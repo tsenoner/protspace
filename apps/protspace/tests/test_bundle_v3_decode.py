@@ -9,14 +9,12 @@ places where that equality is deliberately *not* exact: v3 stores what the
 browser's v2 reader would have parsed out of a cell, not the cell.
 """
 
-import io
 import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
-import pyarrow.parquet as pq
+import pyarrow.compute as pc
 import pytest
 
 from protlabel import Prediction
@@ -24,9 +22,22 @@ from protspace.data.annotations.encoding import (
     FORMAT_VERSION_KEY,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import MANIFEST_KEY, _flat, decode_v3, encode_v3
+from protspace.data.io.bundle_v3 import (
+    MANIFEST_KEY,
+    _flat,
+    decode_v3,
+    encode_v3,
+    replace_annotations_v3,
+    write_part,
+)
 from protspace.data.io.predictions import add_overlay_columns
-from protspace.data.processors.base_processor import BaseProcessor
+from tests.bundle_v3_helpers import (
+    annotations_table,
+    manifest_of,
+    parts_of,
+    projection_tables,
+    read,
+)
 
 REAL_BUNDLE = (
     Path(__file__).resolve().parents[3]
@@ -43,34 +54,6 @@ REAL_BUNDLE = (
 # --------------------------------------------------------------------------- #
 
 
-def annotations_table(**columns: list[str]) -> pa.Table:
-    """An annotations table exactly as the pipeline builds it (all-string, v2)."""
-    n = len(next(iter(columns.values())))
-    frame = pd.DataFrame({"identifier": [f"p{i}" for i in range(n)], **columns})
-    return BaseProcessor({}, {})._create_protein_annotations_table(frame)
-
-
-def projection_tables(num_rows: int, dimensions=(2, 3)):
-    """``projections_metadata`` + long ``projections_data`` for ``num_rows`` proteins."""
-    processor = BaseProcessor({}, {})
-    reductions = [
-        {
-            "name": f"PCA {dimension}",
-            "dimensions": dimension,
-            "info": {"components": dimension},
-            "data": np.arange(num_rows * dimension, dtype=np.float32).reshape(
-                num_rows, dimension
-            ),
-        }
-        for dimension in dimensions
-    ]
-    headers = [f"p{i}" for i in range(num_rows)]
-    return (
-        processor._create_projections_metadata_table(reductions),
-        processor._create_projections_data_table(reductions, headers),
-    )
-
-
 def round_trip(annotations: pa.Table, dimensions=(2, 3)):
     """Encode then decode ``annotations`` with matching projections."""
     metadata, data = projection_tables(annotations.num_rows, dimensions)
@@ -79,6 +62,17 @@ def round_trip(annotations: pa.Table, dimensions=(2, 3)):
 
 def cells(annotations: pa.Table, column: str, dimensions=(2, 3)) -> list:
     return round_trip(annotations, dimensions)[0].column(column).to_pylist()
+
+
+def encoded(**columns: list[str]) -> list[bytes]:
+    """The four parts for ``columns`` over one 2D projection, as a mutable list."""
+    source = annotations_table(**columns)
+    return list(encode_v3(source, *projection_tables(source.num_rows, (2,))))
+
+
+def rewrite(part: bytes, edit) -> bytes:
+    """Read a part, hand the table to ``edit``, write the result back."""
+    return write_part(edit(read(part)))
 
 
 # --------------------------------------------------------------------------- #
@@ -202,13 +196,45 @@ def test_projections_are_long_manifest_ordered_and_protein_ordered():
     assert decoded_data.schema.field("z").type == pa.float32()
 
 
-def test_a_protein_absent_from_a_projection_comes_back_at_the_origin():
-    """v2's zero-initialised Float32Array is the contract, not NaN."""
+def test_a_protein_absent_from_a_projection_comes_back_without_a_row():
+    """Part 3 stores NaN for it; the long table has no way to say that but absence."""
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (2, 3))
+    data = data.filter(
+        pa.compute.invert(
+            pa.compute.and_(
+                pa.compute.equal(data.column("projection_name"), "PCA 3"),
+                pa.compute.equal(data.column("identifier"), "p1"),
+            )
+        )
+    )
+    decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
+    columns = decoded_data.to_pydict()
+    assert columns["identifier"] == ["p0", "p1", "p2", "p0", "p2"]
+    assert columns["x"] == [0.0, 2.0, 4.0, 0.0, 6.0]
+    # p1 keeps its annotations and its PCA 2 row.
+    assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
+
+
+def test_a_non_finite_coordinate_comes_back_without_a_row():
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (3,))
+    z = data.column("z").to_numpy(zero_copy_only=False).copy()
+    z[1] = np.inf
+    data = data.set_column(data.schema.get_field_index("z"), "z", pa.array(z))
+    decoded_data = decode_v3(encode_v3(source, metadata, data))[2]
+    assert decoded_data.column("identifier").to_pylist() == ["p0", "p2"]
+
+
+def test_an_annotation_only_protein_keeps_its_annotations():
+    """No projection covers p2, so no projection row, but the file is lossless."""
     source = annotations_table(kingdom=["A", "B", "C"])
     metadata, data = projection_tables(3, (2,))
-    data = data.filter(pa.compute.not_equal(data.column("identifier"), pa.scalar("p1")))
-    decoded_data = decode_v3(encode_v3(source, metadata, data))[2]
-    assert decoded_data.to_pydict()["x"] == [0.0, 0.0, 4.0]
+    data = data.filter(pa.compute.not_equal(data.column("identifier"), pa.scalar("p2")))
+    decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
+    assert decoded_data.column("identifier").to_pylist() == ["p0", "p1"]
+    assert decoded.column("protein_id").to_pylist() == ["p0", "p1", "p2"]
+    assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
 
 
 # --------------------------------------------------------------------------- #
@@ -347,26 +373,20 @@ def test_a_large_string_column_comes_back_as_its_v2_spelling():
         )
     )
     decoded = round_trip(source, (2,))[0]
-    assert (
-        json.loads(
-            pq.read_table(
-                io.BytesIO(encode_v3(source, *projection_tables(2, (2,)))[0])
-            ).schema.metadata[MANIFEST_KEY]
-        )["columns"]["length"]["sourceType"]
-        == "large_string"
-    )
+    part1 = encode_v3(source, *projection_tables(2, (2,)))[0]
+    assert manifest_of(part1)["columns"]["length"]["sourceType"] == "large_string"
     assert decoded.schema.field("length").type == pa.string()
     assert decoded.column("length").to_pylist() == ["100", "200"]
 
 
-def test_a_bool_column_comes_back_as_the_python_spelling():
-    """``sourceType`` restoration is numeric-only; a bool stays v2's ``True``/``False``."""
+def test_a_bool_column_comes_back_as_bool():
+    """Stored as ``true``/``false`` labels, restored from ``sourceType`` like v2 read."""
     source = stamp_format_version(
-        pa.table({"protein_id": ["p0", "p1"], "flag": [True, False]})
+        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, None]})
     )
     decoded = round_trip(source, (2,))[0]
-    assert decoded.schema.field("flag").type == pa.string()
-    assert decoded.column("flag").to_pylist() == ["True", "False"]
+    assert decoded.schema.field("flag").type == pa.bool_()
+    assert decoded.column("flag").to_pylist() == [True, False, None]
 
 
 # --------------------------------------------------------------------------- #
@@ -380,46 +400,75 @@ def test_rejects_a_part_list_that_is_not_the_encoder_output():
 
 
 def test_rejects_an_annotations_part_without_a_manifest():
-    source = annotations_table(col=["A", "B"])
-    parts = list(encode_v3(source, *projection_tables(2, (2,))))
-    without = pq.read_table(io.BytesIO(parts[0])).replace_schema_metadata(
-        {FORMAT_VERSION_KEY: b"3"}
+    parts = encoded(col=["A", "B"])
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.replace_schema_metadata({FORMAT_VERSION_KEY: b"3"}),
     )
-    buffer = io.BytesIO()
-    pq.write_table(without, buffer)
-    parts[0] = buffer.getvalue()
     with pytest.raises(ValueError, match="not a v3 part"):
         decode_v3(parts)
 
 
 def test_rejects_an_unknown_kind():
-    source = annotations_table(col=["A", "B"])
-    parts = list(encode_v3(source, *projection_tables(2, (2,))))
-    table = pq.read_table(io.BytesIO(parts[0]))
-    manifest = json.loads(table.schema.metadata[MANIFEST_KEY])
+    parts = encoded(col=["A", "B"])
+    manifest = manifest_of(parts[0])
     manifest["columns"]["col"]["kind"] = "sparse"
-    buffer = io.BytesIO()
-    pq.write_table(
-        table.replace_schema_metadata(
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.replace_schema_metadata(
             {**table.schema.metadata, MANIFEST_KEY: json.dumps(manifest).encode()}
         ),
-        buffer,
     )
-    parts[0] = buffer.getvalue()
     with pytest.raises(ValueError, match="unknown v3 kind"):
         decode_v3(parts)
 
 
 # --------------------------------------------------------------------------- #
-# corrupt payloads (a v3 bundle is user-supplied input)
+# replacing the annotations of an encoded core
 # --------------------------------------------------------------------------- #
 
 
-def rewrite(part: bytes, edit) -> bytes:
-    """Read a part, hand the table to ``edit``, write the result back."""
-    buffer = io.BytesIO()
-    pq.write_table(edit(pq.read_table(io.BytesIO(part))), buffer)
-    return buffer.getvalue()
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["p0", "p1", "p2", "p3"],  # same rows
+        ["p3", "p2", "p1", "p0"],  # reordered
+        ["p0", "p1", "p2"],  # a projected protein dropped, so added back
+        ["p0", "p2"],  # two added back, in the long table's order: p3, then p1
+        ["new", "p3", "p1"],  # a protein no projection covers
+    ],
+)
+def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
+    """The wide shortcut has to write what decoding the core back to long tables
+    and encoding them again writes, byte for byte, including the protein missing
+    from one projection and the one whose 3D point has a non-finite axis."""
+    metadata, data = projection_tables(4)
+    uncovered = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 2"),
+        pc.equal(data.column("identifier"), "p1"),
+    )
+    data = data.filter(pc.invert(uncovered))
+    broken_z = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 3"),
+        pc.equal(data.column("identifier"), "p2"),
+    )
+    z = pc.if_else(broken_z, pa.scalar(np.nan, pa.float32()), data.column("z"))
+    data = data.set_column(data.schema.get_field_index("z"), "z", z)
+    parts = list(encode_v3(annotations_table(cat=["a", "b", "a", "c"]), metadata, data))
+
+    replacement = stamp_format_version(
+        pa.table({"protein_id": ids, "cat": [f"x{i}" for i in range(len(ids))]})
+    )
+    _annotations, decoded_metadata, decoded_data = decode_v3(parts)
+
+    assert replace_annotations_v3(replacement, parts) == encode_v3(
+        replacement, decoded_metadata, decoded_data
+    )
+
+
+# --------------------------------------------------------------------------- #
+# corrupt payloads (a v3 bundle is user-supplied input)
+# --------------------------------------------------------------------------- #
 
 
 def corrupt_payload(parts: list[bytes], name: str, data: bytes) -> list[bytes]:
@@ -432,11 +481,6 @@ def corrupt_payload(parts: list[bytes], name: str, data: bytes) -> list[bytes]:
         return pa.table({"name": names, "data": blobs})
 
     return [*parts[:3], rewrite(parts[3], edit)]
-
-
-def encoded(**columns: list[str]) -> list[bytes]:
-    source = annotations_table(**columns)
-    return list(encode_v3(source, *projection_tables(source.num_rows, (2,))))
 
 
 def test_rejects_label_lengths_that_do_not_tile_the_blob():
@@ -523,10 +567,7 @@ def test_real_bundle_round_trip():
     trailing zero to float32, and 4 all-or-partly-null overlay columns whose
     nulls become ``""``.
     """
-    parts = REAL_BUNDLE.read_bytes().split(b"---PARQUET_DELIMITER---")
-    source = pq.read_table(io.BytesIO(parts[0]))
-    metadata = pq.read_table(io.BytesIO(parts[1]))
-    data = pq.read_table(io.BytesIO(parts[2]))
+    source, metadata, data = (read(part) for part in parts_of(REAL_BUNDLE)[:3])
 
     decoded, decoded_metadata, decoded_data = decode_v3(
         encode_v3(source, metadata, data)

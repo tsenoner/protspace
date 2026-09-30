@@ -10,7 +10,6 @@ The assertions here pin the two contracts the encoder has to honour:
 """
 
 import io
-import json
 
 import numpy as np
 import pandas as pd
@@ -24,7 +23,8 @@ from protspace.data.annotations.encoding import (
     read_format_version,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import MANIFEST_KEY, encode_v3
+from protspace.data.io.bundle_v3 import encode_v3
+from tests.bundle_v3_helpers import labels_of, manifest_of, payloads_of, read
 
 
 def make_annotations(**columns: list) -> pa.Table:
@@ -65,33 +65,6 @@ def encode(annotations: pa.Table, names_dims=(("A", 2),)):
     ids = annotations.column("protein_id").to_pylist()
     meta, data = make_projections(names_dims, ids)
     return encode_v3(annotations, meta, data)
-
-
-def read(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
-
-
-def manifest_of(part1: bytes) -> dict:
-    return json.loads(read(part1).schema.metadata[MANIFEST_KEY])
-
-
-def payloads_of(part6: bytes) -> dict[str, bytes]:
-    table = read(part6)
-    return dict(
-        zip(
-            table.column("name").to_pylist(),
-            table.column("data").to_pylist(),
-            strict=True,
-        )
-    )
-
-
-def labels_of(payloads: dict[str, bytes], column: str) -> list[str]:
-    """Rebuild the labels the way the reader does: prefix-sum the byte lengths."""
-    blob = payloads[f"dict:{column}"]
-    ends = np.cumsum(np.frombuffer(payloads[f"dict:{column}:len"], "<i4"))
-    starts = np.concatenate(([0], ends[:-1])).astype(int)
-    return [blob[a:b].decode() for a, b in zip(starts, ends, strict=True)]
 
 
 # --------------------------------------------------------------------------- #
@@ -217,7 +190,7 @@ def test_code_order_is_frequency_then_first_occurrence():
 def test_only_blank_cells_are_minus_one():
     """A cell literally spelled ``none`` is a category, not a missing value.
 
-    v3 is a container encoding: collapsing the six ``MISSING_TOKENS`` spellings
+    v3 is a container encoding: collapsing the ``BROWSER_MISSING_TOKENS`` spellings
     would rewrite the data (``phosphatase.predicted_transmembrane`` is 1383 of
     1587 rows of literal ``none``, and ``protspace style`` keys on that label).
     The browser still folds them into NA at read time, on v2 and v3 alike.
@@ -235,7 +208,7 @@ def test_only_blank_cells_are_minus_one():
 
 
 def test_missing_tokens_only_gate_numeric_inference():
-    """``MISSING_TOKENS`` survives for exactly one job: keeping ``NA`` non-numeric."""
+    """``BROWSER_MISSING_TOKENS`` has exactly one job: keeping ``NA`` non-numeric."""
     parts = encode(make_annotations(col=["1", "NA", "none"]))
     assert manifest_of(parts[0])["columns"]["col"]["kind"] == "numeric"
 
@@ -338,12 +311,18 @@ def test_label_is_trimmed_before_it_becomes_a_category():
     assert labels_of(payloads, "col") == ["Cytoplasm", "Cyto"]
 
 
-def test_bool_cells_use_the_python_spelling():
-    """v2 stringifies bools as ``True``/``False``; a bare cast would say ``true``."""
+def test_bool_cells_use_the_browser_spelling():
+    """The v2 browser reader displayed a ``BOOLEAN`` column as ``true``/``false``.
+
+    Legend colours saved against a v2 bundle are keyed on that spelling, so a
+    v3 write that said ``True``/``False`` would silently drop them.
+    """
     table = stamp_format_version(
-        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, False]})
+        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, None]})
     )
-    assert labels_of(payloads_of(encode(table)[3]), "flag") == ["False", "True"]
+    parts = encode(table)
+    assert labels_of(payloads_of(parts[3]), "flag") == ["true", "false"]
+    assert read(parts[0]).column("flag").to_pylist() == [0, 1, -1]
 
 
 # --------------------------------------------------------------------------- #
@@ -399,16 +378,18 @@ def test_payload_buffers_are_little_endian():
         assert len(blob) % 4 == 0, name
 
 
-def test_projection_rows_align_to_part_one_and_missing_is_zero():
-    """A protein absent from a projection sits at the origin, as in v2."""
+def test_projection_rows_align_to_part_one_and_missing_is_nan():
+    """A protein absent from a projection is NaN there, never the origin."""
     annotations = make_annotations(col=["A", "B", "C"])
-    meta, data = make_projections((("A", 2),), ["p2", "p0"])
+    meta, data = make_projections((("A", 3),), ["p2", "p0"])
     parts = encode_v3(annotations, meta, data)
     projections = read(parts[2]).to_pydict()
     assert projections["A__x"][0] == 1.0  # p0 is the second row of the long table
-    assert projections["A__x"][2] == 0.0  # p2 is the first
-    assert projections["A__x"][1] == 0.0  # p1 is absent from the projection
-    assert projections["A__y"][1] == 0.0
+    assert projections["A__x"][2] == 0.0  # p2 is the first, and really at 0.0
+    # p1 is absent from the projection, and so is every one of its axes.
+    assert all(np.isnan(projections[f"A__{axis}"][1]) for axis in "xyz")
+    # Still one row per protein: the annotation-only protein stays in part 1.
+    assert read(parts[0]).column("protein_id").to_pylist() == ["p0", "p1", "p2"]
 
 
 # --------------------------------------------------------------------------- #
@@ -460,16 +441,33 @@ def test_rejects_colliding_payload_names():
         encode(table)
 
 
-def test_declared_dimension_is_coerced_before_the_z_fallback():
-    """``dimensions`` can arrive as a string; ``"3"`` must not sniff its way to 2D."""
-    annotations = make_annotations(col=["A", "B"])
-    meta, data = make_projections((("A", 2),), ["p0", "p1"])
-    meta = meta.set_column(
-        meta.schema.get_field_index("dimensions"), "dimensions", pa.array(["3"])
+def _declare_dimensions(meta: pa.Table, value) -> pa.Table:
+    return meta.set_column(
+        meta.schema.get_field_index("dimensions"), "dimensions", pa.array([value])
     )
-    parts = encode_v3(annotations, meta, data)
-    assert read(parts[2]).column_names == ["A__x", "A__y", "A__z"]
+
+
+@pytest.mark.parametrize(("data_dim", "declared"), [(2, 3), (3, 2), (2, "abc")])
+def test_dimension_comes_from_the_data_not_the_metadata(data_dim, declared, caplog):
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", data_dim),), ["p0", "p1"])
+    parts = encode_v3(annotations, _declare_dimensions(meta, declared), data)
+
+    assert read(parts[2]).column_names == ["A__x", "A__y", "A__z"][:data_dim]
+    assert manifest_of(parts[0])["projections"] == [
+        {"name": "A", "dimension": data_dim}
+    ]
+    assert f"'A': metadata declares dimensions={declared!r}" in caplog.text
+    assert f"data is {data_dim}D" in caplog.text
+
+
+def test_an_agreeing_declared_dimension_is_silent(caplog):
+    """``dimensions`` can arrive as a string; ``"3"`` agrees with 3D data."""
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", 3),), ["p0", "p1"])
+    parts = encode_v3(annotations, _declare_dimensions(meta, "3"), data)
     assert manifest_of(parts[0])["projections"] == [{"name": "A", "dimension": 3}]
+    assert "declares dimensions" not in caplog.text
 
 
 def test_rejects_duplicate_protein_ids():
@@ -498,10 +496,36 @@ def test_rejects_missing_projection_columns():
         encode_v3(annotations, meta, data)
 
 
-def test_rejects_unknown_identifier():
+def test_a_projected_identifier_without_annotations_is_added(caplog):
+    """The legacy browser reader showed such a protein with N/A everywhere."""
+    annotations = make_annotations(col=["A"], score=["1.5"])
+    meta, data = make_projections((("A", 2),), ["ghost", "p0", "ghost2"])
+    parts = encode_v3(annotations, meta, data)
+
+    part1 = read(parts[0])
+    assert part1.column("protein_id").to_pylist() == ["p0", "ghost", "ghost2"]
+    assert part1.column("col").to_pylist() == [0, -1, -1]
+    assert part1.column("score").to_pylist()[0] == 1.5
+    assert all(np.isnan(v) for v in part1.column("score").to_pylist()[1:])
+    assert read(parts[2]).column("A__x").to_pylist() == [1.0, 0.0, 2.0]
+    assert "2 projected identifier(s) have no annotations row" in caplog.text
+
+
+def test_rejects_a_null_projected_identifier():
     annotations = make_annotations(col=["A"])
-    meta, data = make_projections((("A", 2),), ["p0", "ghost"])
-    with pytest.raises(ValueError, match="ghost"):
+    meta, _ = make_projections((("A", 2),), ["p0"])
+    data = pa.table(
+        {"projection_name": ["A"], "identifier": [None], "x": [1.0], "y": [1.0]},
+        schema=pa.schema(
+            [
+                ("projection_name", pa.string()),
+                ("identifier", pa.string()),
+                ("x", pa.float32()),
+                ("y", pa.float32()),
+            ]
+        ),
+    )
+    with pytest.raises(ValueError, match="null identifier"):
         encode_v3(annotations, meta, data)
 
 

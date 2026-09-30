@@ -50,9 +50,9 @@ def test_replaces_annotations_keeps_other_parts(tmp_path):
 
 
 def test_projection_parts_preserved_byte_for_byte(tmp_path):
-    """A v3 rewrite re-encodes the whole core (part 6 holds part 1's payloads),
-    so the projection parts are re-derived rather than copied — and still come
-    out byte-identical, which is what pins the encoder as deterministic."""
+    """A v3 rewrite re-encodes part 1 and its payloads (part 6), keeps part 2 as
+    stored and realigns part 3 to the new rows — which, for unchanged rows, has
+    to come out byte-identical."""
     src = tmp_path / "in.parquetbundle"
     out = tmp_path / "out.parquetbundle"
     write_bundle(_tables(), src, settings={"foo": 1})

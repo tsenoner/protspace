@@ -332,6 +332,8 @@ def transfer(
             [id_col if n == "identifier" else n for n in augmented.column_names]
         )
 
+    # The renames dropped the stamp, so decide on the version read from the bundle
+    # (see migrate_legacy_annotation_table on the double-migration hazard).
     if input_format_version < 2:
         augmented = migrate_legacy_annotation_table(augmented)
 

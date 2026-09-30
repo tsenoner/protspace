@@ -88,6 +88,8 @@ Or compute quality metrics inline during `prepare` with `--stats` (opt-in): anno
 
 Fill missing annotation values from the nearest annotated protein in embedding space with [`protspace transfer`](https://protspace.app/docs/guide/python-cli) — Embedding Annotation Transfer (EAT).
 
+Bundles in the older v1/v2 format still open, but that support ends in protspace 5.0.0. Upgrade them with `protspace convert old.parquetbundle new.parquetbundle` (or `--in-place`).
+
 ## 📊 Example Output
 
 ![2D Example](https://raw.githubusercontent.com/tsenoner/protspace/main/apps/protspace/docs/protspace_example.png)

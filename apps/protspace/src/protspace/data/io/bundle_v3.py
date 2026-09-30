@@ -38,12 +38,13 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protspace.core.constants import BROWSER_MISSING_TOKENS
 from protspace.data.annotations.encoding import (
+    ARROW_BOOLEAN_LABELS,
     FORMAT_VERSION_KEY,
     decode_field,
     encode_field,
     migrate_legacy_annotation_table,
-    read_format_version,
     stamp_format_version,
 )
 
@@ -51,18 +52,6 @@ logger = logging.getLogger(__name__)
 
 CONTAINER_VERSION = 3
 MANIFEST_KEY = b"protspace_v3_manifest"
-
-#: Cell spellings that block numeric inference, mirroring
-#: ``MISSING_VALUE_TOKENS`` in
-#: ``packages/utils/src/visualization/missing-values.ts``; compared against the
-#: lower-cased, whitespace-trimmed cell.  They are *only* consulted there: a
-#: column of ``NA`` stays categorical instead of becoming all-NaN numeric, but a
-#: cell literally spelled ``none`` keeps that label, because the file has to
-#: preserve the token it was given (``protspace style`` and the Dash legend key
-#: on it, and ``phosphatase.predicted_transmembrane`` is 1383 of 1587 rows of
-#: literal ``none``).  The browser re-applies ``normalizeMissingValue`` at read
-#: time, so folding these into NA stays *its* decision, on both v2 and v3.
-MISSING_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
 
 #: ``EVIDENCE_CODE_RE`` from ``conversion.ts``: the part after a hit's last
 #: ``|`` is an evidence code, not a score.
@@ -101,6 +90,18 @@ _UNRESTORABLE_SOURCE_TYPE = "?"
 _INT32_MAX = 2**31 - 1
 
 
+def write_part(table: pa.Table, **options: Any) -> bytes:
+    """Serialize one bundle part to parquet bytes (``options`` go to pyarrow)."""
+    buf = io.BytesIO()
+    pq.write_table(table, buf, **options)
+    return buf.getvalue()
+
+
+def read_part(part: bytes, columns: list[str] | None = None) -> pa.Table:
+    """Read one bundle part (optionally only ``columns``) back into a table."""
+    return pq.read_table(io.BytesIO(part), columns=columns)
+
+
 # --------------------------------------------------------------------------- #
 # encoder
 # --------------------------------------------------------------------------- #
@@ -108,9 +109,7 @@ _INT32_MAX = 2**31 - 1
 
 def _write(table: pa.Table) -> bytes:
     """Serialize one v3 part: single row group, PLAIN, no dictionary."""
-    buf = io.BytesIO()
-    pq.write_table(table, buf, row_group_size=max(table.num_rows, 1), **_PQ)
-    return buf.getvalue()
+    return write_part(table, row_group_size=max(table.num_rows, 1), **_PQ)
 
 
 def _required_table(
@@ -159,10 +158,11 @@ def _flat(column: pa.ChunkedArray | pa.Array) -> pa.Array:
 
 
 def _as_string(column: pa.ChunkedArray | pa.Array) -> pa.Array:
-    """Flatten to a single ``string`` array, rendering bools as ``True``/``False``."""
+    """Flatten to a single ``string`` array, bools as ``ARROW_BOOLEAN_LABELS``."""
     arr = _flat(column)
     if pa.types.is_boolean(arr.type):
-        return pc.if_else(arr, pa.scalar("True"), pa.scalar("False"))
+        false, true = ARROW_BOOLEAN_LABELS
+        return pc.if_else(arr, pa.scalar(true), pa.scalar(false))
     if pa.types.is_string(arr.type):
         return arr
     return pc.cast(arr, pa.string())
@@ -175,8 +175,18 @@ def _blank_mask(trimmed: pa.Array) -> np.ndarray:
 
 
 def _missing_mask(trimmed: pa.Array) -> np.ndarray:
-    """``normalizeMissingValue``: null, blank, or a MISSING_TOKENS spelling."""
-    token = pc.is_in(pc.utf8_lower(trimmed), value_set=pa.array(sorted(MISSING_TOKENS)))
+    """``normalizeMissingValue``: null, blank, or a ``BROWSER_MISSING_TOKENS`` spelling.
+
+    Only numeric inference consults it: a column of ``NA`` stays categorical
+    instead of becoming all-NaN numeric, but a cell literally spelled ``none``
+    keeps that label, because the file has to preserve the token it was given
+    (``protspace style`` and the Dash legend key on it, and
+    ``phosphatase.predicted_transmembrane`` is 1383 of 1587 rows of literal
+    ``none``).  The browser re-applies ``normalizeMissingValue`` at read time, so
+    folding these into NA stays *its* decision, on both v2 and v3.
+    """
+    tokens = pa.array(sorted(BROWSER_MISSING_TOKENS))
+    token = pc.is_in(pc.utf8_lower(trimmed), value_set=tokens)
     return _blank_mask(trimmed) | np.asarray(pc.fill_null(token, False))
 
 
@@ -234,6 +244,21 @@ def _split_last_pipe(hits: pa.Array) -> tuple[pa.Array, pa.Array]:
     return head, suffix
 
 
+def _numeric_entry(
+    values: np.ndarray, source_type: str, empty_is_int: bool = False
+) -> tuple[dict[str, Any], pa.Array, list[tuple[str, bytes]]]:
+    """:func:`_encode_annotation_column`'s result for float64 ``values`` (NaN = missing)."""
+    finite = values[~np.isnan(values)]
+    # ``np.all([]) is True`` would call an all-missing float column int.
+    integral = bool(np.all(np.mod(finite, 1) == 0)) if finite.size else empty_is_int
+    entry = {
+        "kind": "numeric",
+        "numericType": "int" if integral else "float",
+        "sourceType": source_type,
+    }
+    return entry, pa.array(values, type=pa.float64()), []
+
+
 def _encode_annotation_column(
     column: pa.ChunkedArray | pa.Array,
     name: str,
@@ -255,26 +280,14 @@ def _encode_annotation_column(
     if pa.types.is_integer(arr.type) or pa.types.is_floating(arr.type):
         values = pc.cast(arr, pa.float64()).to_numpy(zero_copy_only=False)
         values = np.where(np.isfinite(values), values, np.nan)
-        finite = values[~np.isnan(values)]
-        if finite.size:
-            numeric_type = "int" if np.all(np.mod(finite, 1) == 0) else "float"
-        else:
-            # ``np.all([]) is True`` would call an all-null float column int.
-            numeric_type = "int" if pa.types.is_integer(arr.type) else "float"
-        entry = {
-            "kind": "numeric",
-            "numericType": numeric_type,
-            "sourceType": source_type,
-        }
-        return entry, pa.array(values, type=pa.float64()), []
+        return _numeric_entry(values, source_type, pa.types.is_integer(arr.type))
 
     strings = _as_string(arr)
     trimmed = pc.utf8_trim_whitespace(strings)
     blank = _blank_mask(trimmed)
 
     # --- numeric inference (conversion.ts:71-125) --------------------------- #
-    # Only here does a MISSING_TOKENS spelling count as absent, so a column of
-    # ``NA`` stays categorical rather than turning into an all-NaN numeric.
+    # Only here does a missing-token spelling count as absent (``_missing_mask``).
     missing = _missing_mask(trimmed)
     if not missing.all():
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
@@ -282,14 +295,7 @@ def _encode_annotation_column(
             values = _parse_floats(trimmed, ~missing)
             if np.isfinite(values[~missing]).all():
                 values = np.where(missing, np.nan, values)
-                finite = values[~missing]
-                numeric_type = "int" if np.all(np.mod(finite, 1) == 0) else "float"
-                entry = {
-                    "kind": "numeric",
-                    "numericType": numeric_type,
-                    "sourceType": source_type,
-                }
-                return entry, pa.array(values, type=pa.float64()), []
+                return _numeric_entry(values, source_type)
 
     # --- categorical: split cells into hits --------------------------------- #
     # ``_blank_mask``, not ``_missing_mask``: v3 is a container encoding and must
@@ -423,7 +429,7 @@ def _encode_projections(
     name_column = projections_data.column("projection_name")
     # The browser derives the projection set, order and dimension from the data
     # rows alone (``conversion.ts:1163-1196``), so a metadata-only projection
-    # would be an all-zero one there and a data-only projection would silently
+    # would be an empty one there and a data-only projection would silently
     # vanish here.  All five shipped datasets agree; refuse the ones that do not.
     in_data = set(pc.unique(name_column).to_pylist())
     if in_data != set(names):
@@ -447,14 +453,13 @@ def _encode_projections(
     for name, declared in zip(names, dimensions, strict=True):
         rows = projections_data.filter(pc.equal(name_column, pa.scalar(name)))
         identifiers = rows.column("identifier")
-        found = pc.index_in(identifiers, value_set=protein_ids)
-        if found.null_count:
-            unknown = identifiers.filter(pc.is_null(found)).to_pylist()
-            raise ValueError(
-                f"projection '{name}' references identifier(s) absent from the "
-                f"annotations table: {sorted(set(unknown))[:5]}"
-            )
-        positions = np.asarray(found.combine_chunks())
+        # ``encode_v3`` has already added every projected identifier to part 1,
+        # so only a null identifier can miss here.
+        if identifiers.null_count:
+            raise ValueError(f"projection '{name}' has null identifier(s)")
+        positions = np.asarray(
+            pc.index_in(identifiers, value_set=protein_ids).combine_chunks()
+        )
         if np.unique(positions).size != positions.size:
             repeated = np.flatnonzero(np.bincount(positions, minlength=num_rows) > 1)
             raise ValueError(
@@ -467,53 +472,83 @@ def _encode_projections(
         z_present = (
             z is not None and not pa.types.is_null(z.type) and z.null_count < len(z)
         )
-        try:  # parquet may hand the dimension back as "3" or a numpy int
-            declared_dim = int(declared)
-        except (TypeError, ValueError):
-            declared_dim = None
-        dimension = declared_dim if declared_dim in (2, 3) else (3 if z_present else 2)
+        # The data decides, as in the browser's legacy reader: metadata claiming
+        # 3D over null z would write an all-missing z axis, and metadata claiming
+        # 2D over real z would drop it.
+        dimension = 3 if z_present else 2
+        if declared is not None:
+            try:  # parquet may hand the dimension back as "3" or a numpy int
+                agrees = int(declared) == dimension
+            except (TypeError, ValueError):
+                agrees = False
+            if not agrees:
+                logger.warning(
+                    f"projection '{name}': metadata declares dimensions={declared!r} "
+                    f"but its data is {dimension}D; writing it as {dimension}D"
+                )
 
         for axis in ("x", "y", "z")[:dimension]:
-            # 0.0, not NaN, for a protein absent from this projection: the browser
-            # leaves its zero-initialised Float32Array untouched and guards the
-            # write (``conversion.ts:1198-1205``), so the protein renders at the
-            # origin.  Preserving that quirk is the contract, not an endorsement.
-            values = np.zeros(num_rows, dtype=np.float32)
-            if axis != "z" or z_present:
-                values[positions] = (
-                    rows.column(axis).to_numpy(zero_copy_only=False).astype(np.float32)
-                )
+            # NaN, never 0.0, for a protein absent from this projection: the
+            # origin is a real coordinate, and a missing point must not be drawn.
+            values = np.full(num_rows, np.nan, dtype=np.float32)
+            values[positions] = (
+                rows.column(axis).to_numpy(zero_copy_only=False).astype(np.float32)
+            )
             columns[f"{name}__{axis}"] = pa.array(values, type=pa.float32())
         manifest.append({"name": name, "dimension": dimension})
 
     return _required_table(columns), manifest
 
 
-def encode_v3(
-    annotations: pa.Table,
-    projections_metadata: pa.Table,
-    projections_data: pa.Table,
-) -> tuple[bytes, bytes, bytes, bytes]:
-    """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
+def _add_unannotated_rows(
+    annotations: pa.Table, id_column: str, projected: pa.Array | None
+) -> pa.Table:
+    """Append an all-missing annotations row per ``projected`` identifier it lacks.
 
-    ``annotations`` must carry the format-version stamp unless it really is v1:
-    an unstamped v2 table is indistinguishable from a v1 one here and is
-    migrated a second time, double-escaping every reserved character.  See the
-    precondition on :func:`~protspace.data.io.bundle.write_bundle`.
+    The legacy browser reader showed such a protein with N/A for every
+    annotation, so the encoder keeps it rather than refusing the bundle.
     """
-    if read_format_version(annotations) == 1:
-        # Loud, because the alternative failure is silent and unrecoverable: an
-        # already-v2 table that lost its stamp (pyarrow drops schema metadata on
-        # rename_columns/concat) is migrated twice and every ``%3B`` becomes
-        # ``%253B``.  Refusing instead is not an option -- a genuine legacy
-        # bundle read back is unstamped too, and that upgrade path is the point.
+    if projected is None:
+        return annotations  # ``_encode_projections`` names the missing column
+    known = _as_string(annotations.column(id_column))
+    absent = projected.filter(pc.invert(pc.is_in(_as_string(projected), known)))
+    if not len(absent):
+        return annotations
+
+    logger.warning(
+        f"{len(absent)} projected identifier(s) have no annotations row, e.g. "
+        f"{absent[:5].to_pylist()}; adding them with every annotation missing"
+    )
+    extra = pa.table(
+        [
+            pc.cast(absent, field.type)
+            if field.name == id_column
+            else pa.nulls(len(absent), field.type)
+            for field in annotations.schema
+        ],
+        schema=annotations.schema,
+    )
+    return pa.concat_tables([annotations, extra])
+
+
+def _prepare_annotations(
+    annotations: pa.Table, projected: pa.Array | None
+) -> tuple[pa.Table, str, pa.Array]:
+    """Migrate a v1 table, add the ``projected`` rows it lacks, validate its ids.
+
+    Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
+    """
+    migrated = migrate_legacy_annotation_table(annotations)
+    if migrated is not annotations:
+        # Loud rather than refused: a genuine legacy table is unstamped too, and
+        # upgrading it is the point (see migrate_legacy_annotation_table).
         logger.warning(
             "annotations table reads as format v1 (no stamp, or stamped 1); "
             "migrating its cell grammar to v2. If it was already v2, re-apply "
             "stamp_format_version() before writing -- migrating twice escapes "
             "every reserved character a second time."
         )
-        annotations = migrate_legacy_annotation_table(annotations)
+        annotations = migrated
 
     id_column = next(
         (c for c in ("protein_id", "identifier") if c in annotations.column_names), None
@@ -524,6 +559,7 @@ def encode_v3(
             f"found {annotations.column_names}"
         )
 
+    annotations = _add_unannotated_rows(annotations, id_column, projected)
     ids = _as_string(annotations.column(id_column))
     if ids.null_count:
         raise ValueError(f"annotations column '{id_column}' contains null values")
@@ -533,7 +569,16 @@ def encode_v3(
             f"annotations column '{id_column}' contains {duplicated} duplicated value(s); "
             "protein identifiers must be unique"
         )
+    return annotations, id_column, ids
 
+
+def _encode_part1(
+    annotations: pa.Table,
+    id_column: str,
+    ids: pa.Array,
+    projection_manifest: list[dict[str, Any]],
+) -> tuple[bytes, bytes]:
+    """Encode the annotation columns as part 1 (manifest in its footer) and part 6."""
     num_rows = annotations.num_rows
     existing = set(annotations.column_names)
     evidence_dict: dict[str, int] = {}
@@ -559,10 +604,6 @@ def encode_v3(
 
     if evidence_dict:
         payloads.extend(_dict_payloads(_EVIDENCE_DICT_NAME, list(evidence_dict)))
-
-    projections_table, projection_manifest = _encode_projections(
-        projections_metadata, projections_data, ids
-    )
 
     manifest = {
         "idColumn": id_column,
@@ -593,13 +634,30 @@ def encode_v3(
             "data": pa.array([d for _, d in payloads], type=pa.binary()),
         }
     )
+    return _write(_required_table(columns, metadata)), _write(payload_table)
 
-    return (
-        _write(_required_table(columns, metadata)),
-        _write(projections_metadata),
-        _write(projections_table),
-        _write(payload_table),
+
+def encode_v3(
+    annotations: pa.Table,
+    projections_metadata: pa.Table,
+    projections_data: pa.Table,
+) -> tuple[bytes, bytes, bytes, bytes]:
+    """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
+
+    ``annotations`` must carry the format-version stamp unless it really is v1;
+    see :func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`.
+    """
+    projected = (
+        pc.unique(projections_data.column("identifier")).drop_null()
+        if "identifier" in projections_data.column_names
+        else None
     )
+    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    projections_table, projection_manifest = _encode_projections(
+        projections_metadata, projections_data, ids
+    )
+    part1, payloads = _encode_part1(annotations, id_column, ids, projection_manifest)
+    return part1, _write(projections_metadata), _write(projections_table), payloads
 
 
 # --------------------------------------------------------------------------- #
@@ -607,12 +665,37 @@ def encode_v3(
 # --------------------------------------------------------------------------- #
 
 
-def _read(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
+def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
+    """Part 1's manifest and the rest of its footer metadata, without the columns."""
+    metadata = dict(pq.read_schema(io.BytesIO(part1)).metadata or {})
+    raw_manifest = metadata.pop(MANIFEST_KEY, None)
+    if raw_manifest is None:
+        raise ValueError(
+            f"annotations part carries no {MANIFEST_KEY.decode()} key; "
+            "it is not a v3 part"
+        )
+    return json.loads(raw_manifest), metadata
+
+
+def _axes(projection: dict[str, Any]) -> tuple[str, ...]:
+    return ("x", "y", "z")[: int(projection["dimension"])]
+
+
+def _finite_rows(wide: pa.Table, projection: dict[str, Any]) -> np.ndarray:
+    """Rows that ``projection`` covers: every axis finite (NaN means not covered)."""
+    name = projection["name"]
+    return np.logical_and.reduce(
+        [
+            np.isfinite(
+                _flat(wide.column(f"{name}__{axis}")).to_numpy(zero_copy_only=False)
+            )
+            for axis in _axes(projection)
+        ]
+    )
 
 
 def _read_payloads(part: bytes) -> dict[str, bytes]:
-    table = _read(part)
+    table = read_part(part)
     return dict(
         zip(
             table.column("name").to_pylist(),
@@ -622,45 +705,40 @@ def _read_payloads(part: bytes) -> dict[str, bytes]:
     )
 
 
-def _read_labels(payloads: dict[str, bytes], name: str) -> list[str]:
-    """Slice ``dict:<name>`` by the prefix sum of its per-label byte lengths.
+def _offsets(counts: np.ndarray, size: int, what: str, unit: str) -> np.ndarray:
+    """Prefix-sum per-element ``counts`` into ``counts.size + 1`` offsets.
 
-    A v3 bundle is user-supplied input and Python slicing clamps, so a corrupt
-    length array would silently yield duplicated and empty labels instead of an
-    error.  The lengths must therefore tile the blob exactly.
+    A v3 bundle is user-supplied input, and counts that fall short of their
+    buffer fail silently downstream (Python slicing clamps, so labels come out
+    duplicated or empty; Arrow empties the tail lists), as does a negative count
+    (misaligned), so the counts must tile all ``size`` elements exactly.
     """
+    offsets = np.concatenate(([0], np.cumsum(counts, dtype=np.int64)))
+    total = int(offsets[-1])
+    if bool((counts < 0).any()) or total != size:
+        raise ValueError(
+            f"{what} is corrupt: {counts.size} count(s) totalling {total} over "
+            f"{size} {unit}(s)"
+        )
+    return offsets
+
+
+def _read_labels(payloads: dict[str, bytes], name: str) -> list[str]:
+    """Slice ``dict:<name>`` by the prefix sum of its per-label byte lengths."""
     blob = payloads[f"dict:{name}"]
     lengths = np.frombuffer(payloads[f"dict:{name}:len"], "<i4")
-    ends = np.cumsum(lengths, dtype=np.int64)
-    total = int(ends[-1]) if ends.size else 0
-    if bool((lengths < 0).any()) or total != len(blob):
-        raise ValueError(
-            f"payload 'dict:{name}:len' is corrupt: {lengths.size} label length(s) "
-            f"totalling {total} over a {len(blob)}-byte 'dict:{name}' blob"
-        )
+    offsets = _offsets(lengths, len(blob), f"payload 'dict:{name}:len'", "byte")
     return [
-        blob[end - length : end].decode()
-        for length, end in zip(lengths, ends, strict=True)
+        blob[start:end].decode()
+        for start, end in zip(offsets[:-1], offsets[1:], strict=True)
     ]
 
 
 def _list_join(
     counts: np.ndarray, values: pa.Array, separator: str, what: str
 ) -> pa.Array:
-    """Prefix-sum per-element ``counts`` into list offsets, then join each list.
-
-    A total below ``len(values)`` silently empties the tail lists and a negative
-    count misaligns them, so a user-supplied bundle has to tile ``values``
-    exactly.  (A total above it already raises inside Arrow.)
-    """
-    ends = np.cumsum(counts, dtype=np.int64)
-    total = int(ends[-1]) if ends.size else 0
-    if bool((counts < 0).any()) or total != len(values):
-        raise ValueError(
-            f"{what} is corrupt: {counts.size} count(s) totalling {total} over "
-            f"{len(values)} value(s)"
-        )
-    offsets = np.concatenate(([0], ends)).astype(np.int32)
+    """Join each run of ``counts`` consecutive ``values`` with ``separator``."""
+    offsets = _offsets(counts, len(values), what, "value").astype(np.int32)
     lists = pa.ListArray.from_arrays(pa.array(offsets, type=pa.int32()), values)
     return pc.binary_join(lists, separator)
 
@@ -688,29 +766,41 @@ def _decode_numeric(column: pa.ChunkedArray, entry: dict[str, Any]) -> pa.Array:
     if type_ is not None:
         return pc.cast(pa.array(values, mask=~present), type_)
 
-    finite = np.where(present, values, 0.0)
-    # ``str(2.0)`` is ``"2.0"`` but an int-typed v2 column spells it ``"2"``, and
-    # numpy's float repr is Python's, so int columns take the int64 detour.  The
-    # magnitude guard keeps a value past int64 out of an undefined cast, and it is
-    # per value: one 1e19 cell must not re-spell the whole column as floats.
+    # Only present cells are spelled.  ``str(2.0)`` is ``"2.0"`` but an int-typed
+    # v2 column spells it ``"2"``, so int columns take the int64 detour, where
+    # pyarrow's cast spells integers exactly as Python does.  Floats keep numpy's
+    # repr, which is Python's: pyarrow spells them differently (``1e-7`` for
+    # ``1e-07``, ``1e+15`` for ``1000000000000000.0``).  The magnitude guard keeps
+    # a value past int64 out of an undefined cast, and it is per value: one 1e19
+    # cell must not re-spell the whole column as floats.
+    kept = values[present]
     if entry.get("numericType") == "int":
-        small = np.abs(finite) < 2.0**63
-        text = np.where(
-            small,
-            np.where(small, finite, 0.0).astype(np.int64).astype(str),
-            finite.astype(str),
+        small = np.abs(kept) < 2.0**63
+        text = pc.cast(
+            pa.array(np.where(small, kept, 0.0).astype(np.int64)), pa.string()
         )
+        if not small.all():
+            text = pc.replace_with_mask(
+                text, pa.array(~small), pa.array(kept[~small].astype(str))
+            )
     else:
-        text = finite.astype(str)
-    return pc.if_else(
-        pa.array(present), pa.array(text, type=pa.string()), pa.scalar("")
-    )
+        text = pa.array(kept.astype(str), type=pa.string())
+    return pc.fill_null(text.take(pa.array(np.cumsum(present) - 1, mask=~present)), "")
 
 
-def _decode_categorical(column: pa.ChunkedArray, labels: pa.Array) -> pa.Array:
-    """int32 codes back to label cells; ``-1`` (missing) becomes ``""``."""
+def _decode_categorical(
+    column: pa.ChunkedArray, labels: pa.Array, entry: dict[str, Any]
+) -> pa.Array:
+    """int32 codes back to label cells; ``-1`` (missing) becomes ``""``.
+
+    A ``bool`` source column comes back as ``bool`` (missing as null) from its
+    ``ARROW_BOOLEAN_LABELS``, as a v2 bundle's ``BOOLEAN`` column always read.
+    """
     codes = _flat(column).to_numpy(zero_copy_only=False)
-    return pc.fill_null(labels.take(pa.array(codes, mask=codes < 0)), "")
+    cells = labels.take(pa.array(codes, mask=codes < 0))
+    if entry.get("sourceType") == "bool":
+        return pc.equal(cells, pa.scalar(ARROW_BOOLEAN_LABELS[1]))
+    return pc.fill_null(cells, "")
 
 
 def _decode_multi(
@@ -768,8 +858,12 @@ def _decode_multi(
 def _decode_projections(
     part: bytes, manifest: list[dict[str, Any]], identifiers: pa.Array
 ) -> pa.Table:
-    """Wide float32 projections back to the long v2 table, in manifest order."""
-    wide = _read(part)
+    """Wide float32 projections back to the long v2 table, in manifest order.
+
+    Only proteins with finite coordinates get a row: NaN is how part 3 says a
+    projection does not cover a protein.
+    """
+    wide = read_part(part)
     num_rows = len(identifiers)
     row = pa.array(np.zeros(num_rows, dtype=np.int32))
     schema = pa.schema(
@@ -785,22 +879,22 @@ def _decode_projections(
     tables = []
     for projection in manifest:
         name = projection["name"]
-        dimension = int(projection["dimension"])
-        tables.append(
-            pa.table(
-                {
-                    # ``take`` of a one-element array beats materialising N copies.
-                    "projection_name": pa.array([name], type=pa.string()).take(row),
-                    "identifier": identifiers,
-                    "x": _flat(wide.column(f"{name}__x")),
-                    "y": _flat(wide.column(f"{name}__y")),
-                    "z": _flat(wide.column(f"{name}__z"))
-                    if dimension == 3
-                    else pa.nulls(num_rows, pa.float32()),
-                },
-                schema=schema,
-            )
+        axes = {
+            axis: _flat(wide.column(f"{name}__{axis}")) for axis in _axes(projection)
+        }
+        table = pa.table(
+            {
+                # ``take`` of a one-element array beats materialising N copies.
+                "projection_name": pa.array([name], type=pa.string()).take(row),
+                "identifier": identifiers,
+                "x": axes["x"],
+                "y": axes["y"],
+                "z": axes.get("z", pa.nulls(num_rows, pa.float32())),
+            },
+            schema=schema,
         )
+        finite = _finite_rows(wide, projection)
+        tables.append(table if finite.all() else table.filter(pa.array(finite)))
     return pa.concat_tables(tables) if tables else schema.empty_table()
 
 
@@ -838,8 +932,16 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
       v2 anyway: the cell grammar's number rule rejects ``Infinity`` and the
       browser drops non-finite values on read, so preserving them would produce
       a bundle no reader agrees on;
-    * projection coordinates come back float32 (``z`` null for a 2D projection)
-      and a protein absent from a projection comes back at the origin;
+    * a ``bool`` column comes back ``bool``, but it is *stored* as the labels
+      ``true``/``false`` (what the browser always displayed for it);
+    * a projected identifier the annotations table lacked comes back as a row
+      whose every annotation is missing, appended after the others;
+    * a projection's dimension comes from its data (non-null ``z`` means 3D),
+      whatever the metadata's ``dimensions`` said;
+    * projection coordinates come back float32 (``z`` null for a 2D projection),
+      and only proteins with finite coordinates get a row: a protein absent from
+      a projection, or whose coordinates there were non-finite, has none (the
+      file stores NaN for it, never the origin);
     * the identifier column comes back first, wherever it sat before.
     """
     if len(parts) != 4:
@@ -847,15 +949,8 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
             f"decode_v3 expects the 4 parts encode_v3 returns, got {len(parts)}"
         )
 
-    annotations = _read(parts[0])
-    metadata = dict(annotations.schema.metadata or {})
-    raw_manifest = metadata.pop(MANIFEST_KEY, None)
-    if raw_manifest is None:
-        raise ValueError(
-            f"annotations part carries no {MANIFEST_KEY.decode()} key; "
-            "it is not a v3 part"
-        )
-    manifest = json.loads(raw_manifest)
+    manifest, metadata = _read_manifest(parts[0])
+    annotations = read_part(parts[0])
     payloads = _read_payloads(parts[3])
 
     evidence_labels = pa.array(
@@ -878,7 +973,7 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
             type=pa.string(),
         )
         if kind == "categorical":
-            columns[name] = _decode_categorical(annotations.column(name), labels)
+            columns[name] = _decode_categorical(annotations.column(name), labels, entry)
         elif kind == "multi":
             columns[name] = _decode_multi(
                 annotations.column(f"{name}__count"),
@@ -893,6 +988,57 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
 
     return (
         stamp_format_version(pa.table(columns).replace_schema_metadata(metadata)),
-        _read(parts[1]),
+        read_part(parts[1]),
         _decode_projections(parts[2], manifest["projections"], columns[id_column]),
     )
+
+
+# --------------------------------------------------------------------------- #
+# replacing the annotations of an encoded core
+# --------------------------------------------------------------------------- #
+
+
+def replace_annotations_v3(
+    annotations: pa.Table, parts: list[bytes]
+) -> tuple[bytes, bytes, bytes, bytes]:
+    """:func:`encode_v3` for new ``annotations`` over an existing v3 core.
+
+    ``parts`` are v3 parts 1, 2, 3 and 6.  The projections stay wide: part 3 is
+    realigned to the new rows instead of being decoded to the long table and
+    pivoted back, part 2 is kept as stored, and none of the old annotation
+    columns are decoded.  The result is what the decode-then-encode round trip
+    writes: a protein with finite coordinates the new table lacks is added back
+    as an all-missing row, and a new protein gets NaN.
+    """
+    manifest, _metadata = _read_manifest(parts[0])
+    projections = manifest["projections"]
+    old_ids = _flat(read_part(parts[0], columns=[manifest["idColumn"]]).column(0))
+    wide = read_part(parts[2])
+
+    finite = [_finite_rows(wide, projection) for projection in projections]
+    # In the order the long table lists them, which is the order they are added.
+    projected = pc.unique(
+        pa.chunked_array(
+            [old_ids.filter(pa.array(rows)) for rows in finite], type=old_ids.type
+        )
+    )
+    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    position = np.asarray(pc.fill_null(pc.index_in(ids, value_set=old_ids), -1))
+    new = np.flatnonzero(position >= 0)
+    old = position[new]
+
+    columns: dict[str, pa.Array] = {}
+    for projection, rows in zip(projections, finite, strict=True):
+        # A row with any non-finite axis is dropped by the decoder, so every axis
+        # of it goes missing here, as the round trip would have written it.
+        keep = rows[old]
+        for axis in _axes(projection):
+            column = f"{projection['name']}__{axis}"
+            values = np.full(len(ids), np.nan, dtype=np.float32)
+            values[new[keep]] = _flat(wide.column(column)).to_numpy(
+                zero_copy_only=False
+            )[old[keep]]
+            columns[column] = pa.array(values, type=pa.float32())
+
+    part1, payloads = _encode_part1(annotations, id_column, ids, projections)
+    return part1, parts[1], _write(_required_table(columns)), payloads

@@ -12,10 +12,13 @@ There are two container layouts. Which one a file uses is recorded in the Parque
 metadata of its first part, under `protspace_format_version` (see
 [Version detection](#version-detection)):
 
-| Layout                    | Parts    | Written by                                                                            |
-| ------------------------- | -------- | ------------------------------------------------------------------------------------- |
-| Legacy (format v1 and v2) | 3 to 5   | `protspace style`, which keeps the layout of the bundle it was handed; older releases |
-| Columnar (format v3)      | always 6 | `protspace prepare`, `protspace bundle`, `protspace transfer`; every web app export   |
+| Layout                    | Parts    | Written by                                                                                                        |
+| ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| Columnar (format v3)      | always 6 | every export from the web app; `protspace prepare`, `bundle`, `transfer` and `convert`                            |
+| Legacy (format v1 and v2) | 3 to 5   | older releases; `protspace style`, which edits settings in place and keeps the layout of the bundle it was handed |
+
+v3 is the current format. v1 and v2 files still load, but reading them is deprecated and ends in
+protspace 5.0.0; see [Legacy formats](#legacy-formats-v1-and-v2) for how to convert them.
 
 Both layouts carry the same data. v3 re-encodes the container, not the dataset: the Python API
 decodes a v3 file back into the same three tables, in the same cell grammar, that a legacy file
@@ -330,7 +333,8 @@ When displayed in ProtSpace, the decoded names render as "Superfamily; old" and 
   row is decoded.
 - `"2"` selects the percent-decoding cell parser described above, `"3"` selects the columnar
   reader. A v1 bundle has no version key and renders with the legacy parser, which does not
-  decode percent-encoded sequences. Existing v1 and v2 bundles therefore keep loading unchanged.
+  decode percent-encoded sequences. Existing v1 and v2 bundles therefore keep loading, until
+  protspace 5.0.0 (see [Legacy formats](#legacy-formats-v1-and-v2)).
 - Python cross-checks the two signals: a six-part file whose first part does not say `3` is
   rejected rather than guessed at, and a three to five part file is always read as legacy.
 - That cross-check runs in one direction only, which is a known limitation. Only a six-part file
@@ -343,8 +347,42 @@ When displayed in ProtSpace, the decoded names render as "Superfamily; old" and 
   `BUNDLE_FORMAT_VERSION` on the Python side stays `2` and why the tables handed back from a v3
   read are re-stamped `protspace_format_version=2`: what they contain is v2 cells.
 - A web build older than v3 support rejects a v3 file with
-  `Expected 2 to 4 delimiters in parquetbundle, found 5`. That is a version-skew signal, not a
-  corrupt file.
+  `Expected 2 to 4 delimiters in parquetbundle, found 5`, and an older `protspace` release with
+  `Expected 3 to 5 parts in parquetbundle, found 6`. That is a version-skew signal, not a corrupt
+  file: upgrade the reader.
+
+## Legacy formats (v1 and v2) {#legacy-formats-v1-and-v2}
+
+Bundles written before format v3 (three to five parts, see
+[Legacy layout](#legacy-layout-3-to-5-parts)) still load in the web app and in the Python package.
+That support is **deprecated and will be removed in protspace 5.0.0**. Until then:
+
+- the Python package logs one warning each time it reads a v1 or v2 bundle, naming
+  `protspace convert`;
+- the web app shows a notice, without blocking the load, when you open a v1 or v2 file of your own.
+  The datasets the app ships with do not trigger it.
+
+To upgrade a file, either:
+
+- run [`protspace convert`](/guide/python-cli#protspace-convert):
+
+  ```bash
+  protspace convert old.parquetbundle new.parquetbundle
+  protspace convert old.parquetbundle --in-place
+  ```
+
+  It keeps the settings and the statistics part as they are, migrates a v1 file's cell grammar to
+  v2 so every label keeps its meaning, writes atomically, and leaves a file that is already v3
+  alone; or
+
+- open the file at [protspace.app/explore](https://protspace.app/explore) and export it again. The
+  web app always exports v3, so this needs no install.
+
+A converted file holds the same proteins, projections, annotations, settings and statistics. Cells
+come back in their canonical spelling (see
+[What a v3 round trip does not preserve](#what-a-v3-round-trip-does-not-preserve)), and a protein
+that a projection did not cover is stored as missing rather than at the origin (see
+[Part 3: projections](#part-3-projections)).
 
 ## Format v3 Physical Schema
 
@@ -383,7 +421,21 @@ Part 2, the projections metadata, is unchanged from the legacy layout.
 
 One row per protein, aligned position by position with part 1, and one `FLOAT` column per axis:
 `<name>__x`, `<name>__y`, and `<name>__z` for a 3D projection. A protein with no coordinates in a
-projection is stored at `0.0`, which is where the legacy reader placed it too.
+projection is stored as `NaN` on every axis, never `0.0`: the origin is a real coordinate, and a
+missing point is not drawn. A projection is 3D when any of its rows has a `z` value and 2D
+otherwise; a `dimensions` value in part 2 that disagrees is ignored with a warning.
+
+Part 1 holds the union of the annotated and the projected proteins. A projected protein with no
+annotations row is added with every annotation missing, and a protein that no projection covers
+stays in part 1 with `NaN` coordinates.
+
+The web app never draws a point without finite coordinates: it is not plotted, picked, selected,
+contoured or counted in a projection's extent. Its protein set is the proteins with a finite
+coordinate in at least one projection, so a protein that no projection covers is kept in the file
+but not listed, counted or searched. v1 and v2 bundles are read by the same rule: a protein with no
+row in a projection is missing there, not at (0, 0). Web builds before v3 support drew such a
+protein at the origin, so a bundle whose projections do not cover every annotated protein now shows
+fewer points than it used to.
 
 The projection name sets in parts 2 and 3 must be identical; the encoder refuses a bundle where
 either one names a projection the other does not, because the browser derives the projection set
@@ -481,14 +533,15 @@ everything else and falls back to the per-kind default:
 
 - a type whose alias cannot be parsed back at all, such as a dictionary, list or decimal column,
   is recorded as `"?"`
-- a type whose alias parses but is not an integer or a float is recorded verbatim and declined
-  anyway. A `bool` column records `sourceType` `"bool"` and a timestamp column records
-  `"timestamp[s]"`; neither is restored, and both come back as v2 string cells
+- a type whose alias parses but is not an integer, a float or a `bool` is recorded verbatim and
+  declined anyway. A timestamp column records `"timestamp[s]"` and comes back as v2 string cells
 - `"string"` and `"large_string"` are declined by design, because the v2 spelling of the column is
   what the encoder consumed, so rendering it back is the restoration
 
-`sourceType` is also consulted only when decoding a `numeric` column, so on a `categorical` or
-`multi` column it is recorded but completely inert.
+A `bool` column is the one categorical exception. It is written with the labels `true` and
+`false`, the spelling the v2 browser reader displayed, and its `sourceType` `"bool"` turns those
+labels back into a `bool` column on decode. Otherwise `sourceType` is consulted only when decoding
+a `numeric` column, so on a `categorical` or `multi` column it is recorded but inert.
 
 ### Scores are float64
 
@@ -537,8 +590,10 @@ they are worth knowing about, but they are cosmetic rather than corrupting: both
 re-parse to the same double, and a second round trip re-emits the same text.
 
 A cell spelled `none`, `NA` or `null` is an ordinary label and comes back unchanged. Projection
-coordinates come back as float32 with `z` null for a 2D projection, and the identifier column
-comes back first whatever position it held before.
+coordinates come back as float32 with `z` null for a 2D projection, and only a protein with finite
+coordinates gets a projection row, so a protein a projection does not cover has no row for it. A
+projected protein that had no annotations row comes back with one whose every annotation is
+missing, and the identifier column comes back first whatever position it held before.
 
 ## Creating Files
 
@@ -556,9 +611,10 @@ If the saved numeric topology no longer matches the realized one, incompatible n
 
 What else an export from the web app does:
 
-- it writes format v3, whatever format the bundle was loaded from, so exporting a v1 or v2 file from the app converts it without a Python install.
-- a numeric column is written as `DOUBLE`, with its int/float identity in the manifest. An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
+- the export is a format v3 bundle, whatever format the dataset was loaded from, so loading a v1 or v2 file and exporting it upgrades it without a Python install (see [Legacy formats](#legacy-formats-v1-and-v2)).
+- a numeric column is written as `DOUBLE`, with its int/float identity in the manifest (`numericType`). An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
+- a boolean column is written with the labels `true` and `false`, and a protein a projection does not cover gets `NaN` coordinates there, exactly as in a Python-written bundle.
 - a statistics part read from the source bundle is re-emitted byte for byte, including columns this app version does not model.
-- a bundle without settings or statistics still has six parts, with zero-byte slots in their place.
+- all six parts are always written, with a zero-byte slot for absent settings or statistics.
 - a subset export (isolation, or an active filter) drops the statistics part, because whole-dataset scores would misdescribe a slice.
 - the export fails with an error, rather than writing a corrupt file, if any annotation value or category name contains the literal `---PARQUET_DELIMITER---`. The delimiter is in-band and unescaped, so such a value would split one part into two on read-back.
