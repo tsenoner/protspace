@@ -80,12 +80,14 @@ def _part_container_version(part: bytes) -> int | None:
 
     Every read parses part 1's footer, including the settings-only
     :func:`read_settings_from_bundle`, so a corrupt part 1 has to fail as a
-    bundle error and not as a raw ``ArrowInvalid`` traceback out of
-    ``protspace style --dump-settings``.
+    bundle error and not as a raw pyarrow traceback out of
+    ``protspace style --dump-settings``.  pyarrow raises ``ArrowInvalid`` for a
+    part that is not parquet at all, but a plain ``OSError`` (thrift) for a
+    footer that ends in ``PAR1`` and cannot be deserialized.
     """
     try:
         schema = pq.read_schema(io.BytesIO(part))
-    except pa.ArrowInvalid as exc:
+    except (pa.ArrowInvalid, OSError) as exc:
         raise ValueError(
             f"parquetbundle part 1 is not readable as parquet: {exc}"
         ) from exc

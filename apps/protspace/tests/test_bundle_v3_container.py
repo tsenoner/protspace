@@ -410,6 +410,29 @@ def test_corrupt_first_part_of_a_six_part_bundle_is_a_bundle_error(tmp_path):
         read_tables(path)
 
 
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        # The footer loses bytes but keeps its length and magic: pyarrow then
+        # fails in thrift, with an ``OSError`` rather than an ``ArrowInvalid``.
+        pytest.param(lambda p: p[:-38] + p[-8:], id="truncated-footer"),
+        pytest.param(lambda p: p[:-40] + b"\xff" * 32 + p[-8:], id="garbled-footer"),
+    ],
+)
+def test_a_part_1_footer_pyarrow_cannot_deserialize_is_a_bundle_error(
+    tmp_path, corrupt
+):
+    path = tmp_path / "b.parquetbundle"
+    write_bundle(pipeline_tables(), path)
+    parts = parts_of(path)
+    path.write_bytes(PARQUET_BUNDLE_DELIMITER.join([corrupt(parts[0]), *parts[1:]]))
+
+    with pytest.raises(ValueError, match="part 1 is not readable as parquet"):
+        read_settings_from_bundle(path)
+    with pytest.raises(ValueError, match="part 1 is not readable as parquet"):
+        convert_bundle(path, tmp_path / "out.parquetbundle")
+
+
 def test_replace_annotations_upgrades_a_legacy_bundle(tmp_path):
     """A rewrite is a write, and every write emits v3."""
     src = tmp_path / "legacy.parquetbundle"
