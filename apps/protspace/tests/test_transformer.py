@@ -24,7 +24,7 @@ SAMPLE_PROTEINS_WITH_LENGTH = [
         annotations={
             "length": "110",
             "annotation_score": "5.0",
-            "protein_families": "Insulin family, Growth factor family",
+            "protein_families": "Insulin family|IC;Growth factor family|IC",
             "reviewed": "Swiss-Prot",
             "xref_pdb": "1INS;2INS",
             "fragment": "fragment",
@@ -100,7 +100,11 @@ class TestAnnotationTransformerTransform:
 
         # Should have transformed annotations
         assert result[0].annotations["annotation_score"] == "5"
-        assert result[0].annotations["protein_families"] == "Insulin family"
+        # Every family of a multi-section entry survives, evidence included
+        assert (
+            result[0].annotations["protein_families"]
+            == "Insulin family|IC;Growth factor family|IC"
+        )
         assert result[0].annotations["reviewed"] == "Swiss-Prot"
         assert result[0].annotations["xref_pdb"] == "True"
         assert result[0].annotations["fragment"] == "yes"
@@ -287,7 +291,7 @@ class TestAnnotationTransformerTransformRow:
         row = [
             "P01308",
             "5.0",  # annotation_score
-            "Insulin family, Growth factor",  # protein_families
+            "Insulin family;Growth factor family",  # protein_families
             "TrEMBL",  # reviewed
             "1INS;2INS",  # xref_pdb
             "fragment",  # fragment
@@ -307,7 +311,7 @@ class TestAnnotationTransformerTransformRow:
 
         assert result[0] == "P01308"
         assert result[1] == "5"
-        assert result[2] == "Insulin family"
+        assert result[2] == "Insulin family;Growth factor family"
         assert result[3] == "TrEMBL"
         assert result[4] == "True"
         assert result[5] == "yes"
@@ -390,7 +394,7 @@ class TestAnnotationTransformerTransformAnnotations:
         transformer = AnnotationTransformer()
         annotations = {
             "annotation_score": "5.0",
-            "protein_families": "Family1, Family2",
+            "protein_families": "Family1;Family2",
             "reviewed": "Swiss-Prot",
             "xref_pdb": "1ABC;2DEF",
             "fragment": "fragment",
@@ -400,7 +404,7 @@ class TestAnnotationTransformerTransformAnnotations:
         result = transformer._transform_annotations(annotations)
 
         assert result["annotation_score"] == "5"
-        assert result["protein_families"] == "Family1"
+        assert result["protein_families"] == "Family1;Family2"
         assert result["reviewed"] == "Swiss-Prot"
         assert result["xref_pdb"] == "True"
         assert result["fragment"] == "yes"

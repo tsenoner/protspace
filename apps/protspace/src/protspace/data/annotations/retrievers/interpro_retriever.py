@@ -7,6 +7,8 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from collections import namedtuple
+from contextlib import closing
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,6 +18,11 @@ from tqdm import tqdm
 from protspace.data.annotations.encoding import encode_field
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 from protspace.data.annotations.retrievers.cath_names import get_cath_names
+from protspace.data.annotations.retrievers.http_utils import (
+    PooledSession,
+    map_in_order,
+    post_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,15 @@ INTERPRO_MAPPING = {
 # pfam_clan is a derived annotation (computed from pfam in the transformer)
 INTERPRO_ANNOTATIONS = list(INTERPRO_MAPPING.keys()) + ["pfam_clan"]
 
+# Match sources that are not a member database's own match. The Matches API
+# also returns InterPro-N's AI-predicted matches, labelled with the member
+# library they predict (sometimes at an older release) but with no name and no
+# match-level score. Mapped by library alone they became unscored hits in
+# `pfam`, `cdd`, ... for about 3 % of Swiss-Prot proteins, so they are skipped
+# and every column keeps its member database's own matches only. Compared
+# lower-case; a match without a `source` is a member-database match.
+_PREDICTED_MATCH_SOURCES = frozenset({"interpro-n"})
+
 # Annotations derived from other InterPro fields (not fetched from API directly)
 DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 
@@ -45,6 +61,20 @@ DERIVED_INTERPRO_ANNOTATIONS = {"pfam_clan"}
 BASE_URL = "https://www.ebi.ac.uk/interpro/matches/api"
 INTERPRO_ENTRY_URL = "https://www.ebi.ac.uk/interpro/api/entry"
 CHUNK_SIZE = 100  # As per API documentation for batch requests
+# Per attempt. The slowest batch observed took 24 s; retries cover the tail.
+MATCHES_TIMEOUT = 30
+# Batches lost in a row, each after its full retry budget, before InterPro is
+# taken to be down and the remaining batches are counted lost unrequested. A
+# lost batch costs at least 7 s of backoff and up to about two minutes with
+# timeouts, and the first one already makes the source incomplete, so asking
+# thousands more during an outage only adds hours.
+_MAX_CONSECUTIVE_LOST_BATCHES = 10
+# Match batches in flight at once, over one session. Measured on the Matches
+# API with Swiss-Prot sequences, 100 per batch: 35 sequences a second one
+# batch at a time (3.8 h for Swiss-Prot's 490K distinct sequences), 92 with 4
+# in parallel (1.5 h), 123 with 8. Raising it asks more of a public server;
+# the constructor takes an override.
+MAX_CONCURRENT_REQUESTS = 4
 
 # Mapping from annotation key to InterPro entry API database path
 # Used to resolve human-readable names for databases where the matches API
@@ -99,6 +129,9 @@ class InterProRetriever(BaseAnnotationRetriever):
     - Count is inferred from the number of comma-separated scores
 
     Example: 'pfam': 'PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5'
+
+    Only the member databases' own matches are kept: InterPro-N's AI-predicted
+    matches, which the Matches API also returns, are skipped.
     """
 
     def __init__(
@@ -106,6 +139,7 @@ class InterProRetriever(BaseAnnotationRetriever):
         headers: list[str] = None,
         annotations: list[str] = None,
         sequences: dict[str, str] = None,
+        max_concurrent_requests: int | None = None,
     ):
         """
         Initialize the InterPro annotation retriever.
@@ -114,6 +148,8 @@ class InterProRetriever(BaseAnnotationRetriever):
             headers: List of protein identifiers
             annotations: List of InterPro database annotations to fetch (e.g., pfam, superfamily, cath, smart, ...)
             sequences: Dictionary mapping protein identifiers to their sequences (needed for MD5 calculation)
+            max_concurrent_requests: Match batches in flight at once; defaults
+                to ``MAX_CONCURRENT_REQUESTS``
         """
         super().__init__(headers, annotations)
         self.headers = self._manage_headers(self.headers) if self.headers else []
@@ -121,6 +157,11 @@ class InterProRetriever(BaseAnnotationRetriever):
             self.annotations if self.annotations else INTERPRO_ANNOTATIONS
         )
         self.sequences = sequences if sequences else {}
+        self.max_concurrent_requests = (
+            MAX_CONCURRENT_REQUESTS
+            if max_concurrent_requests is None
+            else max_concurrent_requests
+        )
         # Batches whose matches never arrived. Their proteins fall through as
         # "no InterPro match", indistinguishable from a real absence, so the
         # caller needs to know the difference before caching them.
@@ -159,15 +200,17 @@ class InterProRetriever(BaseAnnotationRetriever):
             )
             return []
 
-        # Calculate MD5 hashes for sequences
-        md5_to_identifier = {}
+        # Group identifiers by sequence MD5. InterPro is queried per MD5, so
+        # identical sequences are one lookup whose matches belong to every
+        # protein that has that sequence.
+        md5_to_identifiers: dict[str, list[str]] = {}
         missing_sequences = []
 
-        for header in self.headers:
+        for header in dict.fromkeys(self.headers):
             if header in self.sequences:
                 sequence = self.sequences[header]
                 md5_hash = hashlib.md5(sequence.encode("utf-8")).hexdigest().upper()
-                md5_to_identifier[md5_hash] = header
+                md5_to_identifiers.setdefault(md5_hash, []).append(header)
             else:
                 missing_sequences.append(header)
 
@@ -177,12 +220,12 @@ class InterProRetriever(BaseAnnotationRetriever):
                 f" (likely deleted from UniProt): {missing_sequences[:5]}..."
             )
 
-        if not md5_to_identifier:
+        if not md5_to_identifiers:
             logger.error("No valid sequences found for MD5 calculation")
             return []
 
         # Fetch InterPro matches
-        md5s = list(md5_to_identifier.keys())
+        md5s = list(md5_to_identifiers.keys())
         api_results = self._get_matches_in_batches(md5s)
 
         if not api_results:
@@ -190,11 +233,15 @@ class InterProRetriever(BaseAnnotationRetriever):
             return []
 
         # Parse results and create annotations
-        return self._parse_interpro_results(api_results, md5_to_identifier)
+        return self._parse_interpro_results(api_results, md5_to_identifiers)
 
     def _get_matches_in_batches(self, md5s: list[str]) -> list[dict]:
         """
         Submit MD5 hashes to InterPro API in batches.
+
+        Up to ``max_concurrent_requests`` batches are in flight at once over
+        one session. Their answers are taken in input order, so the results
+        and the lost-batch accounting are those of one batch at a time.
 
         Args:
             md5s: List of MD5 hashes to query
@@ -209,48 +256,85 @@ class InterProRetriever(BaseAnnotationRetriever):
             f"Submitting {len(md5s)} sequences to InterPro API in {len(chunks)} batch(es)..."
         )
 
-        with tqdm(
-            total=len(md5s), desc="Fetching InterPro annotations", unit="seq"
-        ) as pbar:
-            for i, chunk in enumerate(chunks, 1):
-                post_url = f"{BASE_URL}/matches"
-                payload = {"md5": chunk}
-
-                try:
-                    response = requests.post(
-                        post_url,
-                        json=payload,
-                        headers={"Accept": "application/json"},
-                        timeout=30,
-                    )
-
-                    if response.status_code == 200:
-                        batch_results = response.json().get("results", [])
-                        all_results.extend(batch_results)
-                    else:
+        consecutive_lost = 0
+        with PooledSession(self.max_concurrent_requests) as session:
+            answers = map_in_order(
+                partial(self._post_batch, session),
+                chunks,
+                self.max_concurrent_requests,
+                stop=session.stop,
+            )
+            with (
+                tqdm(
+                    total=len(md5s), desc="Fetching InterPro annotations", unit="seq"
+                ) as pbar,
+                closing(answers),
+            ):
+                for i, answer in enumerate(answers, 1):
+                    if isinstance(answer, requests.exceptions.RequestException):
                         self.failed_batch_count += 1
+                        consecutive_lost += 1
                         logger.error(
-                            f"Error processing batch {i}: {response.status_code} - {response.text}"
+                            f"InterPro batch {i} of {len(chunks)} failed: {answer}"
                         )
+                    else:
+                        all_results.extend(answer)
+                        consecutive_lost = 0
+                    pbar.update(len(chunks[i - 1]))
 
-                except requests.exceptions.RequestException as e:
-                    self.failed_batch_count += 1
-                    logger.error(f"Request error for batch {i}: {e}")
-
-                pbar.update(len(chunk))
+                    skipped = len(chunks) - i
+                    if consecutive_lost >= _MAX_CONSECUTIVE_LOST_BATCHES and skipped:
+                        # Leaving the loop cancels the batches not yet sent;
+                        # any still in flight give up after their current
+                        # attempt, and are not used.
+                        self.failed_batch_count += skipped
+                        logger.error(
+                            f"InterPro lost {consecutive_lost} batches in a row, "
+                            "so it is taken to be down: no further batch is "
+                            f"requested, and the remaining {skipped} of "
+                            f"{len(chunks)} count as lost. InterPro annotations "
+                            "are incomplete and will not be cached."
+                        )
+                        pbar.update(sum(len(c) for c in chunks[i:]))
+                        break
 
         logger.info(f"Retrieved {len(all_results)} total results from InterPro API")
         return all_results
 
+    @staticmethod
+    def _post_batch(
+        session: requests.Session, chunk: list[str]
+    ) -> list[dict] | requests.exceptions.RequestException:
+        """One batch's match results, or the error that lost the batch.
+
+        Returned rather than raised, so a parallel pass keeps every other
+        batch's results and counts the loss where the caller reads it.
+        Retried like every other batched annotation request: a batch still
+        failing after that is lost, which keeps the whole InterPro source out
+        of the cache.
+        """
+        try:
+            response = post_with_retry(
+                f"{BASE_URL}/matches",
+                json={"md5": chunk},
+                headers={"Accept": "application/json"},
+                timeout=MATCHES_TIMEOUT,
+                session=session,
+            )
+            return response.json().get("results", [])
+        except requests.exceptions.RequestException as e:
+            return e
+
     def _parse_interpro_results(
-        self, api_results: list[dict], md5_to_identifier: dict[str, str]
+        self, api_results: list[dict], md5_to_identifiers: dict[str, list[str]]
     ) -> list[NamedTuple]:
         """
         Parse InterPro API results and extract relevant annotations with confidence scores.
 
         Args:
             api_results: Raw API results from InterPro
-            md5_to_identifier: Mapping from MD5 hash to protein identifier
+            md5_to_identifiers: Mapping from MD5 hash to every protein identifier
+                with that sequence; each of them receives the sequence's values
 
         Returns:
             List of ProteinAnnotations with parsed InterPro data in pipe-separated format:
@@ -263,24 +347,25 @@ class InterProRetriever(BaseAnnotationRetriever):
         # Create reverse mapping from API database names to our keys
         api_to_key = {v: k for k, v in INTERPRO_MAPPING.items()}
 
-        # Initialize annotation dictionary for each protein
+        # Initialize annotation dictionary for each sequence
         # Store accessions, names, and scores separately to maintain correspondence
-        protein_annotations = {}
-        for identifier in md5_to_identifier.values():
-            protein_annotations[identifier] = {
+        sequence_annotations = {
+            md5: {
                 annotation: {"accessions": [], "names": [], "scores": []}
                 for annotation in self.annotations
             }
+            for md5 in md5_to_identifiers
+        }
 
         # Parse API results
         for result in api_results:
             sequence_md5 = result.get("md5")
-            if not result.get("found") or sequence_md5 not in md5_to_identifier:
+            if not result.get("found") or sequence_md5 not in sequence_annotations:
                 continue
 
-            protein_id = md5_to_identifier[sequence_md5]
-
             for match in result.get("matches", []):
+                if (match.get("source") or "").lower() in _PREDICTED_MATCH_SOURCES:
+                    continue
                 signature = match.get("signature", {})
                 sig_lib = signature.get("signatureLibraryRelease", {})
                 source_db = sig_lib.get("library", "").lower()
@@ -295,15 +380,15 @@ class InterProRetriever(BaseAnnotationRetriever):
                             signature_name = signature.get("name", "")
                             score = match.get("score")
 
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "accessions"
                             ].append(signature_accession)
                             # Store name, using empty string if not available
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "names"
                             ].append(signature_name)
                             # Store score, using empty string if not available
-                            protein_annotations[protein_id][annotation_key][
+                            sequence_annotations[sequence_md5][annotation_key][
                                 "scores"
                             ].append(str(score) if score is not None else "")
 
@@ -313,7 +398,7 @@ class InterProRetriever(BaseAnnotationRetriever):
         for annotation_key in self.annotations:
             if annotation_key in ENTRY_API_DB_MAPPING:
                 all_accessions = set()
-                for annotations_data in protein_annotations.values():
+                for annotations_data in sequence_annotations.values():
                     if annotation_key in annotations_data:
                         all_accessions.update(
                             annotations_data[annotation_key]["accessions"]
@@ -322,9 +407,9 @@ class InterProRetriever(BaseAnnotationRetriever):
                     all_accessions, annotation_key
                 )
 
-        # Convert to ProteinAnnotations objects
+        # Convert to ProteinAnnotations objects, one per protein
         result = []
-        for identifier, annotations_dict in protein_annotations.items():
+        for sequence_md5, annotations_dict in sequence_annotations.items():
             # Convert to pipe-separated format: accession|score1,score2;accession2|score1
             processed_annotations = {}
             for annotation_name, annotation_data in annotations_dict.items():
@@ -383,10 +468,11 @@ class InterProRetriever(BaseAnnotationRetriever):
                 else:
                     processed_annotations[annotation_name] = ""
 
-            result.append(
+            result.extend(
                 ProteinAnnotations(
-                    identifier=identifier, annotations=processed_annotations
+                    identifier=identifier, annotations=dict(processed_annotations)
                 )
+                for identifier in md5_to_identifiers[sequence_md5]
             )
 
         logger.info(f"Processed InterPro annotations for {len(result)} proteins")

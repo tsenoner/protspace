@@ -414,26 +414,24 @@ class TestUniProtTransformer:
         assert result == "5"
 
     def test_transform_protein_families(self):
-        """Test modification of protein families values."""
+        """A comma belongs to the family name and is kept."""
         transformer = UniProtTransformer()
 
         result = transformer.transform_protein_families(
-            "Insulin family, Growth factor family"
+            "inositol 1,4,5-trisphosphate 5-phosphatase family"
         )
 
-        # Should take only first family
-        assert result == "Insulin family"
+        assert result == "inositol 1,4,5-trisphosphate 5-phosphatase family"
 
     def test_transform_protein_families_with_semicolon(self):
-        """Test modification of protein families with semicolon separator."""
+        """Every ``;``-separated family of a multi-section entry is kept."""
         transformer = UniProtTransformer()
 
         result = transformer.transform_protein_families(
-            "Insulin family; Growth factor family"
+            "aspartokinase family;homoserine dehydrogenase family"
         )
 
-        # Should take only first family
-        assert result == "Insulin family"
+        assert result == "aspartokinase family;homoserine dehydrogenase family"
 
 
 class TestIntegration:
@@ -1173,24 +1171,20 @@ class TestUniProtTransformerEvidence:
 
     def test_transform_protein_families_with_evidence(self):
         """Protein families transform preserves evidence."""
-        result = UniProtTransformer.transform_protein_families(
-            "Insulin family, Subfamily 1|ISS"
-        )
+        result = UniProtTransformer.transform_protein_families("Insulin family|ISS")
         assert result == "Insulin family|ISS"
 
     def test_transform_protein_families_without_evidence(self):
         """Protein families transform works without evidence (backward compat)."""
-        result = UniProtTransformer.transform_protein_families(
-            "Insulin family, Subfamily 1"
-        )
+        result = UniProtTransformer.transform_protein_families("Insulin family")
         assert result == "Insulin family"
 
     def test_transform_protein_families_semicolon_with_evidence(self):
-        """Protein families with semicolon separator and evidence."""
+        """Each family of a multi-section entry keeps its own evidence."""
         result = UniProtTransformer.transform_protein_families(
-            "Insulin family; Growth factor family|ISS"
+            "aspartokinase family|IC;homoserine dehydrogenase family|ISS"
         )
-        assert result == "Insulin family|ISS"
+        assert result == "aspartokinase family|IC;homoserine dehydrogenase family|ISS"
 
     def test_transform_go_terms_preserves_evidence(self):
         """GO prefix stripping preserves |CODE suffix."""
