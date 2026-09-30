@@ -17,7 +17,7 @@
 - [x] 2.2 `decode_v3` emits long-format projection rows only for finite coordinates
 - [x] 2.3 Encoder adds projection identifiers missing from the annotations as rows with every
       annotation missing, instead of raising
-- [x] 2.4 Dimension from the data (non-null `z` means 3); a disagreeing `dimensions` metadata value
+- [x] 2.4 Dimension from the data (a finite `z` means 3; a NaN `z` counts as missing); a disagreeing `dimensions` metadata value
       is ignored with a warning naming the projection and both values
 - [x] 2.5 `BOOLEAN` annotation columns encode as `true` / `false`
 - [x] 2.6 One deprecation warning per v1/v2 read, naming `protspace convert` and 5.0.0; none for v3

@@ -501,12 +501,19 @@ def _encode_projections(
             )
 
         z = rows.column("z") if has_z else None
+        # A finite z, not merely a non-null one: a float z filled with NaN has no
+        # nulls, and the legacy readers (``conversion.ts`` and ``ArrowReader``)
+        # draw such rows in 2D, so it must not become an all-missing 3D axis.
         z_present = (
-            z is not None and not pa.types.is_null(z.type) and z.null_count < len(z)
+            z is not None
+            and not pa.types.is_null(z.type)
+            and bool(
+                np.isfinite(z.to_numpy(zero_copy_only=False).astype(np.float64)).any()
+            )
         )
         # The data decides, as in the browser's legacy reader: metadata claiming
-        # 3D over null z would write an all-missing z axis, and metadata claiming
-        # 2D over real z would drop it.
+        # 3D over missing z would write an all-missing z axis, and metadata
+        # claiming 2D over real z would drop it.
         dimension = 3 if z_present else 2
         if declared is not None and _as_dimension(declared) != dimension:
             logger.warning(

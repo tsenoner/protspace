@@ -149,7 +149,8 @@ such identifiers as rows whose annotations are all missing.
 The PR's encoder took the dimension from projection metadata when it said 2 or 3, and fell back to
 the data otherwise. Metadata written by hand or by an older tool can be wrong. A 3D projection
 declared 2D then loses its `z`, and a 2D one declared 3D gets a NaN `z` column. The encoder now sets
-the dimension from the data (any non-null `z` means 3) and logs a warning when a `dimensions` value
+the dimension from the data (any finite `z` means 3; a NaN `z` is as missing as a null one, as
+both legacy readers treat it) and logs a warning when a `dimensions` value
 disagrees. The manifest records the derived value, and the browser reader keeps trusting the
 manifest. Part 2 is written with the derived value too: a stale `dimensions` left there would
 contradict the manifest and part 3 for anything that reads projection metadata on its own (the

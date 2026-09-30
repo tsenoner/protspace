@@ -38,7 +38,7 @@ v1/v2 files.
   or export them. The browser protein set is the proteins with at least one finite coordinate
   (v2 parity). The encoder adds projection identifiers missing from the annotations as rows with
   N/A annotations instead of raising.
-- **Dimension comes from the data.** A projection is 3D when it has a non-null `z`, 2D otherwise. A
+- **Dimension comes from the data.** A projection is 3D when it has a finite `z`, 2D otherwise. A
   `dimensions` metadata value that disagrees is ignored with a warning and rewritten to the derived
   value in part 2.
 - **Booleans read `true`/`false`**, as the v2 browser reader showed them, not Python's

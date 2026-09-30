@@ -470,6 +470,22 @@ def test_dimension_comes_from_the_data_not_the_metadata(data_dim, declared, capl
     assert part2.column_names == meta.column_names
 
 
+@pytest.mark.parametrize("declared", [2, 3])
+def test_a_nan_z_column_is_2d(declared):
+    """A float ``z`` filled with NaN (numpy, polars, a third-party legacy bundle)
+    has no nulls, but no finite value either: the legacy readers draw such a
+    projection in 2D, so the encoder must not write it as an all-missing 3D one."""
+    annotations = make_annotations(col=["A", "B"])
+    meta, data = make_projections((("A", 2),), ["p0", "p1"])
+    nan_z = pa.array(np.array([np.nan, np.nan], dtype=np.float32))
+    assert nan_z.null_count == 0
+    data = data.set_column(data.schema.get_field_index("z"), "z", nan_z)
+    parts = encode_v3(annotations, _declare_dimensions(meta, declared), data)
+
+    assert manifest_of(parts[0])["projections"] == [{"name": "A", "dimension": 2}]
+    assert read(parts[2]).column("A__x").to_pylist() == [0.0, 1.0]
+
+
 def test_a_stale_dimension_keeps_the_column_type():
     annotations = make_annotations(col=["A", "B"])
     meta, data = make_projections((("A", 2), ("B", 3)), ["p0", "p1"])
