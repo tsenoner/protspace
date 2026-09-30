@@ -55,7 +55,8 @@
       reports the encoder's input errors as a usage error
 - [x] 2.18 `convert` and `style` key a legacy bundle's annotation rows as the v2 browser did (its
       id-column fallback, null ids dropped, the last row per repeated id kept), and `style`
-      reports a legacy input the encoder still refuses, or a corrupt bundle, as a usage error
+      reports a legacy input the encoder still refuses, or a corrupt bundle, as a usage error;
+      the id column is keyed before the v1 migration, so an id is never escaped as a label
 - [x] 2.19 The encoder writes part 1 in the v2 browser's protein order (first appearance in the
       projection rows, then the unprojected proteins), so label frequency ties break as in v2
 - [x] 2.20 A list annotation column is never inferred numeric, even with one number per cell

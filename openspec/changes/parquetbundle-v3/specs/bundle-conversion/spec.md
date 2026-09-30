@@ -37,6 +37,13 @@ rows sharing an id only the last SHALL be kept.
 - **WHEN** a v2 bundle whose annotations key their rows by a column `id` is converted
 - **THEN** the conversion succeeds, and the v3 bundle's `protein_id` holds that column's values
 
+#### Scenario: A v1 id column holding FASTA-header ids
+
+- **WHEN** a v1 bundle whose annotations key their rows by a column `Entry` holding
+  `sp|P1|A_HUMAN` is converted
+- **THEN** the v3 bundle's `protein_id` holds `sp|P1|A_HUMAN` unescaped, so the protein keeps
+  its annotations: the id column is never migrated as a label
+
 #### Scenario: Two rows share an id
 
 - **WHEN** a v2 bundle's annotations hold two rows for `P2` and one row with a null id

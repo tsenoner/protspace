@@ -326,6 +326,40 @@ def test_a_legacy_id_column_is_found_as_the_v2_browser_found_it(
     assert annotations.column("cat").to_pylist() == ["a", "b"]
 
 
+@pytest.mark.parametrize("id_column", ["id", "Entry", "Protein_ID"])
+@pytest.mark.parametrize("command", ["convert", "style"])
+def test_a_v1_id_column_is_not_migrated_as_a_label(tmp_path, id_column, command):
+    """An id is a key, never a v1 cell: a raw FASTA-header id such as
+    ``sp|P1|A_HUMAN`` in a v1 id column the encoder does not know by name must
+    reach ``protein_id`` unescaped, or it no longer matches the projection rows
+    and every annotation of the protein is detached from it."""
+    src, out = tmp_path / "old.parquetbundle", tmp_path / "new.parquetbundle"
+    ids = ["sp|P1|A_HUMAN", "sp|P2|B_HUMAN", "Q9;X"]
+    _legacy_bundle(
+        src,
+        cells=["kinase", "50% identity", "x"],
+        ids=ids,
+        stamp=False,
+        id_column=id_column,
+    )
+
+    if command == "convert":
+        result = _convert(str(src), str(out))
+    else:
+        styles = '{"cat": {"colors": {"kinase": "#ff0000"}}}'
+        result = _style(str(src), str(out), "--annotation-styles", styles)
+
+    assert result.exit_code == 0, result.output
+    annotations, _metadata, projections = read_tables(out)
+    assert annotations.column("protein_id").to_pylist() == ids
+    assert [_hits(c) for c in annotations.column("cat").to_pylist()] == [
+        ["kinase"],
+        ["50% identity"],
+        ["x"],
+    ]
+    assert projections.column("identifier").to_pylist() == ids
+
+
 @pytest.mark.parametrize("command", ["convert", "style"])
 def test_a_repeated_or_null_legacy_id_keeps_the_last_row(tmp_path, command):
     """The v2 browser keyed annotation rows by id in a Map, so the last row for

@@ -435,13 +435,17 @@ def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
 
     Returns ``(core_parts, payloads, cell_grammar_version)``.  The annotations
     part is read with its stamp intact, so a v1 table is migrated to the v2 cell
-    grammar here, explicitly, and a v2 one passes through.
+    grammar here, explicitly, and a v2 one passes through.  The rows are keyed
+    first, so the id column is ``protein_id`` or ``identifier`` by the time the
+    migration runs, which leaves those two alone: an id is a key, and escaping
+    one (``sp|P1|A_HUMAN`` to ``sp%7CP1|A_HUMAN``) would detach it from its
+    projection rows.
     """
     annotations, projections_metadata, projections_data = _core_tables(core, None)
     version = read_format_version(annotations)
     part1, part2, part3, payloads = encode_v3(
-        _keyed_as_the_legacy_reader_keyed_it(
-            migrate_legacy_annotation_table(annotations)
+        migrate_legacy_annotation_table(
+            _keyed_as_the_legacy_reader_keyed_it(annotations)
         ),
         projections_metadata,
         projections_data,
