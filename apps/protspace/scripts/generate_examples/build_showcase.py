@@ -1180,12 +1180,14 @@ def gate_eat_transfers(table: pa.Table, params: dict) -> Gate:
     threshold = params.get("threshold", 0.5)
     high = sum(1 for c in predicted if c is not None and c >= threshold)
     rel = params.get("rel_tol", 0.0)
+    predicted_rel = params.get("predicted_rel_tol", 0.0)
     problems = []
     if "expected_predicted" in params and not within(
-        len(predicted), params["expected_predicted"], rel, 0
+        len(predicted), params["expected_predicted"], predicted_rel, 0
     ):
         problems.append(
             f"{len(predicted)} transfers, expected {params['expected_predicted']}"
+            + (f" ± {predicted_rel:.0%}" if predicted_rel else "")
         )
     if "expected_at_threshold" in params and not within(
         high, params["expected_at_threshold"], rel, 0

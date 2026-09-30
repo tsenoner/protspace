@@ -571,6 +571,12 @@ def test_eat_transfers_on_one_split_with_a_band_or_pending():
     assert bs.gate_eat_transfers(table, band).status == "pass"
     off = {**params, "expected_at_threshold": 3, "rel_tol": 0.05}
     assert bs.gate_eat_transfers(table, off).status == "fail"
+    # The band is for the rings only: every query must still get a transfer.
+    wide = {**band, "expected_predicted": 4, "rel_tol": 0.5}
+    gate = bs.gate_eat_transfers(table, wide)
+    assert gate.status == "fail" and "3 transfers, expected 4" in gate.detail
+    loose = {**wide, "predicted_rel_tol": 0.25}
+    assert bs.gate_eat_transfers(table, loose).status == "pass"
 
 
 def test_eat_fanout_and_name_agreement():
