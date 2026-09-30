@@ -710,3 +710,60 @@ test.describe('Unified app notifications', () => {
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
+
+test.describe('Bundle format notice', () => {
+  const LEGACY_BUNDLES = [
+    { version: 1, path: path.resolve(SPEC_DIR, 'fixtures/raw_numeric_test.parquetbundle') },
+    {
+      version: 2,
+      path: path.resolve(
+        SPEC_DIR,
+        '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+      ),
+    },
+  ];
+  const NOTICE = 'This file uses an older bundle format.';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+  });
+
+  async function importAndWait(page: Page, datasetPath: string): Promise<void> {
+    const defaultCount = await getProteinCount(page);
+    await loadCustomDatasetFromImportMenu(page, datasetPath);
+    await page.waitForFunction(
+      (originalCount) => {
+        const plot = document.querySelector('#myPlot') as any;
+        return (
+          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
+        );
+      },
+      defaultCount,
+      { polling: 500, timeout: 30_000 },
+    );
+  }
+
+  for (const { version, path: bundlePath } of LEGACY_BUNDLES) {
+    test(`importing a v${version} bundle points to re-export and protspace convert`, async ({
+      page,
+    }) => {
+      await importAndWait(page, bundlePath);
+
+      await expect(page.getByText(NOTICE)).toBeVisible();
+      await expect(page.getByText(`Format v${version} bundles will stop opening`)).toBeVisible();
+      await expect(page.getByText(/protspace convert/)).toBeVisible();
+    });
+  }
+
+  test('the served datasets are v3: the demo and an imported example show no notice', async ({
+    page,
+  }) => {
+    // The demo loaded in beforeEach; the example is one a user downloads from the repo.
+    await importAndWait(page, CUSTOM_5K_BUNDLE_PATH);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
+  });
+});
