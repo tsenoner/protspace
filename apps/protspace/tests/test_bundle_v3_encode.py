@@ -719,6 +719,29 @@ def test_a_list_column_of_non_strings_uses_the_scalar_spelling():
 @pytest.mark.parametrize(
     "column",
     [
+        pa.array([[1], [2], [3]], type=pa.list_(pa.int64())),
+        pa.array([["10"], ["20"], None], type=pa.list_(pa.string())),
+    ],
+    ids=["list<int64>", "list<string>"],
+)
+def test_a_list_column_of_single_numbers_keeps_its_elements_as_labels(column):
+    """One numeric-looking element per cell is still a list: its elements are
+    labels, taken literally, as for any other list, and never a numeric column
+    (the v2 browser showed ``String([1])`` as the category ``1``)."""
+    table = stamp_format_version(
+        pa.table({"protein_id": ["p0", "p1", "p2"], "ids": column})
+    )
+    parts = encode(table)
+    assert manifest_of(parts[0])["columns"]["ids"]["kind"] != "numeric"
+    labels = labels_of(payloads_of(parts[3]), "ids")
+    codes = read(parts[0]).column("ids").to_pylist()
+    expected = [None if c is None else str(c[0]) for c in column.to_pylist()]
+    assert [labels[c] if c >= 0 else None for c in codes] == expected
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
         pa.array([{"a": 1}, {"a": 2}]),
         pa.array([[["x"]], [["y"]]]),
     ],

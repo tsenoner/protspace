@@ -575,7 +575,8 @@ recorded but inert.
 
 A list column, such as GO terms kept as a pandas list column, is written as a `multi` column: each
 non-empty element of a cell is one hit, taken literally, so a `;` or `|` inside an element stays
-part of its label, and a null or empty list is a missing cell. Its `sourceType` is `"?"`, so
+part of its label, and a null or empty list is a missing cell. An element that looks like a number
+is a label too: a list column is never read as numeric, even when every cell holds one number. Its `sourceType` is `"?"`, so
 Python decodes it as `;`-joined v2 cells. A column with no text form, such as a struct, a map or a
 list of lists, is refused with an error that names it.
 

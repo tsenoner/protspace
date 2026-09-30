@@ -197,7 +197,9 @@ as its elements joined by commas, one label per cell (JavaScript's `String` of a
 encoder casts every non-numeric column to text and had no rule for a list, so such a table could
 no longer be bundled at all. A list is what a v2 multi-valued cell means, so the encoder writes
 each non-empty element of a cell as one hit, percent-encoding it first so a `;` or `|` inside an
-element stays part of its label, and records `sourceType` `"?"`. A column with no text form (a
+element stays part of its label, and records `sourceType` `"?"`. Numeric inference, which would
+read a list of single numbers (`[1]`, `[2]`) as a numeric column, is skipped for a list: v2 showed
+such a cell as the category `1`. A column with no text form (a
 struct, a map, a list of lists) is refused with an error that names it, and `protspace bundle`
 reports the encoder's input errors as a usage error rather than a traceback.
 

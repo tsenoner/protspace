@@ -213,6 +213,12 @@ the column.
 - **THEN** the bundle is written, the first protein has the two hits `GO:1` and `GO:2`, and Python
   decodes the column as the cells `GO:1;GO:2` and `GO:3`
 
+#### Scenario: A list column holding one number per cell
+
+- **WHEN** a table's `cluster` column is `list<int64>` with the cells `[1]`, `[2]` and `[3]`
+- **THEN** the column is written with the labels `1`, `2` and `3`, one hit per protein, and not
+  as a numeric column
+
 #### Scenario: A struct column
 
 - **WHEN** `protspace bundle -a` is given a table with a struct column

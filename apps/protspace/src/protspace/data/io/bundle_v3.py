@@ -374,8 +374,12 @@ def _encode_annotation_column(
 
     # --- numeric inference (conversion.ts:71-125) --------------------------- #
     # Only here does a missing-token spelling count as absent (``_missing_mask``).
+    # A list column is never inferred numeric: its elements are labels, taken
+    # literally, even when every cell holds one number (the v2 browser read a
+    # list cell as ``String(array)``, which ``parseNumericAnnotationValue``
+    # never takes for a number).
     missing = _missing_mask(trimmed)
-    if not exact_labels and not missing.all():
+    if not exact_labels and not _is_list(arr.type) and not missing.all():
         numeric_ok = _regex_ok(trimmed, JS_NUMBER_RE) | missing
         if numeric_ok.all():
             values = _parse_floats(trimmed, ~missing)
