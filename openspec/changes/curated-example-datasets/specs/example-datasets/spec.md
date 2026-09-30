@@ -70,7 +70,7 @@ The control bar's Import menu SHALL list every catalog entry under an "Examples"
 
 ### Requirement: Dataset deep link
 
-The `dataset` query parameter SHALL name the example to show. At startup, a known id SHALL be loaded in place of restoring the stored import, and the stored import SHALL be left untouched. Choosing an example from the menu SHALL push a new history entry whose query is the previous one with `dataset=<id>` set and `annotation`, `projection` and `tooltip` removed; other parameters SHALL be kept. Importing a user file SHALL remove the parameter without adding a history entry. Loading the demo by default at startup SHALL NOT set the parameter. When Back or Forward changes the parameter, the app SHALL load the named example, or run the normal startup load when the parameter is gone. `annotation`, `projection` and `tooltip` parameters in the same URL SHALL apply to the loaded example. When the URL names none of them, the example SHALL open on its whole `defaultView`, tooltip included, and nothing SHALL be written to the URL. A parameter present with an empty value SHALL count as named. When the URL names some of them, a missing or invalid `annotation` or `projection` SHALL fall back to the example's `defaultView` value rather than to the bundle's first one, an invalid value SHALL be normalized in the URL, and an absent `tooltip` SHALL mean no tooltip annotations. A `defaultView` name missing from the loaded bundle SHALL fall back to the bundle's first annotation or projection, and to no tooltip annotation, with a development-mode warning.
+The `dataset` query parameter SHALL name the example to show. At startup, a known id SHALL be loaded in place of restoring the stored import, and the stored import SHALL be left untouched. Choosing an example from the menu SHALL push a new history entry whose query is the previous one with `dataset=<id>` set and `annotation`, `projection`, `tooltip` and `density` removed; other parameters SHALL be kept. Importing a user file SHALL remove the parameter without adding a history entry. Loading the demo by default at startup SHALL NOT set the parameter. When Back or Forward changes the parameter, the app SHALL load the named example, or run the normal startup load when the parameter is gone. `annotation`, `projection` and `tooltip` parameters in the same URL SHALL apply to the loaded example. When the URL names none of them, the example SHALL open on its whole `defaultView`, tooltip included, and nothing SHALL be written to the URL. A parameter present with an empty value SHALL count as named. When the URL names some of them, a missing or invalid `annotation` or `projection` SHALL fall back to the example's `defaultView` value rather than to the bundle's first one, an invalid value SHALL be normalized in the URL, and an absent `tooltip` SHALL mean no tooltip annotations. A `defaultView` name missing from the loaded bundle SHALL fall back to the bundle's first annotation or projection, and to no tooltip annotation, with a development-mode warning.
 
 #### Scenario: Open a deep link
 
@@ -105,7 +105,7 @@ The `dataset` query parameter SHALL name the example to show. At startup, a know
 #### Scenario: Menu choice and Back
 
 - **WHEN** the user, on a URL with `annotation=<a>&tooltip=<t>`, chooses an example from the menu and then presses Back
-- **THEN** the pushed URL is the previous query with `dataset=<id>` set and no `annotation`, `projection` or `tooltip`, the example opens on its `defaultView`, and Back returns to the previous dataset with `<a>` and `<t>` restored, or to the normal startup load if the previous URL had no `dataset` parameter
+- **THEN** the pushed URL is the previous query with `dataset=<id>` set and no `annotation`, `projection`, `tooltip` or `density`, the example opens on its `defaultView`, and Back returns to the previous dataset with `<a>` and `<t>` restored, or to the normal startup load if the previous URL had no `dataset` parameter
 
 #### Scenario: Back to a bare entry of the same example
 
@@ -165,12 +165,17 @@ If fetching or parsing an example fails, the app SHALL show an error notificatio
 
 ### Requirement: Examples open in their curated state
 
-Every load of an example, whether from the Import menu, a deep link, Back/Forward or a reload, SHALL discard the legend, tooltip and other per-dataset view settings saved for it in this browser, and SHALL apply the settings bundled with the example (its curated legend styles and its EAT reliability threshold) together with its curated default view. A user import SHALL keep its saved settings as before. The Import menu, the Example datasets documentation page and the importing-data documentation SHALL state that examples reopen in their curated state, and that exporting an example with its settings and importing that copy is the way to keep changes.
+Every load of an example, whether from the Import menu, a deep link, Back/Forward or a reload, SHALL discard the legend, tooltip and other per-dataset view settings saved for it in this browser, and SHALL apply the settings bundled with the example (its curated legend styles and its EAT reliability threshold) together with its curated default view. The Contours mode SHALL NOT carry over from the previous dataset: a menu choice SHALL open the example with contours Off, as its bare `?dataset=<id>` link does, while a link or history entry that names `density` SHALL apply it. A user import SHALL keep its saved settings as before. The Import menu, the Example datasets documentation page and the importing-data documentation SHALL state that examples reopen in their curated state, and that exporting an example with its settings and importing that copy is the way to keep changes.
 
 #### Scenario: Reload restores the curated legend
 
 - **WHEN** the user changes a legend colour or hides a category on `?dataset=<id>` and reloads the page
 - **THEN** the example shows its bundled legend again
+
+#### Scenario: A menu choice turns contours off
+
+- **WHEN** contours are on (`density=on`) and the user chooses an example from the Import menu, then presses Back
+- **THEN** the example opens with contours Off and stays so, its entry has no `density` parameter, and Back restores the previous dataset with contours on
 
 #### Scenario: A user import keeps its changes
 

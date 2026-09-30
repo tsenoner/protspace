@@ -31,15 +31,16 @@ export function setDatasetParam(searchParams: URLSearchParams, id: string | null
   return next;
 }
 
-const EXPLORE_VIEW_PARAM_KEYS = ['annotation', 'projection', 'tooltip'] as const;
+/** Every view parameter the URL carries (see `parseExploreViewRequest`). */
+const EXPLORE_VIEW_PARAM_KEYS = ['annotation', 'projection', 'tooltip', 'density'] as const;
 
 /**
  * Decides how a dataset-change should be written to the URL, mirroring
  * `getExploreViewSearchParamsUpdate`'s pure-decision shape: a menu choice
- * pushes `dataset=<id>` without the view parameters; a user import or a
- * startup/fallback load deletes the parameter with a replace (a no-op when it
- * is already absent); a load that happened because of the URL itself is never
- * written back.
+ * pushes `dataset=<id>` without the view parameters, `density` included; a
+ * user import or a startup/fallback load deletes the parameter with a replace
+ * (a no-op when it is already absent); a load that happened because of the
+ * URL itself is never written back.
  */
 export function getDatasetSearchParamsUpdate(
   searchParams: URLSearchParams,
@@ -53,9 +54,12 @@ export function getDatasetSearchParamsUpdate(
   const nextId = source === 'menu' ? exampleId : null;
   const next = setDatasetParam(searchParams, nextId);
   if (source === 'menu') {
-    // A menu choice opens the example on its curated view, so the previous
-    // dataset's view parameters must not ride along into the new entry. The
-    // previous entry keeps its own, so Back restores them.
+    // A menu choice opens the example on its curated view, with contours
+    // Off, so the previous dataset's view parameters must not ride along into
+    // the new entry: the load has already reset the view request to an empty
+    // one (dataset-controller.ts), and an entry still naming a parameter
+    // would re-apply it. The previous entry keeps its own, so Back restores
+    // them.
     for (const key of EXPLORE_VIEW_PARAM_KEYS) {
       next.delete(key);
     }

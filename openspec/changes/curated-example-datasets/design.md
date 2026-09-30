@@ -84,7 +84,7 @@ A second round of research (2026-09-30: the manuscript's use of its EAT sets, EA
    - it calls `setDatasetDefaults(loadMeta.example?.entry.defaultView ?? null)` for every load;
    - for `source === 'menu'` it also calls `recordRequestedView(createEmptyExploreViewRequest())`.
    - A failed menu load never reaches this point, so the old request, plot and URL survive.
-5. `getDatasetSearchParamsUpdate(…, 'menu')` sets `dataset=<id>` and deletes `annotation`, `projection` and `tooltip`, keeping unrelated parameters. The previous entry keeps its own, so Back restores them.
+5. `getDatasetSearchParamsUpdate(…, 'menu')` sets `dataset=<id>` and deletes `annotation`, `projection`, `tooltip` and `density`, keeping unrelated parameters. The previous entry keeps its own, so Back restores them. The pushed entry must name exactly the view the reset in step 4 resolves to: the URL sync applies it right after the load, so a `density=on` left in it would switch the contours that the reset turned Off straight back on. An example therefore opens with contours Off from the menu, as from its bare link; a unit test resolves the pushed entry and the reset request to the same view.
 
 **Bundle side (belt and braces).** The build puts the insight annotation first and UMAP first, and embeds the curated legend, so a downloaded example opens sensibly elsewhere too.
 

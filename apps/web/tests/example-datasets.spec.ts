@@ -71,6 +71,15 @@ async function getSelectedAnnotation(page: Page): Promise<string | null> {
   });
 }
 
+async function getDensityLayer(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & { densityLayer?: string })
+      | null;
+    return controlBar?.densityLayer ?? null;
+  });
+}
+
 async function getDatasetParam(page: Page): Promise<string | null> {
   return page.evaluate(() => new URL(window.location.href).searchParams.get('dataset'));
 }
@@ -282,24 +291,31 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await waitForProteinCount(page, DEMO_COUNT);
   });
 
-  test('an annotation set before a menu choice survives Back (1a repro)', async ({ page }) => {
+  test('an annotation and contours set before a menu choice survive Back (1a repro)', async ({
+    page,
+  }) => {
     // Demo has an 'ec' annotation and SMALL does not. The menu choice pushes a
-    // bare `dataset=SMALL` entry (SMALL opens on its curated view); the entry
-    // still holding demo+ec must stay untouched, so Back restores 'ec'.
-    await page.goto('/explore?annotation=ec');
+    // bare `dataset=SMALL` entry (SMALL opens on its curated view, contours
+    // Off); the entry still holding demo+ec+contours must stay untouched, so
+    // Back restores both.
+    await page.goto('/explore?annotation=ec&density=on');
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await waitForProteinCount(page, DEMO_COUNT);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+    await expect.poll(() => getDensityLayer(page)).toBe('on');
 
     await chooseExampleFromMenu(page, SMALL.id);
     await waitForProteinCount(page, SMALL.count);
     await expectDatasetParam(page, SMALL.id);
+    await expect.poll(() => getDensityLayer(page)).toBe('off');
+    expect(await getUrlParam(page, 'density')).toBeNull();
 
     await page.goBack();
     await expectDatasetParam(page, null);
     await waitForProteinCount(page, DEMO_COUNT);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
+    await expect.poll(() => getDensityLayer(page)).toBe('on');
   });
 
   test('Back/Forward through a menu choice and a view pick keeps the target entry intact (1b repro)', async ({

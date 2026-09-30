@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEmptyExploreViewRequest } from './url-state';
+import {
+  createEmptyExploreViewRequest,
+  getDatasetSearchParamsUpdate,
+  parseExploreViewRequest,
+} from './url-state';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
@@ -388,6 +392,35 @@ describe('createViewController', () => {
       pointSize: 240,
       densityLayer: 'auto',
     });
+  });
+
+  // The sequence of a menu choice made on a `density=on` URL: the load resets
+  // the recorded request (dataset-controller.ts `handleDataLoaded`) and
+  // applies it, then the URL sync applies the entry the menu pushed
+  // (use-url-state-sync.ts, 'apply-view'). Both name the same view, so the
+  // contour layer is set once, not switched Off and back On.
+  it('sets contours once on a menu switch from density=on', () => {
+    const { controlBar, viewController } = setup();
+    const previous = new URLSearchParams('annotation=pfam&density=on');
+    viewController.setRequestedView(parseExploreViewRequest(previous));
+    expect(controlBar.densityLayer).toBe('on');
+
+    const densityWrites: DensityLayerMode[] = [];
+    let densityLayer = controlBar.densityLayer;
+    Object.defineProperty(controlBar, 'densityLayer', {
+      get: () => densityLayer,
+      set: (mode: DensityLayerMode) => {
+        densityWrites.push(mode);
+        densityLayer = mode;
+      },
+    });
+
+    viewController.recordRequestedView(createEmptyExploreViewRequest());
+    viewController.applyLatestViewForDatasetLoad();
+    const pushed = getDatasetSearchParamsUpdate(previous, 'phosphatase', 'menu');
+    viewController.setRequestedView(parseExploreViewRequest(pushed!.next));
+
+    expect(densityWrites).toEqual(['off']);
   });
 
   it('reads the current density mode back off the plot config', () => {

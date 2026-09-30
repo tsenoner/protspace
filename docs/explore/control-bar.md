@@ -271,10 +271,11 @@ dataset; visiting the app again without the parameter brings the stored dataset 
 id shows a warning and the app starts up normally.
 
 An example opens on its curated view: the projection, colour-by annotation and tooltip fields
-chosen for it. A menu choice always opens that view, so the previous dataset's `annotation`,
-`projection` and `tooltip` parameters don't carry over (**Back** still returns to them); in a link,
-those parameters win over the curated ones. As the note under the heading says, changes you make to
-an example aren't kept: it reopens in its curated state every time.
+chosen for it. A menu choice always opens that view with contours off, so the previous dataset's
+`annotation`, `projection`, `tooltip` and `density` parameters don't carry over (**Back** still
+returns to them); in a link, those parameters win over the curated ones. As the note under the
+heading says, changes you make to an example aren't kept: it reopens in its curated state every
+time.
 
 While an example downloads, the loading screen shows how much of it has arrived and offers
 **Cancel download** until decoding starts. Cancelling leaves the current plot and the URL as they

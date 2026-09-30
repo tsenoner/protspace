@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSearchParamsWithExploreView,
+  createEmptyExploreViewRequest,
   createExploreViewRequestFromView,
   decideUrlChange,
   getDatasetParam,
@@ -598,6 +599,44 @@ describe('explore url state', () => {
 
         expect(update?.replace).toBe(false);
         expect(update?.next.toString()).toBe('seed=1&dataset=phosphatase');
+      });
+
+      it('drops density on a menu choice, so the example opens with contours Off', () => {
+        const update = getDatasetSearchParamsUpdate(
+          new URLSearchParams('annotation=ec&density=on&dataset=demo'),
+          'phosphatase',
+          'menu',
+        );
+
+        expect(update?.next.toString()).toBe('dataset=phosphatase');
+      });
+
+      // The menu load resets the recorded request to an empty one before it
+      // renders (dataset-controller.ts), then the URL sync applies the pushed
+      // entry. Every view parameter the URL can carry must be dropped, or the
+      // entry re-applies what the reset just cleared.
+      it('pushes an entry that resolves to the same view as the menu reset', () => {
+        const previous = buildSearchParamsWithExploreView(
+          new URLSearchParams('seed=1'),
+          { annotation: 'ec', projection: 'PCA', tooltip: ['pfam'], density: 'on' },
+          { mode: 'user' },
+        );
+        const update = getDatasetSearchParamsUpdate(previous, 'phosphatase', 'menu');
+        const annotations = ['ec', 'pfam', 'species'];
+        const projections = ['UMAP', 'PCA'];
+        const defaults = { annotation: 'species', projection: 'UMAP', tooltip: ['pfam'] };
+
+        expect(update).not.toBeNull();
+        expect(
+          resolveExploreView(
+            parseExploreViewRequest(update!.next),
+            annotations,
+            projections,
+            defaults,
+          ),
+        ).toEqual(
+          resolveExploreView(createEmptyExploreViewRequest(), annotations, projections, defaults),
+        );
       });
 
       it('keeps the view params on a user import and on a startup load', () => {

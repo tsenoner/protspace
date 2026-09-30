@@ -376,11 +376,12 @@ export function createDatasetController({
         warnOnMissingDefaultViewNames(loadMeta.example.entry, data);
       }
       if (loadMeta.example?.source === 'menu') {
-        // A menu choice opens the example on its curated view. The recorded
-        // request still holds the previous dataset's annotation, projection
-        // and tooltip, which would otherwise carry over wherever the names
-        // also exist in this bundle; `getDatasetSearchParamsUpdate` drops the
-        // same parameters from the pushed URL. Reset only here, for a load
+        // A menu choice opens the example on its curated view, contours Off.
+        // The recorded request still holds the previous dataset's annotation,
+        // projection, tooltip and contour mode, which would otherwise carry
+        // over wherever the names also exist in this bundle;
+        // `getDatasetSearchParamsUpdate` drops the same parameters from the
+        // pushed URL. Reset only here, for a load
         // that decoded and is still current, so a failed or superseded menu
         // choice leaves the request, the plot and the URL as they were.
         viewController.recordRequestedView(createEmptyExploreViewRequest());
