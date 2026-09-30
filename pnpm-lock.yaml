@@ -199,8 +199,8 @@ importers:
         specifier: ^1.5.11
         version: 1.5.12
       hyparquet-writer:
-        specifier: ^0.7.0
-        version: 0.7.0
+        specifier: ^0.16.10
+        version: 0.16.10
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -2870,6 +2870,9 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  hyparquet-writer@0.16.10:
+    resolution: {integrity: sha512-53fpiA57kdJ2V7X97/VSAzHr8rb8Z2cr126T1pTL9TapZNOP/wNJqFh+jc7dRwwg9TpVMYeRNDMb+r5oiLqwjg==}
+
   hyparquet-writer@0.7.0:
     resolution: {integrity: sha512-TgEOkLE87J+cNKlf9mQhCv7FuzIzJV4/LsGeUsVDiFRIz9tTwjLk2Z5JAsUrGblfPEJeejc6ej/X1u1YEJHfrg==}
 
@@ -2878,6 +2881,9 @@ packages:
 
   hyparquet@1.26.0:
     resolution: {integrity: sha512-yxUiViPZ+z5h+xdX4rA1G+k30jXoEsG9I2xEpjaM84imGznbKjZzxuZFsdzqg6C4LxNnnAlDFvzpk4uxQWTbTQ==}
+
+  hyparquet@1.31.1:
+    resolution: {integrity: sha512-tF9580Xb+41+Eb+mH0av1k7m1PWl+PSKrX66Yd7UOZ760cwEXP9/enwHRMSCeVncaubRI8XPb3v580/ujYKK5w==}
 
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
@@ -6627,6 +6633,10 @@ snapshots:
 
   husky@9.1.7: {}
 
+  hyparquet-writer@0.16.10:
+    dependencies:
+      hyparquet: 1.31.1
+
   hyparquet-writer@0.7.0:
     dependencies:
       hyparquet: 1.20.0
@@ -6634,6 +6644,8 @@ snapshots:
   hyparquet@1.20.0: {}
 
   hyparquet@1.26.0: {}
+
+  hyparquet@1.31.1: {}
 
   iconv-lite@0.6.3:
     dependencies:
