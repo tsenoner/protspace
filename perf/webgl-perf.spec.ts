@@ -1,7 +1,25 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 
-const EXPECTED_SCENARIOS = ['annotationChange', 'zoomInOut', 'dragCanvas', 'clickPoint'] as const;
+const EXPECTED_SCENARIOS = [
+  'annotationChange',
+  'zoomInOut',
+  'zoomFarOut',
+  'dragCanvas',
+  'dragContinuous',
+  'densityZoom',
+  'contourDrag',
+  'clickPoint',
+] as const;
+
+const CAMERA_SCENARIOS = [
+  'zoomInOut',
+  'zoomFarOut',
+  'dragCanvas',
+  'dragContinuous',
+  'densityZoom',
+  'contourDrag',
+] as const;
 const ITERATIONS = (() => {
   const raw = process.env.PERF_ITERATIONS;
   const n = raw ? Number(raw) : NaN;
@@ -173,7 +191,14 @@ test.describe('WebGL render perf benchmark (headed)', () => {
       iterations: number;
       results: Array<{
         dataset: { id: string };
-        scenarios: Array<{ name: string; passes: unknown[] }>;
+        scenarios: Array<{
+          name: string;
+          passes: Array<{
+            uploadedBytes?: number;
+            drawnPoints?: number;
+            renderedPoints?: number;
+          }>;
+        }>;
       }>;
       failures?: Array<{ datasetId: string; error: string }>;
       skipped?: Array<{ datasetId: string; reason: string }>;
@@ -227,6 +252,23 @@ test.describe('WebGL render perf benchmark (headed)', () => {
           scenario?.passes?.length ?? 0,
           `${r.dataset?.id} / ${expected} recorded no render passes`,
         ).toBeGreaterThan(0);
+      }
+
+      for (const name of CAMERA_SCENARIOS) {
+        const scenario = r.scenarios.find((s) => s?.name === name);
+        for (const pass of scenario?.passes ?? []) {
+          expect(
+            pass.uploadedBytes,
+            `${r.dataset?.id} / ${name} uploaded bytes on a camera move`,
+          ).toBe(0);
+          expect(
+            pass.drawnPoints,
+            `${r.dataset?.id} / ${name} recorded no drawnPoints`,
+          ).toBeGreaterThan(0);
+          expect(pass.drawnPoints, `${r.dataset?.id} / ${name} truncated`).toBe(
+            pass.renderedPoints,
+          );
+        }
       }
     }
 

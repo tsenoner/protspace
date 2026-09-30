@@ -1,3 +1,4 @@
+import type { DensityLayerMode } from '@protspace/utils';
 import type { HostMessageEventDetail } from '../../events';
 
 export interface SelectionDisabledNotificationContext {
@@ -29,4 +30,9 @@ export function createSelectionDisabledNotificationDetail(
       dataSize,
     },
   };
+}
+
+/** Detail of `density-layer-change`, fired when the user picks a density mode. */
+export interface DensityLayerChangeDetail {
+  densityLayer: DensityLayerMode;
 }

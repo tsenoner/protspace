@@ -229,9 +229,10 @@ category.
 
 - **WHEN** a user increases or decreases legend point size
 - **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
-- **AND** a visible hollow interior remains at the minimum, default, and maximum supported sizes
+- **AND** a visible hollow interior remains at the default and maximum supported sizes (10 and 64);
+  at the smallest sizes the interior may fall below one device pixel
 - **AND** its responsive thickness is bounded rather than required to scale linearly with marker
-  diameter, with identical live and exported rendering
+  diameter, with identical live and exported rendering at the same point scale
 
 #### Scenario: Hollow cue survives overlapping markers
 

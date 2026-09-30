@@ -8,10 +8,13 @@
  * cap, so nothing a user can load reaches it.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as d3 from 'd3';
 import { MAX_RENDERABLE_POINTS } from '../types';
 import {
   plotData,
+  styleGetters,
   makeRenderer as makeBaseRenderer,
+  makeRendererWithStyle,
   realAtlasAllocations,
 } from './test-support/renderer-fixture';
 
@@ -61,6 +64,25 @@ describe('WebGLRenderer upload accounting', () => {
 
     renderer.render(pd);
     renderer.render(pd);
+    expect(renderer.uploadedBytesTotal).toBe(afterFirst);
+  });
+
+  it('grows dots on zoom-in through a uniform, uploading nothing', () => {
+    let transform = d3.zoomIdentity;
+    const { renderer } = makeRendererWithStyle(
+      styleGetters(),
+      {},
+      { getTransform: () => transform },
+    );
+    const pd = plotData(50_000);
+
+    renderer.render(pd);
+    const afterFirst = renderer.uploadedBytesTotal;
+    expect(renderer.pointScale()).toBeCloseTo(0.90999, 5);
+
+    transform = d3.zoomIdentity.scale(4);
+    renderer.render(pd);
+    expect(renderer.pointScale()).toBeCloseTo(1.28692, 5);
     expect(renderer.uploadedBytesTotal).toBe(afterFirst);
   });
 

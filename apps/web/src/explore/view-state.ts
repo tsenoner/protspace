@@ -1,3 +1,5 @@
+import type { DensityLayerMode } from '@protspace/utils';
+
 export interface RequestedExploreView {
   annotation?: string;
   projection?: string;
@@ -7,12 +9,14 @@ export interface RequestedExploreView {
    * requested an explicitly empty set.
    */
   tooltip?: string[];
+  density?: DensityLayerMode;
 }
 
 export interface ExploreViewNormalization {
   annotation: boolean;
   projection: boolean;
   tooltip: boolean;
+  density: boolean;
 }
 
 export interface ExploreViewRequestState {
@@ -21,6 +25,7 @@ export interface ExploreViewRequestState {
     annotation: boolean;
     projection: boolean;
     tooltip: boolean;
+    density: boolean;
   };
   normalize: ExploreViewNormalization;
 }
@@ -29,6 +34,7 @@ export interface EffectiveExploreView {
   annotation: string;
   projection: string;
   tooltip: string[];
+  density: DensityLayerMode;
 }
 
 export interface ResolvedExploreView {
@@ -37,6 +43,7 @@ export interface ResolvedExploreView {
     annotation: boolean;
     projection: boolean;
     tooltip: boolean;
+    density: boolean;
   };
 }
 

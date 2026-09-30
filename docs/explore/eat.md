@@ -48,7 +48,7 @@ At the top of the [legend panel](/explore/legend), above the separation strips a
 
 A transferred protein is drawn as a **hollow ringed marker**: its shape and its colour are exactly those of the value it borrowed, but the interior is punched out, leaving a ring. Curated proteins stay solid.
 
-This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring thickness scales with the marker, so it stays legible at any **Shape size** rather than closing the hole on small markers or hair-lining on large ones.
+This means the two populations read as one distribution at a glance, since the colours match, while any individual point still declares which kind it is. The ring thickness scales with the marker, so from the default **Shape size** up the hole stays open and the ring never thins to a hairline on large markers. Only at the smallest sizes, where a dot is a few pixels across, can the hole shrink below a pixel.
 
 Hover a transferred protein and its tooltip carries a **Predicted (transferred)** block for the active annotation: the reliability as a percentage, a bar showing the same number, and the line `Reliability index · source <ID>` naming the reference protein the label was copied from.
 

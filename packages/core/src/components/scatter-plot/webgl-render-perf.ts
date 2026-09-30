@@ -1,6 +1,13 @@
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import { materializePlotDataPoint } from '@protspace/utils';
+import type {
+  DensityLayerMode,
+  PlotData,
+  PlotDataPoint,
+  ScatterplotConfig,
+  VisualizationData,
+} from '@protspace/utils';
+import { DENSITY_DEFAULT, materializePlotDataPoint } from '@protspace/utils';
+import { DEFAULT_CONFIG } from './config';
 // Type-only: nothing here needs the class at runtime. The reverse edge
 // (plot-interaction-controller.ts -> RenderWebGLTrigger) is `import type` as well,
 // so neither module pulls the other into the runtime graph.
@@ -17,11 +24,21 @@ const PERF_READY_TIMEOUT_MS = 10 * 60_000;
 const PERF_MEASURE_ZOOM_FACTOR = 3;
 const PERF_MEASURE_PAN_DISTANCE_PX = 160;
 const PERF_MEASURE_PAN_STEPS = 6;
+const PERF_MEASURE_DRAG_CONTINUOUS_FRAMES = 60;
+const PERF_MEASURE_ZOOM_FAR_OUT_FACTOR = DEFAULT_CONFIG.zoomExtent[0];
 const PERF_GLOBAL_RESULTS_KEY = '__protspaceWebGLRenderPerfMeasurements';
 
 export type RenderWebGLTrigger = 'zoom' | 'plot' | 'unknown';
 
-export type PerfScenarioName = 'annotationChange' | 'zoomInOut' | 'dragCanvas' | 'clickPoint';
+export type PerfScenarioName =
+  | 'annotationChange'
+  | 'zoomInOut'
+  | 'zoomFarOut'
+  | 'dragCanvas'
+  | 'dragContinuous'
+  | 'densityZoom'
+  | 'contourDrag'
+  | 'clickPoint';
 
 export type PerfRenderPass = {
   seq: number;
@@ -29,6 +46,7 @@ export type PerfRenderPass = {
   startTs: number;
   endTs: number;
   durationMs: number;
+  gpuSyncedMs: number;
   /**
    * Points handed to the renderer. NOT the count drawn — see `drawnPoints`.
    * Kept as-is because the jsdom host-contract test asserts it against a
@@ -115,6 +133,7 @@ export class WebglRenderPerfRunner {
     renderedPoints: number,
     drawnPoints: number,
     uploadedBytes: number,
+    cpuEndTs: number,
   ) {
     if (!token) return;
     const recorder = this._recorder;
@@ -128,7 +147,8 @@ export class WebglRenderPerfRunner {
       trigger: token.trigger,
       startTs: token.startTs,
       endTs,
-      durationMs: endTs - token.startTs,
+      durationMs: cpuEndTs - token.startTs,
+      gpuSyncedMs: endTs - token.startTs,
       renderedPoints,
       drawnPoints,
       uploadedBytes,
@@ -182,8 +202,12 @@ export class WebglRenderPerfRunner {
       await this._waitForHostFullyLoaded(options.readyTimeoutMs ?? PERF_READY_TIMEOUT_MS);
 
       await this._runAnnotationChangeScenario(iterations);
-      await this._runZoomInOutScenario(iterations);
+      await this._runZoomCycleScenario('zoomInOut', PERF_MEASURE_ZOOM_FACTOR, iterations);
+      await this._runZoomCycleScenario('zoomFarOut', PERF_MEASURE_ZOOM_FAR_OUT_FACTOR, iterations);
       await this._runDragCanvasScenario(iterations);
+      await this._runDragContinuousScenario(iterations);
+      await this._runDensityZoomScenario(iterations);
+      await this._runContourDragScenario(iterations);
       await this._runClickPointScenario(iterations);
 
       const scenarios = this._recorder?.scenarios ?? [];
@@ -362,6 +386,10 @@ export class WebglRenderPerfRunner {
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
+  private async _nextAnimationFrame() {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
   private async _collectPerfMetadata(): Promise<Record<string, unknown>> {
     const nav = navigator as unknown as {
       userAgent?: string;
@@ -415,6 +443,10 @@ export class WebglRenderPerfRunner {
           // corpus becomes evidence about the real distribution of this limit,
           // which we currently have none of.
           maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+          extensions: {
+            colorBufferFloat: !!gl.getExtension('EXT_color_buffer_float'),
+            floatBlend: !!gl.getExtension('EXT_float_blend'),
+          },
         };
         const debugExt = gl.getExtension('WEBGL_debug_renderer_info') as {
           UNMASKED_VENDOR_WEBGL: number;
@@ -518,10 +550,19 @@ export class WebglRenderPerfRunner {
     this._requireInteraction().panBy(dx, dy);
   }
 
-  private async _runZoomInOutScenario(iterations: number) {
+  /**
+   * Setup and teardown shared by the camera scenarios. `body` runs inside the
+   * recorded window; afterwards the transform and selection mode are put back so
+   * the next scenario starts from the same view.
+   */
+  private async _withCameraScenario(
+    name: PerfScenarioName,
+    iterations: number,
+    body: () => Promise<void>,
+  ) {
     const host = this._hostAny();
     if (!this._interaction()?.isZoomReady)
-      throw new Error('WebGL perf runner: missing zoom support for zoomInOut scenario');
+      throw new Error(`WebGL perf runner: missing zoom support for ${name} scenario`);
 
     const prevSelectionMode = !!host.selectionMode;
     if (prevSelectionMode) {
@@ -531,18 +572,8 @@ export class WebglRenderPerfRunner {
 
     const originalTransform = host._transform ?? d3.zoomIdentity;
 
-    this._beginScenario('zoomInOut', iterations);
-    for (let i = 0; i < iterations; i++) {
-      let prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(PERF_MEASURE_ZOOM_FACTOR);
-      let rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
-
-      prevSeq = this._recorder?.passSeq ?? 0;
-      this._applyZoomScale(1 / PERF_MEASURE_ZOOM_FACTOR);
-      rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
-    }
+    this._beginScenario(name, iterations);
+    await body();
     this._endScenario();
 
     const prevSeq = this._recorder?.passSeq ?? 0;
@@ -556,48 +587,99 @@ export class WebglRenderPerfRunner {
     }
   }
 
-  private async _runDragCanvasScenario(iterations: number) {
+  private _runZoomCycleScenario(name: PerfScenarioName, factor: number, iterations: number) {
+    return this._withCameraScenario(name, iterations, async () => {
+      for (let i = 0; i < iterations; i++) {
+        let prevSeq = this._recorder?.passSeq ?? 0;
+        this._applyZoomScale(factor);
+        let rendered = await this._waitForNextRender(prevSeq, 2000);
+        if (rendered) await this._waitForRenderIdle(10, 2000);
+
+        prevSeq = this._recorder?.passSeq ?? 0;
+        this._applyZoomScale(1 / factor);
+        rendered = await this._waitForNextRender(prevSeq, 2000);
+        if (rendered) await this._waitForRenderIdle(10, 2000);
+      }
+    });
+  }
+
+  private _runDensityZoomScenario(iterations: number) {
+    return this._withDensityLayer('on', () =>
+      this._runZoomCycleScenario('densityZoom', PERF_MEASURE_ZOOM_FACTOR, iterations),
+    );
+  }
+
+  private _runContourDragScenario(iterations: number) {
+    return this._withDensityLayer('on', () =>
+      this._runDragContinuousScenario(iterations, 'contourDrag'),
+    );
+  }
+
+  /** Runs `body` with the density layer forced to `mode`, then restores the previous config. */
+  private async _withDensityLayer(mode: DensityLayerMode, body: () => Promise<void>) {
     const host = this._hostAny();
-    if (!this._interaction()?.isZoomReady)
-      throw new Error('WebGL perf runner: missing zoom support for dragCanvas scenario');
-
-    const prevSelectionMode = !!host.selectionMode;
-    if (prevSelectionMode) {
-      host.selectionMode = false;
-      await host.updateComplete;
+    const prevConfig = host.config as ScatterplotConfig | undefined;
+    await this._setConfigAndWait(host, { ...(prevConfig ?? {}), densityLayer: mode });
+    try {
+      await body();
+    } finally {
+      await this._setConfigAndWait(host, {
+        ...(prevConfig ?? {}),
+        densityLayer: prevConfig?.densityLayer ?? DENSITY_DEFAULT,
+      });
     }
+  }
 
-    const originalTransform = host._transform ?? d3.zoomIdentity;
-
-    this._beginScenario('dragCanvas', iterations);
-    const stepDx = PERF_MEASURE_PAN_DISTANCE_PX / PERF_MEASURE_PAN_STEPS;
-    const stepDy = stepDx * 0.6;
-    for (let i = 0; i < iterations; i++) {
-      for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
-        const prevSeq = this._recorder?.passSeq ?? 0;
-        this._applyZoomTranslate(stepDx, stepDy);
-        const rendered = await this._waitForNextRender(prevSeq, 2000);
-        if (rendered) await this._waitForRenderIdle(10, 2000);
-      }
-
-      for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
-        const prevSeq = this._recorder?.passSeq ?? 0;
-        this._applyZoomTranslate(-stepDx, -stepDy);
-        const rendered = await this._waitForNextRender(prevSeq, 2000);
-        if (rendered) await this._waitForRenderIdle(10, 2000);
-      }
-    }
-    this._endScenario();
-
+  private async _setConfigAndWait(
+    host: { config: unknown; updateComplete: Promise<unknown> },
+    config: unknown,
+  ) {
     const prevSeq = this._recorder?.passSeq ?? 0;
-    this._requireInteraction().setTransform(originalTransform);
-    const rendered = await this._waitForNextRender(prevSeq, 2000);
-    if (rendered) await this._waitForRenderIdle(10, 2000);
+    host.config = config;
+    await host.updateComplete;
+    if (await this._waitForNextRender(prevSeq, 2000)) await this._waitForRenderIdle(10, 2000);
+  }
 
-    if (prevSelectionMode !== !!host.selectionMode) {
-      host.selectionMode = prevSelectionMode;
-      await host.updateComplete;
-    }
+  private _runDragContinuousScenario(
+    iterations: number,
+    name: PerfScenarioName = 'dragContinuous',
+  ) {
+    return this._withCameraScenario(name, iterations, async () => {
+      // panBy is transform space: d3 applies tx1 = tx0 + k*dx, so the pixel step has
+      // to be divided by k for the on-screen distance to match dragCanvas.
+      const k = (this._hostAny()._transform as { k: number } | undefined)?.k || 1;
+      const halfFrames = PERF_MEASURE_DRAG_CONTINUOUS_FRAMES / 2;
+      const step = PERF_MEASURE_PAN_DISTANCE_PX / PERF_MEASURE_PAN_STEPS / k;
+      for (let i = 0; i < iterations; i++) {
+        for (let s = 0; s < PERF_MEASURE_DRAG_CONTINUOUS_FRAMES; s++) {
+          await this._nextAnimationFrame();
+          this._applyZoomTranslate(s < halfFrames ? step : -step, 0);
+        }
+        await this._waitForRenderIdle(10, 2000);
+      }
+    });
+  }
+
+  private _runDragCanvasScenario(iterations: number) {
+    return this._withCameraScenario('dragCanvas', iterations, async () => {
+      const stepDx = PERF_MEASURE_PAN_DISTANCE_PX / PERF_MEASURE_PAN_STEPS;
+      const stepDy = stepDx * 0.6;
+      for (let i = 0; i < iterations; i++) {
+        for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
+          const prevSeq = this._recorder?.passSeq ?? 0;
+          this._applyZoomTranslate(stepDx, stepDy);
+          const rendered = await this._waitForNextRender(prevSeq, 2000);
+          if (rendered) await this._waitForRenderIdle(10, 2000);
+        }
+
+        for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
+          const prevSeq = this._recorder?.passSeq ?? 0;
+          this._applyZoomTranslate(-stepDx, -stepDy);
+          const rendered = await this._waitForNextRender(prevSeq, 2000);
+          if (rendered) await this._waitForRenderIdle(10, 2000);
+        }
+      }
+    });
   }
 
   private _dispatchSvgClickAt(svgX: number, svgY: number) {

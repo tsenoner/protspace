@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { POINT_FRAGMENT_SHADER, POINT_VERTEX_SHADER } from './export-shaders';
+import {
+  GAMMA_FRAGMENT_SHADER,
+  POINT_FRAGMENT_SHADER,
+  POINT_VERTEX_SHADER,
+} from './export-shaders';
+
+describe('gamma correction shader', () => {
+  it('un-premultiplies before handing the frame to the compositor', () => {
+    expect(GAMMA_FRAGMENT_SHADER).toContain('linear.rgb / linear.a');
+  });
+});
 
 describe('point shaders', () => {
   it('passes the transferred-annotation flag through as a flat varying', () => {

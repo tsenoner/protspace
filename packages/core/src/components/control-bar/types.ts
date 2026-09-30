@@ -8,6 +8,7 @@ import type {
   AnnotationPredictedData,
   ProjectionStatisticRow,
   LegendSortMode,
+  ScatterplotConfig,
 } from '@protspace/utils';
 
 export interface ProtspaceData {
@@ -59,6 +60,7 @@ export interface ScatterplotElementLike extends Element {
   tooltipAnnotations?: string[];
   selectionMode?: boolean;
   selectionTool?: 'rectangle' | 'lasso';
+  config?: Partial<ScatterplotConfig>;
   selectedProteinIds?: string[];
   data?: ProtspaceData;
   filteredProteinIds?: string[];
