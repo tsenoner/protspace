@@ -12,10 +12,16 @@
  * `example-manifest.ts`, which `write_manifest.py` reads from the file itself,
  * and a unit test checks every `defaultView` name against that record.
  *
- * Interim catalog: the startup demo plus the bundles still shipped under
- * `apps/web/public/data/`. The `curated-example-datasets` change replaces them
- * with the manuscript's datasets; until then each `defaultView` is provisional
- * and names columns and projections its current bundle really has.
+ * Two catalogs live here until the catalog swap (`curated-example-datasets`
+ * task 7.7), and `FINAL_CATALOG_IS_LIVE` picks the one the app serves:
+ *   - the interim catalog, served today: the startup demo plus the test and
+ *     perf bundles still shipped under `apps/web/public/data/`, each opening on
+ *     a provisional view that names columns its current bundle really has;
+ *   - the final catalog: the startup demo, the ProtSpace manuscript's datasets
+ *     and one curated EAT showcase, served from the rebuilt showcase bundles.
+ *     It has no manifest records until those bundles are published, so it
+ *     cannot be served before the swap; the docs page and the tests read it
+ *     meanwhile.
  *
  * Order matters: the demo is first, then the rest ascend by protein count, to
  * match the Import menu's "Examples" section.
@@ -131,7 +137,19 @@ function defineExample({ name, ...spec }: ExampleSpec, index: number): ExampleDa
   };
 }
 
-const EXAMPLE_SPECS: readonly ExampleSpec[] = [
+/**
+ * The catalog swap switch (`curated-example-datasets` task 7.7).
+ *
+ * `false` serves the interim catalog. The swap sets it to `true` in the commit
+ * that writes the final entries' manifest records (`stage-release`) and removes
+ * `apps/web/public/data/`: an entry without a record throws at import, and the
+ * interim entries' files live in that directory, so the three land together.
+ * A later cleanup deletes the interim catalog and this switch.
+ */
+export const FINAL_CATALOG_IS_LIVE: boolean = false;
+
+/** The interim catalog: the test and perf bundles under `apps/web/public/data/`. */
+const INTERIM_EXAMPLE_SPECS: readonly ExampleSpec[] = [
   {
     id: 'demo',
     name: 'Demo',
@@ -243,6 +261,86 @@ const EXAMPLE_SPECS: readonly ExampleSpec[] = [
     },
   },
 ];
+
+/**
+ * The final catalog: the startup demo, the manuscript's datasets (Fig. 2A, 2B
+ * and 3) and one curated EAT showcase, `three-finger-toxins`, which is not a
+ * manuscript dataset: the paper's own EAT sets are benchmarks and test
+ * fixtures, not showcases. Every one carries a UMAP, which it opens on, and a
+ * PCA. Values in ‹angle quotes› come from the rebuilt bundles and are filled
+ * in at the swap; `pnpm docs:examples:check` refuses any left over.
+ */
+export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
+  {
+    id: 'demo',
+    name: 'Venom toxins (demo)',
+    description:
+      'Reviewed animal venom proteins from UniProt, embedded with ProtT5 and ESM2, with every annotation source.',
+    insight:
+      'Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.',
+    defaultView: {
+      projection: 'ProtT5 — UMAP 2',
+      annotation: 'protein_families',
+      tooltip: ['species', 'ec'],
+    },
+  },
+  {
+    id: 'three-finger-toxins',
+    name: 'Snake three-finger toxins (EAT)',
+    description:
+      'Snake three-finger toxins: reviewed ones with a curated toxin class, and ones sequenced from venom glands that have none.',
+    insight:
+      'Rings are toxin classes EAT transferred from the nearest reviewed toxin; held-out reviewed toxins get the right class back ‹about 95 %› of the time.',
+    defaultView: {
+      projection: 'ProtT5 — UMAP 2',
+      annotation: 'toxin_class',
+      tooltip: ['toxin_class_withheld', 'species', 'eat_split'],
+    },
+  },
+  {
+    id: 'human-fly',
+    name: 'Human + fly proteomes',
+    description: 'The human and fruit fly reference proteomes in one layout.',
+    insight:
+      'Most families overlap across species (about 2,000 protein kinases). Recolour by protein family to find human-only MHC class I/II, β-defensins and CC chemokines and fly-only odorant-binding proteins.',
+    figure: 'Fig. 2B',
+    defaultView: {
+      projection: 'ProtT5 — UMAP 2',
+      annotation: 'species',
+      tooltip: ['protein_families', 'reviewed'],
+    },
+  },
+  {
+    id: 'beta-lactamase',
+    name: 'β-lactamases',
+    description: 'The β-lactamase superfamily across all domains of life.',
+    insight:
+      'The serine β-lactamase classes A, C and D sit apart from the metallo-β-lactamases that fill most of the map. Q02940, curated as class C, sits away from the other class-C proteins.',
+    figure: 'Fig. 3',
+    defaultView: {
+      projection: 'ProtT5 — UMAP 2',
+      annotation: 'protein_families',
+      tooltip: ['ec', 'species'],
+    },
+  },
+  {
+    id: 'swissprot',
+    name: 'Swiss-Prot',
+    description: 'Every reviewed UniProtKB protein in one map.',
+    insight:
+      'Bacterial and eukaryotic proteins fill the two halves of the dense core, and archaeal proteins gather in a few small patches.',
+    figure: 'Fig. 2A',
+    // Measured by the D2 gate (task 7.2) on the rebuilt file, which adds the PCA.
+    large: { memory: '‹about 1.2 GB›', loadTime: '‹about 35 s›' },
+    defaultView: {
+      projection: 'ProtT5 — UMAP 2',
+      annotation: 'domain',
+      tooltip: ['protein_families', 'species'],
+    },
+  },
+];
+
+const EXAMPLE_SPECS = FINAL_CATALOG_IS_LIVE ? FINAL_EXAMPLE_SPECS : INTERIM_EXAMPLE_SPECS;
 
 export const EXAMPLE_DATASETS: readonly ExampleDataset[] = EXAMPLE_SPECS.map(defineExample);
 

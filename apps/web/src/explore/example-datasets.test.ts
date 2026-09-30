@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
+  FINAL_CATALOG_IS_LIVE,
+  FINAL_EXAMPLE_SPECS,
   findExampleDataset,
   formatMegabytes,
   formatProteinCount,
@@ -22,6 +24,15 @@ const SHIPPED_BUNDLE_PATHS = new Set(
     ...import.meta.glob('../../public/data/*.parquetbundle'),
   }),
 );
+
+// Every bundle committed under apps/web/public/. `public/examples/` is left
+// out: it is gitignored and holds what `pnpm examples:fetch` downloaded.
+const COMMITTED_PUBLIC_BUNDLES = Object.keys(
+  import.meta.glob(['../../public/**/*.parquetbundle', '!../../public/examples/**']),
+);
+
+/** Catalog ids: lowercase and letter-leading, words joined by single hyphens. */
+const ID_FORMAT = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
 describe('example datasets catalog', () => {
   it('has unique ids', () => {
@@ -89,6 +100,72 @@ describe('example datasets catalog', () => {
   it('marks at least one entry large', () => {
     expect(EXAMPLE_DATASETS.some((entry) => entry.large)).toBe(true);
   });
+
+  // Task 4.10: once the final catalog is live, the startup demo is the only
+  // bundle left in the repository; every other example is release-hosted.
+  // The swap removes apps/web/public/data/ in the commit that flips the switch.
+  it.runIf(FINAL_CATALOG_IS_LIVE)('ships no bundle under public/ but the demo', () => {
+    expect(COMMITTED_PUBLIC_BUNDLES).toEqual(['../../public/data.parquetbundle']);
+  });
+});
+
+describe('the final catalog', () => {
+  const ids = FINAL_EXAMPLE_SPECS.map((spec) => spec.id);
+
+  it('holds the demo, the EAT showcase and the manuscript datasets, in menu order', () => {
+    expect(ids).toEqual([
+      'demo',
+      'three-finger-toxins',
+      'human-fly',
+      'beta-lactamase',
+      'swissprot',
+    ]);
+  });
+
+  it('marks swissprot, and only swissprot, large', () => {
+    expect(FINAL_EXAMPLE_SPECS.filter((spec) => spec.large).map((spec) => spec.id)).toEqual([
+      'swissprot',
+    ]);
+  });
+
+  // Task 1.7: ids double as the `?dataset=` value and the docs anchor, and
+  // published links name them, so their format is fixed.
+  it.each(ids)('gives "%s" a lowercase, letter-leading id', (id) => {
+    expect(id).toMatch(ID_FORMAT);
+  });
+
+  it('accepts hyphenated ids and refuses the other forms', () => {
+    expect('three-finger-toxins').toMatch(ID_FORMAT);
+    for (const id of ['3ftx-eat', 'Swissprot', 'human_fly', 'beta--lactamase', 'demo-']) {
+      expect(id).not.toMatch(ID_FORMAT);
+    }
+  });
+
+  it('has unique ids', () => {
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('is the catalog the app serves once the switch is flipped', () => {
+    const served = EXAMPLE_DATASETS.map((entry) => entry.id);
+    if (FINAL_CATALOG_IS_LIVE) {
+      expect(served).toEqual(ids);
+    } else {
+      expect(served).not.toEqual(ids);
+      expect(served[0]).toBe('demo');
+    }
+  });
+
+  // Every final example carries a UMAP, which it opens on, and a PCA (design
+  // Decision 16). Checked against the manifest for each final entry the app
+  // already serves: the demo now, all five once the switch is flipped.
+  it.each(EXAMPLE_DATASETS.filter((entry) => ids.includes(entry.id)))(
+    'gives "$id" a UMAP to open on and a PCA',
+    (entry) => {
+      const { projections } = EXAMPLE_MANIFEST.examples[entry.id];
+      expect(entry.defaultView.projection).toMatch(/UMAP/);
+      expect(projections.some((name) => /PCA/.test(name))).toBe(true);
+    },
+  );
 });
 
 describe('the E2E startup pin', () => {
@@ -166,8 +243,16 @@ describe('toExampleDatasetSummary', () => {
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 const EAT_COMPANION_PATTERN = /__pred_(value|confidence|source)$/;
 
+/** The served entries plus the final ones not served yet: every view the app opens on or will. */
+const EVERY_ENTRY = [
+  ...EXAMPLE_DATASETS,
+  ...(FINAL_CATALOG_IS_LIVE
+    ? []
+    : FINAL_EXAMPLE_SPECS.map((spec) => ({ ...spec, id: `final:${spec.id}` }))),
+];
+
 describe('example datasets curated default view', () => {
-  it.each(EXAMPLE_DATASETS)('"$id" names a projection and an annotation', (entry) => {
+  it.each(EVERY_ENTRY)('"$id" names a projection and an annotation', (entry) => {
     expect(entry.defaultView.projection.trim()).not.toBe('');
     expect(entry.defaultView.annotation.trim()).not.toBe('');
   });
@@ -183,13 +268,13 @@ describe('example datasets curated default view', () => {
     }
   });
 
-  it.each(EXAMPLE_DATASETS)('"$id" colours by a colourable annotation', (entry) => {
+  it.each(EVERY_ENTRY)('"$id" colours by a colourable annotation', (entry) => {
     const { annotation } = entry.defaultView;
     expect(TOOLTIP_ONLY_ANNOTATIONS.has(annotation)).toBe(false);
     expect(annotation).not.toMatch(EAT_COMPANION_PATTERN);
   });
 
-  it.each(EXAMPLE_DATASETS)(
+  it.each(EVERY_ENTRY)(
     '"$id" has a tooltip without duplicates or the colour-by annotation',
     (entry) => {
       const tooltip = entry.defaultView.tooltip ?? [];
