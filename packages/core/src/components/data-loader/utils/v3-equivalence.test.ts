@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   createParquetBundle,
@@ -116,10 +116,6 @@ function hitsOf(data: VisualizationData, key: string, proteinIndex: number): Hit
 const hitsByProtein = (data: VisualizationData, key: string): Record<string, Hits> =>
   Object.fromEntries(data.protein_ids.map((id, index) => [id, hitsOf(data, key, index)]));
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe('v3 golden fixture: the Python encoder and the browser reader agree', () => {
   it('reads the six-part container with both empty slots and no settings or statistics', async () => {
     const { data, settings } = await loadV3();
@@ -128,20 +124,6 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     // Parts 4 and 5 are the zero-byte slots that keep the payloads part at position six.
     expect(settings).toBeNull();
     expect(data.statistics).toBeUndefined();
-  });
-
-  it('decodes every part-1 column straight into a typed array, with no plain-array fallback', async () => {
-    // The whole performance premise of v3: hyparquet hands back a typed array only for a
-    // REQUIRED, PLAIN, undictionaried column, and the reader logs (once) when it has to
-    // fall back to the ~4x slower element loop. Nothing else in the suite would notice:
-    // the fallback decodes correctly, so this is the only assertion that proves the
-    // Python writer really produced the physical shape the reader is optimised for.
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    const { data } = await loadV3();
-
-    expect(data.protein_ids).toHaveLength(PROTEIN_IDS.length);
-    expect(warn).not.toHaveBeenCalled();
   });
 
   it('exposes exactly the declared annotations, with the EAT companion trio consumed', async () => {

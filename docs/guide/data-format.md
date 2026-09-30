@@ -431,9 +431,9 @@ disabled, in a single row group, snappy compressed.
 For parts 1 and 3 that is load bearing, not stylistic. The browser's Parquet reader hands back a
 zero-copy typed array only for a REQUIRED flat PLAIN column, and each such chunk then lands in
 its preallocated column with a single `set`. A column written nullable or dictionary-encoded
-still decodes to the right values, but it arrives as a plain JavaScript array about 4x slower,
-and the reader logs a warning naming it. Parts 1 and 3 are read by separate passes that carry one
-warning each, so a single read logs at most two. Such a column is a writer bug, not a variant.
+arrives as a plain JavaScript array instead, and the reader rejects the bundle with an error
+naming that column, as it does for a column whose physical type contradicts the manifest. Such
+a column is a writer bug, not a variant.
 
 Part 6 is read differently and is not zero-copy at all. It is a handful of large blobs rather
 than hundreds of per-row columns, so the reader loads the whole part at once and copies each
