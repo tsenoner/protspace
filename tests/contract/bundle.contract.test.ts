@@ -421,6 +421,7 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       );
       // The only intended difference: a protein no projection places is not in the
       // browser's dataset, so it is not in what the browser exports.
+      expect(manifest.annotationOnlyId in written.annotations).toBe(variant === 'coverage');
       delete written.annotations[manifest.annotationOnlyId];
       expect(reexported.annotations).toEqual(written.annotations);
       expect(reexported.projections).toEqual(written.projections);
