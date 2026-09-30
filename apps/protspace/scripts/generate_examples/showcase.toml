@@ -201,6 +201,12 @@ column = "eat_split"
 expected = { reference = 430, holdout = 107, trembl = 552 }
 
 [[datasets.three-finger-toxins.gates]]
+type = "holdout_split"   # which 107 rows are held out, not only how many (NumPy may change its stream)
+split_column = "eat_split"
+value = "holdout"
+split_sha256 = "2abb5245a61ab35aaf2562823240c06ee859d3b442300fcff5859079e0b60468"
+
+[[datasets.three-finger-toxins.gates]]
 type = "no_refill"
 split_column = "eat_split"
 query_value = ["holdout", "trembl"]

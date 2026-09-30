@@ -470,26 +470,6 @@ def test_eat_gates():
         },
     )
     assert transfers.status == "pass"
-    table = table.append_column(
-        "ec__pred_source", pa.array(["R1", None, None, None, None])
-    )
-    source = bs.gate_eat_source(
-        table,
-        {
-            "accession": "Q1",
-            "column": "ec",
-            "source": "R1",
-            "confidence": 0.9,
-            "value_contains": "1.1.1.1",
-        },
-    )
-    assert source.status == "pass"
-    assert (
-        bs.gate_eat_source(
-            table, {"accession": "X", "column": "ec", "source": "R1", "confidence": 0.9}
-        ).status
-        == "fail"
-    )
 
 
 def _eat_example():
@@ -2509,6 +2489,7 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
                 "expected_family_only": 1,
             },
             {"type": "full_length_inputs", "min_fraction": 0.99},
+            {"type": "holdout_split"},  # unpinned: pending
         ],
     )
     cli = EmbedBuildCli(entries)
@@ -2530,9 +2511,11 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     failed = {
         n: g.detail for n, g in by_name.items() if g.status not in ("pass", "warn")
     }
-    # The embeddings are unpinned in this copy of the recipe: pending, nothing else.
-    assert failed == {"embeddings-pin": by_name["embeddings-pin"].detail}, failed
+    # The embeddings and the split are unpinned in this copy of the recipe:
+    # pending, nothing else.
+    assert set(failed) == {"embeddings-pin", "holdout-split"}, failed
     assert by_name["embeddings-pin"].status == "pending" and not ok
+    assert by_name["holdout-split"].status == "pending"
     for name in (
         "membership-pinned",
         "mature-inputs",
@@ -2585,6 +2568,17 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     assert any(line.startswith("protspace embed") for line in provenance["pipeline"])
     assert all(str(tmp_path) not in line for line in provenance["pipeline"])
     assert (ctx.work / "labels.csv").read_text().startswith("identifier,toxin_class,")
+    assert provenance["holdout"] == {
+        "split_column": "eat_split",
+        "stratify": "toxin_class",
+        "fraction": 0.2,
+        "seed": 7,
+        "held_out": 4,
+        "split_sha256": by_name["holdout-split"].data["split_sha256"],
+    }
+    assert provenance["transfer"]["metric"] == "euclidean"
+    assert provenance["transfer"]["k"] == 1
+    assert provenance["embeddings"]["source"] == "embedded in this build"
 
     # Pinned, the same build passes; a second run re-runs nothing.
     facts = ctx.facts()["embeddings"]
@@ -2593,6 +2587,7 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
         "vectors_sha256": facts["vectors_sha256"],
         "sha256": facts["sha256"],
     }
+    dataset["gates"][-1]["split_sha256"] = provenance["holdout"]["split_sha256"]
     ctx.dataset = dataset
     assert bs.verify(ctx)[0]
     cli.commands.clear()

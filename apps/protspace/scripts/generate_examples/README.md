@@ -65,7 +65,10 @@ venom-gland transcripts, carry none. The steps:
    `toxin_class_uniprot_rule`. `[holdout]` draws a stratified 20 % of the Swiss-Prot
    entries (classes and ids sorted, seed 7), blanks their labels and keeps the truth in
    `<column>_withheld`; `eat_split` is `reference`, `holdout` or `trembl`. The labels are
-   also written to `work/labels.csv` for the Zenodo deposit.
+   also written to `work/labels.csv` for the Zenodo deposit. The `holdout_split` gate
+   pins which rows are held out (a NumPy upgrade may draw others under the same seed),
+   and the bundle's provenance records the fraction, seed, stratum, transfer metric and
+   where the vectors came from.
 6. **transfer.** `protspace transfer --k 1 --metric euclidean` from the references to the
    held-out and TrEMBL rows (`bundle` first, since `transfer` reads a bundle). The guard
    fails the step if a query row regains a label.

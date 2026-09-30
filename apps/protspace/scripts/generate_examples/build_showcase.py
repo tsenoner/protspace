@@ -130,6 +130,9 @@ PROVENANCE_KEYS = (
     "command",
     "pipeline",
     "zenodo_doi",
+    "holdout",
+    "transfer",
+    "embeddings",
 )
 
 UNIPROT_REST = "https://rest.uniprot.org/uniprotkb"
@@ -1279,28 +1282,57 @@ def gate_name_agreement(
     )
 
 
-def gate_eat_source(table: pa.Table, params: dict) -> Gate:
-    column = params["column"]
-    ids = row_ids(table)
-    name = f"eat-source:{params['accession']}"
-    if params["accession"] not in ids:
-        return Gate(name, "fail", "accession not in the bundle")
-    row = ids.index(params["accession"])
-    source = table.column(f"{column}__pred_source")[row].as_py()
-    value = table.column(f"{column}__pred_value")[row].as_py()
-    confidence = table.column(f"{column}__pred_confidence")[row].as_py()
-    ok = (
-        source is not None
-        and decode_field(str(source)) == params["source"]
-        and confidence is not None
-        and abs(confidence - params["confidence"]) <= params.get("tol", 0.001)
-        and params.get("value_contains", "") in decode_field(str(value))
-    )
-    return Gate(
-        name,
-        "pass" if ok else "fail",
-        f"← {source} ({value}, reliability {confidence})",
-    )
+def holdout_ids_sha256(ids: Iterable[str]) -> str:
+    """sha256 of the held-out ids, sorted, one per line."""
+    return hashlib.sha256(
+        "".join(f"{pid}\n" for pid in sorted(ids)).encode()
+    ).hexdigest()
+
+
+def held_out_ids(table: pa.Table, split_column: str, value: str) -> list[str]:
+    return [
+        pid
+        for pid, split in zip(
+            row_ids(table), table.column(split_column).to_pylist(), strict=True
+        )
+        if split == value
+    ]
+
+
+def gate_holdout_split(table: pa.Table, params: dict) -> Gate:
+    """Which rows are held out is pinned, not only how many.
+
+    The counts follow from the class sizes and ``round()`` whatever the seeded
+    draw picks, and NumPy does not promise ``Generator.choice`` streams across
+    versions (NEP 19): a dependency bump could change the held-out set, and the
+    card's accuracy with it, under unchanged counts. ``split_sha256`` is
+    :func:`holdout_ids_sha256` of the rows whose ``split_column`` is ``value``;
+    without it the gate is pending and names the value to pin.
+    """
+    column = params.get("split_column", "eat_split")
+    value = params.get("value", "holdout")
+    ids = held_out_ids(table, column, value)
+    digest = holdout_ids_sha256(ids)
+    data = {"held_out": len(ids), "split_sha256": digest}
+    pinned = params.get("split_sha256")
+    if not pinned:
+        return Gate(
+            "holdout-split",
+            "pending",
+            f"pin the {len(ids)} held-out rows in showcase.toml: "
+            f"split_sha256 = {digest!r}",
+            data,
+        )
+    if digest != pinned:
+        return Gate(
+            "holdout-split",
+            "fail",
+            f"the {len(ids)} held-out rows differ from the pin "
+            f"({digest[:12]}… vs {pinned[:12]}…): the draw changed (seed, "
+            "fraction, labels or NumPy); re-record the card's hold-out numbers",
+            data,
+        )
+    return Gate("holdout-split", "pass", f"{len(ids)} held-out rows as pinned", data)
 
 
 def gate_eat_accuracy(table: pa.Table, params: dict) -> Gate:
@@ -1389,9 +1421,9 @@ GATE_TYPES: dict[str, Callable[..., Gate]] = {
     "label_exclusive": gate_label_exclusive,
     "accession_label": gate_accession_label,
     "eat_transfers": gate_eat_transfers,
-    "eat_source": gate_eat_source,
     "eat_accuracy": gate_eat_accuracy,
     "eat_fanout": gate_eat_fanout,
+    "holdout_split": gate_holdout_split,
     "no_refill": gate_no_refill,
     "coverage": gate_coverage,
 }
@@ -4675,7 +4707,44 @@ def provenance(ctx: Context, table: pa.Table) -> dict[str, Any]:
         "command": ctx.command,
         "pipeline": pipeline_commands(ctx),
         "zenodo_doi": ctx.config.build.get("zenodo_doi") or None,
+        **(eat_provenance(ctx, table) if is_embed_build(ctx) else {}),
     }
+
+
+def eat_provenance(ctx: Context, table: pa.Table) -> dict[str, Any]:
+    """How an ``embed-build`` held out and transferred, and where its vectors
+    came from, so the card can state the seed, the metric and the split."""
+    holdout = ctx.dataset.get("holdout") or {}
+    transfer = ctx.dataset.get("transfer") or {}
+    embeddings = ctx.facts().get("embeddings") or {}
+    record: dict[str, Any] = {}
+    if holdout:
+        column = holdout["split_column"]
+        value = holdout_values(holdout)["holdout"]
+        ids = held_out_ids(table, column, value) if column in table.column_names else []
+        record["holdout"] = {
+            "split_column": column,
+            "stratify": holdout.get("stratify"),
+            "fraction": holdout.get("fraction"),
+            "seed": holdout.get("seed"),
+            "held_out": len(ids),
+            "split_sha256": holdout_ids_sha256(ids),
+        }
+    if transfer:
+        record["transfer"] = {
+            k: transfer.get(k) for k in ("columns", "k", "metric") if k in transfer
+        }
+    if embeddings:
+        record["embeddings"] = {
+            "model": embeddings.get("model"),
+            "backend": embeddings.get("backend"),
+            "source": "the pinned embed.input file"
+            if embeddings.get("from_pinned_input")
+            else "embedded in this build",
+            "vectors": embeddings.get("vectors"),
+            "vectors_sha256": embeddings.get("vectors_sha256"),
+        }
+    return record
 
 
 def pipeline_commands(ctx: Context) -> list[str]:
@@ -4687,6 +4756,7 @@ def pipeline_commands(ctx: Context) -> list[str]:
         (str(REPO_ROOT), "$REPO"),
         (str(Path.home()), "~"),
     ]
+    pinned_input = bool((ctx.facts().get("embeddings") or {}).get("from_pinned_input"))
     commands = []
     for step in recipe_steps(ctx):
         if not step.command:
@@ -4695,6 +4765,9 @@ def pipeline_commands(ctx: Context) -> list[str]:
         for old, new in replacements:
             if old and "{" not in old:
                 text = text.replace(old, new)
+        if step.name == "embed" and pinned_input:
+            # Not run: the build copied the pinned file this command once made.
+            text += "  # not run here: the vectors are the pinned embed.input file"
         commands.append(text)
     return commands
 
