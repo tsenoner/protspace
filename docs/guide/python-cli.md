@@ -401,6 +401,11 @@ Legacy annotation caches are migrated when they are read:
   At Swiss-Prot scale this one-time refresh takes hours. An older ProtSpace (4.13 or earlier)
   corrupts the new multi-family values if it resumes from such a cache, so after a downgrade delete
   the cache or run once with `--refetch uniprot`.
+- A cache written before [`root`](/guide/annotations#root) became the top of the lineage, or before
+  a negative [`predicted_transmembrane`](/guide/annotations#predicted_transmembrane) prediction was
+  spelled `non-transmembrane` instead of `none`, is refreshed the same way: a run that requests
+  `root` re-fetches the taxonomy once, a run that requests `predicted_transmembrane` re-fetches
+  Biocentral once, and a run that requests neither drops those columns.
 
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`

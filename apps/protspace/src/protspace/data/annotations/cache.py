@@ -265,18 +265,14 @@ def fetch_annotations(
         )
     migration_sources = set()
     if refresh_columns:
-        stale_by_source = AnnotationConfiguration.categorize_annotations_by_source(
-            refresh_columns
+        # Fetched as though the cache lacked them, so a source looked up by a
+        # key the cache has no column for (InterPro by `sequence`, taxonomy by
+        # `organism_id`) also fetches that key from UniProt. Without it the
+        # refresh would find nothing and stamp that as current.
+        needed = AnnotationConfiguration.determine_sources_to_fetch(
+            cached_annotations - refresh_columns, refresh_columns
         )
-        migration_sources = {
-            source for source, columns in stale_by_source.items() if columns
-        }
-        if "interpro" in migration_sources and "sequence" not in cached_annotations:
-            # InterPro is looked up by sequence, so a refresh from a cache
-            # without one would find nothing and stamp that as current. Fetch
-            # the sequences as a missing InterPro column would
-            # (`determine_sources_to_fetch`).
-            migration_sources.add("uniprot")
+        migration_sources = {source for source, fetch in needed.items() if fetch}
         for source in migration_sources:
             sources[source] = True
         logger.warning(

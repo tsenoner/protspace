@@ -238,6 +238,13 @@ Caches written by older versions are migrated when read, so you do not have to d
 - A cache written before InterPro values reached every protein sharing a sequence (only one protein
   of each identical-sequence group got them) refetches InterPro once when an InterPro column is
   requested. The refetch also drops the InterPro-N predictions that such a cache holds.
+- A cache written before [`root`](/guide/annotations#root) became the top of the lineage (it held
+  the deepest unranked clade, such as `melanogaster subgroup` for the fruit fly) refetches the
+  taxonomy once when `root` is requested. A cache written before
+  [`predicted_transmembrane`](/guide/annotations#predicted_transmembrane) spelled a negative
+  prediction `non-transmembrane` (it wrote `none`, which displays as N/A) refetches Biocentral once
+  when that column is requested. Other sources are reused, and a run that requests neither column
+  drops it.
 
 If such a refresh cannot retrieve the source, the old values are not stamped as current, and the
 next run tries again. At Swiss-Prot scale the one-time refresh takes hours.

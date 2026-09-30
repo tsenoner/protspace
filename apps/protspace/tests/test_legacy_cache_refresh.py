@@ -1,10 +1,10 @@
-"""Caches written before the family and InterPro fixes are refreshed, not reused.
+"""Caches written before a semantics fix are refreshed, not reused.
 
 Cache version 1 stored ``protein_families`` cut at the first ``.`` (and
 section qualifiers as families), and gave InterPro values to only one of the
-proteins sharing a sequence. Neither can be repaired locally, so a run that
-requests those columns refetches their source once; a run that does not drops
-them. All HTTP is mocked.
+proteins sharing a sequence. Version 2 stored ``root`` as the deepest unranked
+clade and a TMbed negative as ``none``. A run that requests such a column
+refetches its source once; a run that does not drops it. All HTTP is mocked.
 """
 
 import pandas as pd
@@ -395,3 +395,236 @@ def test_every_interpro_column_is_stale_in_a_v1_cache(column):
     cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 1}
 
     assert stale_cache_columns(cache) == {column}
+
+
+# --- Cache version 3: the taxonomy root and the TMbed negative ---------------
+#
+# Version 2 stored `root` as the lineage's deepest unranked clade ("melanogaster
+# subgroup" for the fly) and a TMbed negative as "none", which both readers take
+# for a missing value. The refresh refetches exactly the two sources that own
+# them, taxonomy and Biocentral, and reuses every other source.
+
+FLY = {
+    "root": "cellular organisms",
+    "domain": "Eukaryota",
+    "kingdom": "Metazoa",
+    "phylum": "Arthropoda",
+    "class": "Insecta",
+    "order": "Diptera",
+    "family": "Drosophilidae",
+    "genus": "Drosophila",
+    "species": "Drosophila melanogaster",
+}
+BIOCENTRAL = {
+    "predicted_membrane": "Soluble",
+    "predicted_subcellular_location": "Cytoplasm",
+    "predicted_signal_peptide": "False",
+    "predicted_transmembrane": "non-transmembrane",
+}
+V3_ANNOTATIONS = [
+    "gene_name",
+    "pfam",
+    "ted_domains",
+    "root",
+    "species",
+    "predicted_membrane",
+    "predicted_transmembrane",
+]
+
+
+def _write_v2_cache(cache_dir, *, drop=()) -> None:
+    """A fly protein cached by the version before the root and TMbed fixes."""
+    cached = pd.DataFrame(
+        {
+            "identifier": ["P02299"],
+            "gene_name": ["CACHED_GENE"],
+            "protein_name": ["Histone H3"],
+            "uniprot_kb_id": ["H3_DROME"],
+            "organism_id": ["7227"],
+            "sequence": ["MARTKQTARK"],
+            "pfam": [CURRENT_PFAM],
+            "ted_domains": ["3.40.50.2000|94.2"],
+            "root": ["melanogaster subgroup"],
+            "species": ["Drosophila melanogaster"],
+            "predicted_membrane": ["Soluble"],
+            "predicted_transmembrane": ["none"],
+        }
+    ).drop(columns=list(drop))
+    cached.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 2}
+    cached.to_parquet(cache_dir / CACHE_NAME, index=False)
+
+
+def _serve_taxonomy(monkeypatch, calls: list):
+    from protspace.data.annotations.retrievers.taxonomy_retriever import (
+        TaxonomyRetriever,
+    )
+
+    def fetch(retriever):
+        calls.append(("taxonomy", list(retriever.taxon_ids)))
+        return {
+            tid: {"annotations": {a: FLY[a] for a in retriever.annotations}}
+            for tid in retriever.taxon_ids
+        }
+
+    monkeypatch.setattr(TaxonomyRetriever, "fetch_annotations", fetch)
+
+
+def _serve_biocentral(monkeypatch, calls: list, *, fail: bool = False):
+    from protspace.data.annotations.retrievers.biocentral_retriever import (
+        BiocentralPredictionRetriever,
+    )
+
+    def fetch(retriever):
+        calls.append(("biocentral", dict(retriever.sequences)))
+        if fail:
+            raise RuntimeError("Biocentral is down")
+        return [
+            ProteinAnnotations(
+                identifier=h,
+                annotations={a: BIOCENTRAL[a] for a in retriever.annotations},
+            )
+            for h in retriever.headers
+        ]
+
+    monkeypatch.setattr(BiocentralPredictionRetriever, "fetch_annotations", fetch)
+
+
+def _forbid(monkeypatch, retriever_cls, name):
+    def fetch(_retriever):
+        raise AssertionError(f"{name} values are current and must be reused")
+
+    monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
+
+
+def _forbid_all_but_taxonomy_and_biocentral(monkeypatch):
+    _forbid(monkeypatch, UniProtRetriever, "UniProt")
+    _forbid(monkeypatch, InterProRetriever, "InterPro")
+    _forbid(monkeypatch, TedRetriever, "TED")
+
+
+def _sources(calls: list) -> list[str]:
+    return [c if isinstance(c, str) else c[0] for c in calls]
+
+
+class TestVersion3:
+    def test_version_3_covers_root_and_predicted_transmembrane(self):
+        assert CACHE_SEMANTICS_CHANGES[3] == frozenset(
+            {"root", "predicted_transmembrane"}
+        )
+        assert ANNOTATION_CACHE_VERSION >= 3
+
+    def test_a_v2_cache_refetches_taxonomy_and_biocentral_once_and_nothing_else(
+        self, tmp_path, monkeypatch
+    ):
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+
+        result = _pipeline(tmp_path, V3_ANNOTATIONS)._fetch_annotations(["P02299"])
+
+        # Taxonomy looked up the cached organism, Biocentral the cached sequence.
+        assert calls == [
+            ("taxonomy", [7227]),
+            ("biocentral", {"P02299": "MARTKQTARK"}),
+        ]
+        assert result["root"].tolist() == ["cellular organisms"]
+        assert result["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+        # Every other source's value is the cached one.
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        assert result["pfam"].tolist() == [CURRENT_PFAM]
+        assert result["ted_domains"].tolist() == ["3.40.50.2000|94.2"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+        assert cache["root"].tolist() == ["cellular organisms"]
+        assert cache["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+
+        # Stamped current, so the next run reuses it without a request.
+        calls.clear()
+        again = _pipeline(tmp_path, V3_ANNOTATIONS)._fetch_annotations(["P02299"])
+
+        assert calls == []
+        assert again["root"].tolist() == ["cellular organisms"]
+        assert again["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+
+    @pytest.mark.parametrize(
+        ("column", "source"),
+        [("root", "taxonomy"), ("predicted_transmembrane", "biocentral")],
+    )
+    def test_each_column_refreshes_only_its_own_source(
+        self, tmp_path, monkeypatch, column, source
+    ):
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+
+        _pipeline(tmp_path, ["gene_name", column])._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == [source]
+
+    def test_a_run_without_them_drops_them_and_fetches_nothing(
+        self, tmp_path, monkeypatch
+    ):
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+        annotations = ["gene_name", "species", "predicted_membrane"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert calls == []
+        assert result["species"].tolist() == ["Drosophila melanogaster"]
+        assert result["predicted_membrane"].tolist() == ["Soluble"]
+        assert "root" not in result.columns
+        assert "predicted_transmembrane" not in result.columns
+
+    def test_the_root_refresh_fetches_the_organism_the_cache_lacks(
+        self, tmp_path, monkeypatch
+    ):
+        """Taxonomy is looked up by organism; without one it finds nothing.
+
+        Reusing the cached UniProt values of a cache that holds no
+        ``organism_id`` would hand the taxonomy lookup nothing, and its empty
+        result would be stamped current.
+        """
+        _write_v2_cache(tmp_path, drop=["organism_id"])
+        calls: list = []
+        _serve_uniprot(monkeypatch, calls)
+        _serve_taxonomy(monkeypatch, calls)
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+
+        result = _pipeline(tmp_path, ["root"])._fetch_annotations(["P02299"])
+
+        assert calls == ["uniprot", ("taxonomy", [9606])]
+        assert result["root"].tolist() == ["cellular organisms"]
+
+    def test_a_failed_biocentral_refresh_keeps_the_stale_none_uncertified(
+        self, tmp_path, monkeypatch
+    ):
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_biocentral(monkeypatch, calls, fail=True)
+        annotations = ["gene_name", "predicted_membrane", "predicted_transmembrane"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == ["biocentral"]
+        assert "none" not in _values(result, "predicted_transmembrane")
+        cache = _read_cache(tmp_path)
+        assert not _holds_stale_value_as_current(cache, "predicted_transmembrane")
+        # The column the refresh did not question keeps its cached value.
+        assert cache["predicted_membrane"].tolist() == ["Soluble"]
+
+        # The next run asks Biocentral again.
+        calls.clear()
+        _serve_biocentral(monkeypatch, calls)
+        again = _pipeline(tmp_path, annotations)._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == ["biocentral"]
+        assert again["predicted_transmembrane"].tolist() == ["non-transmembrane"]

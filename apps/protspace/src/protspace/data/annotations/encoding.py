@@ -35,6 +35,10 @@ FORMAT_VERSION_KEY = b"protspace_format_version"
 #       qualifier; the InterPro columns reach every protein sharing a sequence,
 #       where v1 gave them to only one of each group, and hold member-database
 #       matches only, where v1 also took InterPro-N's AI-predicted ones
+#   v3: root is the top node of the lineage ("cellular organisms", "Viruses"),
+#       where v2 kept its deepest unranked clade ("melanogaster subgroup");
+#       predicted_transmembrane calls a TMbed negative "non-transmembrane",
+#       where v2 wrote "none", a token the CLI and the web app read as missing
 #
 # To record a new semantics change, add an entry — the version is derived from
 # this table, so the two cannot drift apart. The pipeline reads nothing else to
@@ -59,6 +63,7 @@ _INTERPRO_COLUMNS = frozenset(
 CACHE_SEMANTICS_CHANGES: dict[int, frozenset[str]] = {
     1: frozenset({"xref_pdb"}),
     2: frozenset({"protein_families"}) | _INTERPRO_COLUMNS,
+    3: frozenset({"root", "predicted_transmembrane"}),
 }
 ANNOTATION_CACHE_VERSION = max(CACHE_SEMANTICS_CHANGES)
 ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
