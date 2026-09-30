@@ -240,7 +240,7 @@ section 4 runs after all three are merged back. Rules for every track:
       a cache with the UniProt and InterPro columns, stamped version 2 and `2026_03`; the rerun
       fetched only TED, and its output matched an uninterrupted run.
 
-- [ ] 4.12 After review, and after sections 5 to 9, archive the change
+- [x] 4.12 After review, and after sections 5 to 9, archive the change
       (`openspec archive annotation-retrieval-robustness`) as the last commit on the branch
       before merge. Merge with a merge commit, because the
       branch touches `apps/protspace/`.
