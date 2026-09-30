@@ -652,6 +652,118 @@ def test_mature_chain(fields, start, end, derivation):
     assert chain.fragment == bool(fields.get("fragment"))
 
 
+MOTIF = re.compile(r"G[YSHN]T(?=[A-Z]{2}C)|CLGSA(?=[DN][QE])")
+ELAPID_SIGNAL = "MKTLLLTLVVVTIMCLDFGYT"
+PROPEPTIDE = "DQLGLGRQQIDWGQG"
+
+
+@pytest.mark.parametrize(
+    ("sequence", "fields", "start", "derivation"),
+    [
+        # A precursor UniProt gives no feature: cut after the conserved end.
+        (ELAPID_SIGNAL + "LICLTHKSAVFET", {}, 22, "signal motif"),
+        # A fragment starting inside its signal peptide.
+        ("VVTIVCLDLGSTLKCNKLIPLAY", {"fragment": "fragment"}, 13, "signal motif"),
+        # The colubrid signal peptide ends before the propeptide.
+        ("MKTLLLAVAVVAFVCLGSA" + PROPEPTIDE + "QAIGPPFGLC", {}, 20, "signal motif"),
+        # A mature chain with no signal evidence stays as deposited.
+        ("LKCNKLVPLAYKTCPAGKNLCY", {}, 1, "as deposited"),
+        # Features win over the motif.
+        (
+            ELAPID_SIGNAL + "LICLTHKSAVFET",
+            {"ft_chain": "CHAIN 1..34"},
+            1,
+            "chain",
+        ),
+    ],
+)
+def test_the_signal_motif_cuts_entries_without_features(
+    sequence, fields, start, derivation
+):
+    entry = _entry(sequence=sequence, **fields)
+    chain = bs.mature_chain(entry, MOTIF, 40)
+    assert (chain.start, chain.derivation) == (start, derivation)
+    assert chain.sequence == sequence[start - 1 :]
+    assert bs.mature_chain(entry).derivation != "signal motif"  # opt-in
+
+
+def test_queries_lose_the_propeptide_their_curated_homologue_lost():
+    """The G1 mismatch in the colubrid group: SignalP's Chain keeps the
+    propeptide the reviewed references were embedded without."""
+    signal = "MKTLLLAVAVVAFVCLGSA"
+    mature = "QAIGPPFGLCFQCNQKTSSD"
+    entries = {
+        "A0S864": _entry(
+            accession="A0S864",
+            sequence=signal + PROPEPTIDE + mature,
+            ft_signal="SIGNAL 1..19",
+            ft_propep="PROPEP 20..34",
+            ft_chain="CHAIN 35..54",
+        ),
+        "C0HJD3": _entry(accession="C0HJD3", sequence=mature, ft_chain="CHAIN 1..20"),
+        # Two mismatches, SignalP's chain after the signal peptide.
+        "A0A193CHL1": _entry(
+            accession="A0A193CHL1",
+            reviewed="unreviewed",
+            sequence=signal + "DQLGLGRQRIDWQQG" + mature,
+            ft_signal='SIGNAL 1..19; /evidence="ECO:0000256|SAM:SignalP"',
+            ft_chain='CHAIN 20..54; /evidence="ECO:0000256|SAM:SignalP"',
+        ),
+        # Too far from any curated propeptide: kept.
+        "A0A2Z4N9R4": _entry(
+            accession="A0A2Z4N9R4",
+            reviewed="unreviewed",
+            sequence=signal + "DQLGLRRPLISHSQYCFQCTTESLW",
+            ft_signal="SIGNAL 1..19",
+            ft_chain="CHAIN 20..44",
+        ),
+        # A reviewed entry keeps what its curators annotated.
+        "P99999": _entry(
+            accession="P99999",
+            sequence=signal + PROPEPTIDE + mature,
+            ft_signal="SIGNAL 1..19",
+            ft_chain="CHAIN 20..54",
+        ),
+    }
+    ids = list(entries)
+    assert bs.curated_propeptides(entries) == [("A0S864", PROPEPTIDE)]
+    options = {"signal_motif": MOTIF.pattern, "propeptide_max_mismatches": 5}
+    chains = {c.accession: c for c in bs.mature_chains(entries, ids, options)}
+    assert chains["A0A193CHL1"].sequence == mature
+    assert chains["A0A193CHL1"].start == 35
+    assert chains["A0A193CHL1"].derivation == "chain + homologous propeptide"
+    assert chains["A0A193CHL1"].propeptide_from == "A0S864"
+    assert chains["A0S864"].sequence == chains["C0HJD3"].sequence == mature
+    assert chains["A0A2Z4N9R4"].derivation == "chain"
+    assert chains["P99999"].start == 20
+    # Without the option nothing is cut beyond UniProt's features.
+    plain = {c.accession: c for c in bs.mature_chains(entries, ids)}
+    assert plain["A0A193CHL1"].start == 20
+    strict = bs.mature_chains(entries, ids, {"propeptide_max_mismatches": 1})
+    assert {c.accession: c.start for c in strict}["A0A193CHL1"] == 20
+
+
+def test_the_holdout_split_gate_pins_which_rows_are_held_out():
+    table = pa.table(
+        {
+            "protein_id": ["P3", "P1", "P2", "T1"],
+            "eat_split": ["holdout", "holdout", "reference", "trembl"],
+        }
+    )
+    digest = bs.holdout_ids_sha256(["P1", "P3"])
+    assert digest == hashlib.sha256(b"P1\nP3\n").hexdigest()
+    pending = bs.gate_holdout_split(table, {})
+    assert pending.status == "pending" and digest in pending.detail
+    assert pending.data == {"held_out": 2, "split_sha256": digest}
+    assert bs.gate_holdout_split(table, {"split_sha256": digest}).status == "pass"
+    # Same counts, other rows: what a new NumPy stream would draw.
+    swapped = table.set_column(
+        1, "eat_split", pa.array(["holdout", "reference", "holdout", "trembl"])
+    )
+    gate = bs.gate_holdout_split(swapped, {"split_sha256": digest})
+    assert gate.status == "fail" and gate.data["held_out"] == 2
+
+
 def test_similarity_path_and_derived_labels():
     text = (
         "SIMILARITY: Belongs to the three-finger toxin family. Short-chain subfamily. "
@@ -2307,6 +2419,23 @@ def _tftx_entries() -> list[dict[str, str]]:
                 "sequence": sequence,
             }
         )
+    # A reviewed precursor with a curated propeptide, and a TrEMBL precursor
+    # whose SignalP chain still starts with it (two mismatches).
+    signal, propeptide = "MKTLLLTLVVVTIVCLDLGYT", "DQLGLGRQQIDWGQG"
+    for index, pep in ((1, propeptide), (35, "DQLGLGRQRIDWQQG")):
+        entry = entries[index]
+        mature = entry["sequence"][len(signal) :]
+        entry["sequence"] = signal + pep + mature
+        entry["length"] = str(len(entry["sequence"]))
+        if index == 1:
+            entry["ft_propep"] = f"PROPEP 22..{21 + len(pep)}"
+            entry["ft_chain"] = f"CHAIN {22 + len(pep)}..{len(entry['sequence'])}"
+        else:
+            entry["ft_chain"] = f"CHAIN 22..{len(entry['sequence'])}"
+    # TrEMBL precursors UniProt gives no feature: 39's signal peptide ends in
+    # the motif before a Cys-3 chain ("RIC…"), 38's before "MKT…" does not.
+    for index in (38, 39):
+        entries[index]["ft_signal"] = entries[index]["ft_chain"] = ""
     return entries
 
 
@@ -2339,8 +2468,14 @@ class EmbedBuildCli(bs.Cli):
             out.mkdir(parents=True, exist_ok=True)
             sequences = bs.parse_fasta_text(fasta.read_text())
             with h5py.File(out / "prot_t5.h5", "w") as handle:
-                for accession in sequences:
-                    handle.create_dataset(accession, data=self._vector(accession))
+                for accession, sequence in sequences.items():
+                    dataset = handle.create_dataset(
+                        accession, data=self._vector(accession)
+                    )
+                    # What protspace embed stores (data/embedding/store.py).
+                    dataset.attrs["protspace_sequence_sha256"] = hashlib.sha256(
+                        sequence.encode()
+                    ).hexdigest()[:16]
             return bs.CliResult()
         if args[0] == "prepare":
             h5 = Path(bs.split_h5_spec(args[args.index("-i") + 1])[0])
@@ -2535,6 +2670,8 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     ):
         assert by_name[name].status == "pass", (name, by_name[name].detail)
     assert by_name["mature-inputs"].data["family_only"] == 1
+    assert by_name["mature-inputs"].data["homologous_propeptides"] == 1
+    assert by_name["mature-inputs"].data["derivations"]["signal motif"] == 1
 
     final = bs.read_bundle(ctx.final)
     table = final.annotations
@@ -2553,6 +2690,12 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     # Mature chains are embedded; the precursor's length is UniProt's.
     assert rows["P00000"]["mature_length"] == 60 and rows["P00000"]["length"] == "81"
     assert rows["P00002"]["mature_length"] == 62 and rows["P00002"]["length"] == "62"
+    # One rule for references and queries: both lose the curated propeptide,
+    # and a precursor without features loses its signal peptide at the motif.
+    assert rows["P00001"]["mature_length"] == 61  # without its 15-residue propeptide
+    assert rows["A0A00035"]["mature_length"] == 60  # the homologous one cut too
+    assert rows["A0A00039"]["mature_length"] == 64
+    assert rows["A0A00038"]["mature_length"] == 84  # no motif: as deposited
     assert final.settings["eatOverlayEnabled"] is True
     assert final.settings["eatConfidenceThreshold"] == 0
     assert "toxin_class" in final.settings["legendSettings"]
@@ -2593,3 +2736,46 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     cli.commands.clear()
     bs.execute(ctx, bs.recipe_steps(ctx))
     assert cli.commands == []
+
+    # The gate checks the vectors and the flags, not only its own files.
+    table_with_flags = table.append_column(
+        "predicted_signal_peptide",
+        pa.array(
+            ["True" if pid == "A0A00038" else "False" for pid in bs.row_ids(table)]
+        ),
+    )
+    gate = bs.mature_inputs_gate(ctx, {}, table_with_flags)
+    assert gate.status == "fail" and "predicted to carry a signal" in gate.detail
+    with h5py.File(bs.embed_h5(ctx), "r+") as handle:
+        handle["P00002"].attrs["protspace_sequence_sha256"] = "0" * 16
+    gate = bs.mature_inputs_gate(ctx, {}, table)
+    assert gate.status == "fail" and "not computed from the embedded" in gate.detail
+    with h5py.File(bs.embed_h5(ctx), "r+") as handle:
+        digest = hashlib.sha256(
+            bs.parse_fasta_text((ctx.work / "mature.fasta").read_text())[
+                "P00002"
+            ].encode()
+        ).hexdigest()[:16]
+        handle["P00002"].attrs["protspace_sequence_sha256"] = digest
+    assert bs.mature_inputs_gate(ctx, {}, table).status == "pass"
+    # A query embedded with the propeptide its reference lacks (the G1 case).
+    saved = {
+        name: (ctx.work / name).read_bytes() for name in ("mature.tsv", "mature.fasta")
+    }
+    full = {e["accession"]: e["sequence"] for e in entries}["A0A00035"]
+    tsv = saved["mature.tsv"].decode().splitlines()
+    tsv = [
+        "\t".join(
+            [*r.split("\t")[:4], "22", r.split("\t")[5], str(len(full) - 21)]
+            + ["chain", ""]
+        )
+        if r.startswith("A0A00035\t")
+        else r
+        for r in tsv
+    ]
+    (ctx.work / "mature.tsv").write_text("\n".join(tsv) + "\n")
+    fasta = bs.parse_fasta_text(saved["mature.fasta"].decode())
+    fasta["A0A00035"] = full[21:]
+    bs.write_fasta(ctx.work / "mature.fasta", fasta, list(fasta))
+    gate = bs.mature_inputs_gate(ctx, {}, table)
+    assert gate.status == "fail" and "propeptide their references lack" in gate.detail

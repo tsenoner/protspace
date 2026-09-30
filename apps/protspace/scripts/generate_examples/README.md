@@ -47,11 +47,18 @@ venom-gland transcripts, carry none. The steps:
    `ft_chain`, `ft_peptide`), names and similarity text from UniProt, batched; a missing
    entry fails the step (the list needs a new release, not a silent gap).
 2. **sequences.** Each entry's **mature chain** (`mature.tsv` records start, end, length
-   and how it was found): the annotated Chain (Peptide without one; the longest when
-   there are several), else the sequence without its signal peptide and terminal
-   propeptide, else as deposited. Swiss-Prot often holds the mature chain sequenced from
-   venom and TrEMBL the precursor, so embedding full-length sequences would put the two
-   in separate islands (CRITIQUE2 G1). `full_length.fasta` keeps the whole sequences.
+   and how it was found), cut by one rule for references and queries: the annotated
+   Chain (Peptide without one; the longest when there are several), else the sequence
+   without its signal peptide and terminal propeptide. An entry with none of these
+   features is cut after `[mature] signal_motif` (the signal peptide's conserved end)
+   when it occurs in its first `motif_window` residues, else used as deposited. An
+   unreviewed chain (SignalP's, which keeps any propeptide) that starts with a
+   propeptide a reviewed entry of the set has curated, within
+   `propeptide_max_mismatches`, loses it too (`propeptide_from` names that entry).
+   Swiss-Prot often holds the mature chain sequenced from venom and TrEMBL the
+   precursor, so embedding full-length sequences would put the two in separate islands
+   (CRITIQUE2 G1); the colubrid queries that kept their propeptide formed an island of
+   their own too. `full_length.fasta` keeps the whole sequences.
 3. **embed.** `protspace embed --backend local -e prot_t5`: ProtT5-XL-U50 per protein
    from the half-precision encoder UniProt uses (`Rostlab/prot_t5_xl_half_uniref50-enc`),
    run here rather than on a remote service. `embed.vectors_sha256` and `embed.sha256`
@@ -211,10 +218,12 @@ uv run python $S build --only beta-lactamase --cli-root $CLI
 uv run python $S build --only human-fly --cli-root $CLI
 
 # three-finger-toxins: about 10 min (2 min of CPU embedding, 4 min of Biocentral).
-# Gates: the pinned 1,089 rows and embeddings, every row embedded as its mature chain
-# (the 47 family-only Swiss-Prot entries too), hold-out accuracy ≥ 88 % (≥ 90 % at
-# reliability ≥ 0.5), TrEMBL rings at ≥ 0.5 within 5 % of 238, no donor above 40,
-# ≥ 85 % agreement with the class a query's name states, no refilled query row.
+# Gates: the pinned 1,089 rows, embeddings and held-out rows, every row embedded as
+# its mature chain by one rule (the 47 family-only Swiss-Prot entries too; no query
+# keeping a curated propeptide or a predicted signal peptide; each vector's residue
+# digest), hold-out accuracy ≥ 88 % (≥ 90 % at reliability ≥ 0.5), a transfer for
+# every TrEMBL row and rings at ≥ 0.5 within 5 % of 312, no donor above 40, ≥ 85 %
+# agreement with the class a query's name states, no refilled query row.
 uv run python $S build --only three-finger-toxins --cli-root $CLI
 
 # demo: 30–60 min (TED about 20 min). Gates: Pfam coverage ≥ 50 % (was 26.9 %), full-length inputs, the mature length kept.

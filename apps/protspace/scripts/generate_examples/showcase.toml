@@ -95,9 +95,10 @@ column = "length"
 # ---------------------------------------------------------------------------
 # three-finger-toxins: the EAT example (D1). Snake three-finger toxins at
 # 2026_03: Swiss-Prot curators name each one's class in `cc_similarity`, the
-# TrEMBL entries (venom-gland transcripts) carry none. Every entry is embedded
-# as its mature chain (G1: Swiss-Prot often holds the mature chain, TrEMBL the
-# precursor), InterPro, TED and Biocentral read the full-length sequences (G8).
+# TrEMBL entries (mostly venom-gland transcripts) carry none. Every entry is
+# embedded as its mature chain, cut by one rule for references and queries (G1:
+# Swiss-Prot often holds the mature chain, TrEMBL the precursor; see [mature]);
+# InterPro, TED and Biocentral read the full-length sequences (G8).
 # A stratified 20 % of the Swiss-Prot entries is held out; toxin_class and
 # toxin_subfamily are transferred to the held-out and the TrEMBL rows (k = 1,
 # Euclidean). Opens at reliability 0; the docs say "drag to 0.5".
@@ -117,7 +118,7 @@ membership_sha256 = "2cc644f18375f522e922103bc450371dc5ec35067b72359c8fd24018938
 # rebuild does not depend on what Biocentral serves. The pins are the first
 # build's output; `input` may name a copy of that file (the Zenodo one), which a
 # rebuild then uses instead of embedding again.
-embed = { model = "prot_t5", backend = "local", vectors_sha256 = "a01ea7feec5f9a41cbd2e1d012a402d85330a2e7e4be8b7069d97d8afe3635f3", sha256 = "bb767ab6e1fd4e0d249d488cc7c12a44ef0cd6e79afeafc2bfba13cdbf9eb7c5" }
+embed = { model = "prot_t5", backend = "local", vectors_sha256 = "04a3e237bd4dff65ffd2779ff808704b90886f7adcd387bb60a63af80eaf43a2", sha256 = "974854d873c18b5efde52f72be3ab5c606575734dfae584bb2471df0b282605b" }
 methods = "umap2,pca2"   # the PCA survives a projection switch with its EAT rings (docs eat.md)
 projection_params = { n_neighbors = 25, min_dist = 0.1, random_state = 42 }
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
@@ -143,6 +144,28 @@ max_obsolete = 0
 # the query, kept so the family-parser gate checks the CLI's parser here too
 # (toxin_subfamily and toxin_class hold the levels below it).
 keep_uninformative = ["toxin_class_uniprot_rule", "protein_families"]
+
+# How each entry's mature chain is found (build_showcase.py `mature_chains`):
+# UniProt's Chain (or Peptide) feature, else the sequence without its Signal and
+# Propeptide features. Two gaps in UniProt's features are closed here, so that
+# references and queries are cut alike (the mature-inputs gate checks both):
+# - 16 TrEMBL entries at 2026_03 have no feature at all, though 15 of them are
+#   predicted to carry a signal peptide: 5 precursors, 7 fragments starting inside
+#   the signal peptide, 2 gene models and a colubrid precursor. They are cut after
+#   the signal peptide's conserved end (elapid ...G[YSHN]T before a mature chain
+#   whose first cysteine is residue 3; colubrid ...CLGSA before the propeptide).
+#   The other 11 carry no signal evidence and are used as deposited.
+# - The Chain SignalP gives a TrEMBL precursor keeps a propeptide. Nine reviewed
+#   colubrid toxins (Boiga, Spilotes, Telescopus, Trimorphodon) have a curated
+#   15-residue N-terminal propeptide (DQLGLGRQQIDWGQG and kin), and their mature
+#   chains are embedded without it, as are the colubrid entries sequenced as
+#   protein (C0HJD3, P0C603, P83490). An unreviewed chain starting with one of
+#   those propeptides (≤ 5 of 15 residues differ) loses it too: 71 queries
+#   otherwise formed an island of their own, 3 of them at RI ≥ 0.5.
+[datasets.three-finger-toxins.mature]
+signal_motif = "G[YSHN]T(?=[A-Z]{2}C)|CLGSA(?=[DN][QE])"
+motif_window = 40
+propeptide_max_mismatches = 5
 
 [datasets.three-finger-toxins.labels]
 family = "three-finger toxin family"   # the cc_similarity statement the labels are read from
@@ -241,9 +264,11 @@ column = "toxin_class"
 split_column = "eat_split"
 query_value = "trembl"
 threshold = 0.5
-expected_predicted = 552
-expected_at_threshold = 238   # the 2026_03 build; the full-length pilot had 421
-rel_tol = 0.05
+expected_predicted = 552   # exact: every TrEMBL row gets a transfer
+# The 2026_03 build. 238 before the colubrid queries lost their propeptide
+# (65 of those 71 now reach 0.5, 3 did); the full-length pilot had 421.
+expected_at_threshold = 312
+rel_tol = 0.05   # for expected_at_threshold only
 
 [[datasets.three-finger-toxins.gates]]
 type = "eat_fanout"   # the pilot's largest donor gave its class to 36 queries

@@ -51,7 +51,7 @@ import time
 import tomllib
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -3759,17 +3759,33 @@ class MatureChain:
     sequence: str
     derivation: str
     fragment: bool
+    #: The reviewed entry whose curated N-terminal propeptide this (unreviewed)
+    #: chain also lost, by homology (:func:`mature_chains`); empty otherwise.
+    propeptide_from: str = ""
 
 
-def mature_chain(entry: dict[str, str]) -> MatureChain:
+#: Derivation of a chain cut after the family's signal-peptide motif.
+SIGNAL_MOTIF = "signal motif"
+#: Suffix of a derivation whose homologous curated propeptide was cut too.
+HOMOLOGOUS_PROPEPTIDE = " + homologous propeptide"
+
+
+def mature_chain(
+    entry: dict[str, str],
+    signal_motif: re.Pattern[str] | None = None,
+    motif_window: int = 40,
+) -> MatureChain:
     """The mature chain UniProt annotates for an entry (G1).
 
     Swiss-Prot often holds a toxin as the mature chain sequenced from venom,
     TrEMBL as the precursor translated from a transcript. Embedding what each
     entry's Chain feature marks (Peptide when it has no Chain; the longest one
     when there are several) puts both on the same footing. Without either, the
-    signal peptide and any terminal propeptide are cut off, and a sequence with
-    none of them is used as deposited. A fragment's fuzzy ends are kept.
+    signal peptide and any terminal propeptide are cut off. An entry with none
+    of these features is cut after the first ``signal_motif`` match in its
+    first ``motif_window`` residues (a precursor, or a fragment starting inside
+    its signal peptide, that UniProt gives no feature), else used as deposited.
+    A fragment's fuzzy ends are kept.
     """
     accession = entry.get("accession", "")
     sequence = entry.get("sequence", "")
@@ -3804,14 +3820,99 @@ def mature_chain(entry: dict[str, str]) -> MatureChain:
             removed.append("propeptide")
     if not 1 <= start <= end <= length:
         start, end, removed = 1, length, []
-    derivation = (
-        (" and ".join(dict.fromkeys(removed)) + " removed")
-        if removed
-        else ("as deposited")
-    )
+    if removed:
+        derivation = " and ".join(dict.fromkeys(removed)) + " removed"
+    else:
+        derivation = "as deposited"
+        match = signal_motif.search(sequence[:motif_window]) if signal_motif else None
+        if match and match.end() < length:
+            start, derivation = match.end() + 1, SIGNAL_MOTIF
     return MatureChain(
         accession, start, end, sequence[start - 1 : end], derivation, fragment
     )
+
+
+def curated_propeptides(entries: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
+    """``(accession, sequence)`` of each reviewed entry's N-terminal propeptide:
+    a Propeptide feature that starts right after its Signal feature."""
+    found = []
+    for accession, entry in sorted(entries.items()):
+        if entry.get("reviewed") != "reviewed":
+            continue
+        sequence = entry.get("sequence", "")
+        signals = feature_regions(entry.get("ft_signal", ""), "SIGNAL")
+        if not signals:
+            continue
+        after = max(e for _, e in signals) + 1
+        for s, e in feature_regions(entry.get("ft_propep", ""), "PROPEP"):
+            if s == after and e <= len(sequence):
+                found.append((accession, sequence[s - 1 : e]))
+    return found
+
+
+def mismatches(a: str, b: str) -> int:
+    """Positions where two equally long strings differ."""
+    return sum(x != y for x, y in zip(a, b, strict=True))
+
+
+def homologous_propeptide(
+    sequence: str, curated: Sequence[tuple[str, str]], max_mismatches: int
+) -> tuple[str, str] | None:
+    """The curated propeptide (``(accession, sequence)``) that ``sequence``
+    starts with, within ``max_mismatches``: the closest, then the first by
+    accession. None when none is that close (or the rest would be empty)."""
+    best = None
+    for accession, propeptide in curated:
+        head = sequence[: len(propeptide)]
+        if len(head) < len(propeptide) or len(sequence) == len(propeptide):
+            continue
+        score = mismatches(head, propeptide)
+        if score <= max_mismatches and (best is None or score < best[0]):
+            best = (score, accession, propeptide)
+    return (best[1], best[2]) if best else None
+
+
+def mature_chains(
+    entries: dict[str, dict[str, str]], ids: Sequence[str], options: dict | None = None
+) -> list[MatureChain]:
+    """:func:`mature_chain` of every id, cut by one rule for references and queries.
+
+    ``options`` is the recipe's ``[mature]`` table. ``signal_motif`` (a regex)
+    and ``motif_window`` reach :func:`mature_chain`. With
+    ``propeptide_max_mismatches``, an unreviewed chain (whose Chain feature is
+    SignalP's, so it keeps any propeptide) that starts with a propeptide a
+    reviewed entry of the set has curated, within that many mismatches, loses
+    it too: otherwise the colubrid queries keep the 15 residues their curated
+    references were embedded without, and form an island of their own.
+    """
+    options = options or {}
+    motif = options.get("signal_motif")
+    pattern = re.compile(motif) if motif else None
+    window = int(options.get("motif_window", 40))
+    chains = [mature_chain(entries[pid], pattern, window) for pid in ids]
+    limit = options.get("propeptide_max_mismatches")
+    if limit is None:
+        return chains
+    curated = curated_propeptides({pid: entries[pid] for pid in ids})
+    result = []
+    for chain in chains:
+        match = None
+        if entries[chain.accession].get("reviewed") != "reviewed":
+            match = homologous_propeptide(chain.sequence, curated, int(limit))
+        if match is None:
+            result.append(chain)
+            continue
+        accession, propeptide = match
+        result.append(
+            replace(
+                chain,
+                start=chain.start + len(propeptide),
+                sequence=chain.sequence[len(propeptide) :],
+                derivation=chain.derivation + HOMOLOGOUS_PROPEPTIDE,
+                propeptide_from=accession,
+            )
+        )
+    return result
 
 
 _SIMILARITY_SPLIT = re.compile(r"SIMILARITY:\s*")
@@ -3950,12 +4051,12 @@ def sequences_step(ctx: Context, entries_tsv: Path) -> Step:
     def action() -> None:
         entries = read_entries(entries_tsv)
         ids = membership_ids(ctx)
-        chains = [mature_chain(entries[pid]) for pid in ids]
+        chains = mature_chains(entries, ids, ctx.dataset.get("mature"))
         write_fasta(mature_fasta, {c.accession: c.sequence for c in chains}, ids)
         write_fasta(full_fasta, {pid: entries[pid]["sequence"] for pid in ids}, ids)
         lines = [
             "accession\treviewed\tfragment\tfull_length\tmature_start\tmature_end"
-            "\tmature_length\tderivation"
+            "\tmature_length\tderivation\tpropeptide_from"
         ]
         for chain in chains:
             entry = entries[chain.accession]
@@ -3972,6 +4073,7 @@ def sequences_step(ctx: Context, entries_tsv: Path) -> Step:
                             chain.end,
                             len(chain.sequence),
                             chain.derivation,
+                            chain.propeptide_from,
                         ),
                     )
                 )
@@ -3988,6 +4090,7 @@ def sequences_step(ctx: Context, entries_tsv: Path) -> Step:
         inputs=lambda: {
             "entries": fingerprint(entries_tsv),
             "membership": content_sha256(membership_path(ctx)),
+            "mature": ctx.dataset.get("mature"),
         },
     )
 
@@ -4240,6 +4343,9 @@ def embed_build_steps(ctx: Context) -> list[Step]:
                 "mature": {
                     "derivations": dict(derivations),
                     "fragments": sum(1 for m in mature.values() if m["fragment"]),
+                    "homologous_propeptides": sum(
+                        1 for m in mature.values() if m.get("propeptide_from")
+                    ),
                 },
                 "labels": summary,
             },
@@ -4930,19 +5036,47 @@ def name_agreement_gate(ctx: Context, table: pa.Table, params: dict) -> Gate:
     return gate_name_agreement(table, params, names)
 
 
-def mature_inputs_gate(ctx: Context, params: dict) -> Gate:
-    """Every row was embedded as its mature chain (G1), including the reviewed
-    entries only the family clause brings in (G7).
+def _text(value: Any) -> str:
+    """An HDF5 string attribute as text (h5py may hand back bytes)."""
+    return value.decode() if isinstance(value, bytes) else str(value)
 
-    Reads the build's ``mature.tsv``, ``entries.tsv`` and the H5: each pinned
-    accession has a vector, and the FASTA it was embedded from holds exactly the
-    mature chain ``mature.tsv`` records. ``family_only_xref`` names the InterPro
-    entry the query's first clause matches; the reviewed entries without it must
-    number ``expected_family_only`` and all be embedded.
+
+def _signal_flag(value: Any) -> bool:
+    """A ``predicted_signal_peptide`` cell that predicts one (``True``/``yes``)."""
+    return any(label.lower() in ("true", "yes") for label in cell_labels(value))
+
+
+def mature_inputs_gate(
+    ctx: Context, params: dict, table: pa.Table | None = None
+) -> Gate:
+    """Every row was embedded as its mature chain, by one rule for references
+    and queries (G1), including the reviewed entries only the family clause
+    brings in (G7).
+
+    Reads the build's ``entries.tsv``, ``mature.tsv``, ``mature.fasta`` and the
+    H5, and checks what :func:`mature_chains` promises without calling it:
+
+    - each pinned accession has a vector, embedded from exactly
+      ``sequence[start-1:end]`` of its entry, and the vector's
+      ``protspace_sequence_sha256`` (which ``protspace embed`` stores) is that
+      sequence's: so a pinned ``embed.input`` must have been made from these
+      chains too;
+    - no row used as deposited is predicted to carry a signal peptide
+      (``predicted_signal_peptide`` of the bundle, from the full-length
+      sequence) or holds the recipe's ``signal_motif`` in its first
+      ``motif_window`` residues;
+    - no unreviewed row still starts with a propeptide a reviewed entry of the
+      set has curated (within ``propeptide_max_mismatches``, default the
+      recipe's), which its references were embedded without.
+
+    ``family_only_xref`` names the InterPro entry the query's first clause
+    matches; the reviewed entries without it must number
+    ``expected_family_only`` and all be embedded.
     """
     import h5py
 
     work = ctx.work
+    options = ctx.dataset.get("mature") or {}
     try:
         pinned = membership_ids(ctx)
         entries = read_entries(work / "entries.tsv")
@@ -4955,22 +5089,99 @@ def mature_inputs_gate(ctx: Context, params: dict) -> Gate:
         embedded = parse_fasta_text((work / "mature.fasta").read_text())
         with h5py.File(embed_h5(ctx), "r") as handle:
             keys = set(handle.keys())
+            digests = {
+                key: handle[key].attrs.get("protspace_sequence_sha256") for key in keys
+            }
     except (BuildError, OSError, KeyError) as error:
         return Gate("mature-inputs", "fail", f"cannot check: {error}")
     problems = []
     no_vector = [pid for pid in pinned if pid not in keys]
     if no_vector:
         problems.append(f"{len(no_vector)} without a vector (first {no_vector[:3]})")
+
+    def expected(pid: str) -> str | None:
+        row = mature.get(pid)
+        if row is None or pid not in entries:
+            return None
+        start, end = int(row["mature_start"]), int(row["mature_end"])
+        return entries[pid]["sequence"][start - 1 : end]
+
     wrong = [
         pid
         for pid in pinned
-        if pid not in mature
-        or len(embedded.get(pid, "")) != int(mature[pid]["mature_length"])
+        if expected(pid) is None or embedded.get(pid) != expected(pid)
     ]
     if wrong:
-        problems.append(f"{len(wrong)} not embedded as the recorded mature chain")
+        problems.append(
+            f"{len(wrong)} not embedded as the recorded mature chain (first {wrong[:3]})"
+        )
+    other_residues = [
+        pid
+        for pid in pinned
+        if pid in keys
+        and _text(digests.get(pid))
+        != hashlib.sha256(embedded.get(pid, "").encode()).hexdigest()[:16]
+    ]
+    if other_residues:
+        problems.append(
+            f"{len(other_residues)} vectors not computed from the embedded chain "
+            f"(protspace_sequence_sha256; first {other_residues[:3]})"
+        )
+    as_deposited = [
+        pid for pid in pinned if mature.get(pid, {}).get("derivation") == "as deposited"
+    ]
+    flagged = []
+    if table is not None and "predicted_signal_peptide" in table.column_names:
+        predicted = dict(
+            zip(
+                row_ids(table),
+                table.column("predicted_signal_peptide").to_pylist(),
+                strict=True,
+            )
+        )
+        flagged = [pid for pid in as_deposited if _signal_flag(predicted.get(pid))]
+        if flagged:
+            problems.append(
+                f"{len(flagged)} used as deposited but predicted to carry a signal "
+                f"peptide (first {flagged[:3]})"
+            )
+    motif = options.get("signal_motif")
+    if motif:
+        pattern = re.compile(motif)
+        window = int(options.get("motif_window", 40))
+        with_motif = [
+            pid
+            for pid in as_deposited
+            if pattern.search(entries[pid]["sequence"][:window])
+        ]
+        if with_motif:
+            problems.append(
+                f"{len(with_motif)} used as deposited with the signal motif in "
+                f"their first {window} residues (first {with_motif[:3]})"
+            )
+    limit = params.get(
+        "propeptide_max_mismatches", options.get("propeptide_max_mismatches")
+    )
+    kept_propeptide = []
+    if limit is not None:
+        curated = curated_propeptides({pid: entries[pid] for pid in pinned})
+        kept_propeptide = [
+            pid
+            for pid in pinned
+            if entries[pid]["reviewed"] != "reviewed"
+            and homologous_propeptide(embedded.get(pid, ""), curated, int(limit))
+        ]
+        if kept_propeptide:
+            problems.append(
+                f"{len(kept_propeptide)} unreviewed rows embedded with a curated "
+                f"propeptide their references lack (first {kept_propeptide[:3]})"
+            )
     data: dict[str, Any] = {
         "derivations": dict(Counter(m["derivation"] for m in mature.values())),
+        "homologous_propeptides": sum(
+            1 for m in mature.values() if m.get("propeptide_from")
+        ),
+        "as_deposited_predicted_signal": len(flagged),
         "embedded_equals_full_length": sum(
             1
             for pid in pinned
@@ -4990,16 +5201,21 @@ def mature_inputs_gate(ctx: Context, params: dict) -> Gate:
         data["family_only_derivations"] = dict(
             Counter(mature[pid]["derivation"] for pid in family_only if pid in mature)
         )
-        expected = params.get("expected_family_only")
-        if expected is not None and len(family_only) != expected:
+        expected_family_only = params.get("expected_family_only")
+        if (
+            expected_family_only is not None
+            and len(family_only) != expected_family_only
+        ):
             problems.append(
-                f"{len(family_only)} reviewed entries without {xref}, expected {expected}"
+                f"{len(family_only)} reviewed entries without {xref}, "
+                f"expected {expected_family_only}"
             )
         missing = [pid for pid in family_only if pid not in keys]
         if missing:
             problems.append(f"{len(missing)} family-only entries without a vector")
     detail = "; ".join(problems) or (
-        f"{len(pinned)} mature chains embedded ({data['derivations']})"
+        f"{len(pinned)} mature chains embedded ({data['derivations']}); "
+        "every vector computed from its chain"
         + (
             f"; {data['family_only']} family-only reviewed entries included"
             if xref
@@ -5154,7 +5370,7 @@ def context_gates(
         elif kind == "pfam_duplicates":
             gates.append(pfam_duplicate_gate(ctx, spec))
         elif kind == "mature_inputs":
-            gates.append(mature_inputs_gate(ctx, spec))
+            gates.append(mature_inputs_gate(ctx, spec, bundle.annotations))
         elif kind == "name_agreement":
             gates.append(name_agreement_gate(ctx, bundle.annotations, spec))
         elif kind == "browser_load":
