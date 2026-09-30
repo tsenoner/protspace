@@ -26,6 +26,7 @@ import {
   ANNOTATION_METADATA,
   type AnnotationSource,
 } from '../../packages/utils/src/visualization/annotation-metadata.ts';
+import { isAutoClusterColumnName } from '../../packages/utils/src/visualization/annotation-statistics.ts';
 import {
   EXAMPLE_DATASETS,
   FINAL_CATALOG_IS_LIVE,
@@ -75,6 +76,22 @@ const EAT_VALUE_SUFFIX = '__pred_value';
 /** The columns Biocentral's predictions fill (`predicted_subcellular_location`, …). */
 const BIOCENTRAL_PREFIX = 'predicted_';
 const EAT_COMPANION = /__pred_(value|confidence|source)$/;
+/**
+ * UniProt fields the tooltip header reads. They come from UniProt with the annotations but are not
+ * in the annotation registry, so they are counted as UniProt's here rather than as the build's own.
+ */
+const UNIPROT_HEADER_COLUMNS: ReadonlySet<string> = new Set(['protein_name', 'uniprot_kb_id']);
+
+/**
+ * The release groups of a bundle's provenance (`releases.annotations` in the manifest) that hold
+ * its fetched annotations. Another group is named by `RELEASE_GROUP_NAMES` when its release
+ * differs, and the check refuses a group that is in neither, so none reaches the page as a bare key.
+ */
+const MAIN_RELEASE_GROUPS: readonly string[] = ['all', 'refreshed'];
+const RELEASE_GROUP_NAMES: Readonly<Record<string, string>> = {
+  source: 'the columns kept from the source bundle',
+  'withheld-truth': 'the withheld hold-out labels',
+};
 
 type BundleRecord = (typeof EXAMPLE_MANIFEST)['examples'][string];
 
@@ -247,6 +264,13 @@ function validate(): string[] {
           );
         }
       }
+      for (const group of Object.keys(releases.annotations)) {
+        if (!MAIN_RELEASE_GROUPS.includes(group) && !(group in RELEASE_GROUP_NAMES)) {
+          errors.push(
+            `"${entry.id}": its manifest names the release group "${group}", which the page cannot name; add it to RELEASE_GROUP_NAMES in docs/scripts/generate-examples.mts.`,
+          );
+        }
+      }
     }
   }
 
@@ -304,19 +328,54 @@ function opensOn(view: Card['defaultView']): string {
   return `${code(view.projection)}, coloured by ${code(view.annotation)}${tooltip}.`;
 }
 
+/**
+ * "fetched at UniProt release 2026_03", plus each other group whose release differs: "…, except
+ * the columns kept from the source bundle (2026_01)".
+ */
 function annotationReleases(record: BundleRecord): string {
   const entries = Object.entries(record.releases.annotations);
-  if (entries.length === 0) return PENDING;
-  if (entries.length === 1 && entries[0][0] === 'all') return `UniProt release ${entries[0][1]}`;
-  return entries.map(([group, release]) => `${group} ${release}`).join(', ');
+  if (entries.length === 0) return `fetched at UniProt release ${PENDING}`;
+  const main = entries.find(([group]) => MAIN_RELEASE_GROUPS.includes(group))?.[1] ?? entries[0][1];
+  const exceptions = entries
+    .filter(([group, release]) => !MAIN_RELEASE_GROUPS.includes(group) && release !== main)
+    .map(([group, release]) => `${RELEASE_GROUP_NAMES[group] ?? group} (${release})`);
+  const fetched = `fetched at UniProt release ${main}`;
+  return exceptions.length > 0 ? `${fetched}, except ${list(exceptions)}` : fetched;
 }
 
+/**
+ * The columns by origin: those the annotation sources supply, those the build derived itself (the
+ * three-finger toxins' classes and hold-out, say), and the K-means clusters `protspace stats` adds.
+ */
 function annotations(record: BundleRecord): string {
   const columns = record.columns.filter((column) => !EAT_COMPANION.test(column));
-  const sources = SOURCE_ORDER.filter((source) =>
-    columns.some((column) => ANNOTATION_METADATA[column]?.source === source),
+  const clusters = columns.filter(isAutoClusterColumnName);
+  const sourced = columns.filter(
+    (column) => ANNOTATION_METADATA[column] !== undefined || UNIPROT_HEADER_COLUMNS.has(column),
   );
-  return `${count(columns.length)} columns from ${list(sources)}; releases: ${annotationReleases(record)}.`;
+  const derived = columns.filter(
+    (column) => !isAutoClusterColumnName(column) && !sourced.includes(column),
+  );
+  const sources = SOURCE_ORDER.filter(
+    (source) =>
+      (source === 'UniProt' && sourced.some((column) => UNIPROT_HEADER_COLUMNS.has(column))) ||
+      sourced.some((column) => ANNOTATION_METADATA[column]?.source === source),
+  );
+  const parts = [
+    `${count(sourced.length)} columns from ${list(sources)}, ${annotationReleases(record)}`,
+  ];
+  if (derived.length > 0) {
+    parts.push(`${count(derived.length)} the build derived (${list(derived.map(code))})`);
+  }
+  if (clusters.length > 0) {
+    // Not named by pattern: prettier's markdown printer turns a code span ending in `_*` into
+    // emphasis when a `2026_03` precedes it on the line.
+    parts.push(
+      `${count(clusters.length)} K-means [cluster columns](/explore/separation-scores#cluster-annotations) that \`protspace stats\` computed`,
+    );
+  }
+  if (parts.length === 1) return `${parts[0]}.`;
+  return `${parts.slice(0, -1).join('; ')}; and ${parts[parts.length - 1]}.`;
 }
 
 function extras(record: BundleRecord): string {

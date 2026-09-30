@@ -41,12 +41,14 @@ Each colour in the `protein_families` legend is one toxin family, and the smalle
 - **Proteins:** 7,831, from UniProt release 2026_01.
 - **Embedding:** ProtT5-XL-U50 and ESM2-650M, computed on the mature peptides (signal peptides removed).
 - **Projections:** UMAP 2D (50 neighbours, minimum distance 0.5, Euclidean, seed 42) and PCA 2D, for each model.
-- **Annotations:** 40 columns from UniProt, Taxonomy, InterPro, TED and Biocentral; releases: refreshed 2026_03, source 2026_01.
+- **Annotations:** 40 columns from UniProt, Taxonomy, InterPro, TED and Biocentral, fetched at UniProt release 2026_03, except the columns kept from the source bundle (2026_01).
 - **Extras:** None.
 - **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
 - **In the paper:** Not one of the paper's figures; ProtSpace opens with it because it is small.
 
 The sequence-based annotations (InterPro and the Biocentral predictions) were computed on the full-length sequences, signal peptides included, since that is what their sources annotate.
+
+`length` is the one column kept from the source bundle: the length of the embedded mature peptide, which is shorter than UniProt's sequence for 4,440 of the 7,831 proteins.
 
 <a href="/explore?dataset=demo" target="_self">Open in ProtSpace</a> · <a href="/data.parquetbundle" download>Download the bundle (1.0 MB)</a>
 
@@ -73,7 +75,7 @@ Coloured by `toxin_class`, each colour is one functional class of three-finger t
 - **Proteins:** 1,089, from UniProt release 2026_03.
 - **Embedding:** ProtT5-XL-U50, computed on the mature chains, cut by the same rule for reviewed and unreviewed toxins: signal peptides removed, and the propeptide the curators mark on some colubrid toxins removed from their unreviewed relatives too. Most unreviewed entries are precursors that still carry their signal peptide, while many reviewed ones are mature chains sequenced as protein; embedded as they are, the toxins would group by whether they carry a signal peptide rather than by class.
 - **Projections:** UMAP 2D (25 neighbours, minimum distance 0.1, Euclidean, seed 42) and PCA 2D. Transfer: EAT with k = 1 and the Euclidean distance.
-- **Annotations:** 35 columns from UniProt, Taxonomy, InterPro, TED and Biocentral; releases: refreshed 2026_03, withheld-truth 2026_03.
+- **Annotations:** 24 columns from UniProt, Taxonomy, InterPro, TED and Biocentral, fetched at UniProt release 2026_03; 7 the build derived (`toxin_class`, `toxin_subfamily`, `eat_split`, `toxin_class_withheld`, `toxin_subfamily_withheld`, `toxin_class_uniprot_rule` and `mature_length`); and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [transferred annotations (EAT)](/explore/eat) for `toxin_class` and `toxin_subfamily` and [separation scores](/explore/separation-scores).
 - **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
 - **In the paper:** Not one of the paper's datasets. The paper's annotation-transfer sets are benchmarks, built to measure transfer rather than to show it, so this example was built for the web; their exact files stay in the paper's data deposit.
@@ -115,7 +117,7 @@ Coloured by `species`, human and fly proteins share most of the map, and the reg
 - **Proteins:** 105,562, from UniProt release 2025_04.
 - **Embedding:** ProtT5-XL-U50 per-protein embeddings from UniProt.
 - **Projections:** UMAP 2D (50 neighbours, minimum distance 0.2, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
-- **Annotations:** 40 columns from UniProt, Taxonomy, InterPro and TED; releases: refreshed 2026_03.
+- **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
 - **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
 - **In the paper:** Fig. 2B.
@@ -153,7 +155,7 @@ Coloured by `protein_families`, the serine β-lactamases of Ambler classes A, C 
 - **Proteins:** 113,015, from UniProt release 2026_02.
 - **Embedding:** ProtT5-XL-U50 per-protein embeddings from UniProt.
 - **Projections:** UMAP 2D (200 neighbours, minimum distance 0.4, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
-- **Annotations:** 40 columns from UniProt, Taxonomy, InterPro and TED; releases: refreshed 2026_03.
+- **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
 - **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
 - **In the paper:** Fig. 3.
@@ -189,7 +191,7 @@ The colours are `domain`: the domain of life, or the realm for viruses. Scored o
 - **Proteins:** 573,649, from UniProt release 2025_04.
 - **Embedding:** ProtT5-XL-U50 per-protein embeddings from UniProt.
 - **Projections:** UMAP 2D (500 neighbours, minimum distance 0.2, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
-- **Annotations:** 40 columns from UniProt, Taxonomy, InterPro and TED; releases: refreshed 2026_03.
+- **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
 - **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
 - **In the paper:** Fig. 2A and the abstract.

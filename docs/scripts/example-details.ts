@@ -79,6 +79,7 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     paper: "Not one of the paper's figures; ProtSpace opens with it because it is small.",
     notes: [
       'The sequence-based annotations (InterPro and the Biocentral predictions) were computed on the full-length sequences, signal peptides included, since that is what their sources annotate.',
+      "`length` is the one column kept from the source bundle: the length of the embedded mature peptide, which is shorter than UniProt's sequence for 4,440 of the 7,831 proteins.",
     ],
   },
   'three-finger-toxins': {
