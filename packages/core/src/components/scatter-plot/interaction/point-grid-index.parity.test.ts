@@ -1,5 +1,5 @@
 /**
- * Parity of the uniform-grid {@link QuadtreeIndex} with the d3-quadtree implementation it
+ * Parity of the uniform-grid {@link PointGridIndex} with the d3-quadtree implementation it
  * replaced. `LegacyQuadtreeIndex` below is the previous implementation copied verbatim; every
  * assertion here compares the two over the same PlotData, slots and scales.
  *
@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as d3 from 'd3';
-import { QuadtreeIndex, pointInPolygon } from './quadtree-index';
+import { PointGridIndex, pointInPolygon } from './point-grid-index';
 import type { PlotData } from '@protspace/utils';
 
 // ── legacy implementation (verbatim), used as the reference ────
@@ -149,7 +149,7 @@ function makePD(xs: number[], ys: number[]): PlotData {
 }
 
 function buildBoth(pd: PlotData, slots: number[]) {
-  const grid = new QuadtreeIndex();
+  const grid = new PointGridIndex();
   grid.setScales(scales());
   grid.rebuild(pd, slots);
   const legacy = new LegacyQuadtreeIndex();
@@ -179,7 +179,7 @@ function randomCloud(n: number, seed: number, dupes = 0) {
 
 // ── findNearest parity ─────────────────────────────────────────
 
-describe('QuadtreeIndex findNearest parity with d3', () => {
+describe('PointGridIndex findNearest parity with d3', () => {
   it('matches d3 over 4000 probes on a 3000-point cloud', () => {
     const pd = randomCloud(3000, 20260906);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
@@ -264,7 +264,7 @@ describe('QuadtreeIndex findNearest parity with d3', () => {
 
 // ── rect / polygon parity ──────────────────────────────────────
 
-describe('QuadtreeIndex queryByPixels parity with d3', () => {
+describe('PointGridIndex queryByPixels parity with d3', () => {
   it('matches d3 for 600 random rectangles', () => {
     const pd = randomCloud(4000, 606060, 300);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
@@ -317,7 +317,7 @@ describe('QuadtreeIndex queryByPixels parity with d3', () => {
   });
 });
 
-describe('QuadtreeIndex queryByPolygon parity with d3', () => {
+describe('PointGridIndex queryByPolygon parity with d3', () => {
   it('matches d3 for 200 random convex-ish polygons', () => {
     const pd = randomCloud(4000, 191919, 200);
     const slots = Array.from({ length: pd.length }, (_, i) => i);
@@ -355,13 +355,13 @@ describe('QuadtreeIndex queryByPolygon parity with d3', () => {
 
 // ── edge cases ─────────────────────────────────────────────────
 
-describe('QuadtreeIndex edge-case parity', () => {
+describe('PointGridIndex edge-case parity', () => {
   it('ignores NaN coordinates but still reports a built index, like d3', () => {
     const pd = makePD([NaN, 0.25, 0.5, 0.75], [0.25, NaN, NaN, 0.75]);
     const slots = [0, 1, 2, 3];
     const { grid, legacy } = buildBoth(pd, slots);
-    expect(grid.hasTree()).toBe(legacy.hasTree());
-    expect(grid.hasTree()).toBe(true);
+    expect(grid.isBuilt()).toBe(legacy.hasTree());
+    expect(grid.isBuilt()).toBe(true);
     // Only slot 3 (0.75, 0.75) has two finite coordinates.
     expect(sorted(grid.queryByPixels(-1e6, -1e6, 1e6, 1e6))).toEqual(
       sorted(legacy.queryByPixels(-1e6, -1e6, 1e6, 1e6)),
@@ -372,7 +372,7 @@ describe('QuadtreeIndex edge-case parity', () => {
 
   it('skips infinite coordinates (d3 hangs in cover() on those, so no reference here)', () => {
     const pd = makePD([Infinity, 0.75], [0.5, 0.75]);
-    const grid = new QuadtreeIndex();
+    const grid = new PointGridIndex();
     grid.setScales(scales());
     grid.rebuild(pd, [0, 1]);
     expect(sorted(grid.queryByPixels(-1e6, -1e6, 1e6, 1e6))).toEqual([1]);
@@ -382,7 +382,7 @@ describe('QuadtreeIndex edge-case parity', () => {
   it('reports an empty index when every coordinate is non-finite', () => {
     const pd = makePD([NaN, NaN], [NaN, NaN]);
     const { grid, legacy } = buildBoth(pd, [0, 1]);
-    expect(grid.hasTree()).toBe(true);
+    expect(grid.isBuilt()).toBe(true);
     expect(legacy.hasTree()).toBe(true);
     expect(grid.queryByPixels(-1e6, -1e6, 1e6, 1e6)).toEqual([]);
     expect(grid.findNearest(0, 0, 1e6)).toBe(-1);
@@ -414,9 +414,9 @@ describe('QuadtreeIndex edge-case parity', () => {
       pd,
       Array.from({ length: pd.length }, (_, i) => i),
     );
-    expect(grid.hasTree()).toBe(true);
+    expect(grid.isBuilt()).toBe(true);
     grid.clear();
-    expect(grid.hasTree()).toBe(false);
+    expect(grid.isBuilt()).toBe(false);
     expect(grid.queryByPixels(0, 0, 1024, 1024)).toEqual([]);
     expect(
       grid.queryByPolygon([

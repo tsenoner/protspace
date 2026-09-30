@@ -196,7 +196,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _plotData: PlotData;
     _lastDataRef: unknown;
     _processData(): void;
-    _buildQuadtree(): void;
+    _buildPointGridIndex(): void;
     _updateStyleSignature(): void;
     _renderPlot(): void;
     _reprocessAndRefresh(): void;
@@ -253,7 +253,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
   function instrument(el: RefreshInternals) {
     const calls: string[] = [];
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
-    vi.spyOn(el, '_buildQuadtree').mockImplementation(() => calls.push('buildQuadtree'));
+    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() =>
+      calls.push('buildPointGridIndex'),
+    );
     vi.spyOn(el, '_updateStyleSignature').mockImplementation(() =>
       calls.push('updateStyleSignature'),
     );
@@ -267,19 +269,19 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildQuadtree → requestUpdate, then defers renderPlot', async () => {
+  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then defers renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
 
     el.isolateSelection();
 
-    // Synchronous portion: process + quadtree happen before requestUpdate; render is deferred.
-    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    // Synchronous portion: process + point index happen before requestUpdate; render is deferred.
+    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
   it('resetIsolation nulls _lastDataRef BEFORE reprocess, then runs the same refresh sequence', async () => {
@@ -301,11 +303,11 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     // Divergence preserved: cleared before the shared refresh block runs.
     expect(lastDataRefAtProcess).toBeNull();
-    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
   it('_reprocessAndRefresh is the single shared implementation both callers route through', () => {

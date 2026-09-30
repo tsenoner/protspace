@@ -93,7 +93,7 @@ import { createLegendErrorEventDetail } from './legend.events';
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
  * visual value + percent readout update live on every tick, but the expensive
- * downstream apply (reliability query re-eval + geometry/quadtree rebuild at 570k
+ * downstream apply (reliability query re-eval + geometry/point index rebuild at 570k
  * points) is deferred to a drag-pause/release so dragging stays smooth.
  */
 const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
