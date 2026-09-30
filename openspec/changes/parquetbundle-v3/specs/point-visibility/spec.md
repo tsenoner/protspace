@@ -6,7 +6,9 @@ The system SHALL remove every point whose coordinates in the selected projection
 finite, at the single step that builds plot data from a projection, alongside the query-filter and
 isolation culls. No consumer SHALL draw, hit-test, lasso, brush, contour, stack, depth-sort, export or include in the scale domains a point with a non-finite
 coordinate, and none SHALL depend on a finiteness check of its own to achieve this. A culled protein SHALL stay in the
-dataset (`protein_ids`, annotation arrays, legend counts, search).
+dataset (`protein_ids`, annotation arrays, legend counts, search), and in isolation mode it SHALL
+stay in the isolated subset: isolation is membership in the isolation layers, never the set of
+points the selected projection places.
 
 #### Scenario: A protein missing from the selected projection
 
@@ -36,6 +38,20 @@ dataset (`protein_ids`, annotation arrays, legend counts, search).
 
 - **WHEN** `P` is culled from the selected projection but has coordinates in another
 - **THEN** `P` is still counted in its legend category and can be found by search
+
+#### Scenario: An isolated protein the selected projection does not place
+
+- **WHEN** `P` and `Q` are isolated in projection `A` and the user switches to projection `B`,
+  which does not place `P`
+- **THEN** the current data (the `.parquetbundle` export and the legend counts) still holds `P`,
+  with its annotations and its coordinates in `A`, and an isolated subset of which `B` places no
+  point is still that subset, not the whole dataset
+
+#### Scenario: Isolating a selection the selected projection does not fully place
+
+- **WHEN** `P` and `Q` are selected in projection `A`, the user switches to `B`, which does not
+  place `P`, and isolates the selection
+- **THEN** the isolation layer holds `P` and `Q`, and `P` is drawn again on the way back to `A`
 
 ## MODIFIED Requirements
 

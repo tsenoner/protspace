@@ -33,6 +33,10 @@ type Internals = HTMLElement & {
   };
   readonly _scales: ScalePair | null;
   getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
+  selectedProteinIds: string[];
+  isolateSelection(): void;
+  getIsolationHistory(): string[][];
+  getCurrentData(): VisualizationData | null;
 };
 
 // `complete` places every protein; `gappy` does not cover p1. Every coordinate is far
@@ -136,5 +140,51 @@ describe('scatter plot: missing coordinates', () => {
 
     expect(sp._plotData.xs).toBe(xs);
     expect(Array.from(xs)).toEqual([40, 50, 60]);
+  });
+
+  // Isolation is membership in the isolated set; the NaN cull only decides what is
+  // drawn. The current data (the .parquetbundle export, the legend counts) and a new
+  // isolation layer must not lose a protein the selected projection merely does not place.
+  describe('in isolation mode', () => {
+    const isolate = (sp: Internals, ids: string[]) => {
+      sp.selectedProteinIds = ids;
+      sp.isolateSelection();
+    };
+    const switchTo = (sp: Internals, index: number) => {
+      sp.selectedProjectionIndex = index;
+      sp._processData();
+    };
+
+    it('keeps an isolated protein the projection does not place in the current data', () => {
+      const sp = scatter();
+      isolate(sp, ['p0', 'p1']);
+      switchTo(sp, 1);
+
+      expect(plottedIds(sp._plotData)).toEqual(['p0']);
+      const current = sp.getCurrentData()!;
+      expect(current.protein_ids).toEqual(['p0', 'p1']);
+      expect(current.annotation_data.fam).toEqual([[0], [0]]);
+      expect(Array.from(current.projections[0].data)).toEqual([10, 10, 20, 20]);
+    });
+
+    it('keeps the isolated subset, not the whole dataset, when none of it is placed', () => {
+      const sp = scatter();
+      isolate(sp, ['p1']);
+      switchTo(sp, 1);
+
+      expect(sp._plotData.length).toBe(0);
+      expect(sp.getCurrentData()!.protein_ids).toEqual(['p1']);
+    });
+
+    it('isolates a selected protein the current projection does not place', () => {
+      const sp = scatter();
+      sp.selectedProteinIds = ['p0', 'p1'];
+      switchTo(sp, 1);
+      sp.isolateSelection();
+
+      expect(sp.getIsolationHistory()).toEqual([['p0', 'p1']]);
+      switchTo(sp, 0);
+      expect(plottedIds(sp._plotData)).toEqual(['p0', 'p1']);
+    });
   });
 });

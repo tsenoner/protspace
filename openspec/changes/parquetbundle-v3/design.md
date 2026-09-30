@@ -128,6 +128,13 @@ projection leaves exactly the same points after the cull (in practice: neither p
 missing coordinate). Otherwise it falls back to a full rebuild. The TypeScript track audits every other read of `data.projections` for the
 same bypass.
 
+Isolation is the one cull that is a set of proteins rather than a view. `PlotData` holds the
+isolated points the selected projection places, so the isolated subset itself (what
+`getCurrentData` hands the `.parquetbundle` export and the legend, and what `isolateSelection`
+checks a new selection against) is taken from membership in the isolation layers and the query
+filter, not from `PlotData`: a protein missing from one projection stays isolated and comes back
+in the next.
+
 An unfiltered projection with no missing points keeps the identity path (`originalIndices = null`),
 so the common case pays one finiteness pass and no copy.
 

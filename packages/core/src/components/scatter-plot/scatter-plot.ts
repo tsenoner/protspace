@@ -17,7 +17,6 @@ import {
   sliceVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
-  plotDataId,
   materializePlotDataPoint,
   materializeEatOverlay,
   getProteinAnnotationValues,
@@ -2192,11 +2191,17 @@ export class ProtspaceScatterplot extends LitElement {
       return;
     }
 
-    // Validate selected IDs against current plot data
-    const currentProteinIds = new Set(
-      Array.from({ length: this._plotData.length }, (_, s) => plotDataId(this._plotData, s)),
+    // Keep the selected ids that are in the current view: in the dataset, through the
+    // query filter and in every isolation layer. Not the plotted set: that also lacks
+    // the proteins the selected projection does not place, and isolating them away
+    // would lose them in every other projection too.
+    const inDataset = new Set(this._plotData.proteinIds);
+    const visible = this._getVisibleProteinIdsSet();
+    const inIsolation = this._isolationMembership();
+    const validSelectedIds = this.selectedProteinIds.filter(
+      (id) =>
+        inDataset.has(id) && (!visible || visible.has(id)) && (!inIsolation || inIsolation(id)),
     );
-    const validSelectedIds = this.selectedProteinIds.filter((id) => currentProteinIds.has(id));
 
     if (validSelectedIds.length === 0) {
       return;
@@ -2394,42 +2399,34 @@ export class ProtspaceScatterplot extends LitElement {
     return this._isolationMode;
   }
 
+  /**
+   * Membership in every isolation layer, or `null` outside isolation. Isolation is a set of
+   * proteins, not what is drawn: the plotted set also lacks every protein the selected
+   * projection does not place, which stays part of the isolated subset.
+   */
+  private _isolationMembership(): ((proteinId: string) => boolean) | null {
+    if (!this._isolationMode || this._isolationHistory.length === 0) return null;
+    const layers = this._isolationHistory.map((layer) => new Set(layer));
+    return (proteinId) => layers.every((layer) => layer.has(proteinId));
+  }
+
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null {
     const currentDisplayData = this._getCurrentDisplayData(options);
     if (!currentDisplayData) return null;
 
-    // If we're in isolation mode, return filtered data based on current plot data
-    if (this._isolationMode && this._plotData.length > 0) {
-      const pd = this._plotData;
-      const currentProteinIds = Array.from({ length: pd.length }, (_, s) => plotDataId(pd, s));
-
-      // `keptIndices` are the ascending positions in currentDisplayData.protein_ids to keep.
-      // _plotData.originalIndices is the ascending list of surviving indices into
-      // pd.proteinIds (the full source id array). When no view filter is active,
-      // currentDisplayData.protein_ids IS that same full array in the same order, so
-      // originalIndices already equals keptIndices — reuse it instead of re-scanning all
-      // ~573K ids and building a throwaway Set. The length-equality check detects that
-      // unfiltered case (a filtered display is always a strict subset, so its length
-      // differs); otherwise fall back to the membership scan.
-      let keptIndices: number[];
-      if (pd.originalIndices && currentDisplayData.protein_ids.length === pd.proteinIds.length) {
-        keptIndices = Array.from(pd.originalIndices);
-      } else {
-        const currentProteinIdsSet = new Set(currentProteinIds);
-        keptIndices = [];
-        currentDisplayData.protein_ids.forEach((proteinId, index) => {
-          if (currentProteinIdsSet.has(proteinId)) keptIndices.push(index);
-        });
-      }
-
-      // Delegate the per-index slice to the shared helper (same construction the
-      // filtered-display path uses), then override protein_ids with the
-      // plotDataId-ordered current ids exactly as before. This also reslices
-      // annotation_scores/annotation_evidence consistently, silently correcting
-      // the prior isolation-mode misalignment (sanctioned by F-13; no consumer
-      // indexes scores/evidence off this result, so INV-04 holds).
-      const sliced = sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
-      return { ...sliced, protein_ids: currentProteinIds };
+    // In isolation mode the current data is the isolated subset (through the query
+    // filter, which currentDisplayData already applied). It is taken from the isolation
+    // layers, not from _plotData: a protein the selected projection does not place is
+    // culled from the plot but stays in the dataset, so the .parquetbundle export and the
+    // legend counts keep it, and an isolated subset of which no point is placed is still
+    // that subset, not the whole dataset.
+    const inIsolation = this._isolationMembership();
+    if (inIsolation) {
+      const keptIndices: number[] = [];
+      currentDisplayData.protein_ids.forEach((proteinId, index) => {
+        if (inIsolation(proteinId)) keptIndices.push(index);
+      });
+      return sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
     }
 
     return currentDisplayData;

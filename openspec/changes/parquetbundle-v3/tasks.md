@@ -91,6 +91,9 @@
       columns share a physical part 1 column with each other or with the id column
 - [x] 3.17 The web exporter declares an EAT `__pred_confidence` column `float`, as
       `protspace transfer` writes it, since the overlay leaves no carried `sourceType` to echo
+- [x] 3.18 In isolation mode `getCurrentData` and `isolateSelection` take the isolated subset from
+      the isolation layers, so a protein the selected projection does not place stays in the
+      export, the legend counts and a new isolation layer
 
 ## 4. Contract suite (`tests/contract`)
 
