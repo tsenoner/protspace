@@ -170,7 +170,9 @@ describe('v3 export: the container', () => {
 
     const part1 = parquetMetadata(parts[0]!);
     const kv = Object.fromEntries(part1.key_value_metadata!.map(({ key, value }) => [key, value]));
-    expect(kv.protspace_format_version).toBe('3');
+    expect(kv.protspace_container_version).toBe('3');
+    // No cell-grammar key: a v3 part 1 stores decoded labels, not cells.
+    expect(kv.protspace_format_version).toBeUndefined();
     expect(JSON.parse(kv.protspace_v3_manifest!)).toEqual({
       idColumn: 'identifier',
       columns: {

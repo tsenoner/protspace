@@ -11,7 +11,19 @@ import {
   type BundleParts,
 } from './bundle-parts';
 
-/** Key-value metadata key the Python writer stamps with the bundle's annotation format version. */
+/**
+ * Part 1 key-value metadata key carrying the container version. Its presence is what makes a
+ * bundle format v3; a legacy (v1/v2) bundle never carries it.
+ */
+const CONTAINER_VERSION_KEY = 'protspace_container_version';
+
+/** The only container version this reader understands. */
+const V3_CONTAINER_VERSION = 3;
+
+/**
+ * Part 1 key-value metadata key carrying a legacy bundle's annotation cell-grammar version
+ * (`2` = percent-encoded cells, absent = v1 plain text). A v3 part 1 does not carry it.
+ */
 const FORMAT_VERSION_KEY = 'protspace_format_version';
 
 /** Parquet physical types that identify a stored annotation column as numeric. */
@@ -47,9 +59,9 @@ export interface BundleExtractionResult {
    */
   statisticsRows?: readonly ProjectionStatisticRow[] | null;
   /**
-   * Bundle annotation format version, read from the `protspace_format_version`
-   * parquet key-value metadata on the annotations part (part 1). `1` when the
-   * key is absent, unparsable, or the part isn't a bundle at all (defaults to
+   * Legacy bundle format version, which is the annotation cell grammar: read from the
+   * `protspace_format_version` parquet key-value metadata on the annotations part (part 1).
+   * `1` when the key is absent, unparsable, or the part isn't a bundle at all (defaults to
    * legacy v1 behavior — plain-string labels, raw `;`-delimited multi-hit cells).
    */
   formatVersion: number;
@@ -61,8 +73,13 @@ export interface BundleExtractionResult {
   numericColumnTypes?: Readonly<Record<string, 'int' | 'float'>>;
 }
 
+/** The value stored under `key` in a parsed parquet footer, or undefined. */
+function readFooterValue(metadata: FileMetaData, key: string): string | undefined {
+  return (metadata.key_value_metadata ?? []).find((k) => k.key === key)?.value ?? undefined;
+}
+
 /**
- * Reads the `protspace_format_version` key-value metadata entry from an
+ * Reads a legacy bundle's cell-grammar version (`protspace_format_version`) from an
  * already-parsed parquet footer (part1's `FileMetaData`, produced once by
  * `parquetMetadata` and reused for the subsequent `parquetReadObjects` call —
  * avoids re-parsing the same footer twice).
@@ -72,10 +89,28 @@ export interface BundleExtractionResult {
  * before Task H2.
  */
 function readFormatVersion(metadata: FileMetaData): number {
-  const kv = metadata.key_value_metadata ?? [];
-  const entry = kv.find((k) => k.key === FORMAT_VERSION_KEY);
-  const v = entry?.value ? Number(entry.value) : 1;
+  const raw = readFooterValue(metadata, FORMAT_VERSION_KEY);
+  const v = raw ? Number(raw) : 1;
   return Number.isFinite(v) ? v : 1;
+}
+
+/**
+ * Reads the container version (`protspace_container_version`) from part 1's footer: `null`
+ * when the key is absent, which is what a legacy bundle looks like. A value that is present
+ * but is not the one container version this reader knows is an error, not a fallback to the
+ * legacy reader, which would misread v3's integer codes as labels.
+ */
+function readContainerVersion(metadata: FileMetaData | null): number | null {
+  const raw = metadata ? readFooterValue(metadata, CONTAINER_VERSION_KEY) : undefined;
+  if (raw === undefined) return null;
+  const version = Number(raw);
+  if (version !== V3_CONTAINER_VERSION) {
+    throw new Error(
+      `Parquetbundle declares container version "${raw}"; this reader supports ` +
+        `${CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
+    );
+  }
+  return version;
 }
 
 /**
@@ -158,16 +193,16 @@ async function extractRowsFromParts(
   // decode returns, and the per-part release below would free nothing.
   parts.fill(null);
 
-  const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
   // v3 stores its annotations as dictionary codes plus payloads, which this row-object
   // reader cannot make sense of: it would get as far as part 3 and complain about
   // missing 'projection_name'/'x'/'y' columns. Say what is actually wrong instead.
-  if (formatVersion >= 3) {
+  if (part1Metadata && readFooterValue(part1Metadata, CONTAINER_VERSION_KEY) !== undefined) {
     throw new Error(
-      `Parquetbundle declares annotation format v${formatVersion}, which only ` +
-        'decodeParquetBundle can read; extractRowsFromParquetBundle handles v1 and v2.',
+      'Parquetbundle is a format v3 container, which only decodeParquetBundle can read; ' +
+        'extractRowsFromParquetBundle handles v1 and v2.',
     );
   }
+  const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
   const numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = part1Metadata
     ? readNumericColumnTypes(part1Metadata)
     : {};
@@ -250,8 +285,9 @@ export interface DecodedParquetBundle {
   data: VisualizationData;
   settings: BundleSettings | null;
   /**
-   * Container format version the bundle was read as: 3 for the columnar format, else the
-   * legacy annotation format (1 or 2), whose support ends in protspace 5.0.0.
+   * Format version the bundle was read as: 3 for the columnar container (from
+   * `protspace_container_version`), else the legacy format (1 or 2, from the cell-grammar key
+   * `protspace_format_version`), whose support ends in protspace 5.0.0.
    */
   formatVersion: number;
 }
@@ -261,16 +297,23 @@ export interface DecodedParquetBundle {
  *
  * The one entry point every bundle load goes through — the decode worker and both of
  * `data-loader.ts`'s bundle branches — so the version sniff lives in exactly one place.
- * Format 3 and above take the columnar reader in `bundle-v3.ts`; anything older takes
- * the row-object path unchanged.
+ * A part 1 carrying `protspace_container_version` takes the columnar reader in
+ * `bundle-v3.ts`; one without it takes the legacy row-object path unchanged. The part count
+ * has to agree: six parts without the container key is neither layout.
  */
 export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle> {
   const parts = splitBundleParts(arrayBuffer);
   const part1Metadata = readPart1Metadata(parts[0]);
-  const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
+  const containerVersion = readContainerVersion(part1Metadata);
 
-  if (part1Metadata && formatVersion >= 3) {
-    return { ...(await readV3Bundle(parts, part1Metadata)), formatVersion };
+  if (part1Metadata && containerVersion !== null) {
+    return { ...(await readV3Bundle(parts, part1Metadata)), formatVersion: containerVersion };
+  }
+  if (parts.length === 6) {
+    throw new Error(
+      `Parquetbundle has 6 parts but part 1 carries no ${CONTAINER_VERSION_KEY}; ` +
+        `a format v3 container declares ${CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
+    );
   }
 
   const extraction = await extractRowsFromParts(parts, part1Metadata);

@@ -39,7 +39,7 @@ from protspace.data.io.bundle import (
     replace_settings_in_bundle,
     write_bundle,
 )
-from protspace.data.io.bundle_v3 import write_part
+from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, write_part
 from tests.bundle_v3_helpers import (
     annotations_table,
     parts_of,
@@ -103,7 +103,10 @@ def test_write_bundle_always_emits_six_parts(tmp_path):
     parts = parts_of(path)
     assert len(parts) == 6
     assert parts[3] == b"" and parts[4] == b""
-    assert read(parts[0]).schema.metadata[FORMAT_VERSION_KEY] == b"3"
+    footer = read(parts[0]).schema.metadata
+    assert footer[CONTAINER_VERSION_KEY] == b"3"
+    # One key per meaning: the container version, never the cell grammar.
+    assert FORMAT_VERSION_KEY not in footer
     assert read(parts[5]).column_names == ["name", "data"]
 
 
@@ -151,14 +154,44 @@ def test_write_parts_checks_the_payloads_slot(tmp_path):
         )
 
 
-def test_six_parts_with_a_non_v3_footer_is_rejected(tmp_path):
+def test_six_parts_without_a_container_version_is_rejected(tmp_path):
     """Six parts means v3; the part-1 footer has to agree, or the file is not a
-    bundle this reader understands."""
+    bundle this reader understands.  A grammar stamp, whatever it says, is not a
+    container version -- that is the ambiguity the two keys exist to remove."""
     path = tmp_path / "b.parquetbundle"
     parts = legacy_bundle(tmp_path / "legacy.parquetbundle")
     path.write_bytes(PARQUET_BUNDLE_DELIMITER.join([*parts, b"", b"", b"payloads"]))
 
-    with pytest.raises(ValueError, match="container version 2"):
+    with pytest.raises(ValueError, match="carries no protspace_container_version"):
+        read_tables(path)
+
+
+def test_six_parts_with_an_unknown_container_version_is_rejected(tmp_path):
+    path = tmp_path / "b.parquetbundle"
+    write_bundle(pipeline_tables(), path)
+    parts = parts_of(path)
+    table = read(parts[0])
+    parts[0] = write_part(
+        table.replace_schema_metadata(
+            {**table.schema.metadata, CONTAINER_VERSION_KEY: b"4"}
+        )
+    )
+    path.write_bytes(PARQUET_BUNDLE_DELIMITER.join(parts))
+
+    with pytest.raises(ValueError, match="container version 4, expected 3"):
+        read_tables(path)
+
+
+def test_a_legacy_layout_with_a_container_version_is_rejected(tmp_path):
+    """The check runs both ways: a v3 part 1 in a three-to-five-part file (a
+    truncated or hand-assembled one) holds dictionary codes with no payloads
+    part to resolve them, and must not be read as legacy cells."""
+    source = tmp_path / "b.parquetbundle"
+    write_bundle(pipeline_tables(), source)
+    path = tmp_path / "truncated.parquetbundle"
+    path.write_bytes(PARQUET_BUNDLE_DELIMITER.join(parts_of(source)[:5]))
+
+    with pytest.raises(ValueError, match="5-part parquetbundle declares"):
         read_tables(path)
 
 
@@ -368,7 +401,7 @@ def test_replace_annotations_upgrades_a_legacy_bundle(tmp_path):
 
     parts = parts_of(out)
     assert len(parts) == 6
-    assert read(parts[0]).schema.metadata[FORMAT_VERSION_KEY] == b"3"
+    assert read(parts[0]).schema.metadata[CONTAINER_VERSION_KEY] == b"3"
     annotations, _metadata, data = read_tables(out)
     assert annotations.column("cat").to_pylist() == ["alpha", "beta"]
     assert data.column("x").to_pylist() == [0.0, 1.0]

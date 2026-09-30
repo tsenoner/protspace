@@ -16,9 +16,19 @@ counts back into offsets with one prefix-sum pass.
 
 Only the *container* changes.  ``encode_v3`` takes the v2-shaped tables the
 pipeline already builds and the (sibling) ``decode_v3`` turns v3 parts back
-into them, so every Python consumer keeps its string-cell logic and
-``BUNDLE_FORMAT_VERSION = 2`` in :mod:`~protspace.data.annotations.encoding`
-still versions the cell grammar.
+into them, so every Python consumer keeps its string-cell logic.
+
+Two footer keys, two meanings.  Part 1 of a v3 container carries
+``protspace_container_version`` (:data:`CONTAINER_VERSION_KEY`) = ``3`` and no
+``protspace_format_version``: that key is the annotation *cell grammar*
+version (``BUNDLE_FORMAT_VERSION = 2`` in
+:mod:`~protspace.data.annotations.encoding`), and a v3 part 1 has no cells to
+parse -- its labels sit decoded in the part-6 dictionaries.  The v2-shaped
+tables on either side of the codec carry the grammar stamp and never the
+container key.  ``encode_v3`` refuses a table without a v2 stamp instead of
+guessing its grammar; a caller that holds v1 cells migrates them first
+(:func:`~protspace.data.annotations.encoding.migrate_legacy_annotation_table`,
+:func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`).
 
 The classification rules below intentionally mirror the browser's v2 reader
 (``packages/core/src/components/data-loader/utils/conversion.ts``) so a v3
@@ -53,6 +63,9 @@ from protspace.data.annotations.encoding import (
 logger = logging.getLogger(__name__)
 
 CONTAINER_VERSION = 3
+#: Part 1's footer key for the container version.  Its presence is what makes a
+#: bundle v3; a legacy (v1/v2) bundle never carries it.
+CONTAINER_VERSION_KEY = b"protspace_container_version"
 MANIFEST_KEY = b"protspace_v3_manifest"
 
 #: ``EVIDENCE_CODE_RE`` from ``conversion.ts``: the part after a hit's last
@@ -88,8 +101,25 @@ _EVIDENCE_DICT_NAME = "__evidence"
 #: per-kind default for these instead of throwing on an unknown alias.
 _UNRESTORABLE_SOURCE_TYPE = "?"
 
+#: Footer keys the codec owns: never copied from an input table into part 1, and
+#: never handed back from part 1 to a decoded table.
+_FORMAT_KEYS = frozenset({CONTAINER_VERSION_KEY, FORMAT_VERSION_KEY, MANIFEST_KEY})
+
 #: Counts are prefix-summed into an int32 offset by the reader.
 _INT32_MAX = 2**31 - 1
+
+
+def read_container_version(schema: pa.Schema) -> int | None:
+    """The :data:`CONTAINER_VERSION_KEY` in a part's footer, ``None`` if absent."""
+    raw = (schema.metadata or {}).get(CONTAINER_VERSION_KEY)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"parquetbundle part 1 declares container version {raw!r}, not an integer"
+        ) from None
 
 
 def write_part(table: pa.Table, **options: Any) -> bytes:
@@ -625,13 +655,15 @@ def _encode_part1(
         "columns": manifest_columns,
         "projections": projection_manifest,
     }
+    # The grammar stamp stays behind: a v3 part 1 has no cells to parse, and the
+    # container key alone says how to read it.
     metadata = {
         **{
             k: v
             for k, v in (annotations.schema.metadata or {}).items()
-            if k != MANIFEST_KEY
+            if k not in _FORMAT_KEYS
         },
-        FORMAT_VERSION_KEY: str(CONTAINER_VERSION).encode(),
+        CONTAINER_VERSION_KEY: str(CONTAINER_VERSION).encode(),
         MANIFEST_KEY: json.dumps(manifest, separators=(",", ":")).encode(),
     }
 
@@ -682,9 +714,14 @@ def encode_v3(
 
 
 def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
-    """Part 1's manifest and the rest of its footer metadata, without the columns."""
+    """Part 1's manifest and the rest of its footer metadata, without the columns.
+
+    The rest leaves out the codec's own keys, so a decoded table carries neither
+    the container version nor a stale manifest.
+    """
     metadata = dict(pq.read_schema(io.BytesIO(part1)).metadata or {})
-    raw_manifest = metadata.pop(MANIFEST_KEY, None)
+    raw_manifest = metadata.get(MANIFEST_KEY)
+    metadata = {k: v for k, v in metadata.items() if k not in _FORMAT_KEYS}
     if raw_manifest is None:
         raise ValueError(
             f"annotations part carries no {MANIFEST_KEY.decode()} key; "
@@ -919,8 +956,9 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
 
     ``parts`` is what :func:`encode_v3` returned: annotations, projections
     metadata, wide projections, payloads (bundle parts 1, 2, 3 and 6).  The
-    result is re-stamped ``protspace_format_version=2`` because what comes back
-    *is* the v2 cell grammar every Python consumer parses.
+    annotations come back stamped ``protspace_format_version=2``, because what
+    comes back *is* the v2 cell grammar every Python consumer parses, and without
+    the container key, because they are no longer a v3 part.
 
     The round trip is not byte-exact, and deliberately so -- v3 stores what the
     browser's v2 reader would have parsed out of the cells, not the cells:

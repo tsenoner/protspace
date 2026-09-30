@@ -23,6 +23,7 @@ from protspace.data.annotations.encoding import (
     stamp_format_version,
 )
 from protspace.data.io.bundle_v3 import (
+    CONTAINER_VERSION_KEY,
     MANIFEST_KEY,
     _flat,
     decode_v3,
@@ -162,11 +163,15 @@ def test_a_partial_eat_overlay_keeps_null_confidences_but_blanks_the_strings():
     assert decoded.column("ec__pred_source").to_pylist() == ["", "P20005"]
 
 
-def test_footer_says_two_and_the_manifest_key_is_gone():
+def test_footer_says_two_and_the_container_keys_are_gone():
+    """What comes back is a v2-shaped table: stamped with its cell grammar, and
+    carrying neither the container version nor the manifest of the v3 part it
+    came from."""
     source = pipeline_annotations()
     decoded = round_trip(source)[0]
     assert decoded.schema.metadata[FORMAT_VERSION_KEY] == b"2"
     assert MANIFEST_KEY not in decoded.schema.metadata
+    assert CONTAINER_VERSION_KEY not in decoded.schema.metadata
     # ``stamp_format_version`` merges, so the pandas key the pipeline wrote lives on.
     assert decoded.schema.metadata == source.schema.metadata
 
@@ -403,7 +408,7 @@ def test_rejects_an_annotations_part_without_a_manifest():
     parts = encoded(col=["A", "B"])
     parts[0] = rewrite(
         parts[0],
-        lambda table: table.replace_schema_metadata({FORMAT_VERSION_KEY: b"3"}),
+        lambda table: table.replace_schema_metadata({CONTAINER_VERSION_KEY: b"3"}),
     )
     with pytest.raises(ValueError, match="not a v3 part"):
         decode_v3(parts)

@@ -120,7 +120,9 @@ def test_fixture_is_a_six_part_v3_container(parts):
     assert read_settings_from_bundle(FIXTURE) is None
 
     footer = pq.read_metadata(io.BytesIO(parts[0])).metadata
-    assert footer[b"protspace_format_version"] == b"3"
+    assert footer[b"protspace_container_version"] == b"3"
+    # The cell-grammar key belongs to v2-shaped tables, not to a v3 part 1.
+    assert b"protspace_format_version" not in footer
     assert read(parts[5]).column_names == ["name", "data"]
 
 

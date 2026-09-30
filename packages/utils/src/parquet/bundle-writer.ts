@@ -45,8 +45,13 @@ import { getProteinEvidence, getProteinScores } from '../visualization/plot-data
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
 
-const FORMAT_VERSION_KEY = 'protspace_format_version';
-const FORMAT_VERSION = '3';
+/**
+ * Part 1's container-version key. The writer never sets `protspace_format_version`: that key
+ * is the legacy cell-grammar version, and a v3 part 1 has no cells to parse. It encodes
+ * already-decoded labels, so there is no grammar to declare or migrate here either.
+ */
+const CONTAINER_VERSION_KEY = 'protspace_container_version';
+const CONTAINER_VERSION = '3';
 const MANIFEST_KEY = 'protspace_v3_manifest';
 const ID_COLUMN = 'identifier';
 /** Payload name of the dictionary every column's evidence codes index into. */
@@ -426,7 +431,7 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
   };
   return [
     writePart(parts.columns, [
-      { key: FORMAT_VERSION_KEY, value: FORMAT_VERSION },
+      { key: CONTAINER_VERSION_KEY, value: CONTAINER_VERSION },
       { key: MANIFEST_KEY, value: JSON.stringify(manifest) },
     ]),
     writePart([

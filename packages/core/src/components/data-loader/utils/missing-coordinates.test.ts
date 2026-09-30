@@ -89,7 +89,7 @@ function v3Bundle(): ArrayBuffer {
       { name: 'organism', data: new Int32Array([0, 1, 2, 0]) },
       { name: 'length', data: new Float64Array([100, 200, 300, 400]) },
     ],
-    { protspace_format_version: '3', protspace_v3_manifest: JSON.stringify(manifest) },
+    { protspace_container_version: '3', protspace_v3_manifest: JSON.stringify(manifest) },
   );
   const metadata = part([
     { name: 'projection_name', data: ['A', 'B'] },

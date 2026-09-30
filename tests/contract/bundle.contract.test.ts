@@ -61,8 +61,15 @@ interface Manifest {
 }
 
 /** The format the producer writes today: six slots, payloads last. */
-const PRODUCER_FORMAT_VERSION = 3;
+const PRODUCER_CONTAINER_VERSION = 3;
 const PRODUCER_PART_COUNT = 6;
+/** What part 1 of every bundle the producer writes declares about itself. */
+const PRODUCER_CONTAINER = {
+  partCount: PRODUCER_PART_COUNT,
+  containerVersion: PRODUCER_CONTAINER_VERSION,
+  // The cell-grammar key belongs to legacy parts and v2-shaped tables, never to a v3 part 1.
+  cellGrammar: null,
+};
 
 let outDir: string;
 let manifest: Manifest;
@@ -72,12 +79,24 @@ function loadBundle(variant: string): ArrayBuffer {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 }
 
-/** The container's physical layout: its part count and part 1's declared format. */
-function inspectContainer(bundle: ArrayBuffer): { partCount: number; formatVersion: number } {
+/**
+ * The container's physical layout: its part count and the two version keys of part 1's
+ * footer, the container version (v3 only) and the legacy cell grammar (v1/v2 only).
+ */
+function inspectContainer(bundle: ArrayBuffer): {
+  partCount: number;
+  containerVersion: number | null;
+  cellGrammar: string | null;
+} {
   const positions = findBundleDelimiterPositions(new Uint8Array(bundle));
   const kv = parquetMetadata(bundle.slice(0, positions[0])).key_value_metadata ?? [];
-  const version = kv.find((entry) => entry.key === 'protspace_format_version')?.value;
-  return { partCount: positions.length + 1, formatVersion: Number(version ?? 1) };
+  const value = (key: string) => kv.find((entry) => entry.key === key)?.value ?? null;
+  const container = value('protspace_container_version');
+  return {
+    partCount: positions.length + 1,
+    containerVersion: container === null ? null : Number(container),
+    cellGrammar: value('protspace_format_version'),
+  };
 }
 
 /** Run one of this suite's Python scripts in the protspace environment; returns stdout. */
@@ -136,10 +155,7 @@ describe('bundle layouts the producer can write', () => {
     // Fails if the producer stops stamping part 1, or drops the fixed six-slot layout
     // the v3 reader indexes positionally (payloads at parts[5]).
     for (const variant of ['minimal', 'with_settings', 'with_stats', 'stats_no_settings']) {
-      expect(inspectContainer(loadBundle(variant))).toEqual({
-        partCount: PRODUCER_PART_COUNT,
-        formatVersion: PRODUCER_FORMAT_VERSION,
-      });
+      expect(inspectContainer(loadBundle(variant))).toEqual(PRODUCER_CONTAINER);
     }
   });
 
@@ -371,11 +387,13 @@ describe('protspace convert', () => {
     const converted = await decodeParquetBundle(loadBundle('converted'));
 
     expect(legacy.formatVersion).toBe(2);
-    expect(inspectContainer(loadBundle('converted'))).toEqual({
-      partCount: PRODUCER_PART_COUNT,
-      formatVersion: PRODUCER_FORMAT_VERSION,
+    expect(inspectContainer(loadBundle('legacy_v2'))).toEqual({
+      partCount: 5,
+      containerVersion: null,
+      cellGrammar: '2',
     });
-    expect(converted.formatVersion).toBe(PRODUCER_FORMAT_VERSION);
+    expect(inspectContainer(loadBundle('converted'))).toEqual(PRODUCER_CONTAINER);
+    expect(converted.formatVersion).toBe(PRODUCER_CONTAINER_VERSION);
 
     expect(meaning(converted.data)).toEqual(meaning(legacy.data));
     expect(converted.data.protein_ids).toContain(manifest.gapId);
@@ -416,9 +434,7 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       );
       const [written, reexported] = [summaries[original], summaries[exported]];
 
-      expect(inspectContainer(loadBundle(`web_${variant}`)).formatVersion).toBe(
-        PRODUCER_FORMAT_VERSION,
-      );
+      expect(inspectContainer(loadBundle(`web_${variant}`))).toEqual(PRODUCER_CONTAINER);
       // The only intended difference: a protein no projection places is not in the
       // browser's dataset, so it is not in what the browser exports.
       expect(manifest.annotationOnlyId in written.annotations).toBe(variant === 'coverage');

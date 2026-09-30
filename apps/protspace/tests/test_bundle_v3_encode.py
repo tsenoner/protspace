@@ -23,7 +23,7 @@ from protspace.data.annotations.encoding import (
     read_format_version,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import encode_v3
+from protspace.data.io.bundle_v3 import CONTAINER_VERSION_KEY, encode_v3
 from tests.bundle_v3_helpers import labels_of, manifest_of, payloads_of, read
 
 
@@ -78,7 +78,9 @@ def test_parts_and_footer():
     )
     assert len(parts) == 4
     part1 = read(parts[0])
-    assert part1.schema.metadata[FORMAT_VERSION_KEY] == b"3"
+    assert part1.schema.metadata[CONTAINER_VERSION_KEY] == b"3"
+    # The grammar stamp is not carried over: a v3 part 1 has no cells to parse.
+    assert FORMAT_VERSION_KEY not in part1.schema.metadata
     assert part1.column_names == ["protein_id", "kingdom"]
     assert read(parts[1]).column("projection_name").to_pylist() == ["A", "B"]
     assert read(parts[2]).column_names == ["A__x", "A__y", "B__x", "B__y", "B__z"]

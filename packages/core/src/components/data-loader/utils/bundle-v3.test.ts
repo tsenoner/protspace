@@ -88,8 +88,14 @@ const MANIFEST = {
   ],
 };
 
-/** `null` writes no manifest at all; anything else is stamped verbatim. */
-const annotationsPart = (manifest: unknown = MANIFEST) =>
+/**
+ * `null` writes no manifest at all; anything else is stamped verbatim. `versionKv` replaces
+ * the container-version entry, so a test can drop it or swap in another key.
+ */
+const annotationsPart = (
+  manifest: unknown = MANIFEST,
+  versionKv: Record<string, string> = { protspace_container_version: '3' },
+) =>
   part(
     [
       { name: 'protein_id', data: PROTEIN_IDS },
@@ -101,7 +107,7 @@ const annotationsPart = (manifest: unknown = MANIFEST) =>
       { name: 'score', data: new Float64Array([0.5, 1.5, 2.5, NaN, 4.5, 5.5, 6.5, 7.5]) },
     ],
     {
-      protspace_format_version: '3',
+      ...versionKv,
       ...(manifest === null ? {} : { protspace_v3_manifest: JSON.stringify(manifest) }),
     },
   );
@@ -447,7 +453,7 @@ describe('parquetbundle format v3', () => {
 
     it('a manifest that is not JSON', async () => {
       const broken = part([{ name: 'protein_id', data: PROTEIN_IDS }], {
-        protspace_format_version: '3',
+        protspace_container_version: '3',
         protspace_v3_manifest: '{not json',
       });
       await expect(decodeParquetBundle(v3Bundle({ 0: broken }))).rejects.toThrow(
@@ -598,8 +604,35 @@ describe('parquetbundle format v3', () => {
     // Widening the delimiter gate to 5 made this reachable: without the version guard
     // it gets as far as part 3 and complains about missing projection columns.
     await expect(extractRowsFromParquetBundle(v3Bundle())).rejects.toThrow(
-      /declares annotation format v3, which only decodeParquetBundle can read/,
+      /is a format v3 container, which only decodeParquetBundle can read/,
     );
+  });
+
+  describe('takes the container version from its own footer key', () => {
+    it('reports format 3 from protspace_container_version', async () => {
+      expect((await decodeParquetBundle(v3Bundle())).formatVersion).toBe(3);
+    });
+
+    it('rejects six parts whose part 1 carries only the cell-grammar key', async () => {
+      // What a build from before the two keys were split wrote: the grammar key saying 3.
+      // It is not a container version, and the legacy reader must not get the codes either.
+      const preSplit = annotationsPart(MANIFEST, { protspace_format_version: '3' });
+      await expect(decodeParquetBundle(v3Bundle({ 0: preSplit }))).rejects.toThrow(
+        /6 parts but part 1 carries no protspace_container_version/,
+      );
+    });
+
+    it('rejects a container version it does not know', async () => {
+      const future = annotationsPart(MANIFEST, { protspace_container_version: '4' });
+      await expect(decodeParquetBundle(v3Bundle({ 0: future }))).rejects.toThrow(
+        /declares container version "4"/,
+      );
+    });
+
+    it('rejects a v3 part 1 in a legacy-sized container', async () => {
+      const parts = [annotationsPart(), PROJECTIONS_METADATA, PROJECTIONS];
+      await expect(decodeParquetBundle(bundle(parts))).rejects.toThrow(/no payloads part/);
+    });
   });
 
   it('keeps a byte-order mark that belongs to a label', async () => {
@@ -640,7 +673,7 @@ describe('parquetbundle format v3', () => {
         ] as never,
         statistics: false,
         kvMetadata: [
-          { key: 'protspace_format_version', value: '3' },
+          { key: 'protspace_container_version', value: '3' },
           { key: 'protspace_v3_manifest', value: JSON.stringify(MANIFEST) },
         ],
       }),

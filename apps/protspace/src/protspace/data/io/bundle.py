@@ -14,6 +14,11 @@ A v3 container writes both of those slots unconditionally (zero bytes when
 absent) because the browser reads its payload part positionally, from
 ``parts[5]``.
 
+What a bundle *is* comes from part 1's footer: ``protspace_container_version``
+= 3 marks a v3 container, and its absence a legacy one, whose annotation cell
+grammar is then ``protspace_format_version`` (1 when absent).  The part count
+has to agree with the container key in both directions.
+
 v3 is a *container-boundary* encoding: :func:`write_bundle` takes the v2-shaped
 tables the pipeline already builds and emits v3 parts, and every read here
 (:func:`read_tables`, :func:`read_bundle`, :func:`extract_bundle_to_dir`) hands
@@ -43,8 +48,10 @@ from protspace.data.annotations.encoding import (
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle_v3 import (
     CONTAINER_VERSION,
+    CONTAINER_VERSION_KEY,
     decode_v3,
     encode_v3,
+    read_container_version,
     read_part,
     replace_annotations_v3,
     write_part,
@@ -67,10 +74,10 @@ STATISTICS_FILENAME = "statistics.parquet"
 LEGACY_REMOVAL_VERSION = "5.0.0"
 
 
-def _part_container_version(part: bytes) -> int:
-    """The ``protspace_format_version`` in a part's parquet footer (1 if absent).
+def _part_container_version(part: bytes) -> int | None:
+    """The ``protspace_container_version`` in a part's parquet footer, or ``None``.
 
-    Every six-part read parses part 1's footer, including the settings-only
+    Every read parses part 1's footer, including the settings-only
     :func:`read_settings_from_bundle`, so a corrupt part 1 has to fail as a
     bundle error and not as a raw ``ArrowInvalid`` traceback out of
     ``protspace style --dump-settings``.
@@ -81,14 +88,15 @@ def _part_container_version(part: bytes) -> int:
         raise ValueError(
             f"parquetbundle part 1 is not readable as parquet: {exc}"
         ) from exc
-    return read_format_version(schema)
+    return read_container_version(schema)
 
 
 def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
     """Split raw bundle bytes → ``(core_parts, settings, statistics, payloads)``.
 
-    Six parts is v3 and the part-1 footer has to say so; three to five parts is a
-    legacy container, which has no payloads.  The optional parts are normalised
+    Six parts is v3 and the part-1 footer has to say so with its container key;
+    three to five parts is a legacy container, which has no payloads and must
+    not carry that key.  The optional parts are normalised
     (the zero-byte settings sentinel and an absent/empty statistics part both
     become ``None``), so callers never branch on the raw part count.
     """
@@ -98,14 +106,25 @@ def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes 
         raise ValueError(f"Expected 3 to 6 parts in parquetbundle, found {len(parts)}")
 
     payloads = None
+    version = _part_container_version(parts[0])
+    key = CONTAINER_VERSION_KEY.decode()
     if len(parts) == 6:
-        version = _part_container_version(parts[0])
+        if version is None:
+            raise ValueError(
+                f"6-part parquetbundle carries no {key} in part 1's footer; "
+                f"a v3 container declares {key}={CONTAINER_VERSION}"
+            )
         if version != CONTAINER_VERSION:
             raise ValueError(
                 f"6-part parquetbundle declares container version {version}, "
                 f"expected {CONTAINER_VERSION}"
             )
         payloads = parts[5]
+    elif version is not None:
+        raise ValueError(
+            f"{len(parts)}-part parquetbundle declares {key}={version}; "
+            "a v3 container has 6 parts, a legacy one carries no container version"
+        )
 
     settings = parts[3] if len(parts) >= 4 and parts[3] else None
     statistics = parts[4] if len(parts) >= 5 and parts[4] else None
@@ -200,7 +219,7 @@ def read_tables(
     """Read a bundle's three core tables in their v2 shape.
 
     A v3 container is decoded (all-string annotation cells, long-format
-    projections, footer re-stamped ``protspace_format_version=2``); a legacy
+    projections, stamped ``protspace_format_version=2``); a legacy
     container's parts are read as they are, so a v1 bundle stays v1-stamped and
     is never silently migrated.
     """
