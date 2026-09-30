@@ -26,7 +26,7 @@ list.
 | `three-finger-toxins` | `embed-build`   | 1,089   | built here: ProtT5 of the mature chains, UMAP 2 and PCA 2   | every source (full-length sequences), labels, hold-out, EAT        |
 | `human-fly`           | `paper-refresh` | 105,562 | `nm_2026/data/joint_proteome_105k_stats` (Fig. 2B)          | every source but Biocentral (D4)                                   |
 | `beta-lactamase`      | `paper-refresh` | 113,015 | `nm_2026/data/beta_lactamase_2026_stats` (Fig. 3)           | every source but Biocentral (D4)                                   |
-| `swissprot`           | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP and PCA | every source but Biocentral (opt-in)                               |
+| `swissprot`           | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP and PCA | every source but Biocentral (D4)                                   |
 
 Biocentral's models read the per-residue ProtT5 matrix, which UniProt's mean-pooled
 vectors cannot give back, so the three large sets would need 10–25 h of embedding on the
@@ -150,10 +150,12 @@ the fetch steps (quickly, from the cache) and everything after them. Changes to
 
 ## Prerequisites
 
-- The **fixed CLI** checkout: `fix/annotation-retrieval` merged, and PR #452 (faithfulness
-  ceiling) merged. Pass its root as `--cli-root`. The script runs
-  `uv run --frozen --project <cli-root> protspace …`, so it does not matter which branch
-  the script itself comes from.
+- A checkout of a **released CLI** with the fixes: protspace 4.15.0 or later (tag
+  `v4.15.0`), which includes `fix/annotation-retrieval` (PR #495) and PR #452's
+  faithfulness ceiling (released in 4.13.1). The 2026_03 bundles were built on `v4.15.0`,
+  and the manifest records its version and commit. Pass its root as `--cli-root`. The
+  script runs `uv run --frozen --project <cli-root> protspace …`, so it does not matter
+  which branch the script itself comes from.
 - The read-only inputs named in `showcase.toml`: `[paths]` (`suite`, `nm_data`, `cli_data`)
   or `--path NAME=VALUE`. They live in `protspace_publication/nm_2026/data/` and in the
   gitignored `apps/protspace/data/` of the author's checkout. The build only reads them,
@@ -162,11 +164,13 @@ the fetch steps (quickly, from the cache) and everything after them. Changes to
 - For `embed-build`: the CLI's `local` extra (torch, transformers), which the build asks
   `uv run --extra local` for, and the ProtT5 checkpoint from Hugging Face (cached after
   the first run).
-- Author facts still to collect (tasks 7.1): the
-  Swiss-Prot and human + fly membership releases (2025_04 is inferred); how the 113,015
-  β-lactamases were selected. Until a stated release is `YYYY_MM`, the `provenance` gate
-  is pending and the bundle cannot be staged. Fill them in before the D2 measurement: the
-  re-run `finalize` changes the file, and the measurement is tied to its bytes.
+- The membership facts, recorded per recipe in `showcase.toml` (`membership`,
+  `membership_release`) and derived from the paper's data, each with its reasoning in a
+  comment: Swiss-Prot and human + fly are 2025_04; the 113,015 β-lactamases are every hit
+  of `family:"beta-lactamase"` at 2026_02, unfiltered. Until a stated release is
+  `YYYY_MM`, the `provenance` gate is pending and the bundle cannot be staged. Change one
+  before the D2 measurement, not after: the re-run `finalize` changes the file, and the
+  measurement is tied to its bytes.
 
 Run everything with `uv run` from the repository root. Outputs go to
 `~/protspace-showcase/2026_03/<id>/`, or to `--out-root`:
@@ -200,9 +204,9 @@ Build in this order. Swiss-Prot's TED stage is the critical path, so start it fi
 run it alone: two large TED fetches at once invite 429s.
 
 ```bash
-# swissprot: 1.5–3 days, mostly TED (18–40 h). UMAP only; Biocentral is opt-in.
+# swissprot: 1.5–3 days, mostly TED (18–40 h). The paper's UMAP and PCA; no Biocentral (D4).
 uv run python $S build --only swissprot --cli-root $CLI
-uv run python $S build --only swissprot --cli-root $CLI --enable-stage biocentral   # after the operators' OK
+uv run python $S build --only swissprot --cli-root $CLI --enable-stage biocentral   # a later refresh, after an operator batch run
 # D2 gate: load the bundle in a browser on the reference laptop, then record it
 # (tied to the file's sha256; a rebuilt file must be measured again):
 uv run python $S record-load --only swissprot --seconds 28 --heap-mb 1310 --machine "MacBook Pro M1, Chrome 140"
