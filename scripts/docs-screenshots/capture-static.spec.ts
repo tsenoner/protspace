@@ -29,14 +29,21 @@ const getPage = createSharedCapturePage(async (page) => {
  *
  * Cleans up: injected callout overlays (control-bar-annotated), the publish
  * modal (figure-editor tests), the structure viewer (structure-viewer.png),
- * the filter query (filter-query-builder.png), and any open shadow-DOM
- * dropdowns / modals (Escape closes them at the Lit/native level).
+ * the filter query (filter-query-builder.png), the Contours mode
+ * (*-contours.png), and any open shadow-DOM dropdowns / modals (Escape closes
+ * them at the Lit/native level).
  */
 async function resetStaticState(page: Page): Promise<void> {
   // Close any open dropdown / modal via Escape — handles control-bar-projection,
-  // -annotation, -export, query builder, and the publish modal's outer trap.
+  // -annotation, -export, -contours, query builder, and the publish modal's outer trap.
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
+
+  // The *-contours.png captures switch Contours on; later captures expect it off.
+  const densityLayer = await page
+    .locator('#myControlBar')
+    .evaluate((el) => (el as HTMLElement & { densityLayer?: string }).densityLayer);
+  if (densityLayer !== 'off') await setContoursMode(page, 'off');
 
   await page.evaluate(() => {
     // Annotated control bar appends red callout circles to document.body.
@@ -94,6 +101,33 @@ async function openFigureEditor(page: Page, timeout = 10_000): Promise<void> {
   );
   // Settle: rAF redraw + font readiness.
   await page.waitForTimeout(800);
+}
+
+/**
+ * Pick a Contours mode the way a user does: open the control bar's Contours
+ * menu and click the entry. Resolves once the plot has the new mode and has
+ * drawn a frame with it.
+ */
+async function setContoursMode(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void> {
+  const bar = page.locator('#myControlBar');
+  await bar.locator('#density-layer-trigger').click();
+  await bar.locator(`.density-item[data-mode="${mode}"]`).click();
+  await page.waitForFunction(
+    (m) =>
+      (
+        document.querySelector('#myPlot') as
+          | (HTMLElement & { config?: { densityLayer?: string } })
+          | null
+      )?.config?.densityLayer === m,
+    mode,
+    { timeout: 5_000, polling: 100 },
+  );
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 /**
@@ -224,9 +258,10 @@ test.describe('Control Bar Screenshots', () => {
         { selector: '.projection-container', label: '1', offset: { x: -15, y: -40 } },
         { selector: '#annotation-select', label: '2', offset: { x: -15, y: -40 } },
         { selector: '.search-group', label: '3', offset: { x: -15, y: -40 } },
-        { selector: 'button:has(.icon)', label: '4', offset: { x: -15, y: -40 }, nth: 0 }, // Select
-        { selector: 'button:has(.icon)', label: '5', offset: { x: -15, y: -40 }, nth: 1 }, // Clear
-        { selector: 'button:has(.icon)', label: '6', offset: { x: -15, y: -40 }, nth: 2 }, // Isolate
+        // By class, not position: the Contours trigger is the first icon button now.
+        { selector: '.right-controls-select', label: '4', offset: { x: -15, y: -40 } },
+        { selector: '.right-controls-clear', label: '5', offset: { x: -15, y: -40 } },
+        { selector: '.right-controls-split', label: '6', offset: { x: -15, y: -40 } }, // Isolate
         { selector: '.filter-container', label: '7', offset: { x: -15, y: -40 } },
         {
           selector: '.export-container.right-controls-export',
@@ -234,17 +269,12 @@ test.describe('Control Bar Screenshots', () => {
           offset: { x: -15, y: -40 },
         },
         { selector: '.right-controls-data', label: '9', offset: { x: -15, y: -40 } },
+        // Numbered after Import so the docs' section anchors (#_9-import, ...) stay put.
+        { selector: '#density-layer-trigger', label: '10', offset: { x: -15, y: -40 } },
       ];
 
-      annotations.forEach(({ selector, label, offset, nth }) => {
-        let element: Element | null;
-        if (nth !== undefined) {
-          const elements = shadowRoot.querySelectorAll(selector);
-          element = elements[nth] || null;
-        } else {
-          element = shadowRoot.querySelector(selector);
-        }
-
+      annotations.forEach(({ selector, label, offset }) => {
+        const element: Element | null = shadowRoot.querySelector(selector);
         if (!element) return;
 
         const rect = element.getBoundingClientRect();
@@ -788,5 +818,54 @@ test.describe('Control Bar Screenshots', () => {
     }
 
     console.log('📸 Captured: control-bar-export.png');
+  });
+
+  test('control-bar-contours.png - Contours menu with Always selected', async () => {
+    const page = getPage();
+    await setContoursMode(page, 'on');
+    const trigger = page.locator('#myControlBar').locator('#density-layer-trigger');
+    await expect(trigger).toHaveAttribute('aria-label', 'Contours: Always');
+
+    // Reopen the menu so it shows all three modes with Always checked.
+    await trigger.click();
+    const menu = page.locator('#myControlBar').locator('.density-menu');
+    await menu.waitFor({ state: 'visible', timeout: 5_000 });
+    await page.waitForTimeout(200);
+
+    // Encompass the trigger and the right-aligned menu hanging below it.
+    const triggerBox = await trigger.boundingBox();
+    const menuBox = await menu.boundingBox();
+    if (!triggerBox || !menuBox) throw new Error('Contours trigger or menu has no layout box');
+    const minX = Math.min(triggerBox.x, menuBox.x);
+    const minY = Math.min(triggerBox.y, menuBox.y);
+    const maxX = Math.max(triggerBox.x + triggerBox.width, menuBox.x + menuBox.width);
+    const maxY = Math.max(triggerBox.y + triggerBox.height, menuBox.y + menuBox.height);
+
+    await page.screenshot({
+      path: path.join(IMAGES_DIR, 'control-bar-contours.png'),
+      clip: {
+        x: Math.max(0, minX - 10),
+        y: Math.max(0, minY - 10),
+        width: maxX - minX + 20,
+        height: maxY - minY + 20,
+      },
+    });
+    console.log('📸 Captured: control-bar-contours.png');
+  });
+
+  test('scatterplot-contours.png - Scatterplot with Contours set to Always', async () => {
+    const page = getPage();
+    await setContoursMode(page, 'on');
+    await expect(page.locator('#myControlBar').locator('#density-layer-trigger')).toHaveAttribute(
+      'aria-label',
+      'Contours: Always',
+    );
+    // Let the contour pass settle before capturing the canvas.
+    await page.waitForTimeout(500);
+
+    await page.locator('#myPlot').screenshot({
+      path: path.join(IMAGES_DIR, 'scatterplot-contours.png'),
+    });
+    console.log('📸 Captured: scatterplot-contours.png');
   });
 });

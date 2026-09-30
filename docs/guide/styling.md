@@ -88,7 +88,7 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 | `shapes`            | `{}`     | -             | yes    | `{value: shape}`, one of `circle`, `square`, `diamond`, `triangle-up`, `triangle-down`, `plus`.                                                                                       |
 | `sortMode`          | string   | `"size-desc"` | yes    | Legend sort: `size-desc`, `size-asc`, `alpha-asc`, `alpha-desc`, `manual`, `manual-reverse`.                                                                                          |
 | `maxVisibleValues`  | int      | `10`          | yes    | Legend entries shown before the "Other" bucket.                                                                                                                                       |
-| `shapeSize`         | int      | `30`          | yes    | Marker size in the scatter plot.                                                                                                                                                      |
+| `shapeSize`         | int      | `10`          | yes    | Marker size in the scatter plot. Applies until the user picks a size in the web app, which then holds for every annotation. A legacy `30` reads as the default.                       |
 | `hiddenValues`      | string[] | `[]`          | yes    | Categories hidden from the plot.                                                                                                                                                      |
 | `selectedPaletteId` | string   | `"kellys"`    | yes    | **Categorical** palette for categories without explicit colors, one of the six IDs in [Color palettes](#color-palettes). A gradient or unknown value silently falls back to `kellys`. |
 | `pinnedValues`      | string[] | -             | no     | Ordered list of values for legend positions 0..N-1. See [Legend ordering](#legend-ordering).                                                                                          |
@@ -97,6 +97,15 @@ Top-level keys are annotation names. Each annotation accepts the keys below.
 **Stored** keys are persisted in the output bundle. **Non-stored** (processing-only) keys are
 consumed during generation, only their effects (the resulting categories with `zOrder`, `color`,
 `shape`) are written.
+
+::: warning A size picked in the web app overrides `shapeSize`
+The web app's legend accepts shape sizes from 1 to 64, and the web app caps a larger `shapeSize`
+from a bundle, top-level or per-annotation, at 64. A bundle exported from the web app after the
+user picked a size carries it as a top-level `shapeSize` in its settings, next to the per-annotation
+ones. On import, that top-level value overrides every annotation's `shapeSize`, and
+`protspace style` keeps it when it rewrites the settings, so editing the per-annotation `shapeSize`
+of such a bundle has no visible effect.
+:::
 
 > **Value keys are display values.** In `colors`/`shapes`/`pinnedValues`/`hiddenValues`, a _value_ is
 > the human-readable category as `--generate-template` lists it and the legend shows it: the

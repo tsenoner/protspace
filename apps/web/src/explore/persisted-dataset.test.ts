@@ -321,3 +321,41 @@ describe('supersedePendingExampleFetch', () => {
     expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
   });
 });
+
+// Ported from main's (#478) `loadDefaultDataset` test: the startup demo is now
+// `loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup')`, reached through
+// `loadPersistedOrDefaultDataset` when there is no stored import.
+describe('startup demo when its bundle cannot be fetched', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, statusText: 'Not Found' })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves the current dataset as it was and tells the user', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, dataLoader, loadQueue, setCurrentExampleId, setCurrentDatasetName } =
+      createController();
+
+    const outcome = await controller.loadPersistedOrDefaultDataset();
+
+    expect(outcome).toEqual({ kind: 'default-loaded' });
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(loadQueue.registerFileLoad).not.toHaveBeenCalled();
+    expect(notifyMock.error).toHaveBeenCalledTimes(1);
+    expect(notifyMock.error.mock.calls[0]?.[0]).toMatchObject({
+      title: `Couldn't load "${DEMO.label}".`,
+      description: expect.stringContaining('404'),
+    });
+    errorSpy.mockRestore();
+  });
+});

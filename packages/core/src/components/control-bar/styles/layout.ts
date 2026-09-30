@@ -56,6 +56,32 @@ export const layoutStyles = css`
     display: inline-flex;
   }
 
+  /* Contour mode menu: label over a one-line hint */
+  .density-menu {
+    width: 17rem;
+  }
+
+  .density-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .density-item-label {
+    color: var(--text-dark);
+  }
+
+  .density-item.selected .density-item-label {
+    color: var(--primary);
+  }
+
+  .density-item-hint {
+    font-size: var(--text-sm);
+    font-weight: var(--font-normal);
+    color: var(--text-secondary);
+    white-space: normal;
+  }
+
   .search-group {
     flex: 1 1 auto;
     min-width: 300px;

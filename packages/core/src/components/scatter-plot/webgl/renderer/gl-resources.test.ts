@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GLResources } from './gl-resources';
 import type { FramebufferResources } from '../types';
+import type { DensityResources } from './density-pass';
 
 function makeGl() {
   return {
@@ -30,6 +31,18 @@ function makeFramebuffer(): FramebufferResources {
     width: 4,
     height: 4,
   };
+}
+
+function makeDensity(): DensityResources {
+  return {
+    contourBlurProgram: { k: 'contourBlurProg' },
+    categoryAccumProgram: { k: 'categoryAccumProg' },
+    categoryCompositeProgram: { k: 'categoryCompositeProg' },
+    quadVao: { k: 'quadVao' },
+    accum: { framebuffer: { k: 'afb' }, texture: { k: 'atex' }, width: 4, height: 4 },
+    ping: null,
+    fields: [],
+  } as unknown as DensityResources;
 }
 
 describe('GLResources', () => {
@@ -77,6 +90,18 @@ describe('GLResources', () => {
     expect(res.linearFramebuffer).toBeNull();
   });
 
+  it('deleteAll destroys the density resources and nulls the field', () => {
+    const gl = makeGl();
+    const res = new GLResources();
+    res.density = makeDensity();
+    res.deleteAll(gl);
+    expect(gl.deleteProgram).toHaveBeenCalledTimes(3);
+    expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
+    expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);
+    expect(gl.deleteTexture).toHaveBeenCalledTimes(1);
+    expect(res.density).toBeNull();
+  });
+
   it('validate returns true when every present handle is live', () => {
     const gl = makeGl();
     const res = new GLResources();
@@ -114,6 +139,7 @@ describe('GLResources', () => {
     res.gammaCorrectionProgram = { k: 'gamma' } as unknown as WebGLProgram;
     res.pointVao = { k: 'vao' } as unknown as WebGLVertexArrayObject;
     res.linearFramebuffer = makeFramebuffer();
+    res.density = makeDensity();
     res.reset();
     expect(res.pointProgram).toBeNull();
     expect(res.gammaCorrectionProgram).toBeNull();
@@ -128,6 +154,7 @@ describe('GLResources', () => {
     expect(res.quadBuffer).toBeNull();
     expect(res.labelColorTexture).toBeNull();
     expect(res.linearFramebuffer).toBeNull();
+    expect(res.density).toBeNull();
     expect(gl.deleteBuffer).not.toHaveBeenCalled();
     expect(gl.deleteFramebuffer).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
-import type { VisualizationData } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -42,6 +42,7 @@ export interface ViewController {
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
+  handleUserDensityLayerChange(): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
   dispose(): void;
 }
@@ -107,6 +108,7 @@ export function createViewController({
       annotation,
       projection,
       tooltip,
+      density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
     };
   };
 
@@ -120,6 +122,11 @@ export function createViewController({
 
   const selectTooltipAnnotations = (tooltipAnnotations: string[]) => {
     controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
+  };
+
+  const selectDensityLayer = (density: DensityLayerMode) => {
+    controlBar.densityLayer = density;
+    plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
   };
 
   const arraysEqual = (a: readonly string[], b: readonly string[]) => {
@@ -165,6 +172,7 @@ export function createViewController({
     const projectionChanged = currentView?.projection !== effective.projection;
     const annotationChanged = currentView?.annotation !== effective.annotation;
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
+    const densityChanged = currentView?.density !== effective.density;
 
     // The control bar dispatches its change events synchronously from these
     // apply* calls, and the app routes them back here as user changes. Guard
@@ -181,6 +189,9 @@ export function createViewController({
       }
       if (tooltipChanged) {
         selectTooltipAnnotations(effective.tooltip);
+      }
+      if (densityChanged) {
+        selectDensityLayer(effective.density);
       }
     } finally {
       isApplyingView = wasApplyingView;
@@ -212,6 +223,7 @@ export function createViewController({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
   };
@@ -238,6 +250,9 @@ export function createViewController({
       emitCurrentUserViewChange();
     },
     handleUserTooltipAnnotationsChange() {
+      emitCurrentUserViewChange();
+    },
+    handleUserDensityLayerChange() {
       emitCurrentUserViewChange();
     },
     subscribeToViewChanges(callback: (change: ExploreViewChange) => void) {

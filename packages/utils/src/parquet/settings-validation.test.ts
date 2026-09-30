@@ -349,6 +349,30 @@ describe('settings-validation', () => {
       });
     });
   });
+
+  describe('dataset-level shape size', () => {
+    it('keeps a positive size', () => {
+      const result = normalizeBundleSettings({
+        legendSettings: {},
+        exportOptions: {},
+        shapeSize: 12,
+      });
+      expect(result?.shapeSize).toBe(12);
+    });
+
+    it('drops a malformed size and keeps the other fields', () => {
+      for (const shapeSize of ['x', -1, Number.NaN, 0]) {
+        const result = normalizeBundleSettings({
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: true,
+          shapeSize,
+        });
+        expect(result?.shapeSize).toBeUndefined();
+        expect(result?.eatOverlayEnabled).toBe(true);
+      }
+    });
+  });
 });
 
 describe('LegendPersistedSettings — includeShapes backward compat', () => {

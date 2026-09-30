@@ -68,7 +68,7 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
 
     renderer.destroy();
 
-    expect(del.vao).toHaveBeenCalledTimes(1); // pointVao
+    expect(del.vao).toHaveBeenCalledTimes(1);
     expect(del.buffer.mock.calls.length).toBeGreaterThanOrEqual(7); // 6 data buffers + quad
     expect(del.texture.mock.calls.length).toBeGreaterThanOrEqual(1); // labelColorTexture (+linearFramebuffer.texture when the gamma pipeline is available)
     expect(del.program.mock.calls.length).toBeGreaterThanOrEqual(1); // pointProgram (+gamma if available)
@@ -119,6 +119,32 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     r.render(makePlotData(3));
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     expect(onContextLost).toHaveBeenCalledTimes(1);
+    r.destroy();
+  });
+
+  it('syncGpu reads one pixel after a render and is a no-op before any context', () => {
+    const { canvas, gl } = createMockCanvas();
+    const readPixels = gl!.readPixels as unknown as ReturnType<typeof vi.fn>;
+    const r = new WebGLRenderer(canvas, scales, getTransform, getConfig, styleGetters());
+
+    r.syncGpu();
+    expect(readPixels).not.toHaveBeenCalled();
+
+    r.render(makePlotData(3));
+    r.syncGpu();
+    expect(readPixels).toHaveBeenCalledTimes(1);
+    r.destroy();
+  });
+
+  it('syncGpu is a no-op once the context is lost', () => {
+    const { canvas, gl, setContextLost } = createMockCanvas();
+    const readPixels = gl!.readPixels as unknown as ReturnType<typeof vi.fn>;
+    const r = new WebGLRenderer(canvas, scales, getTransform, getConfig, styleGetters());
+    r.render(makePlotData(3));
+    setContextLost(true);
+
+    r.syncGpu();
+    expect(readPixels).not.toHaveBeenCalled();
     r.destroy();
   });
 });
