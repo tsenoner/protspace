@@ -3,7 +3,8 @@ import { DOCS_URL } from '@/config';
 import { cn } from '@/lib/utils';
 import { DemoScatter } from './DemoScatter';
 import { ExplorerFrame } from './ExplorerFrame';
-import { Section, SectionHeading, linkClass } from './Section';
+import { Section, linkClass } from './Section';
+import { ShowcaseHeading } from './ShowcaseHeading';
 import { loadDemoData, loadVenomData, useLandingData, type VenomData } from './landing-data';
 import { prefersReducedMotion } from './motion';
 
@@ -78,13 +79,7 @@ export function FeatureShowcase() {
 
   return (
     <Section id="features">
-      <div className="grid gap-5 lg:grid-cols-2 lg:items-end lg:gap-12">
-        <SectionHeading eyebrow="In the explorer" title="One map, many questions" />
-        <p className="text-pretty text-lg leading-relaxed text-muted-foreground">
-          Recolor, re-project, transfer labels, score clusters and open structures, all on the same{' '}
-          {(demo?.count ?? 7831).toLocaleString()} venom proteins.
-        </p>
-      </div>
+      <ShowcaseHeading count={demo?.count ?? 7831} />
 
       <div className="mt-10 grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div ref={frameRef} className="min-w-0">
