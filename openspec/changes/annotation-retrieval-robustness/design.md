@@ -300,6 +300,63 @@ with the FASTA's sequence where one was supplied, so the groups cannot be rebuil
 `CACHE_SEMANTICS_CHANGES` exists for values that cannot be repaired locally. The cost is one
 InterPro refetch per legacy cache, and only for runs that ask for InterPro.
 
+### `root` is the top node of the lineage
+
+The research for the example rebuild found `root` holding 1,340 distinct values in Swiss-Prot:
+`_extract_taxonomy` built `{rank: name}` over the lineage and read `"no rank"`, so the last unranked
+node won, and many lineages end in one (`melanogaster subgroup` for the fly, `Bacillus cereus
+group`). The docs promise a near-binary cellular/acellular column.
+
+The UniProt Taxonomy API lists a lineage root-first and leaves out NCBI's unnamed taxon 1, so the
+first node is the top of the tree: `cellular organisms`, `Viruses` (viroids included), or the
+`other entries` / `unclassified entries` holding nodes for synthetic and metagenomic sequences.
+`_lineage_root` takes that node by position. The rank is no guide: checked live for 9606, 7227,
+1396 and 11676, the API ranks the same node `no rank` inside a lineage but `cellular root` /
+`acellular root` in the node's own entry. A taxon without ancestors, such as `Viruses` itself, is
+its own root, and a taxon 1 node is skipped should the API ever list one. The other eight ranks do
+not change.
+
+_Alternative, the first `"no rank"` node:_ rejected. It agrees today, but depends on the API
+keeping the old rank name for the top nodes, which NCBI has already renamed in the entries.
+
+### A TMbed negative is `non-transmembrane`
+
+`_extract_transmembrane` wrote `none` for a TMbed topology without a helix or strand. The CLI's
+`standardize_missing` and the web app's `normalizeMissingValue` both treat `none` as a missing
+value, so every negative prediction showed as N/A (811 of 811 in the venom example). It now writes
+`non-transmembrane`, the label open PR #406 (issue #339) chose for the same bug, with that PR's
+wording in the annotation docs and the registry description, so the two branches agree on the
+value. #406 also turns an empty or malformed TMbed payload into a missing value rather than a
+negative; that stays with #406. A test reads the web app's `MISSING_VALUE_TOKENS` from
+`missing-values.ts` and checks the label against it and against the CLI's normaliser.
+
+### Cache version 3 refreshes `root` and `predicted_transmembrane`
+
+The cache stores extracted values, so without a version bump a cache-assisted rebuild would keep
+serving the deepest clade and `none`. `CACHE_SEMANTICS_CHANGES` gains
+`3: {"root", "predicted_transmembrane"}`. The refresh machinery works per source: a run that
+requests `root` refetches taxonomy, one that requests `predicted_transmembrane` refetches the
+Biocentral columns it requests, and one that requests neither drops them. Listing only `root`
+rather than the whole taxonomy group keeps a run that asks for, say, `species` alone from
+refetching; a run that asks for `root` refetches every taxonomy column it requests anyway, in the
+same requests.
+
+Unlike the InterPro-N filter, which joined the still unreleased version 2, these fixes need a new
+version: every example-dataset cache (seven under the showcase work directories) was written by a
+pre-release build of this branch and is stamped version 2.
+
+The refresh now decides its sources with `determine_sources_to_fetch`, fed the stale columns as
+though the cache lacked them. That keeps the existing rule that an InterPro refresh without a
+cached `sequence` also fetches UniProt, and adds its taxonomy twin: a `root` refresh of a cache
+without `organism_id` fetches UniProt first, instead of looking up nothing and stamping the empty
+result current.
+
+_Alternative, rename `none` to `non-transmembrane` in place, as the TED label migration does:_
+it would save the Biocentral refetch, and the rename is exact for this branch. Not taken: the
+refetch is one-time and small for the examples that carry Biocentral (the demo takes about 18
+minutes; Swiss-Prot, human–fly and β-lactamase have none), and a version entry is the one
+mechanism the rebuild's verification can rely on.
+
 ### The cache is checkpointed after each fetched source
 
 In `to_pd`, after each source _fetched over the network this run_ completes (whether or not it
@@ -490,6 +547,14 @@ Frozen interfaces:
   scale). → Only for runs that request those columns, and the values being replaced are wrong for
   about 2 % (families) and about 15 % (InterPro, duplicate sequences) of Swiss-Prot. The docs say
   so.
+- **A version-2 cache refetches taxonomy and Biocentral once** when a run requests `root` or
+  `predicted_transmembrane`. → Taxonomy costs one request per 100 organisms. Biocentral re-runs
+  every model the run requests, not just TMbed, because the refresh works per source; about 18
+  minutes for the demo, and nothing for the examples without Biocentral columns.
+- **PR #406 fixes the same TMbed bug.** → Both write `non-transmembrane` with the same docs text,
+  so merging the second is a mechanical conflict in `_extract_transmembrane`. #406 also makes an
+  empty TMbed payload missing, which changes the meaning of cached values once more; if it lands
+  after this change, it needs its own cache version.
 - **`protein_families` becomes multi-valued for multi-section entries.** Legend counts, EAT
   targets and `--stats-annotation` treat these proteins like any multi-valued `ec` cell. → The
   registry description and the docs state it, and the example rebuild's verification gates check
@@ -525,13 +590,14 @@ Frozen interfaces:
 
 No user action is needed. The first run after upgrading:
 
-- stamps any cache it writes with version 2 and, when UniProt was fetched, with the release;
-- refreshes `protein_families` and the InterPro columns once, where the run requests them;
+- stamps any cache it writes with version 3 and, when UniProt was fetched, with the release;
+- refreshes `protein_families` and the InterPro columns once, where the run requests them, and
+  likewise `root` (taxonomy) and `predicted_transmembrane` (Biocentral);
 - writes bundles without `organism_id`/`sequence`.
 
 Bundles already published keep their columns until they are rebuilt. Rollback is a version
 downgrade, but not a harmless one for a cache this version wrote. Older versions read a
-version-2 cache as current, and any run of theirs that is not a pure cache hit passes the cached
+version-3 cache as current, and any run of theirs that is not a pure cache hit passes the cached
 `protein_families` through their first-family transform again. That transform corrupts the new
 values: `CarA family|IC;CarB family|IC` becomes `CarA family|IC|IC`, and
 `inositol 1,4,5-trisphosphate 5-phosphatase family|IEA` becomes `inositol 1|IEA`. The result

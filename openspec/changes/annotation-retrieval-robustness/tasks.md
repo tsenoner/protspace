@@ -240,7 +240,7 @@ section 4 runs after all three are merged back. Rules for every track:
       a cache with the UniProt and InterPro columns, stamped version 2 and `2026_03`; the rerun
       fetched only TED, and its output matched an uninterrupted run.
 
-- [ ] 4.12 After review, and after sections 5 and 6, archive the change
+- [ ] 4.12 After review, and after sections 5 to 9, archive the change
       (`openspec archive annotation-retrieval-robustness`) as the last commit on the branch
       before merge. Merge with a merge commit, because the
       branch touches `apps/protspace/`.
@@ -403,3 +403,46 @@ ignored `Retry-After`.
 - [x] 8.5 Bound batches at 200,000 residues and split a failed batch two levels deep (measured
       live: 820 phosphatases, 494,522 residues, fail as one request and succeed as two halves).
       Commit: `fix(protspace): bound Biocentral requests by residues, split on failure`.
+
+## 9. Example-rebuild findings (CI colour, `root`, TMbed negative, cache version 3)
+
+The research for the example rebuild found the Python CI red on every leg, and two value bugs that
+the rebuild would bake into every bundle. A cache-assisted rebuild would also keep serving the old
+values, because the cache stores extracted values and only a version entry refreshes them.
+
+- [x] 9.1 Reproduce the CI-only failure locally with `FORCE_COLOR=1`: Rich splits `--cache-dir`
+      with escape codes, so `test_refetch_without_a_cache_dir_is_a_usage_error` fails. Strip ANSI
+      codes before both usage-error substring checks in `test_annotate_cache_dir.py`, as
+      `test_cli_no_similarity.py` does. Commit:
+      `test(protspace): strip ANSI codes before matching annotate usage errors`.
+- [x] 9.2 Failing tests in `test_taxonomy_annotation_retriever.py`, on lineages captured from the
+      live API for 9606, 7227, 1396 and 11676: `root` is `cellular organisms` for the first three
+      and `Viruses` for HIV-1; the other ranks of the fly are unchanged; a top-level taxon
+      (`cellular root`, `acellular root`, `unclassified entries`) is its own root; the rank label
+      of the first node does not matter; a taxon 1 node is skipped; a deleted taxon has no root.
+      Plus a live integration test (`slow`) on the same taxa.
+- [x] 9.3 `_lineage_root` takes the first lineage node's name. Update the `root` docs in
+      `docs/scripts/annotation-details.ts` with the value set and regenerate
+      `docs/guide/annotations.md`. Commit:
+      `fix(protspace): take the taxonomy root from the top of the lineage`.
+- [x] 9.4 Failing tests in `test_biocentral_retriever.py`: a TMbed negative is
+      `non-transmembrane`, which `standardize_missing` keeps and which is not among the web app's
+      `MISSING_VALUE_TOKENS`, read from `missing-values.ts`.
+- [x] 9.5 Write `non-transmembrane`, the label of open PR #406, and use that PR's wording in
+      `annotation-details.ts` and the `annotation-metadata.ts` description. Commit:
+      `fix(protspace): label TMbed negatives 'non-transmembrane', not 'none'`.
+- [x] 9.6 Failing tests in `test_legacy_cache_refresh.py` on a version-2 fly cache: requesting
+      `root` and `predicted_transmembrane` refetches taxonomy and Biocentral once and nothing
+      else, and the next run fetches nothing; each column refreshes only its own source; a run
+      requesting neither drops them and fetches nothing; a `root` refresh of a cache without
+      `organism_id` fetches UniProt first; a failed Biocentral refresh never stamps `none` current
+      and keeps the cached `predicted_membrane`.
+- [x] 9.7 Add `3: {"root", "predicted_transmembrane"}` to `CACHE_SEMANTICS_CHANGES`, and decide the
+      refresh's sources with `determine_sources_to_fetch`. Document the refresh in
+      `docs/guide/fetching-and-caching.md` and `docs/guide/python-cli.md`. Commit:
+      `fix(protspace): refresh cached root and TMbed values (cache v3)`.
+- [x] 9.8 Gates, all clean: `uv run pytest apps/protspace/tests -q`, and again with
+      `FORCE_COLOR=1 GITHUB_ACTIONS=true` and `-m "not slow"` as CI runs it; from `apps/protspace`,
+      `uv run ruff check src tests` and `uv run ruff format --check src tests`;
+      `pnpm docs:annotations:check`; `pnpm format:check`; and
+      `openspec validate annotation-retrieval-robustness --strict`.

@@ -44,6 +44,15 @@ The rest make large runs unrecoverable or expensive to repeat:
   internal lookup columns `organism_id` and `sequence` ships them to the web app. The venom
   bundle does, which is consistent with it having been bundled from the annotation cache.
 
+Two more, found while preparing the rebuild, would reach every rebuilt bundle:
+
+- **`root` holds the deepest unranked clade** of the lineage instead of its top node
+  (`taxonomy_retriever.py`), so the fly reads `melanogaster subgroup` and Swiss-Prot has 1,340
+  distinct values where the docs promise a near-binary cellular/acellular column.
+- **A TMbed negative is written `none`** (`biocentral_retriever.py`), which the CLI and the web app
+  both read as a missing value, so every protein without a predicted TM segment shows as N/A
+  (811 of 811 in the venom example). Open PR #406 fixes the same bug.
+
 ## What Changes
 
 - InterPro fans each distinct sequence's matches out to every protein with that sequence, and
@@ -65,6 +74,13 @@ The rest make large runs unrecoverable or expensive to repeat:
   convention.
 - Caches written before these two fixes refresh their `protein_families` and InterPro columns
   once, through the existing cache-semantics version table, instead of serving the wrong values.
+- `root` is the top node of the organism's lineage: `cellular organisms`, `Viruses`, or
+  `other entries` / `unclassified entries`.
+- A TMbed negative is written `non-transmembrane`, the label PR #406 uses, instead of `none`.
+- Caches written before the `root` and TMbed fixes refresh `root` (taxonomy) and
+  `predicted_transmembrane` (Biocentral) once, through a version 3 of the same table. Every
+  example-dataset cache is stamped version 2 by a pre-release build of this branch, so they need
+  a new version.
 - The annotation cache is written after each source completes. A later failure no longer loses
   the sources that finished before it.
 - `protspace annotate` gains `--cache-dir` and `--refetch`. With a cache directory it resumes
@@ -85,15 +101,16 @@ The rest make large runs unrecoverable or expensive to repeat:
 - `annotation-source-retrieval`: how each annotation source turns a set of proteins into
   requests, and when a failed request is retried rather than counted as lost. Covers InterPro
   duplicate-sequence fan-out, retry and the InterPro-N filter, Biocentral batching, the TED final
-  retry pass, and the connection reuse and bounded concurrency of TED, InterPro and UniProt.
+  retry pass, the connection reuse and bounded concurrency of TED, InterPro and UniProt, the
+  taxonomy `root`, and the TMbed negative label.
 - `annotation-release-provenance`: which UniProt release a run's annotations came from, as
   recorded in the annotation cache and in `run.log`.
 
 ### Modified Capabilities
 
 - `annotation-cache-semantics`: the cache is persisted per completed source; `annotate` can
-  resume from a cache directory; caches holding values from the old family parser or the old
-  InterPro fan-out are refreshed.
+  resume from a cache directory; caches holding values from the old family parser, the old
+  InterPro fan-out, the old `root` or the old TMbed negative are refreshed.
 - `uniprot-annotation-semantics`: `protein_families` keeps family names whole, takes the family
   of each section of a multi-section entry, and becomes multi-valued for those entries.
 - `bundle-format-contract`: a bundle never carries the internal lookup columns.
@@ -109,7 +126,8 @@ requirements. Per-identifier fill-in is kept, and `annotate --cache-dir` inherit
 
 - **Code** (under `apps/protspace/src/protspace/`):
   - the retrievers `http_utils.py`, `interpro_retriever.py`, `biocentral_retriever.py`,
-    `ted_retriever.py` and `uniprot_retriever.py` in `data/annotations/retrievers/`;
+    `ted_retriever.py`, `taxonomy_retriever.py` and `uniprot_retriever.py` in
+    `data/annotations/retrievers/`;
   - `data/parsers/uniprot_parser.py`, `data/annotations/transformers/uniprot_transforms.py`,
     `data/annotations/encoding.py`, `data/io/bundle.py`;
   - `data/annotations/manager.py`, a new shared cache module under `data/annotations/`,
@@ -126,11 +144,15 @@ requirements. Per-identifier fill-in is kept, and `annotate --cache-dir` inherit
     columns.
   - New `annotate` flags and a new `run.log` line.
   - Bundles lose the internal columns.
+  - `root` becomes near-binary, and TMbed negatives show as `non-transmembrane` rather than N/A.
+  - A version-2 cache refreshes taxonomy and Biocentral once, and only when the run requests
+    `root` or `predicted_transmembrane`.
 - **Release:** `fix(protspace)`, `perf(protspace)` and `feat(protspace)` commits, so this is a
   minor release of the PyPI package. No bundle format version change, no dependency change, no
-  web reader change.
+  web reader change; the web registry's `predicted_transmembrane` description names the new value.
 - **Docs:** `docs/guide/python-cli.md`, `docs/guide/fetching-and-caching.md`, and the
-  `protein_families` entry and InterPro source text of the annotation docs, from which
+  `protein_families`, `root` and `predicted_transmembrane` entries and InterPro source text of
+  the annotation docs, from which
   `docs/guide/annotations.md` is generated. The Colab notebooks restate none of the changed behaviour today, which the
   integration step checks again.
 - **Downstream:** the example-dataset rebuild (PLAN Change B, phase B3) waits for this change to

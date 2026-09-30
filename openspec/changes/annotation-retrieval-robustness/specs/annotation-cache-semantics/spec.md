@@ -129,6 +129,45 @@ cached cell.
 - **THEN** no stale value of that source is written back under a current stamp
 - **AND** a later run fetches that source again
 
+### Requirement: Caches written before the root and TMbed fixes are refreshed
+
+ProtSpace SHALL NOT reuse cached `root` or `predicted_transmembrane` values written before the
+lineage-root and TMbed-label fixes, which are stamped version 2 or earlier. A run that requests
+such a column SHALL refetch its source (taxonomy or Biocentral) once and stamp the rewritten cache
+as current. A run that requests neither SHALL drop them from the cache it writes. Cached values
+from other sources SHALL be reused. The old `root` is the deepest unranked clade of the lineage
+and cannot be recomputed from the cache, and the old `none` reads as a missing value.
+
+#### Scenario: A version-2 cache is asked for both columns
+
+- **WHEN** a run requests `root`, `predicted_transmembrane` and columns from UniProt, InterPro and
+  TED from a cache stamped version 2
+- **THEN** ProtSpace refetches taxonomy and Biocentral once each and fetches no other source
+- **AND** the rewritten cache is stamped current, so the next run fetches nothing
+
+#### Scenario: Only one of the columns is requested
+
+- **WHEN** a run requests `root` but not `predicted_transmembrane` from such a cache, or the
+  other way round
+- **THEN** ProtSpace refetches only the source of the requested column
+
+#### Scenario: The cache holds no organism identifiers for the root refresh
+
+- **WHEN** a run requests `root` from a version-2 cache that has no `organism_id` column
+- **THEN** ProtSpace also refetches the UniProt source, so taxonomy has organisms to look up
+
+#### Scenario: A version-2 cache is not asked for the affected columns
+
+- **WHEN** a run requests neither `root` nor `predicted_transmembrane` from such a cache
+- **THEN** ProtSpace refetches nothing and leaves both columns out of the cache it writes
+
+#### Scenario: The Biocentral refresh fails
+
+- **WHEN** the Biocentral refetch triggered by a version-2 cache fails
+- **THEN** no `none` value is written back under a current stamp, and the cached values of the
+  other Biocentral columns are kept
+- **AND** a later run fetches Biocentral again
+
 ## MODIFIED Requirements
 
 ### Requirement: Legacy PDB annotation caches are refreshed safely

@@ -294,3 +294,54 @@ at Swiss-Prot scale; the measured parallel rates bring each to about 1.5 hours w
   searches secondary accessions
 - **THEN** every request goes through one session, one at a time
 - **AND** the release header of every response is still recorded
+
+### Requirement: The taxonomy root is the top node of the organism's lineage
+
+The `root` taxonomy column SHALL hold the name of the first node of the organism's UniProt
+lineage: `cellular organisms` or `Viruses`, or `other entries` / `unclassified entries` for
+sequences with no organism of origin. It SHALL NOT depend on the rank the API gives that node,
+which reads `no rank` inside a lineage but `cellular root` or `acellular root` in the node's own
+entry. A taxon with no ancestors SHALL be its own root, and NCBI's unnamed taxon 1 SHALL never be
+the root. The other taxonomy columns keep their rank-based values.
+
+#### Scenario: A lineage ends in unranked clades
+
+- **WHEN** taxonomy is retrieved for Drosophila melanogaster (7227), whose lineage ends in the
+  unranked `melanogaster group` and `melanogaster subgroup`
+- **THEN** `root` is `cellular organisms`
+- **AND** `domain` is `Eukaryota` and `species` is `Drosophila melanogaster`, as before
+
+#### Scenario: Cellular and viral organisms
+
+- **WHEN** taxonomy is retrieved for Homo sapiens (9606), Bacillus cereus (1396) and HIV-1 (11676)
+- **THEN** `root` is `cellular organisms`, `cellular organisms` and `Viruses`
+
+#### Scenario: The organism is a top-level node
+
+- **WHEN** taxonomy is retrieved for a taxon without ancestors, such as `Viruses` (10239) ranked
+  `acellular root`
+- **THEN** `root` is the taxon's own name
+
+#### Scenario: The lineage starts with NCBI's root node
+
+- **WHEN** a lineage lists taxon 1 before `cellular organisms`
+- **THEN** `root` is `cellular organisms`
+
+### Requirement: A negative TMbed prediction is a named category
+
+`predicted_transmembrane` SHALL be `non-transmembrane` for a TMbed prediction with neither a
+transmembrane helix nor a transmembrane beta strand. The value SHALL NOT be one of the tokens that
+the CLI's `standardize_missing` or the web app's `normalizeMissingValue` read as missing, so a
+negative prediction is displayed as a category, never as N/A. A protein without a TMbed
+prediction keeps an empty value.
+
+#### Scenario: TMbed predicts no membrane-spanning segment
+
+- **WHEN** a protein's TMbed topology holds only non-membrane and signal-peptide labels
+- **THEN** `predicted_transmembrane` is `non-transmembrane`
+- **AND** both missing-value normalisers keep it as a category
+
+#### Scenario: TMbed made no prediction
+
+- **WHEN** Biocentral returns no TMbed prediction for a protein
+- **THEN** `predicted_transmembrane` is empty and displays as N/A
