@@ -102,6 +102,9 @@
 - [x] 3.19 The web exporter echoes an integer `sourceType` on a categorical column of decimal
       labels in the type's range (Python's exact labels for a 64-bit hash) and on a numeric column
       up to ±2^53 inclusive, as Python classifies it; contract coverage variant carries both
+- [x] 3.20 The web exporter names its id column `protein_id` when an annotation is named
+      `identifier` (Python's id column preference), so a Python bundle holding both exports; the
+      contract coverage variant carries such an annotation
 
 ## 4. Contract suite (`tests/contract`)
 

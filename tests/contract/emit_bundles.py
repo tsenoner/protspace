@@ -303,12 +303,17 @@ def build_statistics_table() -> pa.Table:
 def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
     """The coverage variant's annotations: every projected protein but
     ``PROJECTION_ONLY_ID``, plus ``ANNOTATION_ONLY_ID``, with a BOOLEAN column
-    and the two int64 columns a web re-export must keep int64."""
+    and the two int64 columns a web re-export must keep int64.
+
+    The ids are in ``protein_id`` and ``identifier`` is an ordinary annotation:
+    ``bundle -a`` renames ``identifier`` only when ``protein_id`` is absent, so
+    the web writer must name its id column around that annotation."""
     annotated = [i for i in ids if i != PROJECTION_ONLY_ID] + [ANNOTATION_ONLY_ID]
     return stamp_format_version(
         pa.table(
             {
-                "identifier": pa.array(annotated, pa.string()),
+                "protein_id": pa.array(annotated, pa.string()),
+                "identifier": pa.array([f"alias-{i}" for i in annotated]),
                 "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
                 "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
                 "hash": pa.array(HASH_VALUES, pa.int64()),
@@ -510,7 +515,7 @@ def main(out_dir: Path) -> None:
                 "booleanById": dict(
                     zip(
                         build_coverage_annotations_table(coverage_ids)
-                        .column("identifier")
+                        .column("protein_id")
                         .to_pylist(),
                         BOOLEAN_VALUES,
                         strict=True,

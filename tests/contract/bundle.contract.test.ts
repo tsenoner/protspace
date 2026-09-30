@@ -518,6 +518,8 @@ describe('bundles the web app exports, read by the Python tooling', () => {
         // A hash past 2^53 (stored as exact labels) and the ±2^53 edge (stored as numbers).
         expect(written.types.hash).toBe('int64');
         expect(written.types.edge).toBe('int64');
+        // An annotation named like the web writer's default id column.
+        expect(written.types.identifier).toBe('string');
       }
       expect(reexported.annotations).toEqual(written.annotations);
       expect(reexported.projections).toEqual(written.projections);

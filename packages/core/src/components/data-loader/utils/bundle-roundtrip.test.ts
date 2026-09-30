@@ -372,6 +372,36 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     expect(columns.ratio.sourceType).toBe('double');
   });
 
+  it('names the id column protein_id when an annotation is called identifier', async () => {
+    // Python bundles a table holding both protein_id and identifier with protein_id as the
+    // id column and identifier as an ordinary annotation; such a dataset must export.
+    const original = handBuilt();
+    original.annotations.identifier = categorical(['alt1', 'alt2', 'alt3', 'alt4']);
+    original.annotation_data.identifier = Int32Array.of(0, 1, 2, 3);
+
+    const buffer = createParquetBundle(original);
+    const { data } = await decodeParquetBundle(buffer);
+
+    expect(
+      JSON.parse(
+        parquetMetadata(partOf(buffer, 0)!).key_value_metadata!.find(
+          ({ key }) => key === 'protspace_v3_manifest',
+        )!.value!,
+      ).idColumn,
+    ).toBe('protein_id');
+    expect(data.protein_ids).toEqual(original.protein_ids);
+    expect(meaning(data)).toEqual(meaning(original));
+  });
+
+  it('refuses a dataset whose annotations occupy both id column names', () => {
+    const original = handBuilt();
+    for (const name of ['identifier', 'protein_id']) {
+      original.annotations[name] = categorical(['a', 'b', 'c', 'd']);
+      original.annotation_data[name] = Int32Array.of(0, 1, 2, 3);
+    }
+    expect(() => createParquetBundle(original)).toThrow(/identifier.*protein_id/);
+  });
+
   it('writes an empty dictionary for a categorical column with no values at all', async () => {
     const original = handBuilt();
     original.annotation_data.organism = Int32Array.of(-1, -1, -1, -1);

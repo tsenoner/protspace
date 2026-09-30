@@ -54,7 +54,14 @@ import { isNAValue } from '../visualization/missing-values.js';
 const CONTAINER_VERSION_KEY = 'protspace_container_version';
 const CONTAINER_VERSION = '3';
 const MANIFEST_KEY = 'protspace_v3_manifest';
+/**
+ * The names Python's encoder takes the id column from, in its order of preference
+ * (`protein_id`, else `identifier`). The writer uses the default unless an annotation
+ * occupies it: a Python bundle of a table holding both has `protein_id` as its id column
+ * and `identifier` as an ordinary annotation.
+ */
 const ID_COLUMN = 'identifier';
+const FALLBACK_ID_COLUMN = 'protein_id';
 /** Payload name of the dictionary every column's evidence codes index into. */
 const EVIDENCE_DICT_NAME = '__evidence';
 const AXES = ['x', 'y', 'z'] as const;
@@ -500,10 +507,24 @@ function echoSourceType(
   }
 }
 
+/**
+ * The id column's name: {@link ID_COLUMN}, or {@link FALLBACK_ID_COLUMN} when an annotation
+ * is named, or stored in a part 1 column named, `identifier`. The reader refuses an id column
+ * that shares either with an annotation.
+ */
+function pickIdColumn(parts: AnnotationParts): string {
+  const taken = new Set([...Object.keys(parts.manifest), ...parts.columns.map(({ name }) => name)]);
+  for (const name of [ID_COLUMN, FALLBACK_ID_COLUMN]) if (!taken.has(name)) return name;
+  throw new Error(
+    `Annotations named "${ID_COLUMN}" and "${FALLBACK_ID_COLUMN}" leave no name for the ` +
+      'protein id column; rename one of them',
+  );
+}
+
 /** Parts 1 and 6: the annotations, with the manifest in part 1's footer, and the payloads. */
 function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuffer] {
   const parts: AnnotationParts = {
-    columns: [{ name: ID_COLUMN, data: data.protein_ids, type: 'STRING' }],
+    columns: [],
     manifest: {},
     payloads: new Map(),
     evidence: new Map(),
@@ -533,8 +554,10 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
     addDictionary(parts, EVIDENCE_DICT_NAME, [...parts.evidence.keys()]);
   }
 
+  const idColumn = pickIdColumn(parts);
+  parts.columns.unshift({ name: idColumn, data: data.protein_ids, type: 'STRING' });
   const manifest = {
-    idColumn: ID_COLUMN,
+    idColumn,
     columns: parts.manifest,
     projections: data.projections.map(({ name, dimension }) => ({ name, dimension })),
   };
