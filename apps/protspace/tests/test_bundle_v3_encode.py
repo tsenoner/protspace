@@ -14,6 +14,7 @@ import io
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 
@@ -424,6 +425,33 @@ def test_part_one_rows_follow_the_projection_rows_as_the_v2_browser_did():
     assert read(parts[2]).column("A__x").to_pylist() == [0.0, 1.0, 2.0, 3.0]
     # The metadata survives the reorder, so the table stays declared v2.
     assert read_format_version(decode_v3(list(parts))[0]) == 2
+
+
+def test_projections_follow_the_projection_rows_as_the_v2_browser_did():
+    """The v2 browser built its projection list from the data rows, by first
+    appearance, and opened the first one.  The manifest is the v3 browser's
+    projection order, so metadata listing ``UMAP, PCA`` over rows that start
+    with ``PCA`` must still open on ``PCA``; part 2 keeps the order it was given."""
+    annotations = make_annotations(col=["a", "b"])
+    meta, data = make_projections((("UMAP", 2), ("PCA", 3)), ["p0", "p1"])
+    first_pca = pc.equal(data.column("projection_name"), "PCA")
+    data = pa.concat_tables([data.filter(first_pca), data.filter(pc.invert(first_pca))])
+
+    parts = encode_v3(annotations, meta, data)
+
+    manifest = manifest_of(parts[0])["projections"]
+    assert [p["name"] for p in manifest] == ["PCA", "UMAP"]
+    assert read(parts[2]).column_names == [
+        "PCA__x",
+        "PCA__y",
+        "PCA__z",
+        "UMAP__x",
+        "UMAP__y",
+    ]
+    assert read(parts[1]).column("projection_name").to_pylist() == ["UMAP", "PCA"]
+    _annotations, metadata, projections = decode_v3(list(parts))
+    assert metadata.column("dimensions").to_pylist() == [2, 3]
+    assert projections.column("projection_name").to_pylist()[0] == "PCA"
 
 
 # --------------------------------------------------------------------------- #

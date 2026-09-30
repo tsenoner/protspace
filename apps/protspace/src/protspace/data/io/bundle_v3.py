@@ -510,7 +510,11 @@ def _encode_projections(
     projections_data: pa.Table,
     protein_ids: pa.Array,
 ) -> tuple[pa.Table, list[dict[str, Any]]]:
-    """Pivot the long projections table to wide float32, aligned to part 1."""
+    """Pivot the long projections table to wide float32, aligned to part 1.
+
+    The manifest lists the projections by first appearance in the data rows,
+    as the v2 browser did, whatever order the metadata gives them in.
+    """
     required = {"projection_name", "identifier", "x", "y"}
     missing = required - set(projections_data.column_names)
     if missing:
@@ -529,7 +533,10 @@ def _encode_projections(
     # rows alone (``conversion.ts:1163-1196``), so a metadata-only projection
     # would be an empty one there and a data-only projection would silently
     # vanish here.  All five shipped datasets agree; refuse the ones that do not.
-    in_data = set(pc.unique(name_column).to_pylist())
+    # ``pc.unique`` keeps first appearance, the order the browser lists (and
+    # opens first) the projections in; part 2 keeps its own order.
+    data_order = pc.unique(name_column).to_pylist()
+    in_data = set(data_order)
     if in_data != set(names):
         raise ValueError(
             "projections_metadata and projections_data disagree on the projection "
@@ -537,10 +544,14 @@ def _encode_projections(
             f"data-only {sorted(in_data - set(names), key=str)}"
         )
 
-    dimensions = (
-        projections_metadata.column("dimensions").to_pylist()
-        if "dimensions" in projections_metadata.column_names
-        else [None] * len(names)
+    declared_dimensions = dict(
+        zip(
+            names,
+            projections_metadata.column("dimensions").to_pylist()
+            if "dimensions" in projections_metadata.column_names
+            else [None] * len(names),
+            strict=True,
+        )
     )
     has_z = "z" in projections_data.column_names
 
@@ -548,7 +559,8 @@ def _encode_projections(
     columns: dict[str, pa.Array] = {}
     manifest: list[dict[str, Any]] = []
 
-    for name, declared in zip(names, dimensions, strict=True):
+    for name in data_order:
+        declared = declared_dimensions[name]
         rows = projections_data.filter(pc.equal(name_column, pa.scalar(name)))
         identifiers = rows.column("identifier")
         # ``encode_v3`` has already added every projected identifier to part 1,

@@ -543,7 +543,7 @@ the only description of what the integer columns mean. It does not carry
 | `columns.*.scores`      | present and `true` when a `scores:<col>` payload exists; multi columns only    |
 | `columns.*.evidence`    | present and `true` when an `evidence:<col>` payload exists; multi columns only |
 | `columns.*.sourceType`  | the column's Arrow type in Python, see below                                   |
-| `projections`           | `{ name, dimension }` per projection, in part 3 column order                   |
+| `projections`           | `{ name, dimension }` per projection, in part 3 column order (see below)       |
 
 The browser validates the manifest against part 1's own schema before reading anything. An
 unknown kind, a declared column part 1 does not have, a kind whose physical type disagrees (a
@@ -551,6 +551,10 @@ code column declared numeric, for instance), an id column that is not a string c
 entries backed by the same part 1 column (a multi column `a` and a column named `a__count`, or
 either and the id column), a duplicate projection name, or a dimension that is not 2 or 3 all
 throw rather than being repaired.
+
+`projections` is the order the browser lists the projections in, and it opens the first one. The
+Python writer takes it from the projection rows, by first appearance, which is the order the v2
+browser built from those rows, not from part 2, whose rows it writes in the order it was given.
 
 `sourceType` records the Arrow type the column had before encoding, so the Python decoder can
 restore it instead of handing back a string column. The browser never interprets it. It keeps the

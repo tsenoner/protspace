@@ -162,6 +162,20 @@ in v2.
 - **THEN** part 1 lists `P1, P2, P3, P4`, the `kingdom` dictionary is `x, y`, and the browser
   shows the colours and dataset hash the same data gave in v2
 
+### Requirement: The manifest SHALL list the projections in the v2 browser's order
+
+The v3 encoder SHALL list the projections in the manifest, and their columns in part 3, in order
+of first appearance of their name in the projection rows, which is the order the v2 browser
+listed them in and opened the first of, whatever order the projection metadata gives. Part 2
+SHALL keep the order it was given.
+
+#### Scenario: Metadata ordered differently from the projection rows
+
+- **WHEN** a bundle is written whose projection metadata lists `UMAP, PCA` and whose projection
+  rows start with `PCA`
+- **THEN** the manifest lists `PCA, UMAP`, so the browser opens on `PCA` as the v2 browser did,
+  and part 2 still lists `UMAP, PCA`
+
 ### Requirement: The browser SHALL fold missing-value spellings per hit, as v2 did
 
 The browser v3 reader SHALL fold a hit whose label is a missing-value spelling (`none`, `NA`,
