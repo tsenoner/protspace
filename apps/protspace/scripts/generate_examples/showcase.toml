@@ -265,7 +265,7 @@ type = "label_split"   # conserved: kinases sit in the shared region
 column = "protein_families"
 by = "species"
 label = "protein kinase superfamily"
-expected_total = 1703
+expected_total = 2001  # 2026_03 with whole multi-section families; the paper counted 1,703
 rel_tol = 0.15
 min_per_group = { "Homo sapiens" = 100, "Drosophila melanogaster" = 100 }
 
@@ -359,7 +359,7 @@ abs_tol = 5
 "DNA repair metallo-beta-lactamase (DRMBL) family" = 7459
 "beta-lactamase family" = 3991
 "class-D beta-lactamase family" = 3683
-"class-C beta-lactamase family" = 3140
+"class-C beta-lactamase family" = 3236  # 2026_03; the paper (2026_02) had 3,140
 "hcp beta-lactamase family" = 2326
 "P-Pant transferase superfamily" = 25
 "OBAP family" = 15
