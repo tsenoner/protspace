@@ -81,8 +81,8 @@ serves itself SHALL NOT trigger it.
 
 #### Scenario: The default dataset loads
 
-- **WHEN** the app loads its bundled default dataset, which is v1
-- **THEN** no format notice is shown
+- **WHEN** the app loads its bundled default dataset
+- **THEN** no format notice is shown, whatever the dataset's format version
 
 ### Requirement: A missing coordinate SHALL be NaN, never zero
 

@@ -439,7 +439,6 @@ describe('legacy import, v3 export', () => {
 
   it.each([
     ['v1', () => repoFile('apps/web/tests/fixtures/data_custom.parquetbundle'), 1],
-    ['v1, 5K proteins', () => repoFile('apps/web/public/data/5K.parquetbundle'), 1],
     [
       'v1, raw numerics',
       () => repoFile('apps/web/tests/fixtures/phosphatase_no_binning.parquetbundle'),
@@ -500,6 +499,17 @@ describe('legacy import, v3 export', () => {
 
     expect(data.annotations.reviewed.values).toEqual(['true', 'false']);
     expect(Array.from(data.annotation_data.reviewed as Int32Array)).toEqual([0, 1, 0]);
+  });
+
+  it('re-exports a shipped v3 dataset (5K proteins) to an equal dataset', async () => {
+    const shipped = await decodeParquetBundle(repoFile('apps/web/public/data/5K.parquetbundle'));
+    expect(shipped.formatVersion).toBe(3);
+
+    const exported = await exportAndDecode(shipped.data, shipped.settings ?? undefined);
+
+    expect(meaning(exported.data)).toEqual(meaning(shipped.data));
+    expect(exported.data.annotations).toEqual(shipped.data.annotations);
+    expect(exported.settings).toEqual(shipped.settings);
   });
 
   it('re-exports the golden v3 fixture to an equal dataset', async () => {

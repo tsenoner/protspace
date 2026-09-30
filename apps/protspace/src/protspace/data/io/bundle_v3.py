@@ -1002,10 +1002,11 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
     browser's v2 reader would have parsed out of the cells, not the cells:
 
     * a v1 table has to be migrated to the v2 cell grammar before it can be
-      encoded, which is what every shipped legacy bundle gets: ten of the eleven
-      datasets under ``apps/web/public/data/`` carry no stamp, so converting one
-      runs :func:`migrate_legacy_annotation_table` and its reserved characters
-      come back percent-encoded (display-neutral, and a fix -- but it is a
+      encoded, which is what converting a legacy bundle does: all but one of the
+      datasets under ``apps/web/public/data/`` were v1 before ``protspace
+      convert`` rewrote them, so converting one runs
+      :func:`migrate_legacy_annotation_table` and its reserved characters come
+      back percent-encoded (display-neutral, and a fix -- but it is a
       difference, and it is the one a conversion actually hits);
     * hits and cells are whitespace-trimmed, and *blank* hits are dropped
       (``"A;;B"`` comes back ``"A;B"``, ``" A |IDA"`` as ``"A|IDA"``);

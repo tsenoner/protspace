@@ -110,9 +110,12 @@ planned for protspace 5.0.0."
   `explore/notifications.ts`.
 - Docs: `docs/guide/data-format.md`, `docs/guide/python-cli.md`, `docs/developers/embedding.md`,
   `docs/developers/api/*`.
-- Every bundle shipped in the repo (the default `apps/web/public/data.parquetbundle`, the example
-  datasets and most e2e fixtures) is v1 today. They keep loading and do not trigger the notice,
-  but they need converting before 5.0.0.
+- The bundles the app serves (the default `apps/web/public/data.parquetbundle` and the example
+  datasets under `apps/web/public/data/`, all v1 or v2 before) are converted to v3 with
+  `protspace convert`; each decodes in the browser to the same proteins, labels, legend, scores,
+  finite coordinates, settings and statistics as before. The e2e fixtures under
+  `apps/web/tests/fixtures/` and the `v2-sample` unit fixture stay v1/v2, as the legacy reader's
+  test data until 5.0.0. `scripts/landing-data` reads v3 as well as legacy bundles.
 - Older web builds reject a v3 file with `Expected 2 to 4 delimiters in parquetbundle, found 5`.
   Once the exporter writes v3, a file exported from protspace.app will not open in an older
   self-hosted build.

@@ -53,8 +53,9 @@ Deprecation is announced where each reader runs:
   user-provided v1/v2 bundle loads, suggesting a re-export from the app or `protspace convert`. The
   core reader does not show UI. `decodeParquetBundle` reports the container's format version and
   the app decides. Datasets the app serves itself (the default `data.parquetbundle` and the example
-  datasets, all v1 today) do not trigger the notice: a first-time visitor cannot act on it. They get
-  converted before 5.0.0 instead.
+  datasets) do not trigger the notice: a first-time visitor cannot act on it. They were v1 (one v2)
+  and are converted to v3 in this change, so the notice would not fire for them anyway, and a user
+  who downloads an example dataset and imports it does not see it either.
 
 The release is a minor. Every bundle still loads, so there is nothing breaking to announce, and a
 `BREAKING CHANGE` footer would cut protspace 5.0.0 now, before the removal it names.
@@ -247,9 +248,13 @@ deprecated alongside legacy read support.
   build, which reports `Expected 2 to 4 delimiters in parquetbundle, found 5`. → The data-format
   guide names the error as a version-skew signal. Older Python reads fail the same way. Users on an
   old build can upgrade.
-- **Shipped v1 datasets.** The default dataset and the examples stay v1 until they are converted, so
-  the legacy reader stays on the default load path until then. → No notice for app-served data.
-  Converting them is a tracked task before 5.0.0.
+- **Converted shipped datasets.** The default dataset and the examples are rewritten as v3, which
+  adds their new blobs to the git history (about 69 MB, 36 MB of it the 573K Swiss-Prot bundle;
+  the working tree shrinks from 86.7 to 69.4 MB). → Each was checked to decode in the browser to
+  the same dataset as its legacy original. The conversion also found a migration bug: a v1 hit
+  with a `|` inside its label was split at its first pipe, not at the last one as the browser
+  reads it; `encode_legacy_cell` now splits at the last pipe. The legacy reader keeps its own test
+  data: the v1 e2e fixtures and the `v2-sample` unit fixture stay legacy until 5.0.0.
 - **Legacy coverage.** The contract suite generates bundles with the real CLI, which now writes only
   v3, so the legacy reader loses its cross-language check. → The committed `v2-sample` fixture and
   the Python legacy tests keep it covered in each language until removal.
@@ -264,7 +269,8 @@ deprecated alongside legacy read support.
 1. Land the Python track and the TypeScript track on the PR branch, each with its own tests; the
    contract suite runs against both.
 2. Release as a minor from the merged PR. Do not squash-merge it (it touches `apps/protspace/`).
-3. Convert the shipped bundles and e2e fixtures to v3 in a follow-up, before 5.0.0.
+3. Convert the served bundles (default and example datasets) to v3 in this change; the legacy e2e
+   and unit fixtures stay v1/v2 until 5.0.0 removes the reader they test.
 4. In 5.0.0, remove the legacy readers, `extractRowsFromParquetBundle` and the notice, and make
    `protspace convert` point to the last 4.x release for anyone still holding v1/v2 files.
 

@@ -100,7 +100,9 @@
 
 - [ ] 5.1 Deprecation commits carry "Deprecates reading v1/v2 parquetbundles; removal planned for
       protspace 5.0.0."; no `BREAKING CHANGE` footer; merge without squashing
-- [ ] 5.2 Follow-up: convert `apps/web/public/data.parquetbundle`, the example datasets and the e2e
-      fixtures to v3 before 5.0.0
+- [x] 5.2 Convert `apps/web/public/data.parquetbundle` and the example datasets under
+      `apps/web/public/data/` to v3 with `protspace convert`, each verified to decode to the same
+      dataset; keep the e2e fixtures and `v2-sample` legacy as the legacy reader's test data;
+      `scripts/landing-data` reads v3; `encode_legacy_cell` splits a hit at its last pipe
 - [ ] 5.3 Follow-up (5.0.0): remove the legacy readers, `extractRowsFromParquetBundle` and the
       notice

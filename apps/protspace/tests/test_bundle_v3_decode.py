@@ -583,49 +583,24 @@ def test_flat_concatenates_a_multi_chunk_column():
 
 @pytest.mark.skipif(not REAL_BUNDLE.exists(), reason="web sample data not checked out")
 def test_real_bundle_round_trip():
-    """``venom_eat_stats`` (v2, 811 x 38) end to end, with its non-identities named.
+    """``venom_eat_stats`` (v3, converted from v2; 811 x 38) is a fixed point.
 
-    Every column that is not byte-identical is one of the two documented losses,
-    and nothing else drifts: 4 cluster columns whose ``%.4f`` scores lose a
-    trailing zero to float32, and 4 all-or-partly-null overlay columns whose
-    nulls become ``""``.
+    Decoding the shipped bundle and encoding the tables again gives back the same
+    parts, column for column: numerics, scored hits, the EAT overlay, the
+    projection gap handling and part 2.  The v2 -> v3 differences this dataset
+    went through on conversion (``%.4f`` scores losing a trailing zero, null
+    overlay cells becoming ``""``) are the ones ``decode_v3`` documents, and they
+    are one-off: nothing drifts on a second pass.
     """
-    source, metadata, data = (read(part) for part in parts_of(REAL_BUNDLE)[:3])
+    core = parts_of(REAL_BUNDLE)
+    decoded, metadata, data = decode_v3([*core[:3], core[5]])
 
-    decoded, decoded_metadata, decoded_data = decode_v3(
-        encode_v3(source, metadata, data)
-    )
-    assert decoded.column_names == source.column_names
-    assert decoded.schema.metadata == source.schema.metadata
+    parts = encode_v3(decoded, metadata, data)
+    again, again_metadata, again_data = decode_v3(list(parts))
 
-    differing = {
-        name
-        for name in source.column_names
-        if decoded.column(name).to_pylist() != source.column(name).to_pylist()
-    }
-    assert differing == {
-        "cluster_elbow_ProtT5 — PCA 2",
-        "cluster_silhouette_ProtT5 — PCA 2",
-        "cluster_elbow_ProtT5 — UMAP 2",
-        "cluster_silhouette_ProtT5 — UMAP 2",
-        "ec__pred_value",
-        "ec__pred_source",
-        "protein_families__pred_value",
-        "protein_families__pred_source",
-    }
-    for name in differing:
-        for before, after in zip(
-            source.column(name).to_pylist(),
-            decoded.column(name).to_pylist(),
-            strict=True,
-        ):
-            if before == after:
-                continue
-            if before is None:
-                assert after == ""  # the null / blank collapse
-            else:  # "cluster 4|0.5700" -> "cluster 4|0.57"
-                label, _, score = before.rpartition("|")
-                assert after == f"{label}|{float(score):g}"
-
-    assert decoded_metadata.equals(metadata)
-    assert decoded_data.to_pydict() == data.to_pydict()
+    assert again.schema.metadata == decoded.schema.metadata
+    assert again.equals(decoded)
+    assert again_metadata.equals(metadata)
+    assert again_data.equals(data)
+    # The encoder is deterministic: re-encoding is byte-identical, payloads too.
+    assert list(parts) == [*core[:3], core[5]]
