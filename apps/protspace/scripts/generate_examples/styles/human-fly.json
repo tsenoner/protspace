@@ -1,9 +1,13 @@
 {
-  "$comment": "Fig. 2B: human yellow, fly purple. protein_families pins the families the paper names, then the most frequent others.",
+  "$comment": "Fig. 2B: human yellow, fly purple, fly listed and drawn first so the smaller proteome shows through the shared core. protein_families pins the families the paper names, then the most frequent others.",
   "species": {
     "sortMode": "manual",
     "maxVisibleValues": 3,
-    "pinnedValues": ["Homo sapiens", "Drosophila melanogaster", ""],
+    "pinnedValues": [
+      "Drosophila melanogaster",
+      "Homo sapiens",
+      ""
+    ],
     "colors": {
       "Homo sapiens": "#F3C300",
       "Drosophila melanogaster": "#875692"
