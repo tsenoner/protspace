@@ -44,6 +44,7 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -187,6 +188,43 @@ def _annotation_releases(value: str | None) -> dict[str, str]:
     return {"all": str(parsed)}
 
 
+#: Options of the build command whose value is a machine path; the docs card
+#: prints the command, so a scratch checkout must not show up there (W12). The
+#: showcase build already writes these placeholders; this is the backstop for a
+#: bundle stamped by an older build.
+PATH_PLACEHOLDERS = {
+    "--cli-root": "$CLI",
+    "--out-root": "$OUT",
+    "--staging": "$STAGING",
+    "--config": "$CONFIG",
+    "--out": "$OUT",
+    "--nm-dir": "$NM_DIR",
+}
+_PATH_OPTION = re.compile(
+    r"(?P<option>" + "|".join(map(re.escape, PATH_PLACEHOLDERS)) + r")"
+    r"(?P<sep>=|\s+)(?P<value>'[^']*'|\"[^\"]*\"|\S+)"
+)
+_SCRATCH_PATH = re.compile(r"(?:/private)?/(?:tmp|var/folders)/[^\s'\"]*")
+_HOME_PATH = re.compile(r"/(?:Users|home)/[^/\s'\"]+")
+
+
+def redact_command(command: str | None) -> str | None:
+    """A build command without machine paths: path options become placeholders
+    (``--cli-root $CLI``), other scratch paths ``$TMP`` and home directories ``~``."""
+    if not command:
+        return command
+
+    def option(match: re.Match) -> str:
+        value = match["value"].strip("'\"")
+        if value.startswith("$"):
+            return match[0]
+        return f"{match['option']}{match['sep']}{PATH_PLACEHOLDERS[match['option']]}"
+
+    text = _PATH_OPTION.sub(option, command)
+    text = _SCRATCH_PATH.sub("$TMP", text)
+    return _HOME_PATH.sub("~", text)
+
+
 def _unique_in_order(values: Iterable[object]) -> list[str]:
     seen: dict[str, None] = {}
     for value in values:
@@ -234,7 +272,7 @@ def read_bundle_record(path: Path, *, example_id: str, file: str, hosting: str) 
         },
         "protspaceVersion": meta.get(META_PROTSPACE_VERSION),
         "gitSha": meta.get(META_GIT_SHA),
-        "command": meta.get(META_COMMAND),
+        "command": redact_command(meta.get(META_COMMAND)),
         "builtAt": meta.get(META_BUILT_AT),
         "zenodoDoi": meta.get(META_ZENODO_DOI),
     }

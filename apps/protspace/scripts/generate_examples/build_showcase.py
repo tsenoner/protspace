@@ -4157,7 +4157,9 @@ def stage_release(
         )
         repo_name = config.build.get("github_repo", GITHUB_REPO)
         print(
-            f"gh release create {tag} --repo {repo_name} "
+            # --latest=false: a data release must not become the repository's
+            # "Latest" release, which names the newest ProtSpace version (W33).
+            f"gh release create {tag} --repo {repo_name} --latest=false "
             f"--title {shlex.quote(f'Showcase datasets ({release})')} "
             f"--notes-file {shlex.quote(str(staging / 'RELEASE_NOTES.md'))} {files}"
         )
@@ -4360,7 +4362,7 @@ def publish_commands(release: str, out: Path, title: str, notes: str) -> list[st
     )
     sums = shlex.quote(str(out / "SHA256SUMS"))
     return [
-        f"gh release create {release} --repo {GITHUB_REPO} "
+        f"gh release create {release} --repo {GITHUB_REPO} --latest=false "
         f"--title {shlex.quote(title)} --notes {shlex.quote(notes)} {assets} {sums}",
         f"# or, to replace assets on an existing release:\n"
         f"gh release upload {release} --repo {GITHUB_REPO} --clobber {assets} {sums}",
@@ -4400,9 +4402,48 @@ def make_context(
     )
 
 
+#: Options whose value is a machine path, and the placeholder the provenance
+#: shows instead (W12: a scratch --cli-root was printed on every docs card).
+PATH_OPTIONS = {
+    "--cli-root": "$CLI",
+    "--out-root": "$OUT",
+    "--staging": "$STAGING",
+    "--config": "$CONFIG",
+    "--out": "$OUT",
+    "--nm-dir": "$NM_DIR",
+}
+
+
 def build_command(argv: Sequence[str]) -> str:
-    """This invocation, for provenance, with machine paths shortened."""
-    text = shlex.join(["build_showcase.py", *argv])
+    """This invocation, for provenance, with machine paths replaced.
+
+    Path options become placeholders (``--cli-root $CLI``), a ``--path
+    NAME=VALUE`` override keeps only its name, and any other path left is
+    shortened to ``$REPO`` / ``~``.
+    """
+    args = list(argv)
+    words: list[str] = ["build_showcase.py"]  # already shell-quoted
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        option, sep, _ = arg.partition("=")
+        if option in PATH_OPTIONS:
+            placeholder = PATH_OPTIONS[option]
+            if sep:
+                words.append(f"{option}={placeholder}")
+            else:
+                words.append(option)
+                if index + 1 < len(args):
+                    words.append(placeholder)
+                    index += 1
+        elif arg == "--path" and index + 1 < len(args):
+            name = args[index + 1].split("=", 1)[0]
+            words += [arg, f"{shlex.quote(name)}=${name.upper()}"]
+            index += 1
+        else:
+            words.append(shlex.quote(arg))
+        index += 1
+    text = " ".join(words)
     for old, new in ((str(REPO_ROOT), "$REPO"), (str(Path.home()), "~")):
         text = text.replace(old, new)
     return text

@@ -523,6 +523,33 @@ def test_eat_gates():
 
 
 # ---------------------------------------------------------------------------
+# Provenance without machine paths (W12) and the owner's commands (W33)
+# ---------------------------------------------------------------------------
+
+
+def test_the_build_command_never_shows_a_machine_path():
+    command = bs.build_command(
+        [
+            "build",
+            "--only",
+            "three-finger-toxins",
+            "--cli-root",
+            "/private/tmp/claude-501/x/scratchpad/wt/cli-build",
+            "--out-root=/tmp/out",
+            "--path",
+            "nm_data=/Users/someone/nm",
+            "--redo",
+            "stats",
+        ]
+    )
+    assert command == (
+        "build_showcase.py build --only three-finger-toxins --cli-root $CLI "
+        "--out-root=$OUT --path nm_data=$NM_DATA --redo stats"
+    )
+    assert "/tmp" not in command and "/Users" not in command
+
+
+# ---------------------------------------------------------------------------
 # Catalog default views
 # ---------------------------------------------------------------------------
 
@@ -1647,7 +1674,7 @@ def test_publish_commands_name_the_release_and_every_asset(tmp_path):
     )
 
     assert create.startswith(
-        "gh release create perf-datasets --repo tsenoner/protspace"
+        "gh release create perf-datasets --repo tsenoner/protspace --latest=false "
     )
     assert str(tmp_path / "a.parquetbundle") in create
     assert str(tmp_path / "SHA256SUMS") in create
