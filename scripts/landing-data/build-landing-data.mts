@@ -13,9 +13,12 @@
  *   apps/web/public/landing/venom.json       the 811-protein EAT/statistics demo: EAT columns and
  *                                            per-family silhouette scores
  *
- * Colors follow the explorer exactly: persisted legend settings inside the bundle win; otherwise
+ * Colors and counts follow the explorer: persisted legend settings inside the bundle win; otherwise
  * categories are ranked by frequency and assigned Kelly's colors in slot order, N/A is
- * `NA_DEFAULT_COLOR` and the collapsed "Other" bucket is the scatter plot's neutral grey.
+ * `NA_DEFAULT_COLOR` and the collapsed "Other" bucket is the scatter plot's neutral grey. As in the
+ * explorer's legend, a protein with several values counts once for each. The preview draws one
+ * color per point, so such a protein takes the color of its first value the legend shows, where
+ * the explorer draws all of them.
  *
  * Usage:  pnpm landing:data
  */
@@ -80,13 +83,21 @@ async function readLegendSettings(
   return normalizeBundleSettings(JSON.parse(String(rows[0].settings_json)))?.legendSettings ?? {};
 }
 
-/** Legend display value: first multi-value item, evidence/score suffix stripped; null for N/A. */
-function displayValue(raw: unknown): string | null {
+/**
+ * Legend display values, split as the explorer's loader splits a cell: every `;`-separated item,
+ * evidence/score suffix stripped, missing and empty items dropped; `[]` for N/A.
+ */
+function displayValues(raw: unknown): string[] {
   const value = normalizeMissingValue(raw);
-  if (value == null) return null;
-  const first = String(value).split(';')[0].split('|')[0].trim();
-  return first === '' ? null : first;
+  if (value == null) return [];
+  return String(value)
+    .split(';')
+    .map((item) => item.split('|')[0].trim())
+    .filter((label) => label !== '' && normalizeMissingValue(label) != null);
 }
+
+/** The first legend display value; null for N/A. */
+const displayValue = (raw: unknown): string | null => displayValues(raw)[0] ?? null;
 
 type PersistedCategories = Partial<
   Pick<LegendPersistedSettings, 'maxVisibleValues' | 'categories'>
@@ -104,10 +115,10 @@ function categorize(
   const counts = new Map<string, number>();
   let naCount = 0;
   const values = rows.map((row) => {
-    const value = displayValue(row[column]);
-    if (value == null) naCount += 1;
-    else counts.set(value, (counts.get(value) ?? 0) + 1);
-    return value;
+    const labels = displayValues(row[column]);
+    if (labels.length === 0) naCount += 1;
+    for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+    return labels;
   });
 
   let visible: Category[];
@@ -150,8 +161,9 @@ function categorize(
 
   const lookup = new Map(visible.map((category, i) => [category.label, i]));
   const index = new Uint8Array(rows.length);
-  values.forEach((value, i) => {
-    index[i] = value == null ? naIndex : (lookup.get(value) ?? otherIndex);
+  values.forEach((labels, i) => {
+    const shown = labels.find((label) => lookup.has(label));
+    index[i] = labels.length === 0 ? naIndex : shown ? lookup.get(shown)! : otherIndex;
   });
   return { categories, index };
 }
