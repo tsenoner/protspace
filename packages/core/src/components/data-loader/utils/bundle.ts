@@ -187,7 +187,7 @@ export async function extractRowsFromParquetBundle(
  * in {@link decodeParquetBundle} does not have to scan a 200 MB buffer twice.
  */
 async function extractRowsFromParts(
-  parts: readonly (ArrayBuffer | null)[],
+  parts: (ArrayBuffer | null)[],
   part1Metadata: FileMetaData | null,
 ): Promise<BundleExtractionResult> {
   let part1: ArrayBuffer | null = parts[0] ?? null;
@@ -195,6 +195,9 @@ async function extractRowsFromParts(
   let part3: ArrayBuffer | null = parts[2] ?? null;
   const part4 = parts[3] ?? null;
   const part5 = parts[4] ?? null;
+  // Take ownership: the caller's array would otherwise pin every part until the whole
+  // decode returns, and the per-part release below would free nothing.
+  parts.fill(null);
 
   if (!part1 || !part2 || !part3) {
     throw new Error('Parquetbundle is missing one of its three required core parts');

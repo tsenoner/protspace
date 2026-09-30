@@ -475,22 +475,10 @@ function prefixSum(counts: Int32Array, what: string): Int32Array {
   return end;
 }
 
-/**
- * Score values are read as **float64**, matching what the encoder writes.
- *
- * float32 destroys the E-value, which is the canonical Pfam and InterPro score: 1e-200
- * flushes to 0 and 1e40 saturates to Infinity. `CsrScores.values` in `@protspace/utils`
- * is still declared `Float32Array` and has to be widened to accept this.
- */
-interface V3Scores {
-  hitEnd: Int32Array;
-  values: Float64Array;
-}
-
 interface CsrColumn {
   end: Int32Array;
   codes: Int32Array;
-  scores: V3Scores | null;
+  scores: CsrScores | null;
   evidence: CsrEvidence | null;
 }
 
@@ -519,7 +507,7 @@ function readCsrColumn(
     }
   }
 
-  let scores: V3Scores | null = null;
+  let scores: CsrScores | null = null;
   if (column.scores) {
     const scoreCounts = asTypedPayload(payloads, `score_count:${name}`, Int32Array);
     if (scoreCounts.length !== codes.length) {
@@ -682,10 +670,15 @@ function insertNAForEmptyRows(
  * `parts` comes from `splitBundleParts`; `metadata` is part 1's already-parsed footer.
  */
 export async function readV3Bundle(
-  parts: readonly (ArrayBuffer | null)[],
+  parts: (ArrayBuffer | null)[],
   metadata: FileMetaData,
 ): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
-  const [part1, part2, part3, part4, part5, part6] = parts;
+  const [, part2, , part4, part5] = parts;
+  // The three large parts are released as soon as they are decoded.
+  let [part1, , part3, , , part6] = parts;
+  // Take ownership so each large part can be released once decoded, rather than
+  // pinned by the caller's array until the whole read returns.
+  parts.fill(null);
   if (!part1 || !part2 || !part3) {
     throw new Error('Parquetbundle is missing one of its three required core parts');
   }
@@ -709,6 +702,7 @@ export async function readV3Bundle(
   }
 
   const columns = await readAnnotationColumns(part1, metadata, manifest, numRows);
+  part1 = null;
   const protein_ids = columns.get(manifest.idColumn) as string[];
 
   assertValidParquetMagic(part2);
@@ -719,8 +713,10 @@ export async function readV3Bundle(
     numRows,
     buildProjectionsMetadataMap(projectionsMetadata),
   );
+  part3 = null;
 
   const payloads = await readPayloads(part6);
+  part6 = null;
   let evidenceDict: readonly string[] | null = null;
   const readEvidenceDict = (): readonly string[] =>
     (evidenceDict ??= readLabels(payloads, EVIDENCE_DICT_NAME));
