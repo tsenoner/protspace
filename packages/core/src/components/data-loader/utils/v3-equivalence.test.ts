@@ -403,12 +403,14 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     expect(umap3.dimension).toBe(3);
     expect(Array.from(umap3.data)).toEqual([
       ...Array.from({ length: 15 }, (_, index) => index / 4),
-      // P6 has no umap3 row at all. The encoder writes 0.0 for it and the browser leaves
-      // its zero-initialised slot untouched, so both put it at the origin.
-      0,
-      0,
-      0,
+      // P6 has no umap3 row at all. The encoder writes NaN for it and the reader keeps
+      // it, so P6 is missing there (not drawn), not at the origin. pca2 still places P6,
+      // so it stays in protein_ids.
+      NaN,
+      NaN,
+      NaN,
     ]);
+    expect(data.protein_ids).toContain('P6');
     expect(umap3.metadata).toEqual({ n_neighbors: 15, dimension: 3, dimensions: 3, source: '' });
   });
 });
