@@ -61,12 +61,12 @@
 - [x] 2.19 The encoder writes part 1 in the v2 browser's protein order (first appearance in the
       projection rows, then the unprojected proteins), so label frequency ties break as in v2,
       and lists the manifest's projections by first appearance in those rows, as v2 ordered them
-- [x] 2.21 Numeric inference is over the placed proteins, as in v2: a column missing on every
-      placed protein is written as labels, and one numeric only over them as labels marked
-      `placedNumeric`, keeping the annotation-only protein's label for Python
 - [x] 2.20 A list annotation column is never inferred numeric, even with one number per cell,
       and `replace_annotations_v3` keeps a column the old part 1 stores as labels as labels, so a
       `transfer` round trip of its decoded text does not infer it numeric either
+- [x] 2.21 Numeric inference is over the placed proteins, as in v2: a column missing on every
+      placed protein is written as labels, and one numeric only over them as labels marked
+      `placedNumeric`, keeping the annotation-only protein's label for Python
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
@@ -158,11 +158,33 @@
 
 ## 5. Release and follow-ups
 
-- [ ] 5.1 Deprecation commits carry "Deprecates reading v1/v2 parquetbundles; removal planned for
-      protspace 5.0.0."; no `BREAKING CHANGE` footer; merge without squashing
-- [x] 5.2 Convert `apps/web/public/data.parquetbundle` and the example datasets under
-      `apps/web/public/data/` to v3 with `protspace convert`, each verified to decode to the same
-      dataset; keep the e2e fixtures and `v2-sample` legacy as the legacy reader's test data;
-      `scripts/landing-data` reads v3; `encode_legacy_cell` splits a hit at its last pipe
-- [ ] 5.3 Follow-up (5.0.0): remove the legacy readers, `extractRowsFromParquetBundle` and the
-      notice
+- [x] 5.1 Deprecation commits carry "Deprecates reading v1/v2 parquetbundles; removal planned for
+      protspace 5.0.0." (`feat(cli)` convert, `feat(core)` decode export, `feat(web)` notice and
+      their docs); no commit carries a `BREAKING CHANGE` footer
+- [ ] 5.2 Merge `main` again before landing, then merge the PR with a merge commit, never a squash
+      (it touches `apps/protspace/`)
+- [x] 5.3 Convert `apps/web/public/data.parquetbundle` and the example datasets under
+      `apps/web/public/data/` (the 573K Swiss-Prot bundle included) to v3 with `protspace convert`,
+      each verified to decode to the same dataset; keep the e2e fixtures and `v2-sample` legacy as
+      the legacy reader's test data; `scripts/landing-data` reads v3; `encode_legacy_cell` splits a
+      hit at its last pipe
+
+## 6. Follow-ups for protspace 5.0.0 (not in this change)
+
+- [ ] 6.1 Python: drop the legacy branch of `bundle._parse_bundle` (3 to 5 parts), the deprecation
+      warning and `LEGACY_REMOVAL_VERSION`, and the `warn_legacy` plumbing of the readers and writers
+- [ ] 6.2 Python: `protspace convert` stops reading v1/v2 and names the last 4.x release that can;
+      `style` and `transfer` no longer upgrade a legacy input; the v1 cell migration
+      (`migrate_legacy_annotation_table`, `encode_legacy_cell`) and the v2 browser's id-column
+      fallback go with it
+- [ ] 6.3 Browser: remove the legacy path of `decodeParquetBundle`, `extractRowsFromParquetBundle`
+      and the bundle-only parts of the row-based conversion it feeds (plain `.parquet` imports keep
+      `convertParquetToVisualizationDataOptimized`), the `formatVersion` below 3 handling and the
+      legacy-format notice in `apps/web/src/explore/notifications.ts`
+- [ ] 6.4 Tests and data: retire the v1 e2e fixtures under `apps/web/tests/fixtures/`, the
+      `v2-sample` unit fixture, the Python legacy tests and the legacy-cell path of
+      `scripts/landing-data`
+- [ ] 6.5 Docs: the legacy layout and v1/v2 sections of `docs/guide/data-format.md`, the deprecated
+      `extractRowsFromParquetBundle` entry in `docs/developers/api/index.md`, and the deprecation
+      notes in `docs/guide/python-cli.md` and `apps/protspace/CLAUDE.md`; release with a
+      `BREAKING CHANGE` footer
