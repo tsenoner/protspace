@@ -69,7 +69,7 @@ Provenance is also drawable. With the overlay on, clicking a point in the plot t
 - **Click a transferred protein** and one dashed line joins it to its source, the protein whose label it borrowed for the currently active annotation.
 - **Click a source protein** and dashed lines fan out to every protein that borrowed from it.
 
-![Tracing a transferred value back to its source, then fanning out from that source](./images/eat-connectors.gif)
+![Clicking a transferred toxin draws one dashed line to the reviewed toxin it borrowed its class from; clicking that source draws a line to every toxin that borrowed from it](./images/eat-connectors.gif)
 
 A protein that is both a transferred protein and a source for others takes the first case: only its own source line is drawn. If that source's legend category is hidden, the click draws nothing at all.
 

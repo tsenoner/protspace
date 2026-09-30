@@ -36,7 +36,7 @@ Choose which annotation to use for coloring points:
 
 The Annotation dropdown features:
 
-- **Grouped categories**: Features are organized into sections (UniProt, InterPro, Taxonomy, Other)
+- **Grouped categories**: Features are organized into sections, one per source (Biocentral, InterPro, TED, Taxonomy, UniProt, Other)
 - **Search**: Type to filter features by name (case-insensitive)
 - **Keyboard navigation**: Use arrow keys to move the highlight, Enter to select, Escape to close.
   Hovering does not move the arrow-key highlight, and Enter picks the row under the pointer whenever
