@@ -4,7 +4,7 @@
  * The landing page shows real ProtSpace data without loading the explorer or parsing Parquet in
  * the browser, so this script pre-extracts what the page needs into small static files:
  *
- *   apps/web/public/landing/demo.json        manifest: projection bounds, annotation categories
+ *   apps/web/public/landing/demo.json        manifest: projection names, annotation categories
  *                                            (labels, counts, colors) and the binary layout
  *   apps/web/public/landing/demo.bin         quantized coordinates for four projections +
  *                                            per-point category indices
@@ -22,8 +22,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parquetReadObjects } from 'hyparquet';
+import type { LegendPersistedSettings } from '../../packages/utils/src/types.ts';
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants.ts';
 import { findBundleDelimiterPositions } from '../../packages/utils/src/parquet/delimiter-utils.ts';
+import { normalizeBundleSettings } from '../../packages/utils/src/parquet/settings-validation.ts';
 import { KELLYS_COLORS } from '../../packages/utils/src/visualization/color-scheme.ts';
 import {
   NA_DEFAULT_COLOR,
@@ -32,19 +34,23 @@ import {
   normalizeMissingValue,
 } from '../../packages/utils/src/visualization/missing-values.ts';
 import { annotationLabel } from '../../packages/utils/src/visualization/annotation-metadata.ts';
+import { NEUTRAL_VALUE_COLOR as OTHER_COLOR } from '../../packages/core/src/components/scatter-plot/config.ts';
+import type { Category } from '../../apps/web/src/landing/landing-data.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = resolve(ROOT, 'apps/web/public/landing');
 const DEMO_BUNDLE = 'apps/web/public/data.parquetbundle';
 const VENOM_BUNDLE = 'apps/web/public/data/venom_eat_stats.parquetbundle';
 
-/** Mirrors `NEUTRAL_VALUE_COLOR` in packages/core/src/components/scatter-plot/config.ts. */
-const OTHER_COLOR = '#888888';
 /** Mirrors `LEGEND_DEFAULTS.maxVisibleValues` in packages/core/src/components/legend/config.ts. */
 const DEFAULT_MAX_VISIBLE = 10;
 
 type Row = Record<string, unknown>;
 
+/**
+ * The explorer's loader (`extractRowsFromParquetBundle` in core) can't be imported here: tsx
+ * loads core's sources as CommonJS and hyparquet ships ESM only. Parts are split the same way.
+ */
 function splitBundle(path: string): (ArrayBuffer | null)[] {
   const bytes = new Uint8Array(readFileSync(resolve(ROOT, path)));
   const parts: (ArrayBuffer | null)[] = [];
@@ -60,6 +66,15 @@ function splitBundle(path: string): (ArrayBuffer | null)[] {
 const readRows = (part: ArrayBuffer | null, columns?: string[]): Promise<Row[]> =>
   part ? parquetReadObjects({ file: part, columns }) : Promise.resolve([]);
 
+/** Per-column legend settings, in either the current or the legacy flat settings format. */
+async function readLegendSettings(
+  part: ArrayBuffer | null,
+): Promise<Record<string, PersistedCategories>> {
+  const rows = await readRows(part);
+  if (!rows.length) return {};
+  return normalizeBundleSettings(JSON.parse(String(rows[0].settings_json)))?.legendSettings ?? {};
+}
+
 /** Legend display value: first multi-value item, evidence/score suffix stripped; null for N/A. */
 function displayValue(raw: unknown): string | null {
   const value = normalizeMissingValue(raw);
@@ -68,19 +83,9 @@ function displayValue(raw: unknown): string | null {
   return first === '' ? null : first;
 }
 
-interface Category {
-  label: string;
-  count: number;
-  color: string;
-  kind?: 'other' | 'na';
-  /** Number of named categories folded into the "Other" bucket. */
-  collapsed?: number;
-}
-
-interface PersistedCategories {
-  maxVisibleValues?: number;
-  categories?: Record<string, { zOrder: number; color: string }>;
-}
+type PersistedCategories = Partial<
+  Pick<LegendPersistedSettings, 'maxVisibleValues' | 'categories'>
+>;
 
 /**
  * Bucket a column into legend categories the way the explorer does, returning the categories
@@ -159,13 +164,6 @@ async function readProjection(parts: (ArrayBuffer | null)[], name: string) {
   return coords;
 }
 
-async function readSettings(
-  part: ArrayBuffer | null,
-): Promise<Record<string, PersistedCategories>> {
-  const rows = await readRows(part);
-  return rows.length ? JSON.parse(String(rows[0].settings_json)) : {};
-}
-
 /* ------------------------------------------------------------------------------------------ */
 /* Demo dataset: the bundle /explore opens by default                                          */
 /* ------------------------------------------------------------------------------------------ */
@@ -178,19 +176,27 @@ function quantizeProjection(name: string, xs: number[], ys: number[]) {
     yMin: Math.min(...ys),
     yMax: Math.max(...ys),
   };
-  const quantize = (value: number, min: number, max: number) =>
-    Math.round(((value - min) / (max - min)) * 65535);
+  const xSpan = bounds.xMax - bounds.xMin;
+  const ySpan = bounds.yMax - bounds.yMin;
+  if (!(xSpan > 0 && ySpan > 0)) throw new Error(`${name}: degenerate projection bounds`);
+  const quantize = (value: number, min: number, span: number) =>
+    Math.round(((value - min) / span) * 65535);
   const xy = new Uint16Array(xs.length * 2);
   for (let i = 0; i < xs.length; i++) {
-    xy[i * 2] = quantize(xs[i], bounds.xMin, bounds.xMax);
-    xy[i * 2 + 1] = quantize(ys[i], bounds.yMin, bounds.yMax);
+    xy[i * 2] = quantize(xs[i], bounds.xMin, xSpan);
+    xy[i * 2 + 1] = quantize(ys[i], bounds.yMin, ySpan);
   }
-  const span = bounds.xMax - bounds.xMin;
-  const maxErr = Math.max(
-    ...xs.map((x, i) => Math.abs((xy[i * 2] / 65535) * span + bounds.xMin - x)),
-  );
-  if (maxErr > span / 20000) throw new Error(`${name}: quantization error too large: ${maxErr}`);
-  return { name, bounds, xy };
+  const axisError = (values: number[], offset: number, min: number, span: number) =>
+    values.reduce(
+      (max, v, i) => Math.max(max, Math.abs((xy[i * 2 + offset] / 65535) * span + min - v)),
+      0,
+    );
+  const xErr = axisError(xs, 0, bounds.xMin, xSpan);
+  const yErr = axisError(ys, 1, bounds.yMin, ySpan);
+  if (xErr > xSpan / 20000 || yErr > ySpan / 20000) {
+    throw new Error(`${name}: quantization error too large: x ${xErr}, y ${yErr}`);
+  }
+  return { name, xy };
 }
 
 async function buildDemo() {
@@ -205,7 +211,7 @@ async function buildDemo() {
 
   const parts = splitBundle(DEMO_BUNDLE);
   const rows = await readRows(parts[0], ['protein_id', 'protein_name', ...ANNOTATIONS]);
-  const settings = await readSettings(parts[3]);
+  const settings = await readLegendSettings(parts[3]);
   const ids = rows.map((row) => String(row.protein_id));
 
   const projections = [];
@@ -229,15 +235,15 @@ async function buildDemo() {
   }));
 
   const chunks: Buffer[] = [];
-  const layout: { field: string; type: 'Uint16' | 'Uint8'; offset: number; length: number }[] = [];
+  const layout: { field: string; offset: number; length: number }[] = [];
   let offset = 0;
   projections.forEach((projection, k) => {
-    layout.push({ field: `xy${k}`, type: 'Uint16', offset, length: n * 2 });
+    layout.push({ field: `xy${k}`, offset, length: n * 2 });
     chunks.push(Buffer.from(projection.xy.buffer));
     offset += projection.xy.byteLength;
   });
   for (const annotation of annotations) {
-    layout.push({ field: annotation.column, type: 'Uint8', offset, length: n });
+    layout.push({ field: annotation.column, offset, length: n });
     chunks.push(Buffer.from(annotation.index.buffer));
     offset += n;
   }
@@ -250,9 +256,8 @@ async function buildDemo() {
       generatedBy: 'scripts/landing-data/build-landing-data.mts',
       source: DEMO_BUNDLE,
       count: n,
-      projections: projections.map(({ name, bounds }) => ({ name, ...bounds })),
+      projections: projections.map(({ name }) => ({ name })),
       bin: { file: 'demo.bin', layout },
-      labels: { file: 'demo-labels.json' },
       annotations: annotations.map(({ column, categories }) => ({
         column,
         label: annotationLabel(column),
@@ -278,6 +283,8 @@ async function buildDemo() {
 
 async function buildVenom() {
   const PROJECTION = 'ProtT5 — UMAP 2';
+  /** The embedding PROJECTION was computed from, as the stats table names that space. */
+  const EMBEDDING = 'prot_t5';
   const TARGET = 'ec';
   /** Scored for separation; taxonomic family, as the explorer's legend strips show it. */
   const SCORED = 'family';
@@ -299,17 +306,22 @@ async function buildVenom() {
     [TARGET]: displayValue(row[TARGET]) ?? displayValue(row[`${TARGET}__pred_value`]),
   }));
   const ec = categorize(merged, TARGET);
-  const lookup = new Map(ec.categories.map((category, i) => [category.label, i]));
+  const lookup = new Map(
+    ec.categories.flatMap((category, i) => (category.kind ? [] : [[category.label, i] as const])),
+  );
+  // Values folded into the Other bucket index Other, as their points are colored.
+  const otherIndex = ec.categories.findIndex((category) => category.kind === 'other');
+  const categoryOf = (value: string) => lookup.get(value) ?? otherIndex;
   const curated = rows.map((row) => {
-    const value = displayValue(row[TARGET]);
-    return value == null ? -1 : (lookup.get(value) ?? -1);
+    const curatedValue = displayValue(row[TARGET]);
+    return curatedValue == null ? -1 : categoryOf(curatedValue);
   });
   const transferred = rows.map((row, i) => {
-    const value = displayValue(row[`${TARGET}__pred_value`]);
-    if (value == null || curated[i] >= 0) return null;
+    const predicted = displayValue(row[`${TARGET}__pred_value`]);
+    if (predicted == null || curated[i] >= 0) return null;
     return {
       point: i,
-      category: lookup.get(value) ?? -1,
+      category: categoryOf(predicted),
       confidence: round(Number(row[`${TARGET}__pred_confidence`]), 3),
       source: indexOf.get(String(row[`${TARGET}__pred_source`])) ?? -1,
     };
@@ -323,7 +335,7 @@ async function buildVenom() {
       row.stat_family === 'annotation_validity' &&
       row.label_kind === 'annotation' &&
       row.metric === 'silhouette' &&
-      (row.space_kind === 'embedding' || row.space_name === PROJECTION),
+      row.space_name === (row.space_kind === 'embedding' ? EMBEDDING : PROJECTION),
   );
   const score = (kind: string, category: string | null) => {
     const row = silhouette.find(
@@ -332,10 +344,10 @@ async function buildVenom() {
     if (!row) throw new Error(`venom: no ${kind} silhouette for ${category ?? 'the annotation'}`);
     return round(Number(row.value), 3);
   };
-  const settings = await readSettings(parts[3]);
+  const settings = await readLegendSettings(parts[3]);
   const legend = categorize(rows, SCORED, settings[SCORED]).categories;
-  const colorOf = (label: string) =>
-    legend.find((category) => !category.kind && category.label === label)?.color ?? OTHER_COLOR;
+  const legendRow = (label: string) =>
+    legend.find((category) => !category.kind && category.label === label);
   const scored = [
     ...new Set(silhouette.filter((row) => row.category).map((row) => String(row.category))),
   ];
@@ -345,11 +357,8 @@ async function buildVenom() {
     JSON.stringify({
       generatedBy: 'scripts/landing-data/build-landing-data.mts',
       source: VENOM_BUNDLE,
-      count: rows.length,
       ids,
       eat: {
-        column: TARGET,
-        label: annotationLabel(TARGET),
         categories: ec.categories.filter((category) => category.kind !== 'na'),
         curated,
         transferred: transferred.filter((entry) => entry != null),
@@ -358,12 +367,17 @@ async function buildVenom() {
         label: annotationLabel(SCORED),
         projection: PROJECTION,
         overall: { map: score('projection', null), embedding: score('embedding', null) },
-        categories: scored.map((label) => ({
-          label,
-          color: colorOf(label),
-          map: score('projection', label),
-          embedding: score('embedding', label),
-        })),
+        categories: scored.map((label) => {
+          const row = legendRow(label);
+          return {
+            label,
+            color: row?.color ?? OTHER_COLOR,
+            // Categories the legend collapses into Other, drawn underneath in its grey.
+            ...(row ? {} : { kind: 'other' as const }),
+            map: score('projection', label),
+            embedding: score('embedding', label),
+          };
+        }),
       },
     }),
   );
