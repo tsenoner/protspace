@@ -36,3 +36,14 @@ export const PHOSPHATASE_1587_FIXTURE = fixture('phosphatase_1587.parquetbundle'
 
 /** 40,026 proteins; `protein_existence`, `length_*`, `pfam`, `cath`, `superfamily`, `signal_peptide`; PCA 2 and PCA 3. */
 export const PE1_40026_FIXTURE = fixture('pe1_40026_pca3d.parquetbundle');
+
+/**
+ * The example role fixtures (`helpers/example-fixtures.ts`), derived from the
+ * fixtures above by `derive-example-role-fixtures.py` in the fixtures folder.
+ * Each holds the view names of both examples its role stands for, the interim
+ * and the final one, as its docstring lists.
+ */
+export const ROLE_SMALL_FIXTURE = fixture('example_role_small_5181.parquetbundle');
+export const ROLE_OTHER_FIXTURE = fixture('example_role_other_1587.parquetbundle');
+export const ROLE_SLOW_FIXTURE = fixture('example_role_slow_40026.parquetbundle');
+export const ROLE_EAT_FIXTURE = fixture('example_role_eat_811.parquetbundle');

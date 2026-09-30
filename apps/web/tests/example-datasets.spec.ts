@@ -7,12 +7,15 @@ import {
   type ExampleDataset,
 } from '../src/explore/example-datasets';
 import {
+  clickLegendItem,
   collectDefaultViewDriftWarnings,
   curatedViewOf,
   dismissTourIfPresent,
   getControlBarView,
   getCurrentDatasetName,
+  getFirstLegendItemValue,
   getProteinCount,
+  isLegendItemHidden,
   openImportMenu,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
@@ -20,7 +23,12 @@ import {
   waitForProteinCount,
   type ControlBarView,
 } from './helpers/explore';
-import { e2eExample, exampleBundleGlob, serveExampleFixtures } from './helpers/example-fixtures';
+import {
+  EAT_ROLE_BUNDLED_THRESHOLD,
+  e2eExample,
+  exampleBundleGlob,
+  serveExampleFixtures,
+} from './helpers/example-fixtures';
 import {
   PE1_40026_FIXTURE,
   PHOSPHATASE_1587_FIXTURE,
@@ -34,8 +42,8 @@ import { clearOpfs, seedOpfsState } from './helpers/opfs';
  * mechanics. Every example the suite loads is served from a pinned fixture
  * (`helpers/example-fixtures.ts`), and the startup demo is pinned by the web
  * server, so nothing here depends on what the product's examples hold. The
- * scenarios name examples by role (`SMALL`, `OTHER`, `SLOW`); the annotation
- * names they pick belong to those roles' fixtures.
+ * scenarios name examples by role (`SMALL`, `OTHER`, `SLOW`, `EAT`); the
+ * annotation names they pick belong to those roles' fixtures.
  *
  * Protein counts double as a cheap "which dataset is showing" signal without
  * depending on annotation names.
@@ -48,6 +56,7 @@ const DEMO_COUNT = 7831;
 const SMALL = e2eExample('small');
 const OTHER = e2eExample('other');
 const SLOW = e2eExample('slow');
+const EAT = e2eExample('eat');
 
 /** A user import, never a catalog example. */
 const USER_IMPORT_PATH = PHOSPHATASE_1587_FIXTURE;
@@ -140,6 +149,28 @@ function exampleFailureToast(page: Page, id: string) {
 }
 
 const failWith500 = (route: Route) => route.fulfill({ status: 500, body: 'Internal Server Error' });
+
+/** Whether any saved legend state in this browser hides `value`. */
+async function isHiddenInSavedLegend(page: Page, value: string): Promise<boolean> {
+  return page.evaluate((target) => {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith('protspace:legend:')) continue;
+      const settings = JSON.parse(localStorage.getItem(key) || '{}');
+      if ((settings.hiddenValues ?? []).includes(target)) return true;
+    }
+    return false;
+  }, value);
+}
+
+/** Hides the first legend category and waits until the change is saved. */
+async function hideFirstLegendCategory(page: Page): Promise<string> {
+  const value = await getFirstLegendItemValue(page);
+  await clickLegendItem(page, value);
+  await expect.poll(() => isLegendItemHidden(page, value)).toBe(true);
+  await expect.poll(() => isHiddenInSavedLegend(page, value)).toBe(true);
+  return value;
+}
 
 async function importUserFile(page: Page, filePath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
@@ -327,9 +358,8 @@ test.describe('Example datasets: Import menu and deep link', () => {
   });
 
   test('a deep link with a view param selects that annotation on the example', async ({ page }) => {
-    // 'phylum' is SMALL's curated annotation, so it would pass even if the
-    // param were ignored; 'length_fixed' is not, so it actually proves the
-    // param was applied.
+    // 'length_fixed' is not SMALL's curated annotation, so selecting it
+    // proves the param was applied rather than the curated view.
     await page.goto(`/explore?dataset=${SMALL.id}&annotation=length_fixed`);
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
@@ -1086,5 +1116,60 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     await waitForProteinCount(page, SMALL.count);
     await expectDatasetParam(page, SMALL.id);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 2);
+  });
+});
+
+test.describe('Example datasets: examples reopen in their curated state (d)', () => {
+  test("a reload brings back an example's bundled legend, while a user import keeps its change", async ({
+    page,
+  }) => {
+    await page.goto('/explore?dataset=demo');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+
+    // The change is saved like any other, and discarded when the example loads again.
+    const exampleValue = await hideFirstLegendCategory(page);
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, DEMO_COUNT);
+    await expectDatasetParam(page, 'demo');
+    expect(await isLegendItemHidden(page, exampleValue)).toBe(false);
+
+    // A user import keeps the same kind of change across a reload.
+    await importUserFile(page, USER_IMPORT_PATH);
+    await waitForProteinCount(page, USER_IMPORT_COUNT);
+    await waitForPersistedExploreDataset(page);
+    await expectDatasetParam(page, null);
+    await pickAnnotation(page, 'ec');
+    const importValue = await hideFirstLegendCategory(page);
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, USER_IMPORT_COUNT);
+    expect(await isLegendItemHidden(page, importValue)).toBe(true);
+  });
+});
+
+test.describe('Example datasets: the EAT example', () => {
+  test('opens on its transferred annotation with the overlay on and its bundled reliability threshold', async ({
+    page,
+  }) => {
+    await page.goto(`/explore?dataset=${EAT.id}`);
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, EAT.count);
+    await expect.poll(() => getControlBarView(page)).toEqual(curatedView(EAT.id));
+
+    const eatGroup = page
+      .locator('protspace-legend')
+      .getByRole('region', { name: 'Embedding Annotation Transfer' });
+    await expect(eatGroup).toBeVisible();
+    await expect(eatGroup.getByRole('checkbox', { name: 'Show EAT predictions' })).toBeChecked();
+    await expect(
+      eatGroup.getByRole('slider', { name: 'EAT reliability filter threshold' }),
+    ).toHaveValue(String(EAT_ROLE_BUNDLED_THRESHOLD));
+    expect(await getSearch(page)).toBe(`?dataset=${EAT.id}`);
   });
 });

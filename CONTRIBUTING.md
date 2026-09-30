@@ -277,7 +277,10 @@ lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suit
 - **Test fixtures** live in `apps/web/tests/fixtures/` and are the only bundles tests read
   (`apps/web/tests/helpers/fixtures.ts` names them). A test never reads what the product serves,
   so rebuilding an example cannot break it. Add a new fixture there rather than pointing a test
-  at `apps/web/public/`.
+  at `apps/web/public/`. The `example_role_*` fixtures, which stand in for the catalog examples
+  the E2E suite loads (`apps/web/tests/helpers/example-fixtures.ts`), are derived from the
+  others: edit and rerun `uv run apps/web/tests/fixtures/derive-example-role-fixtures.py`
+  rather than editing them by hand.
 - **Examples** are the Import menu's datasets (`apps/web/src/explore/example-datasets.ts`). Only
   the startup demo is committed (`apps/web/public/data.parquetbundle`). The others are assets of
   a GitHub release, pinned by size and sha256 in the generated
