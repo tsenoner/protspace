@@ -1,10 +1,20 @@
 """Tests for Biocentral prediction retriever."""
 
+import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+
+from protspace.core.constants import standardize_missing
 from src.protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+WEB_MISSING_VALUES = (
+    REPO_ROOT / "packages" / "utils" / "src" / "visualization" / "missing-values.ts"
 )
 
 
@@ -67,7 +77,7 @@ class TestTransmembraneExtraction:
     def test_no_transmembrane(self):
         preds = [_make_prediction("TMbed", "oooooooooiiiiiiiiiii")]
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
-        assert result == "none"
+        assert result == "non-transmembrane"
 
     def test_lowercase_labels(self):
         """TMbed uses lowercase h/b for non-TM side of helix/strand."""
@@ -79,6 +89,39 @@ class TestTransmembraneExtraction:
         preds = [_make_prediction("OtherModel", "something")]
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
+
+
+def _web_missing_tokens() -> set[str]:
+    """The web app's MISSING_VALUE_TOKENS, read from its source."""
+    source = WEB_MISSING_VALUES.read_text()
+    block = re.search(
+        r"MISSING_VALUE_TOKENS[^=]*=\s*new Set\(\[(.*?)\]\)", source, re.S
+    )
+    assert block, f"MISSING_VALUE_TOKENS not found in {WEB_MISSING_VALUES}"
+    return set(re.findall(r"'([^']*)'", block.group(1)))
+
+
+class TestNoTransmembraneIsACategory:
+    """A protein without a TM segment is a prediction, not a missing value.
+
+    Both readers turn a set of literal tokens into N/A: the CLI's
+    `standardize_missing` (exact match) and the web app's `normalizeMissingValue`
+    (trimmed, case-insensitive). `none` was one of them, so every negative
+    prediction displayed as N/A.
+    """
+
+    LABEL = BiocentralPredictionRetriever._extract_transmembrane(
+        [_make_prediction("TMbed", "ooooooiiiiii")]
+    )
+
+    def test_the_cli_keeps_it(self):
+        assert standardize_missing(pd.Series([self.LABEL])).tolist() == [self.LABEL]
+
+    def test_the_web_app_keeps_it(self):
+        tokens = _web_missing_tokens()
+
+        assert "none" in tokens  # the list was read, and still has the old label
+        assert self.LABEL.strip() and self.LABEL.strip().lower() not in tokens
 
 
 class TestPerSequenceExtraction:

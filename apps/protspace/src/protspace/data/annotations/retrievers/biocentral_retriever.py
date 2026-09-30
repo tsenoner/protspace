@@ -376,7 +376,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
     def _extract_transmembrane(predictions: list) -> str:
         """Derive transmembrane type from TMbed per-residue output.
 
-        Returns: 'alpha-helical', 'beta-barrel', or 'none'
+        Returns: 'alpha-helical', 'beta-barrel', or 'non-transmembrane'
         """
         for pred in predictions:
             if pred.model_name == "TMbed":
@@ -389,5 +389,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                     return "alpha-helical"
                 elif has_beta:
                     return "beta-barrel"
-                return "none"
+                # Not "none": the CLI and the web app both read that as a
+                # missing value, which showed every negative prediction as N/A.
+                return "non-transmembrane"
         return ""
