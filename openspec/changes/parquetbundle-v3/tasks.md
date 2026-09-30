@@ -45,12 +45,12 @@
 - [ ] 3.6 Web exporter (`packages/utils/src/parquet/bundle-writer.ts`) writes v3, with `true` /
       `false` for booleans and NaN for missing coordinates; round-trip tests for v1, v2 and v3
       inputs, with and without settings and statistics
-- [ ] 3.7 `decodeParquetBundle` reports the container format version; the web app shows a
+- [x] 3.7 `decodeParquetBundle` reports the container format version; the web app shows a
       non-blocking legacy-format notice for user imports only
-- [ ] 3.8 Restore `main`'s persist-before-render ordering in `explore/dataset-controller.ts`, remove
+- [x] 3.8 Restore `main`'s persist-before-render ordering in `explore/dataset-controller.ts`, remove
       the deferred `persistBytes`, keep the other v3 changes there; test that the bytes are stored
       before the render starts
-- [ ] 3.9 Export `decodeParquetBundle` from `@protspace/core`; `extractRowsFromParquetBundle` rejects
+- [x] 3.9 Export `decodeParquetBundle` from `@protspace/core`; `extractRowsFromParquetBundle` rejects
       a v3 bundle with an error naming `decodeParquetBundle` and is marked deprecated
 - [ ] 3.10 `docs/developers/embedding.md` and `docs/developers/api/index.md` use
       `decodeParquetBundle`; the web export notes in the data-format guide say exports are v3
