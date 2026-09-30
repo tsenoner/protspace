@@ -31,15 +31,15 @@
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
-- [ ] 3.1 v3 reader keeps NaN for missing coordinates; legacy reader fills coordinate arrays with
+- [x] 3.1 v3 reader keeps NaN for missing coordinates; legacy reader fills coordinate arrays with
       NaN before writing the rows it has
-- [ ] 3.2 Browser protein set is the proteins with at least one finite coordinate in some
+- [x] 3.2 Browser protein set is the proteins with at least one finite coordinate in some
       projection, in both readers; annotation arrays are built over that set
-- [ ] 3.3 Cull non-finite points in `DataProcessor.processVisualizationData`, keeping the identity
+- [x] 3.3 Cull non-finite points in `DataProcessor.processVisualizationData`, keeping the identity
       path when nothing is missing
-- [ ] 3.4 Make `_updatePlotDataCoordinates` fall back to a full rebuild when the new projection's
+- [x] 3.4 Make `_updatePlotDataCoordinates` fall back to a full rebuild when the new projection's
       surviving set differs; audit every other direct read of `data.projections`
-- [ ] 3.5 Tests: nothing non-finite reaches drawing, picking, brush, lasso, contours, scale domains,
+- [x] 3.5 Tests: nothing non-finite reaches drawing, picking, brush, lasso, contours, scale domains,
       depth sort, duplicate stacks or export; projection switching between complete and incomplete
       projections
 - [ ] 3.6 Web exporter (`packages/utils/src/parquet/bundle-writer.ts`) writes v3, with `true` /
