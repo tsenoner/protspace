@@ -122,12 +122,12 @@ export class LegendDataProcessor {
         if (code >= 0) bins[code < valueCount ? code : naBin]++;
       }
     } else if (isCsrAnnotationData(colData)) {
-      const { end, codes } = colData;
+      const { offsets, codes } = colData;
       const limit = Math.min(proteinCount, colData.length);
       for (let i = 0; i < limit; i++) {
         if (filteredIndices !== null && !filteredIndices.has(i)) continue;
-        const stop = end[i];
-        for (let j = i === 0 ? 0 : end[i - 1]; j < stop; j++) {
+        const stop = offsets[i + 1];
+        for (let j = offsets[i]; j < stop; j++) {
           const code = codes[j];
           bins[code >= 0 && code < valueCount ? code : naBin]++;
         }
@@ -162,33 +162,24 @@ export class LegendDataProcessor {
   }
 
   /**
-   * Count frequencies of annotation values.
+   * Count frequencies of a per-protein value list, the public `annotationValues` shape.
    * Raw null/empty values are converted to NA_VALUE.
+   *
+   * `filteredIndices` holds PROTEIN indices, as in {@link countFromStorage}, so it only
+   * lines up with a list that has exactly one value per protein; `null` means "no
+   * isolation filter".
    */
   static countAnnotationFrequencies(
-    annotationValues: (string | null)[],
-    isolationMode: boolean,
-    isolationHistory: string[][],
-    filteredIndices: Set<number>,
+    annotationValues: readonly (string | null)[],
+    filteredIndices: ReadonlySet<number> | null,
     knownValues: string[] = [],
-  ): ReadonlyMap<string, number> {
+  ): Map<string, number> {
     const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
-
-    const countValue = (rawValue: string | null) => {
+    annotationValues.forEach((rawValue, index) => {
+      if (filteredIndices !== null && !filteredIndices.has(index)) return;
       const value = toInternalValue(rawValue);
-      freq.set(value, (freq.get(value) || 0) + 1);
-    };
-
-    if (isolationMode && isolationHistory?.length) {
-      annotationValues.forEach((value, index) => {
-        if (filteredIndices.has(index)) {
-          countValue(value);
-        }
-      });
-    } else {
-      annotationValues.forEach(countValue);
-    }
-
+      freq.set(value, (freq.get(value) ?? 0) + 1);
+    });
     return freq;
   }
 
@@ -480,16 +471,15 @@ export class LegendDataProcessor {
 
   /**
    * Main entry point for processing legend items.
-   * Converts raw annotation values to internal format, sorts, and creates legend items.
+   * Sorts the already-counted frequencies (internal value format, isolation applied)
+   * and creates legend items from them.
    */
   static processLegendItems(
     ctx: LegendProcessorContext,
     annotationName: string,
-    annotationValues: (string | null)[] | ReadonlyMap<string, number>,
-    proteinIds: string[],
+    frequencyMap: ReadonlyMap<string, number>,
     maxVisibleValues: number,
     isolationMode: boolean,
-    isolationHistory: string[][],
     existingLegendItems: LegendItem[],
     sortMode: LegendSortMode = 'size-desc',
     persistedCategories: Record<string, PersistedCategoryData> = {},
@@ -498,22 +488,9 @@ export class LegendDataProcessor {
     useOtherBucket: boolean = true,
     pendingExtract?: string,
     pendingMerge?: string,
-    knownValues: string[] = [],
     isNumericSource: boolean = false,
   ): { legendItems: LegendItem[]; otherItems: OtherItem[] } {
     this.resetIfAnnotationChanged(ctx, annotationName);
-
-    // A pre-counted map already has isolation applied, so the O(N) protein-id
-    // scan behind getFilteredIndices is skipped with it.
-    const frequencyMap = Array.isArray(annotationValues)
-      ? this.countAnnotationFrequencies(
-          annotationValues,
-          isolationMode,
-          isolationHistory,
-          this.getFilteredIndices(isolationMode, isolationHistory, proteinIds),
-          knownValues,
-        )
-      : annotationValues;
 
     // Build existing zOrder map for manual sorting
     const existingZOrders = new Map<string, number>();

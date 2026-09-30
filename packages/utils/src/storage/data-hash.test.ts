@@ -126,18 +126,32 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [10, 20],
+        length: new Float64Array([10, 20]),
       },
     };
 
     const changedNumericDataset = {
       ...baseDataset,
       numeric_annotation_data: {
-        length: [10, 21],
+        length: new Float64Array([10, 21]),
       },
     };
 
     expect(generateDatasetHash(baseDataset)).not.toBe(generateDatasetHash(changedNumericDataset));
+  });
+
+  it('hashes a NaN in a typed column like the null an array used to hold', () => {
+    // Settings persisted before numeric columns became Float64Array are keyed by this
+    // hash, so the missing-value spelling must not change it.
+    const dataset = (length: ArrayLike<number | null>) => ({
+      protein_ids: ['P1', 'P2'],
+      annotations: { length: { kind: 'numeric' as const, values: [] } },
+      numeric_annotation_data: { length },
+    });
+
+    expect(generateDatasetHash(dataset(new Float64Array([10, NaN])))).toBe(
+      generateDatasetHash(dataset([10, null])),
+    );
   });
 
   it('changes when EAT value, confidence, or source changes', () => {
@@ -185,7 +199,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
+        length: new Float64Array([1, 2, 3]),
       },
     };
 
@@ -213,7 +227,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
+        length: new Float64Array([1, 2, 3]),
       },
     };
 
@@ -370,7 +384,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [10, 20, 30],
+        length: new Float64Array([10, 20, 30]),
       },
     };
 
@@ -378,7 +392,7 @@ describe('generateDatasetHash', () => {
       protein_ids: ['P3', 'P1', 'P2'],
       annotations: orderedDataset.annotations,
       numeric_annotation_data: {
-        length: [30, 10, 20],
+        length: new Float64Array([30, 10, 20]),
       },
     };
 
@@ -408,7 +422,7 @@ describe('generateDatasetHash', () => {
       confidence: 0.9,
       source: proteinIds[0],
     };
-    const confidence = new Array<number | null>(size).fill(null);
+    const confidence = new Float64Array(size).fill(NaN);
     confidence[size - 1] = 0.9;
 
     const hash = generateDatasetHash({
@@ -523,7 +537,7 @@ describe('generateDatasetHash memoization', () => {
   const buildDataset = () => ({
     protein_ids: ['P3', 'P1', 'P2'],
     annotations: { length: { kind: 'numeric' as const, values: [] } },
-    numeric_annotation_data: { length: [30, 10, 20] as (number | null)[] },
+    numeric_annotation_data: { length: new Float64Array([30, 10, 20]) },
     annotation_predicted: {
       ec: [null, { value: '1.1.1.1', confidence: 0.8, source: 'P1' }, null],
     },
@@ -544,7 +558,7 @@ describe('generateDatasetHash memoization', () => {
     expect(
       generateDatasetHash({
         ...dataset,
-        numeric_annotation_data: { length: [30, 10, 21] },
+        numeric_annotation_data: { length: new Float64Array([30, 10, 21]) },
       }),
     ).not.toBe(baseline);
 

@@ -49,7 +49,7 @@ export abstract class BasePersistenceController<
             string,
             { kind?: 'categorical' | 'numeric'; values?: (string | null)[] }
           >;
-          numeric_annotation_data?: Record<string, (number | null)[]>;
+          numeric_annotation_data?: Record<string, Float64Array>;
         },
   ): boolean {
     const newHash = generateDatasetHash(data);

@@ -112,7 +112,7 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
         cat: new Int32Array([0, 1, 0, 1, 0]),
       },
       numeric_annotation_data: {
-        num: [100, 101, 102, 103, 104],
+        num: new Float64Array([100, 101, 102, 103, 104]),
       },
     };
   }
@@ -144,7 +144,7 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     // categorical column sliced by survivor indices: cat[1]=1, cat[3]=1
     expect(Array.from(r.annotation_data.cat as Int32Array)).toEqual([1, 1]);
     // numeric column sliced: num[1]=101, num[3]=103
-    expect(r.numeric_annotation_data?.num).toEqual([101, 103]);
+    expect(r.numeric_annotation_data?.num).toEqual(new Float64Array([101, 103]));
     // projection coords sliced to rows 1 and 3
     expect(Array.from(r.projections[0].data)).toEqual([10, 11, 30, 33]);
     expect(r.projections[0].dimension).toBe(2);
@@ -181,7 +181,7 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     // Identical survivor slice to the fast-path test above.
     expect(r.protein_ids).toEqual(['p1', 'p3']);
     expect(Array.from(r.annotation_data.cat as Int32Array)).toEqual([1, 1]);
-    expect(r.numeric_annotation_data?.num).toEqual([101, 103]);
+    expect(r.numeric_annotation_data?.num).toEqual(new Float64Array([101, 103]));
     expect(Array.from(r.projections[0].data)).toEqual([10, 11, 30, 33]);
   });
 });
@@ -196,7 +196,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _plotData: PlotData;
     _lastDataRef: unknown;
     _processData(): void;
-    _buildQuadtree(): void;
+    _buildPointGridIndex(): void;
     _updateStyleSignature(): void;
     _renderPlot(): void;
     _reprocessAndRefresh(): void;
@@ -253,7 +253,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
   function instrument(el: RefreshInternals) {
     const calls: string[] = [];
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
-    vi.spyOn(el, '_buildQuadtree').mockImplementation(() => calls.push('buildQuadtree'));
+    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() =>
+      calls.push('buildPointGridIndex'),
+    );
     vi.spyOn(el, '_updateStyleSignature').mockImplementation(() =>
       calls.push('updateStyleSignature'),
     );
@@ -267,19 +269,19 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildQuadtree → requestUpdate, then defers renderPlot', async () => {
+  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then defers renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
 
     el.isolateSelection();
 
-    // Synchronous portion: process + quadtree happen before requestUpdate; render is deferred.
-    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    // Synchronous portion: process + point index happen before requestUpdate; render is deferred.
+    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
   it('resetIsolation nulls _lastDataRef BEFORE reprocess, then runs the same refresh sequence', async () => {
@@ -301,11 +303,11 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     // Divergence preserved: cleared before the shared refresh block runs.
     expect(lastDataRefAtProcess).toBeNull();
-    expect(calls).toEqual(['processData', 'buildQuadtree']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
   it('_reprocessAndRefresh is the single shared implementation both callers route through', () => {

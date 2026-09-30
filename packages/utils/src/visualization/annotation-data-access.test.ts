@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getCsrHitRange,
+  getProteinAnnotationIndexAt,
   getProteinAnnotationIndices,
   getProteinAnnotationCount,
   getFirstAnnotationIndex,
@@ -139,11 +139,10 @@ describe('annotation-data-access', () => {
 
 describe('CSR storage', () => {
   // rows: 0 -> [5, 6], 1 -> [], 2 -> [2], 3 -> [], 4 -> [0, 1, 9]
-  // First and last rows carry hits, and `end[-1]` is conceptually 0, so row 0's
-  // range is [0, end[0]).
+  // First and last rows carry hits.
   const csr = (): CsrAnnotationData => ({
     kind: 'csr',
-    end: Int32Array.from([2, 2, 3, 3, 6]),
+    offsets: Int32Array.from([0, 2, 2, 3, 3, 6]),
     codes: Int32Array.from([5, 6, 2, 0, 1, 9]),
     length: 5,
   });
@@ -162,13 +161,16 @@ describe('CSR storage', () => {
     ).toBe(false);
   });
 
-  it('derives half-open hit ranges, empty outside the row count', () => {
+  it('reads each index in place, in hit order', () => {
     const data = csr();
-    expect(getCsrHitRange(data, 0)).toEqual([0, 2]);
-    expect(getCsrHitRange(data, 1)).toEqual([2, 2]);
-    expect(getCsrHitRange(data, 4)).toEqual([3, 6]);
-    expect(getCsrHitRange(data, 5)).toEqual([0, 0]);
-    expect(getCsrHitRange(data, -1)).toEqual([0, 0]);
+    const read = (row: number) =>
+      Array.from({ length: getProteinAnnotationCount(data, row) }, (_, k) =>
+        getProteinAnnotationIndexAt(data, row, k),
+      );
+    expect(read(0)).toEqual([5, 6]);
+    expect(read(1)).toEqual([]);
+    expect(read(4)).toEqual([0, 1, 9]);
+    expect(read(5)).toEqual([]);
   });
 
   it('returns indices for empty, single-hit, first and last rows', () => {
@@ -183,7 +185,7 @@ describe('CSR storage', () => {
   it('treats an empty first row as the [0, 0) range', () => {
     const data: CsrAnnotationData = {
       kind: 'csr',
-      end: Int32Array.from([0, 1]),
+      offsets: Int32Array.from([0, 0, 1]),
       codes: Int32Array.from([3]),
       length: 2,
     };
@@ -226,12 +228,12 @@ describe('CSR storage', () => {
     }
   });
 
-  it('detects multilabel rows from the end deltas', () => {
+  it('detects multilabel rows from the offset deltas', () => {
     expect(isMultilabelAnnotationData(csr())).toBe(true);
     expect(isMultilabelAnnotationDataCached(csr())).toBe(true);
     const singles: CsrAnnotationData = {
       kind: 'csr',
-      end: Int32Array.from([1, 1, 2]),
+      offsets: Int32Array.from([0, 1, 1, 2]),
       codes: Int32Array.from([4, 7]),
       length: 3,
     };
@@ -244,7 +246,7 @@ describe('CSR storage', () => {
     expect(isCsrAnnotationData(sliced)).toBe(true);
     const out = sliced as CsrAnnotationData;
     expect(out.length).toBe(4);
-    expect(Array.from(out.end)).toEqual([3, 3, 5, 5]);
+    expect(Array.from(out.offsets)).toEqual([0, 3, 3, 5, 5]);
     expect(Array.from(out.codes)).toEqual([0, 1, 9, 5, 6]);
     expect(getProteinAnnotationIndices(out, 0)).toEqual([0, 1, 9]);
     expect(getProteinAnnotationIndices(out, 1)).toEqual([]);
@@ -256,19 +258,65 @@ describe('CSR storage', () => {
     const data = csr();
     const out = sliceAnnotationData(data, [0, 1, 2, 3, 4]) as CsrAnnotationData;
     expect(Array.from(out.codes)).toEqual(Array.from(data.codes));
-    expect(Array.from(out.end)).toEqual(Array.from(data.end));
+    expect(Array.from(out.offsets)).toEqual(Array.from(data.offsets));
     expect(out.codes.buffer).not.toBe(data.codes.buffer);
-    expect(out.end.buffer).not.toBe(data.end.buffer);
+    expect(out.offsets.buffer).not.toBe(data.offsets.buffer);
     out.codes[0] = 42;
-    out.end[0] = 0;
+    out.offsets[1] = 0;
     expect(data.codes[0]).toBe(5);
-    expect(data.end[0]).toBe(2);
+    expect(data.offsets[1]).toBe(2);
   });
 
   it('slices an all-empty selection to zero-length codes', () => {
     const out = sliceAnnotationData(csr(), [1, 3]) as CsrAnnotationData;
     expect(out.codes.length).toBe(0);
-    expect(Array.from(out.end)).toEqual([0, 0]);
+    expect(Array.from(out.offsets)).toEqual([0, 0, 0]);
+  });
+
+  it('slices scores and evidence along with their hits', () => {
+    const data: CsrAnnotationData = {
+      ...csr(),
+      // One score run per hit of row 4 only; hit 1 (code 6) has evidence 0.
+      scores: {
+        offsets: Int32Array.from([0, 0, 0, 0, 1, 1, 3]),
+        values: Float64Array.from([0.5, 0.25, 0.125]),
+      },
+      evidence: { codes: Int32Array.from([-1, 0, -1, -1, -1, -1]), dict: ['EXP'] },
+    };
+    const out = sliceAnnotationData(data, [4, 0]) as CsrAnnotationData;
+    expect(Array.from(out.codes)).toEqual([0, 1, 9, 5, 6]);
+    expect(Array.from(out.scores!.offsets)).toEqual([0, 1, 1, 3, 3, 3]);
+    expect(Array.from(out.scores!.values)).toEqual([0.5, 0.25, 0.125]);
+    expect(Array.from(out.evidence!.codes)).toEqual([-1, -1, -1, -1, 0]);
+  });
+});
+
+describe('getProteinAnnotationIndexAt', () => {
+  it('agrees with getProteinAnnotationIndices on every storage shape', () => {
+    const shapes = [
+      Int32Array.from([0, -1, 2]),
+      [[0], [], [2, 1]],
+      {
+        kind: 'sparse-multi' as const,
+        base: Int32Array.from([0, -1, 2]),
+        overrides: new Map([[2, [2, 1]]]),
+        length: 3,
+      },
+      {
+        kind: 'csr' as const,
+        offsets: Int32Array.from([0, 1, 1, 3]),
+        codes: Int32Array.from([0, 2, 1]),
+        length: 3,
+      },
+    ];
+    for (const data of shapes) {
+      for (let row = 0; row < 3; row++) {
+        const read = Array.from({ length: getProteinAnnotationCount(data, row) }, (_, k) =>
+          getProteinAnnotationIndexAt(data, row, k),
+        );
+        expect(read).toEqual([...getProteinAnnotationIndices(data, row)]);
+      }
+    }
   });
 });
 

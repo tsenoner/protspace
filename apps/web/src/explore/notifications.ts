@@ -136,6 +136,16 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
   };
 }
 
+/** A user imported a v1/v2 bundle: it loads, but reading that format ends in 5.0.0. */
+export function getLegacyBundleFormatNotification(formatVersion: number): NotifyOptions {
+  return {
+    title: 'This file uses an older bundle format.',
+    description: `Format v${formatVersion} bundles will stop opening in ProtSpace 5.0.0. To upgrade this file, export it again as a .parquetbundle from here, or run "protspace convert" on it.`,
+    durationMs: 12_000,
+    dedupeKey: 'legacy-bundle-format',
+  };
+}
+
 export function getExportSuccessNotification(filename: string): NotifyOptions {
   return {
     title: 'Export ready.',

@@ -16,7 +16,7 @@
  *  - **Lengths are per-element counts, never cumulative offsets.** Offsets are
  *    near-incompressible; their first differences are not. Every `<col>__count`,
  *    `score_count:<col>` and `dict:<col>:len` family is prefix-summed here into the
- *    cumulative offsets the in-memory `CsrAnnotationData` / `CsrScores` types use.
+ *    offsets the in-memory `CsrAnnotationData` / `CsrScores` types use.
  *  - **The dictionaries are faithful, not presentational.** The encoder stopped
  *    collapsing `none`/`NA`/`null` because doing so corrupted the Python side, so
  *    `dict:<col>` can carry those spellings as ordinary labels and this reader folds
@@ -24,11 +24,17 @@
  *    has always applied that rule.
  *  - **Every part 1/3/6 column is REQUIRED and PLAIN**, which is the only shape
  *    hyparquet decodes straight into a typed array. A column that arrives as a plain
- *    array still reads correctly (see the fallback in {@link writeChunk}) but about 4x
- *    slower, and is a bug on the writer side, so it is logged.
+ *    array was written nullable or dictionary-encoded, which is a writer bug, so it is
+ *    rejected (see {@link assertTypedChunk}) like any other schema mismatch.
  */
 
-import { parquetMetadata, parquetRead, parquetReadObjects, type FileMetaData } from 'hyparquet';
+import {
+  parquetMetadata,
+  parquetRead,
+  parquetReadObjects,
+  type ColumnData,
+  type FileMetaData,
+} from 'hyparquet';
 import {
   NA_DEFAULT_COLOR,
   NA_VALUE,
@@ -36,18 +42,21 @@ import {
   type Annotation,
   type AnnotationData,
   type BundleSettings,
+  type CsrAnnotationData,
   type CsrEvidence,
   type CsrScores,
   type Projection,
+  remapCsr,
   type VisualizationData,
 } from '@protspace/utils';
 import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
-import { extractSettings, extractStatistics } from './bundle';
+import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
 import {
   appendSyntheticNACategoryToCodes,
   buildProjectionsMetadataMap,
   carryStatistics,
   createNumericAnnotation,
+  dropUnplacedProteins,
   generateColorsAndShapes,
   normalizeEatCompanionColumns,
 } from './conversion';
@@ -203,19 +212,67 @@ function readManifest(metadata: FileMetaData): V3Manifest {
 type ColumnTarget = Int32Array | Float64Array | string[];
 
 /**
- * Copy one decoded chunk into its preallocated column at `rowStart`.
+ * Reject a part 1/3 chunk that did not decode to a typed array.
  *
- * The fast path is the whole point of v3: a REQUIRED PLAIN column arrives as a typed
- * array and lands with a single `set`. Anything else — a column the producer wrote
- * nullable or dictionary-encoded — still decodes correctly through the element loop,
- * which is why `onPlainArray` reports rather than throws.
+ * Only a REQUIRED PLAIN column does, and the encoder writes nothing else, so a plain
+ * array means a producer wrote the column nullable or dictionary-encoded. Its nulls
+ * would have to be invented into codes or coordinates, which is the kind of repair
+ * {@link readManifest} refuses too.
  */
+function assertTypedChunk(
+  columnName: string,
+  columnData: ArrayLike<unknown>,
+): asserts columnData is Int32Array | Float32Array | Float64Array {
+  if (
+    !(
+      columnData instanceof Int32Array ||
+      columnData instanceof Float32Array ||
+      columnData instanceof Float64Array
+    )
+  ) {
+    throw new Error(
+      `v3 bundle column "${columnName}" did not decode to a typed array: every v3 column ` +
+        'must be written REQUIRED and PLAIN, not nullable or dictionary-encoded',
+    );
+  }
+}
+
+/**
+ * `parquetRead` over `columns`, failing the read when `onChunk` throws.
+ *
+ * hyparquet calls `onChunk` from a detached promise continuation, so a throw there would
+ * surface as an unhandled rejection while the read itself resolved. The first one is
+ * held and rethrown once the read has finished.
+ */
+async function readColumnChunks(
+  file: ArrayBuffer,
+  metadata: FileMetaData,
+  columns: string[],
+  onChunk: (chunk: ColumnData) => void,
+): Promise<void> {
+  let failure: unknown = null;
+  await parquetRead({
+    file,
+    metadata,
+    columns,
+    onChunk: (chunk) => {
+      if (failure !== null) return;
+      try {
+        onChunk(chunk);
+      } catch (error) {
+        failure = error;
+      }
+    },
+  });
+  if (failure !== null) throw failure;
+}
+
+/** Copy one decoded chunk into its preallocated column at `rowStart`. */
 function writeChunk(
   target: ColumnTarget,
   columnName: string,
   columnData: ArrayLike<unknown>,
   rowStart: number,
-  onPlainArray: (columnName: string) => void,
 ): void {
   if (Array.isArray(target)) {
     for (let i = 0; i < columnData.length; i++) {
@@ -224,41 +281,8 @@ function writeChunk(
     }
     return;
   }
-
-  if (
-    columnData instanceof Int32Array ||
-    columnData instanceof Float64Array ||
-    columnData instanceof Float32Array
-  ) {
-    target.set(columnData, rowStart);
-    return;
-  }
-
-  onPlainArray(columnName);
-  const missing = target instanceof Int32Array ? -1 : NaN;
-  for (let i = 0; i < columnData.length; i++) {
-    const value = columnData[i];
-    target[rowStart + i] = value == null ? missing : Number(value);
-  }
-}
-
-/**
- * One-shot reporter for a column that did not arrive as a typed array.
- *
- * Per read rather than per column: a producer that got this wrong got it wrong for the
- * whole part, and one line in the console is the point.
- */
-function plainArrayReporter(): (columnName: string) => void {
-  let warned = false;
-  return (columnName: string) => {
-    if (warned) return;
-    warned = true;
-    console.warn(
-      `v3 bundle column "${columnName}" did not decode to a typed array — it was probably ` +
-        'written nullable or dictionary-encoded. The bundle still loads, about 4x slower; ' +
-        'fix the writer (every v3 column must be REQUIRED and PLAIN).',
-    );
-  };
+  assertTypedChunk(columnName, columnData);
+  target.set(columnData, rowStart);
 }
 
 /** Preallocate one array per declared column and fill it chunk by chunk. */
@@ -277,16 +301,9 @@ async function readAnnotationColumns(
     );
   }
 
-  const onPlainArray = plainArrayReporter();
-
-  await parquetRead({
-    file: part,
-    metadata,
-    columns: [...targets.keys()],
-    onChunk: ({ columnName, columnData, rowStart }) => {
-      const target = targets.get(columnName);
-      if (target) writeChunk(target, columnName, columnData, rowStart, onPlainArray);
-    },
+  await readColumnChunks(part, metadata, [...targets.keys()], (chunk) => {
+    const target = targets.get(chunk.columnName);
+    if (target) writeChunk(target, chunk.columnName, chunk.columnData, chunk.rowStart);
   });
 
   return targets;
@@ -298,7 +315,7 @@ async function readAnnotationColumns(
  * The wire is one column per axis (`<name>__x`, `__y`, `__z`), so the interleave into
  * the renderer's stride-major layout happens right in the chunk callback: no
  * per-projection intermediate and no second pass. A protein absent from a projection
- * keeps the zero the allocation gave it, which is what v2 produced too.
+ * has NaN coordinates, as the encoder wrote them: the scatter plot does not draw it.
  */
 async function readProjections(
   part: ArrayBuffer,
@@ -306,7 +323,6 @@ async function readProjections(
   numRows: number,
   metadataMap: ReadonlyMap<string, Record<string, unknown>>,
 ): Promise<Projection[]> {
-  assertValidParquetMagic(part);
   const metadata = parquetMetadata(part);
   const schemaColumns = leafColumnTypes(metadata);
 
@@ -333,23 +349,20 @@ async function readProjections(
   }
 
   if (axisTargets.size > 0) {
-    const onPlainArray = plainArrayReporter();
-    await parquetRead({
-      file: part,
+    await readColumnChunks(
+      part,
       metadata,
-      columns: [...axisTargets.keys()],
-      onChunk: ({ columnName, columnData, rowStart }) => {
+      [...axisTargets.keys()],
+      ({ columnName, columnData, rowStart }) => {
         const target = axisTargets.get(columnName);
         if (!target) return;
-        // A nullable axis column coerces its nulls to 0 below, which is exactly the
-        // origin an absent protein legitimately sits at — so it has to be reported.
-        if (Array.isArray(columnData)) onPlainArray(columnName);
+        assertTypedChunk(columnName, columnData);
         const { data, dimension, axis } = target;
         for (let i = 0; i < columnData.length; i++) {
-          data[(rowStart + i) * dimension + axis] = columnData[i] as number;
+          data[(rowStart + i) * dimension + axis] = columnData[i];
         }
       },
-    });
+    );
   }
 
   return projections;
@@ -462,27 +475,18 @@ function foldMissingLabels(labels: string[]): Int32Array | null {
   return remap;
 }
 
-/** Per-element counts to the cumulative offsets the in-memory CSR types use. */
+/** Per-element counts to CSR offsets: one entry longer, starting at 0. */
 function prefixSum(counts: Int32Array, what: string): Int32Array {
-  const end = new Int32Array(counts.length);
-  let running = 0;
+  const offsets = new Int32Array(counts.length + 1);
   for (let i = 0; i < counts.length; i++) {
     const count = counts[i];
     if (count < 0) throw new Error(`v3 ${what} has a negative count (${count}) at index ${i}`);
-    running += count;
-    end[i] = running;
+    offsets[i + 1] = offsets[i] + count;
   }
-  return end;
+  return offsets;
 }
 
-interface CsrColumn {
-  end: Int32Array;
-  codes: Int32Array;
-  scores: CsrScores | null;
-  evidence: CsrEvidence | null;
-}
-
-/** Assemble one multi-valued column's CSR storage plus its score/evidence payloads. */
+/** Assemble one multi-valued column's CSR storage, scores and evidence included. */
 function readCsrColumn(
   name: string,
   column: V3ColumnManifest,
@@ -490,10 +494,10 @@ function readCsrColumn(
   labelCount: number,
   payloads: ReadonlyMap<string, Uint8Array>,
   evidenceDict: () => readonly string[],
-): CsrColumn {
+): CsrAnnotationData {
   const codes = asTypedPayload(payloads, `csr:${name}`, Int32Array);
-  const end = prefixSum(counts, `column "${name}" hit counts`);
-  const total = counts.length > 0 ? end[counts.length - 1] : 0;
+  const offsets = prefixSum(counts, `column "${name}" hit counts`);
+  const total = offsets[counts.length];
   if (total !== codes.length) {
     throw new Error(
       `v3 column "${name}" hit counts sum to ${total} but csr:${name} holds ${codes.length} codes`,
@@ -507,7 +511,7 @@ function readCsrColumn(
     }
   }
 
-  let scores: CsrScores | null = null;
+  let scores: CsrScores | undefined;
   if (column.scores) {
     const scoreCounts = asTypedPayload(payloads, `score_count:${name}`, Int32Array);
     if (scoreCounts.length !== codes.length) {
@@ -516,17 +520,17 @@ function readCsrColumn(
       );
     }
     const values = asTypedPayload(payloads, `scores:${name}`, Float64Array);
-    const hitEnd = prefixSum(scoreCounts, `column "${name}" score counts`);
-    const scoreTotal = hitEnd.length > 0 ? hitEnd[hitEnd.length - 1] : 0;
+    const scoreOffsets = prefixSum(scoreCounts, `column "${name}" score counts`);
+    const scoreTotal = scoreOffsets[scoreCounts.length];
     if (scoreTotal !== values.length) {
       throw new Error(
         `v3 column "${name}" score counts sum to ${scoreTotal} but scores:${name} holds ${values.length}`,
       );
     }
-    scores = { hitEnd, values };
+    scores = { offsets: scoreOffsets, values };
   }
 
-  let evidence: CsrEvidence | null = null;
+  let evidence: CsrEvidence | undefined;
   if (column.evidence) {
     const evidenceCodes = asTypedPayload(payloads, `evidence:${name}`, Int32Array);
     if (evidenceCodes.length !== codes.length) {
@@ -547,141 +551,60 @@ function readCsrColumn(
     evidence = { codes: evidenceCodes, dict };
   }
 
-  return { end, codes, scores, evidence };
-}
-
-/**
- * Renumber a CSR column onto a folded dictionary, dropping the hits whose label went
- * with it — along with that hit's score run and evidence code, both of which are
- * numbered by hit. A row left with nothing is picked up by {@link insertNAForEmptyRows}
- * below, which is what v2 does with a cell whose only value was a missing-value
- * spelling.
- */
-function dropFoldedHits(csr: CsrColumn, remap: Int32Array | null): CsrColumn {
-  if (!remap) return csr;
-
-  const numRows = csr.end.length;
-  const scores = csr.scores;
-  let keptHits = 0;
-  let keptScores = 0;
-  for (let hit = 0; hit < csr.codes.length; hit++) {
-    if (remap[csr.codes[hit]] < 0) continue;
-    keptHits++;
-    if (scores) keptScores += scores.hitEnd[hit] - (hit === 0 ? 0 : scores.hitEnd[hit - 1]);
-  }
-
-  const codes = new Int32Array(keptHits);
-  const end = new Int32Array(numRows);
-  const evidenceCodes = csr.evidence ? new Int32Array(keptHits) : null;
-  const hitEnd = scores ? new Int32Array(keptHits) : null;
-  const values = scores ? new Float64Array(keptScores) : null;
-
-  let write = 0;
-  let scoreWrite = 0;
-  for (let row = 0; row < numRows; row++) {
-    for (let hit = row === 0 ? 0 : csr.end[row - 1]; hit < csr.end[row]; hit++) {
-      const code = remap[csr.codes[hit]];
-      if (code < 0) continue;
-      codes[write] = code;
-      if (evidenceCodes) evidenceCodes[write] = csr.evidence!.codes[hit];
-      if (hitEnd) {
-        for (let at = hit === 0 ? 0 : scores!.hitEnd[hit - 1]; at < scores!.hitEnd[hit]; at++) {
-          values![scoreWrite++] = scores!.values[at];
-        }
-        hitEnd[write] = scoreWrite;
-      }
-      write++;
-    }
-    end[row] = write;
-  }
-
   return {
-    end,
+    kind: 'csr',
+    offsets,
     codes,
-    scores: scores ? { hitEnd: hitEnd!, values: values! } : null,
-    evidence: csr.evidence ? { codes: evidenceCodes!, dict: csr.evidence.dict } : null,
+    length: counts.length,
+    ...(scores ? { scores } : {}),
+    ...(evidence ? { evidence } : {}),
   };
 }
 
 /**
- * Route rows with no hits at all to a synthetic `__NA__` category, the way
- * `appendSyntheticNACategory` does for the nested storage shape.
+ * Renumber a CSR column onto its folded dictionary and route every row left with no hit
+ * to a synthetic `__NA__` category, in one {@link remapCsr} pass: a folded hit is dropped
+ * together with its score run and evidence code, and an inserted NA hit gets neither.
  *
- * CSR needs a rebuild rather than an in-place patch: an empty row owns no hit slot to
- * write the category into. One lockstep pass therefore inserts a hit per empty row,
- * carrying `-1` into evidence and a repeated running total into `hitEnd` — the inserted
- * hit contributes no score, so every original hit keeps the exact cumulative it had.
+ * A row whose only values were missing-value spellings thereby lands where v2 puts such
+ * a cell, and a row that never had a value gets the NA `appendSyntheticNACategory` gives
+ * the nested storage shape. CSR needs the rebuild because an empty row owns no hit slot
+ * to write the category into.
  */
-function insertNAForEmptyRows(
-  csr: CsrColumn,
+function foldCsrColumn(
+  csr: CsrAnnotationData,
+  remap: Int32Array | null,
   labels: string[],
   colors: string[],
   shapes: string[],
-): CsrColumn {
-  const numRows = csr.end.length;
-  let empty = 0;
-  for (let i = 0; i < numRows; i++) {
-    if ((i === 0 ? 0 : csr.end[i - 1]) === csr.end[i]) empty++;
+): CsrAnnotationData {
+  const { column, filledRows } = remapCsr(csr, remap, labels.length);
+  if (filledRows > 0) {
+    labels.push(NA_VALUE);
+    colors.push(NA_DEFAULT_COLOR);
+    shapes.push('circle');
   }
-  if (empty === 0) return csr;
-
-  const naIndex = labels.length;
-  labels.push(NA_VALUE);
-  colors.push(NA_DEFAULT_COLOR);
-  shapes.push('circle');
-
-  const total = csr.codes.length + empty;
-  const codes = new Int32Array(total);
-  const end = new Int32Array(numRows);
-  const evidenceCodes = csr.evidence ? new Int32Array(total) : null;
-  const hitEnd = csr.scores ? new Int32Array(total) : null;
-
-  let write = 0;
-  for (let i = 0; i < numRows; i++) {
-    const from = i === 0 ? 0 : csr.end[i - 1];
-    const to = csr.end[i];
-    if (from === to) {
-      codes[write] = naIndex;
-      if (evidenceCodes) evidenceCodes[write] = -1;
-      if (hitEnd) hitEnd[write] = from === 0 ? 0 : csr.scores!.hitEnd[from - 1];
-      write++;
-    } else {
-      for (let hit = from; hit < to; hit++) {
-        codes[write] = csr.codes[hit];
-        if (evidenceCodes) evidenceCodes[write] = csr.evidence!.codes[hit];
-        if (hitEnd) hitEnd[write] = csr.scores!.hitEnd[hit];
-        write++;
-      }
-    }
-    end[i] = write;
-  }
-
-  return {
-    end,
-    codes,
-    scores: csr.scores ? { hitEnd: hitEnd!, values: csr.scores.values } : null,
-    evidence: csr.evidence ? { codes: evidenceCodes!, dict: csr.evidence.dict } : null,
-  };
+  return column;
 }
 
 /**
  * Read a format v3 bundle into `VisualizationData`.
  *
- * `parts` comes from `splitBundleParts`; `metadata` is part 1's already-parsed footer.
+ * `parts` comes from `splitBundleParts`, which has already checked the three core parts;
+ * `metadata` is part 1's already-parsed footer.
  */
 export async function readV3Bundle(
-  parts: (ArrayBuffer | null)[],
+  parts: BundleParts,
   metadata: FileMetaData,
 ): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
   const [, part2, , part4, part5] = parts;
   // The three large parts are released as soon as they are decoded.
-  let [part1, , part3, , , part6] = parts;
+  let part1: ArrayBuffer | null = parts[0];
+  let part3: ArrayBuffer | null = parts[2];
+  let part6 = parts[5] ?? null;
   // Take ownership so each large part can be released once decoded, rather than
   // pinned by the caller's array until the whole read returns.
   parts.fill(null);
-  if (!part1 || !part2 || !part3) {
-    throw new Error('Parquetbundle is missing one of its three required core parts');
-  }
   if (!part6) {
     throw new Error('Bundle declares format v3 but carries no payloads part (part 6)');
   }
@@ -705,7 +628,6 @@ export async function readV3Bundle(
   part1 = null;
   const protein_ids = columns.get(manifest.idColumn) as string[];
 
-  assertValidParquetMagic(part2);
   const projectionsMetadata = (await parquetReadObjects({ file: part2 })) as Rows;
   const projections = await readProjections(
     part3,
@@ -723,17 +645,16 @@ export async function readV3Bundle(
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
-  const annotation_scores_csr: Record<string, CsrScores> = {};
-  const annotation_evidence_csr: Record<string, CsrEvidence> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
 
   for (const [name, column] of Object.entries(manifest.columns)) {
     const stored = columns.get(physicalColumn(name, column.kind))!;
 
     if (column.kind === 'numeric') {
-      const raw = stored as Float64Array;
-      const values = new Array<number | null>(numRows);
-      for (let i = 0; i < numRows; i++) values[i] = Number.isFinite(raw[i]) ? raw[i] : null;
+      // Kept as decoded, so the worker can transfer it. NaN is already the in-memory
+      // missing value; an infinity is folded into it, as it was never a real value.
+      const values = stored as Float64Array;
+      for (let i = 0; i < numRows; i++) if (!Number.isFinite(values[i])) values[i] = NaN;
       numeric_annotation_data[name] = values;
       annotations[name] = createNumericAnnotation(column.numericType ?? 'float');
       continue;
@@ -759,25 +680,20 @@ export async function readV3Bundle(
       appendSyntheticNACategoryToCodes(labels, colors, shapes, codes);
       annotation_data[name] = codes;
     } else {
-      const csr = insertNAForEmptyRows(
-        dropFoldedHits(
-          readCsrColumn(
-            name,
-            column,
-            stored as Int32Array,
-            encodedLabelCount,
-            payloads,
-            readEvidenceDict,
-          ),
-          remap,
+      annotation_data[name] = foldCsrColumn(
+        readCsrColumn(
+          name,
+          column,
+          stored as Int32Array,
+          encodedLabelCount,
+          payloads,
+          readEvidenceDict,
         ),
+        remap,
         labels,
         colors,
         shapes,
       );
-      annotation_data[name] = { kind: 'csr', end: csr.end, codes: csr.codes, length: numRows };
-      if (csr.scores) annotation_scores_csr[name] = csr.scores;
-      if (csr.evidence) annotation_evidence_csr[name] = csr.evidence;
     }
 
     annotations[name] = { kind: 'categorical', values: labels, colors, shapes };
@@ -791,15 +707,13 @@ export async function readV3Bundle(
     numeric_annotation_data,
     annotation_scores: {},
     annotation_evidence: {},
-    ...(Object.keys(annotation_scores_csr).length > 0 ? { annotation_scores_csr } : {}),
-    ...(Object.keys(annotation_evidence_csr).length > 0 ? { annotation_evidence_csr } : {}),
   };
 
   // Deliberately NOT restoreDeclaredNumericAnnotations: it reads physical parquet types,
   // which in v3 would declare every int32 dictionary-code column numeric. The manifest
   // is the authority on kind here, and it has already been applied above.
   return {
-    data: carryStatistics(normalizeEatCompanionColumns(data), {
+    data: carryStatistics(normalizeEatCompanionColumns(dropUnplacedProteins(data)), {
       statistics: part5,
       statisticsRows: part5 ? await extractStatistics(part5) : null,
     }),

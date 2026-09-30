@@ -19,7 +19,7 @@ function baseViz(): VisualizationData {
     ],
     annotations: { fam: famAnnotation },
     annotation_data: { fam: new Int32Array([0, 1, 0, 1]) },
-    numeric_annotation_data: { plddt: [10, 20, 30, 40] },
+    numeric_annotation_data: { plddt: new Float64Array([10, 20, 30, 40]) },
     annotation_scores: { fam: [[[0.1]], [[0.2]], [[0.3]], [[0.4]]] },
     annotation_evidence: { fam: [['x'], ['y'], ['z'], ['w']] },
     annotation_predicted: {
@@ -53,7 +53,7 @@ describe('sliceVisualizationDataByIndices', () => {
 
   it('reslices numeric_annotation_data to kept indices', () => {
     const out = sliceVisualizationDataByIndices(baseViz(), [1, 3]);
-    expect(out.numeric_annotation_data!.plddt).toEqual([20, 40]);
+    expect(out.numeric_annotation_data!.plddt).toEqual(new Float64Array([20, 40]));
   });
 
   it('reslices EAT cells in the same protein order', () => {
@@ -105,25 +105,21 @@ describe('sliceVisualizationDataByIndices over CSR storage (bundle format v3)', 
       annotation_data: {
         fam: {
           kind: 'csr',
-          end: Int32Array.of(1, 1, 3, 4),
+          offsets: Int32Array.of(0, 1, 1, 3, 4),
           codes: Int32Array.of(0, 1, 0, 1),
           length: 4,
+          // Hits 0..3 in the same order as `codes`.
+          scores: {
+            offsets: Int32Array.of(0, 1, 1, 3, 4),
+            values: Float64Array.of(0.5, 1.5, 2.5, 3.5),
+          },
+          evidence: { codes: Int32Array.of(0, -1, 1, 2), dict: ['IDA', 'IEA', 'IPI'] },
         },
-      },
-      // Hits 0..3 in the same order as `codes`.
-      annotation_scores_csr: {
-        fam: {
-          hitEnd: Int32Array.of(1, 1, 3, 4),
-          values: Float64Array.of(0.5, 1.5, 2.5, 3.5),
-        },
-      },
-      annotation_evidence_csr: {
-        fam: { codes: Int32Array.of(0, -1, 1, 2), dict: ['IDA', 'IEA', 'IPI'] },
       },
     };
   }
 
-  it('keeps the flat score/evidence payloads aligned with the sliced CSR rows', () => {
+  it('keeps the score/evidence payloads aligned with the sliced CSR rows', () => {
     const src = csrViz();
     // Reversed order and a dropped row, so a slice that just copies would be wrong.
     const out = sliceVisualizationDataByIndices(src, [3, 2, 1]);
@@ -145,11 +141,5 @@ describe('sliceVisualizationDataByIndices over CSR storage (bundle format v3)', 
     expect(getProteinScores(src, 2, 'fam')).toEqual([null, [1.5, 2.5]]);
     expect(getProteinEvidence(src, 2, 'fam')).toEqual([null, 'IEA']);
     expect(getProteinEvidence(src, 3, 'fam')).toEqual(['IPI']);
-  });
-
-  it('omits the flat payloads when the source has none', () => {
-    const out = sliceVisualizationDataByIndices(baseViz(), [0]);
-    expect(out.annotation_scores_csr).toBeUndefined();
-    expect(out.annotation_evidence_csr).toBeUndefined();
   });
 });

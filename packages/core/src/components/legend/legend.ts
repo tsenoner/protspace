@@ -93,7 +93,7 @@ import { createLegendErrorEventDetail } from './legend.events';
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
  * visual value + percent readout update live on every tick, but the expensive
- * downstream apply (reliability query re-eval + geometry/quadtree rebuild at 570k
+ * downstream apply (reliability query re-eval + geometry/point index rebuild at 570k
  * points) is deferred to a drag-pause/release so dragging stays smooth.
  */
 const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
@@ -213,6 +213,7 @@ export class ProtspaceLegend extends LitElement {
 
   @property({ type: String }) annotationName = '';
   @property({ type: Object }) annotationData: LegendAnnotationData = { name: '', values: [] };
+  /** One value per protein, in `proteinIds` order; read only when no data is synced. */
   @property({ type: Array }) annotationValues: (string | null)[] = [];
   @property({ type: Array }) proteinIds: string[] = [];
   @property({ type: Number, reflect: true }) maxVisibleValues: number =
@@ -1679,24 +1680,34 @@ export class ProtspaceLegend extends LitElement {
   }
 
   /**
-   * Legend counts for the synced storage, or `null` when there is none and the
-   * public `annotationValues` array is the source.
+   * Legend counts, isolation applied: from the synced storage, or from the public
+   * `annotationValues` array when there is none. Either way the processor only ever
+   * sees the counted map.
    *
    * Recomputed per rebuild rather than cached: the bincount is ~2 ms at 573K,
    * cheaper than the array scan it replaces, and it depends on the isolation
    * state, which changes independently of the storage.
    */
-  private _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> | null {
-    const source = this._countSource;
-    if (!source) return null;
+  private _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> {
     const isolating = this.isolationMode && this.isolationHistory?.length > 0;
+    const filteredIndices = isolating
+      ? LegendDataProcessor.getFilteredIndices(true, this.isolationHistory, this.proteinIds)
+      : null;
+    const source = this._countSource;
+    if (!source) {
+      // The array holds one value per protein in `proteinIds` order, so the filter's
+      // protein indices address it directly.
+      return LegendDataProcessor.countAnnotationFrequencies(
+        this.annotationValues,
+        filteredIndices,
+        knownValues,
+      );
+    }
     return LegendDataProcessor.countFromStorage(
       source.colData,
       source.values,
       source.proteinCount,
-      isolating
-        ? LegendDataProcessor.getFilteredIndices(true, this.isolationHistory, this.proteinIds)
-        : null,
+      filteredIndices,
       knownValues,
     );
   }
@@ -1849,7 +1860,7 @@ export class ProtspaceLegend extends LitElement {
       ? this.annotationData.values.map((value) => toInternalValue(value))
       : [];
     const frequencies = this._computeAnnotationCounts(knownValues);
-    if (!isNumericAnnotation && !(frequencies?.size ?? this.annotationValues?.length)) {
+    if (!isNumericAnnotation && frequencies.size === 0) {
       this._legendItems = [];
       return;
     }
@@ -1898,11 +1909,9 @@ export class ProtspaceLegend extends LitElement {
       const { legendItems, otherItems } = LegendDataProcessor.processLegendItems(
         this._processorContext,
         this.annotationData.name || this.selectedAnnotation,
-        frequencies ?? this.annotationValues,
-        this.proteinIds,
+        frequencies,
         this.maxVisibleValues,
         this.isolationMode,
-        this.isolationHistory,
         existingLegendItems,
         this._currentSortMode,
         persistedCategories,
@@ -1911,7 +1920,6 @@ export class ProtspaceLegend extends LitElement {
         !isNumericAnnotation,
         pendingExtract,
         pendingMerge,
-        knownValues,
         isNumericAnnotation,
       );
 

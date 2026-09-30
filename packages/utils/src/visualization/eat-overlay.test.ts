@@ -189,7 +189,7 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
       annotation_data: {
         ec: {
           kind: 'csr',
-          end: Int32Array.of(1, 1, 3, 3),
+          offsets: Int32Array.of(0, 1, 1, 3, 3),
           codes: Int32Array.of(0, 1, 2),
           length: 4,
         },
@@ -218,9 +218,9 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
     expect(getProteinAnnotationIndices(rows, 3)).toEqual([0, 1]); // predicted 'A;B'
 
     if (!isCsrAnnotationData(rows)) throw new Error('expected CSR');
-    expect(Array.from(rows.end)).toEqual([1, 2, 4, 6]);
+    expect(Array.from(rows.offsets)).toEqual([0, 1, 2, 4, 6]);
     expect(rows.codes.length).toBe(6);
-    expect(rows.end[rows.length - 1]).toBe(rows.codes.length);
+    expect(rows.offsets[rows.length]).toBe(rows.codes.length);
   });
 
   it('does not mutate or alias the curated CSR storage', () => {
@@ -230,7 +230,7 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
     if (!isCsrAnnotationData(source) || !isCsrAnnotationData(out.annotation_data.ec)) {
       throw new Error('expected CSR');
     }
-    expect(Array.from(source.end)).toEqual([1, 1, 3, 3]);
+    expect(Array.from(source.offsets)).toEqual([0, 1, 1, 3, 3]);
     expect(Array.from(source.codes)).toEqual([0, 1, 2]);
     expect(out.annotation_data.ec.codes.buffer).not.toBe(source.codes.buffer);
   });
@@ -253,20 +253,16 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
       annotation_data: {
         ec: {
           kind: 'csr',
-          end: Int32Array.of(1, 2, 3, 5),
+          offsets: Int32Array.of(0, 1, 2, 3, 5),
           codes: Int32Array.of(0, 1, 2, 0, 1),
           length: 4,
+          // Hit 4 deliberately carries neither a score nor an evidence code.
+          scores: {
+            offsets: Int32Array.of(0, 1, 2, 3, 4, 4),
+            values: Float64Array.of(0.25, 0.5, 0.75, 0.125),
+          },
+          evidence: { codes: Int32Array.of(0, 1, 2, 0, -1), dict: ['IDA', 'IEA', 'ISS'] },
         },
-      },
-      // Hit 4 deliberately carries neither a score nor an evidence code.
-      annotation_scores_csr: {
-        ec: {
-          hitEnd: Int32Array.of(1, 2, 3, 4, 4),
-          values: Float64Array.of(0.25, 0.5, 0.75, 0.125),
-        },
-      },
-      annotation_evidence_csr: {
-        ec: { codes: Int32Array.of(0, 1, 2, 0, -1), dict: ['IDA', 'IEA', 'ISS'] },
       },
       annotation_predicted: {
         ec: [null, { value: 'A;C', values: ['A', 'C'], confidence: 0.6, source: 'p0' }, null, null],
@@ -274,11 +270,11 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
     };
   }
 
-  it('renumbers the flat score and evidence payloads with the rebuilt hits', () => {
+  it('renumbers the score and evidence payloads with the rebuilt hits', () => {
     const out = materializeEatOverlay(createCsrDataWithPayloads(), 'ec', true);
     const rows = out.annotation_data.ec;
     if (!isCsrAnnotationData(rows)) throw new Error('expected CSR');
-    expect(Array.from(rows.end)).toEqual([1, 3, 4, 6]);
+    expect(Array.from(rows.offsets)).toEqual([0, 1, 3, 4, 6]);
 
     // Curated rows keep their own score and evidence, including the rows AFTER the
     // multi-valued transfer that shifted every later hit number.
@@ -296,21 +292,23 @@ describe('EAT overlay over CSR storage (bundle format v3)', () => {
 
   it('leaves the curated payloads untouched and drops no unused capacity', () => {
     const data = createCsrDataWithPayloads();
-    const out = materializeEatOverlay(data, 'ec', true);
-    expect(out.annotation_scores_csr?.ec).not.toBe(data.annotation_scores_csr?.ec);
-    expect(Array.from(data.annotation_scores_csr!.ec.values)).toEqual([0.25, 0.5, 0.75, 0.125]);
-    expect(Array.from(data.annotation_evidence_csr!.ec.codes)).toEqual([0, 1, 2, 0, -1]);
+    const source = data.annotation_data.ec;
+    const rows = materializeEatOverlay(data, 'ec', true).annotation_data.ec;
+    if (!isCsrAnnotationData(source) || !isCsrAnnotationData(rows)) {
+      throw new Error('expected CSR');
+    }
+    expect(rows.scores).not.toBe(source.scores);
+    expect(Array.from(source.scores!.values)).toEqual([0.25, 0.5, 0.75, 0.125]);
+    expect(Array.from(source.evidence!.codes)).toEqual([0, 1, 2, 0, -1]);
     // p1's 0.5 is gone with the row it belonged to; the slack is not retained.
-    expect(Array.from(out.annotation_scores_csr!.ec.values)).toEqual([0.25, 0.75, 0.125]);
-    expect(out.annotation_scores_csr!.ec.values.buffer.byteLength).toBe(
-      3 * Float64Array.BYTES_PER_ELEMENT,
-    );
+    expect(Array.from(rows.scores!.values)).toEqual([0.25, 0.75, 0.125]);
+    expect(rows.scores!.values.buffer.byteLength).toBe(3 * Float64Array.BYTES_PER_ELEMENT);
   });
 
-  it('does not grow the payload records on a dataset that carries none', () => {
-    const out = materializeEatOverlay(createCsrData(), 'ec', true);
-    expect('annotation_scores_csr' in out).toBe(false);
-    expect('annotation_evidence_csr' in out).toBe(false);
+  it('does not grow payloads on a column that carries none', () => {
+    const rows = materializeEatOverlay(createCsrData(), 'ec', true).annotation_data.ec;
+    expect('scores' in rows).toBe(false);
+    expect('evidence' in rows).toBe(false);
   });
 
   it('leaves the row alone when a prediction resolves to no known value', () => {

@@ -283,6 +283,64 @@ describe('DataProcessor.processVisualizationData — query filter (visibleProtei
   });
 });
 
+describe('DataProcessor.processVisualizationData — missing coordinates', () => {
+  // p1 is missing from the projection (NaN); p3 has only a NaN z.
+  const fixture: VisualizationData = {
+    protein_ids: ['p0', 'p1', 'p2', 'p3'],
+    projections: [
+      {
+        name: 'three',
+        data: Float32Array.of(1, 1, 1, NaN, NaN, NaN, 5, 5, 5, 7, 7, NaN),
+        dimension: 3,
+      },
+      { name: 'complete', data: Float32Array.of(0, 0, 1, 1, 2, 2, 3, 3), dimension: 2 },
+    ],
+    annotations: {},
+    annotation_data: {},
+  };
+
+  it.each(['xy', 'xz', 'yz'] as const)(
+    'culls every point with a non-finite coordinate on the %s plane',
+    (plane) => {
+      const result = DataProcessor.processVisualizationData(fixture, 0, false, undefined, plane);
+      expect(Array.from(result.originalIndices!)).toEqual([0, 2]);
+      expect(Array.from(result.xs).every(Number.isFinite)).toBe(true);
+      expect(Array.from(result.ys).every(Number.isFinite)).toBe(true);
+      expect(Array.from(result.zs!).every(Number.isFinite)).toBe(true);
+    },
+  );
+
+  it('keeps the identity mapping when nothing is missing', () => {
+    const result = DataProcessor.processVisualizationData(fixture, 1);
+    expect(result.length).toBe(4);
+    expect(result.originalIndices).toBeNull();
+  });
+
+  it('culls missing points together with the query filter and isolation', () => {
+    const result = DataProcessor.processVisualizationData(
+      fixture,
+      0,
+      true,
+      [['p0', 'p1', 'p2']],
+      'xy',
+      new Set(['p1', 'p2', 'p3']),
+    );
+    expect(Array.from(result.originalIndices!)).toEqual([2]);
+  });
+
+  it('computes the scale domains from the finite points only', () => {
+    const margin = { top: 0, right: 0, bottom: 0, left: 0 };
+    const plotData = DataProcessor.processVisualizationData(fixture, 0);
+    const scales = DataProcessor.createScales(plotData, 100, 100, margin)!;
+    const [xMin, xMax] = scales.x.domain();
+    // Finite x values are 1 and 5, padded; no NaN and no origin pulled in.
+    expect(xMin).toBeGreaterThan(0);
+    expect(xMax).toBeLessThan(6);
+    expect(scales.x.domain().every(Number.isFinite)).toBe(true);
+    expect(scales.y.domain().every(Number.isFinite)).toBe(true);
+  });
+});
+
 describe('materializePlotDataPoint', () => {
   it('reconstructs {id,x,y,originalIndex} for a non-isolated (identity) PlotData', () => {
     const data: VisualizationData = {

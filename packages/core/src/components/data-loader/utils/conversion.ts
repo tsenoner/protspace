@@ -16,7 +16,10 @@ import {
   isCuratedAnnotationMissing,
   isNAValue,
   parseEatCompanionColumn,
+  readNumericValue,
+  remapCsr,
   sanitizeValue,
+  sliceVisualizationDataByIndices,
   normalizeMissingValue,
   NA_VALUE,
   NA_DEFAULT_COLOR,
@@ -63,12 +66,9 @@ const METADATA_EXCLUDED_KEYS = new Set(['projection_name', 'name', 'info_json'])
 /** Match GO/ECO evidence codes: 2–5 uppercase letters OR ECO:NNNNNNN */
 const EVIDENCE_CODE_RE = /^(?:[A-Z]{2,5}|ECO:\d+)$/;
 
-type InferredAnnotationType = 'int' | 'float' | 'string';
-
-interface AnnotationInferenceResult {
-  inferredType: InferredAnnotationType;
-  numericValues: (number | null)[];
-}
+type AnnotationInferenceResult =
+  | { inferredType: 'string' }
+  | { inferredType: 'int' | 'float'; numericValues: Float64Array };
 
 function parseNumericAnnotationValue(rawValue: unknown): number | null {
   if (typeof rawValue === 'number') {
@@ -94,7 +94,7 @@ function parseNumericAnnotationValue(rawValue: unknown): number | null {
 }
 
 function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResult {
-  const numericValues: (number | null)[] = [];
+  const numericValues: number[] = [];
   let sawNumericValue = false;
   let sawNonIntegerValue = false;
 
@@ -103,17 +103,16 @@ function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResu
     const normalized = normalizeMissingValue(rawValue);
 
     if (normalized == null) {
-      numericValues.push(null);
+      numericValues.push(NaN);
       continue;
     }
 
     const parsed = parseNumericAnnotationValue(normalized);
-    numericValues.push(parsed);
-
     if (parsed == null) {
       // Non-numeric, non-missing value — column is categorical.
-      return { inferredType: 'string', numericValues };
+      return { inferredType: 'string' };
     }
+    numericValues.push(parsed);
 
     sawNumericValue = true;
     if (!Number.isInteger(parsed)) {
@@ -122,10 +121,13 @@ function inferAnnotationType(values: Iterable<unknown>): AnnotationInferenceResu
   }
 
   if (!sawNumericValue) {
-    return { inferredType: 'string', numericValues };
+    return { inferredType: 'string' };
   }
 
-  return { inferredType: sawNonIntegerValue ? 'float' : 'int', numericValues };
+  return {
+    inferredType: sawNonIntegerValue ? 'float' : 'int',
+    numericValues: Float64Array.from(numericValues),
+  };
 }
 
 function* valuesForColumn(rows: Rows, column: string): Iterable<unknown> {
@@ -226,32 +228,12 @@ function remapCategoricalStorage(
     return { kind: 'sparse-multi', base, overrides, length: base.length };
   }
   if (isCsrAnnotationData(source)) {
-    // Both arrays are rebuilt from scratch, and `codes` is trimmed to what was written so
-    // the worst-case buffer is neither retained nor shared.
-    const end = new Int32Array(source.length);
-    const codes = new Int32Array(source.codes.length);
-    let written = 0;
-    for (let i = 0; i < source.length; i++) {
-      const stop = source.end[i];
-      for (let hit = i === 0 ? 0 : source.end[i - 1]; hit < stop; hit++) {
-        const index = remap(source.codes[hit]);
-        if (index >= 0) codes[written++] = index;
-      }
-      end[i] = written;
-    }
-    if (written !== source.codes.length) {
-      // Dropping a hit renumbers every later one, and `annotation_scores_csr` /
-      // `annotation_evidence_csr` are numbered by GLOBAL hit — so a silent drop would
-      // show one protein's score and evidence on another's tooltip. No shipping producer
-      // can reach this (`values` is always built as `string[]`), so failing loudly beats
-      // implementing a renumbering pass nothing exercises.
-      throw new Error(
-        `CSR remap dropped ${source.codes.length - written} of ${source.codes.length} hits ` +
-          '(a null or unmapped annotation value). Renumbering the parallel ' +
-          'annotation_scores_csr / annotation_evidence_csr payloads is not implemented.',
-      );
-    }
-    return { kind: 'csr', end, codes, length: source.length };
+    // Codes index `oldValues`, so the remap is tabulated once per value rather than per
+    // hit; a dropped hit takes its score and evidence with it.
+    return remapCsr(
+      source,
+      Int32Array.from(oldValues, (_, index) => remap(index)),
+    ).column;
   }
   return source.map((indices) => indices.map(remap).filter((index) => index >= 0));
 }
@@ -279,10 +261,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
   const numeric_annotation_data = { ...data.numeric_annotation_data };
   const annotation_scores = { ...data.annotation_scores };
   const annotation_evidence = { ...data.annotation_evidence };
-  // v3 columns carry their scores/evidence flat instead of nested; a companion
-  // column must lose both forms or the dropped column's payload outlives it.
-  const annotation_scores_csr = { ...data.annotation_scores_csr };
-  const annotation_evidence_csr = { ...data.annotation_evidence_csr };
   const annotation_predicted = { ...data.annotation_predicted };
 
   for (const column of reservedColumns) {
@@ -291,8 +269,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
     delete numeric_annotation_data[column];
     delete annotation_scores[column];
     delete annotation_evidence[column];
-    delete annotation_scores_csr[column];
-    delete annotation_evidence_csr[column];
   }
 
   for (const [base, group] of groups) {
@@ -318,22 +294,21 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
       if (!isCuratedAnnotationMissing(data, base, i)) continue;
       const values = readCategoricalStorageValues(data, group.value, i);
       const value = values.length > 0 ? values.join(';') : null;
-      // Via the accessors so a CSR-stored companion column resolves too.
-      const scores = getProteinScores(data, i, group.value);
-      const evidence = getProteinEvidence(data, i, group.value);
       const source = readCategoricalStorageValue(data, group.source, i);
-      const confidence = confidences[i];
+      const confidence = readNumericValue(confidences, i);
       if (
         value == null ||
         source == null ||
-        typeof confidence !== 'number' ||
-        !Number.isFinite(confidence) ||
+        confidence == null ||
         confidence < 0 ||
         confidence > 1
       ) {
         if (value != null || source != null || confidence != null) invalidCount += 1;
         continue;
       }
+      // Via the accessors so a CSR-stored companion column resolves too.
+      const scores = getProteinScores(data, i, group.value);
+      const evidence = getProteinEvidence(data, i, group.value);
       cells[i] = {
         value,
         ...(values.length > 1 ? { values } : {}),
@@ -402,7 +377,10 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
       role: 'eat-confidence',
       baseAnnotation: base,
     });
-    numeric_annotation_data[confidenceKey] = cells.map((cell) => cell?.confidence ?? null);
+    numeric_annotation_data[confidenceKey] = Float64Array.from(
+      cells,
+      (cell) => cell?.confidence ?? NaN,
+    );
   }
 
   return {
@@ -412,9 +390,6 @@ export function normalizeEatCompanionColumns(data: VisualizationData): Visualiza
     numeric_annotation_data,
     annotation_scores,
     annotation_evidence,
-    // Spread conditionally: a v1/v2 dataset never had these keys and must not grow them.
-    ...(data.annotation_scores_csr ? { annotation_scores_csr } : {}),
-    ...(data.annotation_evidence_csr ? { annotation_evidence_csr } : {}),
     annotation_predicted:
       Object.keys(annotation_predicted).length > 0 ? annotation_predicted : undefined,
   };
@@ -695,8 +670,8 @@ function buildCoordinateMap(
   const coordMap = new Map<string, [number, number] | [number, number, number]>();
   for (const row of projectionRows) {
     const proteinId = row[proteinIdCol] != null ? String(row[proteinIdCol]) : '';
-    const x = Number(row.x) || 0;
-    const y = Number(row.y) || 0;
+    const x = toCoordinate(row.x);
+    const y = toCoordinate(row.y);
     const zValue = row.z;
     const z = zValue == null ? null : Number(zValue);
     if (z !== null && !Number.isNaN(z)) {
@@ -706,6 +681,116 @@ function buildCoordinateMap(
     }
   }
   return coordMap;
+}
+
+/**
+ * One row per protein to read its annotations from: the first projection's rows, then the
+ * first row of each protein that projection does not cover. Taking the first projection
+ * alone would give such a protein no annotations at all.
+ */
+function firstRowPerProtein(
+  projectionGroups: ReadonlyMap<string, Rows>,
+  rows: Rows,
+  proteinIdCol: string,
+): Rows {
+  const base = projectionGroups.values().next().value ?? rows;
+  if (projectionGroups.size <= 1) return base;
+  const seen = new Set(base.map((row) => String(row[proteinIdCol] ?? '')));
+  const out = [...base];
+  for (const row of rows) {
+    const proteinId = String(row[proteinIdCol] ?? '');
+    if (seen.has(proteinId)) continue;
+    seen.add(proteinId);
+    out.push(row);
+  }
+  return out;
+}
+
+/** A coordinate cell as a number; an absent or unparsable one is NaN, never 0. */
+function toCoordinate(value: unknown): number {
+  return value == null || value === '' ? NaN : Number(value);
+}
+
+/**
+ * One projection's flat coordinate array over `proteinIds`.
+ *
+ * The array starts out NaN, so a protein the projection has no row for (and a 2D row in
+ * a 3D projection, for its z) stays missing: the scatter plot does not draw it. The
+ * zero a fresh `Float32Array` holds would put it at the origin instead.
+ */
+function buildProjection(
+  projectionName: string,
+  projectionRows: Rows,
+  proteinIdCol: string,
+  proteinIds: readonly string[],
+  metadataMap: ReadonlyMap<string, Record<string, unknown>>,
+): VisualizationData['projections'][number] {
+  const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
+  let has3D = false;
+  for (const v of coordMap.values()) {
+    if (v.length === 3) {
+      has3D = true;
+      break;
+    }
+  }
+  const dimension: 2 | 3 = has3D ? 3 : 2;
+  const data = new Float32Array(proteinIds.length * dimension).fill(NaN);
+  for (let i = 0; i < proteinIds.length; i++) {
+    const c = coordMap.get(proteinIds[i]);
+    if (!c) continue;
+    const base = i * dimension;
+    data[base] = c[0];
+    data[base + 1] = c[1];
+    if (dimension === 3 && c.length === 3) data[base + 2] = c[2];
+  }
+
+  return {
+    name: formatProjectionName(projectionName),
+    data,
+    dimension,
+    // Merge dimension with existing metadata from projectionsMetadata
+    metadata: { ...(metadataMap.get(projectionName) ?? {}), dimension },
+  };
+}
+
+/**
+ * Drop every protein that no projection places, i.e. that has no finite coordinate
+ * anywhere. v2 built the protein list from the projection rows, so a protein with
+ * annotations only was never shown, counted or searchable; v3 keeps such rows in the
+ * file, and this restores that protein set for both readers. A protein missing from
+ * only some projections stays, and the scatter plot culls it per projection.
+ *
+ * A dataset without projections has nothing to place its proteins, so it is returned
+ * unchanged, as is the common case where every protein is placed (no copy).
+ */
+export function dropUnplacedProteins(data: VisualizationData): VisualizationData {
+  const n = data.protein_ids.length;
+  if (data.projections.length === 0) return data;
+
+  const placed = new Uint8Array(n);
+  for (const { data: coords, dimension } of data.projections) {
+    for (let i = 0; i < n; i++) {
+      if (placed[i]) continue;
+      for (let axis = 0; axis < dimension; axis++) {
+        if (Number.isFinite(coords[i * dimension + axis])) {
+          placed[i] = 1;
+          break;
+        }
+      }
+    }
+  }
+
+  const kept: number[] = [];
+  for (let i = 0; i < n; i++) if (placed[i]) kept.push(i);
+  if (kept.length === n) return data;
+
+  // The slice clears statistics because a user's subset is not what they were scored
+  // over. This one is the dataset the file defines, so they are carried over.
+  return {
+    ...sliceVisualizationDataByIndices(data, kept),
+    statistics: data.statistics,
+    statisticsRows: data.statisticsRows,
+  };
 }
 
 /**
@@ -751,14 +836,10 @@ function restoreDeclaredNumericAnnotations(
 
     data.annotations[column] = createNumericAnnotation(numericType, annotation.runtime);
     data.numeric_annotation_data ??= {};
-    data.numeric_annotation_data[column] = new Array<number | null>(data.protein_ids.length).fill(
-      null,
-    );
+    data.numeric_annotation_data[column] = new Float64Array(data.protein_ids.length).fill(NaN);
     delete data.annotation_data[column];
     delete data.annotation_scores?.[column];
     delete data.annotation_evidence?.[column];
-    delete data.annotation_scores_csr?.[column];
-    delete data.annotation_evidence_csr?.[column];
   }
   return data;
 }
@@ -789,7 +870,10 @@ export function convertParquetToVisualizationData(
       ? convertBundleFormatData(rows, columnNames, meta, formatVersion)
       : convertLegacyFormatData(rows, columnNames, formatVersion);
   return carryStatistics(
-    restoreDeclaredNumericAnnotations(normalizeEatCompanionColumns(converted), declaredNumeric),
+    restoreDeclaredNumericAnnotations(
+      normalizeEatCompanionColumns(dropUnplacedProteins(converted)),
+      declaredNumeric,
+    ),
     input,
   );
 }
@@ -827,9 +911,9 @@ export function convertParquetToVisualizationDataOptimized(
     if (dataSize < OPTIMIZED_PATH_ROW_THRESHOLD) {
       return Promise.resolve(convertParquetToVisualizationData(input, projectionsMetadata));
     }
-    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata).then(
-      normalizeEatCompanionColumns,
-    );
+    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata)
+      .then(dropUnplacedProteins)
+      .then(normalizeEatCompanionColumns);
   }
 
   // New path: separated extraction shape from extractRowsFromParquetBundle
@@ -838,6 +922,7 @@ export function convertParquetToVisualizationDataOptimized(
     return Promise.resolve(convertParquetToVisualizationData(input));
   }
   return convertLargeDatasetOptimized(input)
+    .then(dropUnplacedProteins)
     .then(normalizeEatCompanionColumns)
     .then((data) => restoreDeclaredNumericAnnotations(data, input.numericColumnTypes ?? {}))
     .then((data) => carryStatistics(data, input));
@@ -926,53 +1011,20 @@ function convertBundleFormatData(
 
   const metadataMap = buildProjectionsMetadataMap(projectionsMetadata);
 
-  const projections = [] as VisualizationData['projections'];
-  for (const [projectionName, projectionRows] of projectionGroups.entries()) {
-    const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    let has3D = false;
-    for (const v of coordMap.values()) {
-      if (v.length === 3) {
-        has3D = true;
-        break;
-      }
-    }
-    const dimension: 2 | 3 = has3D ? 3 : 2;
-    const data = new Float32Array(uniqueProteinIds.length * dimension);
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      const c = coordMap.get(uniqueProteinIds[i]);
-      const base = i * dimension;
-      if (c) {
-        data[base] = c[0];
-        data[base + 1] = c[1];
-        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
-      }
-    }
-
-    // Merge dimension with existing metadata from projectionsMetadata
-    const existingMetadata = metadataMap.get(projectionName) || {};
-    const metadata = {
-      ...existingMetadata,
-      dimension,
-    };
-
-    projections.push({
-      name: formatProjectionName(projectionName),
-      data,
-      dimension,
-      metadata,
-    });
-  }
+  const projections = [...projectionGroups].map(([projectionName, projectionRows]) =>
+    buildProjection(projectionName, projectionRows, proteinIdCol, uniqueProteinIds, metadataMap),
+  );
 
   const allIdColumns = getIdColumnsSet(proteinIdCol);
   const annotationColumns = columnNames.filter((col) => !allIdColumns.has(col));
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 
-  const baseProjectionData = projectionGroups.values().next().value || rows;
+  const baseProjectionData = firstRowPerProtein(projectionGroups, rows, proteinIdCol);
   const baseRowsByProteinId = new Map<string, Rows[number]>();
   for (const row of baseProjectionData) {
     baseRowsByProteinId.set(String(row[proteinIdCol] ?? ''), row);
@@ -981,12 +1033,12 @@ function convertBundleFormatData(
   for (const annotationCol of annotationColumns) {
     const inference = inferAnnotationType(valuesForColumn(baseProjectionData, annotationCol));
     if (inference.inferredType !== 'string') {
-      numeric_annotation_data[annotationCol] = uniqueProteinIds.map((proteinId) => {
+      numeric_annotation_data[annotationCol] = Float64Array.from(uniqueProteinIds, (proteinId) => {
         const row = baseRowsByProteinId.get(proteinId);
         const rawValue = row?.[annotationCol];
         const normalized = normalizeMissingValue(rawValue);
-        if (normalized == null) return null;
-        return parseNumericAnnotationValue(normalized);
+        if (normalized == null) return NaN;
+        return parseNumericAnnotationValue(normalized) ?? NaN;
       });
       annotations[annotationCol] = createNumericAnnotation(inference.inferredType);
       continue;
@@ -1110,46 +1162,14 @@ async function convertBundleFormatDataOptimized(
 
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projectionRows] of projectionGroups.entries()) {
-    const coordMap = buildCoordinateMap(projectionRows, proteinIdCol);
-    let has3D = false;
-    for (const v of coordMap.values()) {
-      if (v.length === 3) {
-        has3D = true;
-        break;
-      }
-    }
-    const dimension: 2 | 3 = has3D ? 3 : 2;
-    const data = new Float32Array(uniqueProteinIds.length * dimension);
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      const c = coordMap.get(uniqueProteinIds[i]);
-      const base = i * dimension;
-      if (c) {
-        data[base] = c[0];
-        data[base + 1] = c[1];
-        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
-      }
-    }
-
-    // Merge dimension with existing metadata from projectionsMetadata
-    const existingMetadata = metadataMap.get(projectionName) || {};
-    const metadata = {
-      ...existingMetadata,
-      dimension,
-    };
-
-    projections.push({
-      name: formatProjectionName(projectionName),
-      data,
-      dimension,
-      metadata,
-    });
-    // yield
-
+    projections.push(
+      buildProjection(projectionName, projectionRows, proteinIdCol, uniqueProteinIds, metadataMap),
+    );
     await fastYield();
   }
 
-  // Use only base projection's rows for annotations (not all rows across projections)
-  const baseProjectionRows = projectionGroups.values().next().value || rows;
+  // One row per protein for annotations (not all rows across projections)
+  const baseProjectionRows = firstRowPerProtein(projectionGroups, rows, proteinIdCol);
   const {
     annotations,
     annotation_data,
@@ -1216,36 +1236,9 @@ async function convertBundleFormatDataOptimizedSeparated(
 
   const projections = [] as VisualizationData['projections'];
   for (const [projectionName, projRows] of projectionGroups.entries()) {
-    const coordMap = buildCoordinateMap(projRows, projectionIdCol);
-    let has3D = false;
-    for (const v of coordMap.values()) {
-      if (v.length === 3) {
-        has3D = true;
-        break;
-      }
-    }
-    const dimension: 2 | 3 = has3D ? 3 : 2;
-    const data = new Float32Array(uniqueProteinIds.length * dimension);
-    for (let i = 0; i < uniqueProteinIds.length; i++) {
-      const c = coordMap.get(uniqueProteinIds[i]);
-      const base = i * dimension;
-      if (c) {
-        data[base] = c[0];
-        data[base + 1] = c[1];
-        if (dimension === 3) data[base + 2] = c.length === 3 ? c[2] : 0;
-      }
-    }
-    const existingMetadata = metadataMap.get(projectionName) || {};
-    const metadata = {
-      ...existingMetadata,
-      dimension,
-    };
-    projections.push({
-      name: formatProjectionName(projectionName),
-      data,
-      dimension,
-      metadata,
-    });
+    projections.push(
+      buildProjection(projectionName, projRows, projectionIdCol, uniqueProteinIds, metadataMap),
+    );
     await fastYield();
   }
 
@@ -1306,9 +1299,10 @@ function convertLegacyFormatData(
     const data = new Float32Array(rows.length * dimension);
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const x = Number(row[pair.xCol]);
-      const y = Number(row[pair.yCol]);
-      if (Number.isNaN(x) || Number.isNaN(y)) {
+      const x = toCoordinate(row[pair.xCol]);
+      const y = toCoordinate(row[pair.yCol]);
+      // An empty cell is a protein the projection does not cover; only junk is reported.
+      if (Number.isNaN(Number(row[pair.xCol]) + Number(row[pair.yCol]))) {
         console.warn(`Invalid coordinates at row ${i} for projection ${pair.name}`, { x, y });
       }
       data[i * dimension] = x;
@@ -1326,7 +1320,7 @@ function convertLegacyFormatData(
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 
@@ -1522,7 +1516,7 @@ export function generateColorsAndShapes(
 interface ExtractedAnnotations {
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data: Record<string, (number | null)[]>;
+  numeric_annotation_data: Record<string, Float64Array>;
   annotation_scores: Record<string, (number[] | null)[][]>;
   annotation_evidence: Record<string, (string | null)[][]>;
 }
@@ -1544,7 +1538,7 @@ async function extractAnnotationsByProtein(
 ): Promise<ExtractedAnnotations> {
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
-  const numeric_annotation_data: Record<string, (number | null)[]> = {};
+  const numeric_annotation_data: Record<string, Float64Array> = {};
   const annotation_scores: Record<string, (number[] | null)[][]> = {};
   const annotation_evidence: Record<string, (string | null)[][]> = {};
 

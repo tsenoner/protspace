@@ -58,24 +58,29 @@ export interface SparseMultiValueAnnotationData {
 /**
  * Compressed sparse row storage for a multi-valued column (bundle format v3).
  *
- * Row `i` owns `codes[end[i - 1] .. end[i])`, with `end[-1]` conceptually 0, so
- * a row with no values is `end[i - 1] === end[i]`. `end` is non-decreasing and
- * `end[length - 1] === codes.length`.
+ * Row `i` owns hits `offsets[i] .. offsets[i + 1]`, so a row with no values has
+ * `offsets[i] === offsets[i + 1]`. `offsets` has `length + 1` entries, starts at 0,
+ * is non-decreasing and ends at `codes.length`.
+ *
+ * Per-hit scores and evidence live on the column itself, numbered by the same hits as
+ * `codes`, so anything that rebuilds the hits rebuilds them too (see `gatherCsr`).
  */
 export interface CsrAnnotationData {
   readonly kind: 'csr';
-  readonly end: Int32Array;
+  readonly offsets: Int32Array;
   readonly codes: Int32Array;
   readonly length: number;
+  readonly scores?: CsrScores;
+  readonly evidence?: CsrEvidence;
 }
 
 /**
- * Per-hit scores for a CSR column, indexed by the same hit numbering as
- * {@link CsrAnnotationData.codes}: hit `h` owns `values[hitEnd[h - 1] .. hitEnd[h])`
- * (`hitEnd[-1]` conceptually 0). An empty range means the hit carries no score.
+ * Per-hit scores of a CSR column: hit `h` owns `values[offsets[h] .. offsets[h + 1]]`,
+ * with `offsets` one longer than the column's `codes`. An empty range means the hit
+ * carries no score.
  */
 export interface CsrScores {
-  readonly hitEnd: Int32Array;
+  readonly offsets: Int32Array;
   /**
    * float64, matching the `scores:<col>` payload the v3 encoder writes. float32
    * cannot carry an E-value — the canonical Pfam / InterPro score — at all: 1e-200
@@ -85,7 +90,7 @@ export interface CsrScores {
 }
 
 /**
- * Per-hit evidence for a CSR column, one code per hit: `-1` means none,
+ * Per-hit evidence of a CSR column, one code per hit: `-1` means none,
  * otherwise the evidence string is `dict[code]`.
  */
 export interface CsrEvidence {
@@ -188,19 +193,16 @@ export interface VisualizationData {
   projections: Projection[];
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  /**
+   * One value per protein, NaN where it is missing. A typed column so a v3 read hands its
+   * decoded array over as is and the decode worker can transfer it instead of cloning it.
+   */
+  numeric_annotation_data?: Record<string, Float64Array>;
   /** Display-independent EAT provenance, keyed by the curated base annotation. */
   annotation_predicted?: AnnotationPredictedData;
+  /** Nested per-protein scores of a v1/v2 load; a CSR column carries its own instead. */
   annotation_scores?: Record<string, (number[] | null)[][]>;
   annotation_evidence?: Record<string, (string | null)[][]>;
-  /**
-   * v3 counterparts of the two records above, flat per hit instead of nested per
-   * protein. Deliberately separate optional fields rather than a union with the
-   * nested form: the existing `annotation_scores?.[key]?.[i]` indexers stay valid,
-   * and a v1/v2 load never populates these. At most one form is present per column.
-   */
-  annotation_scores_csr?: Record<string, CsrScores>;
-  annotation_evidence_csr?: Record<string, CsrEvidence>;
   /**
    * Raw projection-statistics parquet part (bundle part 5) as read, carried
    * unparsed so an export re-emits it instead of dropping it. This is the

@@ -5,10 +5,10 @@ import { createEmptyExploreViewRequest } from './url-state';
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
-  saveLastImportedFileMetadata: vi.fn(),
-  saveLastImportedFileData: vi.fn(),
+  saveLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   warning: vi.fn(),
+  info: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -27,8 +27,7 @@ vi.mock('./persisted-dataset', () => ({
 
 vi.mock('./opfs-dataset-store', () => ({
   markLastLoadStatus: mocks.markLastLoadStatus,
-  saveLastImportedFileMetadata: mocks.saveLastImportedFileMetadata,
-  saveLastImportedFileData: mocks.saveLastImportedFileData,
+  saveLastImportedFile: mocks.saveLastImportedFile,
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
@@ -37,7 +36,7 @@ vi.mock('./tooltip-annotations-store', () => ({
 }));
 
 vi.mock('../lib/notify', () => ({
-  notify: { warning: mocks.warning, error: vi.fn() },
+  notify: { warning: mocks.warning, info: mocks.info, error: vi.fn() },
 }));
 
 import { createDatasetController } from './dataset-controller';
@@ -53,8 +52,7 @@ const data: VisualizationData = {
 
 const file = new File(['bundle'], 'import.parquetbundle');
 
-function buildController() {
-  const overlayController = { update: vi.fn() };
+function buildController(kind: 'user' | 'default' = 'user') {
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
     dataLoader: {},
@@ -68,12 +66,12 @@ function buildController() {
     },
     loadQueue: {
       registerFileLoad: vi.fn(),
-      getLoadMetaForFile: () => ({ sequence: 3, kind: 'user' as const }),
-      getRunningLoadMeta: () => ({ sequence: 3, kind: 'user' as const }),
+      getLoadMetaForFile: () => ({ sequence: 3, kind }),
+      getRunningLoadMeta: () => ({ sequence: 3, kind }),
       getLatestSequence: () => 3,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
-    overlayController,
+    overlayController: { update: vi.fn() },
     plotElement: {},
     setCurrentDatasetIsDemo: vi.fn(),
     setCurrentDatasetName: vi.fn(),
@@ -87,7 +85,7 @@ function buildController() {
     },
   } as unknown as Parameters<typeof createDatasetController>[0];
 
-  return { controller: createDatasetController(options), overlayController };
+  return { controller: createDatasetController(options) };
 }
 
 const loadedEvent = {
@@ -98,84 +96,93 @@ describe('dataset controller OPFS persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
-    mocks.saveLastImportedFileMetadata.mockResolvedValue(undefined);
-    mocks.saveLastImportedFileData.mockResolvedValue(undefined);
+    mocks.saveLastImportedFile.mockResolvedValue(undefined);
+    mocks.loadData.mockResolvedValue(undefined);
   });
 
   /** Drain the microtask queue so every already-resolved await has run. */
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it('opens the pending window before the render and settles the byte copy after it', async () => {
-    let finishRender = () => {};
-    let finishCopy = () => {};
-    mocks.loadData.mockImplementation(
+  it('stores the imported bytes before the render starts', async () => {
+    let finishSave = () => {};
+    mocks.saveLastImportedFile.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
-          finishRender = () => resolve();
-        }),
-    );
-    mocks.saveLastImportedFileData.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishCopy = () => resolve();
+          finishSave = () => resolve();
         }),
     );
 
-    const { controller, overlayController } = buildController();
+    const { controller } = buildController();
     const pending = controller.handleDataLoaded(loadedEvent);
     await flush();
 
-    // The crash-recovery window is open before the render it has to survive: a tab that
-    // dies here leaves a `pending` record naming this import, not the previous dataset's.
-    expect(mocks.saveLastImportedFileMetadata).toHaveBeenCalledWith(file);
-    expect(mocks.saveLastImportedFileMetadata.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.loadData.mock.invocationCallOrder[0],
-    );
-    // The byte copy is in flight rather than in front of first paint: the render started
-    // even though the copy has not resolved, and there is no blocking overlay.
-    expect(mocks.saveLastImportedFileData).toHaveBeenCalledWith(file);
-    expect(mocks.loadData).toHaveBeenCalledOnce();
-    expect(overlayController.update).not.toHaveBeenCalled();
+    // The recovery banner offers the file again after a crash during the render, so the
+    // bytes must already be in OPFS when the render begins.
+    expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.loadData).not.toHaveBeenCalled();
 
-    // ...and success is not reported over a half-copied file.
-    finishRender();
-    await flush();
-    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
-
-    finishCopy();
+    finishSave();
     await pending;
 
-    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
-  });
-
-  it('warns but still finishes the load when the byte copy fails', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.loadData.mockResolvedValue(undefined);
-    mocks.saveLastImportedFileData.mockRejectedValue(new Error('quota exceeded'));
-
-    const { controller } = buildController();
-    await controller.handleDataLoaded(loadedEvent);
-
-    expect(mocks.warning).toHaveBeenCalledOnce();
-    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
-    consoleError.mockRestore();
-  });
-
-  it('warns and still renders when the pending record cannot be written', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.loadData.mockResolvedValue(undefined);
-    mocks.saveLastImportedFileMetadata.mockRejectedValue(new Error('quota exceeded'));
-
-    const { controller } = buildController();
-    await controller.handleDataLoaded(loadedEvent);
-
-    // No recovery window, but the dataset still reaches the screen.
-    expect(mocks.saveLastImportedFileData).not.toHaveBeenCalled();
     expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+  });
+
+  it('warns and still renders when the bytes cannot be stored', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.saveLastImportedFile.mockRejectedValue(new Error('quota exceeded'));
+
+    const { controller } = buildController();
+    await controller.handleDataLoaded(loadedEvent);
+
     expect(mocks.warning).toHaveBeenCalledOnce();
+    expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
     consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller legacy bundle notice', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    mocks.saveLastImportedFile.mockResolvedValue(undefined);
+    mocks.loadData.mockResolvedValue(undefined);
+  });
+
+  const eventFor = (bundleFormatVersion: number | undefined) =>
+    ({
+      detail: { data, settings: null, source: 'user', file, bundleFormatVersion },
+    }) as unknown as Event;
+
+  it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(2));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).toHaveBeenCalledOnce();
+    const [notice] = mocks.info.mock.calls[0];
+    expect(notice.description).toMatch(/5\.0\.0/);
+    expect(notice.description).toMatch(/export it again/);
+    expect(notice.description).toMatch(/protspace convert/);
+  });
+
+  it.each([
+    ['a v3 bundle', 3],
+    ['a plain parquet file', undefined],
+  ])('stays quiet for %s', async (_label, version) => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(version));
+
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for the bundled default dataset, which is still v1', async () => {
+    const { controller } = buildController('default');
+    await controller.handleDataLoaded(eventFor(1));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 });

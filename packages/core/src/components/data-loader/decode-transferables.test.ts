@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { isCsrAnnotationData, type VisualizationData } from '@protspace/utils';
+import type { VisualizationData } from '@protspace/utils';
 import { collectTransferables } from './decode-transferables';
+import { bulkViews } from './bulk-views.test-support';
 
 /**
- * Hand-built CSR dataset. `end` and `codes` deliberately share one ArrayBuffer, which
+ * Hand-built CSR dataset. `offsets` and `codes` deliberately share one ArrayBuffer, which
  * is the case that makes deduplication load-bearing: `postMessage` throws
  * `DataCloneError` on a transfer list that names the same buffer twice.
  */
 function csrDataset(): { data: VisualizationData; shared: ArrayBuffer } {
-  const shared = new ArrayBuffer(6 * 4);
-  const end = new Int32Array(shared, 0, 3); // 3 proteins
-  const codes = new Int32Array(shared, 12, 3);
-  end.set([1, 2, 3]);
+  const shared = new ArrayBuffer(7 * 4);
+  const offsets = new Int32Array(shared, 0, 4); // 3 proteins
+  const codes = new Int32Array(shared, 16, 3);
+  offsets.set([0, 1, 2, 3]);
   codes.set([0, 1, 0]);
 
   return {
@@ -25,37 +26,23 @@ function csrDataset(): { data: VisualizationData; shared: ArrayBuffer } {
       annotations: {
         go_bp: { kind: 'categorical', values: ['a', 'b'], colors: [], shapes: [] },
         organism: { kind: 'categorical', values: ['x'], colors: [], shapes: [] },
+        length: { kind: 'numeric', values: [], colors: [], shapes: [] },
       },
+      numeric_annotation_data: { length: new Float64Array([100, NaN, 300]) },
       annotation_data: {
-        go_bp: { kind: 'csr', end, codes, length: 3 },
+        go_bp: {
+          kind: 'csr',
+          offsets,
+          codes,
+          length: 3,
+          scores: { offsets: new Int32Array([0, 1, 1, 2]), values: new Float64Array([0.5, 0.25]) },
+          evidence: { codes: new Int32Array([-1, 0, -1]), dict: ['IDA'] },
+        },
         organism: new Int32Array([0, 0, 0]),
-      },
-      annotation_scores_csr: {
-        go_bp: { hitEnd: new Int32Array([1, 1, 2]), values: new Float32Array([0.5, 0.25]) },
-      },
-      annotation_evidence_csr: {
-        go_bp: { codes: new Int32Array([-1, 0, -1]), dict: ['IDA'] },
       },
     },
   };
 }
-
-/** Every typed array `collectTransferables` names a buffer for, in a stable order. */
-const bulkViews = (data: VisualizationData): (Int32Array | Float32Array)[] => [
-  ...data.projections.map((projection) => projection.data as Float32Array),
-  ...Object.values(data.annotation_data).flatMap((value) =>
-    value instanceof Int32Array
-      ? [value]
-      : isCsrAnnotationData(value)
-        ? [value.end, value.codes]
-        : [],
-  ),
-  ...Object.values(data.annotation_scores_csr ?? {}).flatMap((scores) => [
-    scores.hitEnd,
-    scores.values,
-  ]),
-  ...Object.values(data.annotation_evidence_csr ?? {}).map((evidence) => evidence.codes),
-];
 
 describe('collectTransferables', () => {
   it('names every bulk buffer exactly once, even when two views share one', () => {
@@ -64,10 +51,10 @@ describe('collectTransferables', () => {
 
     expect(new Set(transfer).size).toBe(transfer.length);
     expect(transfer).toContain(shared);
-    // 2 projections + the shared CSR buffer + organism codes + score hitEnd + score
-    // values + evidence codes. Without deduplication this would be 8: `end` and
-    // `codes` would each name `shared`.
-    expect(transfer).toHaveLength(7);
+    // 2 projections + the numeric column + the shared CSR buffer + score offsets + score
+    // values + evidence codes + organism codes. Without deduplication this would be 9:
+    // `offsets` and `codes` would each name `shared`.
+    expect(transfer).toHaveLength(8);
   });
 
   it('actually transfers: the clone holds the bytes and every source is detached', () => {
@@ -86,12 +73,13 @@ describe('collectTransferables', () => {
     expect(before).toEqual([
       [0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [1, 2, 3],
+      [100, NaN, 300],
+      [0, 1, 2, 3],
       [0, 1, 0],
-      [0, 0, 0],
-      [1, 1, 2],
+      [0, 1, 1, 2],
       [0.5, 0.25],
       [-1, 0, -1],
+      [0, 0, 0],
     ]);
   });
 

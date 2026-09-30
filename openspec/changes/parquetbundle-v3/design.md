@@ -1,0 +1,201 @@
+## Context
+
+A `.parquetbundle` is Parquet files joined by `---PARQUET_DELIMITER---`. Up to format v2 the
+annotations are string cells in the v2 grammar (`;` between hits, `|` before a score or evidence
+code, percent-encoded labels), and projections are long-format rows, one per protein and
+projection. The browser parses every cell into row objects and then into typed arrays, and on the
+573K Swiss-Prot bundle that parse dominates load time and peak memory.
+
+PR #477 (Peyman Vahidi) adds format v3, which moves the parse to the writer. The format is
+documented in `docs/guide/data-format.md` ("Format v3 layout" and "Format v3 Physical Schema"),
+and this document does not restate it. In short: six fixed slots; part 1 holds one row per protein
+with `INT32` codes, `INT32` per-row hit counts or `DOUBLE` numerics, and a JSON manifest in its
+footer; part 3 is wide `FLOAT` columns `<name>__x|y|z`; part 6 holds label dictionaries and CSR
+buffers. The Python side is a container-boundary codec (`encode_v3` / `decode_v3`), so every
+command above it still sees v2-shaped tables.
+
+This change is written after the PR's first implementation and review. It records what the
+maintainer decided on the open points and splits the remaining work into a Python track and a
+TypeScript track.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- One written format: every bundle ProtSpace writes, from Python or from the web app, is v3.
+- Every v1/v2 bundle keeps loading until 5.0.0, and users are told what to do about it.
+- A way to upgrade a file with and without installing anything.
+- v3 renders the same dataset v2 did: same proteins, same labels, same dimensions, nothing at
+  (0,0) that was not there.
+- An imported file survives a tab crash during its first render, as it does on `main`.
+
+**Non-Goals:**
+
+- A second version key separating container from cell grammar.
+- Missing-value labels marked in the manifest.
+- Splitting #477's unrelated performance commits into other PRs.
+
+## Decisions
+
+### v3 everywhere on write, v1/v2 read-only until 5.0.0
+
+Both producers write v3: the Python writer already does, and the web exporter switches from v2. Read
+support for v1/v2 stays in both languages and is deprecated. The alternative, keeping v2 as the web
+export format, would leave two writers producing two formats, and a bundle's format would depend on
+which tool last touched it.
+
+Deprecation is announced where each reader runs:
+
+- **Python** logs one warning per legacy read, at the one place a bundle's layout is decoded
+  (`bundle._parse_bundle` and its callers), naming `protspace convert` and 5.0.0. One warning per
+  read, not per process: a script that loads ten legacy bundles should say so ten times, and
+  nothing is quiet after the first.
+- **The browser** shows a non-blocking notice through the app's existing `notify` mechanism when a
+  user-provided v1/v2 bundle loads, suggesting a re-export from the app or `protspace convert`. The
+  core reader does not show UI. `decodeParquetBundle` reports the container's format version and
+  the app decides. Datasets the app serves itself (the default `data.parquetbundle` and the example
+  datasets, all v1 today) do not trigger the notice: a first-time visitor cannot act on it. They get
+  converted before 5.0.0 instead.
+
+The release is a minor. Every bundle still loads, so there is nothing breaking to announce, and a
+`BREAKING CHANGE` footer would cut protspace 5.0.0 now, before the removal it names.
+
+### `protspace convert`
+
+A new command in the same panel as `style` and `transfer`. It follows `style`'s positional form:
+`protspace convert INPUT [OUTPUT]`, plus `--in-place`. It requires one of the two. Passing `OUTPUT`
+equal to `INPUT` is an explicit request, and so is `--in-place`; nothing else writes over the
+input. A default output name (say `<stem>.v3.parquetbundle`) was considered and rejected, because
+a batch script would then leave a v1 and a v3 copy side by side with nothing to say which one the
+app should load.
+
+It reads through the same legacy reader as every other command. An unstamped (v1) annotations table
+is migrated to the v2 grammar by `encode_v3`, exactly as `write_bundle` already does for a legacy
+bundle. Settings and the statistics part are carried over, and the result goes through
+`atomic_write_bytes`, so an interrupted run leaves either the old file or the new one. A v3 input is
+reported as already current, and nothing is written, not even to a separate `OUTPUT`.
+
+In the browser, loading a legacy bundle and exporting it writes v3. That is the converter for users
+without Python, and it needs no extra UI.
+
+### Missing coordinates are NaN, culled in one place
+
+v2's long-format projections simply had no row for a protein a projection did not cover. The v2
+browser reader allocated a zero-filled `Float32Array` and never wrote those slots, so such a protein
+was drawn at (0,0). The PR kept that and wrote `0.0` into v3's wide columns for parity. (0,0) is a
+real position in every projection, so a missing value there reads as data.
+
+Missing is NaN from the file up:
+
+- the v3 encoder writes NaN into part 3 for a protein a projection does not cover;
+- the v3 reader keeps NaN, and the legacy reader fills its coordinate arrays with NaN before
+  writing the rows it has;
+- Python's `decode_v3` emits long-format projection rows only for finite coordinates, so a v3
+  round trip gives back the v2 tables the encoder was handed.
+
+The scatter plot culls non-finite points in `DataProcessor.processVisualizationData`, where plot
+data is built from the projection arrays, next to the query-filter and isolation culls. The
+visibility model was the other candidate, and it is the wrong layer: an opacity of `0` still leaves a
+point in the plot data, the GPU buffers, the depth sort and the point count. Several consumers never
+consult opacity at all. The extent loop in `createScales` skips NaN only because every comparison
+with NaN is false. Everything downstream (the scale domains, the WebGL buffers, the depth sort, the
+picking grid, hover, click, brush, lasso, the density contours, duplicate stacks and every export)
+reads `PlotData`, so after the cull none of them sees such a point. Existing `Number.isFinite` guards in the duplicate
+stack and picking code become redundant. They stay for now.
+
+One path bypasses `processVisualizationData` today. On a projection switch,
+`scatter-plot.ts#_updatePlotDataCoordinates` copies the new projection's coordinates into the
+existing `PlotData` in place, to avoid reallocating it. With per-projection culling, the set of
+surviving points can change between projections, so that fast path is only valid when the new
+projection leaves exactly the same points after the cull (in practice: neither projection has a
+missing coordinate). Otherwise it falls back to a full rebuild. The TypeScript track audits every other read of `data.projections` for the
+same bypass.
+
+An unfiltered projection with no missing points keeps the identity path (`originalIndices = null`),
+so the common case pays one finiteness pass and no copy.
+
+### The browser protein set is the proteins with some finite coordinate
+
+v2's reader built the protein list from the projection rows, so an annotation-only protein never
+appeared, was never counted in a legend and could not be searched. v3's part 1 keeps
+annotation-only rows (the file stays lossless), and the browser v3 reader drops every protein that
+has no finite coordinate in any projection before it builds `protein_ids` and the annotation arrays.
+A protein with coordinates in one projection but not another stays in the set and is culled per
+projection by the rule above.
+
+In the other direction, a projection identifier missing from the annotations table was an error in
+the PR's encoder. v2 accepted it and showed the protein with N/A annotations. The encoder now adds
+such identifiers as rows whose annotations are all missing.
+
+### Dimension from the data
+
+The PR's encoder took the dimension from projection metadata when it said 2 or 3, and fell back to
+the data otherwise. Metadata written by hand or by an older tool can be wrong. A 3D projection
+declared 2D then loses its `z`, and a 2D one declared 3D gets a NaN `z` column. The encoder now sets
+the dimension from the data (any non-null `z` means 3) and logs a warning when a `dimensions` value
+disagrees. The manifest records the derived value, and the browser reader keeps trusting the
+manifest.
+
+### Booleans are spelled `true` / `false`
+
+The v2 browser reader rendered an Arrow `BOOLEAN` annotation as `true`/`false`, JavaScript's
+spelling. The v3 encoder flattened it with Python's `str()`, which gives `True`/`False`, so legend
+entries, colour assignments keyed by label and saved legend settings stopped matching. Both
+encoders spell booleans `true`/`false`.
+
+### Persist before render
+
+On `main`, a user import is written to OPFS, bytes and metadata, before the render, so a tab that
+dies while rendering a 145 MB bundle comes back with a recovery banner that can offer the file
+again (`apps/web/src/explore/persisted-dataset.ts`). The PR moved the byte copy after the first
+paint to shorten time to first render. A crash during the render then left a pending record of the
+import with no complete bytes behind it. The deferred `persistBytes` promise also stays in flight
+across the whole render, and only the load queue's serialisation keeps it from racing the next
+import. Recovery is worth more than the time saved, so `main`'s ordering comes back and the rest of
+the PR's `dataset-controller.ts` changes stay.
+
+### Public decode API
+
+`decodeParquetBundle(arrayBuffer)` is the single entry point that sniffs the version and returns
+`{ data, settings }` for any bundle. It is exported from `@protspace/core`, and the embedding and API
+docs use it. `extractRowsFromParquetBundle` returns v1/v2 row objects, and on a v3 file there are no
+such rows to return. It stays exported for existing callers, documented as v1/v2-only and
+deprecated alongside legacy read support.
+
+## Risks / Trade-offs
+
+- **Version skew.** A v3 file exported from protspace.app does not open in an older self-hosted web
+  build, which reports `Expected 2 to 4 delimiters in parquetbundle, found 5`. → The data-format
+  guide names the error as a version-skew signal. Older Python reads fail the same way. Users on an
+  old build can upgrade.
+- **Shipped v1 datasets.** The default dataset and the examples stay v1 until they are converted, so
+  the legacy reader stays on the default load path until then. → No notice for app-served data.
+  Converting them is a tracked task before 5.0.0.
+- **Legacy coverage.** The contract suite generates bundles with the real CLI, which now writes only
+  v3, so the legacy reader loses its cross-language check. → The committed `v2-sample` fixture and
+  the Python legacy tests keep it covered in each language until removal.
+- **Culling changes counts for data that used to sit at (0,0).** A bundle whose projections do not
+  cover every annotated protein now shows fewer points than before. That is the fix, but it is
+  visible. → The data-format guide says so.
+- **Finiteness pass.** One pass over `N × dimension` floats per plot-data build. That is small next
+  to the build itself, and it only allocates when something is actually missing.
+
+## Migration Plan
+
+1. Land the Python track and the TypeScript track on the PR branch, each with its own tests; the
+   contract suite runs against both.
+2. Release as a minor from the merged PR. Do not squash-merge it (it touches `apps/protspace/`).
+3. Convert the shipped bundles and e2e fixtures to v3 in a follow-up, before 5.0.0.
+4. In 5.0.0, remove the legacy readers, `extractRowsFromParquetBundle` and the notice, and make
+   `protspace convert` point to the last 4.x release for anyone still holding v1/v2 files.
+
+Rollback is a revert of the merge. Files written as v3 in the meantime then need a 4.x build that
+reads v3, which is why the reader lands in the same release as the writer.
+
+## Open Questions
+
+- `protspace style` edits settings in place and keeps a legacy bundle legacy
+  (`replace_settings_in_bundle` preserves every other part byte for byte). "v3 on every write"
+  would have it upgrade instead. This change leaves `style` as it is, since it is a settings edit
+  and not a re-encode, and `convert` is the upgrade path. Revisit if users expect `style` to
+  modernise the file.

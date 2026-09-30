@@ -12,10 +12,10 @@ There are two container layouts. Which one a file uses is recorded in the Parque
 metadata of its first part, under `protspace_format_version` (see
 [Version detection](#version-detection)):
 
-| Layout                    | Parts    | Written by                                                                                                           |
-| ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| Legacy (format v1 and v2) | 3 to 5   | every export from the web app; `protspace style`, which keeps the layout of the bundle it was handed; older releases |
-| Columnar (format v3)      | always 6 | `protspace prepare`, `protspace bundle`, `protspace transfer`                                                        |
+| Layout                    | Parts    | Written by                                                                            |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------- |
+| Legacy (format v1 and v2) | 3 to 5   | `protspace style`, which keeps the layout of the bundle it was handed; older releases |
+| Columnar (format v3)      | always 6 | `protspace prepare`, `protspace bundle`, `protspace transfer`; every web app export   |
 
 Both layouts carry the same data. v3 re-encodes the container, not the dataset: the Python API
 decodes a v3 file back into the same three tables, in the same cell grammar, that a legacy file
@@ -431,9 +431,9 @@ disabled, in a single row group, snappy compressed.
 For parts 1 and 3 that is load bearing, not stylistic. The browser's Parquet reader hands back a
 zero-copy typed array only for a REQUIRED flat PLAIN column, and each such chunk then lands in
 its preallocated column with a single `set`. A column written nullable or dictionary-encoded
-still decodes to the right values, but it arrives as a plain JavaScript array about 4x slower,
-and the reader logs a warning naming it. Parts 1 and 3 are read by separate passes that carry one
-warning each, so a single read logs at most two. Such a column is a writer bug, not a variant.
+arrives as a plain JavaScript array instead, and the reader rejects the bundle with an error
+naming that column, as it does for a column whose physical type contradicts the manifest. Such
+a column is a writer bug, not a variant.
 
 Part 6 is read differently and is not zero-copy at all. It is a handful of large blobs rather
 than hundreds of per-row columns, so the reader loads the whole part at once and copies each
@@ -556,8 +556,9 @@ If the saved numeric topology no longer matches the realized one, incompatible n
 
 What else an export from the web app does:
 
-- an integral numeric column is written as `INT32` (`INT64` when a value is out of `INT32` range) and a fractional one as `DOUBLE`. Older exports widened every numeric column to `DOUBLE`, which is why a value could read back as `100.0` where it now reads back as `100`.
+- it writes format v3, whatever format the bundle was loaded from, so exporting a v1 or v2 file from the app converts it without a Python install.
+- a numeric column is written as `DOUBLE`, with its int/float identity in the manifest. An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
 - a statistics part read from the source bundle is re-emitted byte for byte, including columns this app version does not model.
-- a bundle that carries statistics but no settings has five parts, with a zero-byte settings slot at position four.
+- a bundle without settings or statistics still has six parts, with zero-byte slots in their place.
 - a subset export (isolation, or an active filter) drops the statistics part, because whole-dataset scores would misdescribe a slice.
 - the export fails with an error, rather than writing a corrupt file, if any annotation value or category name contains the literal `---PARQUET_DELIMITER---`. The delimiter is in-band and unescaped, so such a value would split one part into two on read-back.

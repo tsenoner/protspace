@@ -28,7 +28,7 @@ interface DatasetHashInput {
       };
     }
   >;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  numeric_annotation_data?: Record<string, ArrayLike<number | null>>;
   annotation_predicted?: Record<string, readonly (PredictedCell | null)[]>;
 }
 
@@ -112,7 +112,7 @@ function buildProteinIndexOrder(proteinIds: readonly string[]): number[] {
 }
 
 function buildNumericFingerprint(
-  values: Array<number | null>,
+  values: ArrayLike<number | null>,
   proteinIndexOrder?: readonly number[],
 ): string {
   if (values.length === 0) {
@@ -126,7 +126,8 @@ function buildNumericFingerprint(
 
   for (let position = 0; position < values.length; position++) {
     const value = values[proteinIndexOrder?.[position] ?? position];
-    const serialized = value == null ? 'null' : String(value);
+    // NaN is how a typed column spells missing; it hashes as the null it replaced.
+    const serialized = value == null || Number.isNaN(value) ? 'null' : String(value);
     appendFNV1a64(hash, serialized);
     appendFNV1a64(hash, '\x1f');
 

@@ -31,7 +31,10 @@ const data: ProtspaceData = {
     mass: { kind: 'categorical', sourceKind: 'numeric', values: ['0–10', '10–20'] },
   },
   annotation_data: { organism: [[0], [1]] },
-  numeric_annotation_data: { length: [100, 200], mass: [5, 15] },
+  numeric_annotation_data: {
+    length: new Float64Array([100, 200]),
+    mass: new Float64Array([5, 15]),
+  },
 };
 
 async function mount(): Promise<ConditionRowEl> {

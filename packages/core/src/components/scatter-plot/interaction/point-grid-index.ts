@@ -6,7 +6,7 @@ import type { PlotData } from '@protspace/utils';
  *
  * Backed by a uniform grid over flat typed arrays rather than a d3 quadtree: the quadtree
  * allocated one heap object per visible point, which cost 512 ms to build at 573K points
- * against 37 ms for the grid. The class name is kept because every consumer refers to it.
+ * against 37 ms for the grid.
  *
  * Behaviour matches the quadtree it replaced:
  *  - non-finite screen coordinates are not indexed;
@@ -29,7 +29,7 @@ const MAX_GRID_SIDE = 2048;
 const MIN_CELL_PX = 8;
 const MAX_CELL_PX = 64;
 
-export class QuadtreeIndex {
+export class PointGridIndex {
   private scales: {
     x: d3.ScaleLinear<number, number>;
     y: d3.ScaleLinear<number, number>;
@@ -100,22 +100,18 @@ export class QuadtreeIndex {
       n++;
     }
 
+    if (n === 0) {
+      // Every coordinate was non-finite: indexed but empty, exactly like an empty d3 tree.
+      this.clear();
+      this.built = true;
+      return;
+    }
+
     this.built = true;
     this.px = px;
     this.py = py;
     this.slotOf = slotOf;
     this.n = n;
-
-    if (n === 0) {
-      // Every coordinate was non-finite: indexed but empty, exactly like an empty d3 tree.
-      this.originX = 0;
-      this.originY = 0;
-      this.gridW = 0;
-      this.gridH = 0;
-      this.cellStart = new Int32Array(1);
-      this.cellItems = new Int32Array(0);
-      return;
-    }
 
     const w = maxX - minX;
     const h = maxY - minY;
@@ -203,7 +199,7 @@ export class QuadtreeIndex {
     return bestSlot;
   }
 
-  hasTree(): boolean {
+  isBuilt(): boolean {
     return this.built;
   }
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 import * as d3 from 'd3';
 import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
 import { DuplicateBadgesCanvasRenderer } from './duplicate-badges-canvas-renderer';
-import { QuadtreeIndex } from '../interaction/quadtree-index';
+import { PointGridIndex } from '../interaction/point-grid-index';
 import { makePD, tenPointPD } from './test-support/plot-data-fixtures';
 import type { PlotData } from '@protspace/utils';
 import type { BadgeCaptureProjection } from './duplicate-stack-types';
@@ -33,9 +33,9 @@ function makeFixture(
       ? Array.from({ length: pd.length }, (_, i) => i)
       : opts.visibleSlots;
   const scales = liveScales();
-  const quadtree = new QuadtreeIndex();
-  quadtree.setScales(scales);
-  if (visibleSlots) quadtree.rebuild(pd, visibleSlots);
+  const pointIndex = new PointGridIndex();
+  pointIndex.setScales(scales);
+  if (visibleSlots) pointIndex.rebuild(pd, visibleSlots);
   const config = {
     width: 800,
     height: 600,
@@ -48,7 +48,7 @@ function makeFixture(
     getConfig: () => config,
     getScales: () => scales,
     getPlotData: () => pd,
-    getQuadtree: () => quadtree,
+    getPointGridIndex: () => pointIndex,
     getVisibleSlots: vi.fn(() => visibleSlots),
     isEnabled: () => opts.isEnabled ?? true,
     isSelectionMode: () => false,

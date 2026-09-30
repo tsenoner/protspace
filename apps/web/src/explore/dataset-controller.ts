@@ -12,12 +12,9 @@ import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
+  getLegacyBundleFormatNotification,
 } from './notifications';
-import {
-  markLastLoadStatus,
-  saveLastImportedFileData,
-  saveLastImportedFileMetadata,
-} from './opfs-dataset-store';
+import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
@@ -101,7 +98,7 @@ export function createDatasetController({
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
-      const { data, settings, source, file } = customEvent.detail;
+      const { data, settings, source, file, bundleFormatVersion } = customEvent.detail;
       const runningLoadMeta = loadQueue.getRunningLoadMeta();
       const loadMeta = (file ? loadQueue.getLoadMetaForFile(file) : undefined) ??
         runningLoadMeta ?? {
@@ -119,32 +116,27 @@ export function createDatasetController({
         return;
       }
 
+      if (loadMeta.kind === 'user' && file) {
+        overlayController.update(
+          true,
+          20,
+          'Saving imported dataset...',
+          'Preparing reload support...',
+        );
+        try {
+          await saveLastImportedFile(file);
+        } catch (error) {
+          console.error('Failed to persist imported dataset in OPFS:', error);
+          notify.warning(getDatasetPersistenceFailureNotification(error));
+        }
+      }
+
       const datasetHash = generateDatasetHash(data);
       const shouldClearPersistedState =
         loadMeta.kind === 'default' || (loadMeta.kind === 'user' && settings != null);
 
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
-
-      // The `pending` record is written and awaited BEFORE the render: that window is what
-      // the recovery banner reads, so a tab that dies mid-render leaves a record of the
-      // import that died instead of silently restoring the previous dataset. It is also
-      // what markLastLoadStatus reads on both the success and the data-error path.
-      //
-      // The byte copy is a different matter — 45-145 MB, and it used to sit in front of
-      // first paint. It is only STARTED here; the await happens after the render below.
-      let persistBytes: Promise<unknown> | null = null;
-      if (loadMeta.kind === 'user' && file) {
-        try {
-          await saveLastImportedFileMetadata(file);
-          persistBytes = saveLastImportedFileData(file).then(
-            () => null,
-            (error: unknown) => error,
-          );
-        } catch (error) {
-          persistBytes = Promise.resolve(error);
-        }
-      }
 
       await loadData(data);
 
@@ -248,13 +240,14 @@ export function createDatasetController({
 
       viewController.applyLatestViewForDatasetLoad(data);
 
-      // Settled only once the dataset is on screen. Load-queue serialisation (it waits on
-      // resolvePendingLoadFinalization below) keeps a later import from interleaving with
-      // this write, and markLastLoadStatus must not report success over a half-copied file.
-      const persistError = await persistBytes;
-      if (persistError) {
-        console.error('Failed to persist imported dataset in OPFS:', persistError);
-        notify.warning(getDatasetPersistenceFailureNotification(persistError));
+      // Only for the user's own imports: the app's bundled datasets are still v1, and a
+      // visitor cannot convert those.
+      if (
+        loadMeta.kind === 'user' &&
+        bundleFormatVersion !== undefined &&
+        bundleFormatVersion < 3
+      ) {
+        notify.info(getLegacyBundleFormatNotification(bundleFormatVersion));
       }
 
       try {

@@ -16,7 +16,9 @@ import {
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
 import { readV3Bundle } from './bundle-v3';
+import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
+import { bulkViews } from '../bulk-views.test-support';
 
 /**
  * Format v3 reader tests.
@@ -113,10 +115,10 @@ const PROJECTIONS_METADATA = part([
 const PROJECTIONS = part([
   { name: 'pca2__x', data: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]) },
   { name: 'pca2__y', data: new Float32Array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]) },
-  // P7 and P8 are absent from umap3, so the encoder wrote 0.0 for them (matching v2).
-  { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, 0, 0]) },
-  { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, 0, 0]) },
-  { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, 0, 0]) },
+  // P7 and P8 are absent from umap3, so the encoder wrote NaN for them.
+  { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, NaN, NaN]) },
+  { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, NaN, NaN]) },
+  { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, NaN, NaN]) },
 ]);
 
 const PAYLOADS: Record<string, Uint8Array> = {
@@ -126,7 +128,7 @@ const PAYLOADS: Record<string, Uint8Array> = {
   'dict:go_bp:len': i32(7, 9, 9),
   'csr:go_bp': i32(0, 1, 2, 0, 1, 2, 1, 0, 2),
   // Hit 3 is the first hit of P5, immediately after the empty interior row P4: its
-  // score is what an off-by-one in the inserted-NA `hitEnd` would steal.
+  // score is what an off-by-one in the inserted-NA score offsets would steal.
   'score_count:go_bp': i32(2, 0, 1, 1, 0, 0, 0, 3, 0),
   'scores:go_bp': f64(1.5, 2.5, 9.75, 4, 0.5, 0.25, 0.125),
   'evidence:go_bp': i32(-1, 0, 1, -1, -1, -1, 0, -1, -1),
@@ -146,26 +148,6 @@ const v3Bundle = (overrides: Record<number, Uint8Array> = {}) =>
       (fallback, index) => overrides[index] ?? fallback,
     ),
   );
-
-/**
- * Every typed array `collectTransferables` names a buffer for, in a stable order, so a
- * dataset and its structured clone can be compared element by element.
- */
-const bulkViews = (data: VisualizationData): (Int32Array | Float32Array | Float64Array)[] => [
-  ...data.projections.map((projection) => projection.data as Float32Array),
-  ...Object.values(data.annotation_data).flatMap((value) =>
-    value instanceof Int32Array
-      ? [value]
-      : isCsrAnnotationData(value)
-        ? [value.end, value.codes]
-        : [],
-  ),
-  ...Object.values(data.annotation_scores_csr ?? {}).flatMap((scores) => [
-    scores.hitEnd,
-    scores.values,
-  ]),
-  ...Object.values(data.annotation_evidence_csr ?? {}).map((evidence) => evidence.codes),
-];
 
 const labelsOf = (data: VisualizationData, key: string, protein: number) =>
   getProteinAnnotationIndices(data.annotation_data[key], protein).map(
@@ -210,7 +192,7 @@ describe('parquetbundle format v3', () => {
     expect(csr.length).toBe(8);
     // Counts [0,2,1,0,3,1,2,0] plus one inserted __NA__ hit for each of the three
     // empty rows (first, interior, last).
-    expect(Array.from(csr.end)).toEqual([1, 3, 4, 5, 8, 9, 11, 12]);
+    expect(Array.from(csr.offsets)).toEqual([0, 1, 3, 4, 5, 8, 9, 11, 12]);
     expect(Array.from(csr.codes)).toEqual([3, 0, 1, 2, 3, 0, 1, 2, 1, 0, 2, 3]);
   });
 
@@ -301,8 +283,8 @@ describe('parquetbundle format v3', () => {
     const { data } = await decodeParquetBundle(v3Bundle({ 5: payloadPart(payloads) }));
 
     expect(data.annotations.go_bp.values).toEqual(['binding', 'transport', NA_VALUE]);
-    expect(Array.from((data.annotation_data.go_bp as CsrAnnotationData).end)).toEqual([
-      1, 2, 3, 4, 6, 7, 9, 10,
+    expect(Array.from((data.annotation_data.go_bp as CsrAnnotationData).offsets)).toEqual([
+      0, 1, 2, 3, 4, 6, 7, 9, 10,
     ]);
     expect(labelsOf(data, 'go_bp', 1)).toEqual(['binding']);
     expect(labelsOf(data, 'go_bp', 4)).toEqual(['binding', 'transport']);
@@ -322,8 +304,9 @@ describe('parquetbundle format v3', () => {
 
     expect(labelsOf(data, 'keyword', 1)).toEqual(['alpha', 'beta', 'gamma']);
     expect(labelsOf(data, 'keyword', 4)).toEqual([NA_VALUE]);
-    expect(data.annotation_scores_csr?.keyword).toBeUndefined();
-    expect(data.annotation_evidence_csr?.keyword).toBeUndefined();
+    const keyword = data.annotation_data.keyword as CsrAnnotationData;
+    expect(keyword.scores).toBeUndefined();
+    expect(keyword.evidence).toBeUndefined();
     expect(getProteinScores(data, 1, 'keyword')).toEqual([]);
   });
 
@@ -332,8 +315,12 @@ describe('parquetbundle format v3', () => {
 
     expect(data.annotations.length).toMatchObject({ kind: 'numeric', numericType: 'int' });
     expect(data.annotations.score).toMatchObject({ kind: 'numeric', numericType: 'float' });
-    expect(data.numeric_annotation_data?.length).toEqual([100, 200, null, 300, 400, 500, 600, 700]);
-    expect(data.numeric_annotation_data?.score).toEqual([0.5, 1.5, 2.5, null, 4.5, 5.5, 6.5, 7.5]);
+    expect(data.numeric_annotation_data?.length).toEqual(
+      new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]),
+    );
+    expect(data.numeric_annotation_data?.score).toEqual(
+      new Float64Array([0.5, 1.5, 2.5, NaN, 4.5, 5.5, 6.5, 7.5]),
+    );
     // The manifest is authoritative: an int32 code column must never be read as numeric.
     expect(data.numeric_annotation_data?.organism).toBeUndefined();
     expect(data.numeric_annotation_data?.go_bp).toBeUndefined();
@@ -351,8 +338,8 @@ describe('parquetbundle format v3', () => {
 
     expect(umap3).toMatchObject({ name: 'umap3', dimension: 3 });
     expect(Array.from(umap3.data.slice(0, 6))).toEqual([10, 11, 0.25, 20, 21, 0.5]);
-    // A protein absent from a projection sits at the origin, matching v2.
-    expect(Array.from(umap3.data.slice(18))).toEqual([0, 0, 0, 0, 0, 0]);
+    // A protein absent from a projection keeps NaN, never the origin.
+    expect(Array.from(umap3.data.slice(18))).toEqual([NaN, NaN, NaN, NaN, NaN, NaN]);
   });
 
   it('takes the typed-array fast path for every column', async () => {
@@ -568,44 +555,31 @@ describe('parquetbundle format v3', () => {
     ['past the safe-integer range', 9_007_199_254_740_993n],
     ['absent', undefined],
   ])('rejects a footer whose row count is %s before allocating on it', async (_label, rows) => {
-    const part1 = annotationsPart();
-    const parts = [
-      part1,
-      PROJECTIONS_METADATA,
-      PROJECTIONS,
-      EMPTY,
-      EMPTY,
-      payloadPart(PAYLOADS),
-    ].map((buffer) => (buffer.byteLength > 0 ? (buffer.slice().buffer as ArrayBuffer) : null));
-    const metadata = parquetMetadata(parts[0]!);
+    const parts = splitBundleParts(v3Bundle());
+    const metadata = parquetMetadata(parts[0]);
 
     await expect(readV3Bundle(parts, { ...metadata, num_rows: rows as bigint })).rejects.toThrow(
       /rows, outside 0\.\.2000000/,
     );
   });
 
-  it('reports a projection column that was not written REQUIRED and PLAIN', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('rejects a projection column that was not written REQUIRED and PLAIN', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({
         columnData: [
           { name: 'pca2__x', data: [1, 2, 3, 4, 5, 6, 7, null], type: 'FLOAT', nullable: true },
           { name: 'pca2__y', data: new Float32Array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]) },
-          { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, 0, 0]) },
-          { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, 0, 0]) },
-          { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, 0, 0]) },
+          { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, NaN, NaN]) },
+          { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, NaN, NaN]) },
+          { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, NaN, NaN]) },
         ] as never,
         statistics: false,
       }),
     );
 
-    const { data } = await decodeParquetBundle(v3Bundle({ 2: nullable }));
-
-    // The null coerces to 0, which is indistinguishable from an absent protein's
-    // origin fallback — the warning is the only signal that it happened.
-    expect(Array.from(data.projections[0].data.slice(14))).toEqual([0, 8.5]);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/column "pca2__x" did not decode to a typed array/);
+    await expect(decodeParquetBundle(v3Bundle({ 2: nullable }))).rejects.toThrow(
+      /column "pca2__x" did not decode to a typed array/,
+    );
   });
 
   it('decodes non-ASCII labels by byte range, not character offset', async () => {
@@ -640,8 +614,7 @@ describe('parquetbundle format v3', () => {
     expect(data.annotations.organism.values[0]).toBe('\uFEFFHuman');
   });
 
-  it('still reads a bundle whose columns were written nullable, and says so once', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('rejects an annotation column that was written nullable', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({
         columnData: [
@@ -673,15 +646,10 @@ describe('parquetbundle format v3', () => {
       }),
     );
 
-    const { data } = await decodeParquetBundle(v3Bundle({ 0: nullable }));
-
-    expect(Array.from(data.annotation_data.organism as Int32Array)).toEqual([
-      0, 1, 2, 4, 0, 1, 2, 3,
-    ]);
-    // A null in a column the manifest calls numeric reads as missing, not as 0.
-    expect(data.numeric_annotation_data?.length).toEqual([100, 200, null, 300, 400, 500, 600, 700]);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/did not decode to a typed array/);
+    // Rejected rather than read with the nulls turned into codes and numbers.
+    await expect(decodeParquetBundle(v3Bundle({ 0: nullable }))).rejects.toThrow(
+      /column "(organism|length)" did not decode to a typed array/,
+    );
   });
 
   it('collects every bulk buffer exactly once and they all transfer', async () => {
@@ -689,9 +657,9 @@ describe('parquetbundle format v3', () => {
     const transfer = collectTransferables(data);
 
     expect(new Set(transfer).size).toBe(transfer.length);
-    // 2 projections + organism codes + 2 x 2 CSR (end + codes) + scores (hitEnd +
-    // values) + evidence codes.
-    expect(transfer).toHaveLength(10);
+    // 2 projections + 2 numeric columns + organism codes + 2 x 2 CSR (offsets + codes) +
+    // scores (offsets + values) + evidence codes.
+    expect(transfer).toHaveLength(12);
 
     const sources = bulkViews(data);
     const before = sources.map((view) => Array.from(view));
