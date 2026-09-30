@@ -48,6 +48,7 @@ import {
   buildProjectionsMetadataMap,
   carryStatistics,
   createNumericAnnotation,
+  dropUnplacedProteins,
   generateColorsAndShapes,
   normalizeEatCompanionColumns,
 } from './conversion';
@@ -298,7 +299,7 @@ async function readAnnotationColumns(
  * The wire is one column per axis (`<name>__x`, `__y`, `__z`), so the interleave into
  * the renderer's stride-major layout happens right in the chunk callback: no
  * per-projection intermediate and no second pass. A protein absent from a projection
- * keeps the zero the allocation gave it, which is what v2 produced too.
+ * has NaN coordinates, as the encoder wrote them: the scatter plot does not draw it.
  */
 async function readProjections(
   part: ArrayBuffer,
@@ -341,12 +342,12 @@ async function readProjections(
       onChunk: ({ columnName, columnData, rowStart }) => {
         const target = axisTargets.get(columnName);
         if (!target) return;
-        // A nullable axis column coerces its nulls to 0 below, which is exactly the
-        // origin an absent protein legitimately sits at — so it has to be reported.
+        // A nullable axis column still reads (a null is a missing coordinate), but slowly.
         if (Array.isArray(columnData)) onPlainArray(columnName);
         const { data, dimension, axis } = target;
         for (let i = 0; i < columnData.length; i++) {
-          data[(rowStart + i) * dimension + axis] = columnData[i] as number;
+          const value = columnData[i] as number | null;
+          data[(rowStart + i) * dimension + axis] = value ?? NaN;
         }
       },
     });
@@ -799,7 +800,7 @@ export async function readV3Bundle(
   // which in v3 would declare every int32 dictionary-code column numeric. The manifest
   // is the authority on kind here, and it has already been applied above.
   return {
-    data: carryStatistics(normalizeEatCompanionColumns(data), {
+    data: carryStatistics(normalizeEatCompanionColumns(dropUnplacedProteins(data)), {
       statistics: part5,
       statisticsRows: part5 ? await extractStatistics(part5) : null,
     }),

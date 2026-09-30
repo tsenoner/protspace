@@ -113,10 +113,10 @@ const PROJECTIONS_METADATA = part([
 const PROJECTIONS = part([
   { name: 'pca2__x', data: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]) },
   { name: 'pca2__y', data: new Float32Array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]) },
-  // P7 and P8 are absent from umap3, so the encoder wrote 0.0 for them (matching v2).
-  { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, 0, 0]) },
-  { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, 0, 0]) },
-  { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, 0, 0]) },
+  // P7 and P8 are absent from umap3, so the encoder wrote NaN for them.
+  { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, NaN, NaN]) },
+  { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, NaN, NaN]) },
+  { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, NaN, NaN]) },
 ]);
 
 const PAYLOADS: Record<string, Uint8Array> = {
@@ -351,8 +351,8 @@ describe('parquetbundle format v3', () => {
 
     expect(umap3).toMatchObject({ name: 'umap3', dimension: 3 });
     expect(Array.from(umap3.data.slice(0, 6))).toEqual([10, 11, 0.25, 20, 21, 0.5]);
-    // A protein absent from a projection sits at the origin, matching v2.
-    expect(Array.from(umap3.data.slice(18))).toEqual([0, 0, 0, 0, 0, 0]);
+    // A protein absent from a projection keeps NaN, never the origin.
+    expect(Array.from(umap3.data.slice(18))).toEqual([NaN, NaN, NaN, NaN, NaN, NaN]);
   });
 
   it('takes the typed-array fast path for every column', async () => {
@@ -591,9 +591,9 @@ describe('parquetbundle format v3', () => {
         columnData: [
           { name: 'pca2__x', data: [1, 2, 3, 4, 5, 6, 7, null], type: 'FLOAT', nullable: true },
           { name: 'pca2__y', data: new Float32Array([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]) },
-          { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, 0, 0]) },
-          { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, 0, 0]) },
-          { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, 0, 0]) },
+          { name: 'umap3__x', data: new Float32Array([10, 20, 30, 40, 50, 60, NaN, NaN]) },
+          { name: 'umap3__y', data: new Float32Array([11, 21, 31, 41, 51, 61, NaN, NaN]) },
+          { name: 'umap3__z', data: new Float32Array([0.25, 0.5, 0.75, 1, 1.25, 1.5, NaN, NaN]) },
         ] as never,
         statistics: false,
       }),
@@ -601,9 +601,8 @@ describe('parquetbundle format v3', () => {
 
     const { data } = await decodeParquetBundle(v3Bundle({ 2: nullable }));
 
-    // The null coerces to 0, which is indistinguishable from an absent protein's
-    // origin fallback — the warning is the only signal that it happened.
-    expect(Array.from(data.projections[0].data.slice(14))).toEqual([0, 8.5]);
+    // The null is a missing coordinate: NaN, like an absent protein, never 0.
+    expect(Array.from(data.projections[0].data.slice(14))).toEqual([NaN, 8.5]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toMatch(/column "pca2__x" did not decode to a typed array/);
   });
