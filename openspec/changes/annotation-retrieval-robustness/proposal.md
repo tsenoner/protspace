@@ -76,11 +76,15 @@ Two more, found while preparing the rebuild, would reach every rebuilt bundle:
   once, through the existing cache-semantics version table, instead of serving the wrong values.
 - `root` is the top node of the organism's lineage: `cellular organisms`, `Viruses`, or
   `other entries` / `unclassified entries`.
-- A TMbed negative is written `non-transmembrane`, the label PR #406 uses, instead of `none`.
+- A TMbed negative is written `non-transmembrane`, the label PR #406 uses, instead of `none`; a
+  TMbed prediction with no topology stays empty.
 - Caches written before the `root` and TMbed fixes refresh `root` (taxonomy) and
   `predicted_transmembrane` (Biocentral) once, through a version 3 of the same table. Every
   example-dataset cache is stamped version 2 by a pre-release build of this branch, so they need
-  a new version.
+  a new version. A refresh fetches every cached column of the source it refreshes, so the cache
+  loses none of them.
+- A run that asks Biocentral for predictions from a cache without sequences, and has no FASTA
+  covering the run, fetches the sequences from UniProt first, as InterPro already did.
 - The annotation cache is written after each source completes. A later failure no longer loses
   the sources that finished before it.
 - `protspace annotate` gains `--cache-dir` and `--refetch`. With a cache directory it resumes

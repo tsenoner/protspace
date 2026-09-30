@@ -446,3 +446,45 @@ values, because the cache stores extracted values and only a version entry refre
       `uv run ruff check src tests` and `uv run ruff format --check src tests`;
       `pnpm docs:annotations:check`; `pnpm format:check`; and
       `openspec validate annotation-retrieval-robustness --strict`.
+
+## 10. Review of the version-3 refresh
+
+A review of section 9 found two ways the refresh could still lose cached values, a latent change
+of meaning for an empty TMbed payload, and a test that could not fail.
+
+- [x] 10.1 Failing tests in `test_biocentral_retriever.py`: a TMbed prediction whose value is empty
+      or `None` gives an empty `predicted_transmembrane`, not `non-transmembrane`.
+- [x] 10.2 Return an empty value for an empty topology, as #406 does. Commit:
+      `fix(protspace): keep an empty TMbed payload missing, not negative`.
+- [x] 10.3 The test that a run requesting neither `root` nor `predicted_transmembrane` drops them
+      was a pure cache hit, so it wrote no cache and passed with the version-3 entry removed.
+      Rewrite it so the run fetches an uncached UniProt column and writes the cache, and check
+      that the written cache is stamped current without either column; confirmed to fail without
+      the entry. Commit: `test(protspace): check the v3 drop on a run that writes the cache`.
+- [x] 10.4 Failing tests in `test_legacy_cache_refresh.py`: a Biocentral refresh of a version-2
+      cache without `sequence`, run without a FASTA, fetches UniProt first and hands Biocentral its
+      sequence, and so does an ordinary run adding a Biocentral column to a version-3 cache
+      without `sequence`. Two guards, which pass before the change and pin its limit: with a FASTA
+      covering the run, neither fetches UniProt.
+- [x] 10.5 Give Biocentral InterPro's `sequence` dependency in `determine_sources_to_fetch`,
+      skipped when the FASTA holds a sequence for every protein of the run (`sequences_supplied`).
+      Document it in `docs/guide/fetching-and-caching.md`. Commit:
+      `fix(protspace): fetch sequences for Biocentral the cache lacks`.
+- [x] 10.6 Failing tests: a refresh of `predicted_transmembrane` alone fetches every cached
+      Biocentral column, keeps them in the cache and returns only the requested ones, so a later
+      run asking for `predicted_membrane` fetches nothing; a `root` refresh keeps the other cached
+      taxonomy columns; a run without `-a` fetches neither taxonomy nor Biocentral (this one passed
+      before the change and pins its limit).
+- [x] 10.7 Widen a refresh to every cached column of each refreshed source the run queries anyway,
+      except under `--refetch`, and cut the result back to the request (`_requested_columns`).
+      Document it in `docs/guide/fetching-and-caching.md`, `docs/guide/python-cli.md` and
+      `apps/protspace/CLAUDE.md`. Commit:
+      `fix(protspace): refresh every cached column of a refetched source`.
+- [x] 10.8 Spec deltas: the TMbed requirement keeps an empty topology empty; the version-3
+      requirement refreshes the whole source, fetches sequences the cache lacks and leaves a run
+      without `-a` alone; the incomplete-retrieval requirement gains the Biocentral sequence
+      scenario.
+- [x] 10.9 Gates, all clean: `uv run pytest apps/protspace/tests -q`; from `apps/protspace`,
+      `uv run ruff check src tests` and `uv run ruff format --check src tests`;
+      `pnpm docs:annotations:check`; `pnpm format:check`; and
+      `openspec validate annotation-retrieval-robustness --strict`.

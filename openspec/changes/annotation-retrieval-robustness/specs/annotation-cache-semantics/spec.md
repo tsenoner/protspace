@@ -135,8 +135,10 @@ ProtSpace SHALL NOT reuse cached `root` or `predicted_transmembrane` values writ
 lineage-root and TMbed-label fixes, which are stamped version 2 or earlier. A run that requests
 such a column SHALL refetch its source (taxonomy or Biocentral) once and stamp the rewritten cache
 as current. A run that requests neither SHALL drop them from the cache it writes. Cached values
-from other sources SHALL be reused. The old `root` is the deepest unranked clade of the lineage
-and cannot be recomputed from the cache, and the old `none` reads as a missing value.
+from other sources SHALL be reused. A refresh SHALL refetch every column of the refreshed source
+that the cache holds, not only the requested ones, and return only the requested ones. The old
+`root` is the deepest unranked clade of the lineage and cannot be recomputed from the cache, and
+the old `none` reads as a missing value.
 
 #### Scenario: A version-2 cache is asked for both columns
 
@@ -155,6 +157,28 @@ and cannot be recomputed from the cache, and the old `none` reads as a missing v
 
 - **WHEN** a run requests `root` from a version-2 cache that has no `organism_id` column
 - **THEN** ProtSpace also refetches the UniProt source, so taxonomy has organisms to look up
+
+#### Scenario: The cache holds no sequences for the Biocentral refresh
+
+- **WHEN** a run without a FASTA requests `predicted_transmembrane` from a version-2 cache that
+  has no `sequence` column
+- **THEN** ProtSpace also refetches the UniProt source, so Biocentral has sequences to predict from
+- **AND** a FASTA holding every sequence of the run makes the UniProt refetch unnecessary
+
+#### Scenario: The refresh keeps the source's other cached columns
+
+- **WHEN** a run requests `predicted_transmembrane` but no other Biocentral column from a
+  version-2 cache that holds `predicted_membrane`
+- **THEN** the one Biocentral refetch also refreshes `predicted_membrane`, which stays in the cache
+  and out of the run's result
+- **AND** a later run that requests `predicted_membrane` fetches nothing
+
+#### Scenario: A run without an annotation selection
+
+- **WHEN** a run that selects no annotations, and so requests the default group, reads a
+  version-2 cache holding `root` and `predicted_transmembrane`
+- **THEN** ProtSpace fetches neither taxonomy nor Biocentral, and neither stale column is cached
+  as current
 
 #### Scenario: A version-2 cache is not asked for the affected columns
 
@@ -290,6 +314,14 @@ already holding such values, so it writes regardless.
 - **THEN** ProtSpace treats that source as incomplete, so its empty value for the
   protein is not cached as "no match"
 - **AND** sequences supplied by a FASTA keep the source cacheable
+
+#### Scenario: A Biocentral column is added to a cache without sequences
+
+- **WHEN** a run without a FASTA requests a Biocentral column from a cache that holds no
+  `sequence` column
+- **THEN** ProtSpace fetches the sequences from UniProt before Biocentral, so Biocentral's empty
+  values are never cached for want of a sequence
+- **AND** a FASTA holding every sequence of the run makes the UniProt fetch unnecessary
 
 #### Scenario: The standalone annotate command reports an incomplete source
 

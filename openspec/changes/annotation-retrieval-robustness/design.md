@@ -326,20 +326,37 @@ keeping the old rank name for the top nodes, which NCBI has already renamed in t
 value, so every negative prediction showed as N/A (811 of 811 in the venom example). It now writes
 `non-transmembrane`, the label open PR #406 (issue #339) chose for the same bug, with that PR's
 wording in the annotation docs and the registry description, so the two branches agree on the
-value. #406 also turns an empty or malformed TMbed payload into a missing value rather than a
-negative; that stays with #406. A test reads the web app's `MISSING_VALUE_TOKENS` from
-`missing-values.ts` and checks the label against it and against the CLI's normaliser.
+value. A TMbed prediction whose value is empty or null predicted nothing, so it stays empty, as
+in #406; before the label changed it came out as `none` and displayed as N/A, and without this
+check it would have become a confident `non-transmembrane`. #406 also turns a malformed non-empty
+payload into a missing value; that stays with #406. A test reads the web app's
+`MISSING_VALUE_TOKENS` from `missing-values.ts` and checks the label against it and against the
+CLI's normaliser.
 
 ### Cache version 3 refreshes `root` and `predicted_transmembrane`
 
 The cache stores extracted values, so without a version bump a cache-assisted rebuild would keep
 serving the deepest clade and `none`. `CACHE_SEMANTICS_CHANGES` gains
 `3: {"root", "predicted_transmembrane"}`. The refresh machinery works per source: a run that
-requests `root` refetches taxonomy, one that requests `predicted_transmembrane` refetches the
-Biocentral columns it requests, and one that requests neither drops them. Listing only `root`
-rather than the whole taxonomy group keeps a run that asks for, say, `species` alone from
-refetching; a run that asks for `root` refetches every taxonomy column it requests anyway, in the
-same requests.
+requests `root` refetches taxonomy, one that requests `predicted_transmembrane` refetches
+Biocentral, and one that requests neither drops them. Listing only `root` rather than the whole
+taxonomy group keeps a run that asks for, say, `species` alone from refetching.
+
+A refetched source is written back whole or not at all: the manager caches the columns it fetched
+for a source, not the ones it did not. Fetched for the requested columns alone, a refresh of
+`predicted_transmembrane` would therefore write the cache back without `predicted_membrane`, which
+was still current, and the next run asking for it would pay a second Biocentral pass where the
+version-2 cache had served it. So a refresh fetches every column of each refreshed source that the
+cache holds, and cuts the manager's frame back to the request (`_requested_columns`). This covers
+UniProt when a refresh fetches it for a lookup key, so that pass drops no cached UniProt column
+either. Two limits keep the cost where it was: only a source the run queries anyway is widened, so
+a run without `-a` (the default group, with no taxonomy or Biocentral column) still drops those
+stale columns rather than paying for them; and an explicit `--refetch` keeps to the requested
+columns, as before.
+
+_Alternative, keep the other cached columns beside the refetched ones:_ rejected. Proteins the run
+adds to the cache would have no value for them, and an empty cell reads as "no annotation" to every
+later run; filling those in is exactly a fetch of the columns.
 
 Unlike the InterPro-N filter, which joined the still unreleased version 2, these fixes need a new
 version: every example-dataset cache (seven under the showcase work directories) was written by a
@@ -350,6 +367,15 @@ though the cache lacked them. That keeps the existing rule that an InterPro refr
 cached `sequence` also fetches UniProt, and adds its taxonomy twin: a `root` refresh of a cache
 without `organism_id` fetches UniProt first, instead of looking up nothing and stamping the empty
 result current.
+
+Biocentral is looked up by sequence too, but `determine_sources_to_fetch` had no rule for it. A
+cache first written for columns that need no sequence (the default group) holds none, and a run
+without a FASTA that then asked for a Biocentral column handed Biocentral no sequence. It returns
+empty predictions without failing, so they were cached as current; the version-3 refresh made the
+same happen to a cache that held valid predictions. Biocentral now gets InterPro's rule, on every
+run and not only in the refresh, except that a FASTA holding a sequence for every protein of the
+run skips it: such runs work today without UniProt, and a UniProt pass would replace the cached
+UniProt columns with the requested ones. InterPro's rule is unchanged.
 
 _Alternative, rename `none` to `non-transmembrane` in place, as the TED label migration does:_
 it would save the Biocentral refetch, and the rename is exact for this branch. Not taken: the
@@ -549,12 +575,15 @@ Frozen interfaces:
   so.
 - **A version-2 cache refetches taxonomy and Biocentral once** when a run requests `root` or
   `predicted_transmembrane`. → Taxonomy costs one request per 100 organisms. Biocentral re-runs
-  every model the run requests, not just TMbed, because the refresh works per source; about 18
-  minutes for the demo, and nothing for the examples without Biocentral columns.
+  the model of every Biocentral column the cache holds or the run requests, not just TMbed,
+  because the refresh fetches the source whole; about 18 minutes for the demo, and nothing for the
+  examples without Biocentral columns. A cache without `sequence` also pays one UniProt pass
+  unless a FASTA covers the run.
 - **PR #406 fixes the same TMbed bug.** → Both write `non-transmembrane` with the same docs text,
-  so merging the second is a mechanical conflict in `_extract_transmembrane`. #406 also makes an
-  empty TMbed payload missing, which changes the meaning of cached values once more; if it lands
-  after this change, it needs its own cache version.
+  so merging the second is a mechanical conflict in `_extract_transmembrane`. Both keep an empty
+  TMbed payload missing. #406 also makes a malformed non-empty payload missing, which changes the
+  meaning of cached values once more; if it lands after this change, it needs its own cache
+  version, though no such payload has been observed.
 - **`protein_families` becomes multi-valued for multi-section entries.** Legend counts, EAT
   targets and `--stats-annotation` treat these proteins like any multi-valued `ec` cell. → The
   registry description and the docs state it, and the example rebuild's verification gates check

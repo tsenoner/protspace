@@ -333,7 +333,7 @@ the root. The other taxonomy columns keep their rank-based values.
 transmembrane helix nor a transmembrane beta strand. The value SHALL NOT be one of the tokens that
 the CLI's `standardize_missing` or the web app's `normalizeMissingValue` read as missing, so a
 negative prediction is displayed as a category, never as N/A. A protein without a TMbed
-prediction keeps an empty value.
+prediction, or whose TMbed prediction holds no topology, SHALL keep an empty value.
 
 #### Scenario: TMbed predicts no membrane-spanning segment
 
@@ -345,3 +345,8 @@ prediction keeps an empty value.
 
 - **WHEN** Biocentral returns no TMbed prediction for a protein
 - **THEN** `predicted_transmembrane` is empty and displays as N/A
+
+#### Scenario: TMbed returned an empty topology
+
+- **WHEN** Biocentral returns a TMbed prediction whose value is empty or null
+- **THEN** `predicted_transmembrane` is empty, not `non-transmembrane`
