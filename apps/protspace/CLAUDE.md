@@ -54,6 +54,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
 | `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
+| `protspace convert` | Rewrite a v1/v2 .parquetbundle as v3 (`INPUT OUTPUT` or `INPUT --in-place`); a v3 input is left untouched |
 
 ### protspace prepare Usage
 
@@ -132,7 +133,8 @@ src/protspace/
 │   ├── stats.py                # Projection quality statistics command
 │   ├── serve.py                # Dash web frontend
 │   ├── transfer.py             # Embedding Annotation Transfer (EAT) command
-│   └── style.py                # Annotation styling
+│   ├── style.py                # Annotation styling
+│   └── convert.py              # v1/v2 → v3 bundle conversion
 ├── data/
 │   ├── loaders/
 │   │   ├── embedding_set.py    # EmbeddingSet dataclass
@@ -252,7 +254,7 @@ HDF5 file (float16 embeddings)
 
 Every write from here emits **six** parts (format v3): `core(3) + settings + statistics + payloads`, with zero bytes in the settings or statistics slot when absent, because the browser reads the payloads positionally from `parts[5]`. `replace_settings_in_bundle` (`protspace style`) is the exception: it preserves the layout it was given, so a legacy bundle stays legacy.
 
-Legacy (v1/v2) containers still read: positional layout `core(3) + settings? + statistics?`, 3 to 5 parts. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Both bundled and separate-file (`--no-bundled`) output persist `settings.parquet` and `statistics.parquet` when present.
+Legacy (v1/v2) containers still read, but that is **deprecated and removed in protspace 5.0.0**: every public read (`read_tables`, `read_bundle`, `extract_bundle_to_dir`, `read_settings_from_bundle`, `read_statistics_from_bundle`) logs one warning naming `protspace convert`, emitted in `_parse_bundle`. The writers read their input with `warn_legacy=False`, so a command that reads then rewrites a bundle (`transfer`, `style`) warns once; `convert_bundle()` (`protspace convert`) never warns. Positional layout `core(3) + settings? + statistics?`, 3 to 5 parts. When statistics are present but settings are absent, the settings slot is written as **zero bytes** so statistics stay at position five (readers branch on emptiness, not part count). Both bundled and separate-file (`--no-bundled`) output persist `settings.parquet` and `statistics.parquet` when present.
 
 `read_tables()` / `read_bundle()` / `extract_bundle_to_dir()` decode v3 back to the v2-shaped tables (all-string cells, long projections, footer re-stamped `protspace_format_version=2`), so every consumer above `data/io/` is unchanged. `BUNDLE_FORMAT_VERSION = 2` versions the cell grammar, not the container. See `docs/guide/data-format.md`.
 
@@ -312,6 +314,11 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_atomic_publication.py` | `data/io/atomic.py`: staged rename keeps the previous content on failure, and a published file (bundle, statistics parquet, retained FASTA) carries the process umask rather than `mkstemp`'s owner-only mode |
 | `test_classification.py` | Query/reference rules: id-prefix and case-insensitive `where` substring, query-over-reference precedence, empty-match and missing-column errors |
 | `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet |
+| `test_bundle_v3_encode.py` | v3 encoder: the physical contract behind the browser's zero-copy read (non-nullable PLAIN columns, one row group, little-endian payloads) and v2-reader-parity classification and code order; NaN for uncovered projections, added unannotated rows, dimension from the data, `true`/`false` booleans |
+| `test_bundle_v3_decode.py` | v3 decoder: `decode_v3(encode_v3(T)) == T` on pipeline-shaped tables, plus the deliberate canonicalisations |
+| `test_bundle_v3_container.py` | Six-part container boundary: every write emits v3 with part 6 pinned, every read hands back v2-shaped tables, legacy bundles read as written, the delimiter guard covers part 6 |
+| `test_bundle_v3_fixture.py` | The golden v3 fixture both languages read: committed bytes match the generator part for part, and the cells vitest asserts on |
+| `test_convert.py` | `protspace convert` (v1 grammar migration, settings + statistics kept byte for byte, v3 no-op, `--in-place` / same-path, usage errors, atomic failure) and the legacy-read deprecation warning (once per read, none for v3, silent writers, one per `style` run) |
 | `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
 | `test_cath_names.py` | CATH names file parsing |
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |

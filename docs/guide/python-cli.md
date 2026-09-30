@@ -36,6 +36,7 @@ pip install protspace
 | `protspace bundle`   | Merge projections + annotations → `.parquetbundle`           |
 | `protspace transfer` | Fill missing annotations from nearest neighbours (EAT)       |
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
+| `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
 | `protspace serve`    | Run a local viewer                                           |
 
 Run `protspace <command> -h` for the built-in help of any command.
@@ -675,6 +676,30 @@ protspace style data.parquetbundle --dump-settings
 
 The output path is only required when you are writing styles, not for `--dump-settings` or
 `--generate-template`.
+
+## `protspace convert`
+
+Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:
+they still open, with a warning, until protspace 5.0.0 removes support for them.
+
+```bash
+protspace convert old.parquetbundle new.parquetbundle
+protspace convert old.parquetbundle --in-place
+```
+
+| Flag            | Description                                 |
+| --------------- | ------------------------------------------- |
+| `--in-place`    | Overwrite the input with its v3 conversion. |
+| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.      |
+
+Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
+(legend colors, shapes, order) and projection statistics are kept as they are, and the file is
+written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
+is reported as current and nothing is written.
+
+Without a Python install, load the bundle at [protspace.app/explore](https://protspace.app/explore)
+and export it again: the web app always exports v3. See
+[Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
 
 ## `protspace serve`
 
