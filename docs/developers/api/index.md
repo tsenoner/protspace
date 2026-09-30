@@ -341,8 +341,10 @@ the host installs a `loadFromFileHandler` that prepares them, see
 | `data-loaded`           | `{ data, settings, source, file?, bundleFormatVersion? }` | Dataset loaded successfully |
 | `data-error`            | `{ message, severity, source, context, originalError? }`  | Host-consumed error event   |
 
-For a `.parquetbundle`, `bundleFormatVersion` is the container format version it was read as: `3`,
-or `1`/`2` for a legacy bundle whose support ends in protspace 5.0.0. It is absent for plain parquet.
+For a `.parquetbundle`, `bundleFormatVersion` is the format version it was read as: `3` for a
+columnar bundle (part 1 declares `protspace_container_version`), or `1`/`2` for a legacy bundle
+(its `protspace_format_version` cell grammar), whose support ends in protspace 5.0.0. It is absent
+for plain parquet.
 
 ## Data Loading Utilities
 
@@ -367,8 +369,9 @@ function isParquetBundle(arrayBuffer: ArrayBuffer): boolean;
 ### decodeParquetBundle
 
 Read a bundle of any format version into the shape the scatterplot consumes, along with its
-optional settings and the container format version it was read as (`3`, or `1`/`2` for a legacy
-bundle, whose support ends in protspace 5.0.0).
+optional settings and the format version it was read as (`3`, or `1`/`2` for a legacy bundle,
+whose support ends in protspace 5.0.0). A six-part file without `protspace_container_version`
+in part 1, or with a container version other than `3`, is rejected rather than guessed at.
 
 ```typescript
 function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle>;

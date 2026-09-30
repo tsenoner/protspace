@@ -9,8 +9,8 @@ byte string `---PARQUET_DELIMITER---`. It keeps everything in one convenient fil
 loading efficiently in the browser.
 
 There are two container layouts. Which one a file uses is recorded in the Parquet key-value
-metadata of its first part, under `protspace_format_version` (see
-[Version detection](#version-detection)):
+metadata of its first part: a v3 file carries `protspace_container_version`, a legacy one does not
+(see [Version detection](#version-detection)):
 
 | Layout                    | Parts    | Written by                                                                                                        |
 | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -328,24 +328,35 @@ When displayed in ProtSpace, the decoded names render as "Superfamily; old" and 
 
 ## Version Detection
 
-- A bundle's format version lives in the Parquet key-value metadata of the `selected_annotations`
-  part, under the key `protspace_format_version`, and is read from that part's footer before any
-  row is decoded.
-- `"2"` selects the percent-decoding cell parser described above, `"3"` selects the columnar
-  reader. A v1 bundle has no version key and renders with the legacy parser, which does not
-  decode percent-encoded sequences. Existing v1 and v2 bundles therefore keep loading, until
-  protspace 5.0.0 (see [Legacy formats](#legacy-formats-v1-and-v2)).
-- Python cross-checks the two signals: a six-part file whose first part does not say `3` is
-  rejected rather than guessed at, and a three to five part file is always read as legacy.
-- That cross-check runs in one direction only, which is a known limitation. Only a six-part file
-  has its version key consulted; a five-part file whose key says `3` is read as legacy without
-  complaint, and its part 1 comes back exactly as stored, `INT32` dictionary codes and
-  `<col>__count` columns with no payloads part to resolve them against. Nothing ProtSpace writes
-  produces such a file, because every v3 write emits six parts, but a truncated or hand-assembled
-  one fails quietly instead of loudly.
-- The key versions the **container**, not the cell grammar. The grammar is still v2, which is why
-  `BUNDLE_FORMAT_VERSION` on the Python side stays `2` and why the tables handed back from a v3
-  read are re-stamped `protspace_format_version=2`: what they contain is v2 cells.
+Two keys in the Parquet key-value metadata of the first part (`selected_annotations`) describe a
+bundle, one per question. Both are read from that part's footer before any row is decoded.
+
+| Key                           | Answers                         | Found on                                                                    | Values                  |
+| ----------------------------- | ------------------------------- | --------------------------------------------------------------------------- | ----------------------- |
+| `protspace_container_version` | which container is this?        | part 1 of a v3 bundle, and only there                                       | `"3"`                   |
+| `protspace_format_version`    | which grammar are the cells in? | part 1 of a legacy bundle; every v2-shaped annotations table Python handles | `"2"`, or absent for v1 |
+
+- A part 1 with `protspace_container_version` selects the columnar reader. Without it the file is
+  legacy, and `protspace_format_version` picks the cell parser: `"2"` selects the percent-decoding
+  parser described above, and a missing key means v1, which renders with the legacy parser and
+  does not decode percent-encoded sequences. Existing v1 and v2 bundles therefore keep loading,
+  until protspace 5.0.0 (see [Legacy formats](#legacy-formats-v1-and-v2)).
+- A v3 part 1 carries no `protspace_format_version`. It has no cells to parse: its labels are
+  stored decoded, in the payload part, so a grammar version would describe nothing and could only
+  be misread as the container version. Readers do not consult it on a v3 file.
+- The part count has to agree with the container key, in both directions, and both readers check
+  it: six parts without `protspace_container_version`, a container version other than `3`, or a
+  three to five part file whose part 1 carries the key is rejected rather than guessed at.
+- Python keeps the cell-grammar key on the tables it hands back. A v3 read decodes part 1 into v2
+  cells, so those tables are stamped `protspace_format_version=2`, which is also why
+  `BUNDLE_FORMAT_VERSION` on the Python side stays `2`, and they do not carry the container key.
+- The grammar is never guessed on a write. The Python encoder refuses an annotations table without
+  a `protspace_format_version` stamp instead of treating it as v1: a v2 table that lost its stamp
+  looks exactly like a v1 one, and migrating it again would escape every reserved character a
+  second time (`%3B` becomes `%253B`). The callers that do hold v1 cells migrate them explicitly:
+  `protspace convert`, `protspace transfer` on a v1 bundle, and `protspace bundle -a` given a table
+  with no stamp (see [`protspace bundle`](/guide/python-cli#protspace-bundle)). The web exporter
+  writes from decoded labels, so it has no grammar to declare.
 - A web build older than v3 support rejects a v3 file with
   `Expected 2 to 4 delimiters in parquetbundle, found 5`, and an older `protspace` release with
   `Expected 3 to 5 parts in parquetbundle, found 6`. That is a version-skew signal, not a corrupt
@@ -496,8 +507,10 @@ arbitrary byte offset, which a `Float64Array` cannot wrap.
 ### The manifest
 
 Part 1's footer carries the two key-value entries that describe the format:
-`protspace_format_version`, which is `"3"`, and `protspace_v3_manifest`, a JSON object that is
-the only description of what the integer columns mean.
+`protspace_container_version`, which is `"3"`, and `protspace_v3_manifest`, a JSON object that is
+the only description of what the integer columns mean. It does not carry
+`protspace_format_version`, the legacy cell-grammar key (see
+[Version detection](#version-detection)).
 
 ```json
 {
