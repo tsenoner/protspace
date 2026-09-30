@@ -305,7 +305,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_output_combinations.py` | Output format flag combinations |
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
-| `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet |
+| `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
 | `test_transfer_cli.py` | Transfer orchestration core and CLI registration |
 | `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
@@ -313,12 +313,12 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_bundle_overlay.py` | Round-trip replacement of the annotations part of a bundle |
 | `test_atomic_publication.py` | `data/io/atomic.py`: staged rename keeps the previous content on failure, and a published file (bundle, statistics parquet, retained FASTA) carries the process umask rather than `mkstemp`'s owner-only mode |
 | `test_classification.py` | Query/reference rules: id-prefix and case-insensitive `where` substring, query-over-reference precedence, empty-match and missing-column errors |
-| `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet; `bundle -a` passes stamped annotate output through and reads an unstamped table as v1 plain text |
-| `test_bundle_v3_encode.py` | v3 encoder: the physical contract behind the browser's zero-copy read (non-nullable PLAIN columns, one row group, little-endian payloads) and v2-reader-parity classification and code order; NaN for uncovered projections, added unannotated rows, dimension from the data, `true`/`false` booleans |
-| `test_bundle_v3_decode.py` | v3 decoder: `decode_v3(encode_v3(T)) == T` on pipeline-shaped tables, plus the deliberate canonicalisations |
-| `test_bundle_v3_container.py` | Six-part container boundary: every write emits v3 with part 6 pinned, every read hands back v2-shaped tables, legacy bundles read as written, the delimiter guard covers part 6 |
+| `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet; `bundle -a` passes stamped annotate output and the `prepare` annotation cache through (an unstamped cache is recognised by its cache-version attribute), reads an unstamped table as v1 plain text (a pandas `category` column too), stores a list column as hits and reports an unstorable column as a usage error; `ArrowReader.save_data` keeps the stamp it read |
+| `test_bundle_v3_encode.py` | v3 encoder: the physical contract behind the browser's zero-copy read (non-nullable PLAIN columns, one row group, little-endian payloads) and v2-reader-parity classification and code order (part 1 rows and projections in the v2 browser's order, numeric inference over the placed proteins with the `placedNumeric` mark, a v1 hit split at its last pipe); NaN for uncovered projections, added unannotated rows, dimension from the data, `true`/`false` booleans, list columns as one hit per element, unstamped and v1 tables refused |
+| `test_bundle_v3_decode.py` | v3 decoder: `decode_v3(encode_v3(T)) == T` on pipeline-shaped tables, plus the deliberate canonicalisations; `sourceType` restoration (64-bit integers past 2^53 exactly), finite-only projection rows, manifest dimensions, payload tiling checks |
+| `test_bundle_v3_container.py` | Six-part container boundary: every write emits v3 with part 6 pinned, every read hands back v2-shaped tables, legacy bundles read as written, the delimiter guard covers part 6; detection by `protspace_container_version`, `style` writing a legacy input as v3, `replace_annotations` keeping label columns labels and the `placedNumeric` mark, a corrupt part 1 as a bundle error |
 | `test_bundle_v3_fixture.py` | The golden v3 fixture both languages read: committed bytes match the generator part for part, and the cells vitest asserts on |
-| `test_convert.py` | `protspace convert` (v1 grammar migration, settings + statistics kept byte for byte, v3 no-op, `--in-place` / same-path, usage errors, atomic failure) and the legacy-read deprecation warning (once per read, none for v3, silent writers, one per `style` run) |
+| `test_convert.py` | `protspace convert` (v1 grammar migration, settings + statistics kept byte for byte, v3 no-op, `--in-place` / same-path, usage errors, atomic failure, the legacy id column keyed as the v2 browser keyed it and never migrated as a label) and the legacy-read deprecation warning (once per read, none for v3, silent writers, one per `style` run); `style` usage errors for a legacy input v3 cannot hold or a corrupt bundle |
 | `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
 | `test_cath_names.py` | CATH names file parsing |
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
