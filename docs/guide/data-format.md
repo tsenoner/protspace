@@ -250,8 +250,10 @@ not as a sentinel string. Bundles from older web builds may still hold literal `
 those normalize to N/A on load, as above.
 
 A v3 bundle stores a missing cell as code `-1`, a hit count of `0`, or `NaN`, depending on the
-column. It never rewrites the spellings above into a missing value: they stay in the file as
-ordinary labels and the reader folds them into N/A, exactly as it does for a legacy bundle. See
+column. In a categorical column it never rewrites the spellings above into a missing value: they
+stay in the file as ordinary labels and the reader folds them into N/A, exactly as it does for a
+legacy bundle. A column whose other cells are all numbers is the exception: it is stored as
+numbers, and those spellings become `NaN`. See
 [Missing values in a v3 file](#missing-values-in-a-v3-file).
 
 The single "N/A" legend row covers every missing-value protein. Its default
@@ -579,10 +581,10 @@ reclassify the hit as a plain label. On the 573K SwissProt bundle the float64 sc
 
 ### Missing values in a v3 file {#missing-values-in-a-v3-file}
 
-Only a null cell and an empty cell (after trimming whitespace) are missing in v3. The spellings
-listed under [Missing Values](#missing-values), `none`, `NA`, `n/a`, `nan`, `null` and `__NA__`,
-are kept in the file as ordinary labels, and the browser folds them into its N/A category at read
-time, on v3 exactly as it always has on v2.
+In a categorical or multi-valued column, only a null cell and an empty cell (after trimming
+whitespace) are missing in v3. The spellings listed under [Missing Values](#missing-values),
+`none`, `NA`, `n/a`, `nan`, `null` and `__NA__`, are kept in the file as ordinary labels, and the
+browser folds them into its N/A category at read time, on v3 exactly as it always has on v2.
 
 The reason is that v3 is a container encoding and must hand back the label it was given.
 Collapsing these spellings in the file broke `protspace style` on the shipped phosphatase
@@ -591,7 +593,10 @@ style command raised, and a 1383-protein legend entry came back blank. Folding t
 display decision, made by the reader.
 
 Those spellings are consulted at write time in one place only, to decide whether a column is
-numeric, so a column of `NA` stays categorical instead of becoming an all-`NaN` numeric column.
+numeric, as the browser's numeric inference always has: a column of `NA` stays categorical
+instead of becoming an all-`NaN` numeric column, but in a column whose every other cell is a
+number they count as missing. `["1", "2.5", "NA", "none"]` is stored as a numeric column, and
+the two spellings are `NaN` in the file and come back from Python as `""`.
 
 ### What a v3 round trip does not preserve
 
@@ -599,23 +604,26 @@ A v3 file stores what the reader would have parsed out of the v2 cells, not the 
 so decoding a v3 bundle returns the canonical spelling of each cell rather than the original
 bytes. The differences are deliberate:
 
-| Written                               | Read back          | Why                                                                                                                             |
-| ------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `PF00001\|62.0`                       | `PF00001\|62`      | scores are re-spelled by Python's float repr, the shortest spelling that reads back as the same double, minus the trailing `.0` |
-| `PF00001\|0.5700`                     | `PF00001\|0.57`    | same rule                                                                                                                       |
-| `PF00001\|2.3e-5`                     | `PF00001\|2.3e-05` | same rule; Python's repr is not JavaScript's, and it pads a single-digit exponent to two digits                                 |
-| `PF00001\|1e16`                       | `PF00001\|1e+16`   | same rule; Python switches to exponential notation at 1e16, JavaScript not until 1e21                                           |
-| ` A \|IDA`                            | `A\|IDA`           | cells and hits are whitespace-trimmed                                                                                           |
-| `A;;B`                                | `A;B`              | empty hits are dropped                                                                                                          |
-| `%3b`                                 | `%3B`              | labels are re-encoded canonically, in uppercase hex                                                                             |
-| a missing cell                        | `""`               | null and blank both mean missing                                                                                                |
-| `100.0` where every value is integral | `100`              | the canonical v2 spelling of an integral value                                                                                  |
+| Written                                  | Read back          | Why                                                                                                                             |
+| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PF00001\|62.0`                          | `PF00001\|62`      | scores are re-spelled by Python's float repr, the shortest spelling that reads back as the same double, minus the trailing `.0` |
+| `PF00001\|0.5700`                        | `PF00001\|0.57`    | same rule                                                                                                                       |
+| `PF00001\|2.3e-5`                        | `PF00001\|2.3e-05` | same rule; Python's repr is not JavaScript's, and it pads a single-digit exponent to two digits                                 |
+| `PF00001\|1e16`                          | `PF00001\|1e+16`   | same rule; Python switches to exponential notation at 1e16, JavaScript not until 1e21                                           |
+| ` A \|IDA`                               | `A\|IDA`           | cells and hits are whitespace-trimmed                                                                                           |
+| `A;;B`                                   | `A;B`              | empty hits are dropped                                                                                                          |
+| `%3b`                                    | `%3B`              | labels are re-encoded canonically, in uppercase hex                                                                             |
+| a missing cell                           | `""`               | null and blank both mean missing                                                                                                |
+| `NA`, `none`, `null` in a numeric column | `""`               | a missing-value spelling among numbers is stored as `NaN`, see [Missing values in a v3 file](#missing-values-in-a-v3-file)      |
+| `1` where another value is fractional    | `1.0`              | a float column is re-spelled by Python's float repr                                                                             |
+| `100.0` where every value is integral    | `100`              | the canonical v2 spelling of an integral value                                                                                  |
 
 The `2.3e-5` and `1e16` rows land squarely in the E-value range the float64 scores exist for, so
 they are worth knowing about, but they are cosmetic rather than corrupting: both spellings
 re-parse to the same double, and a second round trip re-emits the same text.
 
-A cell spelled `none`, `NA` or `null` is an ordinary label and comes back unchanged. Projection
+A cell spelled `none`, `NA` or `null` in a categorical column is an ordinary label and comes back
+unchanged; in a numeric column it comes back as `""`, as in the table above. Projection
 coordinates come back as float32 with `z` null for a 2D projection, and only a protein with finite
 coordinates gets a projection row, so a protein a projection does not cover has no row for it. A
 projected protein that had no annotations row comes back with one whose every annotation is
