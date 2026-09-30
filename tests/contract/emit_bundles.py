@@ -14,7 +14,8 @@ rather than by calling ``write_bundle`` directly. Two transformations live only
 in the CLI layer and are contract surface the reader depends on:
 
 * the ``identifier`` -> ``protein_id`` column rename, and
-* ``stamp_format_version``, which marks the annotations table as v2.
+* ``stamp_format_version``, which marks the annotations table's v2 cell grammar
+  so the v3 encoder does not migrate it a second time.
 
 A reader that mishandles either still passes a ``write_bundle``-only generator.
 
@@ -47,11 +48,9 @@ from protspace.stats.base import STATS_SCHEMA
 # Small enough to eyeball a failure, big enough for a category to have members.
 PROTEIN_COUNT = 10
 
-# The reader routes datasets of 10_000+ projection rows through a separate,
-# optimized conversion implementation (see `convertParquetToVisualizationData
-# Optimized` in conversion.ts) -- the one every production dataset actually
-# takes. 6_000 proteins x 2 projections = 12_000 rows clears that threshold, so
-# the contract covers both implementations rather than only the small-data one.
+# A dataset large enough that per-row shortcuts (a label dictionary built from
+# the first rows, a CSR payload sized from a sample) would show; the positional
+# payload is the same as the small variants', so both assert one contract.
 LARGE_PROTEIN_COUNT = 6_000
 
 # One 2D and one 3D projection, so the reader's dimension handling is covered.
@@ -87,7 +86,7 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     The payload is positional and identical at every size: protein 1 carries the
     percent-encoded label and the multi-hit cell, protein 4 carries the null
     length. The large variant therefore asserts exactly the same encoding
-    contract as the small one, just through the optimized reader path.
+    contract as the small one.
     """
     rest = len(ids) - 1
     family = [encode_field(LABEL_WITH_RESERVED_CHAR)] + [
@@ -284,7 +283,7 @@ def main(out_dir: Path) -> None:
     }
 
     # Every layout the producer can write. `stats_no_settings` is the sneaky one:
-    # the producer emits a zero-byte settings slot to keep statistics at part five.
+    # the producer emits a zero-byte settings slot so the parts keep fixed positions.
     variants: dict[str, tuple[int, list[str]]] = {
         "minimal": (PROTEIN_COUNT, []),
         "with_settings": (PROTEIN_COUNT, ["--settings", str(settings_path)]),
@@ -293,7 +292,7 @@ def main(out_dir: Path) -> None:
             ["--settings", str(settings_path), "-s", str(statistics_path)],
         ),
         "stats_no_settings": (PROTEIN_COUNT, ["-s", str(statistics_path)]),
-        # Same layout as `minimal`, sized past the reader's optimized-path threshold.
+        # Same layout as `minimal`, at a size where per-row shortcuts would show.
         "large": (LARGE_PROTEIN_COUNT, []),
     }
 

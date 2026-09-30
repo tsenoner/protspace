@@ -813,12 +813,8 @@ export function carryStatistics(
 /**
  * Row count at or above which the optimized entry point uses the separated
  * decoder instead of delegating to the small-data implementation.
- *
- * Exported so tests can size fixtures from the real threshold rather than
- * restating it — a hardcoded fixture size silently stops exercising the
- * optimized path the moment this number moves.
  */
-export const OPTIMIZED_PATH_ROW_THRESHOLD = 10_000;
+const OPTIMIZED_PATH_ROW_THRESHOLD = 10_000;
 
 export function convertParquetToVisualizationDataOptimized(
   input: BundleExtractionResult | Rows,

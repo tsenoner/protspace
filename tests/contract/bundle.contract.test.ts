@@ -6,7 +6,9 @@
  * committed: a fixture that cannot go stale is the whole point of the suite.
  *
  * This is the Python -> TypeScript direction, the path every dataset produced by
- * apps/prep takes. The reverse direction (bundles exported by
+ * apps/prep takes. Every read goes through `decodeParquetBundle`, the single entry
+ * point the decode worker and data-loader use, so the suite follows whatever format
+ * version the producer currently writes (v3 since the columnar container landed). The reverse direction (bundles exported by
  * packages/utils/bundle-writer.ts and reopened in the Python tooling) is a
  * documented non-goal of the add-bundle-contract-test change.
  */
@@ -17,16 +19,14 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { extractRowsFromParquetBundle } from '../../packages/core/src/components/data-loader/utils/bundle';
-import {
-  convertParquetToVisualizationData,
-  convertParquetToVisualizationDataOptimized,
-  OPTIMIZED_PATH_ROW_THRESHOLD,
-} from '../../packages/core/src/components/data-loader/utils/conversion';
+import { parquetMetadata } from 'hyparquet';
+
+import { decodeParquetBundle } from '../../packages/core/src/components/data-loader/utils/bundle';
 // Imported by source path, like the core reader above: the suite tests the
 // working tree, not built package output. (The vitest config still aliases
 // `@protspace/utils` — packages/core's own sources import it that way.)
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants';
+import { findBundleDelimiterPositions } from '../../packages/utils/src/parquet/delimiter-utils';
 
 const REPO_ROOT = resolve(__dirname, '../..');
 
@@ -45,12 +45,24 @@ interface Manifest {
   statisticsCategory: string;
 }
 
+/** The format the producer writes today: six slots, payloads last. */
+const PRODUCER_FORMAT_VERSION = 3;
+const PRODUCER_PART_COUNT = 6;
+
 let outDir: string;
 let manifest: Manifest;
 
 function loadBundle(variant: string): ArrayBuffer {
   const buffer = readFileSync(join(outDir, `${variant}.parquetbundle`));
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+/** The container's physical layout: its part count and part 1's declared format. */
+function inspectContainer(bundle: ArrayBuffer): { partCount: number; formatVersion: number } {
+  const positions = findBundleDelimiterPositions(new Uint8Array(bundle));
+  const kv = parquetMetadata(bundle.slice(0, positions[0])).key_value_metadata ?? [];
+  const version = kv.find((entry) => entry.key === 'protspace_format_version')?.value;
+  return { partCount: positions.length + 1, formatVersion: Number(version ?? 1) };
 }
 
 beforeAll(() => {
@@ -108,77 +120,81 @@ beforeAll(() => {
 });
 
 describe('bundle layouts the producer can write', () => {
-  it('reads a 3-part bundle and reports the producer format version', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('minimal'));
-
-    // The CLI renames `identifier` -> `protein_id` on the annotations table only.
-    expect(extraction.annotationIdColumn).toBe('protein_id');
-    expect(extraction.projectionIdColumn).toBe('identifier');
-
-    expect(extraction.annotationsById.size).toBe(manifest.proteinCount);
-    expect(extraction.projections).toHaveLength(manifest.proteinCount * manifest.projectionCount);
-    expect(extraction.projectionsMetadata).toHaveLength(manifest.projectionCount);
-
-    // Fails if `stamp_format_version` stops being applied by the bundle CLI.
-    expect(extraction.formatVersion).toBe(2);
-    expect(extraction.settings).toBeNull();
+  it('writes the current container layout and declares its format version', () => {
+    // Fails if the producer stops stamping part 1, or drops the fixed six-slot layout
+    // the v3 reader indexes positionally (payloads at parts[5]).
+    for (const variant of ['minimal', 'with_settings', 'with_stats', 'stats_no_settings']) {
+      expect(inspectContainer(loadBundle(variant))).toEqual({
+        partCount: PRODUCER_PART_COUNT,
+        formatVersion: PRODUCER_FORMAT_VERSION,
+      });
+    }
   });
 
-  it('reads a 4-part bundle and normalizes its settings', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('with_settings'));
+  it('reads a bundle without settings or statistics', async () => {
+    const { data, settings } = await decodeParquetBundle(loadBundle('minimal'));
 
-    expect(extraction.settings).not.toBeNull();
-    expect(extraction.settings?.legendSettings.family).toMatchObject({
+    expect(data.protein_ids).toHaveLength(manifest.proteinCount);
+    expect(data.projections).toHaveLength(manifest.projectionCount);
+    expect(settings).toBeNull();
+    expect(data.statistics).toBeUndefined();
+  });
+
+  it('reads a bundle with settings and normalizes them', async () => {
+    const { settings } = await decodeParquetBundle(loadBundle('with_settings'));
+
+    expect(settings).not.toBeNull();
+    expect(settings?.legendSettings.family).toMatchObject({
       maxVisibleValues: 10,
       shapeSize: 24,
       sortMode: 'size-desc',
     });
   });
 
-  it('reads a 5-part bundle, keeping settings and carrying statistics', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('with_stats'));
+  it('reads a bundle with settings and statistics, keeping the two apart', async () => {
+    const { data, settings } = await decodeParquetBundle(loadBundle('with_stats'));
 
     // The statistics part must not leak into the settings slot: the reader used
     // to slice part 4 to end-of-file, which glued statistics onto settings.
-    expect(extraction.settings?.legendSettings.family).toMatchObject({ sortMode: 'size-desc' });
-    expect(extraction.projections).toHaveLength(manifest.proteinCount * manifest.projectionCount);
+    expect(settings?.legendSettings.family).toMatchObject({ sortMode: 'size-desc' });
+    expect(data.protein_ids).toHaveLength(manifest.proteinCount);
 
     // Unparsed but preserved, so re-exporting the bundle doesn't drop it. Assert
     // the magic bytes: a part sliced with the wrong bounds is still non-null.
-    expect(extraction.statistics).not.toBeNull();
-    expect(new TextDecoder().decode(new Uint8Array(extraction.statistics!, 0, 4))).toBe('PAR1');
+    expect(data.statistics).toBeDefined();
+    expect(new TextDecoder().decode(new Uint8Array(data.statistics!, 0, 4))).toBe('PAR1');
 
     // The render-side view of the same part. Carrying the bytes is what an export
     // needs; parsing them is what every ⓘ popover and score strip needs, and the
     // reader's schema guard fails that half silently (it warns and returns null,
     // which is indistinguishable from a bundle prepared without `--stats`). So
     // assert the parse against the producer's own schema, from the manifest.
-    expect(extraction.statisticsRows).not.toBeNull();
+    expect(data.statisticsRows).toBeDefined();
     // Sorted on both sides: a column added or renamed on either half of the seam
     // must fail, but the physical column order is not part of the contract.
-    expect(Object.keys(extraction.statisticsRows![0]).sort()).toEqual(
+    expect(Object.keys(data.statisticsRows![0]).sort()).toEqual(
       [...manifest.statisticsColumns].sort(),
     );
     // NULL `category` is the aggregate rows; a set one is the per-category
     // decomposition. Both must survive, since the reader tells them apart by it.
-    const categories = extraction.statisticsRows!.map((row) => row.category);
+    const categories = data.statisticsRows!.map((row) => row.category);
     expect(categories).toContain(manifest.statisticsCategory);
     expect(categories.filter((category) => category == null)).not.toHaveLength(0);
   });
 
-  it('reads a 5-part bundle whose settings slot is the zero-byte sentinel', async () => {
-    // `settings === null` alone does NOT test the byteLength guard: extractSettings
+  it('reads a bundle whose settings slot is the zero-byte sentinel', async () => {
+    // `settings === null` alone does NOT test the zero-byte handling: extractSettings
     // swallows the magic-byte failure into null anyway, so this assertion passes
-    // with the guard removed. The guard's observable effect is that the empty slot
-    // is recognised as the producer's sentinel rather than run through the settings
+    // with the handling removed. Its observable effect is that the empty slot is
+    // recognised as the producer's sentinel rather than run through the settings
     // parser at all — so assert the parser was never entered.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const extraction = await extractRowsFromParquetBundle(loadBundle('stats_no_settings'));
+      const { data, settings } = await decodeParquetBundle(loadBundle('stats_no_settings'));
 
-      expect(extraction.settings).toBeNull();
-      expect(extraction.annotationsById.size).toBe(manifest.proteinCount);
-      expect(extraction.projections).toHaveLength(manifest.proteinCount * manifest.projectionCount);
+      expect(settings).toBeNull();
+      expect(data.protein_ids).toHaveLength(manifest.proteinCount);
+      expect(data.statisticsRows).toBeDefined();
       expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
@@ -192,54 +208,56 @@ describe('bundle layouts the producer can write', () => {
     extra.set(BUNDLE_DELIMITER_BYTES, original.length);
     extra.set([0x50, 0x41, 0x52, 0x31], original.length + BUNDLE_DELIMITER_BYTES.length);
 
-    // Pinned to the full message, not a bare /5/: byte offsets and row counts in
-    // unrelated downstream errors also contain a '5', which would let a reader
+    // Pinned to the full message, not a bare /6/: byte offsets and row counts in
+    // unrelated downstream errors also contain a '6', which would let a reader
     // that stopped enforcing the upper bound keep this test green.
-    await expect(extractRowsFromParquetBundle(extra.buffer)).rejects.toThrow(
-      /Expected 2 to 4 delimiters in parquetbundle, found 5/,
+    await expect(decodeParquetBundle(extra.buffer)).rejects.toThrow(
+      /Expected 2 to 5 delimiters in parquetbundle, found 6/,
     );
   });
 });
 
+/**
+ * The annotation contract every decoded bundle must satisfy, whatever its size.
+ * `minimal` and `large` both carry the same positional payload from emit_bundles.py.
+ */
+function expectAnnotationContract(
+  data: Awaited<ReturnType<typeof decodeParquetBundle>>['data'],
+  proteinCount: number,
+) {
+  // The producer encodes the reserved ';' as %3B; a reader that skipped the
+  // decode would surface the escape sequence verbatim.
+  expect(data.annotations.family.values).toContain(manifest.labelWithReservedChar);
+  expect(data.annotations.family.values.join('|')).not.toContain('%3B');
+
+  // "DomA|0.91;DomB|0.82" — a reader that splits on '|' before ';' loses DomB.
+  expect(data.annotations.domains.values).toContain('DomA');
+  expect(data.annotations.domains.values).toContain('DomB');
+
+  const lengths = data.numeric_annotation_data?.length;
+  // Assert the length first: an out-of-range index yields `undefined`, which
+  // would satisfy the null check below even if the reader dropped a protein.
+  expect(lengths).toHaveLength(proteinCount);
+  expect(
+    lengths?.[manifest.nullLengthIndex] == null ||
+      Number.isNaN(lengths?.[manifest.nullLengthIndex]),
+  ).toBe(true);
+  expect(lengths?.[0]).toBe(100);
+
+  // structuredClone is the decode.worker.ts postMessage boundary; JSON.stringify
+  // is how projection state is persisted and throws on a leaked BigInt.
+  expect(() => structuredClone(data)).not.toThrow();
+  expect(() => JSON.stringify(data.projections)).not.toThrow();
+}
+
 describe('annotation encoding across the language boundary', () => {
-  // Every case below reads the same `minimal` bundle, so decode it once. These
-  // assertions are all pure reads of the converted result; none mutates it, and
-  // none needs a spy installed before the decode (unlike the sentinel case
-  // above, which must extract inside the test body to observe console.warn).
-  let data: Awaited<ReturnType<typeof convertParquetToVisualizationData>>;
-
-  beforeAll(async () => {
-    data = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(loadBundle('minimal')),
-    );
+  it('decodes labels, multi-hit cells and missing numerics', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('minimal'));
+    expectAnnotationContract(data, manifest.proteinCount);
   });
 
-  it('decodes a percent-encoded label back to its literal characters', () => {
-    // The producer encodes the reserved ';' as %3B; a v1 reader would surface
-    // the escape sequence verbatim.
-    expect(data.annotations.family.values).toContain(manifest.labelWithReservedChar);
-    expect(data.annotations.family.values.join('|')).not.toContain('%3B');
-  });
-
-  it('splits a multi-hit cell into separate labels', () => {
-    // "DomA|0.91;DomB|0.82" — a reader that splits on '|' before ';' loses DomB.
-    expect(data.annotations.domains.values).toContain('DomA');
-    expect(data.annotations.domains.values).toContain('DomB');
-  });
-
-  it('reports a missing numeric value as missing rather than zero', () => {
-    const lengths = data.numeric_annotation_data?.length;
-    // Assert the length first: an out-of-range index yields `undefined`, which
-    // would satisfy the null check below even if the reader dropped a protein.
-    expect(lengths).toHaveLength(manifest.proteinCount);
-    expect(
-      lengths?.[manifest.nullLengthIndex] == null ||
-        Number.isNaN(lengths?.[manifest.nullLengthIndex]),
-    ).toBe(true);
-    expect(lengths?.[0]).toBe(100);
-  });
-
-  it('exposes the third dimension of a 3D projection', () => {
+  it('exposes the third dimension of a 3D projection', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('minimal'));
     const projection3d = data.projections.find((p) => p.name === 'PCA_3');
     expect(projection3d?.dimension).toBe(3);
     expect(projection3d?.data.length).toBe(manifest.proteinCount * 3);
@@ -248,52 +266,9 @@ describe('annotation encoding across the language boundary', () => {
     expect(projection2d?.dimension).toBe(2);
   });
 
-  it('produces data that survives serialization despite BigInt-valued columns', () => {
-    // `dimensions` is an int64 column, so the raw extraction really does hand back
-    // a BigInt (verified: `typeof extraction.projectionsMetadata[0].dimensions`
-    // === 'bigint'); conversion is what normalizes it away. Merely converting is
-    // not the contract — four tests above already do that — so serialize:
-    //   - JSON.stringify throws on BigInt, and is how state is persisted;
-    //   - structuredClone tolerates BigInt but rejects functions/DOM refs, and is
-    //     the decode.worker.ts postMessage boundary.
-    // They catch different regressions; neither subsumes the other.
-    expect(() => JSON.stringify(data.projections)).not.toThrow();
-    expect(() => structuredClone(data)).not.toThrow();
-  });
-});
-
-describe('the optimized conversion path real datasets take', () => {
-  // Below OPTIMIZED_PATH_ROW_THRESHOLD projection rows the optimized entry point
-  // delegates to the small-data implementation, so the 10-protein variants never
-  // reach the separated decoder decode.worker.ts uses for production datasets.
-  //
-  // Guard the fixture against the real threshold, not a copy of its value: if the
-  // threshold is raised above what emit_bundles.py generates, this block silently
-  // degrades into a duplicate of the small-data tests above — the one way this
-  // suite can stop protecting without going red. Asserted below against the
-  // generated bundle rather than against the manifest, so a generator that stops
-  // clearing the threshold fails here rather than quietly agreeing with itself.
-  it('decodes the same annotation contract as the small-data path', async () => {
-    const extraction = await extractRowsFromParquetBundle(loadBundle('large'));
-    expect(extraction.projections.length).toBeGreaterThanOrEqual(OPTIMIZED_PATH_ROW_THRESHOLD);
-    expect(extraction.formatVersion).toBe(2);
-
-    const data = await convertParquetToVisualizationDataOptimized(extraction);
-
+  it('decodes the same contract for a dataset of production scale', async () => {
+    const { data } = await decodeParquetBundle(loadBundle('large'));
     expect(data.protein_ids).toHaveLength(manifest.largeProteinCount);
-    // The same positional payload as `minimal`, now through the other decoder.
-    expect(data.annotations.family.values).toContain(manifest.labelWithReservedChar);
-    expect(data.annotations.family.values.join('|')).not.toContain('%3B');
-    expect(data.annotations.domains.values).toContain('DomA');
-    expect(data.annotations.domains.values).toContain('DomB');
-
-    const lengths = data.numeric_annotation_data?.length;
-    expect(lengths).toHaveLength(manifest.largeProteinCount);
-    expect(
-      lengths?.[manifest.nullLengthIndex] == null ||
-        Number.isNaN(lengths?.[manifest.nullLengthIndex]),
-    ).toBe(true);
-
-    expect(() => structuredClone(data)).not.toThrow();
+    expectAnnotationContract(data, manifest.largeProteinCount);
   });
 });
