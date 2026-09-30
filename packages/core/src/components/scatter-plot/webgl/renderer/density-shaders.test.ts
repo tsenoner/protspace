@@ -27,6 +27,14 @@ describe('DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER', () => {
     );
     expect(DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER).toContain('uniform vec2 u_direction;');
   });
+
+  it('clamps to the half-float range, which saturates only past the last ring', () => {
+    expect(DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER).toContain('fragColor = min(c, vec4(65504.0));');
+    const w = gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS);
+    // A clamped ping texel still gives every field it reaches at least 65504 x the edge
+    // weight (~96.9), far above the top ring (floor x 2^5, ~2.84).
+    expect(65504 * w[0]!).toBeGreaterThan(DENSITY_CONTOUR_FLOOR * 2 ** 5);
+  });
 });
 
 describe('DENSITY_CATEGORY_ACCUM_VERTEX_SHADER camera', () => {

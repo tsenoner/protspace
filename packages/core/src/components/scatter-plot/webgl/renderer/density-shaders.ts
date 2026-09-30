@@ -24,6 +24,11 @@ void main() {
   fragColor = v_accum;
 }`;
 
+// The ping and fields are RGBA16F, and past ~492K same-slot points in a cell the horizontal
+// pass overflows; SwiftShader writes that as NaN and the dense core loses its fill. Clamping
+// cannot move a ring, since the rings stop far below this.
+const HALF_FLOAT_MAX = 65504;
+
 function blurSource(sigma: number, radius: number): string {
   const taps = gaussianWeights(sigma, radius)
     .map(
@@ -43,7 +48,7 @@ out vec4 fragColor;
 void main() {
   vec4 c = vec4(0.0);
 ${taps}
-  fragColor = c;
+  fragColor = min(c, vec4(${HALF_FLOAT_MAX.toFixed(1)}));
 }`;
 }
 
