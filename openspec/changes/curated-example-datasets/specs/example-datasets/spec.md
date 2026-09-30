@@ -2,7 +2,7 @@
 
 ### Requirement: Example catalog
 
-The app SHALL define a static catalog of example datasets in which every entry has a unique, lowercase, letter-leading `id`, a `label` that states the protein count and download size, a one-line `description`, a one-line `insight` naming what the curated view shows, a same-origin `url`, its decoded size in bytes, a `docsUrl` pointing at the entry's section of the Example datasets documentation page, and a required curated `defaultView` naming a projection, a colour-by annotation and optional tooltip annotations. The label's count and size and the entry's size in bytes SHALL be derived from the entry's record in the example bundle manifest. The catalog SHALL contain the startup demo and the ProtSpace manuscript's datasets, and nothing else: `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot`. These ids are permanent, because published links name them. The first entry SHALL be the startup demo, `id: 'demo'`, served from `./data.parquetbundle`; every other entry SHALL be served from `./examples/`. An entry MAY be marked large; `swissprot` SHALL be. Every `defaultView` name SHALL exist in the entry's bundle: the annotation and tooltip names among its annotation columns, the projection among its projections. The annotation SHALL be colourable, meaning neither tooltip-only nor an EAT prediction companion column, and the tooltip SHALL contain neither duplicates nor the annotation.
+The app SHALL define a static catalog of example datasets in which every entry has a unique `id` made of lowercase letters and digits, starting with a letter, with words joined by single hyphens, a `label` that states the protein count and download size, a one-line `description`, a one-line `insight` naming what the curated view shows, a same-origin `url`, its decoded size in bytes, a `docsUrl` pointing at the entry's section of the Example datasets documentation page, and a required curated `defaultView` naming a projection, a colour-by annotation and optional tooltip annotations. The label's count and size and the entry's size in bytes SHALL be derived from the entry's record in the example bundle manifest. The catalog SHALL contain the startup demo, the ProtSpace manuscript's datasets and one curated annotation-transfer (EAT) showcase, and nothing else: `demo`, `three-finger-toxins`, `human-fly`, `beta-lactamase` and `swissprot`. The showcase, `three-finger-toxins`, is not a manuscript dataset, because the manuscript's EAT sets are benchmarks and test fixtures rather than showcases. These ids are permanent, because published links name them. The first entry SHALL be the startup demo, `id: 'demo'`, served from `./data.parquetbundle`; every other entry SHALL be served from `./examples/`. An entry MAY be marked large; `swissprot` SHALL be. Every `defaultView` name SHALL exist in the entry's bundle: the annotation and tooltip names among its annotation columns, the projection among its projections. The annotation SHALL be colourable, meaning neither tooltip-only nor an EAT prediction companion column, and the tooltip SHALL contain neither duplicates nor the annotation. Every entry's bundle SHALL carry a UMAP projection, which its `defaultView` names, and a PCA projection.
 
 #### Scenario: Known id
 
@@ -17,7 +17,17 @@ The app SHALL define a static catalog of example datasets in which every entry h
 #### Scenario: Catalog contents and order
 
 - **WHEN** the catalog is listed
-- **THEN** it holds exactly `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot`, in that order, with `swissprot` marked large
+- **THEN** it holds exactly `demo`, `three-finger-toxins`, `human-fly`, `beta-lactamase` and `swissprot`, in that order, with `swissprot` marked large
+
+#### Scenario: An id outside the format
+
+- **WHEN** a catalog entry's id has an uppercase letter or an underscore, starts with a digit, or holds a doubled or trailing hyphen, as `3ftx-eat` does
+- **THEN** the unit suite fails; `three-finger-toxins` passes
+
+#### Scenario: Every example has a UMAP and a PCA
+
+- **WHEN** an entry's manifest record is checked
+- **THEN** its projections include a PCA, and its `defaultView` projection is a UMAP
 
 #### Scenario: A default-view name drifts from its bundle
 
@@ -257,7 +267,7 @@ While an example downloads, the loading overlay SHALL show progress as the numbe
 
 ### Requirement: Example datasets documentation
 
-The documentation SHALL include an Example datasets page, at `/docs/explore/example-datasets`, generated from the catalog, the example bundle manifest and docs-only prose, with one section per catalog entry anchored at the entry's `id`. Each section SHALL state what the dataset is, what its curated view shows and what to try next, and how it was built: the source query or proteomes and the membership release, the annotation release for each column group, the protein count, the embedding model, the projection parameters, the annotation sources, the ProtSpace version, the build command and the paper figure it reproduces. Each section SHALL link to open the example in ProtSpace and to download its bundle. The page intro SHALL state that examples reopen in their curated state. A check SHALL fail in CI when the page is stale, when a catalog id has no section or no prose, when prose or a section exists for an id outside the catalog, when a thumbnail it names is missing, or when the in-repository demo differs from its manifest record. Once the catalog holds only the final entries, the check SHALL also fail while any thumbnail is still pending, and when a stated release is not a UniProt release name (`YYYY_MM`). The app SHALL link to the page from the Import menu's "Examples" heading, and to each section from that example's info control.
+The documentation SHALL include an Example datasets page, at `/docs/explore/example-datasets`, generated from the catalog, the example bundle manifest and docs-only prose, with one section per catalog entry anchored at the entry's `id`. Each section SHALL state what the dataset is, what its curated view shows and what to try next, and how it was built: the source query or proteomes and the membership release, the annotation release for each column group, the protein count, the embedding model, the projection parameters, the annotation sources, the ProtSpace version, the build command, and the paper figure it reproduces or, for the EAT showcase, that it is not a paper dataset and why. A section whose bundle has no Biocentral predictions SHALL say so and why. The build command SHALL name no path of the machine that built the bundle. Each section SHALL link to open the example in ProtSpace and to download its bundle. The page intro SHALL state that examples reopen in their curated state, name the example that is not a paper dataset, and say why every example carries both a UMAP and a PCA. A check SHALL fail in CI when the page is stale, when a catalog id has no section or no prose, when prose or a section exists for an id outside the catalog, when a thumbnail it names is missing, or when the in-repository demo differs from its manifest record. Once the catalog holds only the final entries, the check SHALL also fail while any thumbnail is still pending, while a value still to come (`‹…›`) is left on the page or in the hand-written pages that quote example numbers, and when a stated release is not a UniProt release name (`YYYY_MM`). The app SHALL link to the page from the Import menu's "Examples" heading, and to each section from that example's info control.
 
 #### Scenario: Every entry is documented
 
@@ -268,6 +278,16 @@ The documentation SHALL include an Example datasets page, at `/docs/explore/exam
 
 - **WHEN** the catalog, the manifest or the prose changes without regenerating the page
 - **THEN** `pnpm docs:examples:check` fails, in CI as well as in precommit
+
+#### Scenario: The large sets without Biocentral predictions
+
+- **WHEN** the page describes `human-fly`, `beta-lactamase` or `swissprot`
+- **THEN** its section says that the bundle has no Biocentral predictions, because they need per-residue embeddings, and that the Phobius signal-peptide column still covers signal peptides
+
+#### Scenario: A machine path in the build command
+
+- **WHEN** a manifest record's build command names a path such as `/private/tmp/…` or `/Users/…`
+- **THEN** `pnpm docs:examples:check` fails
 
 #### Scenario: No orphan section
 

@@ -18,11 +18,13 @@ Five facts about the current code shape this design:
 
 The research behind this change (catalog audit, data currency, the default-view mechanism, the open behaviour decisions, hosting, docs) was consolidated into a plan and an independent critique. The owner's final decisions (D1–D10) are applied below. Where the plan and a decision differ, the decision wins.
 
+A second round of research (2026-09-30: the manuscript's use of its EAT sets, EAT candidates, CLI transfer, the PCA policy, per-residue embeddings, the open issues and the catalog swap) ended in four more owner decisions, cited here as R2-D1 to R2-D4: the lineup (Decisions 1 and 17), fix everything and rebuild once on the released CLI (Decision 9), PCA in every example (Decision 16), and no Biocentral predictions for the three large sets (Decision 18).
+
 ## Goals / Non-Goals
 
 **Goals:**
 
-- The Import menu lists the startup demo plus the manuscript's datasets, and nothing else.
+- The Import menu lists the startup demo, the manuscript's datasets and one curated EAT showcase, and nothing else.
 - Every example opens on a curated projection, annotation and tooltip, and changing that choice is a one-line catalog edit that a test guards against drift.
 - The data is current: the paper's membership and coordinates, annotations refreshed at UniProt 2026_03, all features.
 - A generated, CI-checked docs page explains each dataset, and the app links to it.
@@ -41,19 +43,18 @@ The research behind this change (catalog audit, data currency, the default-view 
 
 ## Decisions
 
-### 1. Catalog: six entries, final ids (D3, D4)
+### 1. Catalog: five entries, final ids (D3, D4, R2-D1)
 
-| id                  | Menu name                    |       N | Paper                                   | Provisional `defaultView` (projection / annotation / tooltip)                      | Bundle settings                                                          |
-| ------------------- | ---------------------------- | ------: | --------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `demo`              | Venom toxins (demo)          |   7,831 | JMB 2025 lineage, not in the manuscript | `ProtT5 — UMAP 2` / `protein_families` / `species`, `ec`                           | Curated `protein_families` legend (top 13 + Other)                       |
-| `venom-eat`         | Venom toxins · EAT           |     811 | Fig. 4 a, d, e, f                       | `ProtT5 — UMAP 2` / `ec` / `protein_families`, `species`                           | EAT threshold **0**; the four cluster legends plus a curated `ec` legend |
-| `phosphatase-eat`   | Phosphatases · EAT benchmark |     832 | Abstract, Results                       | `ProtT5 — UMAP 2` / `ec` / `eat_split`, `ec_withheld`, `protein_families_withheld` | EAT threshold **0.5**                                                    |
-| `human-fly`         | Human + fly proteomes        | 105,562 | Fig. 2B                                 | `ProtT5 — UMAP 2` / `species` / `protein_families`, `reviewed`                     | Fig. 2B species colours; named families pinned                           |
-| `beta-lactamase`    | β-lactamases                 | 113,015 | Fig. 3                                  | `ProtT5 — UMAP 2` / `protein_families` / `ec`, `species`                           | Fig. 3 Kelly colours, class C painted on top                             |
-| `swissprot` (Large) | Swiss-Prot                   | 573,649 | Fig. 2A, abstract                       | `ProtT5 — UMAP 2` / `domain` / `protein_families`, `species`                       | Fig. 2A domain colours                                                   |
+| id                    | Menu name                       |       N | Paper                                   | `defaultView` (projection / annotation / tooltip)                                  | Bundle settings                                      |
+| --------------------- | ------------------------------- | ------: | --------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `demo`                | Venom toxins (demo)             |   7,831 | JMB 2025 lineage, not in the manuscript | `ProtT5 — UMAP 2` / `protein_families` / `species`, `ec`                           | Curated `protein_families` legend (top 13 + Other)   |
+| `three-finger-toxins` | Snake three-finger toxins (EAT) |  ≈1,089 | Not in the manuscript (Decision 17)     | `ProtT5 — UMAP 2` / `toxin_class` / `toxin_class_withheld`, `species`, `eat_split` | EAT threshold **0**; a curated `toxin_class` palette |
+| `human-fly`           | Human + fly proteomes           | 105,562 | Fig. 2B                                 | `ProtT5 — UMAP 2` / `species` / `protein_families`, `reviewed`                     | Fig. 2B species colours; named families pinned       |
+| `beta-lactamase`      | β-lactamases                    | 113,015 | Fig. 3                                  | `ProtT5 — UMAP 2` / `protein_families` / `ec`, `species`                           | Fig. 3 Kelly colours, class C painted on top         |
+| `swissprot` (Large)   | Swiss-Prot                      | 573,649 | Fig. 2A, abstract                       | `ProtT5 — UMAP 2` / `domain` / `protein_families`, `species`                       | Fig. 2A domain colours                               |
 
 - **Order.** The demo comes first, then the rest by ascending protein count, which puts `swissprot` last.
-- **Ids.** They are lowercase and letter-leading, and they double as the `?dataset=` value and the docs anchor. PR #494's ids were never public, so there is no alias map.
+- **Ids.** They are lowercase and letter-leading, with words joined by single hyphens (so `3ftx-eat` would be refused), and they double as the `?dataset=` value and the docs anchor. PR #494's ids were never public, so there is no alias map. Neither were the first lineup's `venom-eat` and `phosphatase-eat`, so dropping them breaks no link.
 - **Labels.**
   - Each label is derived: `<name> · <N> · <MB>`, from the entry's manifest record (Decision 11), so the count and size cannot drift from the file.
   - `sizeBytes` also comes from the manifest.
@@ -61,13 +62,12 @@ The research behind this change (catalog audit, data currency, the default-view 
   - `insight` is the one-line "what to look at" shown in the info popover and as the first line of the docs card.
 - **Projection names.** The paper's Swiss-Prot and human + fly bundles name the projection `UMAP_2`. The build renames it to `ProtT5 — UMAP 2`, so every example uses one naming convention.
 - **Startup default (D3).** It stays the small ToxProt demo, re-annotated. At about 2.3–2.8 MB raw it allows roughly 40–65k first visits a month under the Pages soft bandwidth limit, and it is never a 10 MB+ paper dataset.
-  - 790 of `venom-eat`'s 811 proteins are also in the demo. This is accepted: `venom-eat` exists to show EAT and the separation scores, the demo to show a fast, clustered first view.
-- **Provisional defaults (D5).** The table's values are provisional, and the final picks are made after the data build (tasks §7).
-  - Three of them currently have near-zero or negative whole-annotation silhouettes, which the `--stats` legend strips will display next to the default: Swiss-Prot `domain` −0.32, β-lactamase `protein_families` −0.45, human + fly `species` +0.03.
-  - The final choice follows a stated criterion (kNN label agreement or the per-category silhouette of the categories the story names; alternatives are β-lactamase `ec` and human + fly `protein_families`) plus the author's review of the `examples-live` thumbnails. Where figure fidelity wins over the criterion, the card says why the view is informative anyway (for example, Archaea +0.24, class C +0.32).
-- **EAT thresholds (D6).**
-  - `venom-eat` opens at threshold 0, so both the transferred-value rings and the separation strips are visible. Its insight line says "drag reliability to 0.5 to keep 244 of 384".
-  - `phosphatase-eat` opens at 0.5 (the abstract's 98.1 % story is about that threshold, so hiding the strips there is accepted). It carries withheld-truth columns, surfaced in the tooltip, so a reader can check each transfer in the app. The column names are provisional and fixed by the build.
+  - The demo holds 536 proteins of the three-finger toxin family, most of them also in `three-finger-toxins`. This is accepted: the demo shows a fast, clustered first view, the EAT example shows transfer and the separation scores.
+- **Default views (D5).** The table's views are the owner's picks, made after the data build (task 7.5), all on the UMAP.
+  - Three of them have near-zero or negative whole-annotation silhouettes, which the `--stats` legend strips display next to the default: on the refreshed data Swiss-Prot `domain` about −0.25, β-lactamase `protein_families` about −0.39, human + fly `species` about +0.04.
+  - Figure fidelity wins over the criterion there, and each card says why the view is informative anyway.
+- **EAT threshold (D6).** `three-finger-toxins` opens at threshold 0, so both the transferred-value rings and the separation strips are visible, and the docs say "drag reliability to 0.5". Its tooltip carries the withheld class, so a reader can check each held-out transfer in the app.
+- **Values from the build.** The final entries are written before their bundles exist (Decision 15). A value only the built file can give, such as the three-finger toxins' hold-out accuracy or Swiss-Prot's memory and load time, is a `‹…›` placeholder, which `docs:examples:check` refuses after the swap.
 
 ### 2. Curated default view: resolved at view time, reset on a menu choice (D5, D7c)
 
@@ -181,7 +181,7 @@ Rejected:
   - The same info control appears next to the current-dataset name when an example is loaded.
   - Opening the popover never dispatches `load-example-dataset`.
 
-### 9. Data strategy R (D1, D2)
+### 9. Data strategy R (D1, D2, R2-D2)
 
 The paper's protein set and published coordinates are kept, and every annotation source is re-fetched at UniProt 2026_03 with the fixed CLI:
 
@@ -190,33 +190,29 @@ The paper's protein set and published coordinates are kept, and every annotation
 - Biocentral batching;
 - a per-source cache;
 - a release line in `run.log`;
-- PR #452's faithfulness ceiling, which is a hard prerequisite, since without it every set over 20K proteins gets no faithfulness score.
+- PR #452's faithfulness statistics, a hard prerequisite, since without them every set over 20K proteins gets no faithfulness score;
+- `root` as the first lineage element rather than the deepest unranked clade, and TMbed's "no TM segment" rather than `none`, which the app reads as missing;
+- a cache-semantics bump for those two columns, so a cache-assisted rebuild refetches them instead of reusing the wrong values.
+
+**Rebuild once, then publish (R2-D2).** All of it lands in PR #495, released as protspace 4.14.0, and every example is rebuilt on that release before the first publish. A release file name can never carry different bytes, so fixing a published file would mean new names; one rebuild also replaces provenance no public commit could reproduce (a local CLI commit, a scratch path in the build command).
 
 Statistics and clusters are recomputed on the paper coordinates with **explicit** `--stats-annotation` lists, because `auto` would also score EAT companions.
 
 Per-dataset recipes and gates live in the build script (tasks §6 and §7):
 
-- **`swissprot`: UMAP only, all features.**
-  - It ships only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap on the reference laptop. Otherwise the web copy drops the GO and TED columns, and the full-feature file stays on Zenodo.
-  - Biocentral is added only after batching lands and with the Rostlab operators' agreement.
-- **`human-fly`.** The 146 paper rows without a UniProt vector keep their paper position and are annotated from FASTA. PCA is kept.
-- **`beta-lactamase`.** Coordinates come from the paper's `beta_lactamase_2026_stats` bundle; PCA is kept.
-- **`venom-eat` (R-EAT).**
-  - Frozen: the coordinates, the statistics part, and `ec`, `protein_families` and `*__pred_*`, so the Fig. 4 values reproduce.
-  - `sequence` and `organism_id` are dropped.
-  - InterPro, TED and Biocentral are added from full-length sequences.
-- **`phosphatase-eat` (R-EAT).** The graft path follows the bundle's format version:
-  - Re-encode the v1 fixture's columns first (it has no format stamp, and `protspace bundle` stamps v2 on the whole table), or rebuild it at release `2026_03` and graft only the `eat_split` column and the EAT prediction columns (`*__pred_*`).
-  - **No step may refill `ec` or `protein_families` for the 213 query rows.**
-  - Add the withheld truth as separate columns.
-  - The gate recomputes accuracy against the fetched truth: k = 1 exact EC 91.5 % over 213, and 98.1 % over the 160 transfers with reliability ≥ 0.5.
-- **`demo`.** It keeps its four projections, so the docs captures' layout stays valid, and gains every annotation column. Sequence-based sources (InterPro, Biocentral) must see **full-length** sequences: the demo is embedded on mature peptides, and local FASTA overrides UniProt sequences in `_build_sequence_map`, which today leaves 73 % of `pfam` empty.
+- **`swissprot`: UMAP and the paper's PCA, all features.**
+  - It ships only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap on the reference laptop, measured again on the rebuilt file with its PCA (Decision 16). Otherwise the web copy drops the GO and TED columns, and the full-feature file stays on Zenodo.
+  - No Biocentral predictions (Decision 18).
+- **`human-fly`.** The 146 paper rows without a UniProt vector keep their paper position and are annotated from FASTA. PCA is kept. No Biocentral predictions.
+- **`beta-lactamase`.** Coordinates come from the paper's `beta_lactamase_2026_stats` bundle; PCA is kept. No Biocentral predictions.
+- **`three-finger-toxins`** is built fresh, not from a paper bundle (Decision 17).
+- **`demo`.** It keeps its four projections (both models' UMAP and PCA), so the docs captures' layout stays valid, and gains every annotation column. Sequence-based sources (InterPro, Biocentral) must see **full-length** sequences: the demo is embedded on mature peptides, and local FASTA overrides UniProt sequences in `_build_sequence_map`, which today leaves 73 % of `pfam` empty.
 
 **Provenance travels with the file (G15).** Each bundle gets key/value metadata on its annotations table:
 
 - `example_id`;
 - `protspace_version` plus the git SHA when that is a dev version;
-- `uniprot_release` **per column group** (the EAT examples mix paper-era and 2026_03 columns: G10), as JSON `{group: {release, columns}}` with a null release for computed columns; `write_manifest.py` keeps each group's release, leaves out groups with none, and still reads the flat `{group: release}` form of older bundles;
+- `uniprot_release` **per column group** (a bundle can mix releases, as the demo's 2026_01 membership and 2026_03 annotations do: G10), as JSON `{group: {release, columns}}` with a null release for computed columns; `write_manifest.py` keeps each group's release, leaves out groups with none, and still reads the flat `{group: release}` form of older bundles;
 - `membership_release`;
 - `built_at`;
 - `command`;
@@ -237,9 +233,9 @@ Readers ignore unknown keys. The same fields go into the manifest.
 
 - the kinases, MHC, β-defensins and CC chemokines, and PBP/GOBP for `human-fly`;
 - Q02940 still class C, and Fig. 3 counts within 2 %, for `beta-lactamase`;
-- 244 transfers at ≥ 0.5 and P0DPU8 ← F5CPF0 for `venom-eat`;
-- 91.5 % / 98.1 % for `phosphatase-eat`;
-- Fig. 2A domain counts within 1 % for `swissprot`.
+- Fig. 2A domain counts within 1 % for `swissprot`;
+- the gates of Decision 17 for `three-finger-toxins`;
+- after the rebuild, `root` has at most three values and `predicted_transmembrane` holds no literal `none`, so a stale cache cannot pass.
 
 If a story gate fails, that dataset ships frozen (strategy F) and is labelled so.
 
@@ -311,8 +307,9 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - A guard scenario asserts that the startup load requested the fixture URL and nothing else, so a dev server reused without the variable fails with that cause named rather than as scattered count mismatches.
   - Fallback if `/@fs/` proves brittle: copy the fixture into a gitignored `apps/web/public/__e2e__/` in global setup.
 - **Catalog routing (G3).**
-  - `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id the suite loads to a fixture that contains that entry's `defaultView` names (`demo` → the demo fixture, `venom-eat` → the venom fixture, `phosphatase-eat` → `phosphatase_eat`), and the spec routes the entry's URL to it.
-  - The spec names examples by the role they play (`small`, `other`, `slow`), so a catalog change edits the helper's table and not the scenarios; the annotation names a scenario picks belong to its role's fixture.
+  - `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id the suite loads to a fixture that contains that entry's `defaultView` names, and the spec routes the entry's URL to it.
+  - The spec names examples by the role they play (`small`, `other`, `slow`, `eat`), so a catalog change edits the helper's table and not the scenarios; the annotation names a scenario picks belong to its role's fixture. The roles map to settled final ids: `small` → `human-fly`, `other` → `beta-lactamase`, `slow` → `swissprot`, `eat` → `three-finger-toxins`.
+  - The role fixtures (`example_role_*`) are derived from the pinned fixtures by a committed script, `apps/web/tests/fixtures/derive-example-role-fixtures.py` (uv, pyarrow pinned, `--check` for a stale file). Until the swap each role also stands for an interim example, so each fixture holds both examples' view names: the final projection name is a copy of an existing layout, and the added view columns are synthetic. The `eat` fixture relabels the venom fixture's transferred EC numbers as toxin classes, holds every eighth reference out, and stores a threshold of 0.5, so a scenario can tell the bundled threshold from the default.
   - A held request passes on with `route.fallback()`, so it reaches the fixture route rather than the network, and protspace.app's copies are refused, so a development build's fallback can never download a real example.
   - The spec asserts that no default-view drift warning is logged.
   - The history and race tests use explicit `annotation=`/`projection=` parameters, so any fixture serves them.
@@ -320,6 +317,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 - **Unit tests.**
   - "The file exists under `public/`" becomes "every catalog id has a manifest record, and the only bundle under `public/` is the demo".
   - `bundle-roundtrip.test.ts` reads the 5K fixture.
+  - No unit test indexes the product catalog or depends on its size: the suites that exercise its consumers swap in a two-entry test catalog (`example-catalog.fixtures.ts`, through `vi.mock`), and their fetch mocks carry headers, since a development build checks a release-hosted example's content type.
 
 ### 13. Perf datasets move to a `perf-datasets` release (D8, W4/G18)
 
@@ -341,25 +339,63 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - a label's count or size disagrees with the manifest, or the prose does not name the colour-by annotation.
 - **Interim state (until the swap).** The page, the check and the anchor pin land with §5, before the final catalog exists, so `example-details.ts` carries three transitional lists that the check keeps honest:
   - `INTERIM_CATALOG_IDS`: the ten test and perf entries, which get no card. The check fails when a listed id leaves the catalog, so the list empties with the swap.
-  - `beforeSwap` on the five final ids that have no catalog entry yet: their insight and provisional `defaultView`, exactly as the catalog entry will state them. The check fails while an id has both, which moves them into the catalog at the swap.
+  - The final examples not served yet: their cards take the insight, `defaultView` and large-download note from the catalog's `FINAL_EXAMPLE_SPECS` (Decision 15), and the check fails while one of them has no prose. (A first version kept these fields as `beforeSwap` in the prose; with the second lineup they moved into the catalog, so they are written once.)
   - `THUMBNAILS_PENDING`: cards without a thumbnail. The check fails when a listed thumbnail exists.
-  - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›`, any `beforeSwap`, any entry left in `THUMBNAILS_PENDING`, and any stated release that is not `YYYY_MM` (a note such as "inferred; confirm" stamped into a bundle is no `‹…›`).
+  - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose or the catalog), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›` (on the page, and in `eat.md` and `importing-data.md`, which quote the EAT example's numbers), any entry left in `THUMBNAILS_PENDING`, and any stated release that is not `YYYY_MM` (a note such as "inferred; confirm" stamped into a bundle is no `‹…›`). At any time it refuses a manifest build command that names a path of the build machine.
 - **Scripts and CI.** `docs:examples` and `docs:examples:check` join `precommit`, and the `ci.yml` `build-docs` job runs both `docs:examples:check` and the existing `docs:annotations:check`, which runs in no workflow today.
 - **Page layout.**
   - Cards use `## Title {#id}`.
   - "Open in ProtSpace" and "Download" are raw `<a href>`, because markdown links to `/explore?…` or to a bundle fail `docs:build`.
   - A `::: details How this bundle was built` block holds the exact command.
   - Citation text is journal-neutral: the 2026 preprint DOI `10.64898/2026.05.04.722720` and the FAQ citation anchor. UniProt is credited under CC BY 4.0.
-- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts `{#<id>}` for every catalog id (outside `INTERIM_CATALOG_IDS`), that every `docsUrl` points at its id's section, and that no section names an id outside the catalog (other than a `beforeSwap` one).
+- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts `{#<id>}` for every catalog id (outside `INTERIM_CATALOG_IDS`), that every `docsUrl` points at its id's section, and that no section names an id outside the catalog (other than a final example not served yet).
 - **Thumbnails.** An opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`) opens each `?dataset=<id>`, asserts the curated view with no URL write and no drift warning, and captures the thumbnail.
 
 ### 15. Sequencing: machinery first, catalog swap last
 
 - **Tasks §1–§6** land on this branch while the CLI fixes proceed elsewhere. They run against the **interim** catalog (today's eleven entries, repo-hosted), each given a provisional `defaultView` naming columns and projections that its current file really has. An interim manifest written from those files keeps the drift test meaningful.
 - **Fixture copies.** §4 adds the fixtures as byte-identical copies (same blobs) and repoints every test. §7 deletes the `apps/web/public/data/` originals, so for the four non-demo fixtures the branch diff is a plain `git mv` (D9). The demo fixture is a copy, because the product demo keeps its path with new content.
-- **Docs.** §5 lands the generator, the prose for the final six ids, the generated page, the retargeted pin test and the CI and precommit wiring of both docs checks. The interim lists in `example-details.ts` (Decision 14) let the catalog↔prose check pass against the interim catalog; the swap (§7) empties them, and from then on the check enforces every rule for every id.
-- **The swap (§7)** replaces the catalog and the manifest, deletes the old bundles, updates the E2E routing table's ids, and regenerates the docs page, thumbnails and the demo's docs images.
+- **Docs.** §5 lands the generator, the prose for the final ids, the generated page, the retargeted pin test and the CI and precommit wiring of both docs checks. The interim lists in `example-details.ts` (Decision 14) let the catalog↔prose check pass against the interim catalog; the swap (§7) empties them, and from then on the check enforces every rule for every id.
+- **The final catalog is written before the swap.** `example-datasets.ts` holds `INTERIM_EXAMPLE_SPECS` and `FINAL_EXAMPLE_SPECS`, and `FINAL_CATALOG_IS_LIVE` (false until the swap) picks the one the app serves. The final entries cannot be served early (an entry without a manifest record throws at import), but the docs page renders their cards, the unit tests check them (id format, order, colourable default views), the build script's `verify` reads their `defaultView` from the catalog, and the E2E role table names their ids.
+- **The swap (§7)** writes the final manifest records, flips `FINAL_CATALOG_IS_LIVE` and deletes `apps/web/public/data/`, in one commit: the interim entries' files live in that directory, and the "only the demo under `public/`" assertion runs once the switch is flipped. It then fills the `‹…›` values, captures the thumbnails and regenerates the docs page and the demo's docs images. A cleanup commit deletes the interim catalog, the switch and the role fixtures' interim names.
 - **Commits.** Every commit keeps `pnpm test:ci`, `pnpm format:check`, `pnpm precommit` and the E2E suite green.
+
+### 16. Every example carries a UMAP and a PCA (R2-D3)
+
+Every example opens on a UMAP and also carries a PCA of the same embedding: the demo keeps all four of its projections (ProtT5 and ESM2, each as UMAP and PCA), `three-finger-toxins` gets both, `human-fly` and `beta-lactamase` keep theirs, and `swissprot` adds the paper's PCA as `ProtT5 — PCA 2`.
+
+- **Why a PCA everywhere.**
+  - One rule a reader can rely on. UMAP draws clusters most clearly, which is why every example opens on it (UMAP scores higher kNN label agreement in 21 of the 23 PCA/UMAP pairs of the build reports, the other two being a tie and a random split). PCA is linear and keeps the coarse geometry UMAP distorts, so switching between the two shows what a picture owes to the layout. The docs page says this in one sentence.
+  - The paper reports PCA numbers for Swiss-Prot, human + fly and β-lactamase (the Extended Data faithfulness and statistics tables), which the examples reproduce only with their PCA.
+  - PCA shows what UMAP cannot: identical sequences stack on one point (2,185 stacks in β-lactamase, the largest 240; the demo's duplicate badge in the docs), and a projection can separate an annotation better than its embedding (β-lactamase `signal_peptide`), which is why the separation panel calls the embedding value a reference, not a ceiling.
+  - The EAT docs show provenance connectors surviving a projection switch, which needs a second projection in the EAT example.
+- **Rejected: a PCA only where it earns its place.** The research recommended dropping the demo's ESM2 PCA (−102 KB, 9.8 % of the file every visitor downloads) and keeping Swiss-Prot UMAP-only, since a PCA costs it at least 7.4 MB, about 190 ms of parsing and 93 MB of heap against a load gate it already came close to (32.3 s of 35 s). The owner chose the simpler rule. The Swiss-Prot D2 gate is therefore measured again on the rebuilt file, and the web-cut fallback (Decision 9) still applies. The larger byte lever, dictionary-encoding `projection_name` in the CLI (about −1.1 to −1.3 MB on each large file), is left to a CLI change.
+
+### 17. The EAT showcase: `three-finger-toxins` (R2-D1)
+
+The Import menu shows annotation transfer with one example built for the purpose, not with the paper's EAT sets.
+
+- **Why not the paper's sets.** They are benchmarks and fixtures, not showcases:
+  - The 811-protein venom set (Fig. 4) was added as a UI fixture for the statistics dropdown. Its transfer rule (arthropod queries, non-arthropod references) puts snake-enzyme EC numbers on arthropod non-enzymes in all 384 transfers, 307 of them from one 101-residue fragment, P20005.
+  - The 832-protein phosphatase benchmark (the abstract's 98.1 %) holds out masked Swiss-Prot entries in an essentially two-class EC task, which MMseqs2 solves at least as well (94.4 % against 91.5 %).
+  - setHARD, DeepLoc 2.0 and the low-identity EC sets have few confident transfers or unreadable legends.
+- **Their frozen files stay.** `venom_eat_stats_811` and `phosphatase_eat` remain E2E fixtures, `perf-datasets` assets and files of the paper's Zenodo deposit, so the manuscript's numbers stay reproducible; the manuscript's scripts read them from the `perf-datasets` release.
+- **Why three-finger toxins.** It is a real use case: the unreviewed entries, mostly venom-gland transcripts, have no functional class, and the reviewed ones carry a curated one. A held-out fifth of the reviewed entries gives the transfers a ground truth the reader can check in the tooltip; the labels are short and readable; and three-finger toxins are the lab's own subject (Koludarov et al., 2023; the ProtSpace JMB 2025 paper shows them clustering by function). It is the UniProt query set, not the unpublished set of the domain-loss manuscript, so the example is reproducible from public data and pre-empts no paper.
+- **Membership.** UniProtKB `(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`, about 1,089 entries at 2026_03 (verified at build time; IPR003571 alone gives 1,042 and misses 47 curated three-finger toxins). The accession list is pinned.
+- **Mature chains (G1).** The embedding is ProtT5-XL-U50 on each entry's mature chain, as the demo does. In the pilot on full-length vectors, 525 of the 552 unreviewed entries carried a signal peptide against 264 of the 490 reviewed ones, 97.7 % of each protein's 15 nearest neighbours shared its signal-peptide status, and every precursor query took its label from a precursor: the rings could only sit in precursor islands, and the mature-only references never donated. UniProt's precomputed per-protein vectors are full-length, so the example is embedded by the build (minutes for about 1,089 short sequences). The sequence-based annotation sources (InterPro, Biocentral) still run on the full-length sequences, the demo's lesson (G8).
+- **Labels.** `toxin_class` groups the subfamily and sub-subfamily UniProt curators record for each reviewed entry into functional classes. The automatic TrEMBL labels ("Boigatoxin") are blanked, so every unreviewed entry is a query.
+- **Hold-out.** A fifth of the reviewed entries, drawn within each class with a recorded seed and the classes taken in sorted order (the pilot's draw depended on Python's hash seed: G4). The realised split ships as `eat_split` (`reference`, `holdout`, `trembl`) and the truth as `toxin_class_withheld`; `toxin_class` is blank on the held-out rows, and the no-refill gate applies.
+- **Transfer.** EAT with k = 1 and the Euclidean distance (`protspace transfer -t toxin_class --k 1 --metric euclidean`), whose goPredSim transform makes a 0.5 threshold mean what the docs say; under the cosine default every score is high and the slider filters little.
+- **Gates (tolerances, since the accuracy depends on the draw: 0.89–1.0 over 200 seeds in the pilot).** Hold-out accuracy ≥ 0.88 overall and ≥ 0.90 at reliability ≥ 0.5; unreviewed transfers at reliability ≥ 0.5 within ±5 % of the built value; no reference donating to more than 40 queries; the family parser a hard failure; no all-N/A column. The card's numbers are read from the built file.
+- **Caveats on the card.** The classes are curator subfamilies; holding out whole genera instead of a random fifth drops the accuracy (pilot: 68.5 %, 85.3 % at reliability ≥ 0.5); _Naja_ supplies about a third of the reviewed entries; about a fifth of the unreviewed ones are fragments.
+
+### 18. No Biocentral predictions on the three large sets (R2-D4)
+
+`human-fly`, `beta-lactamase` and `swissprot` ship without the four `predicted_*` columns; the demo and `three-finger-toxins` keep them.
+
+- **Why they cost so much.** The columns come from LightAttention (subcellular location, membrane) and TMbed (signal peptide, transmembrane), which read the L × 1024 per-residue ProtT5 matrix. Biocentral's predict API accepts only sequences, and UniProt publishes only mean-pooled per-protein vectors, which cannot be un-pooled, so every protein would be embedded again per residue: 10–25 h per set on the public server for β-lactamase (109,092 unique sequences, 45 M residues) or human + fly (103,947, 44 M), several times that for Swiss-Prot, with 90–190 GB of per-residue data landing in the operators' database.
+- **What the cards say.** Each of the three cards states that it has no Biocentral predictions and why, and that the Phobius `signal_peptide` column (present on nearly every protein) still covers signal peptides.
+- **Later.** An operator batch run or a lab GPU (about 2–4 h per set) can add the columns in a later refresh, under new file names. The build configuration commits the skip with its reason.
 
 ## Risks / Trade-offs
 
@@ -370,7 +406,8 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 - **A file over 100 MB on Pages is untested** (the largest served today is 44.9 MB). A staging deploy test is an owner step (§8). The fallback is R2 on `data.protspace.app` with CORS.
 - **Bandwidth.** Pages allows 100 GB/month and bundles are uncached today, so the cache rule must be live before the Swiss-Prot link is announced.
 - **Refreshed annotations could weaken a figure's story.** The story gates catch it, and the dataset then ships frozen with an honest label.
-- **Mixed releases inside a bundle** (the EAT examples). The manifest and the cards record the release per column group; "annotations UniProt 2026_03" is never claimed for a whole EAT bundle.
+- **Mixed releases inside a bundle** (the demo's membership is 2026_01, its annotations 2026_03). The manifest and the cards record the release per column group.
+- **The EAT showcase is not a paper dataset.** The spec's principle becomes "the manuscript's datasets plus one curated EAT showcase", which reviewers of the first lineup did not see. Its labels are curator subfamilies, and its hold-out accuracy depends on the random draw (0.89–1.0 over 200 seeds in the pilot), so the gates are tolerances and the card's number is read from the built file.
 - **The defaults do not cluster by silhouette** (Decision 1). The criterion, the author review and the card text address it. It is a presentation choice, not a code risk, because a change is one line.
 - **The deploy depends on GitHub release downloads.** A release outage fails the deploy loudly, which is intended, and never ships a site with missing examples.
 - **A reused dev server loses the E2E startup pin.** Locally, `reuseExistingServer` can attach to a dev server started without `VITE_STARTUP_DATASET_URL`. Specs that assert the demo count then fail loudly rather than flake. CI never reuses a server, and CONTRIBUTING says to stop a running dev server first.
@@ -386,9 +423,9 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 ## Open Questions
 
 - **Author facts** to collect before the data build:
-  - the venom 811 query and release (Peyman);
-  - the Swiss-Prot and human + fly membership releases, inferred as 2025_04;
+  - the Swiss-Prot and human + fly membership releases, inferred as 2025_04 from the data;
   - how the 113,015 β-lactamases were selected from about 120K query hits.
+  - (The venom 811 query was reconstructed and matches 811/811 at 2026_02; the venom set no longer ships in the menu.)
 - Whether Cancel on an empty screen (Decision 7) is confirmed, or D7e's literal "no fallback" is wanted even there.
-- The final withheld-truth column names for `phosphatase-eat` (the build decides; the drift test pins them).
+- The three-finger toxin class vocabulary and its palette (the build decides from UniProt's subfamily notes; the docs name only classes every version has).
 - Whether `?webglPerf=1` should be compiled out of production builds. Once `/data/*` is gone it only records dataset errors there.

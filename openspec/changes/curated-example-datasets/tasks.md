@@ -1,4 +1,4 @@
-Sequencing (design Decision 15): tasks §1–§6 run against the interim catalog (today's eleven repo-hosted entries), while the CLI fixes proceed on `fix/annotation-retrieval`. §7 swaps in the six final entries after those fixes merge. §8 is for the owner. §9 happens in the manuscript repository.
+Sequencing (design Decision 15): tasks §1–§6 run against the interim catalog (today's eleven repo-hosted entries), while the CLI fixes proceed on `fix/annotation-retrieval`. §7 swaps in the five final entries after those fixes are released. §8 is for the owner. §9 happens in the manuscript repository. §10 records the second lineup (owner decisions R2-D1 to R2-D4, 2026-09-30: `three-finger-toxins` replaces the two paper EAT sets, PCA in every example, no Biocentral on the three large sets, rebuild once on the released CLI).
 
 Before every commit:
 
@@ -35,11 +35,11 @@ Before every commit:
   - user, OPFS and perf loads pass `null`;
   - a load superseded before render changes neither.
   - Add `vi.fn()` for `setDatasetDefaults`/`recordRequestedView` to the hand-built mocks in `example-dataset-load.test.ts`, `dataset-controller.dataset-changes.test.ts` and `dataset-controller.eat.test.ts`.
-- [ ] 1.7 `example-datasets.test.ts` (the colourable-annotation and tooltip checks landed with §1; the manifest-name check and the protein-count order landed with 4.1; only the id format waits for the final ids, task 7.7): assert, for every entry,
+- [x] 1.7 `example-datasets.test.ts` (the colourable-annotation and tooltip checks landed with §1; the manifest-name check and the protein-count order landed with 4.1; the id format landed with the final catalog, task 10.3, and is checked on `FINAL_EXAMPLE_SPECS` and, once the switch is flipped, on the served catalog): assert, for every entry,
   - that each `defaultView` name is in the entry's manifest `columns`/`projections`;
   - that the annotation is colourable (not tooltip-only, not `__pred_*`);
   - that the tooltip has no duplicates and does not repeat the annotation;
-  - that ids are unique, lowercase and letter-leading, and the demo is first;
+  - that ids are unique, lowercase and letter-leading, with words joined by single hyphens (`three-finger-toxins` passes, `3ftx-eat` fails), and the demo is first;
   - that the order is ascending by manifest protein count after the demo.
 
 ## 2. Behaviour decisions (a), (b1), (b2), (c), (d)
@@ -74,7 +74,7 @@ Before every commit:
   - a corrupt restore during a click only clears the store;
   - a mid-session `null` request begins a user request before the startup flow.
 - [x] 2.9 (d) Keep the reset on every example load. The hint and docs text are tasks 3.1 and 5.x (the hint line and the `importing-data.md` exception landed with §2).
-- [ ] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the (c) cases landed with §1, and the (a), (b1) and (b2) cases with §2; since 4.9 they run on fixtures by role; only the (d) case remains):
+- [x] 2.10 E2E in `example-datasets.spec.ts`, using fixtures routed per task 4.9 (the (c) cases landed with §1, and the (a), (b1) and (b2) cases with §2; since 4.9 they run on fixtures by role; the (d) case landed with task 10.4, which hides a legend category rather than recolouring it):
   - (c) from `?annotation=<a>&tooltip=<t>`, a menu choice gives `?dataset=<id>` and the control bar shows `defaultView`; Back restores `<a>` and `<t>`;
   - (c) `?dataset=<id>`, pick an annotation, Back → `defaultView`; explicit deep-link parameters beat the defaults;
   - (a) a fixture routed to 500 on Back keeps the plot, the URL and `history.length`, and Retry recovers after `unroute`;
@@ -88,7 +88,7 @@ Before every commit:
   - a restore preempted while marking `'pending'` puts the previous status back;
   - a user request aborts a FASTA preparation and takes the overlay's Cancel over (E2E: Forward during a preparation);
   - failure toasts dedupe per request kind; a failed startup demo after Back re-records the view; an empty `tooltip=`/`annotation=` is named, not a landing.
-- [ ] 2.11 File a separate issue for the pre-existing bug where a failed user import marks the healthy stored import as `error`, and add it to Project #2.
+- [x] 2.11 File a separate issue for the pre-existing bug where a failed user import marks the healthy stored import as `error`, and add it to Project #2: #500. The rare Back/Forward race that leaves superseded data on screen after a failed download (review finding, deferred as too invasive) is #501, also on Project #2.
 
 ## 3. Import-menu UI, download progress and cancel
 
@@ -155,7 +155,7 @@ Before every commit:
   - Result (2026-09-29): with `apps/web/public/data.parquetbundle` replaced by the 40K bundle, `CI=1 pnpm test:e2e` passed 149/149, the same as with the real demo.
 - [x] 4.9 `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id a spec loads to a fixture that contains its `defaultView` names. `example-datasets.spec.ts` routes by the entry's `url`, asserts that no drift warning is logged, and gives its race tests explicit `annotation=`/`projection=`.
   - The scenarios name examples by role (`small`, `other`, `slow`), so the swap (7.9) edits only the helper's table; held requests pass on with `route.fallback()` so they reach the fixture, and protspace.app's copies are refused so a development build's fallback can never download a real example. With the three `public/data` originals moved away, the project still passes (26/26).
-- [ ] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the latter enabled at 7.8; the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`").
+- [x] 4.10 `example-datasets.test.ts`: replace "the file exists under `public/`" with "every catalog id has a manifest record" and "the only `.parquetbundle` under `public/` is the demo" (the former landed with 4.1, plus "every repo-hosted record's file ships under `public/`"; the latter is written, leaves out the gitignored `public/examples/`, and runs once `FINAL_CATALOG_IS_LIVE` is flipped, in the swap commit that also removes `public/data/`, tasks 7.7–7.8).
 - [x] 4.11 Perf datasets:
   - `perf/datasets.manifest.json` (`{ id, file, bytes, sha256 }`) for the eleven current `public/data` bundles plus `beta_lactamase_2026_stats` (113K) and `phosphatase_eat` (832), under their original names;
   - `pnpm perf:fetch` (the same fetch script, perf mode; `--only` for a subset) into `perf/datasets/`.
@@ -239,28 +239,34 @@ Before every commit:
   - `pfam_duplicates` fails without its cache, the obsolete-accession count falls back to `protein_name` (and fails when it cannot count), a refreshed source empty on every row fails, an unknown gate type fails, and an unconfirmed release (not `YYYY_MM`) keeps the `provenance` gate pending;
   - outputs may not land in the repository or an input directory.
 
+- [ ] 6.10 Second lineup in the build (design Decisions 16–18):
+  - a build kind for `three-finger-toxins` that makes its own coordinates: the pinned accession list, mature chains embedded with ProtT5-XL-U50, `prepare` keeping its UMAP and PCA, sequence-based sources on full-length sequences, the `toxin_class` CSV, the hold-out (sorted classes, recorded seed, the realised `eat_split` shipped), `transfer` with k = 1 and the Euclidean distance, statistics after the transfer, and the Decision 17 gates as tolerances; with tests;
+  - PCA in every example: `swissprot` adds the paper's PCA as `ProtT5 — PCA 2`, and the demo keeps all four projections;
+  - commit the Biocentral skip for `human-fly`, `beta-lactamase` and `swissprot` with its reason;
+  - a build command without machine paths (`--cli-root $CLI`), the web's missing-value set for the N/A gate, the `root` and `predicted_transmembrane` gates of Decision 9, and `--latest=false` in the printed `gh release create` commands.
+- [ ] 6.11 Drop `venom-eat` and `phosphatase-eat` from `showcase.toml`; their frozen files stay fixtures, `perf-datasets` assets and Zenodo files.
+
 ## 7. Data build and catalog swap (after the CLI fixes merge)
 
 - [ ] 7.1 Prerequisites:
-  - `fix/annotation-retrieval` merged (InterPro fan-out plus retry, the family parser, Biocentral batching, the per-source cache and `annotate --cache-dir`, and the `run.log` release line);
-  - PR #452 (the faithfulness ceiling) merged;
-  - author facts collected: the venom 811 query and release; the Swiss-Prot and human + fly membership releases (2025_04 is inferred); how the 113,015 were selected.
-- [ ] 7.2 Build `swissprot` first (the TED critical path, 18–40 h; run alone). Gates: N = 573,649, no `(TC n`/"In the … section", the Pfam empty rate on duplicate-sequence rows ≈ unique rows, domain counts within ±1 % of Fig. 2A. Then apply the **D2 gate** (≤ ~35 s, ≤ ~1.5 GB heap), or produce the GO/TED-free web copy.
+  - `fix/annotation-retrieval` (PR #495) merged with a merge commit and released as protspace 4.14.0 (InterPro fan-out plus retry, the family parser, Biocentral batching, the per-source cache and `annotate --cache-dir`, the `run.log` release line, `root` and TMbed's "no TM segment", and the cache-semantics bump that makes a rebuild refetch them);
+  - PR #452 (the faithfulness statistics) merged (done, released in 4.13.1);
+  - author facts collected: the Swiss-Prot and human + fly membership releases (2025_04 is inferred from the data); how the 113,015 were selected.
+- [ ] 7.2 Rebuild every example on the released CLI (R2-D2), `swissprot` first (the critical path; run alone). Gates: N = 573,649, no `(TC n`/"In the … section", the Pfam empty rate on duplicate-sequence rows ≈ unique rows, domain counts within ±1 % of Fig. 2A, and the paper's PCA present. Then apply the **D2 gate** again on the rebuilt file with its PCA (≤ ~35 s, ≤ ~1.5 GB heap, `record-load`, reference laptop), or produce the GO/TED-free web copy.
 - [ ] 7.3 Build `beta-lactamase`, then `human-fly`, staggered after Swiss-Prot's TED run:
   - `beta-lactamase`: Q02940 still class C; the Fig. 3 legend counts within 2 %; `xref_pdb` has both values;
-  - `human-fly`: kinases about 1,700 and shared; MHC I/II, β-defensins and CC chemokines human-only; PBP/GOBP fly-only; species 83,598 / 21,964; the 146 vector-less rows annotated.
-- [ ] 7.4 Build `venom-eat` (244 transfers at ≥ 0.5; P0DPU8 ← F5CPF0 at RI 0.583), `phosphatase-eat` (91.5 % / 98.1 % against fetched truth; no refilled query rows) and `demo` (7,831; coordinates unchanged; `pfam` coverage checked).
-- [ ] 7.5 Final `defaultView` picks: score the candidates by the stated criterion (kNN label agreement, or the per-category silhouette of the story's categories); capture the `examples-live` thumbnails; **the author reviews them**; set each final pick in one catalog line. Where figure fidelity wins over the criterion, the card explains why.
-- [ ] 7.6 `build_showcase.py stage-release` for `showcase-2026_03`, writing the manifest with `release: 'showcase-2026_03'` and `hosting: 'release'` for the five paper entries and `'repo'` for the demo. Record the release per column group.
-- [ ] 7.7 Catalog swap:
-  - replace the interim entries with `demo`, `venom-eat`, `phosphatase-eat`, `human-fly`, `beta-lactamase` and `swissprot` (`large`, with the memory and load time measured at the D2 gate);
-  - final names, descriptions and insights (with the numbers from the built files);
-  - relabel the demo "Venom toxins (demo)" (the docs already name it by its card);
-  - `docs/explore/eat.md` already names `?dataset=venom-eat` (§5); check its counts against the built file.
-- [ ] 7.8 Remove `apps/web/public/data/` entirely (including `datasets.json`); this makes the four non-demo fixtures `git mv`s in the branch diff. Replace `apps/web/public/data.parquetbundle` with the new demo. Enable the "only the demo under `public/`" assertion.
-- [ ] 7.9 Update `apps/web/tests/helpers/example-fixtures.ts` to the final ids, each routed to a fixture that contains its `defaultView` names.
-- [ ] 7.10 Empty the interim lists in `docs/scripts/example-details.ts` (`INTERIM_CATALOG_IDS`; move each `beforeSwap` into its catalog entry), fill in the remaining `‹…›` author facts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5.)
-- [ ] 7.11 Re-run `pnpm docs:images` against the new demo; check the PLD/Kunitz overlay coordinates and the demo-dependent alt texts.
+  - `human-fly`: kinases about 2,000 (1,488 human, 513 fly at 2026_03) and shared; MHC I/II, β-defensins and CC chemokines human-only; PBP/GOBP fly-only; species about 83,546 / 21,942 plus the obsolete rows; the 146 vector-less rows annotated.
+- [ ] 7.4 Build `three-finger-toxins` (task 6.10; the Decision 17 gates) and `demo` (7,831; coordinates unchanged; `pfam` coverage checked; all four projections).
+- [ ] 7.5 Final `defaultView` picks: score the candidates by the stated criterion (kNN label agreement, or the per-category silhouette of the story's categories); capture the `examples-live` thumbnails; **the author reviews them**; set each final pick in one catalog line. Where figure fidelity wins over the criterion, the card explains why. (The owner's picks are in `FINAL_EXAMPLE_SPECS`, task 10.3; the thumbnail review is left.)
+- [ ] 7.6 `build_showcase.py stage-release` for `showcase-2026_03`, writing the manifest with `release: 'showcase-2026_03'` and `hosting: 'release'` for the four release-hosted entries and `'repo'` for the demo. Record the release per column group.
+- [ ] 7.7 Catalog swap, in one commit with 7.6's manifest and 7.8:
+  - set `FINAL_CATALOG_IS_LIVE` to `true` (the final entries, names, descriptions, insights and relabelled demo are already in `FINAL_EXAMPLE_SPECS`);
+  - fill their `‹…›` values from the built files: the three-finger toxins' hold-out accuracy, and `swissprot`'s `large` memory and load time from the D2 gate;
+  - fill the `‹…›` counts in `docs/explore/eat.md` ("Trying It") and the three-finger toxins card from the built file (the docs check refuses any left after the swap).
+- [ ] 7.8 Remove `apps/web/public/data/` entirely (including `datasets.json`); this makes the four non-demo fixtures `git mv`s in the branch diff. Replace `apps/web/public/data.parquetbundle` with the new demo. The "only the demo under `public/`" assertion runs from the flipped switch on.
+- [ ] 7.9 `apps/web/tests/helpers/example-fixtures.ts` switches to the final ids with the flag (task 10.4); run the E2E suite on the flipped catalog. A later cleanup drops the roles' `interimId`, the interim view names from `derive-example-role-fixtures.py` and its fixtures, `INTERIM_EXAMPLE_SPECS` and the switch.
+- [ ] 7.10 Empty `INTERIM_CATALOG_IDS` in `docs/scripts/example-details.ts`, fill in the remaining `‹…›` author facts and counts, add the thumbnails (emptying `THUMBNAILS_PENDING`), and regenerate `docs/explore/example-datasets.md`. (The page, the retargeted pin test and the CI/precommit wiring landed with §5; the final cards with task 10.5.)
+- [ ] 7.11 Re-run `pnpm docs:images` against the new demo; check the PLD/Kunitz overlay coordinates and the demo-dependent alt texts. Move the EAT captures (`scripts/docs-screenshots/eat-helpers.ts`) to the `three-finger-toxins` bundle, `toxin_class`, as its note says, re-capture the four EAT images and check the `eat.md` alt texts.
 - [ ] 7.12 Full verification:
   - `pnpm test:ci`, `pnpm format:check`, `pnpm precommit`;
   - `CI=1 pnpm test:e2e` (all default projects);
@@ -274,11 +280,11 @@ Before every commit:
 
 - [ ] 8.1 Create the `perf-datasets` release and upload the staged assets plus `SHA256SUMS` (task 4.13); check `pnpm perf:fetch` against it.
 - [ ] 8.2 Create the `showcase-2026_03` release and upload the staged assets (task 7.6); check `pnpm examples:fetch` and the CI manifest job.
-- [ ] 8.3 Zenodo "paper companion" deposit: the frozen paper files (all eleven old bundles, the 113K, the 832) plus the new showcase files. Record its DOI with `write_manifest.py --refresh --examples-dir <fetched files> --zenodo-doi <doi>` (later runs keep it while the files are unchanged, so the CI check passes; no re-stamping of the bundles), then regenerate the docs page.
+- [ ] 8.3 Zenodo "paper companion" deposit: the frozen paper files (all eleven old bundles, the 113K, the 832 with its query input and ProtT5 H5, the venom 811 H5) plus the new showcase files and the three-finger toxins' inputs (accession list, label CSV, mature-chain H5). Record its DOI with `write_manifest.py --refresh --examples-dir <fetched files> --zenodo-doi <doi>` (later runs keep it while the files are unchanged, so the CI check passes; no re-stamping of the bundles), then regenerate the docs page.
 - [ ] 8.4 Cloudflare cache rule for `/examples/*` (cache everything, long edge TTL, **and a Browser TTL**, since Pages sends `max-age=600`). Verify `cf-cache-status: HIT` on a second request, before the Swiss-Prot link is announced.
 - [ ] 8.5 Staging GitHub Pages deploy with a file over 100 MB, before 7.2 finishes (G19). If it fails, fall back to Cloudflare R2 on `data.protspace.app` with CORS.
 - [ ] 8.6 After deploying: `curl -sI https://protspace.app/examples/<file>` returns 200; time a Swiss-Prot load on the reference laptop and record its heap.
-- [ ] 8.7 Add the PR (closing #443) and the issue from 2.11 to Project #2. Coordinate the stack with t03i (PR #494), and merge with a **merge commit**.
+- [ ] 8.7 Add the PR (closing #443) to Project #2 (the issues #500 and #501 are on it). Coordinate the stack with t03i (PR #494), and merge with a **merge commit**.
 
 ## 9. Manuscript follow-up (`protspace_publication`, separate repository; out of scope)
 
@@ -286,3 +292,13 @@ Before every commit:
 - [ ] 9.2 Add `https://protspace.app/explore?dataset=<id>` links per figure, and fill in the Zenodo DOI in the end matter.
 - [ ] 9.3 Name `phosphatase-eat` (with its 91.5 % / 98.1 % gate) as the NM code checklist's "demo dataset with expected output".
 - [ ] 9.4 Before submission, re-check the Swiss-Prot Pfam statistics that the InterPro duplicate-sequence bug affected (the multi-family share, and the Pfam cardinality in the size model).
+- [ ] 9.5 Numbers the linked examples no longer show: 1,703 shared protein kinases (the example has about 2,000, mostly new automatic TrEMBL family annotations); class C's +0.32 silhouette (about +0.17 refreshed); Fig. 2A's Monodnaviria (now Floreoviria). Footnote or update them, and point the manuscript scripts that read `apps/web/public/data` at the `perf-datasets` release before 7.8. Optionally redraw Fig. 4 d–f from the three-finger toxins bundle.
+
+## 10. Second lineup (owner decisions R2-D1 to R2-D4, 2026-09-30)
+
+- [x] 10.1 Amend the proposal, design (Decisions 1, 9, 12, 14–18), the spec deltas and these tasks for the five-entry lineup; `openspec validate curated-example-datasets --strict`.
+- [x] 10.2 Unit tests stop indexing the product catalog: `example-catalog.fixtures.ts` is a two-entry test catalog swapped in with `vi.mock`, and the fetch mocks carry headers.
+- [x] 10.3 `FINAL_EXAMPLE_SPECS` (the five final entries with the owner's default views) and the `FINAL_CATALOG_IS_LIVE` switch in `example-datasets.ts`; tests for the id format (1.7), the order, the default views, a UMAP and a PCA per final entry, and the prepared 4.10 assertion.
+- [x] 10.4 `apps/web/tests/fixtures/derive-example-role-fixtures.py` derives the four role fixtures (small, other, slow, eat), each holding its interim and final example's view names; the role table maps to `human-fly`, `beta-lactamase`, `swissprot` and `three-finger-toxins` behind the switch; E2E for (d) and for the EAT example's bundled threshold.
+- [x] 10.5 Docs: the five cards (the three-finger toxins story, mature chains, caveats and `‹…›` counts; the refreshed human + fly, β-lactamase and Swiss-Prot numbers and their reasons; no Biocentral on the three large sets), the generator's intro (the non-paper example, why UMAP and PCA), its machine-path and post-swap placeholder checks, and `eat.md`/`importing-data.md` pointing at `three-finger-toxins`.
+- [x] 10.6 Call the separation panel's embedding value a reference, not a ceiling, in the app and the docs.
