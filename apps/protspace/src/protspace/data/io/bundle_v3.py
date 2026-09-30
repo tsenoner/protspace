@@ -500,16 +500,15 @@ def _encode_projections(
 
 
 def _add_unannotated_rows(
-    annotations: pa.Table, id_column: str, projections_data: pa.Table
+    annotations: pa.Table, id_column: str, projected: pa.Array | None
 ) -> pa.Table:
-    """Append an all-missing annotations row per projected identifier it lacks.
+    """Append an all-missing annotations row per ``projected`` identifier it lacks.
 
     The legacy browser reader showed such a protein with N/A for every
     annotation, so the encoder keeps it rather than refusing the bundle.
     """
-    if "identifier" not in projections_data.column_names:
+    if projected is None:
         return annotations  # ``_encode_projections`` names the missing column
-    projected = pc.unique(projections_data.column("identifier")).drop_null()
     known = _as_string(annotations.column(id_column))
     absent = projected.filter(pc.invert(pc.is_in(_as_string(projected), known)))
     if not len(absent):
@@ -531,17 +530,12 @@ def _add_unannotated_rows(
     return pa.concat_tables([annotations, extra])
 
 
-def encode_v3(
-    annotations: pa.Table,
-    projections_metadata: pa.Table,
-    projections_data: pa.Table,
-) -> tuple[bytes, bytes, bytes, bytes]:
-    """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
+def _prepare_annotations(
+    annotations: pa.Table, projected: pa.Array | None
+) -> tuple[pa.Table, str, pa.Array]:
+    """Migrate a v1 table, add the ``projected`` rows it lacks, validate its ids.
 
-    ``annotations`` must carry the format-version stamp unless it really is v1:
-    an unstamped v2 table is indistinguishable from a v1 one here and is
-    migrated a second time, double-escaping every reserved character.  See the
-    precondition on :func:`~protspace.data.io.bundle.write_bundle`.
+    Returns ``(annotations, id_column, ids)`` with ``ids`` as a string array.
     """
     if read_format_version(annotations) == 1:
         # Loud, because the alternative failure is silent and unrecoverable: an
@@ -566,7 +560,7 @@ def encode_v3(
             f"found {annotations.column_names}"
         )
 
-    annotations = _add_unannotated_rows(annotations, id_column, projections_data)
+    annotations = _add_unannotated_rows(annotations, id_column, projected)
     ids = _as_string(annotations.column(id_column))
     if ids.null_count:
         raise ValueError(f"annotations column '{id_column}' contains null values")
@@ -576,7 +570,16 @@ def encode_v3(
             f"annotations column '{id_column}' contains {duplicated} duplicated value(s); "
             "protein identifiers must be unique"
         )
+    return annotations, id_column, ids
 
+
+def _encode_part1(
+    annotations: pa.Table,
+    id_column: str,
+    ids: pa.Array,
+    projection_manifest: list[dict[str, Any]],
+) -> tuple[bytes, bytes]:
+    """Encode the annotation columns as part 1 (manifest in its footer) and part 6."""
     num_rows = annotations.num_rows
     existing = set(annotations.column_names)
     evidence_dict: dict[str, int] = {}
@@ -602,10 +605,6 @@ def encode_v3(
 
     if evidence_dict:
         payloads.extend(_dict_payloads(_EVIDENCE_DICT_NAME, list(evidence_dict)))
-
-    projections_table, projection_manifest = _encode_projections(
-        projections_metadata, projections_data, ids
-    )
 
     manifest = {
         "idColumn": id_column,
@@ -636,13 +635,32 @@ def encode_v3(
             "data": pa.array([d for _, d in payloads], type=pa.binary()),
         }
     )
+    return _write(_required_table(columns, metadata)), _write(payload_table)
 
-    return (
-        _write(_required_table(columns, metadata)),
-        _write(projections_metadata),
-        _write(projections_table),
-        _write(payload_table),
+
+def encode_v3(
+    annotations: pa.Table,
+    projections_metadata: pa.Table,
+    projections_data: pa.Table,
+) -> tuple[bytes, bytes, bytes, bytes]:
+    """Encode the v2-shaped pipeline tables as v3 parts 1, 2, 3 and 6.
+
+    ``annotations`` must carry the format-version stamp unless it really is v1:
+    an unstamped v2 table is indistinguishable from a v1 one here and is
+    migrated a second time, double-escaping every reserved character.  See the
+    precondition on :func:`~protspace.data.io.bundle.write_bundle`.
+    """
+    projected = (
+        pc.unique(projections_data.column("identifier")).drop_null()
+        if "identifier" in projections_data.column_names
+        else None
     )
+    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    projections_table, projection_manifest = _encode_projections(
+        projections_metadata, projections_data, ids
+    )
+    part1, payloads = _encode_part1(annotations, id_column, ids, projection_manifest)
+    return part1, _write(projections_metadata), _write(projections_table), payloads
 
 
 # --------------------------------------------------------------------------- #
@@ -650,8 +668,37 @@ def encode_v3(
 # --------------------------------------------------------------------------- #
 
 
-def _read(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
+def _read(part: bytes, columns: list[str] | None = None) -> pa.Table:
+    return pq.read_table(io.BytesIO(part), columns=columns)
+
+
+def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
+    """Part 1's manifest and the rest of its footer metadata, without the columns."""
+    metadata = dict(pq.read_schema(io.BytesIO(part1)).metadata or {})
+    raw_manifest = metadata.pop(MANIFEST_KEY, None)
+    if raw_manifest is None:
+        raise ValueError(
+            f"annotations part carries no {MANIFEST_KEY.decode()} key; "
+            "it is not a v3 part"
+        )
+    return json.loads(raw_manifest), metadata
+
+
+def _axes(projection: dict[str, Any]) -> tuple[str, ...]:
+    return ("x", "y", "z")[: int(projection["dimension"])]
+
+
+def _finite_rows(wide: pa.Table, projection: dict[str, Any]) -> np.ndarray:
+    """Rows that ``projection`` covers: every axis finite (NaN means not covered)."""
+    name = projection["name"]
+    return np.logical_and.reduce(
+        [
+            np.isfinite(
+                _flat(wide.column(f"{name}__{axis}")).to_numpy(zero_copy_only=False)
+            )
+            for axis in _axes(projection)
+        ]
+    )
 
 
 def _read_payloads(part: bytes) -> dict[str, bytes]:
@@ -842,8 +889,7 @@ def _decode_projections(
     for projection in manifest:
         name = projection["name"]
         axes = {
-            axis: _flat(wide.column(f"{name}__{axis}"))
-            for axis in ("x", "y", "z")[: int(projection["dimension"])]
+            axis: _flat(wide.column(f"{name}__{axis}")) for axis in _axes(projection)
         }
         table = pa.table(
             {
@@ -856,9 +902,7 @@ def _decode_projections(
             },
             schema=schema,
         )
-        finite = np.logical_and.reduce(
-            [np.isfinite(a.to_numpy(zero_copy_only=False)) for a in axes.values()]
-        )
+        finite = _finite_rows(wide, projection)
         tables.append(table if finite.all() else table.filter(pa.array(finite)))
     return pa.concat_tables(tables) if tables else schema.empty_table()
 
@@ -914,15 +958,8 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
             f"decode_v3 expects the 4 parts encode_v3 returns, got {len(parts)}"
         )
 
+    manifest, metadata = _read_manifest(parts[0])
     annotations = _read(parts[0])
-    metadata = dict(annotations.schema.metadata or {})
-    raw_manifest = metadata.pop(MANIFEST_KEY, None)
-    if raw_manifest is None:
-        raise ValueError(
-            f"annotations part carries no {MANIFEST_KEY.decode()} key; "
-            "it is not a v3 part"
-        )
-    manifest = json.loads(raw_manifest)
     payloads = _read_payloads(parts[3])
 
     evidence_labels = pa.array(
@@ -963,3 +1000,54 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
         _read(parts[1]),
         _decode_projections(parts[2], manifest["projections"], columns[id_column]),
     )
+
+
+# --------------------------------------------------------------------------- #
+# replacing the annotations of an encoded core
+# --------------------------------------------------------------------------- #
+
+
+def replace_annotations_v3(
+    annotations: pa.Table, parts: list[bytes]
+) -> tuple[bytes, bytes, bytes, bytes]:
+    """:func:`encode_v3` for new ``annotations`` over an existing v3 core.
+
+    ``parts`` are v3 parts 1, 2, 3 and 6.  The projections stay wide: part 3 is
+    realigned to the new rows instead of being decoded to the long table and
+    pivoted back, part 2 is kept as stored, and none of the old annotation
+    columns are decoded.  The result is what the decode-then-encode round trip
+    writes: a protein with finite coordinates the new table lacks is added back
+    as an all-missing row, and a new protein gets NaN.
+    """
+    manifest, _metadata = _read_manifest(parts[0])
+    projections = manifest["projections"]
+    old_ids = _flat(_read(parts[0], columns=[manifest["idColumn"]]).column(0))
+    wide = _read(parts[2])
+
+    finite = [_finite_rows(wide, projection) for projection in projections]
+    # In the order the long table lists them, which is the order they are added.
+    projected = pc.unique(
+        pa.chunked_array(
+            [old_ids.filter(pa.array(rows)) for rows in finite], type=old_ids.type
+        )
+    )
+    annotations, id_column, ids = _prepare_annotations(annotations, projected)
+    position = np.asarray(pc.fill_null(pc.index_in(ids, value_set=old_ids), -1))
+    new = np.flatnonzero(position >= 0)
+    old = position[new]
+
+    columns: dict[str, pa.Array] = {}
+    for projection, rows in zip(projections, finite, strict=True):
+        # A row with any non-finite axis is dropped by the decoder, so every axis
+        # of it goes missing here, as the round trip would have written it.
+        keep = rows[old]
+        for axis in _axes(projection):
+            column = f"{projection['name']}__{axis}"
+            values = np.full(len(ids), np.nan, dtype=np.float32)
+            values[new[keep]] = _flat(wide.column(column)).to_numpy(
+                zero_copy_only=False
+            )[old[keep]]
+            columns[column] = pa.array(values, type=pa.float32())
+
+    part1, payloads = _encode_part1(annotations, id_column, ids, projections)
+    return part1, parts[1], _write(_required_table(columns)), payloads

@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 
@@ -24,7 +25,13 @@ from protspace.data.annotations.encoding import (
     FORMAT_VERSION_KEY,
     stamp_format_version,
 )
-from protspace.data.io.bundle_v3 import MANIFEST_KEY, _flat, decode_v3, encode_v3
+from protspace.data.io.bundle_v3 import (
+    MANIFEST_KEY,
+    _flat,
+    decode_v3,
+    encode_v3,
+    replace_annotations_v3,
+)
 from protspace.data.io.predictions import add_overlay_columns
 from protspace.data.processors.base_processor import BaseProcessor
 
@@ -440,6 +447,49 @@ def test_rejects_an_unknown_kind():
     parts[0] = buffer.getvalue()
     with pytest.raises(ValueError, match="unknown v3 kind"):
         decode_v3(parts)
+
+
+# --------------------------------------------------------------------------- #
+# replacing the annotations of an encoded core
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["p0", "p1", "p2", "p3"],  # same rows
+        ["p3", "p2", "p1", "p0"],  # reordered
+        ["p0", "p1", "p2"],  # a projected protein dropped, so added back
+        ["p0", "p2"],  # two added back, in the long table's order: p3, then p1
+        ["new", "p3", "p1"],  # a protein no projection covers
+    ],
+)
+def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
+    """The wide shortcut has to write what decoding the core back to long tables
+    and encoding them again writes, byte for byte, including the protein missing
+    from one projection and the one whose 3D point has a non-finite axis."""
+    metadata, data = projection_tables(4)
+    uncovered = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 2"),
+        pc.equal(data.column("identifier"), "p1"),
+    )
+    data = data.filter(pc.invert(uncovered))
+    broken_z = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 3"),
+        pc.equal(data.column("identifier"), "p2"),
+    )
+    z = pc.if_else(broken_z, pa.scalar(np.nan, pa.float32()), data.column("z"))
+    data = data.set_column(data.schema.get_field_index("z"), "z", z)
+    parts = list(encode_v3(annotations_table(cat=["a", "b", "a", "c"]), metadata, data))
+
+    replacement = stamp_format_version(
+        pa.table({"protein_id": ids, "cat": [f"x{i}" for i in range(len(ids))]})
+    )
+    _annotations, decoded_metadata, decoded_data = decode_v3(parts)
+
+    assert replace_annotations_v3(replacement, parts) == encode_v3(
+        replacement, decoded_metadata, decoded_data
+    )
 
 
 # --------------------------------------------------------------------------- #

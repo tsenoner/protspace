@@ -42,7 +42,12 @@ from protspace.data.annotations.encoding import (
     stamp_format_version,
 )
 from protspace.data.io.atomic import atomic_write_bytes
-from protspace.data.io.bundle_v3 import CONTAINER_VERSION, decode_v3, encode_v3
+from protspace.data.io.bundle_v3 import (
+    CONTAINER_VERSION,
+    decode_v3,
+    encode_v3,
+    replace_annotations_v3,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -364,11 +369,12 @@ def replace_annotations_in_bundle(
 ) -> None:
     """Replace the annotations (1st) part of a bundle, preserving the rest.
 
-    The whole v3 core is re-encoded, not just part 1: the payloads part holds the
-    label dictionaries and CSR buffers *for* part 1, so keeping the old one next
-    to new annotations would leave stale payloads behind.  Settings and
-    statistics are carried over unchanged.  A legacy input container comes out as
-    v3, which is correct — this is a write, and every write emits v3.
+    Part 1 and the payloads part are re-encoded together, because the payloads
+    hold the label dictionaries and CSR buffers *for* part 1.  A v3 input keeps
+    its projections as stored (realigned to the new rows, never re-pivoted);
+    settings and statistics are carried over unchanged.  A legacy input
+    container comes out as v3, which is correct — this is a write, and every
+    write emits v3.
     """
     core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
 
@@ -381,12 +387,13 @@ def replace_annotations_in_bundle(
     # explicitly migrates legacy v1 categorical grammar before this boundary.
     annotations_table = stamp_format_version(annotations_table)
 
-    _annotations, projections_metadata, projections_data = _core_tables(core, payloads)
-    part1, part2, part3, payloads = encode_v3(
-        annotations_table, projections_metadata, projections_data
-    )
+    if payloads is not None:
+        parts = replace_annotations_v3(annotations_table, [*core, payloads])
+    else:
+        metadata, projections = (pq.read_table(io.BytesIO(p)) for p in core[1:])
+        parts = encode_v3(annotations_table, metadata, projections)
 
-    _write_parts(output_path, [part1, part2, part3], settings, statistics, payloads)
+    _write_parts(output_path, list(parts[:3]), settings, statistics, parts[3])
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 
