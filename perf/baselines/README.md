@@ -155,8 +155,8 @@ one of their 760 passes, and `drawnPoints === renderedPoints` in every pass of e
 ## Per-category contours (2026-09-25)
 
 `2026-09-25-573K_swissprot_v3-chrome.contour-merged.json` is the v3 command on the merged contour
-(`5fa6b82b`, the `contourDrag` scenario already in place); `...contour-per-category.json` is the same
-command after the per-category contours landed. Same machine and session, minutes apart. Median
+(the commit before "feat(webgl): per-category contours", with the `contourDrag` scenario already in
+place); `...contour-per-category.json` is the same command after the per-category contours landed. Same machine and session, minutes apart. Median
 `gpuSyncedMs`, the first 20 frames of the two sustained drags dropped (n = 580):
 
 | Scenario                | merged | per-category |
@@ -169,3 +169,6 @@ command after the per-category contours landed. Same machine and session, minute
 `DENSITY_CONTOUR_GRID_DIVISOR = 1` (per-category fields at the old sampling, not kept) measured
 `contourDrag` 15.30. `densityZoom` is an isolated-frame scenario (n = 20), so its -0.8 ms is spread,
 not a change: the heatmap passes are the same shaders. Every camera pass uploaded 0 bytes.
+
+These numbers are historical: the heatmap style and `DENSITY_CONTOUR_GRID_DIVISOR` were removed
+later in the same PR, and the contour grid is now a fixed 512 cells on the long side of the plot.
