@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { INTERIM_CATALOG_IDS } from '../../../../docs/scripts/example-details';
+import { MACHINE_PATH } from '../../../../docs/scripts/machine-path';
 import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
@@ -67,5 +68,34 @@ describe('example-datasets.md', () => {
 
   it.each([...PENDING_IDS])('already has the section of the final example %s', (id) => {
     expect(SECTION_IDS).toContain(id);
+  });
+});
+
+/**
+ * The docs check refuses a manifest build command that names a path of the build machine,
+ * because the page prints the command. Each form a real build command could carry one in.
+ */
+describe('MACHINE_PATH', () => {
+  it.each([
+    ['a scratch checkout', 'build_showcase.py build --cli-root /private/tmp/x/cli'],
+    ['/tmp', 'build --out-root=/tmp/out'],
+    ['a home directory', 'build --path nm_data=/Users/jane/nm'],
+    ['a Linux home directory', 'build --cli-root /home/jane/cli'],
+    ['a quoted path with a space', "build --cli-root '/Users/Jane Doe/cli'"],
+    ['a double-quoted path', 'build --cli-root "/Volumes/Data/cli"'],
+    ["macOS's $TMPDIR", 'build --out-root /var/folders/ab/T/tmp.x'],
+    ['an external disk', 'build --out-root /Volumes/Data/out'],
+    ['a path under ~', 'build --release ~/r'],
+    ['the start of the command', '/Users/jane/build_showcase.py build'],
+  ])('finds %s', (_, command) => {
+    expect(command).toMatch(MACHINE_PATH);
+  });
+
+  it.each([
+    'build_showcase.py build --only three-finger-toxins --cli-root $CLI --out-root $OUT',
+    'build --path nm_data=$NM_DATA --only $TMP',
+    'build --only a/Users/b',
+  ])('passes the redacted command %s', (command) => {
+    expect(command).not.toMatch(MACHINE_PATH);
   });
 });

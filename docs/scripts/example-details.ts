@@ -53,8 +53,12 @@ export interface ExampleDetails {
 const PAPER_UMAP_AND_PCA = (neighbours: number, minDist: number) =>
   `UMAP 2D (${neighbours} neighbours, minimum distance ${minDist}, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.`;
 
-/** The three large paper datasets carry no Biocentral predictions (owner decision D4). */
-const NO_BIOCENTRAL =
+/**
+ * The three large paper datasets carry no Biocentral predictions (owner decision D4). The docs check
+ * requires this note on every card whose bundle has no `predicted_*` column, and refuses it on the
+ * others.
+ */
+export const NO_BIOCENTRAL =
   'This bundle has no Biocentral predictions (the `predicted_*` columns). Their models read per-residue ProtT5 embeddings, which UniProt does not publish, so they would have to be computed for every protein: 10 to 25 hours per 100,000 proteins on the public Biocentral server. Signal peptides are still covered, by the Phobius `signal_peptide` column.';
 
 /** One card per example, in the Import menu's order: the demo, then ascending protein count. */

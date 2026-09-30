@@ -107,6 +107,17 @@ describe('example datasets catalog', () => {
   it.runIf(FINAL_CATALOG_IS_LIVE)('ships no bundle under public/ but the demo', () => {
     expect(COMMITTED_PUBLIC_BUNDLES).toEqual(['../../public/data.parquetbundle']);
   });
+
+  // ‹…› marks a value the rebuilt bundles fill in (design Decision 15). The docs
+  // check refuses any on the page after the swap; this keeps them out of the
+  // Import menu itself, which shows the description, insight and large note.
+  it.runIf(FINAL_CATALOG_IS_LIVE).each(EXAMPLE_DATASETS)(
+    'shows no value still to come for "$id"',
+    (entry) => {
+      const shown = [entry.description, entry.insight, entry.large?.memory, entry.large?.loadTime];
+      expect(shown.filter((text) => text?.includes('‹'))).toEqual([]);
+    },
+  );
 });
 
 describe('the final catalog', () => {

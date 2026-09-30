@@ -38,9 +38,11 @@ import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts
 import {
   EXAMPLE_DETAILS,
   INTERIM_CATALOG_IDS,
+  NO_BIOCENTRAL,
   THUMBNAILS_PENDING,
   type ExampleDetails,
 } from './example-details.ts';
+import { MACHINE_PATH } from './machine-path.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUTPUT = join(REPO_ROOT, 'docs/explore/example-datasets.md');
@@ -51,8 +53,6 @@ const THUMBNAIL_DIR = join(REPO_ROOT, 'docs/explore/images/examples');
  * rebuilt bundles like the generated page's, so the check refuses them after the swap too.
  */
 const PAGES_WITH_EXAMPLE_FACTS = ['docs/explore/eat.md', 'docs/explore/importing-data.md'];
-/** A build command must not publish a path of the machine that ran it. */
-const MACHINE_PATH = /(^|[\s=])(\/private\/|\/tmp\/|\/Users\/|\/home\/)/;
 
 /** A value still to come. Rendered as is; the check refuses it once the catalog swap is done. */
 const PENDING = '‹pending build›';
@@ -72,6 +72,8 @@ const SOURCE_ORDER: readonly AnnotationSource[] = [
 ];
 
 const EAT_VALUE_SUFFIX = '__pred_value';
+/** The columns Biocentral's predictions fill (`predicted_subcellular_location`, …). */
+const BIOCENTRAL_PREFIX = 'predicted_';
 const EAT_COMPANION = /__pred_(value|confidence|source)$/;
 
 type BundleRecord = (typeof EXAMPLE_MANIFEST)['examples'][string];
@@ -244,6 +246,27 @@ function validate(): string[] {
             `"${entry.id}": the ${group} release "${release}" is not a UniProt release (YYYY_MM); confirm it (tasks 7.1), rebuild the bundle and rerun write_manifest.py.`,
           );
         }
+      }
+    }
+  }
+
+  // A section whose bundle has no Biocentral predictions says so and why (the spec's Example
+  // datasets page requirement). The cards describe the final bundles, so this applies to their
+  // records, which exist once the final catalog is live (before that the demo's is the old one).
+  if (FINAL_CATALOG_IS_LIVE) {
+    for (const [id, details] of Object.entries(EXAMPLE_DETAILS)) {
+      const record = EXAMPLE_MANIFEST.examples[id];
+      if (!record) continue;
+      const predicted = record.columns.some((column) => column.startsWith(BIOCENTRAL_PREFIX));
+      const noted = details.notes?.includes(NO_BIOCENTRAL) ?? false;
+      if (!predicted && !noted) {
+        errors.push(
+          `"${id}": its bundle has no Biocentral predictions (no ${code(`${BIOCENTRAL_PREFIX}*`)} column); add NO_BIOCENTRAL to its notes in docs/scripts/example-details.ts.`,
+        );
+      } else if (predicted && noted) {
+        errors.push(
+          `"${id}": its bundle has Biocentral predictions, but its notes say it has none; drop NO_BIOCENTRAL.`,
+        );
       }
     }
   }
