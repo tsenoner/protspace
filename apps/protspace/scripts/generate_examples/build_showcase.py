@@ -2,10 +2,12 @@
 """Build the curated showcase bundles behind protspace.app's Import-menu examples.
 
 Strategy R (OpenSpec change ``curated-example-datasets``, design Decision 9): keep
-each paper dataset's membership and published coordinates, refresh every annotation
-source with the fixed CLI at the current UniProt release, and keep the paper's EAT
-inputs and outputs for the two EAT examples. Recipes live in ``showcase.toml``; the
-README next to this file has usage examples per dataset.
+each paper dataset's membership and published coordinates and refresh every
+annotation source with the fixed CLI at the current UniProt release. The EAT
+example (``embed-build``) has no source bundle: its membership is a pinned
+accession list, and the build embeds, projects, labels, holds out and transfers it
+itself. Recipes live in ``showcase.toml``; the README next to this file has usage
+examples per dataset.
 
 Every protspace step runs as a subprocess of the CLI checkout given by
 ``--cli-root`` (``uv run --frozen --project <cli-root> protspace …``), so this script
@@ -32,8 +34,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import datetime as dt
-import fnmatch
 import hashlib
 import importlib.util
 import io
@@ -76,11 +78,21 @@ CLUSTER_PREFIX = "cluster_"
 PRED_MARKER = "__pred_"
 FORMAT_VERSION_KEY = b"protspace_format_version"
 FORMAT_VERSION = b"2"
-KINDS = ("paper-refresh", "eat-graft", "demo-refresh")
+KINDS = ("paper-refresh", "demo-refresh", "embed-build")
 
-# Display values the web app and `protspace style` treat as "missing".
-NA_LABELS = frozenset({"", "<NA>", "NaN", "__NA__", "None"})
-MISSING_TOKENS = NA_LABELS | {"nan", "null", "<N/A>"}
+#: What the web app reads as missing (W10): MISSING_VALUE_TOKENS in
+#: packages/utils/src/visualization/missing-values.ts, compared trimmed and
+#: case-insensitively, plus the empty string. test_build_showcase.py pins the
+#: two against each other, so a gate here counts N/A exactly as the legend does.
+WEB_MISSING_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
+WEB_MISSING_TOKENS_FILE = "packages/utils/src/visualization/missing-values.ts"
+
+
+def is_missing_label(text: str) -> bool:
+    """Whether the web app shows this display value as N/A."""
+    stripped = text.strip()
+    return not stripped or stripped.lower() in WEB_MISSING_TOKENS
+
 
 # Kelly's colours in the web app's order (packages/utils color-scheme.ts).
 KELLYS = (
@@ -244,7 +256,7 @@ def cell_labels(cell: Any) -> list[str]:
     labels = []
     for hit in cell.split(";"):
         label = decode_field(hit.split("|", 1)[0]).strip()
-        if label and label not in MISSING_TOKENS:
+        if not is_missing_label(label):
             labels.append(label)
     return labels
 
@@ -632,90 +644,20 @@ def concat_aligned(tables: Sequence[pa.Table]) -> pa.Table:
     return pa.concat_tables(aligned)
 
 
-def matches_any(name: str, patterns: Iterable[str]) -> bool:
-    return any(fnmatch.fnmatchcase(name, p) for p in patterns)
-
-
-@dataclass
-class GraftSpec:
-    """How an EAT example combines the paper bundle with a fresh fetch.
-
-    ``frozen`` columns always come from the paper (the EAT inputs and outputs).
-    With ``keep_paper_columns`` every other paper column is kept too and the fetch
-    only adds new columns; without it the fetch refreshes them. ``withheld`` maps a
-    fresh column onto a new column filled only on the query rows (the withheld
-    truth of a benchmark).
-    """
-
-    frozen: Sequence[str] = ()
-    keep_paper_columns: bool = True
-    withheld: dict[str, str] = field(default_factory=dict)
-    split_column: str | None = None
-    query_value: str | None = None
-
-
-def query_mask(table: pa.Table, split_column: str, query_value: str) -> list[bool]:
+def query_mask(
+    table: pa.Table, split_column: str, query_value: str | Sequence[str]
+) -> list[bool]:
+    """Rows whose ``split_column`` holds ``query_value`` (or one of several)."""
+    wanted = {query_value} if isinstance(query_value, str) else set(query_value)
     values = table.column(split_column).to_pylist()
-    return [query_value in cell_labels(v) for v in values]
-
-
-def graft_columns(
-    paper: pa.Table, fresh: pa.Table, spec: GraftSpec
-) -> tuple[pa.Table, dict[str, Any]]:
-    """Combine paper and freshly fetched annotations; membership is the paper's.
-
-    Never lets the fetch overwrite a frozen column. Returns the table and a report
-    naming the origin of every column.
-    """
-    paper = drop_columns(normalize_id(paper), INTERNAL_COLUMNS)
-    ids = row_ids(paper)
-    fresh, absent = align_rows(drop_columns(fresh, INTERNAL_COLUMNS), ids)
-    origin: dict[str, str] = {}
-    names: list[str] = [ID_COLUMN]
-    arrays: list[pa.ChunkedArray] = [paper.column(ID_COLUMN)]
-
-    for name in paper.column_names:
-        if name == ID_COLUMN:
-            continue
-        frozen = matches_any(name, spec.frozen)
-        if frozen or spec.keep_paper_columns or name not in fresh.column_names:
-            arrays.append(paper.column(name))
-            origin[name] = "paper-frozen" if frozen else "paper"
-        else:
-            arrays.append(fresh.column(name))
-            origin[name] = "refreshed"
-        names.append(name)
-
-    mask = None
-    if spec.withheld:
-        if not spec.split_column or spec.query_value is None:
-            raise BuildError("withheld columns need split_column and query_value")
-        mask = query_mask(paper, spec.split_column, spec.query_value)
-
-    for name in fresh.column_names:
-        if name == ID_COLUMN or name in origin:
-            continue
-        if matches_any(name, spec.frozen):
-            continue  # a fresh value of a frozen column must never reach the bundle
-        arrays.append(fresh.column(name))
-        names.append(name)
-        origin[name] = "refreshed"
-
-    for source, target in spec.withheld.items():
-        if source not in fresh.column_names:
-            raise BuildError(f"withheld source column {source!r} was not fetched")
-        values = fresh.column(source).to_pylist()
-        kept = [v if q else None for v, q in zip(values, mask, strict=True)]
-        arrays.append(pa.chunked_array([pa.array(kept, type=pa.string())]))
-        names.append(target)
-        origin[target] = "withheld-truth"
-
-    table = pa.Table.from_arrays(arrays, names=names)
-    return table, {"origin": origin, "absent_from_fetch": absent}
+    return [bool(wanted & set(cell_labels(v))) for v in values]
 
 
 def refill_violations(
-    table: pa.Table, split_column: str, query_value: str, columns: Sequence[str]
+    table: pa.Table,
+    split_column: str,
+    query_value: str | Sequence[str],
+    columns: Sequence[str],
 ) -> dict[str, list[str]]:
     """Query rows whose guarded columns hold a value (the hold-out leaked)."""
     mask = query_mask(table, split_column, query_value)
@@ -736,7 +678,10 @@ def refill_violations(
 
 
 def assert_no_refill(
-    table: pa.Table, split_column: str, query_value: str, columns: Sequence[str]
+    table: pa.Table,
+    split_column: str,
+    query_value: str | Sequence[str],
+    columns: Sequence[str],
 ) -> None:
     violations = refill_violations(table, split_column, query_value, columns)
     if violations:
@@ -791,9 +736,9 @@ def release_groups(
 ) -> dict[str, dict[str, Any]]:
     """``{group: {release, columns}}`` for every annotation column.
 
-    ``origin`` maps a column to its group (``refreshed``, ``paper``, …); columns
-    not in it are ``computed`` when they are cluster columns and ``refreshed``
-    otherwise.
+    ``origin`` maps a column to its group (``refreshed``, ``source``, …); columns
+    not in it are ``computed`` when they are cluster or transfer (``__pred_``)
+    columns and ``refreshed`` otherwise.
     """
     groups: dict[str, dict[str, Any]] = {}
     for column in columns:
@@ -801,9 +746,8 @@ def release_groups(
             continue
         group = origin.get(column)
         if group is None:
-            group = "computed" if column.startswith(CLUSTER_PREFIX) else "refreshed"
-        if group == "paper-frozen":
-            group = "paper"
+            computed = column.startswith(CLUSTER_PREFIX) or PRED_MARKER in column
+            group = "computed" if computed else "refreshed"
         entry = groups.setdefault(
             group, {"release": releases.get(group), "columns": []}
         )
@@ -812,7 +756,7 @@ def release_groups(
 
 
 # ---------------------------------------------------------------------------
-# EAT accuracy (phosphatase benchmark; logic of research/critic/c3_eat.py)
+# EAT accuracy against a withheld truth (logic of research/critic/c3_eat.py)
 # ---------------------------------------------------------------------------
 
 EC_RE = re.compile(r"\d+\.[\d-]+\.[\d-]+\.[\dn-]+")
@@ -830,7 +774,7 @@ def eat_accuracy(
     column: str,
     truth_column: str,
     split_column: str,
-    query_value: str,
+    query_value: str | Sequence[str],
     threshold: float,
     compare: str = "ec",
 ) -> dict[str, Any]:
@@ -939,7 +883,7 @@ def column_display_values(table: pa.Table, column: str) -> Counter:
 def _present(value: str, values: set[str]) -> bool:
     if value in values:
         return True
-    return value in NA_LABELS and bool(values & NA_LABELS)
+    return is_missing_label(value) and any(is_missing_label(v) for v in values)
 
 
 def filter_styles(
@@ -991,7 +935,7 @@ def filter_legend(entry: dict, table: pa.Table, column: str) -> tuple[dict, list
     dropped = [
         key
         for key in categories
-        if key != "__NA__" and not _present(key, values) and key not in NA_LABELS
+        if not is_missing_label(key) and not _present(key, values)
     ]
     for key in dropped:
         del categories[key]
@@ -1206,22 +1150,121 @@ def gate_neighbourhood(bundle: Bundle, params: dict) -> Gate:
 
 
 def gate_eat_transfers(table: pa.Table, params: dict) -> Gate:
+    """How many rows (of a split, optionally) received a transfer, and how many
+    of those at reliability ≥ ``threshold``.
+
+    ``expected_*`` are exact unless ``rel_tol`` gives a band (a rebuild on new
+    embeddings moves the count a little). A missing ``expected_at_threshold`` is
+    pending: record the built value in showcase.toml.
+    """
     column = params["column"]
     values = table.column(f"{column}__pred_value").to_pylist()
     confidence = table.column(f"{column}__pred_confidence").to_pylist()
+    rows = [True] * table.num_rows
+    if "split_column" in params:
+        rows = query_mask(table, params["split_column"], params["query_value"])
     predicted = [
-        c for v, c in zip(values, confidence, strict=True) if not is_missing(v)
+        c
+        for v, c, row in zip(values, confidence, rows, strict=True)
+        if row and not is_missing(v)
     ]
     threshold = params.get("threshold", 0.5)
     high = sum(1 for c in predicted if c is not None and c >= threshold)
-    ok = len(predicted) == params["expected_predicted"] and high == params.get(
-        "expected_at_threshold", high
-    )
+    rel = params.get("rel_tol", 0.0)
+    problems = []
+    if "expected_predicted" in params and not within(
+        len(predicted), params["expected_predicted"], rel, 0
+    ):
+        problems.append(
+            f"{len(predicted)} transfers, expected {params['expected_predicted']}"
+        )
+    if "expected_at_threshold" in params and not within(
+        high, params["expected_at_threshold"], rel, 0
+    ):
+        problems.append(
+            f"{high} at ≥ {threshold}, expected {params['expected_at_threshold']}"
+            + (f" ± {rel:.0%}" if rel else "")
+        )
+    where = f" on {params['query_value']} rows" if "split_column" in params else ""
+    detail = f"{high} of {len(predicted)} transfers{where} at reliability ≥ {threshold}"
+    if problems:
+        status, detail = "fail", "; ".join(problems)
+    elif "expected_at_threshold" not in params:
+        status = "pending"
+        detail += "; record the built value as expected_at_threshold"
+    else:
+        status = "pass"
     return Gate(
         f"eat:{column}",
-        "pass" if ok else "fail",
-        f"{high} of {len(predicted)} transfers at reliability ≥ {threshold}",
+        status,
+        detail,
         {"predicted": len(predicted), "at_threshold": high},
+    )
+
+
+def gate_eat_fanout(table: pa.Table, params: dict) -> Gate:
+    """No reference donates its label to more than ``max_fanout`` queries."""
+    column = params["column"]
+    sources = Counter(
+        decode_field(str(s))
+        for s in table.column(f"{column}__pred_source").to_pylist()
+        if not is_missing(s)
+    )
+    top = sources.most_common(1)
+    largest, count = top[0] if top else (None, 0)
+    ok = count <= params["max_fanout"]
+    return Gate(
+        f"eat-fanout:{column}",
+        "pass" if ok else "fail",
+        f"{len(sources)} sources; the largest, {largest}, donates to {count} "
+        f"(max {params['max_fanout']})",
+        {"sources": len(sources), "largest": largest, "fanout": count},
+    )
+
+
+def gate_name_agreement(
+    table: pa.Table, params: dict, names: Sequence[str | None] | None = None
+) -> Gate:
+    """Transfers agree with the class a query's own name states.
+
+    ``rules`` are ``[regex, label]`` pairs tried in order on the lower-cased
+    name; the first that matches is the class the name states. Rows whose name
+    states none are not counted. ``names`` (by row) replaces ``name_column``:
+    the bundle's ``protein_name`` holds no TrEMBL submission names, UniProt's
+    full "Protein names" do (:func:`name_agreement_gate`).
+    """
+    column = params["column"]
+    rules = [(re.compile(pattern), label) for pattern, label in params["rules"]]
+    rows = [True] * table.num_rows
+    if "split_column" in params:
+        rows = query_mask(table, params["split_column"], params["query_value"])
+    if names is None:
+        names = table.column(params.get("name_column", "protein_name")).to_pylist()
+    predicted = table.column(f"{column}__pred_value").to_pylist()
+    stated = agree = 0
+    confusions: Counter = Counter()
+    for row, name, value in zip(rows, names, predicted, strict=True):
+        if not row or is_missing(value) or name is None:
+            continue
+        text = decode_field(str(name)).lower()
+        label = next((lab for rx, lab in rules if rx.search(text)), None)
+        if label is None:
+            continue
+        stated += 1
+        guess = first_label(value)
+        if guess == label:
+            agree += 1
+        else:
+            confusions[f"{label} → {guess}"] += 1
+    fraction = agree / stated if stated else 0.0
+    minimum = params.get("min_fraction", 0.85)
+    ok = stated >= params.get("min_n", 1) and fraction >= minimum
+    return Gate(
+        f"name-agreement:{column}",
+        "pass" if ok else "fail",
+        f"{agree} of {stated} transfers match the class the name states "
+        f"({fraction:.1%}, min {minimum:.0%})",
+        {"stated": stated, "agree": agree, "confusions": dict(confusions)},
     )
 
 
@@ -1250,6 +1293,12 @@ def gate_eat_source(table: pa.Table, params: dict) -> Gate:
 
 
 def gate_eat_accuracy(table: pa.Table, params: dict) -> Gate:
+    """Transfer accuracy on the withheld rows, in percent.
+
+    ``expected_*`` pin a reproduced benchmark exactly (within ``tol_pp``);
+    ``min_accuracy`` / ``min_accuracy_at_threshold`` / ``min_n`` are floors for a
+    split drawn by the build, whose numbers move with the embeddings (G4).
+    """
     result = eat_accuracy(
         table,
         column=params["column"],
@@ -1260,17 +1309,35 @@ def gate_eat_accuracy(table: pa.Table, params: dict) -> Gate:
         compare=params.get("compare", "ec"),
     )
     tol = params.get("tol_pp", 0.1)
-    ok = (
-        result["n"] == params["expected_n"]
-        and result["accuracy"] is not None
-        and abs(result["accuracy"] - params["expected_accuracy"]) <= tol
-        and result["n_at_threshold"] == params["expected_n_at_threshold"]
-        and result["accuracy_at_threshold"] is not None
-        and abs(
-            result["accuracy_at_threshold"] - params["expected_accuracy_at_threshold"]
+    checks = []
+    if "expected_n" in params:
+        checks.append(result["n"] == params["expected_n"])
+    if "expected_accuracy" in params:
+        checks.append(
+            result["accuracy"] is not None
+            and abs(result["accuracy"] - params["expected_accuracy"]) <= tol
         )
-        <= tol
-    )
+    if "expected_n_at_threshold" in params:
+        checks.append(result["n_at_threshold"] == params["expected_n_at_threshold"])
+    if "expected_accuracy_at_threshold" in params:
+        checks.append(
+            result["accuracy_at_threshold"] is not None
+            and abs(
+                result["accuracy_at_threshold"]
+                - params["expected_accuracy_at_threshold"]
+            )
+            <= tol
+        )
+    if "min_n" in params:
+        checks.append(result["n"] >= params["min_n"])
+    if "min_accuracy" in params:
+        checks.append((result["accuracy"] or 0.0) >= params["min_accuracy"])
+    if "min_accuracy_at_threshold" in params:
+        checks.append(
+            (result["accuracy_at_threshold"] or 0.0)
+            >= params["min_accuracy_at_threshold"]
+        )
+    ok = bool(checks) and all(checks)
     return Gate(
         f"eat-accuracy:{params['column']}",
         "pass" if ok else "fail",
@@ -1313,19 +1380,133 @@ GATE_TYPES: dict[str, Callable[..., Gate]] = {
     "eat_transfers": gate_eat_transfers,
     "eat_source": gate_eat_source,
     "eat_accuracy": gate_eat_accuracy,
+    "eat_fanout": gate_eat_fanout,
     "no_refill": gate_no_refill,
     "coverage": gate_coverage,
 }
 BUNDLE_GATE_TYPES = {"neighbourhood": gate_neighbourhood}
 
 
-def common_gates(
-    bundle: Bundle,
-    dataset: dict,
-    view: dict,
-    *,
-    frozen: Sequence[str] = (),
-) -> list[Gate]:
+#: Columns whose one value marks the rows it is on (``fragment`` is ``yes`` or
+#: empty by design), so one value next to empty rows is informative.
+PRESENCE_FLAG_COLUMNS = frozenset({"fragment"})
+#: The most ``root`` values a fixed CLI writes (cellular / acellular root and
+#: the odd unclassified lineage); the deepest-"no rank" bug gave hundreds (G2).
+MAX_ROOT_VALUES = 3
+
+
+def uninformative_columns(table: pa.Table) -> dict[str, str]:
+    """Annotation columns the legend could only show as N/A or as one value.
+
+    Counted with the web's N/A rules (:func:`is_missing_label`); the id and the
+    ``__pred_`` overlay columns are not annotations. A presence flag
+    (:data:`PRESENCE_FLAG_COLUMNS`) with one value and some empty rows counts
+    as informative.
+    """
+    found: dict[str, str] = {}
+    for column in table.column_names:
+        if column == ID_COLUMN or PRED_MARKER in column:
+            continue
+        counts = label_counts(table, column)
+        if not counts:
+            found[column] = "all N/A"
+        elif len(counts) == 1:
+            value = next(iter(counts))
+            if column in PRESENCE_FLAG_COLUMNS and counts[value] < table.num_rows:
+                continue
+            found[column] = f"one value {value!r}"
+    return found
+
+
+def informative_gate(table: pa.Table, dataset: dict, view: dict) -> Gate:
+    """No all-N/A or single-valued column ships unless a recipe keeps it (W10, G13).
+
+    Nothing is dropped here: the gate lists the columns, and the recipe either
+    leaves them out of its fetch or names them in ``keep_uninformative`` (a
+    documented column). The default view's annotation and tooltip are kept
+    implicitly.
+    """
+    found = uninformative_columns(table)
+    kept = {
+        view.get("annotation"),
+        *(view.get("tooltip") or []),
+        *dataset.get("keep_uninformative", []),
+    }
+    blocking = {c: why for c, why in found.items() if c not in kept}
+    allowed = {c: why for c, why in found.items() if c in kept}
+    if blocking:
+        detail = f"all N/A or one value: {blocking}"
+        if allowed:
+            detail += f"; kept by the recipe: {sorted(allowed)}"
+    elif allowed:
+        detail = f"kept by the recipe: {allowed}"
+    else:
+        detail = "every column has at least two values"
+    return Gate(
+        "informative-columns",
+        "fail" if blocking else "pass",
+        detail,
+        {"blocking": blocking, "kept": allowed},
+    )
+
+
+#: Names of the deep unranked clades the root bug wrote ("melanogaster
+#: subgroup", "Bacillus cereus group", "Fungi incertae sedis", …); a root
+#: never has one.
+DEEP_CLADE = re.compile(
+    r"\b(?:group|subgroup|complex|incertae sedis|unclassified)\b", re.IGNORECASE
+)
+
+
+def taxonomy_root_gate(table: pa.Table) -> Gate | None:
+    """``root`` is the cellular/acellular split, not the deepest "no rank" (G2).
+
+    At most :data:`MAX_ROOT_VALUES` values, none of them a deep clade: human +
+    fly had only two, but one was "melanogaster subgroup".
+    """
+    if "root" not in table.column_names:
+        return None
+    counts = label_counts(table, "root")
+    deep = sorted(value for value in counts if DEEP_CLADE.search(value))
+    ok = len(counts) <= MAX_ROOT_VALUES and not deep
+    shown = dict(counts.most_common(5))
+    return Gate(
+        "root-values",
+        "pass" if ok else "fail",
+        f"{len(counts)} distinct values (max {MAX_ROOT_VALUES}): {shown}"
+        + (f"; deep clades {deep[:5]}" if deep else "")
+        + ("" if ok else "; rebuild on a CLI with the root fix"),
+        {"distinct": len(counts), "deep_clades": len(deep)},
+    )
+
+
+def literal_none_gate(table: pa.Table, column: str) -> Gate | None:
+    """A literal ``none`` the web shows as N/A instead of a category (G2, W10).
+
+    TMbed writes ``none`` for "no transmembrane segment"; the web's N/A tokens
+    include it, so the category the docs promise would vanish into N/A.
+    """
+    if column not in table.column_names:
+        return None
+    count = sum(
+        1
+        for cell in table.column(column).to_pylist()
+        if cell is not None
+        and any(
+            decode_field(hit.split("|", 1)[0]).strip().lower() == "none"
+            for hit in str(cell).split(";")
+        )
+    )
+    return Gate(
+        f"literal-none:{column}",
+        "fail" if count else "pass",
+        f"{count} cells hold a literal 'none' (shown as N/A)"
+        + ("; rebuild on a CLI that names the category" if count else ""),
+        {"count": count},
+    )
+
+
+def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
     """The gates every example must pass (design Decision 9)."""
     table = bundle.annotations
     columns = [c for c in table.column_names if c != ID_COLUMN]
@@ -1364,23 +1545,20 @@ def common_gates(
         Gate("format-v2", "pass" if version == 2 else "fail", f"version {version}")
     )
 
-    # The paper's column and any refreshed copy of it (e.g. the withheld truth).
+    # The column and any copy of it (e.g. a withheld truth). A parser defect
+    # always fails: every family column is refreshed by the fixed CLI.
     family_columns = [
         c for c in columns if c.startswith("protein_families") and PRED_MARKER not in c
     ]
     for column in family_columns:
         defects = family_defects(table, column)
         bad = defects["truncated_tc"] + defects["section_pseudo"]
-        status = (
-            "pass" if not bad else ("warn" if matches_any(column, frozen) else "fail")
-        )
         gates.append(
             Gate(
                 f"family-parser:{column}",
-                status,
+                "fail" if bad else "pass",
                 f"{len(defects['truncated_tc'])} '(TC n' and "
-                f"{len(defects['section_pseudo'])} 'In the … section' labels"
-                + (" (frozen paper column)" if bad and status == "warn" else ""),
+                f"{len(defects['section_pseudo'])} 'In the … section' labels",
                 defects,
             )
         )
@@ -1388,12 +1566,23 @@ def common_gates(
     if dataset.get("xref_pdb_both", True) and "xref_pdb" in columns:
         values = {first_label(v) for v in table.column("xref_pdb").to_pylist()}
         both = {"True", "False"} <= values
-        status = (
-            "pass" if both else ("warn" if matches_any("xref_pdb", frozen) else "fail")
-        )
         gates.append(
-            Gate("xref_pdb", status, f"values {sorted(v for v in values if v)}")
+            Gate(
+                "xref_pdb",
+                "pass" if both else "fail",
+                f"values {sorted(v for v in values if v)}",
+            )
         )
+
+    gates.append(informative_gate(table, dataset, view))
+    gates += [
+        gate
+        for gate in (
+            taxonomy_root_gate(table),
+            literal_none_gate(table, "predicted_transmembrane"),
+        )
+        if gate is not None
+    ]
 
     reviewed = dataset.get("reviewed")
     if reviewed and "reviewed" in columns:
@@ -1553,7 +1742,14 @@ def check_default_view(
 #: Story gates that need the build's sources or facts; :func:`context_gates`
 #: evaluates them.
 CONTEXT_GATE_TYPES = frozenset(
-    {"full_length_inputs", "source_column_kept", "pfam_duplicates", "browser_load"}
+    {
+        "full_length_inputs",
+        "source_column_kept",
+        "pfam_duplicates",
+        "browser_load",
+        "mature_inputs",
+        "name_agreement",
+    }
 )
 
 
@@ -1678,8 +1874,15 @@ def slug(text: str) -> str:
 
 
 def render_thumbnail(
-    xy, labels: Sequence[str | None], path: Path, title: str, top: int
+    xy,
+    labels: Sequence[str | None],
+    path: Path,
+    title: str,
+    top: int,
+    rings: Sequence[str | None] | None = None,
 ) -> None:
+    """A scatter of the legend view; ``rings`` (EAT) outlines each unlabelled
+    point that received a transfer in the transferred label's colour."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1710,6 +1913,21 @@ def render_thumbnail(
                 label=f"{label} ({counts[label]})",
             )
         )
+    if rings is not None:
+        ring_colors = [
+            colors.get(r, OTHER_COLOR) if r is not None and lab is None else None
+            for r, lab in zip(rings, labels, strict=True)
+        ]
+        mask = np.array([c is not None for c in ring_colors])
+        if mask.any():
+            ax.scatter(
+                *xy[mask].T,
+                s=size * 4,
+                facecolors="none",
+                edgecolors=[c for c in ring_colors if c is not None],
+                linewidths=0.6,
+                rasterized=True,
+            )
     ax.legend(
         handles=list(reversed(handles)),
         fontsize=6,
@@ -1737,7 +1955,11 @@ def clustering_report(
     top: int = 10,
     thumbnails: bool = True,
 ) -> list[dict[str, Any]]:
-    """Score every candidate annotation × projection; write JSON, Markdown, PNGs."""
+    """Score every candidate annotation × projection; write JSON, Markdown, PNGs.
+
+    ``cluster_*`` columns are never candidates (W21): k-means on the layout
+    agrees with the layout by construction, so they would always rank first.
+    """
     table = bundle.annotations
     ann_ids = row_ids(table)
     row_of = {pid: i for i, pid in enumerate(ann_ids)}
@@ -1745,10 +1967,15 @@ def clustering_report(
         candidates.get("projections")
         or bundle.metadata.column("projection_name").to_pylist()
     )
+    annotations = [
+        a for a in candidates.get("annotations", []) if not a.startswith(CLUSTER_PREFIX)
+    ]
+    if thumbnails:  # a candidate dropped from the recipe leaves no stale picture
+        shutil.rmtree(out_dir / "thumbs", ignore_errors=True)
     rows: list[dict[str, Any]] = []
     for projection in projections:
         ids, xy = _coords(bundle, projection)
-        for annotation in candidates.get("annotations", []):
+        for annotation in annotations:
             if annotation not in table.column_names:
                 rows.append(
                     {
@@ -1781,8 +2008,21 @@ def clustering_report(
                 thumb = (
                     out_dir / "thumbs" / f"{slug(annotation)}__{slug(projection)}.png"
                 )
+                rings = None
+                predicted = f"{annotation}{PRED_MARKER}value"
+                if predicted in table.column_names:
+                    cells = table.column(predicted).to_pylist()
+                    rings = [
+                        first_label(cells[row_of[i]]) if i in row_of else None
+                        for i in ids
+                    ]
                 render_thumbnail(
-                    xy, labels, thumb, f"{ds_id} · {annotation} · {projection}", top
+                    xy,
+                    labels,
+                    thumb,
+                    f"{ds_id} · {annotation} · {projection}",
+                    top,
+                    rings=rings,
                 )
                 row["thumbnail"] = str(thumb.relative_to(out_dir))
             rows.append(row)
@@ -1917,6 +2157,65 @@ def fetch_uniprot_sequences(
                 note(response)
                 found[accession] = next(iter(sequences.values()))
     return found, releases
+
+
+#: The UniProt fields an ``embed-build`` reads for its sequences and labels.
+ENTRY_FIELDS = (
+    "accession",
+    "reviewed",
+    "protein_name",
+    "organism_name",
+    "organism_id",
+    "length",
+    "fragment",
+    "ft_signal",
+    "ft_propep",
+    "ft_chain",
+    "ft_peptide",
+    "cc_similarity",
+    "xref_interpro",
+    "sequence",
+)
+
+
+def fetch_uniprot_entries(
+    accessions: Sequence[str], fields: Sequence[str] = ENTRY_FIELDS, *, chunk: int = 100
+) -> tuple[list[dict[str, str]], set[str]]:
+    """UniProt TSV rows for ``accessions``, keyed by the requested field names.
+
+    Batches use ``/uniprotkb/accessions`` (the stream endpoint drops large
+    responses mid-way). A batch that does not answer 200 after the retries
+    fails the call, so a partial membership can never pass silently. Returns
+    the rows and every release the responses reported.
+    """
+    rows: list[dict[str, str]] = []
+    releases: set[str] = set()
+    for start in range(0, len(accessions), chunk):
+        batch = list(accessions[start : start + chunk])
+        response = _http_get(
+            f"{UNIPROT_REST}/accessions",
+            {
+                "accessions": ",".join(batch),
+                "fields": ",".join(fields),
+                "format": "tsv",
+            },
+        )
+        if response.status_code != 200:
+            raise BuildError(
+                f"UniProt answered {response.status_code} for accessions "
+                f"{batch[0]}…{batch[-1]}"
+            )
+        release = response.headers.get("X-UniProt-Release")
+        if release:
+            releases.add(release)
+        lines = response.text.splitlines()
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            values = line.split("\t")
+            values += [""] * (len(fields) - len(values))
+            rows.append(dict(zip(fields, values[: len(fields)], strict=True)))
+    return rows, releases
 
 
 def write_fasta(path: Path, sequences: dict[str, str], order: Sequence[str]) -> int:
@@ -2128,13 +2427,17 @@ class Cli:
         self._git_sha: str | None = None
         self._capabilities: dict[str, Any] | None = None
 
-    def argv(self, args: Sequence[str]) -> list[str]:
+    def argv(self, args: Sequence[str], extras: Sequence[str] = ()) -> list[str]:
+        """``uv run`` of the checkout's protspace; ``extras`` are its optional
+        dependency groups a command needs (``local`` for on-device embedding)."""
+        extra_flags = [flag for name in extras for flag in ("--extra", name)]
         return [
             "uv",
             "run",
             "--frozen",
             "--project",
             str(self.project),
+            *extra_flags,
             "protspace",
             *map(str, args),
         ]
@@ -2146,13 +2449,14 @@ class Cli:
         cwd: Path,
         log: Callable[[str], None],
         transcript: Path | None = None,
+        extras: Sequence[str] = (),
     ) -> CliResult:
         """Run one protspace command; a non-zero exit raises.
 
         An exit of 0 is not a complete run: the result names the annotation
         sources the command reported as not fully retrieved.
         """
-        command = self.argv(args)
+        command = self.argv(args, extras)
         log("$ " + shlex.join(command))
         if self.dry_run:
             return CliResult()
@@ -2356,20 +2660,20 @@ ASSEMBLE_KEYS = (
     "source",
     "source_sha256",
     "projections_source",
-    "frozen",
-    "keep_paper_columns",
-    "withheld",
     "keep_source_columns",
     "first_columns",
     "drop_columns",
     "missing_rows",
     "fill_missing_taxonomy",
+    "membership_file",
+    "membership_sha256",
+    "labels",
+    "holdout",
 )
 STATS_KEYS = (
     "stats",
     "stats_annotations",
     "cluster_selection",
-    "freeze_statistics",
     "embeddings",
     "source_sha256",
 )
@@ -2415,6 +2719,8 @@ class Step:
     inputs: Callable[[], dict[str, Any]] | None = None
     #: Fetches data from UniProt and records the release it came from.
     fetches: bool = False
+    #: Optional dependency groups of the CLI the command needs (``uv --extra``).
+    extras: tuple[str, ...] = ()
 
     def key(self) -> str:
         payload = {
@@ -2609,7 +2915,7 @@ def execute(ctx: Context, steps: Sequence[Step]) -> None:
             reason = "" if step.always or marker_key(marker) is None else " (changed)"
             ctx.log(f"{step.name}: would run{reason} — {step.summary}")
             if step.command and ctx.cli is not None:
-                ctx.log("    $ " + shlex.join(ctx.cli.argv(step.command)))
+                ctx.log("    $ " + shlex.join(ctx.cli.argv(step.command, step.extras)))
             dirty = dirty or not step.always
             if step.always:
                 step.action()
@@ -2641,7 +2947,25 @@ def execute(ctx: Context, steps: Sequence[Step]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def is_embed_build(ctx: Context) -> bool:
+    return ctx.dataset.get("kind") == "embed-build"
+
+
+def embed_model(ctx: Context) -> str:
+    return (ctx.dataset.get("embed") or {}).get("model", "prot_t5")
+
+
+def embed_h5(ctx: Context) -> Path:
+    """The embeddings an ``embed-build`` makes (``protspace embed`` names the
+    file after the model)."""
+    return ctx.work / "embed" / f"{embed_model(ctx)}.h5"
+
+
 def dataset_embeddings(ctx: Context) -> list[str]:
+    """``path:name`` specs of the dataset's embeddings: the recipe's read-only
+    inputs, or the file an ``embed-build`` makes."""
+    if is_embed_build(ctx):
+        return [f"{embed_h5(ctx)}:{embed_model(ctx)}"]
     specs = []
     for spec in ctx.dataset.get("embeddings", []):
         path, name = split_h5_spec(ctx.config.expand(spec))
@@ -2688,9 +3012,42 @@ def find_source(ctx: Context) -> Path:
 
 
 def find_projection_source(ctx: Context) -> Path:
+    """Where the coordinates come from: the paper's projections, the source
+    bundle, or (``embed-build``) the build's own ``prepare`` output."""
+    if is_embed_build(ctx):
+        return ctx.work / "ann" / "data.parquetbundle"
     if "projections_source" in ctx.dataset:
         return ctx.config.first_existing(ctx.dataset["projections_source"])
     return find_source(ctx)
+
+
+def membership_path(ctx: Context) -> Path:
+    """The pinned accession list of an ``embed-build`` (relative to this script)."""
+    path = ctx.path(ctx.dataset["membership_file"])
+    return path if path.is_absolute() else SCRIPT_DIR / path
+
+
+def read_membership(path: Path) -> list[str]:
+    """Accessions of a membership file: one per line, ``#`` starts a comment."""
+    ids = []
+    for line in path.read_text().splitlines():
+        text = line.split("#", 1)[0].strip()
+        if text:
+            ids.append(text)
+    if len(set(ids)) != len(ids):
+        raise BuildError(f"{path} lists an accession twice")
+    return ids
+
+
+def membership_ids(ctx: Context) -> list[str]:
+    """Row order of an ``embed-build``: the pinned list, checked against its pin."""
+    path = membership_path(ctx)
+    pinned = ctx.dataset.get("membership_sha256")
+    if not path.is_file():
+        raise BuildError(f"membership file {path} is missing")
+    if pinned and sha256_file(path) != pinned:
+        raise BuildError(f"{path}: sha256 differs from membership_sha256")
+    return read_membership(path)
 
 
 def require_served_release(ctx: Context, step: str) -> None:
@@ -2738,16 +3095,30 @@ def check_inputs_step(ctx: Context) -> Step:
                 )
             if "sha256" in pin and sha256_file(path) != pin["sha256"]:
                 problems.append(f"{path}: sha256 differs from the pin")
-        for spec in dataset_embeddings(ctx):
-            path, _ = split_h5_spec(spec)
-            if not Path(path).is_file():
-                problems.append(f"missing embeddings {path}")
-        try:
-            ctx.log(f"input projections: {find_projection_source(ctx)}")
-            if "source" in ctx.dataset:
-                ctx.log(f"input source bundle: {find_source(ctx)}")
-        except BuildError as error:
-            problems.append(str(error))
+        if is_embed_build(ctx):
+            # The build makes its embeddings and coordinates; its one input is
+            # the pinned accession list.
+            try:
+                ids = membership_ids(ctx)
+                ctx.log(f"membership: {len(ids)} accessions in {membership_path(ctx)}")
+                if len(ids) != ctx.dataset.get("proteins"):
+                    problems.append(
+                        f"membership lists {len(ids)} accessions, proteins = "
+                        f"{ctx.dataset.get('proteins')}"
+                    )
+            except BuildError as error:
+                problems.append(str(error))
+        else:
+            for spec in dataset_embeddings(ctx):
+                path, _ = split_h5_spec(spec)
+                if not Path(path).is_file():
+                    problems.append(f"missing embeddings {path}")
+            try:
+                ctx.log(f"input projections: {find_projection_source(ctx)}")
+                if "source" in ctx.dataset:
+                    ctx.log(f"input source bundle: {find_source(ctx)}")
+            except BuildError as error:
+                problems.append(str(error))
         if ctx.cli is not None:
             caps = ctx.cli.capabilities()
             ctx.log(f"CLI {ctx.cli.project}: {caps}")
@@ -2872,15 +3243,34 @@ def fetch_step(
     )
 
 
+def projection_args(ctx: Context) -> list[str]:
+    """``-m`` and the reducer options of ``prepare``.
+
+    A paper dataset keeps the paper's coordinates, so its ``-m pca2`` is cheap
+    and discarded. An ``embed-build`` keeps them: ``methods`` and
+    ``projection_params`` (UMAP n_neighbors, min_dist, the seed) are spelled
+    out, so the command in the provenance states them.
+    """
+    args = ["-m", ctx.dataset.get("methods", "pca2")]
+    for key, value in (ctx.dataset.get("projection_params") or {}).items():
+        args += [f"--{key.replace('_', '-')}", str(value)]
+    return args
+
+
 def prepare_steps(ctx: Context) -> list[Step]:
     """Staged, resumable annotation fetch through ``prepare``'s per-source cache.
 
-    ``-m pca2`` is cheap and its output is discarded; each stage adds sources and
-    reuses the cached ones, so a failure costs only the stage that failed.
+    Each stage adds sources and reuses the cached ones, so a failure costs only
+    the stage that failed. An ``embed-build`` passes its full-length FASTA with
+    ``-f``: the sequence-based sources (InterPro with Phobius, Biocentral) see
+    full-length sequences although the embeddings are of the mature chains (G8).
     """
     inputs: list[str] = []
     for spec in dataset_embeddings(ctx):
         inputs += ["-i", spec]
+    full_length = ctx.work / "full_length.fasta"
+    if is_embed_build(ctx):
+        inputs += ["-f", str(full_length)]
     ann_dir = ctx.work / "ann"
     run_log = ann_dir / "run.log"
     steps = []
@@ -2888,8 +3278,7 @@ def prepare_steps(ctx: Context) -> list[Step]:
         args = [
             "prepare",
             *inputs,
-            "-m",
-            "pca2",
+            *projection_args(ctx),
             "-a",
             ",".join(groups),
             "-o",
@@ -2922,7 +3311,12 @@ def prepare_steps(ctx: Context) -> list[Step]:
                     "embeddings": [
                         fingerprint(split_h5_spec(s)[0])
                         for s in dataset_embeddings(ctx)
-                    ]
+                    ],
+                    **(
+                        {"fasta": fingerprint(full_length)}
+                        if is_embed_build(ctx)
+                        else {}
+                    ),
                 },
                 releases=releases,
                 before=before,
@@ -2974,17 +3368,6 @@ def fasta_step(
                 if accession not in sequences and table.get(accession):
                     sequences[accession] = table[accession]
                     fallback += 1
-        if "fallback_column" in options:
-            source = read_bundle(find_source(ctx)).annotations
-            column = options["fallback_column"]
-            if column in source.column_names:
-                stored = dict(
-                    zip(row_ids(source), source.column(column).to_pylist(), strict=True)
-                )
-                for accession in ids:
-                    if accession not in sequences and stored.get(accession):
-                        sequences[accession] = stored[accession]
-                        fallback += 1
         written = write_fasta(out, sequences, ids)
         ctx.record(
             f"{name}:counts",
@@ -3064,14 +3447,16 @@ def assemble_step(
     )
 
 
-def write_annotations(ctx: Context, table: pa.Table, report: dict) -> None:
+def write_annotations(
+    ctx: Context, table: pa.Table, report: dict, name: str = "annotations.parquet"
+) -> None:
     first = [ctx.view.get("annotation"), *ctx.dataset.get("first_columns", [])]
     drop = (
         INTERNAL_COLUMNS + LEGACY_COLUMNS + tuple(ctx.dataset.get("drop_columns", []))
     )
     table = order_columns(drop_columns(table, drop), [c for c in first if c])
     table = stamp_v2(strip_pandas_metadata(table))
-    atomic_write(ctx.work / "annotations.parquet", parquet_bytes(table))
+    atomic_write(ctx.work / name, parquet_bytes(table))
     (ctx.work / "assemble_report.json").write_text(
         json.dumps(report, indent=1, default=str)
     )
@@ -3289,48 +3674,639 @@ def annotate_source_steps(ctx: Context) -> tuple[list[Step], Path, Path]:
     return steps, fasta, fresh
 
 
-def eat_graft_steps(ctx: Context) -> list[Step]:
-    """venom-eat and phosphatase-eat: the paper's EAT inputs and outputs, grafted
-    onto a fresh fetch (R-EAT)."""
-    steps, _, fresh = annotate_source_steps(ctx)
-    withheld = ctx.dataset.get("withheld", {})
-    spec = GraftSpec(
-        frozen=ctx.dataset.get("frozen", []),
-        keep_paper_columns=ctx.dataset.get("keep_paper_columns", True),
-        withheld=dict(withheld.get("columns", {})),
-        split_column=withheld.get("split_column"),
-        query_value=withheld.get("query_value"),
+# ---------------------------------------------------------------------------
+# embed-build: a dataset without a source bundle (G3). Membership is a pinned
+# accession list; the build fetches the entries, embeds their mature chains,
+# projects them, derives labels, holds out a stratified share and transfers.
+# ---------------------------------------------------------------------------
+
+_FEATURE_RE = re.compile(
+    r"\b(?P<kind>SIGNAL|PROPEP|CHAIN|PEPTIDE)\s+(?P<start>[<>?]?\d*)\.\.(?P<end>[<>?]?\d*)"
+)
+#: The UniProt TSV field of each feature kind.
+FEATURE_FIELDS = {
+    "SIGNAL": "ft_signal",
+    "PROPEP": "ft_propep",
+    "CHAIN": "ft_chain",
+    "PEPTIDE": "ft_peptide",
+}
+
+
+def feature_regions(text: str, kind: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of every ``kind`` feature in a UniProt TSV feature cell.
+
+    Fuzzy ends (``<1``, ``1..>25``, on fragments) count as their number; a
+    feature with an unknown end (``?``) is skipped.
+    """
+    regions = []
+    for match in _FEATURE_RE.finditer(text or ""):
+        if match["kind"] != kind:
+            continue
+        start, end = match["start"].lstrip("<>"), match["end"].lstrip("<>")
+        if start.isdigit() and end.isdigit():
+            regions.append((int(start), int(end)))
+    return regions
+
+
+@dataclass(frozen=True)
+class MatureChain:
+    """The part of an entry's sequence that is embedded, and how it was found."""
+
+    accession: str
+    start: int
+    end: int
+    sequence: str
+    derivation: str
+    fragment: bool
+
+
+def mature_chain(entry: dict[str, str]) -> MatureChain:
+    """The mature chain UniProt annotates for an entry (G1).
+
+    Swiss-Prot often holds a toxin as the mature chain sequenced from venom,
+    TrEMBL as the precursor translated from a transcript. Embedding what each
+    entry's Chain feature marks (Peptide when it has no Chain; the longest one
+    when there are several) puts both on the same footing. Without either, the
+    signal peptide and any terminal propeptide are cut off, and a sequence with
+    none of them is used as deposited. A fragment's fuzzy ends are kept.
+    """
+    accession = entry.get("accession", "")
+    sequence = entry.get("sequence", "")
+    length = len(sequence)
+    fragment = bool((entry.get("fragment") or "").strip())
+
+    def valid(kind: str) -> list[tuple[int, int]]:
+        return [
+            (s, e)
+            for s, e in feature_regions(entry.get(FEATURE_FIELDS[kind], ""), kind)
+            if 1 <= s <= e <= length
+        ]
+
+    for kind, derivation in (("CHAIN", "chain"), ("PEPTIDE", "peptide")):
+        regions = valid(kind)
+        if regions:
+            start, end = max(regions, key=lambda r: (r[1] - r[0], -r[0]))
+            return MatureChain(
+                accession, start, end, sequence[start - 1 : end], derivation, fragment
+            )
+    start, end, removed = 1, length, []
+    signals = valid("SIGNAL")
+    if signals:
+        start = max(e for _, e in signals) + 1
+        removed.append("signal peptide")
+    for s, e in sorted(valid("PROPEP")):
+        if s <= start <= e + 1:  # N-terminal, right after the signal peptide
+            start = e + 1
+            removed.append("propeptide")
+        elif e >= end > s:  # C-terminal
+            end = s - 1
+            removed.append("propeptide")
+    if not 1 <= start <= end <= length:
+        start, end, removed = 1, length, []
+    derivation = (
+        (" and ".join(dict.fromkeys(removed)) + " removed")
+        if removed
+        else ("as deposited")
+    )
+    return MatureChain(
+        accession, start, end, sequence[start - 1 : end], derivation, fragment
     )
 
-    def assemble() -> None:
-        paper = read_bundle(find_source(ctx)).annotations
-        migrated: dict[str, int] = {}
-        if format_version(paper) < 2:
-            # G9: re-encode a v1 source before any v2 column joins it.
-            paper, migrated = migrate_v1_columns(paper)
-        fetched = normalize_id(pq.read_table(fresh))
-        table, report = graft_columns(paper, fetched, spec)
-        if spec.withheld:
-            # G6: the refresh must never refill the withheld columns.
-            assert_no_refill(
-                table, spec.split_column, spec.query_value, list(spec.withheld)
+
+_SIMILARITY_SPLIT = re.compile(r"SIMILARITY:\s*")
+_EVIDENCE = re.compile(r"\{ECO:[^}]*\}")
+_BELONGS = re.compile(r"^(?:In the [^;]*section;\s*)?belongs to the\s+", re.I)
+
+
+def similarity_path(text: str, family: str) -> str | None:
+    """The ``cc_similarity`` statement for ``family``, without evidence and the
+    "Belongs to the" prefix: ``"three-finger toxin family. Short-chain
+    subfamily. Type I alpha-neurotoxin sub-subfamily"``. None without one."""
+    for part in _SIMILARITY_SPLIT.split(text or ""):
+        part = _BELONGS.sub("", _EVIDENCE.sub("", part).strip()).strip()
+        if part.lower().startswith(family.lower()):
+            return part.rstrip(". ").strip()
+    return None
+
+
+def derive_label(path: str | None, rules: Sequence[Sequence[str]]) -> str:
+    """The label of the first rule whose text occurs in the lower-cased path."""
+    if not path:
+        return ""
+    text = path.lower()
+    return next((label for needle, label in rules if needle.lower() in text), "")
+
+
+def holdout_split(
+    ids: Sequence[str],
+    reviewed: dict[str, bool],
+    strata: dict[str, str],
+    *,
+    fraction: float,
+    seed: int,
+    values: dict[str, str],
+) -> dict[str, str]:
+    """The split column: references, their held-out share, and the queries.
+
+    Reviewed rows are references; ``fraction`` of those with a label is held
+    out per label (``round(fraction · n)``). Unreviewed rows are the queries.
+    Labels and ids are visited sorted and the draw uses one seeded generator,
+    so the split depends on the seed alone (G4: iterating a set did not).
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    split: dict[str, str] = {}
+    by_label: dict[str, list[str]] = {}
+    for pid in sorted(ids):
+        if reviewed.get(pid):
+            split[pid] = values["reference"]
+            if strata.get(pid):
+                by_label.setdefault(strata[pid], []).append(pid)
+        else:
+            split[pid] = values["query"]
+    for label in sorted(by_label):
+        members = by_label[label]
+        count = int(round(fraction * len(members)))
+        if count:
+            for pid in rng.choice(members, size=count, replace=False):
+                split[str(pid)] = values["holdout"]
+    return split
+
+
+def read_entries(path: Path) -> dict[str, dict[str, str]]:
+    """``{accession: entry}`` from the TSV the ``entries`` step wrote."""
+    with path.open(newline="") as handle:
+        header = handle.readline().rstrip("\n").split("\t")
+        entries = {}
+        for line in handle:
+            values = line.rstrip("\n").split("\t")
+            values += [""] * (len(header) - len(values))
+            entry = dict(zip(header, values, strict=True))
+            entries[entry["accession"]] = entry
+    return entries
+
+
+def h5_vectors_sha256(path: Path) -> tuple[str, int]:
+    """A digest of an H5's vectors (ids sorted, float32 bytes) and their count.
+
+    Unlike the file's sha256 it does not depend on how HDF5 laid the file out,
+    so it pins what the projections and the transfer read.
+    """
+    import h5py
+    import numpy as np
+
+    digest = hashlib.sha256()
+    with h5py.File(path, "r") as handle:
+        keys = sorted(handle.keys())
+        for key in keys:
+            digest.update(key.encode() + b"\0")
+            digest.update(np.asarray(handle[key][()], dtype=np.float32).tobytes())
+    return digest.hexdigest(), len(keys)
+
+
+def entries_step(ctx: Context, out: Path) -> Step:
+    """The pinned entries' full-length sequences, features and similarity text."""
+
+    def action() -> None:
+        ids = membership_ids(ctx)
+        require_served_release(ctx, "entries")
+        rows, releases = fetch_uniprot_entries(ids)
+        by_id = {row["accession"]: row for row in rows}
+        missing = [pid for pid in ids if pid not in by_id]
+        if missing:
+            raise BuildError(
+                f"UniProt returned no entry for {len(missing)} pinned accessions "
+                f"(first: {missing[:5]}); the membership file needs a new release"
             )
-        report.update(
-            rows=table.num_rows,
-            v1_cells_migrated=migrated,
-            fresh_rows_without_entry=obsolete_rows(fetched),
+        out.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["\t".join(ENTRY_FIELDS)]
+        lines += ["\t".join(by_id[pid].get(f, "") for f in ENTRY_FIELDS) for pid in ids]
+        atomic_write(out, ("\n".join(lines) + "\n").encode())
+        record_data_release(ctx, "entries", releases)
+        reviewed = sum(1 for pid in ids if by_id[pid]["reviewed"] == "reviewed")
+        ctx.log(f"entries: {len(ids)} ({reviewed} reviewed)")
+
+    return Step(
+        "entries",
+        f"UniProt entries of the pinned membership → {out.name}",
+        action,
+        inputs=lambda: {
+            "release": ctx.release,
+            "fields": ENTRY_FIELDS,
+            "membership": content_sha256(membership_path(ctx)),
+        },
+        fetches=True,
+    )
+
+
+def sequences_step(ctx: Context, entries_tsv: Path) -> Step:
+    """Mature chains to embed, full-length sequences to annotate (G1, G8)."""
+    mature_fasta = ctx.work / "mature.fasta"
+    full_fasta = ctx.work / "full_length.fasta"
+    mature_tsv = ctx.work / "mature.tsv"
+
+    def action() -> None:
+        entries = read_entries(entries_tsv)
+        ids = membership_ids(ctx)
+        chains = [mature_chain(entries[pid]) for pid in ids]
+        write_fasta(mature_fasta, {c.accession: c.sequence for c in chains}, ids)
+        write_fasta(full_fasta, {pid: entries[pid]["sequence"] for pid in ids}, ids)
+        lines = [
+            "accession\treviewed\tfragment\tfull_length\tmature_start\tmature_end"
+            "\tmature_length\tderivation"
+        ]
+        for chain in chains:
+            entry = entries[chain.accession]
+            lines.append(
+                "\t".join(
+                    map(
+                        str,
+                        (
+                            chain.accession,
+                            entry["reviewed"],
+                            "yes" if chain.fragment else "",
+                            len(entry["sequence"]),
+                            chain.start,
+                            chain.end,
+                            len(chain.sequence),
+                            chain.derivation,
+                        ),
+                    )
+                )
+            )
+        atomic_write(mature_tsv, ("\n".join(lines) + "\n").encode())
+        derivations = Counter(c.derivation for c in chains)
+        ctx.record("mature:derivations", dict(derivations))
+        ctx.log(f"mature chains: {dict(derivations)}")
+
+    return Step(
+        "sequences",
+        "mature chains (embedded) and full-length sequences (annotated)",
+        action,
+        inputs=lambda: {
+            "entries": fingerprint(entries_tsv),
+            "membership": content_sha256(membership_path(ctx)),
+        },
+    )
+
+
+def embed_step(ctx: Context) -> Step:
+    """``protspace embed`` of the mature chains, or the pinned H5 when present.
+
+    ``embed.input`` names a pinned copy of the embeddings (the Zenodo file); a
+    rebuild that finds it uses its bytes instead of re-embedding, so the
+    coordinates and transfers come out the same. The ``embeddings-pin`` gate
+    checks the result against ``embed.sha256`` and ``embed.vectors_sha256``.
+    """
+    options = ctx.dataset.get("embed") or {}
+    backend = options.get("backend", "local")
+    fasta = ctx.work / "mature.fasta"
+    out = embed_h5(ctx)
+    args = [
+        "embed",
+        "-i",
+        str(fasta),
+        "-e",
+        embed_model(ctx),
+        "-o",
+        str(out.parent),
+        "--backend",
+        backend,
+        "-v",
+    ]
+    extras = ("local",) if backend == "local" else ()
+
+    def action() -> None:
+        pinned = ctx.path(options["input"]) if options.get("input") else None
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if pinned is not None and pinned.is_file():
+            ctx.log(f"embed: the pinned embeddings {pinned}")
+            shutil.copyfile(pinned, out)
+        else:
+            # A left-over file would be resumed; start from nothing so the
+            # vectors are this run's.
+            out.unlink(missing_ok=True)
+            ctx.need_cli().run(
+                args,
+                cwd=ctx.work,
+                log=ctx.log,
+                transcript=ctx.work / "logs" / "embed.log",
+                extras=extras,
+            )
+        vectors, count = h5_vectors_sha256(out)
+        ctx.record(
+            "embeddings",
+            {
+                "file": out.name,
+                "sha256": sha256_file(out),
+                "vectors_sha256": vectors,
+                "vectors": count,
+                "backend": backend,
+                "model": embed_model(ctx),
+                "from_pinned_input": pinned is not None and pinned.is_file(),
+            },
         )
-        write_annotations(ctx, table, report)
+        ctx.log(f"embed: {count} vectors, vectors_sha256 {vectors}")
+
+    return Step(
+        "embed",
+        shlex.join(args),
+        action,
+        command=args,
+        inputs=lambda: {
+            "cli": ctx.cli_identity(),
+            "fasta": fingerprint(fasta),
+            "options": {k: options.get(k) for k in ("model", "backend", "input")},
+            "pinned": fingerprint(ctx.path(options["input"]))
+            if options.get("input")
+            else None,
+        },
+        extras=extras,
+    )
+
+
+def label_table(
+    ids: Sequence[str],
+    entries: dict[str, dict[str, str]],
+    labels: dict,
+    holdout: dict,
+) -> tuple[dict[str, list], dict[str, Any]]:
+    """The derived label columns, the split and the withheld truth, by row.
+
+    Each ``labels.columns`` entry derives one column from the entry's
+    ``cc_similarity`` statement for ``labels.family``. Unreviewed entries only
+    carry UniProt's automatic rule labels, so their value moves to
+    ``<column>_uniprot_rule`` (for the columns in ``labels.keep_rule_labels``)
+    and the column is left empty: they are the transfer's queries. The
+    hold-out blanks its rows too and keeps their truth in ``<column>_withheld``.
+    """
+    family = labels["family"]
+    reviewed = {pid: entries[pid]["reviewed"] == "reviewed" for pid in ids}
+    paths = {pid: similarity_path(entries[pid]["cc_similarity"], family) for pid in ids}
+    derived = {
+        spec["name"]: {pid: derive_label(paths[pid], spec["rules"]) for pid in ids}
+        for spec in labels["columns"]
+    }
+    values = holdout_values(holdout)
+    split = holdout_split(
+        ids,
+        reviewed,
+        derived[holdout["stratify"]],
+        fraction=holdout["fraction"],
+        seed=holdout["seed"],
+        values=values,
+    )
+    columns: dict[str, list] = {}
+    blanked = set(holdout.get("columns", list(derived)))
+    for name, by_id in derived.items():
+        shown = []
+        for pid in ids:
+            keep = reviewed[pid] and not (
+                split[pid] == values["holdout"] and name in blanked
+            )
+            shown.append(by_id[pid] if keep and by_id[pid] else None)
+        columns[name] = shown
+    for name in labels.get("keep_rule_labels", []):
+        columns[f"{name}_uniprot_rule"] = [
+            (derived[name][pid] or None) if not reviewed[pid] else None for pid in ids
+        ]
+    for name in derived:
+        if name in blanked:
+            columns[f"{name}_withheld"] = [
+                (derived[name][pid] or None)
+                if split[pid] == values["holdout"]
+                else None
+                for pid in ids
+            ]
+    columns[holdout["split_column"]] = [split[pid] for pid in ids]
+    summary = {
+        "split": dict(Counter(split.values())),
+        "reviewed_without_label": {
+            name: sorted(pid for pid in ids if reviewed[pid] and not by_id[pid])
+            for name, by_id in derived.items()
+        },
+        "reviewed_labels": {
+            name: dict(
+                Counter(by_id[pid] for pid in ids if reviewed[pid] and by_id[pid])
+            )
+            for name, by_id in derived.items()
+        },
+        "uniprot_rule_labels": {
+            name: dict(
+                Counter(
+                    derived[name][pid]
+                    for pid in ids
+                    if not reviewed[pid] and derived[name][pid]
+                )
+            )
+            for name in labels.get("keep_rule_labels", [])
+        },
+        "holdout": {
+            "fraction": holdout["fraction"],
+            "seed": holdout["seed"],
+            "stratify": holdout["stratify"],
+            "per_label": dict(
+                Counter(
+                    derived[holdout["stratify"]][pid]
+                    for pid in ids
+                    if split[pid] == values["holdout"]
+                )
+            ),
+        },
+    }
+    return columns, summary
+
+
+def embed_build_steps(ctx: Context) -> list[Step]:
+    """three-finger-toxins: pinned membership, mature-chain embeddings made here,
+    the build's own projections, derived labels, a hold-out and EAT."""
+    entries_tsv = ctx.work / "entries.tsv"
+    mature_tsv = ctx.work / "mature.tsv"
+    full_fasta = ctx.work / "full_length.fasta"
+    ann_bundle = ctx.work / "ann" / "data.parquetbundle"
+    assembled = ctx.work / "annotations.assembled.parquet"
+    steps = [
+        entries_step(ctx, entries_tsv),
+        sequences_step(ctx, entries_tsv),
+        embed_step(ctx),
+        *prepare_steps(ctx),
+    ]
+    labels = ctx.dataset["labels"]
+    holdout = ctx.dataset["holdout"]
+
+    def assemble() -> None:
+        ids = membership_ids(ctx)
+        fetched = extract_ann(ann_bundle)
+        table, absent = align_rows(fetched, ids)
+        entries = read_entries(entries_tsv)
+        columns, summary = label_table(ids, entries, labels, holdout)
+        with mature_tsv.open() as handle:
+            header = handle.readline().rstrip("\n").split("\t")
+            mature = {
+                row[0]: dict(zip(header, row, strict=True))
+                for row in (line.rstrip("\n").split("\t") for line in handle)
+            }
+        columns["mature_length"] = [int(mature[pid]["mature_length"]) for pid in ids]
+        origin = {c: "refreshed" for c in table.column_names if c != ID_COLUMN}
+        for name, values in columns.items():
+            if name in table.column_names:
+                raise BuildError(f"derived column {name!r} clashes with a fetched one")
+            array = pa.array(
+                values, type=pa.int64() if name == "mature_length" else pa.string()
+            )
+            table = table.append_column(name, array)
+            if name.endswith("_withheld"):
+                origin[name] = "withheld-truth"
+            elif name == holdout["split_column"]:
+                origin[name] = "computed"
+            else:
+                origin[name] = "refreshed"
+        queries = [v for k, v in holdout_values(holdout).items() if k != "reference"]
+        blanked = holdout.get("columns", [c["name"] for c in labels["columns"]])
+        assert_no_refill(table, holdout["split_column"], queries, blanked)
+        # G8 evidence, as for the demo: InterPro and Biocentral read these.
+        lengths = {
+            a: len(s) for a, s in parse_fasta_text(full_fasta.read_text()).items()
+        }
+        uniprot = (
+            dict(zip(ids, table.column("length").to_pylist(), strict=True))
+            if "length" in table.column_names
+            else {}
+        )
+        equal = sum(1 for a, n in lengths.items() if as_int(uniprot.get(a)) == n)
+        derivations = Counter(m["derivation"] for m in mature.values())
+        # The derived labels as a file of their own (the Zenodo deposit's
+        # label CSV; `protspace prepare -a labels.csv` reads the same shape).
+        derived_names = [n for n in columns if n != "mature_length"]
+        with (ctx.work / "labels.csv").open("w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["identifier", *derived_names])
+            for row, pid in enumerate(ids):
+                writer.writerow([pid, *(columns[n][row] or "" for n in derived_names)])
+        write_annotations(
+            ctx,
+            table,
+            {
+                "rows": table.num_rows,
+                "rows_without_annotations": absent,
+                "origin": origin,
+                "fresh_rows_without_entry": obsolete_rows(table),
+                "full_length": {
+                    "sequences": len(lengths),
+                    "length_matches_uniprot": equal,
+                },
+                "mature": {
+                    "derivations": dict(derivations),
+                    "fragments": sum(1 for m in mature.values() if m["fragment"]),
+                },
+                "labels": summary,
+            },
+            name=assembled.name,
+        )
 
     steps.append(
         assemble_step(
-            ctx, "graft the paper EAT columns onto the fetch", assemble, [fresh]
+            ctx,
+            "prepare output + derived labels + the hold-out split",
+            assemble,
+            [ann_bundle, entries_tsv, mature_tsv, full_fasta],
         )
     )
-    steps.append(
-        projections_step(ctx, drop_quality=not ctx.dataset.get("freeze_statistics"))
-    )
+    steps.append(projections_step(ctx, drop_quality=True))
+    steps += transfer_steps(ctx, assembled)
     return steps
+
+
+def holdout_values(holdout: dict) -> dict[str, str]:
+    return {
+        "reference": "reference",
+        "holdout": "holdout",
+        "query": "trembl",
+        **holdout.get("values", {}),
+    }
+
+
+def transfer_steps(ctx: Context, assembled: Path) -> list[Step]:
+    """EAT with ``protspace transfer`` (it reads a bundle), then its annotations
+    become ``work/annotations.parquet`` for the statistics and the final bundle.
+    """
+    options = ctx.dataset["transfer"]
+    pre = ctx.work / "pre_transfer.parquetbundle"
+    post = ctx.work / "transferred.parquetbundle"
+    bundle_args = [
+        "bundle",
+        "-p",
+        str(ctx.work / "proj"),
+        "-a",
+        str(assembled),
+        "-o",
+        str(pre),
+        "-v",
+    ]
+    transfer_args = ["transfer", "-b", str(pre), "-e", dataset_embeddings(ctx)[0]]
+    for column in options["columns"]:
+        transfer_args += ["-t", column]
+    transfer_args += [
+        "--k",
+        str(options.get("k", 1)),
+        "--metric",
+        options.get("metric", "euclidean"),
+    ]
+    for clause in options.get("query_where", []):
+        transfer_args += ["--query-where", clause]
+    for clause in options.get("reference_where", []):
+        transfer_args += ["--reference-where", clause]
+    transfer_args += ["-o", str(post), "-v"]
+    holdout = ctx.dataset["holdout"]
+
+    def bundle() -> None:
+        ctx.need_cli().run(bundle_args, cwd=ctx.work, log=ctx.log)
+
+    def transfer() -> None:
+        ctx.need_cli().run(transfer_args, cwd=ctx.work, log=ctx.log)
+        table = extract_ann(post)
+        queries = [v for k, v in holdout_values(holdout).items() if k != "reference"]
+        # The transfer writes __pred_ columns only; the labels stay withheld.
+        assert_no_refill(table, holdout["split_column"], queries, options["columns"])
+        missing = [
+            c
+            for c in options["columns"]
+            if f"{c}{PRED_MARKER}value" not in table.column_names
+        ]
+        if missing:
+            raise BuildError(f"protspace transfer wrote no predictions for {missing}")
+        atomic_write(
+            ctx.work / "annotations.parquet",
+            parquet_bytes(stamp_v2(strip_pandas_metadata(table))),
+        )
+
+    return [
+        Step(
+            "pre-transfer",
+            shlex.join(bundle_args),
+            bundle,
+            command=bundle_args,
+            inputs=lambda: {
+                "cli": ctx.cli_identity(),
+                "annotations": fingerprint(assembled),
+                "projections": fingerprint(ctx.work / "proj"),
+            },
+        ),
+        Step(
+            "transfer",
+            shlex.join(transfer_args),
+            transfer,
+            command=transfer_args,
+            inputs=lambda: {
+                "cli": ctx.cli_identity(),
+                "bundle": fingerprint(pre),
+                "embeddings": fingerprint(embed_h5(ctx)),
+                "transfer": options,
+                "holdout": holdout,
+            },
+        ),
+    ]
 
 
 def demo_refresh_steps(ctx: Context) -> list[Step]:
@@ -3397,7 +4373,6 @@ def tail_steps(ctx: Context) -> list[Step]:
     cluster legends are merged in afterwards, untouched.
     """
     work = ctx.work
-    frozen_stats = ctx.dataset.get("freeze_statistics", False)
     with_stats = ctx.dataset.get("stats", False)
     stats_list = ctx.dataset.get("stats_annotations", [])
     raw = work / "raw.parquetbundle"
@@ -3435,12 +4410,7 @@ def tail_steps(ctx: Context) -> list[Step]:
         )
         for stale in (work / "statistics.parquet", work / "stats_styles.json"):
             stale.unlink(missing_ok=True)
-        if frozen_stats:
-            parts = split_bundle(find_source(ctx), work / "src")
-            if "statistics.parquet" not in parts:
-                raise BuildError("freeze_statistics, but the source has no statistics")
-            shutil.copyfile(parts["statistics.parquet"], work / "statistics.parquet")
-        elif with_stats:
+        if with_stats:
             if not stats_list:
                 raise BuildError("stats need an explicit stats_annotations list (G12)")
             ctx.need_cli().run(stats_args, cwd=work, log=ctx.log)
@@ -3448,16 +4418,15 @@ def tail_steps(ctx: Context) -> list[Step]:
     def stats_inputs() -> dict[str, Any]:
         return {
             "recipe": ctx.recipe(STATS_KEYS),
-            "cli": ctx.cli_identity() if with_stats and not frozen_stats else None,
+            "cli": ctx.cli_identity() if with_stats else None,
             "annotations": fingerprint(work / "annotations.parquet"),
             "projections": fingerprint(work / "proj"),
             "embeddings": [
                 fingerprint(split_h5_spec(s)[0]) for s in dataset_embeddings(ctx)
             ],
-            "source": fingerprint(find_source(ctx)) if frozen_stats else None,
         }
 
-    if with_stats and not frozen_stats:
+    if with_stats:
         steps.append(
             Step(
                 "stats",
@@ -3468,8 +4437,7 @@ def tail_steps(ctx: Context) -> list[Step]:
             )
         )
     else:
-        summary = "frozen paper statistics" if frozen_stats else "no statistics"
-        steps.append(Step("stats", summary, stats, inputs=stats_inputs))
+        steps.append(Step("stats", "no statistics", stats, inputs=stats_inputs))
 
     bundle_args = [
         "bundle",
@@ -3598,19 +4566,16 @@ def tail_steps(ctx: Context) -> list[Step]:
 
 
 def carried_legends(ctx: Context, table: pa.Table) -> tuple[dict, list[str]]:
-    """Cluster legends from ``stats`` plus legends carried over from the source.
-
-    A frozen-statistics source carries every legend (its cluster legends match its
-    frozen cluster columns); otherwise ``source_legends`` names the ones to keep.
-    """
+    """Cluster legends from ``stats`` plus the legends ``source_legends`` names,
+    carried over from the source bundle."""
     legends: dict = {}
     notes: list[str] = []
     wanted = ctx.dataset.get("source_legends")
-    if ctx.dataset.get("freeze_statistics") or wanted:
+    if wanted:
         for column, entry in unwrap_legends(
             read_bundle(find_source(ctx)).settings
         ).items():
-            if (wanted is None or column in wanted) and column in table.column_names:
+            if column in wanted and column in table.column_names:
                 entry, dropped = filter_legend(entry, table, column)
                 legends[column] = entry
                 notes += dropped
@@ -3686,7 +4651,6 @@ def provenance(ctx: Context, table: pa.Table) -> dict[str, Any]:
     releases = {
         "refreshed": fetched,
         "withheld-truth": fetched,
-        "paper": ctx.dataset.get("paper_release"),
         "source": ctx.dataset.get("paper_release"),
         "computed": None,
     }
@@ -3730,8 +4694,8 @@ def recipe_steps(ctx: Context) -> list[Step]:
     kind = ctx.dataset["kind"]
     if kind == "paper-refresh":
         body = paper_refresh_steps(ctx)
-    elif kind == "eat-graft":
-        body = eat_graft_steps(ctx)
+    elif kind == "embed-build":
+        body = embed_build_steps(ctx)
     else:
         body = demo_refresh_steps(ctx)
     return [check_inputs_step(ctx), *body, *tail_steps(ctx)]
@@ -3761,11 +4725,7 @@ def verify(ctx: Context) -> tuple[bool, list[Gate]]:
         raise BuildError(f"{ctx.final} does not exist; build it first")
     identity = file_identity(ctx.final)
     bundle = read_bundle(ctx.final)
-    frozen = list(ctx.dataset.get("frozen", []))
-    if ctx.dataset.get("keep_paper_columns"):
-        origin = assemble_report(ctx).get("origin", {})
-        frozen += [c for c, o in origin.items() if o.startswith("paper")]
-    gates = common_gates(bundle, ctx.dataset, ctx.view, frozen=frozen)
+    gates = common_gates(bundle, ctx.dataset, ctx.view)
     gates += context_gates(ctx, bundle, identity)
     gates += run_story_gates(bundle, ctx.dataset.get("gates", []))
     ok, text = summarize(gates)
@@ -3818,35 +4778,153 @@ def assemble_report(ctx: Context) -> dict:
     return json.loads(path.read_text()) if path.is_file() else {}
 
 
-def frozen_columns_gate(ctx: Context, bundle: Bundle) -> Gate:
-    """EAT examples keep the paper's frozen columns value-for-value (v1 sources
-    after their v2 re-encoding)."""
-    source = read_bundle(find_source(ctx)).annotations
-    if format_version(source) < 2:
-        source, _ = migrate_v1_columns(source)
-    table = bundle.annotations
+def embeddings_pin_gate(ctx: Context) -> Gate:
+    """The embeddings an ``embed-build`` made are the pinned ones.
+
+    ``embed.vectors_sha256`` pins what the projections and the transfer read;
+    ``embed.sha256`` pins the file that goes to Zenodo. Other vectors fail (a
+    rebuild on other hardware: point ``embed.input`` at the pinned file); the
+    same vectors in another file layout only warn. Unpinned is pending.
+    """
+    options = ctx.dataset.get("embed") or {}
+    h5 = embed_h5(ctx)
+    if not h5.is_file():
+        return Gate("embeddings-pin", "fail", f"{h5.name} was not built")
+    vectors, count = h5_vectors_sha256(h5)
+    file_sha = sha256_file(h5)
+    data = {"vectors_sha256": vectors, "sha256": file_sha, "vectors": count}
+    pinned = options.get("vectors_sha256")
+    if not pinned:
+        return Gate(
+            "embeddings-pin",
+            "pending",
+            f"pin the embeddings in showcase.toml: embed.vectors_sha256 = "
+            f"{vectors!r}, embed.sha256 = {file_sha!r}",
+            data,
+        )
+    if vectors != pinned:
+        return Gate(
+            "embeddings-pin",
+            "fail",
+            f"{count} vectors differ from the pin ({vectors[:12]}… vs {pinned[:12]}…); "
+            "rebuild from the pinned file with embed.input",
+            data,
+        )
+    if options.get("sha256") and file_sha != options["sha256"]:
+        return Gate(
+            "embeddings-pin", "warn", "the pinned vectors in another file layout", data
+        )
+    return Gate("embeddings-pin", "pass", f"{count} vectors as pinned", data)
+
+
+def membership_gate(ctx: Context, table: pa.Table) -> Gate:
+    """The rows are exactly the pinned accession list, in its order."""
+    try:
+        pinned = membership_ids(ctx)
+    except BuildError as error:
+        return Gate("membership-pinned", "fail", str(error))
     ids = row_ids(table)
-    source_rows = {pid: i for i, pid in enumerate(row_ids(source))}
-    patterns = ctx.dataset.get("frozen", [])
-    checked, differing = [], []
-    for column in source.column_names:
-        if column == ID_COLUMN or not matches_any(column, patterns):
-            continue
-        checked.append(column)
-        if column not in table.column_names:
-            differing.append(f"{column} (missing)")
-            continue
-        old = source.column(column).to_pylist()
-        new = table.column(column).to_pylist()
-        if any(old[source_rows[pid]] != new[i] for i, pid in enumerate(ids)):
-            differing.append(column)
+    differ = set(ids) ^ set(pinned)
+    ok = ids == pinned
     return Gate(
-        "frozen-columns",
-        "fail" if differing else "pass",
-        f"differ: {differing}"
-        if differing
-        else f"{len(checked)} columns as in the paper",
+        "membership-pinned",
+        "pass" if ok else "fail",
+        f"{len(ids)} rows; {len(differ)} ids differ from {membership_path(ctx).name}"
+        + ("" if ok or differ else "; the order differs"),
     )
+
+
+def name_agreement_gate(ctx: Context, table: pa.Table, params: dict) -> Gate:
+    """:func:`gate_name_agreement` on UniProt's full "Protein names" of each
+    entry (``names_from = "entries"``: the ``entries`` step's TSV), which carry
+    the TrEMBL submission names the bundle's ``protein_name`` lacks."""
+    names = None
+    if params.get("names_from") == "entries":
+        path = ctx.work / "entries.tsv"
+        if not path.is_file():
+            return Gate(f"name-agreement:{params['column']}", "fail", "no entries.tsv")
+        entries = read_entries(path)
+        names = [entries.get(pid, {}).get("protein_name") for pid in row_ids(table)]
+    return gate_name_agreement(table, params, names)
+
+
+def mature_inputs_gate(ctx: Context, params: dict) -> Gate:
+    """Every row was embedded as its mature chain (G1), including the reviewed
+    entries only the family clause brings in (G7).
+
+    Reads the build's ``mature.tsv``, ``entries.tsv`` and the H5: each pinned
+    accession has a vector, and the FASTA it was embedded from holds exactly the
+    mature chain ``mature.tsv`` records. ``family_only_xref`` names the InterPro
+    entry the query's first clause matches; the reviewed entries without it must
+    number ``expected_family_only`` and all be embedded.
+    """
+    import h5py
+
+    work = ctx.work
+    try:
+        pinned = membership_ids(ctx)
+        entries = read_entries(work / "entries.tsv")
+        with (work / "mature.tsv").open() as handle:
+            header = handle.readline().rstrip("\n").split("\t")
+            mature = {
+                row[0]: dict(zip(header, row, strict=True))
+                for row in (line.rstrip("\n").split("\t") for line in handle)
+            }
+        embedded = parse_fasta_text((work / "mature.fasta").read_text())
+        with h5py.File(embed_h5(ctx), "r") as handle:
+            keys = set(handle.keys())
+    except (BuildError, OSError, KeyError) as error:
+        return Gate("mature-inputs", "fail", f"cannot check: {error}")
+    problems = []
+    no_vector = [pid for pid in pinned if pid not in keys]
+    if no_vector:
+        problems.append(f"{len(no_vector)} without a vector (first {no_vector[:3]})")
+    wrong = [
+        pid
+        for pid in pinned
+        if pid not in mature
+        or len(embedded.get(pid, "")) != int(mature[pid]["mature_length"])
+    ]
+    if wrong:
+        problems.append(f"{len(wrong)} not embedded as the recorded mature chain")
+    data: dict[str, Any] = {
+        "derivations": dict(Counter(m["derivation"] for m in mature.values())),
+        "embedded_equals_full_length": sum(
+            1
+            for pid in pinned
+            if pid in mature
+            and int(mature[pid]["mature_length"]) == int(mature[pid]["full_length"])
+        ),
+    }
+    xref = params.get("family_only_xref")
+    if xref:
+        family_only = [
+            pid
+            for pid in pinned
+            if entries[pid]["reviewed"] == "reviewed"
+            and xref not in entries[pid]["xref_interpro"]
+        ]
+        data["family_only"] = len(family_only)
+        data["family_only_derivations"] = dict(
+            Counter(mature[pid]["derivation"] for pid in family_only if pid in mature)
+        )
+        expected = params.get("expected_family_only")
+        if expected is not None and len(family_only) != expected:
+            problems.append(
+                f"{len(family_only)} reviewed entries without {xref}, expected {expected}"
+            )
+        missing = [pid for pid in family_only if pid not in keys]
+        if missing:
+            problems.append(f"{len(missing)} family-only entries without a vector")
+    detail = "; ".join(problems) or (
+        f"{len(pinned)} mature chains embedded ({data['derivations']})"
+        + (
+            f"; {data['family_only']} family-only reviewed entries included"
+            if xref
+            else ""
+        )
+    )
+    return Gate("mature-inputs", "fail" if problems else "pass", detail, data)
 
 
 def provenance_gate(found: dict[str, Any]) -> Gate:
@@ -3929,27 +5007,20 @@ def context_gates(
         metadata, data = read_projection_source(find_projection_source(ctx))
         _, expected = select_projections(metadata, data, projection_spec(ctx))
         same = coordinate_map(expected) == coordinate_map(bundle.data)
+        source = "the build's own projections" if is_embed_build(ctx) else "paper"
         gates.append(
             Gate(
                 "coordinates",
                 "pass" if same else "fail",
-                "paper coordinates unchanged" if same else "differ from the source",
+                f"{source} coordinates unchanged" if same else "differ from the source",
             )
         )
     except BuildError as error:
         gates.append(Gate("coordinates", "fail", str(error)))
 
-    if ctx.dataset["kind"] == "eat-graft":
-        gates.append(frozen_columns_gate(ctx, bundle))
-    if ctx.dataset.get("freeze_statistics"):
-        source_parts = split_parts(find_source(ctx).read_bytes())
-        final_parts = split_parts(ctx.final.read_bytes())
-        same = len(final_parts) == 5 and final_parts[4] == source_parts[4]
-        gates.append(
-            Gate(
-                "statistics-frozen", "pass" if same else "fail", "paper statistics part"
-            )
-        )
+    if is_embed_build(ctx):
+        gates.append(membership_gate(ctx, bundle.annotations))
+        gates.append(embeddings_pin_gate(ctx))
 
     gates.append(provenance_gate(read_provenance(bundle.annotations)))
 
@@ -4000,6 +5071,10 @@ def context_gates(
             )
         elif kind == "pfam_duplicates":
             gates.append(pfam_duplicate_gate(ctx, spec))
+        elif kind == "mature_inputs":
+            gates.append(mature_inputs_gate(ctx, spec))
+        elif kind == "name_agreement":
+            gates.append(name_agreement_gate(ctx, bundle.annotations, spec))
         elif kind == "browser_load":
             gates.append(
                 browser_load_gate(ctx, spec, identity or file_identity(ctx.final))

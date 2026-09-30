@@ -1,9 +1,0 @@
-{
-  "$comment": "Fig. 4: the nine most frequent EC numbers plus N/A (the transferred rings fill the N/A rows).",
-  "ec": {
-    "sortMode": "manual",
-    "zOrderSort": "size-desc",
-    "maxVisibleValues": 10,
-    "pinnedValues": ["__REST__", ""]
-  }
-}

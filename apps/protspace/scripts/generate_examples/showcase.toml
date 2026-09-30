@@ -1,9 +1,14 @@
-# Showcase example datasets for the protspace.app Import menu. Every example
-# ships its UMAP and a PCA (D3).
+# Showcase example datasets for the protspace.app Import menu: the demo first,
+# then ascending protein count (D1). Every example ships its UMAP and a PCA (D3).
 #
 # Read by build_showcase.py in this directory; README.md has usage per dataset.
 # OpenSpec change: openspec/changes/curated-example-datasets (design Decisions 1 and
 # 9-13, tasks §6-§7).
+#
+# A column the legend could only show as N/A or as one value fails the
+# `informative-columns` gate unless the recipe keeps it in `keep_uninformative`
+# (a documented column whose one value is itself the fact, e.g. "all Swiss-Prot")
+# or it is the default view's annotation or a tooltip name (W10, G13).
 #
 # Path templates: {repo} is the checkout this file lives in, {home} is $HOME, and
 # every name under [paths] can be used too. Override a path with
@@ -17,7 +22,7 @@
 
 [build]
 uniprot_release = "2026_03"       # annotations are refreshed at this release; the build stops if UniProt serves another
-release_tag = "showcase-2026_03"  # GitHub release hosting the five paper bundles (D8)
+release_tag = "showcase-2026_03"  # GitHub release hosting every example but the demo (D8)
 file_pattern = "{id}_{release}.parquetbundle"
 out_root = "{home}/protspace-showcase/2026_03"
 catalog = "{repo}/apps/web/src/explore/example-datasets.ts"
@@ -63,6 +68,7 @@ styles = "styles/demo.json"
 stats = false                             # two embeddings without a metadata `source` column; keep the startup file small
 reviewed = "Swiss-Prot"
 max_obsolete = 50
+keep_uninformative = ["reviewed", "domain", "kingdom", "root"]  # ToxProt is Swiss-Prot animals: one value each, documented columns
 
 [datasets.demo.default_view]
 projection = "ProtT5 — UMAP 2"
@@ -87,127 +93,181 @@ type = "source_column_kept"
 column = "length"
 
 # ---------------------------------------------------------------------------
-# venom-eat: Fig. 4 a, d, e, f. Coordinates, statistics and the EAT columns are
-# the paper's; InterPro, TED and Biocentral are added from full-length sequences.
-# Opens at reliability 0 so the separation strips stay visible (D6, G1).
+# three-finger-toxins: the EAT example (D1). Snake three-finger toxins at
+# 2026_03: Swiss-Prot curators name each one's class in `cc_similarity`, the
+# TrEMBL entries (venom-gland transcripts) carry none. Every entry is embedded
+# as its mature chain (G1: Swiss-Prot often holds the mature chain, TrEMBL the
+# precursor), InterPro, TED and Biocentral read the full-length sequences (G8).
+# A stratified 20 % of the Swiss-Prot entries is held out; toxin_class and
+# toxin_subfamily are transferred to the held-out and the TrEMBL rows (k = 1,
+# Euclidean). Opens at reliability 0; the docs say "drag to 0.5".
 # ---------------------------------------------------------------------------
-[datasets.venom-eat]
-kind = "eat-graft"
-name = "Venom toxins · EAT"
+[datasets.three-finger-toxins]
+kind = "embed-build"
+name = "Snake three-finger toxins · EAT"
 hosting = "release"
-proteins = 811
-figure = "Fig. 4a, d, e, f"
-membership = "(keyword:KW-0800) AND (keyword:KW-0964) AND (reviewed:true) AND (taxonomy_id:33208) AND (length:[100 TO 140])"  # reconstructed from the data: returns exactly the 811
-membership_release = "2026_02"  # contains C0HMH2 (new in 2026_02); same 811 at 2026_03; built 2026-08-05
-paper_release = "2026_02"       # the frozen GO columns match the 2026_02 entry versions
-source = [
-  "{repo}/apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle",
-  "{repo}/apps/web/public/data/venom_eat_stats.parquetbundle",
-  "{repo}/perf/datasets/venom_eat_stats.parquetbundle",
+proteins = 1089
+membership = '(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)'  # the family clause adds 47 reviewed entries InterPro misses (G7)
+membership_release = "2026_03"
+membership_file = "inputs/three-finger-toxins.accessions.txt"  # the pinned list, relative to this file
+membership_sha256 = "2cc644f18375f522e922103bc450371dc5ec35067b72359c8fd24018938716db"
+# ProtT5-XL-U50 per protein, as UniProt computes it: the half-precision encoder
+# Rostlab/prot_t5_xl_half_uniref50-enc. `local` runs that fixed checkpoint in
+# this build (fp32 on CPU, fp16 on CUDA) instead of a remote service, so a
+# rebuild does not depend on what Biocentral serves. The pins are the first
+# build's output; `input` may name a copy of that file (the Zenodo one), which a
+# rebuild then uses instead of embedding again.
+embed = { model = "prot_t5", backend = "local", vectors_sha256 = "a01ea7feec5f9a41cbd2e1d012a402d85330a2e7e4be8b7069d97d8afe3635f3", sha256 = "bb767ab6e1fd4e0d249d488cc7c12a44ef0cd6e79afeafc2bfba13cdbf9eb7c5" }
+methods = "umap2,pca2"   # the PCA survives a projection switch with its EAT rings (docs eat.md)
+projection_params = { n_neighbors = 25, min_dist = 0.1, random_state = 42 }
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+# Only columns with something to show: the snakes share their ranks above
+# family, and InterPro's superfamily, CATH, CDD, PRINTS, SMART and Pfam clan and
+# TMbed's transmembrane type have one value (or none) here; the
+# informative-columns gate lists any that does.
+stages = [
+  { groups = ["protein_families", "reviewed", "length", "fragment", "protein_existence", "annotation_score", "keyword", "xref_pdb", "go_bp", "go_mf", "family", "genus", "species"] },
+  { groups = ["pfam", "signal_peptide", "panther", "prosite"] },   # InterPro, Phobius
+  { groups = ["ted"] },
+  { groups = ["predicted_subcellular_location", "predicted_membrane", "predicted_signal_peptide"] },   # Biocentral: about 1,100 short sequences, minutes
 ]
-source_sha256 = "75124338953565bdb394f110be54b6f29e35099536cafc15d9d359aad51bfb31"
-projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
-frozen = ["ec", "protein_families", "*__pred_*", "cluster_*"]
-keep_paper_columns = true
-refresh_groups = ["interpro", "ted", "biocentral"]
-fasta = { fallback_column = "sequence" }
-freeze_statistics = true
-envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.0 }
-styles = "styles/venom-eat.json"
-reviewed = "Swiss-Prot"
-max_obsolete = 10
-
-[datasets.venom-eat.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "ec"
-tooltip = ["protein_families", "species"]
-
-[datasets.venom-eat.report]
-annotations = ["ec", "protein_families", "family", "order", "cc_subcellular_location", "pfam", "cluster_elbow_ProtT5 — UMAP 2"]
-projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
-
-[[datasets.venom-eat.gates]]
-type = "eat_transfers"
-column = "ec"
-expected_predicted = 384
-threshold = 0.5
-expected_at_threshold = 244
-
-[[datasets.venom-eat.gates]]
-type = "eat_source"
-accession = "P0DPU8"
-column = "ec"
-source = "F5CPF0"
-confidence = 0.583
-tol = 0.001
-value_contains = "3.1.1.4"
-
-# ---------------------------------------------------------------------------
-# phosphatase-eat: the benchmark behind the abstract's 91.5 % / 98.1 %. EC and
-# family were withheld from 213 queries and transferred from 619 references
-# (k = 1, Euclidean). Everything else is refreshed; the refreshed EC and family
-# of the queries become the withheld-truth columns (G6). Opens at reliability 0.5.
-# ---------------------------------------------------------------------------
-[datasets.phosphatase-eat]
-kind = "eat-graft"
-name = "Phosphatases · EAT benchmark"
-hosting = "release"
-proteins = 832
-figure = "Abstract; Results (EAT benchmark)"
-membership = "(ft_domain:phosphatase) AND (reviewed:true), 832 entries with a UniProt ProtT5 vector"
-membership_release = "2025_03"
-paper_release = "2025_03"
-source = [
-  "{repo}/apps/web/tests/fixtures/phosphatase_eat.parquetbundle",
-  "{cli_data}/eat_demo/phosphatase_eat.parquetbundle",
-]
-source_sha256 = "06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33"
-embeddings = ["{cli_data}/eat_demo/phosphatase_prot_t5.h5:prot_t5"]
-pins = [{ path = "{cli_data}/eat_demo/phosphatase_prot_t5.h5", bytes = 2026752 }]
-projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
-frozen = ["ec", "protein_families", "eat_split", "*__pred_*"]
-keep_paper_columns = false
-refresh_groups = ["all"]
-withheld = { split_column = "eat_split", query_value = "query", columns = { ec = "ec_withheld", protein_families = "protein_families_withheld" } }
+first_columns = ["toxin_subfamily", "eat_split", "toxin_class_withheld", "toxin_subfamily_withheld", "toxin_class_uniprot_rule", "species", "genus", "family"]
 stats = true
-stats_annotations = ["ec", "protein_families", "domain", "kingdom", "phylum", "cc_subcellular_location", "protein_existence", "xref_pdb"]
-envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.5 }
-styles = "styles/phosphatase-eat.json"
-reviewed = "Swiss-Prot"
-max_obsolete = 10
+stats_annotations = ["toxin_class", "toxin_subfamily", "family", "genus", "pfam"]
+envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.0 }
+styles = "styles/three-finger-toxins.json"
+reviewed = "mixed"
+max_obsolete = 0
+# toxin_class_uniprot_rule: one rule (Boigatoxin) labels TrEMBL here, shown as
+# the rule's claim. protein_families: "three-finger toxin family" on every row by
+# the query, kept so the family-parser gate checks the CLI's parser here too
+# (toxin_subfamily and toxin_class hold the levels below it).
+keep_uninformative = ["toxin_class_uniprot_rule", "protein_families"]
 
-[datasets.phosphatase-eat.default_view]
+[datasets.three-finger-toxins.labels]
+family = "three-finger toxin family"   # the cc_similarity statement the labels are read from
+keep_rule_labels = ["toxin_class"]     # TrEMBL's automatic "Boigatoxin" rule labels, kept aside as toxin_class_uniprot_rule
+
+[[datasets.three-finger-toxins.labels.columns]]
+name = "toxin_class"   # research2/e2/pilot_tftx.py `cls`: first matching rule wins
+rules = [
+  ["type i alpha", "Type I α-neurotoxin (short)"],
+  ["type ii alpha", "Type II α-neurotoxin (long)"],
+  ["type iii alpha", "Type III α-neurotoxin"],
+  ["kappa", "κ-neurotoxin"],
+  ["cytotoxin", "Cytotoxin"],
+  ["aminergic", "Aminergic / muscarinic"],
+  ["muscarinic", "Aminergic / muscarinic"],
+  ["mambalgin", "Aminergic / muscarinic"],
+  ["ancestral", "Ancestral / non-conventional"],
+  ["short-chain", "Other short-chain"],
+  ["long-chain", "Other long-chain"],
+]
+
+[[datasets.three-finger-toxins.labels.columns]]
+name = "toxin_subfamily"
+rules = [
+  ["short-chain subfamily", "Short-chain"],
+  ["long-chain subfamily", "Long-chain"],
+  ["ancestral subfamily", "Ancestral"],
+]
+
+[datasets.three-finger-toxins.holdout]
+split_column = "eat_split"   # reference | holdout | trembl
+stratify = "toxin_class"     # classes and ids are visited sorted (G4)
+fraction = 0.2
+seed = 7
+columns = ["toxin_class", "toxin_subfamily"]   # blanked on hold-out rows; the truth goes to <column>_withheld
+
+[datasets.three-finger-toxins.transfer]
+columns = ["toxin_class", "toxin_subfamily"]
+k = 1
+metric = "euclidean"   # the RI scale the paper uses (W26); cosine puts every query near 1
+query_where = ["eat_split~holdout", "eat_split~trembl"]
+reference_where = ["eat_split~reference"]
+
+[datasets.three-finger-toxins.default_view]
 projection = "ProtT5 — UMAP 2"
-annotation = "ec"
-tooltip = ["eat_split", "ec_withheld", "protein_families_withheld"]
+annotation = "toxin_class"
+tooltip = ["toxin_class_withheld", "species", "eat_split"]
 
-[datasets.phosphatase-eat.report]
-annotations = ["ec", "protein_families", "eat_split", "pfam", "kingdom", "cluster_elbow_ProtT5 — UMAP 2"]
+[datasets.three-finger-toxins.report]
+annotations = ["toxin_class", "toxin_subfamily", "eat_split", "genus", "family", "pfam"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
 
-[[datasets.phosphatase-eat.gates]]
+[[datasets.three-finger-toxins.gates]]
 type = "category_counts"
 column = "eat_split"
-expected = { query = 213, reference = 619 }
+expected = { reference = 430, holdout = 107, trembl = 552 }
 
-[[datasets.phosphatase-eat.gates]]
+[[datasets.three-finger-toxins.gates]]
 type = "no_refill"
 split_column = "eat_split"
-query_value = "query"
-columns = ["ec", "protein_families"]
+query_value = ["holdout", "trembl"]
+columns = ["toxin_class", "toxin_subfamily"]
 
-[[datasets.phosphatase-eat.gates]]
-type = "eat_accuracy"   # research/critic/c3_eat.py: 91.5 % over 213, 98.1 % over 160 at ≥ 0.5
-column = "ec"
-truth_column = "ec_withheld"
+[[datasets.three-finger-toxins.gates]]
+type = "eat_accuracy"   # tolerances, not the pilot's numbers (G4): a 200-seed sweep gave min 0.887
+column = "toxin_class"
+truth_column = "toxin_class_withheld"
 split_column = "eat_split"
-query_value = "query"
+query_value = "holdout"
+compare = "labels"
 threshold = 0.5
-expected_n = 213
-expected_accuracy = 91.5
-expected_n_at_threshold = 160
-expected_accuracy_at_threshold = 98.1
-tol_pp = 0.1
+min_n = 100
+min_accuracy = 88.0
+min_accuracy_at_threshold = 90.0
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_accuracy"
+column = "toxin_subfamily"
+truth_column = "toxin_subfamily_withheld"
+split_column = "eat_split"
+query_value = "holdout"
+compare = "labels"
+threshold = 0.5
+min_n = 100
+min_accuracy = 95.0
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_transfers"   # the rings at RI ≥ 0.5 on the TrEMBL rows; ± 5 % of the built value
+column = "toxin_class"
+split_column = "eat_split"
+query_value = "trembl"
+threshold = 0.5
+expected_predicted = 552
+expected_at_threshold = 238   # the 2026_03 build; the full-length pilot had 421
+rel_tol = 0.05
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_fanout"   # the pilot's largest donor gave its class to 36 queries
+column = "toxin_class"
+max_fanout = 40
+
+[[datasets.three-finger-toxins.gates]]
+type = "name_agreement"   # research2/e2/tftx_detail.py `hint`: the pilot agreed on 48 of 53
+names_from = "entries"      # UniProt's "Protein names": the bundle has no TrEMBL submission names
+column = "toxin_class"
+split_column = "eat_split"
+query_value = "trembl"
+min_fraction = 0.85
+min_n = 20
+rules = [
+  ["weak neurotoxin|weak toxin|non-conventional|boigatoxin|denmotoxin", "Ancestral / non-conventional"],
+  ["muscarinic", "Aminergic / muscarinic"],
+  ["cytotoxin|cardiotoxin", "Cytotoxin"],
+  ["short neurotoxin|short-chain neurotoxin", "Type I α-neurotoxin (short)"],
+  ["long neurotoxin|long-chain|alpha-elapitoxin|alpha-bungarotoxin", "Type II α-neurotoxin (long)"],
+]
+
+[[datasets.three-finger-toxins.gates]]
+type = "mature_inputs"   # G1 and G7: every row embedded as its mature chain
+family_only_xref = "IPR003571"
+expected_family_only = 47
+
+[[datasets.three-finger-toxins.gates]]
+type = "full_length_inputs"   # G8: InterPro and Biocentral read full-length sequences
+min_fraction = 0.99
 
 # ---------------------------------------------------------------------------
 # human-fly: Fig. 2B. Paper membership (105,562) and coordinates; the 146 rows
@@ -252,6 +312,7 @@ stats_annotations = ["species", "protein_families", "reviewed", "protein_existen
 styles = "styles/human-fly.json"
 reviewed = "mixed"
 max_obsolete = 400   # G17: about 195 expected
+keep_uninformative = ["domain", "kingdom", "root"]  # two animal proteomes: one value each, documented columns
 
 [datasets.human-fly.default_view]
 projection = "ProtT5 — UMAP 2"
@@ -259,7 +320,7 @@ annotation = "species"
 tooltip = ["protein_families", "reviewed"]
 
 [datasets.human-fly.report]
-annotations = ["species", "protein_families", "reviewed", "protein_existence", "cluster_elbow_ProtT5 — UMAP 2"]
+annotations = ["species", "protein_families", "reviewed", "protein_existence"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
 
 [[datasets.human-fly.gates]]
@@ -360,7 +421,7 @@ annotation = "protein_families"
 tooltip = ["ec", "species"]
 
 [datasets.beta-lactamase.report]
-annotations = ["protein_families", "ec", "domain", "kingdom", "cluster_elbow_ProtT5 — UMAP 2"]
+annotations = ["protein_families", "ec", "domain", "kingdom"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
 
 [[datasets.beta-lactamase.gates]]
@@ -434,6 +495,7 @@ web_cut = ["go_bp", "go_cc", "go_mf", "ted_domains"]
 styles = "styles/swissprot.json"
 reviewed = "Swiss-Prot"
 max_obsolete = 100   # G17: about 45 expected
+keep_uninformative = ["reviewed"]   # all Swiss-Prot, a documented column
 
 [datasets.swissprot.default_view]
 projection = "ProtT5 — UMAP 2"
@@ -441,7 +503,7 @@ annotation = "domain"
 tooltip = ["protein_families", "species"]
 
 [datasets.swissprot.report]
-annotations = ["domain", "kingdom", "protein_families", "pfam_clan", "cluster_elbow_ProtT5 — UMAP 2"]
+annotations = ["domain", "kingdom", "protein_families", "pfam_clan"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
 
 [[datasets.swissprot.gates]]

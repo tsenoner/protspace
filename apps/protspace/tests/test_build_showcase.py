@@ -11,7 +11,9 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 import h5py
@@ -321,59 +323,6 @@ def _eat_paper():
     )
 
 
-def _eat_fresh():
-    return pa.table(
-        {
-            "identifier": ["R1", "Q1", "Q2"],
-            "ec": ["9.9.9.9 (new)", "1.1.1.1 (a)|EXP", "3.3.3.3 (c)"],
-            "protein_families": ["fam new", "fam A", "fam C"],
-            "species": ["new R", "new Q1", "new Q2"],
-            "pfam": ["PF9", "PF1", "PF2"],
-            "organism_id": ["1", "2", "3"],
-        }
-    )
-
-
-def test_graft_refresh_keeps_frozen_columns_and_fills_withheld_truth_on_queries_only():
-    spec_ = bs.GraftSpec(
-        frozen=["ec", "protein_families", "eat_split", "*__pred_*"],
-        keep_paper_columns=False,
-        withheld={"ec": "ec_withheld", "protein_families": "protein_families_withheld"},
-        split_column="eat_split",
-        query_value="query",
-    )
-    table, report = bs.graft_columns(_eat_paper(), _eat_fresh(), spec_)
-    rows = {r["protein_id"]: r for r in table.to_pylist()}
-    assert (
-        rows["Q1"]["ec"] == "" and rows["R1"]["ec"] == "1.1.1.1 (a)"
-    )  # paper, never fresh
-    assert rows["Q2"]["species"] == "new Q2"  # refreshed
-    assert rows["R1"]["pfam"] == "PF9"  # new source added
-    assert rows["Q1"]["ec_withheld"] == "1.1.1.1 (a)|EXP"
-    assert rows["R1"]["ec_withheld"] is None  # truth only for the queries
-    assert (
-        "sequence" not in table.column_names and "organism_id" not in table.column_names
-    )
-    assert report["origin"]["ec"] == "paper-frozen"
-    assert report["origin"]["species"] == "refreshed"
-    assert report["origin"]["ec_withheld"] == "withheld-truth"
-    bs.assert_no_refill(table, "eat_split", "query", ["ec", "protein_families"])
-
-
-def test_graft_keep_paper_columns_only_adds_new_sources():
-    spec_ = bs.GraftSpec(frozen=["ec", "*__pred_*"], keep_paper_columns=True)
-    table, report = bs.graft_columns(_eat_paper(), _eat_fresh(), spec_)
-    assert table.column("species").to_pylist() == ["old"] * 3
-    assert table.column("pfam").to_pylist() == ["PF1", "PF2", "PF9"]
-    assert report["origin"]["species"] == "paper"
-
-
-def test_graft_reports_accessions_the_fetch_missed():
-    fresh = _eat_fresh().slice(0, 2)
-    _, report = bs.graft_columns(_eat_paper(), fresh, bs.GraftSpec(frozen=["ec"]))
-    assert report["absent_from_fetch"] == ["Q2"]
-
-
 def test_no_refill_guard_detects_a_leaked_query_value():
     table = _eat_paper().set_column(1, "ec", pa.array(["1.1.1.1 (a)", "", "x"]))
     assert bs.refill_violations(
@@ -381,6 +330,11 @@ def test_no_refill_guard_detects_a_leaked_query_value():
     ) == {"ec": ["Q1"]}
     with pytest.raises(bs.BuildError, match="hold-out leak"):
         bs.assert_no_refill(table, "eat_split", "query", ["ec"])
+    # Several query values (hold-out and TrEMBL rows) guard together.
+    assert bs.refill_violations(
+        table, "eat_split", ["reference", "absent"], ["ec"]
+    ) == {"ec": ["R1"]}
+    bs.assert_no_refill(table, "eat_split", ["absent"], ["ec"])
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +348,7 @@ def test_provenance_round_trip_keeps_the_format_stamp():
     stamped = bs.set_provenance(
         table,
         {
-            "example_id": "venom-eat",
+            "example_id": "three-finger-toxins",
             "protspace_version": "4.14.0",
             "uniprot_release": {
                 "refreshed": {"release": "2026_03", "columns": ["pfam"]}
@@ -407,7 +361,8 @@ def test_provenance_round_trip_keeps_the_format_stamp():
     assert metadata[b"protspace_format_version"] == b"2"
     assert b"pandas" not in metadata and b"zenodo_doi" not in metadata
     found = bs.read_provenance(stamped)
-    assert found["example_id"] == "venom-eat" and found["protspace_version"] == "4.14.0"
+    assert found["example_id"] == "three-finger-toxins"
+    assert found["protspace_version"] == "4.14.0"
     assert found["uniprot_release"]["refreshed"]["release"] == "2026_03"
     assert found["pipeline"] == ["protspace annotate …"]
     with pytest.raises(bs.BuildError):
@@ -416,18 +371,30 @@ def test_provenance_round_trip_keeps_the_format_stamp():
 
 def test_release_groups_label_every_column():
     groups = bs.release_groups(
-        {"ec": "paper-frozen", "pfam": "refreshed", "ec_withheld": "withheld-truth"},
-        ["protein_id", "ec", "pfam", "ec_withheld", "cluster_elbow_U", "species"],
-        {"refreshed": "2026_03", "paper": "2025_03", "withheld-truth": "2026_03"},
+        {"length": "source", "pfam": "refreshed", "ec_withheld": "withheld-truth"},
+        [
+            "protein_id",
+            "length",
+            "pfam",
+            "ec_withheld",
+            "cluster_elbow_U",
+            "ec__pred_value",
+            "species",
+        ],
+        {"refreshed": "2026_03", "source": "2026_01", "withheld-truth": "2026_03"},
     )
-    assert groups["paper"] == {"release": "2025_03", "columns": ["ec"]}
+    assert groups["source"] == {"release": "2026_01", "columns": ["length"]}
     assert groups["refreshed"]["columns"] == ["pfam", "species"]
-    assert groups["computed"] == {"release": None, "columns": ["cluster_elbow_U"]}
+    # Cluster and transfer columns are computed by the build, not fetched.
+    assert groups["computed"] == {
+        "release": None,
+        "columns": ["cluster_elbow_U", "ec__pred_value"],
+    }
     assert groups["withheld-truth"]["columns"] == ["ec_withheld"]
 
 
 # ---------------------------------------------------------------------------
-# EAT accuracy (phosphatase gate)
+# EAT gates
 # ---------------------------------------------------------------------------
 
 
@@ -522,9 +489,424 @@ def test_eat_gates():
     )
 
 
+def _eat_example():
+    """Six rows of an EAT example: two held out, three TrEMBL, one reference."""
+    return pa.table(
+        {
+            "protein_id": ["H1", "H2", "T1", "T2", "T3", "R1"],
+            "eat_split": [
+                "holdout",
+                "holdout",
+                "trembl",
+                "trembl",
+                "trembl",
+                "reference",
+            ],
+            "protein_name": [
+                "Short neurotoxin 1",
+                "x",
+                "Long neurotoxin 2",
+                "Cytotoxin 3",
+                "Three-finger toxin",
+                "Short neurotoxin",
+            ],
+            "toxin_class": [None, None, None, None, None, "Type I"],
+            "toxin_class_withheld": ["Type I", "Type II", None, None, None, None],
+            "toxin_class__pred_value": [
+                "Type I",
+                "Type I",
+                "Type II",
+                "Type I",
+                "Cyto",
+                None,
+            ],
+            "toxin_class__pred_confidence": [0.8, 0.4, 0.6, 0.55, 0.3, None],
+            "toxin_class__pred_source": ["R1", "R1", "R2", "R1", "R3", None],
+        }
+    )
+
+
+def test_eat_accuracy_floors_for_a_split_the_build_draws():
+    params = {
+        "column": "toxin_class",
+        "truth_column": "toxin_class_withheld",
+        "split_column": "eat_split",
+        "query_value": "holdout",
+        "compare": "labels",
+        "threshold": 0.5,
+    }
+    table = _eat_example()
+    gate = bs.gate_eat_accuracy(table, {**params, "min_accuracy": 50.0})
+    assert gate.status == "pass" and gate.data["accuracy"] == 50.0
+    assert (
+        gate.data["n_at_threshold"] == 1 and gate.data["accuracy_at_threshold"] == 100
+    )
+    assert (
+        bs.gate_eat_accuracy(table, {**params, "min_accuracy": 51.0}).status == "fail"
+    )
+    assert bs.gate_eat_accuracy(table, {**params, "min_n": 3}).status == "fail"
+    floors = {**params, "min_accuracy": 50.0, "min_accuracy_at_threshold": 100.0}
+    assert bs.gate_eat_accuracy(table, floors).status == "pass"
+    assert bs.gate_eat_accuracy(table, params).status == "fail"  # nothing checked
+
+
+def test_eat_transfers_on_one_split_with_a_band_or_pending():
+    params = {
+        "column": "toxin_class",
+        "split_column": "eat_split",
+        "query_value": "trembl",
+        "threshold": 0.5,
+        "expected_predicted": 3,
+    }
+    table = _eat_example()
+    pending = bs.gate_eat_transfers(table, params)
+    assert pending.status == "pending" and pending.data == {
+        "predicted": 3,
+        "at_threshold": 2,
+    }
+    band = {**params, "expected_at_threshold": 2, "rel_tol": 0.05}
+    assert bs.gate_eat_transfers(table, band).status == "pass"
+    off = {**params, "expected_at_threshold": 3, "rel_tol": 0.05}
+    assert bs.gate_eat_transfers(table, off).status == "fail"
+
+
+def test_eat_fanout_and_name_agreement():
+    table = _eat_example()
+    fanout = bs.gate_eat_fanout(table, {"column": "toxin_class", "max_fanout": 3})
+    assert fanout.status == "pass" and fanout.data["largest"] == "R1"
+    assert fanout.data["fanout"] == 3
+    assert (
+        bs.gate_eat_fanout(table, {"column": "toxin_class", "max_fanout": 2}).status
+        == "fail"
+    )
+    params = {
+        "column": "toxin_class",
+        "split_column": "eat_split",
+        "query_value": "trembl",
+        "min_fraction": 0.5,
+        "rules": [
+            ["cytotoxin", "Cyto"],
+            ["short neurotoxin", "Type I"],
+            ["long neurotoxin", "Type II"],
+        ],
+    }
+    agreement = bs.gate_name_agreement(table, params)
+    # T1 long → Type II (agrees), T2 cytotoxin → Type I (disagrees), T3 states none.
+    assert agreement.status == "pass"
+    assert agreement.data["stated"] == 2 and agreement.data["agree"] == 1
+    assert agreement.data["confusions"] == {"Cyto → Type I": 1}
+    strict = bs.gate_name_agreement(table, {**params, "min_fraction": 0.85})
+    assert strict.status == "fail"
+
+
 # ---------------------------------------------------------------------------
-# Taxonomy of rows without an entry (W18)
+# embed-build: mature chains, derived labels and the hold-out
 # ---------------------------------------------------------------------------
+
+
+def _entry(**fields):
+    base = dict.fromkeys(bs.ENTRY_FIELDS, "")
+    base.update(accession="A1", reviewed="reviewed", sequence="M" * 20 + "K" * 60)
+    base.update(fields)
+    return base
+
+
+@pytest.mark.parametrize(
+    ("fields", "start", "end", "derivation"),
+    [
+        (
+            {
+                "ft_signal": 'SIGNAL 1..21; /evidence="ECO:0000256|SAM:SignalP"',
+                "ft_chain": 'CHAIN 22..80; /id="PRO_1"',
+            },
+            22,
+            80,
+            "chain",
+        ),
+        (  # the precursor with a propeptide: the Chain feature decides
+            {
+                "ft_signal": "SIGNAL 1..19",
+                "ft_propep": "PROPEP 20..34",
+                "ft_chain": 'CHAIN 35..80; /note="Irditoxin subunit A"',
+            },
+            35,
+            80,
+            "chain",
+        ),
+        (  # a mature chain sequenced as protein, a fuzzy end on a fragment
+            {
+                "ft_chain": 'CHAIN 1..>25; /note="Alpha-elapitoxin"',
+                "fragment": "fragment",
+            },
+            1,
+            25,
+            "chain",
+        ),
+        ({"ft_peptide": 'PEPTIDE 1..60; /note="Toxin"'}, 1, 60, "peptide"),
+        ({"ft_chain": "CHAIN 1..20; CHAIN 22..80"}, 22, 80, "chain"),  # the longest
+        ({"ft_signal": "SIGNAL 1..21"}, 22, 80, "signal peptide removed"),
+        (
+            {"ft_signal": "SIGNAL 1..19", "ft_propep": "PROPEP 20..30"},
+            31,
+            80,
+            "signal peptide and propeptide removed",
+        ),
+        ({"ft_chain": "CHAIN ?..80"}, 1, 80, "as deposited"),  # unknown start
+        ({}, 1, 80, "as deposited"),
+    ],
+)
+def test_mature_chain(fields, start, end, derivation):
+    entry = _entry(**fields)
+    chain = bs.mature_chain(entry)
+    assert (chain.start, chain.end, chain.derivation) == (start, end, derivation)
+    assert chain.sequence == entry["sequence"][start - 1 : end]
+    assert chain.fragment == bool(fields.get("fragment"))
+
+
+def test_similarity_path_and_derived_labels():
+    text = (
+        "SIMILARITY: Belongs to the three-finger toxin family. Short-chain subfamily. "
+        "Type I alpha-neurotoxin sub-subfamily. {ECO:0000305}."
+    )
+    path = bs.similarity_path(text, "three-finger toxin family")
+    assert path == (
+        "three-finger toxin family. Short-chain subfamily. "
+        "Type I alpha-neurotoxin sub-subfamily"
+    )
+    assert (
+        bs.similarity_path(
+            "SIMILARITY: Belongs to the PLA2 family.", "three-finger toxin family"
+        )
+        is None
+    )
+    assert bs.similarity_path("", "x") is None
+    rules = [
+        ["type i alpha", "Type I"],
+        ["type ii alpha", "Type II"],
+        ["short-chain", "Short"],
+    ]
+    assert bs.derive_label(path, rules) == "Type I"
+    assert bs.derive_label(path.replace("Type I ", "Type II "), rules) == "Type II"
+    assert (
+        bs.derive_label("three-finger toxin family. Short-chain subfamily", rules)
+        == "Short"
+    )
+    assert bs.derive_label(None, rules) == ""
+
+
+def test_the_holdout_split_depends_on_the_seed_alone():
+    ids = [f"P{i:02d}" for i in range(30)]
+    reviewed = {pid: i < 20 for i, pid in enumerate(ids)}
+    strata = {
+        pid: ("a" if i < 10 else "b" if i < 18 else "") for i, pid in enumerate(ids)
+    }
+    values = {"reference": "reference", "holdout": "holdout", "query": "trembl"}
+    split = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=7, values=values)
+    counts = Counter(split.values())
+    # round(0.2 · 10) of a, round(0.2 · 8) of b; P18-P19 are reviewed, unlabelled.
+    assert counts == {"reference": 16, "holdout": 4, "trembl": 10}
+    held = [pid for pid, s in split.items() if s == "holdout"]
+    assert sum(strata[p] == "a" for p in held) == 2
+    assert not {p for p in held if not strata[p]}  # unlabelled rows stay references
+    # Row order and dict order do not matter (G4: a set's order did).
+    shuffled = list(reversed(ids))
+    again = bs.holdout_split(
+        shuffled,
+        dict(reversed(reviewed.items())),
+        dict(reversed(strata.items())),
+        fraction=0.2,
+        seed=7,
+        values=values,
+    )
+    assert again == split
+    other = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=8, values=values)
+    assert other != split
+
+
+def test_label_table_blanks_queries_and_keeps_the_truth():
+    ids = ["P1", "P2", "P3", "T1", "T2"]
+    boiga = (
+        "SIMILARITY: Belongs to the three-finger toxin family. Ancestral subfamily. "
+        "Boigatoxin sub-subfamily. {ECO:0000256|RuleBase:RU000001}."
+    )
+    short = (
+        "SIMILARITY: Belongs to the three-finger toxin family. Short-chain subfamily."
+    )
+    entries = {
+        "P1": _entry(accession="P1", cc_similarity=short),
+        "P2": _entry(accession="P2", cc_similarity=short),
+        "P3": _entry(accession="P3", cc_similarity=boiga),
+        "T1": _entry(accession="T1", reviewed="unreviewed", cc_similarity=boiga),
+        "T2": _entry(accession="T2", reviewed="unreviewed"),
+    }
+    labels = {
+        "family": "three-finger toxin family",
+        "keep_rule_labels": ["toxin_class"],
+        "columns": [
+            {
+                "name": "toxin_class",
+                "rules": [["ancestral", "Ancestral"], ["short-chain", "Short"]],
+            },
+        ],
+    }
+    holdout = {
+        "split_column": "eat_split",
+        "stratify": "toxin_class",
+        "fraction": 0.5,
+        "seed": 1,
+        "columns": ["toxin_class"],
+    }
+    columns, summary = bs.label_table(ids, entries, labels, holdout)
+    split = dict(zip(ids, columns["eat_split"], strict=True))
+    assert split["T1"] == split["T2"] == "trembl"
+    # round(0.5 · 2) of the two short-chain toxins, round(0.5 · 1) = 0 ancestral.
+    assert Counter(split.values()) == {"trembl": 2, "holdout": 1, "reference": 2}
+    for pid, cls, truth in zip(
+        ids, columns["toxin_class"], columns["toxin_class_withheld"], strict=True
+    ):
+        if split[pid] == "holdout":
+            assert cls is None and truth in ("Short", "Ancestral")
+        elif split[pid] == "reference":
+            assert cls in ("Short", "Ancestral") and truth is None
+        else:
+            assert cls is None and truth is None
+    # TrEMBL's automatic rule label is kept aside, never shown as the class.
+    assert columns["toxin_class_uniprot_rule"] == [None, None, None, "Ancestral", None]
+    assert summary["holdout"]["seed"] == 1 and summary["split"]["holdout"] == 1
+    assert summary["holdout"]["per_label"] == {"Short": 1}
+    assert summary["uniprot_rule_labels"] == {"toxin_class": {"Ancestral": 1}}
+
+
+def test_membership_files_and_their_pin(config, tmp_path):
+    path = tmp_path / "m.txt"
+    path.write_text("# query: x\nB2\nA1  # a comment\n\n")
+    assert bs.read_membership(path) == ["B2", "A1"]
+    path.write_text("A1\nA1\n")
+    with pytest.raises(bs.BuildError, match="twice"):
+        bs.read_membership(path)
+    ctx = _context(config, "three-finger-toxins", tmp_path)
+    ctx.dataset = {**ctx.dataset, "membership_file": str(path)}
+    path.write_text("A1\n")
+    with pytest.raises(bs.BuildError, match="sha256 differs"):
+        bs.membership_ids(ctx)
+    ctx.dataset["membership_sha256"] = bs.sha256_file(path)
+    assert bs.membership_ids(ctx) == ["A1"]
+
+
+def _h5(path, vectors):
+    with h5py.File(path, "w") as handle:
+        for key, vector in vectors.items():
+            handle.create_dataset(key, data=np.asarray(vector, dtype=np.float32))
+    return path
+
+
+def test_the_embeddings_pin_gate(config, tmp_path):
+    ctx = _context(config, "three-finger-toxins", tmp_path, dry_run=False)
+    assert config.datasets["three-finger-toxins"]["embed"]["vectors_sha256"]  # pinned
+    ctx.dataset = {**ctx.dataset, "embed": {"model": "prot_t5", "backend": "local"}}
+    assert bs.embeddings_pin_gate(ctx).status == "fail"  # not built
+    ctx.work.joinpath("embed").mkdir(parents=True)
+    _h5(bs.embed_h5(ctx), {"B": [1, 2], "A": [3, 4]})
+    vectors, count = bs.h5_vectors_sha256(bs.embed_h5(ctx))
+    assert count == 2
+    # The vectors' digest ignores the file layout and the insertion order.
+    other = _h5(tmp_path / "other.h5", {"A": [3, 4], "B": [1, 2]})
+    assert bs.h5_vectors_sha256(other)[0] == vectors
+    pending = bs.embeddings_pin_gate(ctx)
+    assert pending.status == "pending" and vectors in pending.detail
+    embed = dict(ctx.dataset["embed"])
+    ctx.dataset = {**ctx.dataset, "embed": {**embed, "vectors_sha256": vectors}}
+    assert bs.embeddings_pin_gate(ctx).status == "pass"
+    ctx.dataset["embed"]["sha256"] = "0" * 64
+    assert bs.embeddings_pin_gate(ctx).status == "warn"
+    ctx.dataset["embed"]["vectors_sha256"] = "1" * 64
+    assert bs.embeddings_pin_gate(ctx).status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Missing values as the web reads them, and columns worth a legend (W10, G2, G13)
+# ---------------------------------------------------------------------------
+
+
+def test_missing_tokens_match_the_web_app():
+    source = (REPO_ROOT / bs.WEB_MISSING_TOKENS_FILE).read_text()
+    block = source.split("MISSING_VALUE_TOKENS: ReadonlySet<string> = new Set([", 1)[1]
+    tokens = set(re.findall(r"'([^']*)'", block.split("])", 1)[0]))
+    assert tokens == bs.WEB_MISSING_TOKENS
+
+
+@pytest.mark.parametrize(
+    ("text", "missing"),
+    [
+        ("", True),
+        ("  ", True),
+        ("None", True),
+        (" NONE ", True),
+        ("N/A", True),
+        ("NaN", True),
+        ("__NA__", True),
+        ("null", True),
+        ("<N/A>", False),  # the web shows it as a category, so the gates count it
+        ("none of these", False),
+        ("Homo sapiens", False),
+    ],
+)
+def test_missing_labels_follow_the_web(text, missing):
+    assert bs.is_missing_label(text) is missing
+    assert bs.cell_labels(text) == ([] if missing else [text.strip()])
+
+
+def test_uninformative_columns_fail_unless_kept():
+    table = pa.table(
+        {
+            "protein_id": ["P1", "P2", "P3"],
+            "species": ["a", "b", "a"],
+            "domain": ["Eukaryota"] * 3,
+            "ec": ["", None, "none"],
+            "fragment": ["yes", "", ""],  # a presence flag
+            "always": ["yes", "yes", "yes"],
+            "ec__pred_value": [None, None, None],  # overlay, not an annotation
+        }
+    )
+    assert bs.uninformative_columns(table) == {
+        "domain": "one value 'Eukaryota'",
+        "ec": "all N/A",
+        "always": "one value 'yes'",
+    }
+    view = {"annotation": "species", "tooltip": ["always"]}
+    gate = bs.informative_gate(table, {"keep_uninformative": ["domain"]}, view)
+    assert gate.status == "fail" and list(gate.data["blocking"]) == ["ec"]
+    assert set(gate.data["kept"]) == {"domain", "always"}
+    kept = bs.informative_gate(table, {"keep_uninformative": ["domain", "ec"]}, view)
+    assert kept.status == "pass"
+
+
+def test_root_and_literal_none_gates():
+    table = pa.table(
+        {
+            "protein_id": ["P1", "P2", "P3", "P4"],
+            "root": ["cellular organisms", "Viruses", "A", "B"],
+            "predicted_transmembrane": ["alpha-helical", "none", "None|0.9", ""],
+        }
+    )
+    assert bs.taxonomy_root_gate(table).status == "fail"  # 4 values
+    assert bs.taxonomy_root_gate(table.slice(0, 3)).status == "pass"
+    fly = pa.table(
+        {
+            "protein_id": ["H", "F"],
+            "root": ["cellular organisms", "melanogaster subgroup"],
+        }
+    )
+    gate = bs.taxonomy_root_gate(fly)  # two values, but one is a deep clade
+    assert gate.status == "fail" and gate.data["deep_clades"] == 1
+    gate = bs.literal_none_gate(table, "predicted_transmembrane")
+    assert gate.status == "fail" and gate.data["count"] == 2
+    assert (
+        bs.literal_none_gate(table.slice(0, 1), "predicted_transmembrane").status
+        == "pass"
+    )
+    assert bs.taxonomy_root_gate(table.drop_columns(["root"])) is None
+    assert bs.literal_none_gate(table, "absent") is None
 
 
 def test_rows_without_an_entry_take_the_papers_species_and_its_lineage():
@@ -806,7 +1188,7 @@ def test_common_gates_flag_leaks_and_membership(tmp_path):
             reviewed=["Swiss-Prot"] * 3,
             xref_pdb=["True", "False", "False"],
             protein_name=["x", "y", "z"],
-            sequence=["M", "M", "M"],
+            sequence=["M", "MK", "MKT"],
         )
     )
     bundle = bs.read_bundle(
@@ -816,7 +1198,11 @@ def test_common_gates_flag_leaks_and_membership(tmp_path):
         g.name: g
         for g in bs.common_gates(
             bundle,
-            {"proteins": 3, "reviewed": "Swiss-Prot"},
+            {
+                "proteins": 3,
+                "reviewed": "Swiss-Prot",
+                "keep_uninformative": ["reviewed"],
+            },
             {"projection": "U", "annotation": "ec"},
         )
     }
@@ -827,6 +1213,8 @@ def test_common_gates_flag_leaks_and_membership(tmp_path):
     assert gates["xref_pdb"].status == "pass"
     assert gates["reviewed"].status == "pass"
     assert gates["default-view"].status == "pass"
+    assert gates["informative-columns"].status == "pass"
+    assert "root-values" not in gates  # no root column, no gate
     ok, summary = bs.summarize(list(gates.values()))
     assert not ok and "1 fail" in summary
 
@@ -903,11 +1291,30 @@ def test_clustering_report_writes_rows_markdown_and_thumbnails(tmp_path):
         {"projection_name": ["U"] * 60, "identifier": ids, "x": xy[:, 0], "y": xy[:, 1]}
     )
     bundle = bs.Bundle(annotations, metadata, data)
+    annotations = annotations.append_column(
+        "cluster_elbow_U", pa.array(labels)
+    ).append_column(
+        "fam__pred_value",
+        pa.array([lab if i % 5 == 0 else None for i, lab in enumerate(labels)]),
+    )
+    annotations = annotations.set_column(
+        1,
+        "fam",
+        pa.array([None if i % 5 == 0 else lab for i, lab in enumerate(labels)]),
+    )
+    bundle = bs.Bundle(annotations, metadata, data)
     rows = bs.clustering_report(
-        bundle, "demo", {"annotations": ["fam", "noise", "absent"]}, tmp_path, k=5
+        bundle,
+        "demo",
+        {"annotations": ["fam", "noise", "absent", "cluster_elbow_U"]},
+        tmp_path,
+        k=5,
     )
     assert rows[0]["annotation"] == "fam" and rows[0]["legend_kappa"] > 0.9
     assert any(r.get("error") for r in rows)
+    # W21: k-means on the layout is never a candidate view.
+    assert "cluster_elbow_U" not in {r["annotation"] for r in rows}
+    # The EAT column's thumbnail draws its transfers as rings.
     assert (tmp_path / "report.md").is_file() and (
         tmp_path / "thumbs" / "fam__u.png"
     ).is_file()
@@ -998,19 +1405,45 @@ def config():
     return bs.Config.load(bs.DEFAULT_CONFIG)
 
 
-def test_showcase_toml_lists_the_six_final_ids(config):
-    assert list(config.datasets) == [
-        "demo",
-        "venom-eat",
-        "phosphatase-eat",
-        "human-fly",
-        "beta-lactamase",
-        "swissprot",
-    ]
+FINAL_IDS = ["demo", "three-finger-toxins", "human-fly", "beta-lactamase", "swissprot"]
+
+
+def test_showcase_toml_lists_the_five_final_ids(config):
+    assert list(config.datasets) == FINAL_IDS
     proteins = [d["proteins"] for d in list(config.datasets.values())[1:]]
     assert proteins == sorted(proteins)  # demo first, then ascending count
     assert config.datasets["swissprot"].get("large") is True
     assert config.datasets["demo"]["hosting"] == "repo"
+    assert set(bs.KINDS) == {d["kind"] for d in config.datasets.values()}
+
+
+def test_every_example_ships_its_umap_and_a_pca(config):
+    """D3: a PCA in every example; the demo keeps both pLMs' projections."""
+    for ds_id, dataset in config.datasets.items():
+        names = [t for _, t in bs.parse_projection_spec(dataset["projections"])]
+        assert names[0] == "ProtT5 — UMAP 2", ds_id
+        assert "ProtT5 — PCA 2" in names, ds_id
+    assert len(config.datasets["demo"]["projections"]) == 4
+    swissprot = bs.parse_projection_spec(config.datasets["swissprot"]["projections"])
+    assert ("PCA_2", "ProtT5 — PCA 2") in swissprot
+
+
+def test_the_large_sets_skip_biocentral_and_say_why(config):
+    """D4, W11: the skip is committed, not a local edit."""
+    for ds_id in ("human-fly", "beta-lactamase", "swissprot"):
+        stages = config.datasets[ds_id]["stages"]
+        biocentral = [s for s in stages if "biocentral" in s["groups"]]
+        assert biocentral and biocentral[0]["enabled"] is False, ds_id
+    # The two small sets keep their predicted_* columns.
+    assert config.datasets["demo"]["refresh_groups"] == ["all"]
+    stages = config.datasets["three-finger-toxins"]["stages"]
+    fetched = {g for s in stages if s.get("enabled", True) for g in s["groups"]}
+    assert "predicted_subcellular_location" in fetched
+
+
+def test_the_swissprot_statistics_list_follows_the_paper(config):
+    listed = config.datasets["swissprot"]["stats_annotations"]
+    assert "reviewed" not in listed and "xref_pdb" in listed  # W22
 
 
 def test_every_recipe_is_complete(config):
@@ -1035,46 +1468,49 @@ def test_every_recipe_is_complete(config):
             assert gate["type"] in {
                 *bs.GATE_TYPES,
                 *bs.BUNDLE_GATE_TYPES,
-                "full_length_inputs",
-                "source_column_kept",
-                "pfam_duplicates",
-                "browser_load",
+                *bs.CONTEXT_GATE_TYPES,
             }, (ds_id, gate["type"])
+        report = dataset["report"]["annotations"]
+        assert not [a for a in report if a.startswith(bs.CLUSTER_PREFIX)], ds_id
 
 
-def test_every_example_ships_its_umap_and_a_pca(config):
-    """D3: a PCA in every example; the demo keeps both pLMs' projections."""
-    for ds_id, dataset in config.datasets.items():
-        names = [t for _, t in bs.parse_projection_spec(dataset["projections"])]
-        assert names[0] == "ProtT5 — UMAP 2", ds_id
-        assert "ProtT5 — PCA 2" in names, ds_id
-    assert len(config.datasets["demo"]["projections"]) == 4
-    swissprot = bs.parse_projection_spec(config.datasets["swissprot"]["projections"])
-    assert ("PCA_2", "ProtT5 — PCA 2") in swissprot
-
-
-def test_the_large_sets_skip_biocentral_and_say_why(config):
-    """D4, W11: the skip is committed, not a local edit."""
-    for ds_id in ("human-fly", "beta-lactamase", "swissprot"):
-        stages = config.datasets[ds_id]["stages"]
-        biocentral = [s for s in stages if "biocentral" in s["groups"]]
-        assert biocentral and biocentral[0]["enabled"] is False, ds_id
-    assert config.datasets["demo"]["refresh_groups"] == ["all"]
-
-
-def test_the_swissprot_statistics_list_follows_the_paper(config):
-    listed = config.datasets["swissprot"]["stats_annotations"]
-    assert "reviewed" not in listed and "xref_pdb" in listed  # W22
-
-
-def test_eat_thresholds_follow_d6(config):
-    assert config.datasets["venom-eat"]["envelope"]["eatConfidenceThreshold"] == 0
+def test_the_eat_example_opens_at_reliability_0_on_its_truth(config):
+    dataset = config.datasets["three-finger-toxins"]
+    assert dataset["envelope"] == {
+        "eatOverlayEnabled": True,
+        "eatConfidenceThreshold": 0,
+    }
+    view = dataset["default_view"]
+    assert view["annotation"] == "toxin_class"
+    assert view["tooltip"] == ["toxin_class_withheld", "species", "eat_split"]
     assert (
-        config.datasets["phosphatase-eat"]["envelope"]["eatConfidenceThreshold"] == 0.5
+        dataset["transfer"]["metric"] == "euclidean" and dataset["transfer"]["k"] == 1
     )
-    withheld = config.datasets["phosphatase-eat"]["withheld"]["columns"]
-    tooltip = config.datasets["phosphatase-eat"]["default_view"]["tooltip"]
-    assert set(withheld.values()) <= set(tooltip)
+    assert set(dataset["transfer"]["columns"]) == set(dataset["holdout"]["columns"])
+    assert dataset["projection_params"] == {
+        "n_neighbors": 25,
+        "min_dist": 0.1,
+        "random_state": 42,
+    }
+    assert dataset["stats_annotations"] == [
+        "toxin_class",
+        "toxin_subfamily",
+        "family",
+        "genus",
+        "pfam",
+    ]
+    assert dataset.get("cluster_selection", "both") == "both"
+
+
+def test_the_membership_file_matches_its_pin(config):
+    dataset = config.datasets["three-finger-toxins"]
+    path = bs.SCRIPT_DIR / dataset["membership_file"]
+    assert bs.sha256_file(path) == dataset["membership_sha256"]
+    ids = bs.read_membership(path)
+    assert len(ids) == dataset["proteins"] and ids == sorted(ids)
+    header = [line for line in path.read_text().splitlines() if line.startswith("#")]
+    assert any(dataset["membership"] in line for line in header)
+    assert any(dataset["membership_release"] in line for line in header)
 
 
 def _context(config, ds_id, tmp_path, cli=None, **kwargs):
@@ -1104,17 +1540,7 @@ def test_stage_groups_are_cumulative_and_disabled_stages_opt_in(config, tmp_path
     assert bs.enabled_stage_groups(ctx)[-1][-1] == "biocentral"
 
 
-@pytest.mark.parametrize(
-    "ds_id",
-    [
-        "demo",
-        "venom-eat",
-        "phosphatase-eat",
-        "human-fly",
-        "beta-lactamase",
-        "swissprot",
-    ],
-)
+@pytest.mark.parametrize("ds_id", FINAL_IDS)
 def test_the_build_plan_runs_the_cli_through_uv(config, tmp_path, ds_id):
     cli = bs.Cli(REPO_ROOT, dry_run=True)
     ctx = _context(config, ds_id, tmp_path, cli=cli)
@@ -1128,7 +1554,8 @@ def test_the_build_plan_runs_the_cli_through_uv(config, tmp_path, ds_id):
     ]
     commands = [s.command for s in steps if s.command]
     assert all(
-        c[0] in {"prepare", "annotate", "stats", "bundle", "style"} for c in commands
+        c[0] in {"prepare", "annotate", "embed", "transfer", "stats", "bundle", "style"}
+        for c in commands
     )
     argv = cli.argv(commands[0])
     assert argv[:5] == [
@@ -1147,6 +1574,54 @@ def test_the_build_plan_runs_the_cli_through_uv(config, tmp_path, ds_id):
         assert not stats
     pipeline = bs.pipeline_commands(ctx)
     assert all(str(tmp_path) not in line for line in pipeline)
+
+
+def test_the_eat_example_embeds_projects_holds_out_and_transfers(config, tmp_path):
+    cli = bs.Cli(REPO_ROOT, dry_run=True)
+    ctx = _context(config, "three-finger-toxins", tmp_path, cli=cli)
+    steps = {s.name: s for s in bs.recipe_steps(ctx)}
+    assert list(steps)[:4] == ["check-inputs", "entries", "sequences", "embed"]
+    embed = steps["embed"]
+    assert embed.extras == ("local",)  # the on-device backend's dependencies
+    assert cli.argv(embed.command, embed.extras)[5:8] == [
+        "--extra",
+        "local",
+        "protspace",
+    ]
+    assert embed.command[embed.command.index("--backend") + 1] == "local"
+    assert (
+        str(tmp_path / "three-finger-toxins" / "work" / "mature.fasta") in embed.command
+    )
+    fetch = steps["fetch-1"].command
+    # Mature-chain embeddings in, full-length sequences for the annotation
+    # sources, and the projections kept with their parameters spelled out.
+    assert fetch[fetch.index("-f") + 1].endswith("full_length.fasta")
+    assert fetch[fetch.index("-m") + 1] == "umap2,pca2"
+    for option, value in (
+        ("--n-neighbors", "25"),
+        ("--min-dist", "0.1"),
+        ("--random-state", "42"),
+    ):
+        assert fetch[fetch.index(option) + 1] == value
+    transfer = steps["transfer"].command
+    assert transfer[transfer.index("--k") + 1] == "1"
+    assert transfer[transfer.index("--metric") + 1] == "euclidean"
+    assert [transfer[i + 1] for i, a in enumerate(transfer) if a == "-t"] == [
+        "toxin_class",
+        "toxin_subfamily",
+    ]
+    assert [
+        transfer[i + 1] for i, a in enumerate(transfer) if a == "--query-where"
+    ] == [
+        "eat_split~holdout",
+        "eat_split~trembl",
+    ]
+    names = list(steps)
+    assert names.index("transfer") < names.index("stats")  # stats see the transfer
+    assert bs.find_projection_source(ctx) == ctx.work / "ann" / "data.parquetbundle"
+    assert bs.dataset_embeddings(ctx) == [
+        f"{ctx.work / 'embed' / 'prot_t5.h5'}:prot_t5"
+    ]
 
 
 def test_execute_skips_finished_steps_until_one_reruns(config, tmp_path):
@@ -1173,32 +1648,32 @@ def test_stamped_provenance_reads_back_through_write_manifest(tmp_path):
     """The manifest writer reads the nested {group: {release, columns}} form the
     build stamps: one release per group, and a group without one left out."""
     groups = bs.release_groups(
-        {"ec": "paper-frozen", "pfam": "refreshed"},
+        {"ec": "source", "pfam": "refreshed"},
         ["protein_id", "ec", "pfam", "cluster_elbow_U"],
-        {"refreshed": "2026_03", "paper": "2025_03"},
+        {"refreshed": "2026_03", "source": "2025_03"},
     )
     table = bs.set_provenance(
         bs.stamp_v2(_annotations(ec=["a", "b", "c"], pfam=["x", "y", "z"])),
         {
-            "example_id": "venom-eat",
+            "example_id": "three-finger-toxins",
             "protspace_version": "4.14.0",
             "git_sha": "abc",
             "uniprot_release": groups,
             "membership_release": "2025_03",
             "built_at": "2026-10-01T00:00:00+00:00",
-            "command": "build_showcase.py build --only venom-eat",
+            "command": "build_showcase.py build --only three-finger-toxins",
             "pipeline": ["protspace annotate …"],
         },
     )
     bundle = _write_bundle(
-        tmp_path / "venom-eat_2026_03.parquetbundle", table, names=("U",)
+        tmp_path / "three-finger-toxins_2026_03.parquetbundle", table, names=("U",)
     )
     record = _write_manifest_module().read_bundle_record(
-        bundle, example_id="venom-eat", file=bundle.name, hosting="release"
+        bundle, example_id="three-finger-toxins", file=bundle.name, hosting="release"
     )
     assert record["releases"] == {
         "membership": "2025_03",
-        "annotations": {"paper": "2025_03", "refreshed": "2026_03"},
+        "annotations": {"source": "2025_03", "refreshed": "2026_03"},
     }
     assert record["columns"] == ["ec", "pfam"] and record["projections"] == ["U"]
     assert record["protspaceVersion"] == "4.14.0" and record["gitSha"] == "abc"
@@ -1258,9 +1733,9 @@ def _step(ctx, name):
 
 
 def test_an_author_fact_reruns_finalize_but_not_stats(config, tmp_path):
-    # venom-eat: every input is in the repository (the swissprot ones are not).
+    # three-finger-toxins: its one input is in the repository.
     cli = bs.Cli(REPO_ROOT, dry_run=True)
-    ctx = _context(config, "venom-eat", tmp_path, cli=cli)
+    ctx = _context(config, "three-finger-toxins", tmp_path, cli=cli)
     before = {n: _step(ctx, n).key() for n in ("assemble", "stats", "finalize")}
     ctx.dataset = {**ctx.dataset, "gates": [], "report": {}, "name": "renamed"}
     assert {n: _step(ctx, n).key() for n in before} == before
@@ -1269,10 +1744,17 @@ def test_an_author_fact_reruns_finalize_but_not_stats(config, tmp_path):
     assert after["assemble"] == before["assemble"]
     assert after["stats"] == before["stats"]
     assert after["finalize"] != before["finalize"]
-    ctx.dataset = {**ctx.dataset, "freeze_statistics": False}
+    ctx.dataset = {**ctx.dataset, "stats_annotations": ["toxin_class"]}
     assert _step(ctx, "stats").key() != before["stats"]
     ctx.view = {**ctx.view, "annotation": "protein_families"}
     assert _step(ctx, "assemble").key() != before["assemble"]
+    # Pinning the embeddings after the first build re-embeds nothing.
+    embed = _step(ctx, "embed").key()
+    ctx.dataset = {
+        **ctx.dataset,
+        "embed": {**ctx.dataset["embed"], "vectors_sha256": "0" * 64},
+    }
+    assert _step(ctx, "embed").key() == embed
 
 
 def test_every_local_step_declares_its_inputs(config, tmp_path):
@@ -1281,16 +1763,17 @@ def test_every_local_step_declares_its_inputs(config, tmp_path):
         ctx = _context(config, ds_id, tmp_path, cli=cli)
         steps = [s for s in bs.recipe_steps(ctx) if not s.always]
         assert all(s.inputs is not None for s in steps), ds_id
-        assert {s.name for s in steps if s.fetches} >= (
-            {"annotate", "fasta"}
-            if config.datasets[ds_id].get("refresh_groups")
-            else {"fetch-1"}
-        )
+        expected = {"fetch-1"}
+        if config.datasets[ds_id].get("refresh_groups"):
+            expected = {"annotate", "fasta"}
+        elif config.datasets[ds_id]["kind"] == "embed-build":
+            expected = {"entries", "fetch-1"}
+        assert {s.name for s in steps if s.fetches} >= expected, ds_id
 
 
 def test_a_dry_run_writes_nothing(config, tmp_path):
     cli = bs.Cli(REPO_ROOT, dry_run=True)
-    for ds_id in ("venom-eat", "phosphatase-eat", "demo"):
+    for ds_id in ("three-finger-toxins", "demo"):
         ctx = _context(config, ds_id, tmp_path, cli=cli, web_cut=None)
         bs.execute(ctx, bs.recipe_steps(ctx))
         ctx.record("anything", 1)
@@ -1466,7 +1949,7 @@ def _facts(ctx, facts):
 
 def test_fetched_release_ignores_what_uniprot_serves_later(config, tmp_path):
     cli = bs.Cli(REPO_ROOT, dry_run=True)
-    ctx = _context(config, "venom-eat", tmp_path, cli=cli, dry_run=False)
+    ctx = _context(config, "demo", tmp_path, cli=cli, dry_run=False)
     _facts(
         ctx,
         {
@@ -1494,7 +1977,7 @@ def test_fetched_release_refuses_data_it_cannot_certify(
     config, tmp_path, facts, message
 ):
     cli = bs.Cli(REPO_ROOT, dry_run=True)
-    ctx = _context(config, "venom-eat", tmp_path, cli=cli, dry_run=False)
+    ctx = _context(config, "demo", tmp_path, cli=cli, dry_run=False)
     _facts(ctx, facts)
     with pytest.raises(bs.BuildError, match=message):
         bs.fetched_release(ctx)
@@ -1504,7 +1987,7 @@ def test_fetched_release_refuses_data_it_cannot_certify(
 
 def test_data_releases_only_count_this_recipes_fetch_steps(config, tmp_path):
     cli = bs.Cli(REPO_ROOT, dry_run=True)
-    ctx = _context(config, "venom-eat", tmp_path, cli=cli, dry_run=False)
+    ctx = _context(config, "demo", tmp_path, cli=cli, dry_run=False)
     _facts(
         ctx,
         {"data-release:annotate": ["2026_03"], "data-release:fetch-9": ["2025_01"]},
@@ -1643,10 +2126,12 @@ def test_release_readiness_needs_a_passed_verify_of_these_bytes(tmp_path):
 
 
 def test_stage_release_refuses_unverified_files(config, tmp_path):
-    ctx = _context(config, "venom-eat", tmp_path, dry_run=False)
+    ctx = _context(config, "three-finger-toxins", tmp_path, dry_run=False)
     _built(ctx)
     with pytest.raises(bs.BuildError, match="refusing to stage"):
-        bs.stage_release(config, tmp_path, "2026_03", tmp_path / "s", ["venom-eat"])
+        bs.stage_release(
+            config, tmp_path, "2026_03", tmp_path / "s", ["three-finger-toxins"]
+        )
     assert not (tmp_path / "s").exists()
 
 
@@ -1766,38 +2251,148 @@ def test_showcase_toml_has_no_second_perf_list(config):
 
 
 # ---------------------------------------------------------------------------
-# End to end, offline: fake network + annotate, real protspace bundle/style/stats
+# End to end, offline: fake UniProt, embed and prepare; real protspace bundle,
+# transfer, stats and style
 # ---------------------------------------------------------------------------
 
+SHORT = (
+    "SIMILARITY: Belongs to the three-finger toxin family. Short-chain subfamily. "
+    "Type I alpha-neurotoxin sub-subfamily. {ECO:0000305}."
+)
+LONG = (
+    "SIMILARITY: Belongs to the three-finger toxin family. Long-chain subfamily. "
+    "Type II alpha-neurotoxin sub-subfamily. {ECO:0000305}."
+)
+BOIGA = (
+    "SIMILARITY: Belongs to the three-finger toxin family. Ancestral subfamily. "
+    "Boigatoxin sub-subfamily. {ECO:0000256|RuleBase:RU000001}."
+)
 
-def _first(*paths: Path) -> Path | None:
-    return next((p for p in paths if p.is_file()), None)
+
+def _tftx_entries() -> list[dict[str, str]]:
+    """40 entries: 12 short- and 12 long-chain Swiss-Prot toxins (half of them
+    mature chains, half precursors), 16 TrEMBL precursors, two of them with
+    UniProt's automatic Boigatoxin label."""
+    entries = []
+    for i in range(40):
+        reviewed = i < 24
+        short = i % 2 == 0
+        precursor = not reviewed or i % 4 < 2
+        mature = ("MKT" if short else "RIC") * 20 + "A" * (i % 5)
+        sequence = ("MKTLLLTLVVVTIVCLDLGYT" if precursor else "") + mature
+        signal = 21 if precursor else 0
+        name = "Short neurotoxin" if short else "Long neurotoxin"
+        entries.append(
+            {
+                **dict.fromkeys(bs.ENTRY_FIELDS, ""),
+                "accession": f"{'P' if reviewed else 'A0A'}{i:05d}",
+                "reviewed": "reviewed" if reviewed else "unreviewed",
+                "protein_name": f"{name} {i}",
+                "organism_name": "Naja naja" if i % 3 else "Bungarus multicinctus",
+                "length": str(len(sequence)),
+                "ft_signal": f"SIGNAL 1..{signal}" if signal else "",
+                "ft_chain": f"CHAIN {signal + 1}..{len(sequence)}",
+                "cc_similarity": (SHORT if short else LONG)
+                if reviewed
+                else (BOIGA if i in (30, 31) else ""),
+                "xref_interpro": "IPR003571;" if i != 5 else "",
+                "sequence": sequence,
+            }
+        )
+    return entries
 
 
-class FakeCli(bs.Cli):
-    """Runs the installed protspace, except ``annotate``, which writes a table."""
+class EmbedBuildCli(bs.Cli):
+    """Fakes ``embed`` and ``prepare``; runs the installed protspace otherwise."""
 
-    def __init__(self, annotate):
+    def __init__(self, entries):
         super().__init__(REPO_ROOT)
-        self.annotate = annotate
+        self.entries = {e["accession"]: e for e in entries}
         self.commands = []
 
-    def argv(self, args):
+    def argv(self, args, extras=()):
         return [str(Path(sys.executable).with_name("protspace")), *map(str, args)]
 
-    def run(self, args, *, cwd, log, transcript=None):
+    def _vector(self, accession):
+        entry = self.entries[accession]
+        index = int(accession[-5:])
+        short = "Short" in entry["protein_name"]
+        vector = np.zeros(16, dtype=np.float32)
+        vector[0] = 1.0 if short else -1.0
+        vector[1 + index % 15] = 0.05
+        return vector
+
+    def run(self, args, *, cwd, log, transcript=None, extras=()):
         self.commands.append(args[0])
-        if args[0] == "annotate":
+        if args[0] == "embed":
+            assert extras == ("local",)
             fasta = Path(args[args.index("-i") + 1])
-            ids = list(bs.parse_fasta_text(fasta.read_text()))
-            pq.write_table(self.annotate(ids), args[args.index("-o") + 1])
-            if "--cache-dir" in args:
-                # Like the CLI, stamp the release its UniProt values came from.
-                cache = Path(args[args.index("--cache-dir") + 1])
-                cache.mkdir(parents=True, exist_ok=True)
-                frame = pd.DataFrame({"identifier": ids})
-                frame.attrs[bs.CACHE_RELEASE_ATTR] = "2026_03"
-                frame.to_parquet(cache / "all_annotations.parquet", index=False)
+            out = Path(args[args.index("-o") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            sequences = bs.parse_fasta_text(fasta.read_text())
+            with h5py.File(out / "prot_t5.h5", "w") as handle:
+                for accession in sequences:
+                    handle.create_dataset(accession, data=self._vector(accession))
+            return bs.CliResult()
+        if args[0] == "prepare":
+            h5 = Path(bs.split_h5_spec(args[args.index("-i") + 1])[0])
+            out = Path(args[args.index("-o") + 1])
+            with h5py.File(h5) as handle:
+                ids = list(handle.keys())
+            full = bs.parse_fasta_text(Path(args[args.index("-f") + 1]).read_text())
+            rows = [self.entries[a] for a in ids]
+            annotations = pa.table(
+                {
+                    "protein_id": ids,
+                    "protein_name": [r["protein_name"] for r in rows],
+                    "reviewed": [
+                        "Swiss-Prot" if r["reviewed"] == "reviewed" else "TrEMBL"
+                        for r in rows
+                    ],
+                    "length": [str(len(full[a])) for a in ids],
+                    "species": [r["organism_name"] for r in rows],
+                    "genus": [r["organism_name"].split()[0] for r in rows],
+                    "family": [
+                        "Elapidae" if i % 4 else "Colubridae" for i in range(40)
+                    ],
+                    "pfam": [
+                        "PF00087 (Toxin_TOLIP)|50.1"
+                        if i % 2
+                        else "PF21947 (Toxin_3FTx)|41.0"
+                        for i in range(40)
+                    ],
+                    "xref_pdb": ["True" if i % 7 == 0 else "False" for i in range(40)],
+                    "sequence": [full[a] for a in ids],
+                }
+            )
+            xy = np.array([self._vector(a)[:2] for a in ids], dtype=float)
+            metadata = pa.table(
+                {
+                    "projection_name": ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"],
+                    "dimensions": [2, 2],
+                    "info_json": ["{}", "{}"],
+                }
+            )
+            data = pa.table(
+                {
+                    "projection_name": ["ProtT5 — UMAP 2"] * 40
+                    + ["ProtT5 — PCA 2"] * 40,
+                    "identifier": ids * 2,
+                    "x": list(xy[:, 0]) + list(-xy[:, 0]),
+                    "y": list(xy[:, 1]) + list(xy[:, 1] * 2),
+                    "z": pa.nulls(80, pa.float64()),
+                }
+            )
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "data.parquetbundle").write_bytes(
+                bs.join_parts(
+                    bs.parquet_bytes(bs.stamp_v2(annotations)),
+                    bs.parquet_bytes(metadata),
+                    bs.parquet_bytes(data),
+                )
+            )
+            with (out / "run.log").open("a") as handle:
+                handle.write("## Annotations\nuniprot_release: 2026_03\n")
             return bs.CliResult()
         return super().run(args, cwd=cwd, log=log, transcript=transcript)
 
@@ -1808,202 +2403,170 @@ class FakeCli(bs.Cli):
         return "test"
 
 
-@pytest.fixture
-def offline(monkeypatch):
+@pytest.mark.slow
+def test_the_eat_example_builds_offline_and_passes_its_gates(
+    config, tmp_path, monkeypatch
+):
+    entries = _tftx_entries()
     monkeypatch.setattr(bs, "current_uniprot_release", lambda: "2026_03")
     monkeypatch.setattr(
         bs,
-        "fetch_uniprot_sequences",
-        lambda ids, chunk=100: (dict.fromkeys(ids, "MKTAYIAKQR"), {"2026_03"}),
+        "fetch_uniprot_entries",
+        lambda ids, fields=bs.ENTRY_FIELDS, chunk=100: (
+            [e for e in entries if e["accession"] in set(ids)],
+            {"2026_03"},
+        ),
     )
-
-
-def _confirmed(config, ds_id, release="2025_03"):
-    """A copy of ``config`` whose author facts for ``ds_id`` are confirmed releases."""
+    membership = tmp_path / "membership.txt"
+    membership.write_text(
+        "# query: test\n" + "\n".join(sorted(e["accession"] for e in entries)) + "\n"
+    )
     local = copy.copy(config)
     local.raw = copy.deepcopy(config.raw)
-    dataset = local.raw["datasets"][ds_id]
-    dataset["membership_release"] = release
-    dataset["paper_release"] = release
-    return local
-
-
-@pytest.mark.slow
-def test_venom_eat_builds_offline_and_passes_its_gates(config, tmp_path, offline):
-    source = _first(
-        REPO_ROOT / "apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle",
-        REPO_ROOT / "apps/web/public/data/venom_eat_stats.parquetbundle",
-    )
-    if source is None:
-        pytest.skip("venom bundle not in this checkout")
-
-    def annotate(ids):
-        return pa.table(
+    dataset = local.raw["datasets"]["three-finger-toxins"]
+    dataset.update(
+        membership_file=str(membership),
+        membership_sha256=bs.sha256_file(membership),
+        proteins=40,
+        embed={"model": "prot_t5", "backend": "local"},  # unpinned: fake vectors
+        keep_uninformative=["toxin_class_uniprot_rule"],
+        gates=[
             {
-                "identifier": ids,
-                "pfam": [f"PF{i % 7:05d} (dom{i % 7})|12.5" for i in range(len(ids))],
-                "ted_domains": [
-                    "" if i % 3 else "3.30.30.10|91.2" for i in range(len(ids))
-                ],
-                "predicted_subcellular_location": ["Extracellular" for _ in ids],
-                "gene_name": ["fresh" for _ in ids],  # must not replace the paper value
-                "protein_name": ["fresh name" for _ in ids],  # the CLI always adds it
-            }
-        )
-
-    local = _confirmed(config, "venom-eat")
-    cli = FakeCli(annotate)
-    ctx = _context(
-        local, "venom-eat", tmp_path, cli=cli, dry_run=False, thumbnails=False
-    )
-    bs.execute(ctx, bs.recipe_steps(ctx))
-    assert cli.commands == ["annotate", "bundle", "style"]
-    ok, gates = bs.verify(ctx)
-    by_name = {g.name: g for g in gates}
-    failed = {n: g.detail for n, g in by_name.items() if g.status == "fail"}
-    assert ok, failed
-    for name in (
-        "eat:ec",
-        "eat-source:P0DPU8",
-        "frozen-columns",
-        "statistics-frozen",
-        "coordinates",
-        "settings-envelope",
-        "faithfulness",
-    ):
-        assert by_name[name].status == "pass", name
-    final = bs.read_bundle(ctx.final)
-    assert final.metadata.column("projection_name").to_pylist()[0] == "ProtT5 — UMAP 2"
-    assert final.annotations.column_names[1] == "ec"
-    assert final.settings["eatConfidenceThreshold"] == 0
-    assert "ec" in final.settings["legendSettings"]  # the curated legend
-    assert (
-        "cluster_elbow_ProtT5 — UMAP 2" in final.settings["legendSettings"]
-    )  # carried
-    assert (
-        "pfam" in final.annotations.column_names
-        and "sequence" not in final.annotations.column_names
-    )
-    provenance = bs.read_provenance(final.annotations)
-    assert provenance["uniprot_release"]["refreshed"]["columns"] == [
-        "pfam",
-        "ted_domains",
-        "predicted_subcellular_location",
-    ]
-    assert "gene_name" in provenance["uniprot_release"]["paper"]["columns"]
-    assert provenance["uniprot_release"]["refreshed"]["release"] == "2026_03"
-    assert by_name["provenance"].status == "pass"
-    bs.report(ctx)
-    assert (ctx.root / "report" / "report.json").is_file()
-
-    # A second build re-runs nothing: every marker matches its inputs.
-    cli.commands.clear()
-    bs.execute(ctx, bs.recipe_steps(ctx))
-    assert cli.commands == []
-
-    # Staged through write_manifest.py, which reads the stamped provenance.
-    staging = tmp_path / "staging"
-    manifest = bs.stage_release(
-        local,
-        tmp_path,
-        "2026_03",
-        staging,
-        ["venom-eat"],
-        previous_manifest=tmp_path / "absent.ts",
-    )
-    record = manifest["examples"]["venom-eat"]
-    assert record["file"] == "venom-eat_2026_03.parquetbundle"
-    assert record["hosting"] == "release" and manifest["release"] == "showcase-2026_03"
-    assert record["releases"]["annotations"]["refreshed"] == "2026_03"
-    assert record["sha256"] == hashlib.sha256(ctx.final.read_bytes()).hexdigest()
-    written = (staging / "example-manifest.ts").read_text()
-    assert _write_manifest_module().parse_manifest(written) == manifest
-    sums = (staging / "SHA256SUMS").read_text()
-    assert sums == f"{record['sha256']}  venom-eat_2026_03.parquetbundle\n"
-
-
-@pytest.mark.slow
-def test_phosphatase_eat_builds_offline_with_stats_and_guards_the_hold_out(
-    config, tmp_path, offline
-):
-    source = REPO_ROOT / "apps/web/tests/fixtures/phosphatase_eat.parquetbundle"
-    if not source.is_file():
-        pytest.skip("phosphatase fixture not in this checkout")
-    paper = bs.read_bundle(source).annotations.to_pydict()
-    predicted = dict(zip(paper["protein_id"], paper["ec__pred_value"], strict=True))
-
-    # A fake ProtT5 file with the benchmark's ids; stats only needs vectors.
-    h5_dir = tmp_path / "cli_data" / "eat_demo"
-    h5_dir.mkdir(parents=True)
-    rng = np.random.default_rng(0)
-    with h5py.File(h5_dir / "phosphatase_prot_t5.h5", "w") as handle:
-        for accession in paper["protein_id"]:
-            handle.create_dataset(
-                accession, data=rng.normal(size=16).astype(np.float16)
-            )
-    local = bs.Config.load(bs.DEFAULT_CONFIG, {"cli_data": str(tmp_path / "cli_data")})
-    local.raw["datasets"]["phosphatase-eat"]["pins"] = []
-    assert local.datasets["phosphatase-eat"]["membership_release"] == "2025_03"
-
-    def annotate(ids):
-        # The "truth": the transferred EC for queries, so accuracy is 100 %.
-        return pa.table(
+                "type": "category_counts",
+                "column": "eat_split",
+                "expected": {"reference": 20, "holdout": 4, "trembl": 16},
+            },
             {
-                "identifier": ids,
-                "ec": [predicted.get(a) or "3.1.3.16 (x)" for a in ids],
-                "protein_families": ["PPP phosphatase family" for _ in ids],
-                "species": ["Homo sapiens" for _ in ids],
-                "domain": [
-                    "Eukaryota" if i % 3 else "Bacteria" for i in range(len(ids))
+                "type": "no_refill",
+                "split_column": "eat_split",
+                "query_value": ["holdout", "trembl"],
+                "columns": ["toxin_class", "toxin_subfamily"],
+            },
+            {
+                "type": "eat_accuracy",
+                "column": "toxin_class",
+                "truth_column": "toxin_class_withheld",
+                "split_column": "eat_split",
+                "query_value": "holdout",
+                "compare": "labels",
+                "min_n": 4,
+                "min_accuracy": 88.0,
+                "min_accuracy_at_threshold": 90.0,
+            },
+            {
+                "type": "eat_transfers",
+                "column": "toxin_class",
+                "split_column": "eat_split",
+                "query_value": "trembl",
+                "expected_predicted": 16,
+                "expected_at_threshold": 16,
+                "rel_tol": 0.05,
+            },
+            {"type": "eat_fanout", "column": "toxin_class", "max_fanout": 40},
+            {
+                "type": "name_agreement",
+                "names_from": "entries",
+                "column": "toxin_class",
+                "split_column": "eat_split",
+                "query_value": "trembl",
+                "min_fraction": 0.85,
+                "rules": [
+                    ["short neurotoxin", "Type I α-neurotoxin (short)"],
+                    ["long neurotoxin", "Type II α-neurotoxin (long)"],
                 ],
-                "kingdom": ["Metazoa" if i % 2 else "Fungi" for i in range(len(ids))],
-                "reviewed": ["Swiss-Prot" for _ in ids],
-                "protein_name": ["p" for _ in ids],
-                "xref_pdb": [
-                    "True" if i % 4 == 0 else "False" for i in range(len(ids))
-                ],
-            }
-        )
-
-    cli = FakeCli(annotate)
+            },
+            {
+                "type": "mature_inputs",
+                "family_only_xref": "IPR003571",
+                "expected_family_only": 1,
+            },
+            {"type": "full_length_inputs", "min_fraction": 0.99},
+        ],
+    )
+    cli = EmbedBuildCli(entries)
     ctx = _context(
         local,
-        "phosphatase-eat",
+        "three-finger-toxins",
         tmp_path / "out",
         cli=cli,
         dry_run=False,
         thumbnails=False,
     )
     bs.execute(ctx, bs.recipe_steps(ctx))
-    assert cli.commands == ["annotate", "stats", "bundle", "style"]
+    assert cli.commands == [
+        "embed", "prepare", "prepare", "prepare", "prepare",
+        "bundle", "transfer", "stats", "bundle", "style",
+    ]  # fmt: skip
     ok, gates = bs.verify(ctx)
     by_name = {g.name: g for g in gates}
+    failed = {
+        n: g.detail for n, g in by_name.items() if g.status not in ("pass", "warn")
+    }
+    # The embeddings are unpinned in this copy of the recipe: pending, nothing else.
+    assert failed == {"embeddings-pin": by_name["embeddings-pin"].detail}, failed
+    assert by_name["embeddings-pin"].status == "pending" and not ok
     for name in (
+        "membership-pinned",
+        "mature-inputs",
+        "full-length-inputs",
         "no-refill",
-        "frozen-columns",
-        "coordinates",
+        "eat-accuracy:toxin_class",
+        "eat:toxin_class",
+        "eat-fanout:toxin_class",
+        "name-agreement:toxin_class",
+        "counts:eat_split",
+        "informative-columns",
         "settings-envelope",
         "default-view",
-        "counts:eat_split",
+        "coordinates",
         "faithfulness",
+        "provenance",
     ):
         assert by_name[name].status == "pass", (name, by_name[name].detail)
-    accuracy = by_name["eat-accuracy:ec"]
-    assert accuracy.data["n"] == 213 and accuracy.data["accuracy"] == 100.0
-    assert accuracy.status == "fail"  # fake truth, so the paper's 91.5 % is not met
-    assert not ok
-    # A failed gate keeps the file out of the release.
-    problem = bs.release_readiness(ctx.final, ctx.root / "verify.json")
-    assert problem and "eat-accuracy:ec (fail)" in problem
+    assert by_name["mature-inputs"].data["family_only"] == 1
+
     final = bs.read_bundle(ctx.final)
-    rows = final.annotations.to_pylist()
-    queries = [r for r in rows if r["eat_split"] == "query"]
-    assert all(r["ec"] in ("", None) and r["ec_withheld"] for r in queries)
-    assert all(r["ec_withheld"] is None for r in rows if r["eat_split"] == "reference")
-    assert bs.format_version(final.annotations) == 2
-    assert final.settings["eatConfidenceThreshold"] == 0.5
-    assert any(c.startswith("cluster_") for c in final.annotations.column_names)
-    stats_names = set(final.statistics.column("annotation").to_pylist())
-    assert "eat_split" not in stats_names and not any(
-        "__pred_" in (n or "") for n in stats_names
+    table = final.annotations
+    rows = {r["protein_id"]: r for r in table.to_pylist()}
+    assert table.column_names[1] == "toxin_class"
+    assert final.metadata.column("projection_name").to_pylist() == [
+        "ProtT5 — UMAP 2",
+        "ProtT5 — PCA 2",
+    ]
+    # The TrEMBL rows are queries; their automatic label is kept aside.
+    assert rows["A0A00030"]["toxin_class"] is None
+    assert (
+        rows["A0A00030"]["toxin_class_uniprot_rule"] == "Ancestral / non-conventional"
     )
+    assert rows["A0A00030"]["toxin_class__pred_value"]
+    # Mature chains are embedded; the precursor's length is UniProt's.
+    assert rows["P00000"]["mature_length"] == 60 and rows["P00000"]["length"] == "81"
+    assert rows["P00002"]["mature_length"] == 62 and rows["P00002"]["length"] == "62"
+    assert final.settings["eatOverlayEnabled"] is True
+    assert final.settings["eatConfidenceThreshold"] == 0
+    assert "toxin_class" in final.settings["legendSettings"]
+    stats_names = set(final.statistics.column("annotation").to_pylist())
+    assert {"toxin_class", "toxin_subfamily", "pfam"} <= stats_names
+    assert "eat_split" not in stats_names
+    provenance = bs.read_provenance(table)
+    groups = provenance["uniprot_release"]
+    assert groups["refreshed"]["release"] == "2026_03"
+    assert "toxin_class_withheld" in groups["withheld-truth"]["columns"]
+    assert "toxin_class__pred_value" in groups["computed"]["columns"]
+    assert provenance["membership_release"] == "2026_03"
+    assert any(line.startswith("protspace embed") for line in provenance["pipeline"])
+    assert all(str(tmp_path) not in line for line in provenance["pipeline"])
+    assert (ctx.work / "labels.csv").read_text().startswith("identifier,toxin_class,")
+
+    # Pinned, the same build passes; a second run re-runs nothing.
+    facts = ctx.facts()["embeddings"]
+    dataset["embed"] = {
+        **dataset["embed"],
+        "vectors_sha256": facts["vectors_sha256"],
+        "sha256": facts["sha256"],
+    }
+    ctx.dataset = dataset
+    assert bs.verify(ctx)[0]
+    cli.commands.clear()
+    bs.execute(ctx, bs.recipe_steps(ctx))
+    assert cli.commands == []

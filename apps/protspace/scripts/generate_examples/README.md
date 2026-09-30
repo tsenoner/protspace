@@ -1,9 +1,11 @@
 # Showcase example datasets
 
-`build_showcase.py` builds the six bundles behind the Import menu's **Examples** on
-protspace.app: the startup demo plus the manuscript's datasets. `showcase.toml` holds
-one recipe per dataset, and `styles/` holds their curated legends. The design is in the
-OpenSpec change `openspec/changes/curated-example-datasets` (Decisions 1 and 9–13, tasks §6–§7).
+`build_showcase.py` builds the five bundles behind the Import menu's **Examples** on
+protspace.app: the startup demo, one curated EAT example and the manuscript's datasets.
+`showcase.toml` holds one recipe per dataset, `styles/` holds their curated legends and
+`inputs/` the pinned inputs the repository owns (the EAT example's accession list). The
+design is in the OpenSpec change `openspec/changes/curated-example-datasets` (Decisions 1
+and 9–13, tasks §6–§7).
 
 `write_manifest.py` writes the web app's example manifest
 (`apps/web/src/explore/example-manifest.ts`) from the bundle files; `build_showcase.py
@@ -12,18 +14,63 @@ unrelated: they build the Colab notebooks' `examples` release.
 
 ## What the build does (strategy R)
 
-Each paper dataset keeps its protein set and its published coordinates. Every annotation
-source is fetched again with the **fixed** CLI at the current UniProt release. The two EAT
-examples keep the paper's EAT inputs and outputs. Nothing is re-embedded and no UMAP is re-run.
+Each paper dataset keeps its protein set and its published coordinates, UMAP and PCA
+(D3). Every annotation source is fetched again with the **fixed** CLI at the current
+UniProt release; nothing of theirs is re-embedded and no UMAP is re-run. The EAT example
+has no source bundle (`embed-build`): the build makes all of it from a pinned accession
+list.
 
-| id                | Kind            | N       | Source of the layout                                     | Refreshed                                  | Paper                                              |
-| ----------------- | --------------- | ------- | -------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------- |
-| `demo`            | `demo-refresh`  | 7,831   | the current demo (4 projections, mature peptides)        | every column, from full-length sequences   | the mature-peptide `length`                        |
-| `venom-eat`       | `eat-graft`     | 811     | `venom_eat_stats` (Fig. 4)                               | InterPro, TED, Biocentral are added        | every existing column, the statistics part         |
-| `phosphatase-eat` | `eat-graft`     | 832     | the `phosphatase_eat` fixture                            | every column except the EAT ones           | `ec`, `protein_families`, `eat_split`, `*__pred_*` |
-| `human-fly`       | `paper-refresh` | 105,562 | `nm_2026/data/joint_proteome_105k_stats` (Fig. 2B)       | every column but Biocentral (D4)           | (none)                                             |
-| `beta-lactamase`  | `paper-refresh` | 113,015 | `nm_2026/data/beta_lactamase_2026_stats` (Fig. 3)        | every column but Biocentral (D4)           | (none)                                             |
-| `swissprot`       | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP, PCA | every column except Biocentral (opt-in)    | (none)                                             |
+| id                    | Kind            | N       | Source of the layout                                        | Annotations                                                        |
+| --------------------- | --------------- | ------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `demo`                | `demo-refresh`  | 7,831   | the current demo (4 projections, mature peptides)           | every source, from full-length sequences; the mature `length` kept |
+| `three-finger-toxins` | `embed-build`   | 1,089   | built here: ProtT5 of the mature chains, UMAP 2 and PCA 2   | every source (full-length sequences), labels, hold-out, EAT        |
+| `human-fly`           | `paper-refresh` | 105,562 | `nm_2026/data/joint_proteome_105k_stats` (Fig. 2B)          | every source but Biocentral (D4)                                   |
+| `beta-lactamase`      | `paper-refresh` | 113,015 | `nm_2026/data/beta_lactamase_2026_stats` (Fig. 3)           | every source but Biocentral (D4)                                   |
+| `swissprot`           | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP and PCA | every source but Biocentral (opt-in)                               |
+
+Biocentral's models read the per-residue ProtT5 matrix, which UniProt's mean-pooled
+vectors cannot give back, so the three large sets would need 10–25 h of embedding on the
+public server each. Their recipes skip that stage (`enabled = false`, with the reason);
+the docs cards say so. The former `venom-eat` and `phosphatase-eat` examples are gone
+from the menu; their frozen files stay test fixtures, `perf-datasets` assets
+(`stage-perf`) and Zenodo files for the paper.
+
+### `embed-build`: the EAT example
+
+`three-finger-toxins` is every snake three-finger toxin at 2026_03,
+`(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)`,
+pinned in `inputs/three-finger-toxins.accessions.txt` (sha256 in `membership_sha256`).
+Swiss-Prot curators name each one's class in `cc_similarity`; the TrEMBL entries,
+venom-gland transcripts, carry none. The steps:
+
+1. **entries.** The pinned entries' sequences, features (`ft_signal`, `ft_propep`,
+   `ft_chain`, `ft_peptide`), names and similarity text from UniProt, batched; a missing
+   entry fails the step (the list needs a new release, not a silent gap).
+2. **sequences.** Each entry's **mature chain** (`mature.tsv` records start, end, length
+   and how it was found): the annotated Chain (Peptide without one; the longest when
+   there are several), else the sequence without its signal peptide and terminal
+   propeptide, else as deposited. Swiss-Prot often holds the mature chain sequenced from
+   venom and TrEMBL the precursor, so embedding full-length sequences would put the two
+   in separate islands (CRITIQUE2 G1). `full_length.fasta` keeps the whole sequences.
+3. **embed.** `protspace embed --backend local -e prot_t5`: ProtT5-XL-U50 per protein
+   from the half-precision encoder UniProt uses (`Rostlab/prot_t5_xl_half_uniref50-enc`),
+   run here rather than on a remote service. `embed.vectors_sha256` and `embed.sha256`
+   pin the result; `embed.input` may name a copy of the pinned file (the Zenodo one),
+   which a rebuild then uses instead of embedding again.
+4. **fetch.** Staged `protspace prepare -i <mature H5> -f full_length.fasta -m umap2,pca2
+   --n-neighbors 25 --min-dist 0.1 --random-state 42 -a …`: the projections are kept, and
+   InterPro (with Phobius), TED and Biocentral read the full-length sequences.
+5. **assemble.** `toxin_class` (8 classes) and `toxin_subfamily` (3) from the similarity
+   text (`[labels]` rules, first match wins); TrEMBL's automatic rule label goes to
+   `toxin_class_uniprot_rule`. `[holdout]` draws a stratified 20 % of the Swiss-Prot
+   entries (classes and ids sorted, seed 7), blanks their labels and keeps the truth in
+   `<column>_withheld`; `eat_split` is `reference`, `holdout` or `trembl`. The labels are
+   also written to `work/labels.csv` for the Zenodo deposit.
+6. **transfer.** `protspace transfer --k 1 --metric euclidean` from the references to the
+   held-out and TrEMBL rows (`bundle` first, since `transfer` reads a bundle). The guard
+   fails the step if a query row regains a label.
+7. **stats, style, finalize** as for every dataset, with the EAT settings envelope
+   (`eatConfidenceThreshold` 0).
 
 The build steps for each dataset are:
 
@@ -34,7 +81,8 @@ The build steps for each dataset are:
 2. **fetch.**
    - `paper-refresh` runs staged `protspace prepare -m pca2 -a …` calls that reuse the
      per-source cache. Each stage adds sources, so a failure costs only its own stage.
-   - The other kinds fetch full-length UniProt FASTA and run one `protspace annotate`.
+   - `embed-build` runs the same stages on its own embeddings (above).
+   - `demo-refresh` fetches full-length UniProt FASTA and runs one `protspace annotate`.
    - Paper rows without a UniProt vector (146 in human + fly) are annotated from FASTA and
      keep their paper position.
    - A fetch step does not start while UniProt serves another release than `--release`.
@@ -52,33 +100,34 @@ The build steps for each dataset are:
    - The rows are the paper's membership, with the default annotation as the first column.
    - `sequence`, `organism_id` and the legacy length bins are dropped.
    - A v1 source is re-encoded to v2 before new columns join it (G9).
-   - For `phosphatase-eat`, the refreshed `ec` and `protein_families` of the 213 queries
-     become `ec_withheld` and `protein_families_withheld`. A guard fails the build if any
-     query row regains a value in the withheld columns (G6).
+   - `fill_missing_taxonomy` (human-fly): a row whose UniProt entry is gone takes the
+     paper's species and that species' refreshed lineage instead of literal `"None"`
+     strings (W18).
 4. **projections.** Keeps, renames and reorders the paper projections, UMAP first, named
    `ProtT5 — UMAP 2`. The coordinates are copied unchanged.
 5. **stats.**
    - Runs `protspace stats --cluster-selection both` with an **explicit**
      `--stats-annotation` list (G12).
-   - `venom-eat` keeps the paper's statistics part byte-for-byte.
    - The demo gets none.
 6. **bundle, style, finalize.**
    - `protspace bundle`, then `protspace style` with `styles/<id>.json`. Style entries for
      values the data lacks are dropped first.
    - Carried-over legends and the cluster legends are merged in afterwards, because
      `style` would reorder a manual legend.
-   - The EAT examples get the settings envelope, with `eatConfidenceThreshold` 0 for venom
-     and 0.5 for phosphatase (D6).
+   - The EAT example gets the settings envelope, with `eatConfidenceThreshold` 0 (D6).
    - Provenance goes into the annotations' parquet metadata (G15): `example_id`,
      `protspace_version`, `git_sha`, `builder_git_sha`, `uniprot_release` per column
      group (G10, `{group: {release, columns}}`), `membership_release`, `built_at`,
-     `command`, `pipeline` and `zenodo_doi`. The refreshed groups' release is the one the
+     `command`, `pipeline` and `zenodo_doi`. `command` and `pipeline` carry no machine
+     path: `--cli-root $CLI`, `--out-root $OUT`, `$WORK`, `$NM_DATA`, `~` (W12;
+     `write_manifest.py` redacts older stamps the same way). The refreshed groups' release is the one the
      fetch steps recorded for their data. It must be a single release and equal
      `--release`; what UniProt serves later does not matter, so a finished build can be
      finalized after UniProt moves on.
 7. **verify.** Runs the gates and writes `verify.json`, with the sha256 of the file it
    checked. The build exits non-zero if a gate fails or is pending.
-8. **report.** Writes the clustering report and thumbnails for the default-view choice (see below).
+8. **report.** Writes the clustering report and thumbnails for the default-view choice
+   (see below). An EAT column's thumbnail draws its transfers as rings.
 
 Every step writes a marker under `work/.steps/`, keyed on a digest of everything the step
 reads: its CLI command, the recipe keys it uses, the size and modification time of its
@@ -100,7 +149,10 @@ the fetch steps (quickly, from the cache) and everything after them. Changes to
   gitignored `apps/protspace/data/` of the author's checkout. The build only reads them,
   and refuses an output root inside the repository or an input directory.
 - Network access to rest.uniprot.org, the InterPro and AlphaFold DB APIs, and Biocentral.
-- Author facts still to collect (tasks 7.1): the venom 811 query and release; the
+- For `embed-build`: the CLI's `local` extra (torch, transformers), which the build asks
+  `uv run --extra local` for, and the ProtT5 checkpoint from Hugging Face (cached after
+  the first run).
+- Author facts still to collect (tasks 7.1): the
   Swiss-Prot and human + fly membership releases (2025_04 is inferred); how the 113,015
   β-lactamases were selected. Until a stated release is `YYYY_MM`, the `provenance` gate
   is pending and the bundle cannot be staged. Fill them in before the D2 measurement: the
@@ -155,11 +207,12 @@ uv run python $S build --only beta-lactamase --cli-root $CLI
 # human-fly: 5–14 h, including the 146 vector-less rows. Gates: kinases shared, MHC I/II, β-defensin and CC chemokines human-only, PBP/GOBP fly-only.
 uv run python $S build --only human-fly --cli-root $CLI
 
-# venom-eat: minutes. Gates: 244 of 384 transfers at reliability ≥ 0.5, P0DPU8 ← F5CPF0 (0.583), the frozen columns and statistics unchanged.
-uv run python $S build --only venom-eat --cli-root $CLI
-
-# phosphatase-eat: minutes. Gates: 91.5 % over 213 and 98.1 % over 160 at ≥ 0.5 against the withheld truth, no refilled query row.
-uv run python $S build --only phosphatase-eat --cli-root $CLI
+# three-finger-toxins: about 10 min (2 min of CPU embedding, 4 min of Biocentral).
+# Gates: the pinned 1,089 rows and embeddings, every row embedded as its mature chain
+# (the 47 family-only Swiss-Prot entries too), hold-out accuracy ≥ 88 % (≥ 90 % at
+# reliability ≥ 0.5), TrEMBL rings at ≥ 0.5 within 5 % of 238, no donor above 40,
+# ≥ 85 % agreement with the class a query's name states, no refilled query row.
+uv run python $S build --only three-finger-toxins --cli-root $CLI
 
 # demo: 30–60 min (TED about 20 min). Gates: Pfam coverage ≥ 50 % (was 26.9 %), full-length inputs, the mature length kept.
 uv run python $S build --only demo --cli-root $CLI
@@ -174,7 +227,8 @@ uv run python $S stage-release --staging /tmp/showcase-2026_03   # release asset
 uv run python $S stage-perf --out /tmp/perf-datasets             # perf-datasets assets, perf/datasets.manifest.json, the owner's commands
 ```
 
-`stage-release` and `stage-perf` copy files and print the `gh release create` commands.
+`stage-release` and `stage-perf` copy files and print the `gh release create` commands,
+with `--latest=false` so a data release never becomes the repository's "Latest" (W33).
 They never upload anything: creating releases is an owner step (tasks §8).
 
 ## Choosing the default view (G2, tasks 7.5)
@@ -203,16 +257,30 @@ come). Pending blocks the release like a failure.
 - the protein count and the paper membership;
 - no `sequence`, `organism_id` or legacy length bins;
 - the v2 format stamp;
-- no `(TC n` or "In the … section" family values (a warning only in a frozen paper column);
+- no `(TC n` or "In the … section" family values;
 - `xref_pdb` has both values, and `reviewed` is plausible;
+- **informative columns** (W10, G13): no column the legend could only show as N/A or
+  as one value, counted with the web's N/A rules (`MISSING_VALUE_TOKENS` in
+  `packages/utils/src/visualization/missing-values.ts`, trimmed and case-insensitive; a
+  test pins the two). Nothing is dropped: the gate lists them, and the recipe either
+  leaves them out of its fetch or keeps them in `keep_uninformative` (a documented
+  column whose one value is the fact, such as "all Swiss-Prot"). The default view's
+  annotation and tooltip are kept implicitly; `fragment` (`yes` or empty) is a flag;
+- `root` has at most three values and no deep clade ("… group", "… subgroup"), and
+  `predicted_transmembrane` holds no literal `none`, which the web shows as N/A (G2).
+  Both fail on bundles built before the CLI fixes, so a rebuild on a cache that kept the
+  old values cannot pass;
 - the obsolete-accession count (rows empty in `reviewed` and `protein_name`), to state on
   the docs card (G17); a table with neither column fails rather than counting zero;
 - no refreshed source (UniProt, taxonomy, InterPro, TED, Biocentral) empty on every row;
 - the `defaultView` names are present;
 - the settings envelope (EAT);
 - the statistics name existing projections, and every projection has a faithfulness score;
-- the coordinates equal the paper's;
-- provenance is written, and every release it states is a `YYYY_MM` UniProt release.
+- the coordinates equal the paper's (for `embed-build`, its own projections');
+- provenance is written, and every release it states is a `YYYY_MM` UniProt release;
+- `embed-build` only: the rows are the pinned list, and the embeddings are the pinned
+  vectors (`pending` until pinned; other vectors fail, the same vectors in another file
+  layout warn).
 
 **Story gates** are set per dataset in `showcase.toml` (`[[datasets.<id>.gates]]`). An
 unknown gate type fails. If a story gate fails after the refresh, that dataset ships
@@ -250,5 +318,5 @@ bundles from their pinned git blobs, the manuscript's 113K β-lactamase bundle (
 ```bash
 cd apps/protspace
 uv run pytest tests/test_build_showcase.py -m "not slow"   # pure helpers, offline
-uv run pytest tests/test_build_showcase.py -m slow         # venom-eat and phosphatase-eat end to end, network faked
+uv run pytest tests/test_build_showcase.py -m slow         # three-finger-toxins end to end: UniProt, embed and prepare faked
 ```

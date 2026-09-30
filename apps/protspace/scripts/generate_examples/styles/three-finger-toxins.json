@@ -1,0 +1,48 @@
+{
+  "$comment": "The eight curator classes grouped by subfamily: short-chain in yellow to green, long-chain in purples, ancestral in blue; N/A (the queries, where the EAT rings sit) grey. toxin_subfamily and eat_split follow the same logic.",
+  "toxin_class": {
+    "sortMode": "manual",
+    "maxVisibleValues": 10,
+    "pinnedValues": [
+      "Type I α-neurotoxin (short)",
+      "Type III α-neurotoxin",
+      "Cytotoxin",
+      "Aminergic / muscarinic",
+      "Other short-chain",
+      "Type II α-neurotoxin (long)",
+      "κ-neurotoxin",
+      "Other long-chain",
+      "Ancestral / non-conventional",
+      ""
+    ],
+    "colors": {
+      "Type I α-neurotoxin (short)": "#F3C300",
+      "Type III α-neurotoxin": "#F38400",
+      "Cytotoxin": "#BE0032",
+      "Aminergic / muscarinic": "#008856",
+      "Other short-chain": "#C2B280",
+      "Type II α-neurotoxin (long)": "#875692",
+      "κ-neurotoxin": "#E68FAC",
+      "Other long-chain": "#604E97",
+      "Ancestral / non-conventional": "#0067A5",
+      "": "#DDDDDD"
+    }
+  },
+  "toxin_subfamily": {
+    "sortMode": "manual",
+    "maxVisibleValues": 4,
+    "pinnedValues": ["Short-chain", "Long-chain", "Ancestral", ""],
+    "colors": {
+      "Short-chain": "#F38400",
+      "Long-chain": "#875692",
+      "Ancestral": "#0067A5",
+      "": "#DDDDDD"
+    }
+  },
+  "eat_split": {
+    "sortMode": "manual",
+    "maxVisibleValues": 3,
+    "pinnedValues": ["reference", "holdout", "trembl"],
+    "colors": { "reference": "#A1CAF1", "holdout": "#BE0032", "trembl": "#F3C300" }
+  }
+}
