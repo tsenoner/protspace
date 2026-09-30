@@ -362,6 +362,20 @@ class TestSequenceLengthLimits:
             assert values[pid] == f"membrane:{sequences[pid]}"
         assert not retriever.prediction_failed
 
+    def test_refusal_resends_are_bounded_then_the_batch_is_split(self):
+        """Each refusal removes one sequence and resends; after five resends a
+        batch still refused is split like any other failure, so refusals add
+        to the seven requests the split alone may send."""
+        sequences = {f"P{i}": _seq(i) for i in range(8)}
+        fake = _FakeBiocentral(rejects={f"P{i}" for i in range(7)})
+
+        retriever, values = _predict(sequences, fake)
+
+        assert [len(r) for r in fake.requests] == [8, 7, 6, 5, 4, 3, 1, 1]
+        assert values["P7"] == f"membrane:{sequences['P7']}"
+        assert all(values[f"P{i}"] == "" for i in range(7))
+        assert not retriever.prediction_failed
+
     def test_an_unexplained_rejection_still_fails_the_batch(self):
         sequences = {f"P{i}": _seq(i) for i in range(3)}
         fake = _FakeBiocentral(failing={1, 2, 3, 4, 5, 6, 7}, error=RuntimeError("x"))

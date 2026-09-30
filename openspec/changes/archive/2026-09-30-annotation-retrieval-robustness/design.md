@@ -108,10 +108,13 @@ gets a batch of its own:
   do not make the source incomplete, and one warning counts them. A 422 that still names a
   sequence as too short or too long resends the batch without it.
 - A batch that raises for another reason, or returns nothing, is split in half and each half sent
-  again, at most `_MAX_SPLIT_DEPTH` (2) levels deep, so at most seven requests per batch. Only the
-  proteins of parts that still fail lack predictions; the batch counts as failed and the loop
-  moves on. The residue bound and the split come from the showcase demo build: 820 phosphatases (494,522
-  residues) failed as one request and succeeded as two halves.
+  again, at most `_MAX_SPLIT_DEPTH` (2) levels deep, so at most seven requests per batch when no
+  refusal names a sequence. Refusal resends come on top: each batch or part is resent at most
+  `_MAX_REFUSAL_RESENDS` (5) times, once per refused sequence, and one still refused after that
+  is split like any other failure. Only the proteins of parts that still fail lack predictions;
+  the batch counts as failed and the loop moves on. The residue bound and the split come from the
+  showcase demo build: 820 phosphatases (494,522 residues) failed as one request and succeeded as
+  two halves.
 - `prediction_failed` stays the manager-facing signal. It is `True` when the health check failed
   or any batch lost proteins, so `manager.py` needs no change.
 - The upstream "longer than the recommended" warning stays suppressed.

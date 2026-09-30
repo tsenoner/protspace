@@ -93,7 +93,7 @@ sequences.
 
 #### Scenario: A very long sequence is included
 
-- **WHEN** a requested sequence is longer than 2,000 residues
+- **WHEN** a requested sequence is longer than 2,000 and at most 5,000 residues
 - **THEN** it is submitted like any other sequence
 - **AND** its length alone never makes the source fail
 
@@ -167,7 +167,7 @@ deep, and only the proteins of parts that still fail SHALL lack predictions.
 
 #### Scenario: Splitting is bounded
 
-- **WHEN** every part of a failed batch keeps failing
+- **WHEN** every part of a failed batch keeps failing without naming a refused sequence
 - **THEN** at most seven requests are sent for it (the batch, two halves, four quarters)
 - **AND** the source is incomplete
 
