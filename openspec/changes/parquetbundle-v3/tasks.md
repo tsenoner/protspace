@@ -130,6 +130,7 @@
       encoder do
 - [x] 3.24 The v3 reader checks a footer's row count against its row groups and the rows each
       column actually decodes (each row exactly once), and caps the cells it preallocates from it
+      and the bytes, at 32 times the part's size (snappy compresses by ~21x at most)
 - [x] 3.25 The v3 reader folds a missing-value spelling per hit: a scored or evidenced hit keeps
       its label, score and evidence, as v2's whole-hit test kept it
 - [x] 3.26 The v3 reader reads a `placedNumeric` column as numbers over the placed proteins, as

@@ -808,6 +808,29 @@ describe('parquetbundle format v3', () => {
       },
     );
 
+    it('caps the bytes a footer can make the reader preallocate by the part size', async () => {
+      // 2M rows of 100 float64 columns is well within the cell cap, but a few-KB part
+      // cannot hold the 1.6 GB they would preallocate: snappy compresses by ~21x at most.
+      const names = Array.from({ length: 100 }, (_, i) => `n${i}`);
+      const wide = part(
+        [
+          { name: 'protein_id', data: PROTEIN_IDS },
+          ...names.map((name) => ({ name, data: new Float64Array(8) })),
+        ],
+        {
+          protspace_container_version: '3',
+          protspace_v3_manifest: JSON.stringify({
+            idColumn: 'protein_id',
+            columns: Object.fromEntries(names.map((name) => [name, { kind: 'numeric' }])),
+            projections: MANIFEST.projections,
+          }),
+        },
+      );
+      await expect(
+        decodeParquetBundle(v3Bundle({ 0: declaring(wide, 2_000_000, true) })),
+      ).rejects.toThrow(/part 1 declares 2000000 rows, 1616000000 bytes to preallocate/);
+    });
+
     it('caps the cells a footer can make the reader preallocate', async () => {
       // A few KB claiming 2M rows of 500 float64 columns would preallocate 8 GB before
       // a single row is read.

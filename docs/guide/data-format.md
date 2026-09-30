@@ -510,6 +510,12 @@ arrives as a plain JavaScript array instead, and the reader rejects the bundle w
 naming that column, as it does for a column whose physical type contradicts the manifest. Such
 a column is a writer bug, not a variant.
 
+The reader preallocates every column from part 1's and part 3's footer row counts before it reads
+a page, so it first checks those counts against what the part can hold: the arrays may not
+outweigh the part by more than 32 times (above 64 MB), where snappy compresses PLAIN data by at
+most about 21 times. A footer claiming more rows than its pages hold is refused before anything
+is allocated from it.
+
 Part 6 is read differently and is not zero-copy at all. It is a handful of large blobs rather
 than hundreds of per-row columns, so the reader loads the whole part at once and copies each
 payload out of the decoded page before wrapping it as a typed array. At that granularity the copy

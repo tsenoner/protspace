@@ -341,14 +341,33 @@ function assertUniqueIds(ids: readonly string[]): void {
 }
 
 /**
+ * The most a part's preallocated arrays may outweigh the part itself. Every v3 column is
+ * PLAIN and snappy compressed, and each array holds at most its column's uncompressed
+ * PLAIN bytes (the id column's slots less), while snappy compresses by at most ~21x (a
+ * 3-byte copy element covers 64 bytes).
+ */
+const MAX_PREALLOCATION_RATIO = 32;
+/** What any part may preallocate, however small it is. */
+const MIN_PREALLOCATION_BUDGET = 64 * 1024 * 1024;
+
+/**
  * Check a part's footer row count before anything is allocated from it.
  *
  * `num_rows` is only a claim: hyparquet decodes whatever row groups there are, so a
  * footer claiming more rows than its row groups hold would leave the difference as
  * phantom proteins at the zeros a fresh typed array holds. And every column is
- * preallocated from it, so the cells it implies are capped as the legacy path caps them.
+ * preallocated from it, so the cells it implies are capped as the legacy path caps them,
+ * and so are the bytes (`bytesPerRow`, summed over the columns) against the part's own
+ * size: a few-KB footer claiming 2M rows of 499 float64 columns would otherwise have the
+ * reader allocate 8 GB before it reads a single page.
  */
-function assertFooterRows(metadata: FileMetaData, part: string, columns: number): void {
+function assertFooterRows(
+  metadata: FileMetaData,
+  part: string,
+  columns: number,
+  bytesPerRow: number,
+  partBytes: number,
+): void {
   const inRowGroups = metadata.row_groups.reduce((sum, group) => sum + BigInt(group.num_rows), 0n);
   if (inRowGroups !== BigInt(metadata.num_rows)) {
     throw new Error(
@@ -361,6 +380,14 @@ function assertFooterRows(metadata: FileMetaData, part: string, columns: number)
     throw new Error(
       `v3 ${part} declares ${String(metadata.num_rows)} rows of ${columns} columns, ` +
         `past the ${DEFAULT_VALIDATION_LIMITS.maxTotalCells} cell limit`,
+    );
+  }
+  const bytes = Number(metadata.num_rows) * bytesPerRow;
+  const budget = Math.max(MIN_PREALLOCATION_BUDGET, partBytes * MAX_PREALLOCATION_RATIO);
+  if (bytes > budget) {
+    throw new Error(
+      `v3 ${part} declares ${String(metadata.num_rows)} rows, ${bytes} bytes to preallocate, ` +
+        `more than a ${partBytes}-byte part can hold`,
     );
   }
 }
@@ -424,7 +451,15 @@ async function readAnnotationColumns(
   manifest: V3Manifest,
   numRows: number,
 ): Promise<Map<string, ColumnTarget>> {
-  assertFooterRows(metadata, 'part 1', 1 + Object.keys(manifest.columns).length);
+  const columns = Object.values(manifest.columns);
+  assertFooterRows(
+    metadata,
+    'part 1',
+    1 + columns.length,
+    // An id slot, then a Float64Array or an Int32Array per column.
+    8 + columns.reduce((sum, { kind }) => sum + (kind === 'numeric' ? 8 : 4), 0),
+    part.byteLength,
+  );
   const targets = new Map<string, ColumnTarget>();
   targets.set(manifest.idColumn, new Array<string>(numRows).fill(''));
   for (const [name, column] of Object.entries(manifest.columns)) {
@@ -467,11 +502,8 @@ async function readProjections(
       `v3 part 3 holds ${String(metadata.num_rows)} rows but part 1 holds ${numRows}`,
     );
   }
-  assertFooterRows(
-    metadata,
-    'part 3',
-    manifest.projections.reduce((sum, { dimension }) => sum + dimension, 0),
-  );
+  const axes = manifest.projections.reduce((sum, { dimension }) => sum + dimension, 0);
+  assertFooterRows(metadata, 'part 3', axes, 4 * axes, part.byteLength);
 
   const axisTargets = new Map<string, { data: Float32Array; dimension: number; axis: number }>();
   const projections: Projection[] = [];
