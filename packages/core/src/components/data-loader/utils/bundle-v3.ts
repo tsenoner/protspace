@@ -24,11 +24,17 @@
  *    has always applied that rule.
  *  - **Every part 1/3/6 column is REQUIRED and PLAIN**, which is the only shape
  *    hyparquet decodes straight into a typed array. A column that arrives as a plain
- *    array still reads correctly (see the fallback in {@link writeChunk}) but about 4x
- *    slower, and is a bug on the writer side, so it is logged.
+ *    array was written nullable or dictionary-encoded, which is a writer bug, so it is
+ *    rejected (see {@link assertTypedChunk}) like any other schema mismatch.
  */
 
-import { parquetMetadata, parquetRead, parquetReadObjects, type FileMetaData } from 'hyparquet';
+import {
+  parquetMetadata,
+  parquetRead,
+  parquetReadObjects,
+  type ColumnData,
+  type FileMetaData,
+} from 'hyparquet';
 import {
   NA_DEFAULT_COLOR,
   NA_VALUE,
@@ -206,19 +212,67 @@ function readManifest(metadata: FileMetaData): V3Manifest {
 type ColumnTarget = Int32Array | Float64Array | string[];
 
 /**
- * Copy one decoded chunk into its preallocated column at `rowStart`.
+ * Reject a part 1/3 chunk that did not decode to a typed array.
  *
- * The fast path is the whole point of v3: a REQUIRED PLAIN column arrives as a typed
- * array and lands with a single `set`. Anything else — a column the producer wrote
- * nullable or dictionary-encoded — still decodes correctly through the element loop,
- * which is why `onPlainArray` reports rather than throws.
+ * Only a REQUIRED PLAIN column does, and the encoder writes nothing else, so a plain
+ * array means a producer wrote the column nullable or dictionary-encoded. Its nulls
+ * would have to be invented into codes or coordinates, which is the kind of repair
+ * {@link readManifest} refuses too.
  */
+function assertTypedChunk(
+  columnName: string,
+  columnData: ArrayLike<unknown>,
+): asserts columnData is Int32Array | Float32Array | Float64Array {
+  if (
+    !(
+      columnData instanceof Int32Array ||
+      columnData instanceof Float32Array ||
+      columnData instanceof Float64Array
+    )
+  ) {
+    throw new Error(
+      `v3 bundle column "${columnName}" did not decode to a typed array: every v3 column ` +
+        'must be written REQUIRED and PLAIN, not nullable or dictionary-encoded',
+    );
+  }
+}
+
+/**
+ * `parquetRead` over `columns`, failing the read when `onChunk` throws.
+ *
+ * hyparquet calls `onChunk` from a detached promise continuation, so a throw there would
+ * surface as an unhandled rejection while the read itself resolved. The first one is
+ * held and rethrown once the read has finished.
+ */
+async function readColumnChunks(
+  file: ArrayBuffer,
+  metadata: FileMetaData,
+  columns: string[],
+  onChunk: (chunk: ColumnData) => void,
+): Promise<void> {
+  let failure: unknown = null;
+  await parquetRead({
+    file,
+    metadata,
+    columns,
+    onChunk: (chunk) => {
+      if (failure !== null) return;
+      try {
+        onChunk(chunk);
+      } catch (error) {
+        failure = error;
+      }
+    },
+  });
+  if (failure !== null) throw failure;
+}
+
+/** Copy one decoded chunk into its preallocated column at `rowStart`. */
 function writeChunk(
   target: ColumnTarget,
   columnName: string,
   columnData: ArrayLike<unknown>,
   rowStart: number,
-  onPlainArray: (columnName: string) => void,
 ): void {
   if (Array.isArray(target)) {
     for (let i = 0; i < columnData.length; i++) {
@@ -227,41 +281,8 @@ function writeChunk(
     }
     return;
   }
-
-  if (
-    columnData instanceof Int32Array ||
-    columnData instanceof Float64Array ||
-    columnData instanceof Float32Array
-  ) {
-    target.set(columnData, rowStart);
-    return;
-  }
-
-  onPlainArray(columnName);
-  const missing = target instanceof Int32Array ? -1 : NaN;
-  for (let i = 0; i < columnData.length; i++) {
-    const value = columnData[i];
-    target[rowStart + i] = value == null ? missing : Number(value);
-  }
-}
-
-/**
- * One-shot reporter for a column that did not arrive as a typed array.
- *
- * Per read rather than per column: a producer that got this wrong got it wrong for the
- * whole part, and one line in the console is the point.
- */
-function plainArrayReporter(): (columnName: string) => void {
-  let warned = false;
-  return (columnName: string) => {
-    if (warned) return;
-    warned = true;
-    console.warn(
-      `v3 bundle column "${columnName}" did not decode to a typed array — it was probably ` +
-        'written nullable or dictionary-encoded. The bundle still loads, about 4x slower; ' +
-        'fix the writer (every v3 column must be REQUIRED and PLAIN).',
-    );
-  };
+  assertTypedChunk(columnName, columnData);
+  target.set(columnData, rowStart);
 }
 
 /** Preallocate one array per declared column and fill it chunk by chunk. */
@@ -280,16 +301,9 @@ async function readAnnotationColumns(
     );
   }
 
-  const onPlainArray = plainArrayReporter();
-
-  await parquetRead({
-    file: part,
-    metadata,
-    columns: [...targets.keys()],
-    onChunk: ({ columnName, columnData, rowStart }) => {
-      const target = targets.get(columnName);
-      if (target) writeChunk(target, columnName, columnData, rowStart, onPlainArray);
-    },
+  await readColumnChunks(part, metadata, [...targets.keys()], (chunk) => {
+    const target = targets.get(chunk.columnName);
+    if (target) writeChunk(target, chunk.columnName, chunk.columnData, chunk.rowStart);
   });
 
   return targets;
@@ -335,23 +349,20 @@ async function readProjections(
   }
 
   if (axisTargets.size > 0) {
-    const onPlainArray = plainArrayReporter();
-    await parquetRead({
-      file: part,
+    await readColumnChunks(
+      part,
       metadata,
-      columns: [...axisTargets.keys()],
-      onChunk: ({ columnName, columnData, rowStart }) => {
+      [...axisTargets.keys()],
+      ({ columnName, columnData, rowStart }) => {
         const target = axisTargets.get(columnName);
         if (!target) return;
-        // A nullable axis column still reads (a null is a missing coordinate), but slowly.
-        if (Array.isArray(columnData)) onPlainArray(columnName);
+        assertTypedChunk(columnName, columnData);
         const { data, dimension, axis } = target;
         for (let i = 0; i < columnData.length; i++) {
-          const value = columnData[i] as number | null;
-          data[(rowStart + i) * dimension + axis] = value ?? NaN;
+          data[(rowStart + i) * dimension + axis] = columnData[i];
         }
       },
-    });
+    );
   }
 
   return projections;

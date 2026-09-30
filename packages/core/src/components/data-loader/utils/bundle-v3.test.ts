@@ -583,8 +583,7 @@ describe('parquetbundle format v3', () => {
     );
   });
 
-  it('reports a projection column that was not written REQUIRED and PLAIN', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('rejects a projection column that was not written REQUIRED and PLAIN', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({
         columnData: [
@@ -598,12 +597,9 @@ describe('parquetbundle format v3', () => {
       }),
     );
 
-    const { data } = await decodeParquetBundle(v3Bundle({ 2: nullable }));
-
-    // The null is a missing coordinate: NaN, like an absent protein, never 0.
-    expect(Array.from(data.projections[0].data.slice(14))).toEqual([NaN, 8.5]);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/column "pca2__x" did not decode to a typed array/);
+    await expect(decodeParquetBundle(v3Bundle({ 2: nullable }))).rejects.toThrow(
+      /column "pca2__x" did not decode to a typed array/,
+    );
   });
 
   it('decodes non-ASCII labels by byte range, not character offset', async () => {
@@ -638,8 +634,7 @@ describe('parquetbundle format v3', () => {
     expect(data.annotations.organism.values[0]).toBe('\uFEFFHuman');
   });
 
-  it('still reads a bundle whose columns were written nullable, and says so once', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('rejects an annotation column that was written nullable', async () => {
     const nullable = new Uint8Array(
       parquetWriteBuffer({
         columnData: [
@@ -671,17 +666,10 @@ describe('parquetbundle format v3', () => {
       }),
     );
 
-    const { data } = await decodeParquetBundle(v3Bundle({ 0: nullable }));
-
-    expect(Array.from(data.annotation_data.organism as Int32Array)).toEqual([
-      0, 1, 2, 4, 0, 1, 2, 3,
-    ]);
-    // A null in a column the manifest calls numeric reads as missing, not as 0.
-    expect(data.numeric_annotation_data?.length).toEqual(
-      new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]),
+    // Rejected rather than read with the nulls turned into codes and numbers.
+    await expect(decodeParquetBundle(v3Bundle({ 0: nullable }))).rejects.toThrow(
+      /column "(organism|length)" did not decode to a typed array/,
     );
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toMatch(/did not decode to a typed array/);
   });
 
   it('collects every bulk buffer exactly once and they all transfer', async () => {
