@@ -46,8 +46,8 @@ hosting = "repo"
 repo_file = "data.parquetbundle"
 proteins = 7831
 membership = "ToxProt: (taxonomy_id:33208) AND (cc_tissue_specificity:venom OR cc_scl_term:SL-0177) AND (reviewed:true)"
-membership_release = "2026_01 (inferred from the 2026-05-01 build)"
-paper_release = "2026_01 (mature-peptide length from the 2026-05-01 build)"
+membership_release = "2026_01"  # from the data: every entry created in 2026_01, none from 2026_02; pre-2026_02 sequences
+paper_release = "2026_01"       # the mature-peptide length column, from the same 2026-05-01 build
 source = [
   "{repo}/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle",
   "{repo}/apps/web/public/data.parquetbundle",
@@ -96,9 +96,9 @@ name = "Venom toxins · EAT"
 hosting = "release"
 proteins = 811
 figure = "Fig. 4a, d, e, f"
-membership = "Reviewed secreted animal toxins (KW-0800 and KW-0964); the exact query is unrecorded (ask the author, tasks 7.1)"
-membership_release = "unrecorded (bundle built 2026-08-05)"
-paper_release = "unrecorded (UniProt columns fetched about 2026-08)"
+membership = "(keyword:KW-0800) AND (keyword:KW-0964) AND (reviewed:true) AND (taxonomy_id:33208) AND (length:[100 TO 140])"  # reconstructed from the data: returns exactly the 811
+membership_release = "2026_02"  # contains C0HMH2 (new in 2026_02); same 811 at 2026_03; built 2026-08-05
+paper_release = "2026_02"       # the frozen GO columns match the 2026_02 entry versions
 source = [
   "{repo}/apps/web/tests/fixtures/venom_eat_stats_811.parquetbundle",
   "{repo}/apps/web/public/data/venom_eat_stats.parquetbundle",
@@ -219,7 +219,7 @@ hosting = "release"
 proteins = 105562
 figure = "Fig. 2B"
 membership = "Reference proteomes UP000005640 (human) and UP000000803 (fly)"
-membership_release = "2025_04 (inferred; confirm with the author, tasks 7.1)"
+membership_release = "2025_04"  # from the data: every entry created in 2025_04, none from 2026_01; built 2026-01-26
 embeddings = [
   "{cli_data}/other/homsap_dromel/homsap_UP000005640.h5:prot_t5",
   "{cli_data}/other/homsap_dromel/dromel_UP000000803.h5:prot_t5",
@@ -396,7 +396,7 @@ large = true
 proteins = 573649
 figure = "Fig. 2A"
 membership = "UniProtKB/Swiss-Prot entries with a UniProt ProtT5 vector (UniProt omits sequences over 12,000 aa)"
-membership_release = "2025_04 (inferred; confirm with the author, tasks 7.1)"
+membership_release = "2025_04"  # 573,661 Swiss-Prot entries - 11 over 12,000 aa - 1 empty vector; 2025_04 re-issued 2025_03 unchanged
 embeddings = ["{cli_data}/other/sprot/per-protein.h5:prot_t5"]
 projections_source = "{nm_data}/swissprot_573k_stats"
 pins = [
