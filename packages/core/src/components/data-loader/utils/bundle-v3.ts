@@ -84,6 +84,8 @@ interface V3ColumnManifest {
   scores?: boolean;
   /** Only meaningful for `kind: 'multi'`: an `evidence:<col>` payload exists. */
   evidence?: boolean;
+  /** Python's Arrow type for the column; carried onto the annotation, never interpreted here. */
+  sourceType?: string;
 }
 
 interface V3Manifest {
@@ -185,6 +187,8 @@ function readManifest(metadata: FileMetaData): V3Manifest {
       ...(numericType != null ? { numericType } : {}),
       ...(entry.scores === true ? { scores: true } : {}),
       ...(entry.evidence === true ? { evidence: true } : {}),
+      // Opaque to the browser, so only its shape is checked: a non-string is dropped.
+      ...(typeof entry.sourceType === 'string' ? { sourceType: entry.sourceType } : {}),
     };
   }
 
@@ -207,6 +211,13 @@ function readManifest(metadata: FileMetaData): V3Manifest {
   }
 
   return { idColumn, columns: validated, projections: validatedProjections };
+}
+
+/** `annotation` carrying the manifest's `sourceType`, for the bundle writer to echo back. */
+function withSourceType(annotation: Annotation, column: V3ColumnManifest): Annotation {
+  return column.sourceType === undefined
+    ? annotation
+    : { ...annotation, sourceType: column.sourceType };
 }
 
 type ColumnTarget = Int32Array | Float64Array | string[];
@@ -656,7 +667,10 @@ export async function readV3Bundle(
       const values = stored as Float64Array;
       for (let i = 0; i < numRows; i++) if (!Number.isFinite(values[i])) values[i] = NaN;
       numeric_annotation_data[name] = values;
-      annotations[name] = createNumericAnnotation(column.numericType ?? 'float');
+      annotations[name] = withSourceType(
+        createNumericAnnotation(column.numericType ?? 'float'),
+        column,
+      );
       continue;
     }
 
@@ -696,7 +710,10 @@ export async function readV3Bundle(
       );
     }
 
-    annotations[name] = { kind: 'categorical', values: labels, colors, shapes };
+    annotations[name] = withSourceType(
+      { kind: 'categorical', values: labels, colors, shapes },
+      column,
+    );
   }
 
   const data: VisualizationData = {

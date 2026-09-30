@@ -192,6 +192,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     // this pins first-occurrence order. `__NA__` is appended last, never sorted in.
     expect(data.annotations.cath).toEqual({
       kind: 'categorical',
+      sourceType: 'string',
       values: [CATH_ENCODED_SEMICOLON, 'G3DSA:6.20.10.10', '6.20.10.10', NA_VALUE],
       colors: ['#F3C300', '#875692', '#F38400', NA_DEFAULT_COLOR],
       shapes: ['circle', 'circle', 'circle', 'circle'],
@@ -228,6 +229,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
 
     expect(data.annotations.go_bp).toEqual({
       kind: 'categorical',
+      sourceType: 'string',
       // 'apoptotic process' has 3 hits, 'protein folding' 2.
       values: ['apoptotic process', 'protein folding', NA_VALUE],
       colors: ['#F3C300', '#875692', NA_DEFAULT_COLOR],
@@ -254,6 +256,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
 
     expect(data.annotations.pfam).toEqual({
       kind: 'categorical',
+      sourceType: 'string',
       // The encoded '|' - the grammar's suffix separator - is decoded back into a label.
       values: ['PF00001 (7tm;1)', 'PF00002', PFAM_NON_ASCII, 'PF00003 (a|b)', NA_VALUE],
       colors: ['#F3C300', '#875692', '#F38400', '#A1CAF1', NA_DEFAULT_COLOR],
@@ -324,6 +327,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     // encoder ever stops sorting.
     expect(data.annotations.reviewed).toEqual({
       kind: 'categorical',
+      sourceType: 'string',
       values: ['True', 'False'],
       colors: ['#F3C300', '#875692'],
       shapes: ['circle', 'circle'],
@@ -349,6 +353,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     // makes the display decision, and must land them in ONE bucket, not two.
     expect(data.annotations.predicted_tm).toEqual({
       kind: 'categorical',
+      sourceType: 'string',
       values: ['TM helix', NA_VALUE],
       colors: ['#F3C300', NA_DEFAULT_COLOR],
       shapes: ['circle', 'circle'],
@@ -367,6 +372,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
 
     expect(data.annotations.length).toEqual({
       kind: 'numeric',
+      sourceType: 'string',
       numericType: 'int',
       values: [],
       colors: [],
@@ -374,6 +380,7 @@ describe('v3 golden fixture: the Python encoder and the browser reader agree', (
     });
     expect(data.annotations.hydrophobicity).toEqual({
       kind: 'numeric',
+      sourceType: 'string',
       numericType: 'float',
       values: [],
       colors: [],

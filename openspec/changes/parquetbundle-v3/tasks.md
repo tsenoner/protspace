@@ -74,6 +74,10 @@
       key for the legacy notice; the web exporter writes `protspace_container_version` and no
       grammar key
 
+- [x] 3.12 The v3 reader keeps the manifest's `sourceType` on the loaded `Annotation`; the web
+      exporter echoes it for a column that still fits it (integer range, `bool` labels, numeric
+      kind), and falls back to its inferred type otherwise; round-trip tests
+
 ## 4. Contract suite (`tests/contract`)
 
 - [x] 4.1 `emit_bundles.py` adds a `BOOLEAN` annotation column and a protein that one projection
@@ -86,6 +90,9 @@
 - [x] 4.4 The `annotate` stand-in is stamped v2 as `annotate` stamps it; the layout assertion checks
       `protspace_container_version` = 3 and no grammar key on every producer and web bundle, and
       the grammar key `2` without a container key on the legacy v2 input
+
+- [x] 4.5 The reverse-direction test compares the Arrow type of every annotation column Python
+      decodes from a web re-export with the Python-written original (no boolean folding)
 
 ## 5. Release and follow-ups
 

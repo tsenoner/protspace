@@ -7,15 +7,14 @@ compared by the reader every downstream tool (``style``, ``transfer``,
 ``convert``, ``serve``) uses: ``read_tables``, which decodes v3 through
 ``decode_v3``.
 
-The summary is what a bundle means, not how it is spelled: per protein, every
-annotation cell and every finite coordinate, plus a digest of the statistics
-part. Two spellings are folded together because they are the same value in the
-v2 cell grammar ``read_tables`` returns:
-
-* a missing cell, which is null or the empty string depending on column type;
-* an Arrow BOOLEAN, which a Python-written file decodes as a bool and a
-  web-written file (the browser never knew the column was BOOLEAN) as the
-  ``true``/``false`` labels it displayed.
+The summary is what a bundle means: per protein, every annotation cell and
+every finite coordinate, the Arrow type each annotation column decodes to, and a
+digest of the statistics part. The column types are compared as strictly as the
+values: the web writer echoes the ``sourceType`` the browser read from the
+Python-written manifest, so a ``bool`` or ``double`` column must come back as
+that type, not as re-inferred ``true``/``false`` labels or ``int64``. Only a
+missing cell is folded, because it is null or the empty string depending on the
+column type.
 """
 
 from __future__ import annotations
@@ -33,11 +32,7 @@ from protspace.data.io.bundle import (
 
 
 def cell(value: object) -> object:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return value
+    return None if value is None or value == "" else value
 
 
 def summarize(path: Path) -> dict:
@@ -56,6 +51,9 @@ def summarize(path: Path) -> dict:
     statistics = read_statistics_from_bundle(path)
     return {
         "annotations": rows,
+        "types": {
+            column: str(annotations.schema.field(column).type) for column in columns
+        },
         "projections": projections,
         "statistics": hashlib.sha256(statistics).hexdigest() if statistics else None,
         "hasSettings": read_settings_from_bundle(path) is not None,

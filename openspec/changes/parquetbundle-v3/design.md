@@ -163,6 +163,24 @@ spelling. The v3 encoder flattened it with Python's `str()`, which gives `True`/
 entries, colour assignments keyed by label and saved legend settings stopped matching. Both
 encoders spell booleans `true`/`false`.
 
+### Column types survive a web re-export
+
+The manifest's `sourceType` is the Arrow type a column had in Python (`bool`, `int32`, `string`,
+...). `decode_v3` restores a numeric column to it and a `bool` column from its `true`/`false`
+labels. The web exporter used to write its own guess (`string`, `int64` or `double`), so a
+Python-written boolean column exported from the app decoded in Python as the strings `true` and
+`false`, and a float64 column of whole numbers came back `int64`.
+
+The browser reader now keeps the manifest's `sourceType` on the loaded `Annotation` (an optional
+field, set once per column at load and never read by rendering), and the exporter writes it back
+when the column as written still fits it: an integer type when every value is a whole number in
+its range, `bool` when the column is categorical with only `true`/`false` labels, a float type when
+it is numeric, and anything else (`string`, a timestamp, `?`), which Python only renders as text,
+always. A column the app changed so that it no longer fits, and every column of a legacy load, gets
+the exporter's own choice. The alternative, re-deriving the type in the writer, cannot tell a
+float64 column of whole numbers from an integer one or a string column the browser reads as numbers
+from a numeric one.
+
 ### Persist before render
 
 On `main`, a user import is written to OPFS, bytes and metadata, before the render, so a tab that

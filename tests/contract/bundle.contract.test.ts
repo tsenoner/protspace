@@ -406,6 +406,7 @@ describe('protspace convert', () => {
 
 type PythonSummary = {
   annotations: Record<string, Record<string, unknown>>;
+  types: Record<string, string>;
   projections: Record<string, Record<string, number[]>>;
   statistics: string | null;
   hasSettings: boolean;
@@ -439,6 +440,11 @@ describe('bundles the web app exports, read by the Python tooling', () => {
       // browser's dataset, so it is not in what the browser exports.
       expect(manifest.annotationOnlyId in written.annotations).toBe(variant === 'coverage');
       delete written.annotations[manifest.annotationOnlyId];
+      // Same column types, not just the same values: the writer echoes the manifest's
+      // sourceType, so Python reads the BOOLEAN column as bool and a float64 column of
+      // whole numbers as double, exactly as from the file it wrote itself.
+      expect(reexported.types).toEqual(written.types);
+      if (variant === 'coverage') expect(written.types.reviewed).toBe('bool');
       expect(reexported.annotations).toEqual(written.annotations);
       expect(reexported.projections).toEqual(written.projections);
       expect(reexported.statistics).toBe(written.statistics);

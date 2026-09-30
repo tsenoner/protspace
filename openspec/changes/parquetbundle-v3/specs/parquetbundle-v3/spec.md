@@ -181,6 +181,31 @@ the spelling the v2 browser reader displayed, by both the Python and the web enc
   converted to v3
 - **THEN** the converted bundle's legend applies the same colours to the same proteins
 
+### Requirement: A web re-export SHALL keep the column types Python wrote
+
+The browser reader SHALL keep each v3 manifest column's `sourceType` on the loaded annotation, and
+the web exporter SHALL write that `sourceType` back for a column that still fits it, so the Python
+package decodes a web re-export of a Python-written bundle to the same column types as the
+original. A column that no longer fits its recorded type SHALL be written with the exporter's
+inferred type.
+
+#### Scenario: A boolean column round-trips through the web app
+
+- **WHEN** a bundle written by Python with a `BOOLEAN` annotation column is loaded in the web app
+  and exported
+- **THEN** Python decodes that column of the export as `bool`, with the same values as the original
+
+#### Scenario: A float column of whole numbers round-trips through the web app
+
+- **WHEN** a bundle written by Python with a `double` column whose values are all whole numbers is
+  loaded in the web app and exported
+- **THEN** Python decodes that column of the export as `double`, not `int64`
+
+#### Scenario: A column that no longer fits its recorded type
+
+- **WHEN** a column recorded as `int32` holds a value outside the `int32` range when it is exported
+- **THEN** the export records the exporter's inferred type for it instead
+
 ### Requirement: The container version and the cell grammar SHALL be recorded under separate keys
 
 A v3 part 1 SHALL declare its container version under `protspace_container_version` and SHALL NOT

@@ -147,6 +147,14 @@ const handBuilt = (): VisualizationData => ({
 /** Part `index` (0-based) of a bundle, `null` for a zero-byte slot. */
 const partOf = (buffer: ArrayBuffer, index: number) => splitBundleParts(buffer)[index] ?? null;
 
+/** The v3 manifest in part 1's footer. */
+const manifestOf = (buffer: ArrayBuffer) =>
+  JSON.parse(
+    parquetMetadata(partOf(buffer, 0)!).key_value_metadata!.find(
+      ({ key }) => key === 'protspace_v3_manifest',
+    )!.value!,
+  ) as { columns: Record<string, { kind: string; sourceType: string }> };
+
 describe('v3 export: the container', () => {
   it('writes the six-part layout the reader validates, every column REQUIRED and PLAIN', () => {
     const buffer = createParquetBundle(handBuilt());
@@ -283,16 +291,43 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     const original = handBuilt();
     original.numeric_annotation_data!.length[0] = 2 ** 60;
 
-    const manifest = JSON.parse(
-      parquetMetadata(partOf(createParquetBundle(original), 0)!).key_value_metadata!.find(
-        ({ key }) => key === 'protspace_v3_manifest',
-      )!.value!,
-    );
-    expect(manifest.columns.length).toEqual({
+    expect(manifestOf(createParquetBundle(original)).columns.length).toEqual({
       kind: 'numeric',
       numericType: 'int',
       sourceType: 'double',
     });
+  });
+
+  it('echoes a carried sourceType for a column that still fits it', () => {
+    const original = handBuilt();
+    original.annotations.reviewed = {
+      ...categorical(['true', 'false', '__NA__']),
+      sourceType: 'bool',
+    };
+    original.annotation_data.reviewed = Int32Array.of(0, 1, 2, 0);
+    original.annotations.length.sourceType = 'int32';
+    original.annotations.ratio.sourceType = 'float';
+    original.annotations.organism.sourceType = 'large_string';
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.reviewed.sourceType).toBe('bool');
+    expect(columns.length.sourceType).toBe('int32');
+    expect(columns.ratio.sourceType).toBe('float');
+    expect(columns.organism.sourceType).toBe('large_string');
+    expect(columns.go.sourceType).toBe('string'); // nothing carried, the writer's default
+  });
+
+  it('falls back to the inferred sourceType for a column that no longer fits', () => {
+    const original = handBuilt();
+    original.annotations.organism.sourceType = 'bool'; // labels are not true / false
+    original.annotations.length.sourceType = 'int32';
+    original.numeric_annotation_data!.length[0] = 2 ** 40; // past int32
+    original.annotations.ratio.sourceType = 'int8'; // ratio holds fractions
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.organism.sourceType).toBe('string');
+    expect(columns.length.sourceType).toBe('int64');
+    expect(columns.ratio.sourceType).toBe('double');
   });
 
   it('writes an empty dictionary for a categorical column with no values at all', async () => {
@@ -476,6 +511,22 @@ describe('legacy import, v3 export', () => {
 
     expect(meaning(data)).toEqual(meaning(original));
     expect(data.annotations).toEqual(original.annotations);
+  });
+
+  it("carries the golden fixture's sourceType through a re-export", async () => {
+    const file = fixture('v3-sample.parquetbundle').slice().buffer as ArrayBuffer;
+    const written = manifestOf(file).columns;
+    const { data } = await decodeParquetBundle(file);
+
+    // A Python string column the reader sees as numbers stays a string column for Python.
+    expect(written.length).toMatchObject({ kind: 'numeric', sourceType: 'string' });
+    expect(data.annotations.length.sourceType).toBe('string');
+
+    const echoed = manifestOf(createParquetBundle(data)).columns;
+    for (const [name, annotation] of Object.entries(data.annotations)) {
+      if (annotation.runtime) continue;
+      expect(echoed[name]?.sourceType, name).toBe(written[name].sourceType);
+    }
   });
 });
 

@@ -21,7 +21,9 @@ v1/v2 files.
   documented in `docs/guide/data-format.md` and not repeated here.
 - **v3 is the only format written.** The Python writer already emits v3. The web exporter
   (`packages/utils/src/parquet/bundle-writer.ts`) switches from v2 to v3. `protspace style`,
-  which used to keep a legacy bundle legacy, writes a v1/v2 input as v3 too.
+  which used to keep a legacy bundle legacy, writes a v1/v2 input as v3 too. A web re-export keeps
+  the column types Python wrote: the reader carries each column's manifest `sourceType` and the
+  exporter echoes it while the column still fits it.
 - **v1/v2 stay readable but are deprecated.** Removal is planned for protspace 5.0.0. Python logs
   one warning per legacy read, naming `protspace convert` and 5.0.0. The web app shows a
   non-blocking notice when a user loads a v1/v2 bundle, suggesting a re-export or
@@ -97,9 +99,11 @@ planned for protspace 5.0.0."
   (explicit grammar), a new `cli/convert.py`, the CLI docs and the Colab notebook where they list
   commands.
 - Core (`packages/core`): `data-loader/utils/bundle.ts` and `bundle-v3.ts` (NaN for missing
-  coordinates, protein set, detecting and reporting the container version from its own key),
+  coordinates, protein set, detecting and reporting the container version from its own key,
+  carrying `sourceType`),
   `src/index.ts` (export `decodeParquetBundle`).
-- Utils (`packages/utils`): `parquet/bundle-writer.ts` writes v3; `visualization/data-processor.ts`
+- Utils (`packages/utils`): `parquet/bundle-writer.ts` writes v3 and echoes `sourceType`,
+  `types.ts` (`Annotation.sourceType`); `visualization/data-processor.ts`
   culls non-finite points.
 - Web (`apps/web`): `explore/dataset-controller.ts` (persist before render, legacy notice),
   `explore/notifications.ts`.

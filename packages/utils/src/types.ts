@@ -31,6 +31,14 @@ export interface Annotation {
   sourceKind?: AnnotationKind;
   numericType?: NumericAnnotationType;
   numericMetadata?: NumericAnnotationMetadata;
+  /**
+   * The Arrow type the column had in Python (`bool`, `int32`, `string`, ...), as a v3 manifest's
+   * `sourceType` records it. Nothing in the browser reads it: the bundle writer echoes it back
+   * when the column still fits it, so a web re-export decodes in Python to the column type the
+   * Python writer started from instead of a re-inferred one. Absent for a legacy load and for
+   * columns the app builds itself.
+   */
+  sourceType?: string;
   /** Runtime-only identity for derived annotations that must never be persisted as user data. */
   runtime?: {
     role: 'eat-confidence';

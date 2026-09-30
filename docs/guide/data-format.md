@@ -531,7 +531,7 @@ the only description of what the integer columns mean. It does not carry
 | `columns.*.numericType` | `int` or `float`; numeric columns only                                         |
 | `columns.*.scores`      | present and `true` when a `scores:<col>` payload exists; multi columns only    |
 | `columns.*.evidence`    | present and `true` when an `evidence:<col>` payload exists; multi columns only |
-| `columns.*.sourceType`  | Python-private, see below                                                      |
+| `columns.*.sourceType`  | the column's Arrow type in Python, see below                                   |
 | `projections`           | `{ name, dimension }` per projection, in part 3 column order                   |
 
 The browser validates the manifest against part 1's own schema before reading anything. An
@@ -539,8 +539,11 @@ unknown kind, a declared column part 1 does not have, a kind whose physical type
 code column declared numeric, for instance), a duplicate projection name, or a dimension that is
 not 2 or 3 all throw rather than being repaired.
 
-`sourceType` is Python-private and the browser ignores it. It records the Arrow type the column
-had before encoding, so the decoder can restore it instead of handing back a string column.
+`sourceType` records the Arrow type the column had before encoding, so the Python decoder can
+restore it instead of handing back a string column. The browser never interprets it. It keeps the
+value on the loaded annotation and the web exporter writes it back when the column still fits it
+(see [Export and import notes](#export-and-import-notes)), so a bundle re-exported from
+the app decodes in Python to the same column types as the file Python wrote.
 
 Only a numeric source type is ever restored, and only on a numeric column. The decoder declines
 everything else and falls back to the per-kind default:
@@ -627,6 +630,7 @@ What else an export from the web app does:
 
 - the export is a format v3 bundle, whatever format the dataset was loaded from, so loading a v1 or v2 file and exporting it upgrades it without a Python install (see [Legacy formats](#legacy-formats-v1-and-v2)).
 - a numeric column is written as `DOUBLE`, with its int/float identity in the manifest (`numericType`). An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
+- a column loaded from a v3 bundle keeps the `sourceType` its manifest recorded, so Python reads a web re-export of a `bool`, `int32` or string column as that type again. The recorded type is kept only while the column still fits it: an integer type needs every value to be a whole number in its range, `bool` needs the labels `true` and `false`, and a float type needs a numeric column. A column that no longer fits, or one loaded from a v1/v2 file, gets the exporter's own choice (`string`, `int64` or `double`).
 - a boolean column is written with the labels `true` and `false`, and a protein a projection does not cover gets `NaN` coordinates there, exactly as in a Python-written bundle.
 - a statistics part read from the source bundle is re-emitted byte for byte, including columns this app version does not model.
 - all six parts are always written, with a zero-byte slot for absent settings or statistics.

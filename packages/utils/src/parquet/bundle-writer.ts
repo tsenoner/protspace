@@ -26,6 +26,7 @@
 
 import { parquetWriteBuffer, type ColumnSource, type KeyValue } from 'hyparquet-writer';
 import type {
+  Annotation,
   AnnotationData,
   BundleSettings,
   CsrAnnotationData,
@@ -62,13 +63,28 @@ const ENCODER = new TextEncoder();
 
 /**
  * One manifest column. `sourceType` is Python-private and the browser ignores it: it is the
- * Arrow type `decode_v3` restores a numeric column to, so a Python consumer keeps reading an
- * integer column as integers, as it did from the v2 writer's INT32/INT64 columns.
+ * Arrow type `decode_v3` restores the column to (a numeric type, or `bool` for the `true` /
+ * `false` labels), so a Python consumer keeps reading an integer column as integers, as it did
+ * from the v2 writer's INT32/INT64 columns. The writer's default is `string`, or `int64` /
+ * `double` for a numeric column; `echoSourceType` replaces it with the type a v3 load carried in.
  */
 type ColumnEntry =
-  | { kind: 'categorical'; sourceType: 'string' }
-  | { kind: 'multi'; sourceType: 'string'; scores?: true; evidence?: true }
-  | { kind: 'numeric'; numericType: 'int' | 'float'; sourceType: 'int64' | 'double' };
+  | { kind: 'categorical'; sourceType: string }
+  | { kind: 'multi'; sourceType: string; scores?: true; evidence?: true }
+  | { kind: 'numeric'; numericType: 'int' | 'float'; sourceType: string };
+
+/** Arrow's integer types, by the name `sourceType` records, with the range Python casts into. */
+const ARROW_INTEGER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  int8: [-(2 ** 7), 2 ** 7 - 1],
+  int16: [-(2 ** 15), 2 ** 15 - 1],
+  int32: [-(2 ** 31), 2 ** 31 - 1],
+  int64: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  uint8: [0, 2 ** 8 - 1],
+  uint16: [0, 2 ** 16 - 1],
+  uint32: [0, 2 ** 32 - 1],
+  uint64: [0, Number.MAX_SAFE_INTEGER],
+};
+const ARROW_FLOAT_TYPES: ReadonlySet<string> = new Set(['halffloat', 'float', 'double']);
 
 /** Parts 1 and 6 under construction. */
 interface AnnotationParts {
@@ -395,6 +411,64 @@ function addNumericColumn(
   );
 }
 
+/**
+ * Whether the column `entry` describes still fits the `sourceType` a v3 load carried in, so
+ * Python can restore that type from it. A numeric type needs a numeric column whose values it
+ * holds, `bool` a categorical column of `true` / `false` labels. Any other type (`string`, a
+ * timestamp, `?`) is one Python only ever renders as v2 text, which fits every column.
+ */
+function fitsSourceType(
+  sourceType: string,
+  entry: ColumnEntry,
+  labels: readonly (string | null)[],
+  numeric: Float64Array | undefined,
+): boolean {
+  const range = ARROW_INTEGER_RANGES[sourceType];
+  if (range) {
+    const [low, high] = range;
+    return (
+      entry.kind === 'numeric' &&
+      numeric !== undefined &&
+      numeric.every(
+        (value) =>
+          Number.isNaN(value) || (Number.isInteger(value) && value >= low && value <= high),
+      )
+    );
+  }
+  if (ARROW_FLOAT_TYPES.has(sourceType)) return entry.kind === 'numeric';
+  if (sourceType === 'bool') {
+    return (
+      entry.kind === 'categorical' &&
+      labels.every(
+        (label) => label == null || isNAValue(label) || label === 'true' || label === 'false',
+      )
+    );
+  }
+  return true;
+}
+
+/**
+ * Record the `sourceType` the annotation carried in from a v3 load, when the column as written
+ * still fits it. That keeps a Python-written `bool` or `int32` column that type through a web
+ * re-export; a column the app changed into something else keeps the writer's default.
+ */
+function echoSourceType(
+  parts: AnnotationParts,
+  name: string,
+  annotation: Annotation,
+  numeric?: Float64Array,
+): void {
+  const entry = parts.manifest[name];
+  const carried = annotation.sourceType;
+  if (
+    entry &&
+    carried !== undefined &&
+    fitsSourceType(carried, entry, annotation.values, numeric)
+  ) {
+    entry.sourceType = carried;
+  }
+}
+
 /** Parts 1 and 6: the annotations, with the manifest in part 1's footer, and the payloads. */
 function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuffer] {
   const parts: AnnotationParts = {
@@ -410,13 +484,17 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
 
     if (isNumericAnnotation(annotation)) {
       const values = data.numeric_annotation_data?.[name];
-      if (values) addNumericColumn(parts, name, values, annotation.numericType ?? 'float');
+      if (values) {
+        addNumericColumn(parts, name, values, annotation.numericType ?? 'float');
+        echoSourceType(parts, name, annotation, values);
+      }
       continue;
     }
 
     const storage = data.annotation_data[name];
     if (!storage) continue;
     addCategoricalAnnotation(parts, data, name, storage);
+    echoSourceType(parts, name, annotation);
     addEatCompanions(parts, data, name);
   }
 
