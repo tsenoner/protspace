@@ -82,6 +82,8 @@ STATISTICS_CATEGORY = "Hydrolase"
 COVERAGE_PROTEIN_COUNT = 6
 GAP_ID = "P00002"
 ANNOTATION_ONLY_ID = "ANNOTATION_ONLY"
+# The family only ANNOTATION_ONLY_ID carries: the browser must not list it.
+ANNOTATION_ONLY_FAMILY = "Unplaced family"
 PROJECTION_ONLY_ID = "PROJECTION_ONLY"
 
 # An Arrow BOOLEAN column, one value per annotated protein of the coverage
@@ -314,7 +316,16 @@ def build_coverage_annotations_table(ids: list[str]) -> pa.Table:
             {
                 "protein_id": pa.array(annotated, pa.string()),
                 "identifier": pa.array([f"alias-{i}" for i in annotated]),
-                "family": pa.array([encode_field("Hydrolase")] * len(annotated)),
+                "family": pa.array(
+                    [
+                        encode_field(
+                            ANNOTATION_ONLY_FAMILY
+                            if i == ANNOTATION_ONLY_ID
+                            else "Hydrolase"
+                        )
+                        for i in annotated
+                    ]
+                ),
                 "reviewed": pa.array(BOOLEAN_VALUES, pa.bool_()),
                 "hash": pa.array(HASH_VALUES, pa.int64()),
                 "edge": pa.array(EDGE_VALUES, pa.int64()),
@@ -511,6 +522,7 @@ def main(out_dir: Path) -> None:
                 "statisticsCategory": STATISTICS_CATEGORY,
                 "gapId": GAP_ID,
                 "annotationOnlyId": ANNOTATION_ONLY_ID,
+                "annotationOnlyFamily": ANNOTATION_ONLY_FAMILY,
                 "projectionOnlyId": PROJECTION_ONLY_ID,
                 "booleanById": dict(
                     zip(

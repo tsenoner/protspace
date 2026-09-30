@@ -105,6 +105,10 @@
 - [x] 3.20 The web exporter names its id column `protein_id` when an annotation is named
       `identifier` (Python's id column preference), so a Python bundle holding both exports; the
       contract coverage variant carries such an annotation
+- [x] 3.21 The v3 reader drops unplaced proteins before it finishes the label dictionaries and
+      re-ranks them over the placed proteins' hits, so a label, rank, palette slot or N/A entry
+      only an unplaced protein had is not left behind; the contract coverage variant gives its
+      annotation-only protein a family no placed protein has
 
 ## 4. Contract suite (`tests/contract`)
 

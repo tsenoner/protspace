@@ -130,6 +130,13 @@ SHALL still store annotation-only proteins in part 1, so Python decodes them bac
 - **THEN** the browser does not list, count, colour or search `Q`
 - **AND** Python's decoded annotations table still contains `Q`
 
+#### Scenario: A label only an unplaced protein carries
+
+- **WHEN** a v3 bundle's part 1 holds placed proteins labelled `A` and `B` and unplaced proteins
+  labelled `C`, or with a missing value, in the same column
+- **THEN** the browser's labels for that column are `A` and `B` with the order, colours and
+  dataset hash a bundle without the unplaced proteins gives, with no `C` and no N/A entry
+
 #### Scenario: A protein covered by one projection of two
 
 - **WHEN** protein `P` has coordinates in projection `A` only

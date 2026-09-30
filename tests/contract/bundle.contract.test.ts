@@ -63,6 +63,7 @@ interface Manifest {
   statisticsCategory: string;
   gapId: string;
   annotationOnlyId: string;
+  annotationOnlyFamily: string;
   projectionOnlyId: string;
   booleanById: Record<string, boolean | null>;
 }
@@ -398,6 +399,8 @@ describe('proteins the annotations and projections disagree on', () => {
     const { data } = await decodeParquetBundle(loadBundle('coverage'));
     expect(data.protein_ids).not.toContain(manifest.annotationOnlyId);
     expect(data.protein_ids).toHaveLength(Object.keys(manifest.booleanById).length);
+    // Nor a label only it carries: the dictionary is built over the placed proteins.
+    expect(data.annotations.family.values).not.toContain(manifest.annotationOnlyFamily);
   });
 
   it('shows a projected protein without an annotations row as N/A', async () => {

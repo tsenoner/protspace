@@ -144,6 +144,12 @@ v2's reader built the protein list from the projection rows, so an annotation-on
 appeared, was never counted in a legend and could not be searched. v3's part 1 keeps
 annotation-only rows (the file stays lossless), and the browser v3 reader drops every protein that
 has no finite coordinate in any projection before it builds `protein_ids` and the annotation arrays.
+That includes the label dictionaries: the encoder ranks a column's labels over every row of part
+1, so after the drop the reader re-ranks them over the placed proteins' hits (by descending count,
+ties by first occurrence, as the encoder ranks) and leaves out the labels only dropped proteins
+carried, before it folds missing spellings, assigns the palette and adds an N/A entry. A label
+only an unplaced protein has therefore takes no rank, colour or N/A slot, and the dataset hash
+that keys saved legend settings is the one v2 gave the same data.
 A protein with coordinates in one projection but not another stays in the set and is culled per
 projection by the rule above.
 

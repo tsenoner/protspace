@@ -7,6 +7,7 @@ import {
   BUNDLE_DELIMITER_BYTES,
   concatenateBuffers,
   createParquetBundle,
+  generateDatasetHash,
   getProteinAnnotationIndices,
   getProteinEvidence,
   getProteinScores,
@@ -427,6 +428,51 @@ describe('v3 export: round trip through decodeParquetBundle', () => {
     expect(decoded.settings).toEqual(settings);
     expect(new Uint8Array(decoded.data.statistics!)).toEqual(statistics);
     expect(decoded.data.statisticsRows!.length).toBeGreaterThan(0);
+  });
+});
+
+describe('v3 import: proteins no projection places', () => {
+  /**
+   * P1-P3 are placed; Q1-Q3 are in the file but no projection covers them, as when
+   * `prepare` annotates a sequence it could not embed. The Q rows make `C` and `z` the
+   * most frequent labels, carry the only missing `family` cell and break the `go` tie.
+   */
+  const dataset = (rows: number): VisualizationData => ({
+    protein_ids: ['P1', 'P2', 'P3', 'Q1', 'Q2', 'Q3'].slice(0, rows),
+    projections: [
+      {
+        name: 'pca2',
+        dimension: 2,
+        data: Float32Array.of(0, 1, 2, 3, 4, 5, NaN, NaN, NaN, NaN, NaN, NaN).slice(0, rows * 2),
+        metadata: { dimension: 2 },
+      },
+    ],
+    annotations: {
+      family: categorical(['A', 'B', 'C']),
+      go: categorical(['x', 'y', 'z']),
+      length: numeric('int'),
+    },
+    annotation_data: {
+      family: Int32Array.of(0, 0, 1, 2, 2, -1).slice(0, rows),
+      go: [[0], [0, 1], [1], [2], [2], [2, 1]].slice(0, rows),
+    },
+    numeric_annotation_data: { length: Float64Array.of(1, 2, 3, 4, 5, 6).slice(0, rows) },
+    annotation_scores: {},
+    annotation_evidence: {},
+  });
+
+  it('builds every dictionary over the placed proteins only, as if the file held no others', async () => {
+    const { data } = await decodeParquetBundle(createParquetBundle(dataset(6)));
+    const { data: placedOnly } = await decodeParquetBundle(createParquetBundle(dataset(3)));
+
+    expect(data.protein_ids).toEqual(['P1', 'P2', 'P3']);
+    // No phantom C, z or N/A slot, and the placed labels keep their palette colours.
+    expect(data.annotations.family.values).toEqual(['A', 'B']);
+    expect(data.annotations.go.values).toEqual(['x', 'y']);
+    expect(data.annotations).toEqual(placedOnly.annotations);
+    expect(meaning(data)).toEqual(meaning(placedOnly));
+    // Saved legend settings are keyed by this hash.
+    expect(generateDatasetHash(data)).toBe(generateDatasetHash(placedOnly));
   });
 });
 

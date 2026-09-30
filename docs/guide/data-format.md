@@ -448,7 +448,8 @@ stays in part 1 with `NaN` coordinates.
 The web app never draws a point without finite coordinates: it is not plotted, picked, selected,
 contoured or counted in a projection's extent. Its protein set is the proteins with a finite
 coordinate in at least one projection, so a protein that no projection covers is kept in the file
-but not listed, counted or searched. v1 and v2 bundles are read by the same rule: a protein with no
+but not listed, counted or searched, and a label only such proteins carry does not appear in the
+legend or take a colour. v1 and v2 bundles are read by the same rule: a protein with no
 row in a projection is missing there, not at (0, 0). Web builds before v3 support drew such a
 protein at the origin, so a bundle whose projections do not cover every annotated protein now shows
 fewer points than it used to.

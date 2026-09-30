@@ -616,6 +616,49 @@ function readCsrColumn(
 }
 
 /**
+ * Re-rank `labels` over the hits `storage` holds, as the encoder ranks a dictionary: by
+ * descending hit count, ties by first occurrence, labels no hit carries left out. Used
+ * once unplaced proteins are dropped, so the dictionary is the one a file holding only
+ * the placed proteins would carry. `labels` is rewritten in place; the result maps an old
+ * code to its new one, `-1` for a dropped label.
+ */
+function rankByHits(storage: Int32Array | CsrAnnotationData, labels: string[]): Int32Array {
+  const counts = new Int32Array(labels.length);
+  const first = new Int32Array(labels.length);
+  let hit = 0;
+  const count = (code: number) => {
+    if (code >= 0 && counts[code]++ === 0) first[code] = hit;
+    hit++;
+  };
+  if (storage instanceof Int32Array) {
+    storage.forEach(count);
+  } else {
+    const { offsets, codes, length } = storage;
+    for (let i = offsets[0]; i < offsets[length]; i++) count(codes[i]);
+  }
+
+  const order = labels
+    .map((_, code) => code)
+    .filter((code) => counts[code] > 0)
+    .sort((a, b) => counts[b] - counts[a] || first[a] - first[b]);
+  const remap = new Int32Array(labels.length).fill(-1);
+  const ranked = order.map((code, rank) => {
+    remap[code] = rank;
+    return labels[code];
+  });
+  // Copied back rather than spliced in: a spread of a large dictionary overflows the stack.
+  labels.length = ranked.length;
+  for (let code = 0; code < ranked.length; code++) labels[code] = ranked[code];
+  return remap;
+}
+
+/** `second` applied after `first` (either may be `null`, the identity). */
+function composeRemaps(first: Int32Array | null, second: Int32Array | null): Int32Array | null {
+  if (!first || !second) return first ?? second;
+  return first.map((code) => (code < 0 ? -1 : second[code]));
+}
+
+/**
  * Renumber a CSR column onto its folded dictionary and route every row left with no hit
  * to a synthetic `__NA__` category, in one {@link remapCsr} pass: a folded hit is dropped
  * together with its score run and evidence code, and an inserted NA hit gets neither.
@@ -700,6 +743,8 @@ export async function readV3Bundle(
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
   const numeric_annotation_data: Record<string, Float64Array> = {};
+  /** Categorical columns, read as written; their dictionaries are finished below. */
+  const dictionaries: { name: string; column: V3ColumnManifest; labels: string[] }[] = [];
 
   for (const [name, column] of Object.entries(manifest.columns)) {
     const stored = columns.get(physicalColumn(name, column.kind))!;
@@ -717,49 +762,36 @@ export async function readV3Bundle(
       continue;
     }
 
-    const labels = readLabels(payloads, name);
     // Codes on the wire index the dictionary AS WRITTEN, so they are range-checked
-    // against that count and only then renumbered onto the folded one.
-    const encodedLabelCount = labels.length;
-    const remap = foldMissingLabels(labels);
-    const { colors, shapes } = generateColorsAndShapes('kellys', labels.length);
-
+    // against that count before anything renumbers them.
+    const labels = readLabels(payloads, name);
     if (column.kind === 'categorical') {
       const codes = stored as Int32Array;
       for (let i = 0; i < numRows; i++) {
-        if (codes[i] >= encodedLabelCount || codes[i] < -1) {
+        if (codes[i] >= labels.length || codes[i] < -1) {
           throw new Error(
-            `v3 column "${name}" row ${i} has code ${codes[i]}, outside its ${encodedLabelCount} labels`,
+            `v3 column "${name}" row ${i} has code ${codes[i]}, outside its ${labels.length} labels`,
           );
         }
-        if (remap && codes[i] >= 0) codes[i] = remap[codes[i]];
       }
-      appendSyntheticNACategoryToCodes(labels, colors, shapes, codes);
       annotation_data[name] = codes;
     } else {
-      annotation_data[name] = foldCsrColumn(
-        readCsrColumn(
-          name,
-          column,
-          stored as Int32Array,
-          encodedLabelCount,
-          payloads,
-          readEvidenceDict,
-        ),
-        remap,
-        labels,
-        colors,
-        shapes,
+      annotation_data[name] = readCsrColumn(
+        name,
+        column,
+        stored as Int32Array,
+        labels.length,
+        payloads,
+        readEvidenceDict,
       );
     }
-
-    annotations[name] = withSourceType(
-      { kind: 'categorical', values: labels, colors, shapes },
-      column,
-    );
+    dictionaries.push({ name, column, labels });
   }
 
-  const data: VisualizationData = {
+  // The protein set is fixed before any dictionary is finished: the encoder ranked its
+  // labels over every row of part 1, and a protein no projection places must not leave
+  // a label, a frequency rank, a palette slot or an N/A entry behind (v2 never saw it).
+  const data = dropUnplacedProteins({
     protein_ids,
     projections,
     annotations,
@@ -767,13 +799,41 @@ export async function readV3Bundle(
     numeric_annotation_data,
     annotation_scores: {},
     annotation_evidence: {},
-  };
+  });
+  const rowsDropped = data.protein_ids.length !== numRows;
+
+  for (const { name, column, labels } of dictionaries) {
+    const storage = data.annotation_data[name] as Int32Array | CsrAnnotationData;
+    const rerank = rowsDropped ? rankByHits(storage, labels) : null;
+    const remap = composeRemaps(rerank, foldMissingLabels(labels));
+    const { colors, shapes } = generateColorsAndShapes('kellys', labels.length);
+
+    if (storage instanceof Int32Array) {
+      if (remap) {
+        for (let i = 0; i < storage.length; i++) {
+          if (storage[i] >= 0) storage[i] = remap[storage[i]];
+        }
+      }
+      appendSyntheticNACategoryToCodes(labels, colors, shapes, storage);
+    } else {
+      data.annotation_data[name] = foldCsrColumn(storage, remap, labels, colors, shapes);
+    }
+
+    annotations[name] = withSourceType(
+      { kind: 'categorical', values: labels, colors, shapes },
+      column,
+    );
+  }
+  // In the manifest's column order, which the numeric columns' head start above broke.
+  data.annotations = Object.fromEntries(
+    Object.keys(manifest.columns).map((name) => [name, annotations[name]]),
+  );
 
   // Deliberately NOT restoreDeclaredNumericAnnotations: it reads physical parquet types,
   // which in v3 would declare every int32 dictionary-code column numeric. The manifest
   // is the authority on kind here, and it has already been applied above.
   return {
-    data: carryStatistics(normalizeEatCompanionColumns(dropUnplacedProteins(data)), {
+    data: carryStatistics(normalizeEatCompanionColumns(data), {
       statistics: part5,
       statisticsRows: part5 ? await extractStatistics(part5) : null,
     }),
