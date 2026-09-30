@@ -24,8 +24,9 @@ expressible via a single call; ``_continuity`` computes it with the same
 normalisation as sklearn (and is bit-identical when the metric is euclidean).
 
 Both build a full pairwise distance matrix (no ANN path), so above a sample
-threshold a fixed-seed shared subsample is used, and beyond a hard ceiling the
-statistic is skipped with a recorded marker.
+threshold a fixed-seed shared subsample is used. That subsample bounds the cost
+independently of n, so there is no size ceiling by default; an explicit
+``hard_ceiling`` param skips the statistic past it with a recorded marker.
 
 scikit-learn imports are function-local to keep CLI startup fast.
 """
@@ -41,11 +42,10 @@ DEFAULT_K = 15
 # No size ceiling by default. Every metric below runs on the deterministic
 # ``DEFAULT_SAMPLE_THRESHOLD`` subsample, so the O(n^2) work is bounded by the
 # SUBSAMPLE size and not by n -- a dataset of 573k rows and one of 20k rows are
-# both scored on 5,000 points and cost the same. The previous default of 20000
-# gated the bounded work on the unbounded number, which only ever suppressed
-# results that were cheap to produce. Set ``hard_ceiling`` explicitly to restore
-# a bail-out; ``None`` means "no ceiling".
-DEFAULT_HARD_CEILING = None
+# both scored on 5,000 points and cost the same, and a ceiling on n would only
+# suppress results that are cheap to produce. Set ``hard_ceiling`` explicitly to
+# bail out above a given n; ``None`` means "no ceiling".
+DEFAULT_HARD_CEILING: int | None = None
 DEFAULT_N_TRIPLETS_PER_POINT = 5
 
 
@@ -199,9 +199,9 @@ class FaithfulnessStatistic:
 
         if ctx.embedding is None:
             return []
-        # Derive n WITHOUT upcasting: the guards below may bail, and past the
-        # ceiling every metric is skipped — a full float64 copy of a 570k-row
-        # embedding just to discard it would be pure waste.
+        # Derive n WITHOUT upcasting: only the rows the subsample below selects are
+        # ever gathered and upcast, so a full float64 copy of a 570k-row embedding
+        # would be pure waste.
         emb_raw = np.asarray(ctx.embedding)
         n = emb_raw.shape[0]
         if n < 3:
@@ -249,6 +249,14 @@ class FaithfulnessStatistic:
         )
         coords_raw = np.asarray(coords_src)
         ids = ctx.embedding_ids if ctx.embedding_ids is not None else ctx.ids
+        # Only the subsampled rows are gathered below, so a length mismatch would
+        # no longer surface as an IndexError on a full-array index: it would pair
+        # misaligned rows and score them silently. Check the alignment explicitly.
+        if coords_raw.shape[0] != n or len(ids) != n:
+            raise ValueError(
+                "faithfulness inputs are not row-aligned: embedding has "
+                f"{n} rows, coords {coords_raw.shape[0]}, ids {len(ids)}"
+            )
 
         # Canonicalise row order by id up front so EVERY metric depends only on the
         # id-SET, not the input row order. The kNN/Spearman metrics are already
@@ -256,7 +264,6 @@ class FaithfulnessStatistic:
         # sorting here (matching the id-derived subsample seed) makes random_triplet
         # reproducible across differently-ordered inputs too.
         canonical = np.argsort(np.asarray(ids), kind="stable")
-        ids = [ids[int(i)] for i in canonical]
 
         k = int(ctx.params.get("k", DEFAULT_K))
         sample_threshold = int(
@@ -264,21 +271,15 @@ class FaithfulnessStatistic:
         )
         hi_metric = ctx.high_dim_metric or "euclidean"
 
-        sampled = False
-        # Seeded from the FULL canonical id list, exactly as before, so the drawn
-        # subsample — and therefore every number this function returns — is
-        # unchanged by the reordering above.
+        # ``id_seed`` depends only on the id-set, and ``sorted_subsample`` returns
+        # positions in canonical order; ``canonical[idx]`` maps them back to source
+        # rows, so the draw is id-canonical without reordering the full arrays. Only
+        # the selected rows are gathered and upcast.
         rng = np.random.default_rng(id_seed(ctx.rng_seed, ids))
         idx = sorted_subsample(n, sample_threshold, rng)
-        if idx is not None:
-            # Gather straight from the source rows in one pass: canonical[idx] maps
-            # canonical positions back to original row positions, so this is the
-            # same rows the old emb[canonical][idx] produced.
-            take = canonical[idx]
-            n = len(idx)
-            sampled = True
-        else:
-            take = canonical
+        sampled = idx is not None
+        take = canonical[idx] if sampled else canonical
+        n = len(take)
 
         emb = np.asarray(emb_raw[take], dtype=float)
         coords = np.asarray(coords_raw[take], dtype=float)
