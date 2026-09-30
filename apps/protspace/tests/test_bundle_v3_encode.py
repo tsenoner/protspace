@@ -504,10 +504,36 @@ def test_rejects_missing_projection_columns():
         encode_v3(annotations, meta, data)
 
 
-def test_rejects_unknown_identifier():
+def test_a_projected_identifier_without_annotations_is_added(caplog):
+    """The legacy browser reader showed such a protein with N/A everywhere."""
+    annotations = make_annotations(col=["A"], score=["1.5"])
+    meta, data = make_projections((("A", 2),), ["ghost", "p0", "ghost2"])
+    parts = encode_v3(annotations, meta, data)
+
+    part1 = read(parts[0])
+    assert part1.column("protein_id").to_pylist() == ["p0", "ghost", "ghost2"]
+    assert part1.column("col").to_pylist() == [0, -1, -1]
+    assert part1.column("score").to_pylist()[0] == 1.5
+    assert all(np.isnan(v) for v in part1.column("score").to_pylist()[1:])
+    assert read(parts[2]).column("A__x").to_pylist() == [1.0, 0.0, 2.0]
+    assert "2 projected identifier(s) have no annotations row" in caplog.text
+
+
+def test_rejects_a_null_projected_identifier():
     annotations = make_annotations(col=["A"])
-    meta, data = make_projections((("A", 2),), ["p0", "ghost"])
-    with pytest.raises(ValueError, match="ghost"):
+    meta, _ = make_projections((("A", 2),), ["p0"])
+    data = pa.table(
+        {"projection_name": ["A"], "identifier": [None], "x": [1.0], "y": [1.0]},
+        schema=pa.schema(
+            [
+                ("projection_name", pa.string()),
+                ("identifier", pa.string()),
+                ("x", pa.float32()),
+                ("y", pa.float32()),
+            ]
+        ),
+    )
+    with pytest.raises(ValueError, match="null identifier"):
         encode_v3(annotations, meta, data)
 
 

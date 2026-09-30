@@ -452,14 +452,13 @@ def _encode_projections(
     for name, declared in zip(names, dimensions, strict=True):
         rows = projections_data.filter(pc.equal(name_column, pa.scalar(name)))
         identifiers = rows.column("identifier")
-        found = pc.index_in(identifiers, value_set=protein_ids)
-        if found.null_count:
-            unknown = identifiers.filter(pc.is_null(found)).to_pylist()
-            raise ValueError(
-                f"projection '{name}' references identifier(s) absent from the "
-                f"annotations table: {sorted(set(unknown))[:5]}"
-            )
-        positions = np.asarray(found.combine_chunks())
+        # ``encode_v3`` has already added every projected identifier to part 1,
+        # so only a null identifier can miss here.
+        if identifiers.null_count:
+            raise ValueError(f"projection '{name}' has null identifier(s)")
+        positions = np.asarray(
+            pc.index_in(identifiers, value_set=protein_ids).combine_chunks()
+        )
         if np.unique(positions).size != positions.size:
             repeated = np.flatnonzero(np.bincount(positions, minlength=num_rows) > 1)
             raise ValueError(
@@ -492,6 +491,38 @@ def _encode_projections(
         manifest.append({"name": name, "dimension": dimension})
 
     return _required_table(columns), manifest
+
+
+def _add_unannotated_rows(
+    annotations: pa.Table, id_column: str, projections_data: pa.Table
+) -> pa.Table:
+    """Append an all-missing annotations row per projected identifier it lacks.
+
+    The legacy browser reader showed such a protein with N/A for every
+    annotation, so the encoder keeps it rather than refusing the bundle.
+    """
+    if "identifier" not in projections_data.column_names:
+        return annotations  # ``_encode_projections`` names the missing column
+    projected = pc.unique(projections_data.column("identifier")).drop_null()
+    known = _as_string(annotations.column(id_column))
+    absent = projected.filter(pc.invert(pc.is_in(_as_string(projected), known)))
+    if not len(absent):
+        return annotations
+
+    logger.warning(
+        f"{len(absent)} projected identifier(s) have no annotations row, e.g. "
+        f"{absent[:5].to_pylist()}; adding them with every annotation missing"
+    )
+    extra = pa.table(
+        [
+            pc.cast(absent, field.type)
+            if field.name == id_column
+            else pa.nulls(len(absent), field.type)
+            for field in annotations.schema
+        ],
+        schema=annotations.schema,
+    )
+    return pa.concat_tables([annotations, extra])
 
 
 def encode_v3(
@@ -529,6 +560,7 @@ def encode_v3(
             f"found {annotations.column_names}"
         )
 
+    annotations = _add_unannotated_rows(annotations, id_column, projections_data)
     ids = _as_string(annotations.column(id_column))
     if ids.null_count:
         raise ValueError(f"annotations column '{id_column}' contains null values")
