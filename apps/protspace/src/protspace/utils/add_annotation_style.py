@@ -86,9 +86,10 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
     """If *value* is an NA-like label, return the matching label in *all_values*.
 
     Different data sources represent missing values as ``""``, ``"<NA>"``,
-    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel.  ``"None"`` is what
-    ``str()`` yields for a parquet NULL, which is how the frontend writer stores
-    a missing categorical cell.  This helper maps between them so styles using
+    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel; a v3 bundle's missing
+    cell decodes as ``""``.  ``"None"`` is what ``str()`` yields for a parquet
+    NULL, which is how a v2 bundle exported by a web build before v3 stored a
+    missing categorical cell.  This helper maps between them so styles using
     one form still work when the data uses another.  Returns *None* when no
     match is found.
     """

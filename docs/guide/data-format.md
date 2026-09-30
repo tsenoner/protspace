@@ -245,9 +245,10 @@ in memory for a missing cell, and the exporter drops it unconditionally. A genui
 literally named `__NA__` therefore collapses into N/A on load. Give such a category a different
 name before bundling.
 
-How missing values are stored: on export a missing categorical cell is written as a Parquet NULL,
-not as a sentinel string. Bundles from older web builds may still hold literal `__NA__` cells;
-those normalize to N/A on load, as above.
+How missing values are stored: an export never writes a sentinel string, and a v3 bundle holds no
+Parquet NULL either (see the next paragraph). Bundles from older web builds may hold a missing
+cell as a literal `__NA__` or, from the last v2 web builds, as a Parquet NULL; both normalize to
+N/A on load, as above.
 
 A v3 bundle stores a missing cell as code `-1`, a hit count of `0`, or `NaN`, depending on the
 column. In a categorical column it never rewrites the spellings above into a missing value: they
