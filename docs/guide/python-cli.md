@@ -485,7 +485,7 @@ Score the quality of the projections in an existing project directory and write 
 `statistics.parquet`, the optional fifth part of a
 [`.parquetbundle`](/guide/data-format).
 
-Folding it in with `bundle -s` produces a five-part bundle, and the web app reads that table: it
+Folding it in with `bundle -s` fills the bundle's statistics slot, and the web app reads that table: it
 draws separation-score strips in the legend, adds a `By separation` legend sort mode and fills the
 Separation section of the projection metadata panel. See
 [Separation Scores](/explore/separation-scores) for how the scores read in the app, and
@@ -575,7 +575,8 @@ protspace bundle -p projections/ -a annotations.parquet \
 | `-s, --statistics`  | Projection-statistics parquet → fifth bundle part.               | -       |
 | `--settings`        | Settings JSON (for example cluster legend styles) → fourth part. | -       |
 
-A bundle written with `-s` has five parts and the web app renders that table, see
+Every bundle is written with six parts (format v3); `-s` fills the fifth, the statistics slot, and
+the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
 
 The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`

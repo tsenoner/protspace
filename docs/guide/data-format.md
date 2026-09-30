@@ -160,7 +160,7 @@ a `STATS` badge on the annotations that carry scores. See
 Python CLI or any Parquet reader.
 
 The faithfulness metrics do not depend on it: they travel in the projection metadata
-(`info_json.quality`) and render for both four- and five-part bundles.
+(`info_json.quality`) and render whether or not a bundle carries the statistics part.
 :::
 
 ## Annotation Types
