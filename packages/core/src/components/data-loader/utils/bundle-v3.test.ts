@@ -41,7 +41,12 @@ const i32 = (...values: number[]) => new Uint8Array(new Int32Array(values).buffe
 const f32 = (...values: number[]) => new Uint8Array(new Float32Array(values).buffer);
 const f64 = (...values: number[]) => new Uint8Array(new Float64Array(values).buffer);
 
-type Column = { name: string; data: unknown[] | Int32Array | Float64Array | Float32Array };
+type Column = {
+  name: string;
+  data: unknown[] | Int32Array | Float64Array | Float32Array;
+  /** Forces PLAIN where hyparquet-writer would dictionary-encode repeated values. */
+  encoding?: 'PLAIN';
+};
 
 function part(columns: Column[], kv?: Record<string, string>): Uint8Array {
   return new Uint8Array(
@@ -542,6 +547,52 @@ describe('parquetbundle format v3', () => {
       ]);
       await expect(decodeParquetBundle(v3Bundle({ 5: duplicated }))).rejects.toThrow(
         /payloads part declares "csr:go_bp" twice/,
+      );
+    });
+
+    // Counts that sum past 2^31 wrapped the int32 offsets back onto the payload length,
+    // passed the sum check and then looped ~2^31 times over one row. hyparquet-writer
+    // would dictionary-encode the repeated count, so the column is written PLAIN.
+    it('hit counts whose sum overflows the int32 offsets', async () => {
+      const max = 2 ** 31 - 1;
+      const overflowing = part(
+        [
+          { name: 'protein_id', data: PROTEIN_IDS },
+          { name: 'organism', data: new Int32Array([0, 1, 2, -1, 0, 1, 2, 3]) },
+          {
+            name: 'go_bp__count',
+            data: new Int32Array([max, max, 2, 0, 0, 0, 0, 0]),
+            encoding: 'PLAIN',
+          },
+          { name: 'keyword__count', data: new Int32Array([1, 3, 2, 1, 0, 4, 1, 2]) },
+          { name: 'length', data: new Float64Array([100, 200, NaN, 300, 400, 500, 600, 700]) },
+          { name: 'score', data: new Float64Array([0.5, 1.5, 2.5, NaN, 4.5, 5.5, 6.5, 7.5]) },
+        ],
+        {
+          protspace_container_version: '3',
+          protspace_v3_manifest: JSON.stringify({
+            ...MANIFEST,
+            columns: { ...MANIFEST.columns, go_bp: { kind: 'multi' } },
+          }),
+        },
+      );
+      const payloads = { ...PAYLOADS, 'csr:go_bp': i32() };
+      const started = performance.now();
+      await expect(
+        decodeParquetBundle(v3Bundle({ 0: overflowing, 5: payloadPart(payloads) })),
+      ).rejects.toThrow(/hit counts sum past the int32 offset range at index 1/);
+      expect(performance.now() - started).toBeLessThan(1000);
+    });
+
+    it('score counts whose sum overflows the int32 offsets', async () => {
+      const max = 2 ** 31 - 1;
+      const payloads = {
+        ...PAYLOADS,
+        'score_count:go_bp': i32(max, max, 2, 0, 0, 0, 0, 0, 0),
+        'scores:go_bp': f64(),
+      };
+      await expect(decodeParquetBundle(v3Bundle({ 5: payloadPart(payloads) }))).rejects.toThrow(
+        /score counts sum past the int32 offset range at index 1/,
       );
     });
 

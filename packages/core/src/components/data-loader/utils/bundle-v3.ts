@@ -495,13 +495,28 @@ function foldMissingLabels(labels: string[]): Int32Array | null {
   return remap;
 }
 
-/** Per-element counts to CSR offsets: one entry longer, starting at 0. */
+/** Largest offset an Int32Array holds; a larger running sum would wrap. */
+const INT32_MAX = 2 ** 31 - 1;
+
+/**
+ * Per-element counts to CSR offsets: one entry longer, starting at 0.
+ *
+ * The running sum is kept in a JS number and refused once it leaves the int32 range,
+ * before it is stored: an Int32Array store wraps modulo 2^32, so counts summing past
+ * 2^31 could come back round to the payload length, pass the caller's total check and
+ * hand `remapCsr` non-monotonic offsets to loop over ~2^31 times.
+ */
 function prefixSum(counts: Int32Array, what: string): Int32Array {
   const offsets = new Int32Array(counts.length + 1);
+  let running = 0;
   for (let i = 0; i < counts.length; i++) {
     const count = counts[i];
     if (count < 0) throw new Error(`v3 ${what} has a negative count (${count}) at index ${i}`);
-    offsets[i + 1] = offsets[i] + count;
+    running += count;
+    if (running > INT32_MAX) {
+      throw new Error(`v3 ${what} sum past the int32 offset range at index ${i}`);
+    }
+    offsets[i + 1] = running;
   }
   return offsets;
 }

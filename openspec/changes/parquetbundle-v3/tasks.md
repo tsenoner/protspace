@@ -85,6 +85,8 @@
 - [x] 3.13 The point-visibility requirements that named the picking quadtree name the point grid
       (`PointGridIndex`) that replaced it
 - [x] 3.14 The v3 reader refuses a part 3 whose row count differs from part 1's
+- [x] 3.15 The v3 reader refuses hit or score counts whose prefix sum leaves the int32 offset
+      range, instead of wrapping them back onto the payload length
 
 ## 4. Contract suite (`tests/contract`)
 
