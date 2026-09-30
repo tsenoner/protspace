@@ -1715,8 +1715,9 @@ export class ProtspaceScatterplot extends LitElement {
     );
     this._tooltipData = { x, y, view };
     this._hoveredPoint = point;
-    // The hover runs a frame after its mousemove, so a Shift press in between is only in _shiftDown.
-    this._updateFocus(event.shiftKey || this._shiftDown);
+    // The hover runs a frame after its mousemove, so `event.shiftKey` may be stale: the mousemove
+    // already synced it into _shiftDown, and any later Shift keydown/keyup or blur overwrote it.
+    this._updateFocus(this._shiftDown);
 
     if (this._hoveredProteinId !== point.id) {
       this._hoveredProteinId = point.id;
