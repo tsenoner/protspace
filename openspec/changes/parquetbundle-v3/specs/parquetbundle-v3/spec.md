@@ -212,6 +212,13 @@ inferred type.
   loaded in the web app and exported
 - **THEN** Python decodes that column of the export as `double`, not `int64`
 
+#### Scenario: EAT companion columns round-trip through the web app
+
+- **WHEN** a bundle written by `protspace transfer`, whose `<col>__pred_confidence` column is
+  `float`, is loaded in the web app and exported
+- **THEN** Python decodes the export's `<col>__pred_confidence` as `float`, not `double`, and its
+  `__pred_value` and `__pred_source` columns as `string`
+
 #### Scenario: A column that no longer fits its recorded type
 
 - **WHEN** a column recorded as `int32` holds a value outside the `int32` range when it is exported

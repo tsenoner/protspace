@@ -415,7 +415,7 @@ describe('v3 export: EAT predictions', () => {
     expect(manifest.columns.organism__pred_confidence).toEqual({
       kind: 'numeric',
       numericType: 'float',
-      sourceType: 'double',
+      sourceType: 'float',
     });
     const { data } = await exportAndDecode(selectedView);
     expect(data.annotation_predicted?.organism[3]?.confidence).toBe(0.83);
@@ -521,6 +521,22 @@ describe('legacy import, v3 export', () => {
 
     expect(meaning(data)).toEqual(meaning(original));
     expect(data.annotations).toEqual(original.annotations);
+  });
+
+  it('keeps the column type of every EAT companion Python wrote through a re-export', async () => {
+    // `protspace transfer` writes `__pred_confidence` as float32; the reader folds the
+    // companions into `annotation_predicted`, so their carried sourceType is not on any
+    // annotation the writer could echo.
+    const file = repoFile('apps/web/public/data/venom_eat_stats.parquetbundle');
+    const written = manifestOf(file).columns;
+    const companions = Object.keys(written).filter((name) => name.includes('__pred_'));
+    expect(companions.length).toBeGreaterThan(0);
+    const { data } = await decodeParquetBundle(file);
+
+    const echoed = manifestOf(createParquetBundle(data)).columns;
+    for (const name of companions) {
+      expect(echoed[name]?.sourceType, name).toBe(written[name].sourceType);
+    }
   });
 
   it("carries the golden fixture's sourceType through a re-export", async () => {

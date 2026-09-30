@@ -189,6 +189,11 @@ longer be written, converted or styled. The encoder stores such a column as a ca
 of its exact decimal labels, which is what the v2 browser reader showed for a bigint it could not
 hold as a number, and `decode_v3` casts the labels back to the recorded integer type.
 
+The EAT companion columns (`<col>__pred_value`, `__pred_confidence`, `__pred_source`) never
+reach an `Annotation`: the reader folds them into the prediction overlay, so there is no carried
+`sourceType` to echo. Their types are protspace's own schema, fixed by `protspace transfer`
+(`float32` confidence, string value and source), and the exporter writes those.
+
 ### Persist before render
 
 On `main`, a user import is written to OPFS, bytes and metadata, before the render, so a tab that

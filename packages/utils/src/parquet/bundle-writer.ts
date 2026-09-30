@@ -84,6 +84,8 @@ const ARROW_INTEGER_RANGES: Readonly<Record<string, readonly [number, number]>> 
   uint32: [0, 2 ** 32 - 1],
   uint64: [0, Number.MAX_SAFE_INTEGER],
 };
+/** Arrow type Python writes an EAT `__pred_confidence` column as (float32). */
+const EAT_CONFIDENCE_SOURCE_TYPE = 'float';
 const ARROW_FLOAT_TYPES: ReadonlySet<string> = new Set(['halffloat', 'float', 'double']);
 
 /** Parts 1 and 6 under construction. */
@@ -380,12 +382,18 @@ function addEatCompanions(parts: AnnotationParts, data: VisualizationData, name:
   });
   addHitsColumn(parts, getEatCompanionColumn(name, 'value'), [...labels.keys()], hits);
 
+  const confidence = getEatCompanionColumn(name, 'confidence');
   addNumericColumn(
     parts,
-    getEatCompanionColumn(name, 'confidence'),
+    confidence,
     Float64Array.from(cells, (cell) => cell?.confidence ?? NaN),
     'float',
   );
+  // The reader folds the trio into `annotation_predicted`, so no carried sourceType
+  // survives to echo. The trio's types are protspace's own schema instead: Python writes
+  // the confidence as float32 (`predictions.add_overlay_columns`), the other two as
+  // strings, which is what the value and source columns already declare.
+  parts.manifest[confidence].sourceType = EAT_CONFIDENCE_SOURCE_TYPE;
 
   const sources = new Map<string, number>();
   const sourceCodes = Int32Array.from(cells, (cell) => (cell ? intern(sources, cell.source) : -1));

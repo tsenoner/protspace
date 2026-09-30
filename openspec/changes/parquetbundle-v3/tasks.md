@@ -89,6 +89,8 @@
       range, instead of wrapping them back onto the payload length
 - [x] 3.16 The v3 reader refuses a manifest whose id column is not a string column or whose
       columns share a physical part 1 column with each other or with the id column
+- [x] 3.17 The web exporter declares an EAT `__pred_confidence` column `float`, as
+      `protspace transfer` writes it, since the overlay leaves no carried `sourceType` to echo
 
 ## 4. Contract suite (`tests/contract`)
 
