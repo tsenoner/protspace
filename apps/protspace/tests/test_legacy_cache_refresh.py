@@ -750,6 +750,87 @@ class TestVersion3:
             "non-transmembrane"
         ]
 
+    def test_the_refresh_keeps_every_cached_column_of_the_refetched_source(
+        self, tmp_path, monkeypatch
+    ):
+        """One pass refreshes the whole source, so the cache loses none of it.
+
+        Refetching Biocentral for `predicted_transmembrane` alone would write
+        the cache back without the other, still valid, Biocentral columns, and
+        a later run asking for one would pay a second Biocentral pass where
+        the version-2 cache served it.
+        """
+        _write_v2_cache(
+            tmp_path,
+            predicted_subcellular_location="Cytoplasm",
+            predicted_signal_peptide="False",
+        )
+        calls: list = []
+        requested: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_biocentral(monkeypatch, calls, requested=requested)
+
+        result = _pipeline(
+            tmp_path, ["gene_name", "predicted_transmembrane"]
+        )._fetch_annotations(["P02299"])
+
+        assert _sources(calls) == ["biocentral"]
+        assert requested == [set(BIOCENTRAL)]
+        # The run returns what it asked for, nothing more.
+        assert "predicted_membrane" not in result.columns
+        assert result["predicted_transmembrane"].tolist() == ["non-transmembrane"]
+        cache = _read_cache(tmp_path)
+        assert {c: cache[c].tolist() for c in BIOCENTRAL} == {
+            c: [v] for c, v in BIOCENTRAL.items()
+        }
+
+        # A later run asking for another Biocentral column is a cache hit.
+        calls.clear()
+        again = _pipeline(tmp_path, ["predicted_membrane"])._fetch_annotations(
+            ["P02299"]
+        )
+
+        assert calls == []
+        assert again["predicted_membrane"].tolist() == ["Soluble"]
+
+    def test_the_root_refresh_keeps_the_other_cached_taxonomy_columns(
+        self, tmp_path, monkeypatch
+    ):
+        _write_v2_cache(tmp_path, genus="Drosophila")
+        calls: list = []
+        requested: list = []
+        _forbid_all_but_taxonomy_and_biocentral(monkeypatch)
+        _serve_taxonomy(monkeypatch, calls, requested=requested)
+
+        _pipeline(tmp_path, ["root"])._fetch_annotations(["P02299"])
+
+        assert requested == [{"root", "species", "genus"}]
+        cache = _read_cache(tmp_path)
+        assert cache["species"].tolist() == ["Drosophila melanogaster"]
+        assert cache["genus"].tolist() == ["Drosophila"]
+
+    def test_a_default_run_refetches_no_source_it_does_not_ask_for(
+        self, tmp_path, monkeypatch
+    ):
+        """A run without -a asks for the default group, which has no taxonomy
+        or Biocentral column, so it must not pay for either to refresh the
+        cache's.
+        """
+        _write_v2_cache(tmp_path)
+        calls: list = []
+        _serve_fly_uniprot(monkeypatch, calls)
+        _forbid(monkeypatch, InterProRetriever, "InterPro")
+        _forbid(monkeypatch, TedRetriever, "TED")
+        _serve_taxonomy(monkeypatch, calls)
+        _serve_biocentral(monkeypatch, calls)
+
+        _pipeline(tmp_path, None)._fetch_annotations(["P02299"])
+
+        assert calls == ["uniprot"]
+        cache = _read_cache(tmp_path)
+        assert not _holds_stale_value_as_current(cache, "root")
+        assert not _holds_stale_value_as_current(cache, "predicted_transmembrane")
+
 
 class TestBiocentralNeedsASequence:
     """Biocentral is looked up by sequence, like InterPro, on any run.

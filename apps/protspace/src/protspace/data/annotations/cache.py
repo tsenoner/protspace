@@ -99,6 +99,23 @@ def _restore_cached_columns(api_df: pd.DataFrame, cached: pd.DataFrame) -> pd.Da
     return restored
 
 
+def _requested_columns(
+    frame: pd.DataFrame, annotations: list[str] | None
+) -> pd.DataFrame:
+    """*frame* cut to the columns a run for *annotations* returns.
+
+    The manager returns every annotation it was asked to fetch; this applies
+    its output rule to the run's own request instead.
+    """
+    from protspace.data.annotations.configuration import AnnotationConfiguration
+
+    identifier = frame.columns[0]
+    wanted = AnnotationConfiguration(annotations).user_annotations
+    return frame[
+        [identifier, *(c for c in wanted if c in frame.columns and c != identifier)]
+    ]
+
+
 def fetch_annotations(
     headers: list[str],
     annotations: list[str] | None,
@@ -286,6 +303,8 @@ def fetch_annotations(
         )
 
     legacy_uniprot = None
+    # What the manager fetches; the run still returns only `annotations`.
+    fetch_list = annotations
     if refetching_annotations or refresh_columns:
         # Drop cached columns for refetched sources so manager re-fetches them
         cached_by_source = AnnotationConfiguration.categorize_annotations_by_source(
@@ -294,6 +313,31 @@ def fetch_annotations(
         cols_to_drop = set().union(
             *(cached_by_source[s] for s in _ANN_SOURCES if sources[s])
         )
+        # A refresh refetches its sources whole: every column of theirs the
+        # cache holds, not only the ones this run asks for. Otherwise the cache
+        # is written back without the others, which were still current, and
+        # the next run that asks for one pays the source again. Only a source
+        # the run queries anyway is widened: a run without -a asks for no
+        # taxonomy or Biocentral column, so their stale columns are dropped
+        # rather than paid for. An explicit --refetch keeps to the columns the
+        # run asks for.
+        widened = {
+            s
+            for s in migration_sources - refetch
+            if s == "uniprot" or required & SOURCE_ANNOTATIONS[s]
+        }
+        refreshed_along = (
+            set().union(*(cached_by_source[s] for s in widened)) - required
+        )
+        if refreshed_along:
+            logger.info(
+                "Refreshing the cached column(s) "
+                f"{', '.join(sorted(refreshed_along))} in the same requests"
+            )
+            fetch_list = [
+                *(annotations if annotations is not None else ["default"]),
+                *sorted(refreshed_along),
+            ]
         if cached_by_source["taxonomy"] and not sources["taxonomy"]:
             cols_to_drop.discard(TAXONOMY_LOOKUP_ANNOTATION)
         if "uniprot" in migration_sources and "uniprot" not in refetch:
@@ -316,7 +360,7 @@ def fetch_annotations(
 
     manager = ProteinAnnotationManager(
         headers=headers,
-        annotations=annotations,
+        annotations=fetch_list,
         output_path=cache_path,
         sequences=sequences,
         cached_data=cached_df,
@@ -328,7 +372,10 @@ def fetch_annotations(
         # and the next run refetches it.
         protect_cached_columns=not refetching_annotations,
     )
-    fetched = _from_manager(manager, manager.to_pd())
+    frame = manager.to_pd()
+    if fetch_list is not annotations:
+        frame = _requested_columns(frame, annotations)
+    fetched = _from_manager(manager, frame)
     if legacy_uniprot is not None and manager.uniprot_fetch_failed:
         logger.warning(
             "Legacy UniProt cache refresh failed; reusing the cached "

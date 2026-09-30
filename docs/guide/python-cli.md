@@ -407,6 +407,9 @@ Legacy annotation caches are migrated when they are read:
   `root` re-fetches the taxonomy once, a run that requests `predicted_transmembrane` re-fetches
   Biocentral once, and a run that requests neither drops those columns.
 
+A refresh re-fetches every column of that source the cache holds, not only the requested ones, so
+the cache keeps them all; the run still returns only what it asked for.
+
 Projection caches are keyed by embedding name, method, dimensions and every parameter, so changing
 any parameter creates a new entry. Use `--refetch all` to bypass all caches, or `--refetch <stages>`
 selectively (for example `--refetch ted,biocentral`).

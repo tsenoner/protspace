@@ -249,6 +249,11 @@ Caches written by older versions are migrated when read, so you do not have to d
   when that column is requested. Other sources are reused, and a run that requests neither column
   drops it.
 
+A refresh refetches the whole source: every column of it the cache holds, not only the ones the run
+asks for, so the cache keeps them all and a later run asking for another one is still a cache hit.
+The run returns only what it asked for. Refreshing `predicted_transmembrane` therefore also re-runs
+the models behind any other Biocentral column the cache holds.
+
 If such a refresh cannot retrieve the source, the old values are not stamped as current, and the
 next run tries again. At Swiss-Prot scale the one-time refresh takes hours.
 
