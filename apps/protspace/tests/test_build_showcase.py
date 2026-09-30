@@ -523,6 +523,56 @@ def test_eat_gates():
 
 
 # ---------------------------------------------------------------------------
+# Taxonomy of rows without an entry (W18)
+# ---------------------------------------------------------------------------
+
+
+def test_rows_without_an_entry_take_the_papers_species_and_its_lineage():
+    table = pa.table(
+        {
+            "protein_id": ["H1", "H2", "F1", "X1", "X2", "X3"],
+            "root": [
+                "cellular organisms",
+                "cellular organisms",
+                "cellular organisms",
+                "None",
+                "None",
+                None,
+            ],
+            "genus": ["Homo", "Homo", "Drosophila", "None", "None", None],
+            "species": [
+                "Homo sapiens",
+                "Homo sapiens",
+                "Drosophila melanogaster",
+                "None",
+                "None",
+                "",
+            ],
+            "pfam": ["PF1", "PF2", "PF3", "None", "nan", None],
+            "length": ["10", "20", "30", "None", "None", None],
+        }
+    )
+    paper = pa.table(
+        {
+            "protein_id": ["X1", "X2"],
+            "species": ["Drosophila melanogaster", "Homo sapiens"],
+        }
+    )
+    filled, report = bs.fill_missing_taxonomy(table, paper)
+    rows = {r["protein_id"]: r for r in filled.to_pylist()}
+    assert rows["X1"]["species"] == "Drosophila melanogaster"
+    assert (
+        rows["X1"]["genus"] == "Drosophila"
+        and rows["X1"]["root"] == "cellular organisms"
+    )
+    assert rows["X2"]["genus"] == "Homo"
+    assert rows["X1"]["pfam"] is None and rows["X2"]["length"] is None  # no "None" left
+    assert rows["H1"] == table.to_pylist()[0]  # untouched
+    assert report == {"filled": 2, "ids": ["X1", "X2"], "unresolved": ["X3"]}
+    assert bs.fill_missing_taxonomy(table.slice(0, 3), paper)[1] == {"filled": 0}
+
+
+# ---------------------------------------------------------------------------
 # Provenance without machine paths (W12) and the owner's commands (W33)
 # ---------------------------------------------------------------------------
 
@@ -990,6 +1040,31 @@ def test_every_recipe_is_complete(config):
                 "pfam_duplicates",
                 "browser_load",
             }, (ds_id, gate["type"])
+
+
+def test_every_example_ships_its_umap_and_a_pca(config):
+    """D3: a PCA in every example; the demo keeps both pLMs' projections."""
+    for ds_id, dataset in config.datasets.items():
+        names = [t for _, t in bs.parse_projection_spec(dataset["projections"])]
+        assert names[0] == "ProtT5 — UMAP 2", ds_id
+        assert "ProtT5 — PCA 2" in names, ds_id
+    assert len(config.datasets["demo"]["projections"]) == 4
+    swissprot = bs.parse_projection_spec(config.datasets["swissprot"]["projections"])
+    assert ("PCA_2", "ProtT5 — PCA 2") in swissprot
+
+
+def test_the_large_sets_skip_biocentral_and_say_why(config):
+    """D4, W11: the skip is committed, not a local edit."""
+    for ds_id in ("human-fly", "beta-lactamase", "swissprot"):
+        stages = config.datasets[ds_id]["stages"]
+        biocentral = [s for s in stages if "biocentral" in s["groups"]]
+        assert biocentral and biocentral[0]["enabled"] is False, ds_id
+    assert config.datasets["demo"]["refresh_groups"] == ["all"]
+
+
+def test_the_swissprot_statistics_list_follows_the_paper(config):
+    listed = config.datasets["swissprot"]["stats_annotations"]
+    assert "reviewed" not in listed and "xref_pdb" in listed  # W22
 
 
 def test_eat_thresholds_follow_d6(config):

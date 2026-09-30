@@ -21,9 +21,9 @@ examples keep the paper's EAT inputs and outputs. Nothing is re-embedded and no 
 | `demo`            | `demo-refresh`  | 7,831   | the current demo (4 projections, mature peptides)        | every column, from full-length sequences   | the mature-peptide `length`                        |
 | `venom-eat`       | `eat-graft`     | 811     | `venom_eat_stats` (Fig. 4)                               | InterPro, TED, Biocentral are added        | every existing column, the statistics part         |
 | `phosphatase-eat` | `eat-graft`     | 832     | the `phosphatase_eat` fixture                            | every column except the EAT ones           | `ec`, `protein_families`, `eat_split`, `*__pred_*` |
-| `human-fly`       | `paper-refresh` | 105,562 | `nm_2026/data/joint_proteome_105k_stats` (Fig. 2B)       | every column                               | (none)                                             |
-| `beta-lactamase`  | `paper-refresh` | 113,015 | `nm_2026/data/beta_lactamase_2026_stats` (Fig. 3)        | every column                               | (none)                                             |
-| `swissprot`       | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP only | every column except Biocentral (opt-in)    | (none)                                             |
+| `human-fly`       | `paper-refresh` | 105,562 | `nm_2026/data/joint_proteome_105k_stats` (Fig. 2B)       | every column but Biocentral (D4)           | (none)                                             |
+| `beta-lactamase`  | `paper-refresh` | 113,015 | `nm_2026/data/beta_lactamase_2026_stats` (Fig. 3)        | every column but Biocentral (D4)           | (none)                                             |
+| `swissprot`       | `paper-refresh` | 573,649 | `nm_2026/data/swissprot_573k_stats` (Fig. 2A), UMAP, PCA | every column except Biocentral (opt-in)    | (none)                                             |
 
 The build steps for each dataset are:
 

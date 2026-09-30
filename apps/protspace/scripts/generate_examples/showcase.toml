@@ -1,4 +1,5 @@
-# Showcase example datasets for the protspace.app Import menu.
+# Showcase example datasets for the protspace.app Import menu. Every example
+# ships its UMAP and a PCA (D3).
 #
 # Read by build_showcase.py in this directory; README.md has usage per dataset.
 # OpenSpec change: openspec/changes/curated-example-datasets (design Decisions 1 and
@@ -233,11 +234,18 @@ pins = [
 ]
 projections = ["UMAP_2=ProtT5 — UMAP 2", "PCA_2=ProtT5 — PCA 2"]
 missing_rows = "annotate"
+# Rows whose UniProt entry is gone (74 at 2026_03) take the paper's species and
+# that species' refreshed lineage instead of literal "None" strings (W18).
+fill_missing_taxonomy = true
 stages = [
   { groups = ["species", "protein_families", "uniprot", "taxonomy"] },
   { groups = ["interpro"] },   # 1-1.7 h
   { groups = ["ted"] },        # 3.3-12 h; do not overlap another TED build (429s)
-  { groups = ["biocentral"] }, # batched by the fixed CLI
+  # Skipped (D4, W11): LightAttention and TMbed read the per-residue ProtT5
+  # matrix, which UniProt's mean-pooled vectors cannot give back, so Biocentral
+  # would embed all 103,947 sequences itself (10-25 h on the public server).
+  # The cards say so. --enable-stage biocentral after an operator batch run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
 ]
 stats = true
 stats_annotations = ["species", "protein_families", "reviewed", "protein_existence"]
@@ -259,6 +267,11 @@ type = "category_counts"
 column = "species"
 expected = { "Homo sapiens" = 83598, "Drosophila melanogaster" = 21964 }
 rel_tol = 0.005
+
+[[datasets.human-fly.gates]]
+type = "coverage"   # W18: the default view shows no N/A species
+column = "species"
+min_fraction = 1.0
 
 [[datasets.human-fly.gates]]
 type = "label_split"   # conserved: kinases sit in the shared region
@@ -330,7 +343,10 @@ stages = [
   { groups = ["protein_families", "uniprot", "taxonomy"] },
   { groups = ["interpro"] },   # 0.5-4 h
   { groups = ["ted"] },        # 3.6-8 h
-  { groups = ["biocentral"] },
+  # Skipped (D4, W11): the Biocentral models read per-residue ProtT5, which the
+  # UniProt vectors cannot give back; 109,092 sequences are 10-25 h on the public
+  # server. The card says so. --enable-stage biocentral after an operator run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
 ]
 stats = true
 stats_annotations = ["protein_families", "ec", "kingdom", "domain", "signal_peptide", "protein_existence", "reviewed", "xref_pdb"]
@@ -382,11 +398,12 @@ k = 50
 max_mean = 0.2
 
 # ---------------------------------------------------------------------------
-# swissprot: Fig. 2A, marked Large. Paper membership (573,649) and the UMAP
-# coordinates only (D2). Ships only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap,
-# measured in a browser and recorded with `record-load` (tied to the file's sha256);
-# otherwise rebuild with --web-cut (drops GO and TED; the full file goes to Zenodo;
-# the decision is kept for later builds) and measure the cut file.
+# swissprot: Fig. 2A, marked Large. Paper membership (573,649), the paper's UMAP
+# and its PCA (D3: `ProtT5 — PCA 2`, the Extended Data faithfulness row). Ships
+# only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap, measured in a browser and
+# recorded with `record-load` (tied to the file's sha256; the PCA adds bytes, so
+# measure again); otherwise rebuild with --web-cut (drops GO and TED; the full
+# file goes to Zenodo; the decision is kept for later builds) and measure that.
 # ---------------------------------------------------------------------------
 [datasets.swissprot]
 kind = "paper-refresh"
@@ -404,7 +421,7 @@ pins = [
   { path = "{nm_data}/swissprot_573k_stats/projections_data.parquet", sha256 = "969dcb46d921c5b3c79e77b836bdec63dbe04b3be78342ab5aa64cbd64603582" },
   { path = "{cli_data}/other/sprot/per-protein.h5", bytes = 1425064360 },
 ]
-projections = ["UMAP_2=ProtT5 — UMAP 2"]
+projections = ["UMAP_2=ProtT5 — UMAP 2", "PCA_2=ProtT5 — PCA 2"]
 stages = [
   { groups = ["domain", "uniprot", "taxonomy"] },   # about 1 h
   { groups = ["interpro"] },                        # about 5 h (2-20 h)
@@ -412,7 +429,7 @@ stages = [
   { groups = ["biocentral"], enabled = false, name = "biocentral" },  # needs the Rostlab operators' OK: --enable-stage biocentral
 ]
 stats = true
-stats_annotations = ["domain", "kingdom", "protein_existence", "signal_peptide", "reviewed", "protein_families"]
+stats_annotations = ["domain", "kingdom", "protein_existence", "signal_peptide", "protein_families", "xref_pdb"]  # W22: reviewed is one value here; the paper scores xref_pdb
 web_cut = ["go_bp", "go_cc", "go_mf", "ted_domains"]
 styles = "styles/swissprot.json"
 reviewed = "Swiss-Prot"
@@ -425,7 +442,7 @@ tooltip = ["protein_families", "species"]
 
 [datasets.swissprot.report]
 annotations = ["domain", "kingdom", "protein_families", "pfam_clan", "cluster_elbow_ProtT5 — UMAP 2"]
-projections = ["ProtT5 — UMAP 2"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
 
 [[datasets.swissprot.gates]]
 type = "category_counts"   # Fig. 2A, within ±1 %

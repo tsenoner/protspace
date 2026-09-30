@@ -2363,6 +2363,7 @@ ASSEMBLE_KEYS = (
     "first_columns",
     "drop_columns",
     "missing_rows",
+    "fill_missing_taxonomy",
 )
 STATS_KEYS = (
     "stats",
@@ -3076,6 +3077,96 @@ def write_annotations(ctx: Context, table: pa.Table, report: dict) -> None:
     )
 
 
+#: Taxonomy columns, most general first; one species fixes all of them.
+TAXONOMY_COLUMNS = (
+    "root",
+    "domain",
+    "kingdom",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "species",
+)
+
+
+def paper_annotations(ctx: Context) -> pa.Table | None:
+    """The paper's own annotations next to its projections, if it kept them."""
+    source = find_projection_source(ctx)
+    if source.is_dir():
+        path = source / "annotations.parquet"
+        return normalize_id(pq.read_table(path)) if path.is_file() else None
+    return normalize_id(read_bundle(source).annotations)
+
+
+def fill_missing_taxonomy(
+    table: pa.Table, paper: pa.Table | None
+) -> tuple[pa.Table, dict[str, Any]]:
+    """Give rows without a species (an entry UniProt no longer has) the paper's
+    species and that species' refreshed lineage (W18, G13).
+
+    Such rows otherwise hold the literal strings ``"None"`` the fetch wrote for
+    them; the web shows those as N/A. Their species comes from the paper's
+    annotations; every other taxonomy column is the lineage the refreshed rows
+    of that species share (so ``root`` follows the refreshed rule). The other
+    literal missing tokens on those rows become nulls. Rows the paper has no
+    species for are left as they are and reported.
+    """
+    if "species" not in table.column_names:
+        return table, {"filled": 0}
+    ids = row_ids(table)
+    columns = {name: table.column(name).to_pylist() for name in table.column_names}
+    missing = [i for i, cell in enumerate(columns["species"]) if is_missing(cell)]
+    if not missing:
+        return table, {"filled": 0}
+    paper_species: dict[str, str] = {}
+    if paper is not None and "species" in paper.column_names:
+        paper_species = {
+            pid: first_label(cell)
+            for pid, cell in zip(
+                row_ids(paper), paper.column("species").to_pylist(), strict=True
+            )
+            if first_label(cell)
+        }
+    present = [c for c in TAXONOMY_COLUMNS if c in columns and c != "species"]
+    lineage: dict[str, dict[str, Any]] = {}
+    for row, species in enumerate(columns["species"]):
+        label = first_label(species)
+        if label is None:
+            continue
+        counts = lineage.setdefault(label, {c: Counter() for c in present})
+        for column in present:
+            value = columns[column][row]
+            if not is_missing(value):
+                counts[column][value] += 1
+    filled, unresolved = [], []
+    for row in missing:
+        species = paper_species.get(ids[row])
+        if species is None:
+            unresolved.append(ids[row])
+            continue
+        for name, values in columns.items():
+            if (
+                name != ID_COLUMN
+                and isinstance(values[row], str)
+                and is_missing(values[row])
+            ):
+                values[row] = None
+        columns["species"][row] = species
+        for column in present:
+            counts = lineage.get(species, {}).get(column)
+            if counts:
+                columns[column][row] = counts.most_common(1)[0][0]
+        filled.append(ids[row])
+    arrays = [
+        pa.array(columns[name], type=table.schema.field(name).type)
+        for name in table.column_names
+    ]
+    report = {"filled": len(filled), "ids": filled, "unresolved": unresolved}
+    return pa.Table.from_arrays(arrays, names=table.column_names), report
+
+
 def paper_refresh_steps(ctx: Context) -> list[Step]:
     """Swiss-Prot, human + fly, β-lactamase: paper membership and coordinates,
     every annotation source refreshed."""
@@ -3141,6 +3232,9 @@ def paper_refresh_steps(ctx: Context) -> list[Step]:
         ids = paper_ids()
         extra = sorted(set(row_ids(table)) - set(ids))
         table, absent = align_rows(table, ids)
+        taxonomy_fill: dict[str, Any] = {"filled": 0}
+        if ctx.dataset.get("fill_missing_taxonomy"):
+            table, taxonomy_fill = fill_missing_taxonomy(table, paper_annotations(ctx))
         write_annotations(
             ctx,
             table,
@@ -3152,6 +3246,7 @@ def paper_refresh_steps(ctx: Context) -> list[Step]:
                     c: "refreshed" for c in table.column_names if c != ID_COLUMN
                 },
                 "fresh_rows_without_entry": obsolete_rows(table),
+                "taxonomy_filled_from_paper": taxonomy_fill,
             },
         )
 
