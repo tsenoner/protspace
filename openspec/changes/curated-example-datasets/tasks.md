@@ -239,12 +239,12 @@ Before every commit:
   - `pfam_duplicates` fails without its cache, the obsolete-accession count falls back to `protein_name` (and fails when it cannot count), a refreshed source empty on every row fails, an unknown gate type fails, and an unconfirmed release (not `YYYY_MM`) keeps the `provenance` gate pending;
   - outputs may not land in the repository or an input directory.
 
-- [ ] 6.10 Second lineup in the build (design Decisions 16–18):
+- [x] 6.10 Second lineup in the build (design Decisions 16–18; the `embed-build` kind, merged from `feat/curated-example-datasets-3ftx`, with the review fixes: mature chains cut by one rule, a pinned hold-out split, the EAT provenance, exact transfer counts and the web's N/A order):
   - a build kind for `three-finger-toxins` that makes its own coordinates: the pinned accession list, mature chains embedded with ProtT5-XL-U50, `prepare` keeping its UMAP and PCA, sequence-based sources on full-length sequences, the `toxin_class` CSV, the hold-out (sorted classes, recorded seed, the realised `eat_split` shipped), `transfer` with k = 1 and the Euclidean distance, statistics after the transfer, and the Decision 17 gates as tolerances; with tests;
   - PCA in every example: `swissprot` adds the paper's PCA as `ProtT5 — PCA 2`, and the demo keeps all four projections;
   - commit the Biocentral skip for `human-fly`, `beta-lactamase` and `swissprot` with its reason;
   - a build command without machine paths (`--cli-root $CLI`), the web's missing-value set for the N/A gate, the `root` and `predicted_transmembrane` gates of Decision 9, and `--latest=false` in the printed `gh release create` commands.
-- [ ] 6.11 Drop `venom-eat` and `phosphatase-eat` from `showcase.toml`; their frozen files stay fixtures, `perf-datasets` assets and Zenodo files.
+- [x] 6.11 Drop `venom-eat` and `phosphatase-eat` from `showcase.toml`; their frozen files stay fixtures, `perf-datasets` assets and Zenodo files.
 
 ## 7. Data build and catalog swap (after the CLI fixes merge)
 
