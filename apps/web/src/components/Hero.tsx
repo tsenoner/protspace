@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DOCS_URL } from '@/config';
 import { DemoScatter } from '@/landing/DemoScatter';
+import { PreviewUnavailable } from '@/landing/PreviewUnavailable';
 import { toPercent } from '@/landing/ScatterCanvas';
 import { loadDemoData, useLandingData } from '@/landing/landing-data';
 import { prefersReducedMotion } from '@/landing/motion';
@@ -164,6 +165,8 @@ const Hero = () => {
                 transitionMs={REVEAL_MS}
                 aria-label={`${shown.name} of ${demo.count.toLocaleString()} venom proteins, colored by ${annotation.label.toLowerCase()}`}
               />
+            ) : demo === null ? (
+              <PreviewUnavailable message="The preview map couldn't load." exploreLink />
             ) : null}
 
             {mapLabels.map((item) => (

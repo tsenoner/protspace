@@ -3,6 +3,7 @@ import { DOCS_URL } from '@/config';
 import { cn } from '@/lib/utils';
 import { DemoScatter } from './DemoScatter';
 import { ExplorerFrame } from './ExplorerFrame';
+import { PreviewUnavailable } from './PreviewUnavailable';
 import { Section, linkClass } from './Section';
 import { ShowcaseHeading } from './ShowcaseHeading';
 import { loadDemoData, loadVenomData, useLandingData, type VenomData } from './landing-data';
@@ -85,30 +86,33 @@ export function FeatureShowcase() {
         <div ref={frameRef} className="min-w-0">
           <ExplorerFrame
             toolbar={
-              <>
-                <ChipGroup
-                  label="Projection"
-                  items={demo?.projections.map((entry) => entry.name) ?? []}
-                  active={projection}
-                  onSelect={(i) => {
-                    setPinned(true);
-                    setProjection(i);
-                  }}
-                />
-                <ChipGroup
-                  label="Annotation"
-                  items={demo?.annotations.map((entry) => entry.label) ?? []}
-                  active={annotationIndex}
-                  onSelect={(i) => {
-                    setPinned(true);
-                    setAnnotationIndex(i);
-                  }}
-                />
-              </>
+              demo === null ? null : (
+                <>
+                  <ChipGroup
+                    label="Projection"
+                    items={demo?.projections.map((entry) => entry.name) ?? []}
+                    active={projection}
+                    onSelect={(i) => {
+                      setPinned(true);
+                      setProjection(i);
+                    }}
+                  />
+                  <ChipGroup
+                    label="Annotation"
+                    items={demo?.annotations.map((entry) => entry.label) ?? []}
+                    active={annotationIndex}
+                    onSelect={(i) => {
+                      setPinned(true);
+                      setAnnotationIndex(i);
+                    }}
+                  />
+                </>
+              )
             }
             legendTitle={annotation?.label ?? 'Annotation'}
             categories={annotation?.categories ?? []}
             legendRows={LEGEND_ROWS}
+            showLegend={demo !== null}
             colored={inView}
             count={demo?.count}
             busy={demo === undefined}
@@ -123,6 +127,8 @@ export function FeatureShowcase() {
                 neutral={!inView}
                 aria-label={`${shown.name} of ${demo.count.toLocaleString()} venom proteins colored by ${annotation.label.toLowerCase()}`}
               />
+            ) : demo === null ? (
+              <PreviewUnavailable message="The preview map couldn't load." exploreLink />
             ) : null}
           </ExplorerFrame>
           <p className="mt-3 text-sm text-muted-foreground">
@@ -136,7 +142,13 @@ export function FeatureShowcase() {
             title="Annotation transfer"
             href={`${DOCS_URL}explore/eat`}
             link="How EAT works"
-            visual={venom ? <TransferSketch venom={venom} /> : null}
+            visual={
+              venom ? (
+                <TransferSketch venom={venom} />
+              ) : venom === null ? (
+                <PreviewUnavailable />
+              ) : null
+            }
           >
             Missing labels come from the nearest annotated neighbor in the embedding, with a
             reliability index.
@@ -145,7 +157,13 @@ export function FeatureShowcase() {
             title="Projection statistics"
             href={`${DOCS_URL}explore/separation-scores`}
             link="How the scores work"
-            visual={venom ? <SeparationSketch venom={venom} /> : null}
+            visual={
+              venom ? (
+                <SeparationSketch venom={venom} />
+              ) : venom === null ? (
+                <PreviewUnavailable />
+              ) : null
+            }
           >
             Score every category in the 2D map and in the embedding, and check how faithful the map
             is, so projection artifacts stand out.
@@ -233,7 +251,7 @@ function Tile({
   return (
     <article className="grid min-w-0 gap-4 rounded-2xl border border-border/70 bg-white p-3 xl:grid-cols-[12rem_minmax(0,1fr)] xl:items-center xl:pr-4">
       <div
-        className="h-32 overflow-hidden rounded-[10px] border border-[#d9e2ec] bg-white"
+        className="relative h-32 overflow-hidden rounded-[10px] border border-[#d9e2ec] bg-white"
         aria-busy={visual === null}
       >
         {visual}
