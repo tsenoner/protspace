@@ -44,6 +44,7 @@ import {
   pointRadiusCss,
 } from './webgl';
 import { resolveColor } from './webgl/color-utils';
+import { BackgroundColorCache } from './styling/background-color-cache';
 import type { RendererDegradedDetail } from './scatter-plot.events';
 import { PointGridIndex } from './interaction/point-grid-index';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
@@ -483,6 +484,9 @@ export class ProtspaceScatterplot extends LitElement {
     );
   }
 
+  /** Resolved plot background; see the class for what invalidates it. */
+  private _background = new BackgroundColorCache(this);
+
   constructor() {
     super();
     this.resizeObserver = new ResizeObserver(() => this._updateSizeAndRender());
@@ -534,7 +538,7 @@ export class ProtspaceScatterplot extends LitElement {
         createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
       },
       this._handleWebglContextLost,
-      () => resolveColor(getComputedStyle(this).backgroundColor),
+      () => this._background.get(),
       (detail) =>
         this.dispatchEvent(
           new CustomEvent<RendererDegradedDetail>('renderer-degraded', {
@@ -551,6 +555,7 @@ export class ProtspaceScatterplot extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.resizeObserver.observe(this);
+    this._background.connect();
 
     this.addEventListener('legend-zorder-change', this._handleZOrderChange);
     this.addEventListener('legend-colormapping-change', this._handleColorMappingChange);
@@ -566,6 +571,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
+    this._background.disconnect();
     if (this._pointGridIndexRebuildRafId !== null) {
       cancelAnimationFrame(this._pointGridIndexRebuildRafId);
       this._pointGridIndexRebuildRafId = null;
