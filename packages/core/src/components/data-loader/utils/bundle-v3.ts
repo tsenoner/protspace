@@ -333,11 +333,67 @@ function writeChunk(
  * Python's encoder never writes it.
  */
 function assertUniqueIds(ids: readonly string[]): void {
+  const repeated = findRepeatedId(ids);
+  if (repeated !== null) {
+    throw new Error(`v3 bundle protein id "${repeated}" appears more than once`);
+  }
+}
+
+/** Probes per id, on average, after which {@link findRepeatedId} abandons its hash table. */
+const MAX_PROBES_PER_ID = 8;
+
+/**
+ * The first id that repeats an earlier one (scanning in row order), or `null`.
+ *
+ * Strictly ascending ids cannot repeat, so a sorted file is cleared by one pass of
+ * comparisons. Anything else goes through an open-addressing table of row indices, at
+ * most half full and keyed by an FNV-1a hash of the id's UTF-16 code units: several times
+ * faster than a `Set` of half a million freshly decoded strings. A slot match is
+ * confirmed by comparing the strings, so a hash collision is never taken for a
+ * duplicate. Ids that collide so often (a hostile file can choose them) that the probes
+ * exceed `probesPerId` per id are checked with a `Set` instead, rather than left to
+ * degrade towards quadratic time.
+ */
+export function findRepeatedId(
+  ids: readonly string[],
+  probesPerId = MAX_PROBES_PER_ID,
+): string | null {
+  let sorted = 1;
+  while (sorted < ids.length && ids[sorted - 1] < ids[sorted]) sorted++;
+  if (sorted >= ids.length) return null;
+
+  let capacity = 1;
+  while (capacity < ids.length * 2) capacity *= 2;
+  const mask = capacity - 1;
+  const table = new Int32Array(capacity); // row index + 1; 0 is an empty slot
+  let probeBudget = ids.length * probesPerId;
+  for (let row = 0; row < ids.length; row++) {
+    const id = ids[row];
+    let hash = 0x811c9dc5;
+    for (let c = 0; c < id.length; c++) hash = Math.imul(hash ^ id.charCodeAt(c), 0x01000193);
+    let slot = (hash ^ (hash >>> 15)) & mask;
+    for (;;) {
+      const entry = table[slot];
+      if (entry === 0) {
+        table[slot] = row + 1;
+        break;
+      }
+      if (ids[entry - 1] === id) return id;
+      if (--probeBudget < 0) return repeatedIdBySet(ids);
+      slot = (slot + 1) & mask;
+    }
+  }
+  return null;
+}
+
+/** The first id that repeats an earlier one, or `null`. */
+function repeatedIdBySet(ids: readonly string[]): string | null {
   const seen = new Set<string>();
   for (const id of ids) {
-    if (seen.has(id)) throw new Error(`v3 bundle protein id "${id}" appears more than once`);
+    if (seen.has(id)) return id;
     seen.add(id);
   }
+  return null;
 }
 
 /**

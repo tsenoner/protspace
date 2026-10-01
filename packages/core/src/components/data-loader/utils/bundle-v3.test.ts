@@ -15,7 +15,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
-import { readV3Bundle } from './bundle-v3';
+import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
 import { bulkViews } from '../bulk-views.test-support';
@@ -1039,5 +1039,54 @@ describe('parquetbundle format v3', () => {
     expect(bulkViews(clone).map((view) => Array.from(view))).toEqual(before);
     expect(clone.protein_ids).toEqual(PROTEIN_IDS);
     expect(clone.annotations.go_bp.values).toEqual(data.annotations.go_bp.values);
+  });
+});
+
+describe('findRepeatedId', () => {
+  /** The first id, in row order, that an earlier row already had: what a `Set` scan finds. */
+  const reference = (ids: readonly string[]) => {
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (seen.has(id)) return id;
+      seen.add(id);
+    }
+    return null;
+  };
+
+  /** Deterministic ids: `count` draws from `pool` distinct values. */
+  const draws = (count: number, pool: number, seed: number) => {
+    let state = seed;
+    return Array.from({ length: count }, () => {
+      state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+      return `Q${state % pool}`;
+    });
+  };
+
+  it('clears ids in ascending order with no repeat', () => {
+    expect(findRepeatedId(['A1', 'A2', 'B1', 'B10', 'B2'])).toBeNull();
+    expect(findRepeatedId([])).toBeNull();
+  });
+
+  it('finds a repeat right after an ascending run', () => {
+    expect(findRepeatedId(['A1', 'A2', 'A2', 'A3'])).toBe('A2');
+  });
+
+  // A full-period generator never repeats within 2^32 draws, so that pool is repeat-free.
+  it.each([
+    ['no repeat', 5_000, 2 ** 32, false],
+    ['a few repeats', 5_000, 1_000_000, true],
+    ['dense repeats', 2_000, 50, true],
+  ])('reports what a Set scan reports for unordered ids (%s)', (_label, count, pool, repeats) => {
+    for (let seed = 1; seed <= 5; seed++) {
+      const ids = draws(count, pool, seed);
+      expect(reference(ids) !== null).toBe(repeats);
+      expect(findRepeatedId(ids)).toBe(reference(ids));
+    }
+  });
+
+  it('falls back to a Set when the hash probes run long, with the same answer', () => {
+    for (const ids of [draws(3_000, 2 ** 32, 7), draws(3_000, 5_000, 7)]) {
+      expect(findRepeatedId(ids, 0)).toBe(reference(ids));
+    }
   });
 });
