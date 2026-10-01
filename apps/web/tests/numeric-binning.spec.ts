@@ -320,6 +320,11 @@ async function selectAnnotation(page: Page, annotation: string): Promise<void> {
     )
     .first()
     .click();
+  // The control bar applies a menu pick after the next paint. Re-picking the current
+  // annotation leaves the state polled below unchanged, so wait out that frame too.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
+  );
 
   await page.waitForFunction((nextAnnotation) => {
     const plot = document.querySelector('protspace-scatterplot') as
