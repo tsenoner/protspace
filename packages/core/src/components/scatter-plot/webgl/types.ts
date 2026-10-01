@@ -44,6 +44,17 @@ export interface PointStyleRecords {
   readonly shapes: readonly string[];
   /** `getPointSize`, the same for every point of the pass. */
   readonly pointSize: number;
+  /**
+   * What the first `count` records are keyed by: record `c` is category code `c`
+   * of `values` (then N/A, then no value), in the slots `rows` assigns. Any pass
+   * with the same `values`, `rows` and `count` gives a slot the same one of
+   * those ids, so it can restyle staged slots without staging them again.
+   */
+  readonly codes?: {
+    readonly values: readonly unknown[];
+    readonly rows: object;
+    readonly count: number;
+  };
 }
 
 /** What {@link PointStylePass.resolve} writes per plot slot. Capacity-sized. */
@@ -56,6 +67,11 @@ export interface SlotStyleScratch {
   readonly record: Int32Array;
   /** `isPredicted` as 0 or 1, read for slots that have a record. */
   readonly predicted: Uint8Array;
+  /**
+   * `getOpacity` as if the legend hid nothing, for slots with a record. Only a
+   * pass with `hiddenRecords` writes it.
+   */
+  readonly base: Float64Array;
 }
 
 /** One staging pass: every per-point style input, resolved once per pass. */
@@ -64,6 +80,12 @@ export interface PointStylePass {
   readonly records: PointStyleRecords;
   /** Fill `out` for slots `[0, count)` of `pd`. */
   resolve(pd: PlotData, count: number, out: SlotStyleScratch): void;
+  /**
+   * Per record, whether the legend hides its points (opacity 0), read after
+   * `resolve`. A pass that has it also writes `base`, so the hiding can be
+   * applied per record: `opacity` is `base`, or 0 where the record is hidden.
+   */
+  readonly hiddenRecords?: readonly boolean[];
   /**
    * Write the style channels of a slot `resolve` marked {@link PER_POINT_STYLE}.
    * A pass that gives every slot a record has none.

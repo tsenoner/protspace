@@ -12,6 +12,9 @@
  * point with no value is `values.length + 1`. Each distinct list of several
  * codes gets the next free id the first time a pass meets it. With no usable
  * annotation every point has record 0.
+ *
+ * A pass also says which records the legend hides, so the renderer can apply
+ * the hiding per record (see `PointStylePass.hiddenRecords`).
  */
 
 import type {
@@ -26,7 +29,7 @@ import {
   isSparseMultiValueAnnotationData,
   toInternalValue,
 } from '@protspace/utils';
-import type { PointStylePass } from '../webgl/types';
+import type { PointStylePass, PointStyleRecords } from '../webgl/types';
 import { composePaintDepth } from '../webgl/renderer/point-staging';
 import type { VisibilityModel } from './visibility-model';
 
@@ -58,7 +61,9 @@ export class CategoryStyles {
   readonly shapes: string[] = [];
   /** z-order offset per record. */
   readonly recordZ: number[] = [];
-  readonly records: { colors: string[][]; shapes: string[]; pointSize: number };
+  /** The values `getProteinAnnotationValues` reads for a point with each record. */
+  readonly recordValues: (readonly string[])[] = [];
+  readonly records: PointStyleRecords;
   /** Storage of the selected annotation, or null when every point is record 0. */
   readonly rows: AnnotationData | null;
   /** `annotation.values.length`: the record of a code that names no value. */
@@ -79,7 +84,6 @@ export class CategoryStyles {
     const usable = !!annotation && !!rows && Array.isArray(annotation.values);
     this.annotation = usable ? annotation : null;
     this.rows = usable ? rows : null;
-    this.records = { colors: this.colors, shapes: this.shapes, pointSize: source.pointSize };
 
     if (usable) {
       const values = annotation.values;
@@ -89,6 +93,12 @@ export class CategoryStyles {
       this.naRecord = 0;
     }
     this.emptyRecord = this.add([]);
+    this.records = {
+      colors: this.colors,
+      shapes: this.shapes,
+      pointSize: source.pointSize,
+      codes: usable ? { values: annotation.values, rows, count: this.emptyRecord + 1 } : undefined,
+    };
   }
 
   /** The record of a protein's code list, as `getProteinAnnotationIndices` returns it. */
@@ -115,6 +125,7 @@ export class CategoryStyles {
 
   private add(values: readonly string[]): number {
     const { source } = this;
+    this.recordValues.push(values);
     this.colors.push(source.colorsOfValues(values));
     this.shapes.push(source.shapeOfValues(values));
     this.recordZ.push(source.zOrderActive ? source.zOffsetOfValues(values) : 0);
@@ -190,15 +201,24 @@ export function createCategoryStylePass(
   styles: CategoryStyles,
   opacityModel: VisibilityModel,
 ): PointStylePass {
-  const { source, recordZ } = styles;
+  const { source, recordZ, recordValues } = styles;
   const { depthModel, predictedCells } = source;
   // The usual case: one model for both, so base opacity is looked up once.
   const oneModel = opacityModel === depthModel;
+  // Hidden-ness is a property of a point's values, so of its record. Filled on
+  // first read: only a renderer that applies it per record asks.
+  const hiddenRecords: boolean[] = [];
 
   return {
     records: styles.records,
+    get hiddenRecords() {
+      for (let r = hiddenRecords.length; r < recordValues.length; r++) {
+        hiddenRecords.push(opacityModel.hidesValues(recordValues[r]));
+      }
+      return hiddenRecords;
+    },
     resolve(pd, count, out) {
-      const { opacity, depth, record, predicted } = out;
+      const { opacity, depth, record, predicted, base } = out;
       writeRecordIds(styles, pd, count, record);
       const oiArr = pd.originalIndices;
       const ids = pd.proteinIds;
@@ -206,6 +226,7 @@ export function createCategoryStylePass(
         const oi = oiArr ? oiArr[i] : i;
         const id = ids[oi];
         const baseOpacity = depthModel.baseOpacityAt(oi, id);
+        const slotBase = oneModel ? baseOpacity : opacityModel.baseOpacityAt(oi, id);
         const slotOpacity = oneModel
           ? depthModel.isHiddenAt(oi)
             ? 0
@@ -213,6 +234,7 @@ export function createCategoryStylePass(
           : opacityModel.opacityAt(oi, id);
         const isPredicted = !!predictedCells?.[oi];
         opacity[i] = slotOpacity;
+        base[i] = slotBase;
         predicted[i] = isPredicted ? 1 : 0;
         depth[i] = composePaintDepth(
           source.depthOf(baseOpacity, recordZ[record[i]]),

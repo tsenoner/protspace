@@ -37,6 +37,7 @@ export function createPassScratch(capacity: number): PassScratch {
     depth: new Float32Array(capacity),
     record: new Int32Array(capacity),
     predicted: new Uint8Array(capacity),
+    base: new Float64Array(capacity),
     sortScratch: new Uint32Array(capacity),
   };
 }

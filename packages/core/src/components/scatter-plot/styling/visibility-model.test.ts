@@ -607,6 +607,66 @@ describe('computeVisibilityModel', () => {
     }
   });
 
+  // ── Values form: what a per-category style table asks, once per category ───
+  describe('hidesValues', () => {
+    const values = ['A', 'B', 'C', null];
+    // Index 6 reads past `values` (N/A); index 5 has no value.
+    const rowLists = [[0], [1], [0, 2], [], [3], [6], [1, 6]];
+    const storages: [string, AnnotationData][] = [
+      ['int32', Int32Array.of(0, 1, 2, -1, 3, 6, 1)],
+      ['dense', rowLists],
+      [
+        'sparse',
+        {
+          kind: 'sparse-multi',
+          base: Int32Array.of(0, 1, -1, -1, 3, 6, -1),
+          overrides: new Map([
+            [2, [0, 2]],
+            [6, [1, 6]],
+          ]),
+          length: 7,
+        },
+      ],
+    ];
+    const valuesOf = (rows: AnnotationData, i: number): string[] => {
+      const codes =
+        rows instanceof Int32Array
+          ? rows[i] < 0
+            ? []
+            : [rows[i]]
+          : Array.isArray(rows)
+            ? rows[i]
+            : ((rows as { overrides: Map<number, number[]> }).overrides.get(i) ??
+              ((rows as { base: Int32Array }).base[i] < 0
+                ? []
+                : [(rows as { base: Int32Array }).base[i]]));
+      return codes.map((c) => values[c] ?? NA_VALUE);
+    };
+    const hiddenSets = [[], ['A'], ['B', NA_VALUE], ['A', 'B', 'C'], ['A', 'B', 'C', NA_VALUE]];
+    for (const [name, rows] of storages) {
+      for (const hidden of hiddenSets) {
+        it(`matches isHiddenAt: ${name} storage, hidden [${hidden.join(', ')}]`, () => {
+          const data = makeData(values, rows);
+          const model = computeVisibilityModel(
+            baseInputs({ data, hiddenAnnotationValues: hidden }),
+          );
+          for (let i = 0; i < 7; i++) {
+            expect(model.hidesValues(valuesOf(rows, i))).toBe(model.isHiddenAt(i));
+          }
+        });
+      }
+    }
+
+    it('hides every category when the annotation is missing, none without data', () => {
+      const data = makeData(values, Int32Array.of(0, 1));
+      const missing = computeVisibilityModel(baseInputs({ data, selectedAnnotation: 'other' }));
+      expect(missing.hidesValues(['A'])).toBe(true);
+      expect(missing.isHiddenAt(0)).toBe(true);
+      const empty = computeVisibilityModel(baseInputs({ hiddenAnnotationValues: ['A'] }));
+      expect(empty.hidesValues(['A'])).toBe(false);
+    });
+  });
+
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──
   // when the mask-relevant inputs (data, selectedAnnotation, hidden ref) are
   // reference-equal, so a selection-only change never redoes the pass.

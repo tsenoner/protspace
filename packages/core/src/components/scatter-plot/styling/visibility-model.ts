@@ -79,6 +79,12 @@ export interface VisibilityModel {
   baseOpacityAt(originalIndex: number, id: string): number;
   /** Whether the legend hides the protein at `originalIndex` (opacity exactly 0). */
   isHiddenAt(originalIndex: number): boolean;
+  /**
+   * `isHiddenAt` for any protein whose selected-annotation values are `values`,
+   * normalized with `toInternalValue` (`[]` for no value, `'__NA__'` for a code
+   * that names no value). Lets a caller hide a whole category at once.
+   */
+  hidesValues(values: readonly string[]): boolean;
 }
 
 /**
@@ -298,6 +304,16 @@ export function computeVisibilityModel(
     return hiddenMask![idx] === 1; // hiddenMode === 'mask' guarantees non-null
   };
 
+  // The mask's per-bin test, applied to values instead of codes.
+  let hiddenKeys: Set<string> | null = null;
+  const hidesValues = (values: readonly string[]): boolean => {
+    if (hiddenMode === 'none') return false;
+    if (hiddenMode === 'all') return true;
+    hiddenKeys ??= new Set(hiddenAnnotationValues.map((v) => toInternalValue(v)));
+    for (const v of values) if (!hiddenKeys.has(v)) return false;
+    return true; // every value hidden, vacuously for none
+  };
+
   // Out-of-focus mask: the hidden-mask pass with every value except the focused
   // ones treated as "hidden", so a point fades iff none of its values is focused.
   let unfocusedMask: Uint8Array | null = null;
@@ -346,6 +362,7 @@ export function computeVisibilityModel(
     opacityAt,
     baseOpacityAt,
     isHiddenAt,
+    hidesValues,
   };
 
   // Stash mask-relevant inputs + the mask non-enumerably so a later call can

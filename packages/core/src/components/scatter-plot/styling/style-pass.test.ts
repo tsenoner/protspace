@@ -203,6 +203,23 @@ function expectSameStaging(
   expect(Array.from(order)).toEqual(Array.from(expected.order));
   expect(cut).toBe(expected.cut);
   expect(staged).toEqual(legacy);
+  expectHidingPerRecord(style, pd);
+}
+
+/**
+ * The renderer may apply the legend's hiding per record: every slot's opacity
+ * must be its unhidden opacity, or 0 where its record is hidden.
+ */
+function expectHidingPerRecord(style: Required<WebGLStyleGetters>, pd: PlotData) {
+  const pass = beginStylePass(style);
+  const scratch = createPassScratch(pd.length);
+  pass.resolve(pd, pd.length, scratch);
+  const hidden = pass.hiddenRecords!;
+  expect(hidden).toHaveLength(pass.records.colors.length);
+  for (let i = 0; i < pd.length; i++) {
+    const r = scratch.record[i];
+    expect(scratch.opacity[i]).toBe(hidden[r] ? 0 : scratch.base[i]);
+  }
 }
 
 describe('category style pass', () => {
@@ -399,6 +416,52 @@ describe('category style pass', () => {
     pass.resolve(pd, 4, scratch);
     expect(Array.from(scratch.record.subarray(0, 4))).toEqual(first);
     expect(pass.records.colors.length).toBe(recordCount);
+  });
+
+  it('keys the code records by the annotation storage they read', () => {
+    const data = makeData(100, 'int32', 12);
+    const pass = createStyleGetters(data, legendConfig).createStylePass();
+    expect(pass.records.codes).toEqual({
+      values: data.annotations.family.values,
+      rows: data.annotation_data.family,
+      count: VALUES.length + 2,
+    });
+    // Another set of getters over the same storage keys records the same way.
+    const other = createStyleGetters(data, baseConfig).createStylePass();
+    expect(other.records.codes!.values).toBe(pass.records.codes!.values);
+    expect(other.records.codes!.rows).toBe(pass.records.codes!.rows);
+    expect(
+      createStyleGetters(data, { ...legendConfig, selectedAnnotation: '' }).createStylePass()
+        .records.codes,
+    ).toBeUndefined();
+  });
+
+  it('marks the records the legend hides, per pass', () => {
+    const data = makeData(100, 'int32', 13);
+    const getters = createStyleGetters(data, legendConfig);
+    // gamma is hidden, N/A is not, and a point with no value is always hidden.
+    expect(getters.createStylePass().hiddenRecords).toEqual(
+      VALUES.map((v) => v === 'gamma').concat(false, true),
+    );
+    const newer = computeVisibilityModel({
+      data,
+      selectedAnnotation: 'family',
+      hiddenAnnotationValues: ['alpha', '__NA__'],
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      opacities: baseConfig.opacities,
+    });
+    // N/A covers the null value and a code that names no value.
+    expect(getters.createStylePass(newer).hiddenRecords).toEqual([
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+    ]);
   });
 
   it('builds its records once per set of getters', () => {
