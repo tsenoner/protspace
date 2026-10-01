@@ -449,6 +449,13 @@ deprecated, and SHALL reject a v3 bundle with an error that names `decodeParquet
   bundle
 - **THEN** it receives the same visualization data the web app renders, and the format version
 
+#### Scenario: A Node process decodes a legacy bundle
+
+- **WHEN** a Node script awaits `decodeParquetBundle` on a v1 or v2 bundle large enough for the
+  chunked conversion, which yields to the event loop between chunks
+- **THEN** the promise resolves and the decode leaves no MessagePort or other handle open, so the
+  process exits when the script ends
+
 #### Scenario: The row extractor is handed a v3 bundle
 
 - **WHEN** `extractRowsFromParquetBundle` is called on a v3 bundle

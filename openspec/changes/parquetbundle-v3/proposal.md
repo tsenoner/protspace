@@ -1,9 +1,11 @@
 ## Why
 
-Decoding the 573K Swiss-Prot bundle in the browser takes about 6.5 s and 2.1 GB of heap, almost all
-of it spent parsing annotation cells into row objects. PR #477 adds a columnar `.parquetbundle`
-container, format v3, that the browser reads straight into typed arrays: about 0.4 s and under
-50 MB, in a file about 19% smaller.
+Decoding the 573K Swiss-Prot bundle takes about 6 s and a peak of about 2.4 GB of heap and
+ArrayBuffers, almost all of it spent parsing annotation cells into row objects. PR #477 adds a
+columnar `.parquetbundle` container, format v3, that the reader decodes straight into typed
+arrays: about 0.38 s and a peak of about 140 MB, in a file about 19% smaller. (Decode times
+measured in Node on 2026-10-01, median of seven fresh processes: v3 0.38 s; the same data as a v1
+bundle 5.6 s through this change's legacy reader and 6.0 s through `main`'s.)
 
 The PR shipped the reader and the Python writer without an OpenSpec change, and review turned up
 several places where v3 quietly behaves differently from v2: a protein missing from a projection is

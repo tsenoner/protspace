@@ -402,8 +402,10 @@ that a projection did not cover is stored as missing rather than at the origin (
 
 Format v3 changes how the three logical tables are physically stored so that the browser can
 build its typed arrays without parsing a single annotation cell. On the 573K SwissProt dataset
-that takes bundle decoding from about 6.5 s and 2.1 GB of heap to about 0.4 s and under 50 MB,
-in a file about 19% smaller than the v2 encoding of the same data. The module docstring in
+that takes bundle decoding from about 5.6 s and a peak of about 2.4 GB of heap and ArrayBuffers
+to about 0.38 s and about 140 MB, in a file about 19% smaller than the v2 encoding of the same
+data. These are decode times measured in Node on 2026-10-01 (median of seven fresh processes,
+the legacy figure from the same data as a v1 bundle). The module docstring in
 `bundle_v3.py` quotes 21% for the same bundle. The two numbers measure different builds, not the
 same one twice: 21% is what settled the counts-versus-offsets choice described below, measured
 while scores were still float32, and 19% is the same comparison after scores widened to float64.

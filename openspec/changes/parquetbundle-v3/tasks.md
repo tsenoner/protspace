@@ -140,6 +140,17 @@
 - [x] 3.26 The v3 reader reads a `placedNumeric` column as numbers over the placed proteins, as
       v2 inferred it; the encoder infers a column's kind over the placed rows as well as all rows
       and marks a column numeric only over the placed ones (2.21)
+- [x] 3.27 The v3 reader's repeated-id check and the CSR rebuild cost what the PR head's decode
+      cost again: ids are cleared by an ascending scan or an index hash table (with a `Set` only
+      when a file makes the hash probes run long), and `gatherCsr` copies score runs a block of
+      consecutive hits at a time. Swiss-Prot decodes in a median of ~0.38 s in Node (PR head
+      ~0.37 s, before this ~0.55 s); the figures in the data-format guide and the proposal are
+      those measurements
+- [x] 3.28 The legacy reader's `fastYield` uses `setImmediate` where it exists and otherwise holds
+      its `MessageChannel` until the message arrives and then closes it. Every yield used to leave
+      an open port behind, which kept a Node process that called `decodeParquetBundle` on a
+      legacy bundle from exiting; a Node test decodes one through 120+ yields and checks that no
+      port is left open
 
 ## 4. Contract suite (`tests/contract`)
 
