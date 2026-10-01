@@ -155,6 +155,9 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       uniform3f: (loc: { n: string }, a: number, b: number, c: number) => {
         pushed[loc.n] = [a, b, c];
       },
+      uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) => {
+        pushed[loc.n] = [a, b, c, d];
+      },
     } as unknown as WebGL2RenderingContext;
     const uniforms = {
       resolution: { n: 'resolution' },
@@ -228,6 +231,7 @@ describe('bindPointDrawState point scale', () => {
       uniform1i: () => {},
       uniform2f: () => {},
       uniform3f: () => {},
+      uniform4f: () => {},
     } as unknown as WebGL2RenderingContext;
     const uniforms = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
     bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {

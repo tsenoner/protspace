@@ -8,6 +8,7 @@
  */
 
 import type { PointUniformLocations } from '../types';
+import { IDENTITY_RESCALE, type Rescale } from '../../rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 
 export const LABEL_ATLAS_TEXTURE_UNIT = 1;
@@ -41,10 +42,16 @@ export interface CameraParams {
   /** Physical target dimensions in device pixels (u_resolution). */
   width: number;
   height: number;
-  /** Current zoom transform (u_transform = x, y, k). */
+  /** Current zoom transform. */
   transform: { x: number; y: number; k: number };
   /** Device pixel ratio (u_dpr). */
   dpr: number;
+  /**
+   * Carries the staged positions to the pixels the current scales lay them out
+   * at, when the two differ (the plot was resized since they were staged).
+   * Omitted, the positions are taken as they are.
+   */
+  rescale?: Rescale;
 }
 
 export type CameraUniformLocations = Pick<
@@ -58,7 +65,12 @@ export function setCameraUniforms(
   cam: CameraParams,
 ): void {
   gl.uniform2f(loc.resolution, cam.width, cam.height);
-  gl.uniform3f(loc.transform, cam.transform.x, cam.transform.y, cam.transform.k);
+  // u_transform = (tx, ty, kx, ky): the rescale composed with the zoom here in
+  // doubles, so the shader still does one multiply-add per axis. The identity
+  // rescale pushes exactly (x, y, k, k).
+  const { x, y, k } = cam.transform;
+  const r = cam.rescale ?? IDENTITY_RESCALE;
+  gl.uniform4f(loc.transform, r.x.offset * k + x, r.y.offset * k + y, r.x.scale * k, r.y.scale * k);
   gl.uniform1f(loc.dpr, cam.dpr);
 }
 

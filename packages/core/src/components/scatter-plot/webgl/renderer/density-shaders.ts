@@ -92,7 +92,7 @@ in vec2 a_dataPosition;
 in vec4 a_color;
 
 uniform vec2 u_resolution;
-uniform vec3 u_transform;
+uniform vec4 u_transform;
 uniform float u_dpr;
 uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
 uniform int u_slotCount;

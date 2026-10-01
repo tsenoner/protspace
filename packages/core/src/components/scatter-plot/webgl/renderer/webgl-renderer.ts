@@ -24,6 +24,13 @@ import {
   DEFAULT_GAMMA,
 } from '../types';
 import { createProgramFromSources } from '../shader-utils';
+import {
+  IDENTITY_RESCALE,
+  rescaleBetween,
+  snapshotScales,
+  type Rescale,
+  type ScaleSnapshot,
+} from '../../rescale';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { composePaintDepth } from './point-staging';
@@ -187,6 +194,14 @@ export class WebGLRenderer {
 
   // Store last rendered data for off-screen export rendering
   private lastRenderedData: PlotData | null = null;
+
+  // Positions are staged in CSS pixels, through the scales of the pass that
+  // staged them. New scales move every point, but while only their ranges
+  // changed (a resize) `positionRescale` moves them on the GPU, folded into
+  // u_transform, instead of a re-stage: a full style pass and depth sort,
+  // ~500 ms at 573K points.
+  private stagedScales: ScaleSnapshot | null = null;
+  private positionRescale: Rescale = IDENTITY_RESCALE;
 
   // Reusable index-sort scratch (avoids per-render object staging + a retained mapped array).
   // `sortOrder[0..currentPointCount)` holds slot indices in far->near draw order; it indexes
@@ -560,7 +575,10 @@ export class WebGLRenderer {
     const dataSignature = this.computeDataSignature(pd);
     const styleSignature = this.computeStyleSignature(pd);
 
-    const needsPositionUpdate = this.positionsDirty || dataSignature !== this.lastDataSignature;
+    const needsPositionUpdate =
+      this.positionsDirty ||
+      dataSignature !== this.lastDataSignature ||
+      !this.rescaleStagedTo(scales);
     const needsStyleUpdate = this.stylesDirty || styleSignature !== this.lastStyleSignature;
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
@@ -572,9 +590,16 @@ export class WebGLRenderer {
       this.stylesDirty = false;
       // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
     }
+    // Asked after staging, which may have laid the positions out afresh.
+    this.positionRescale = this.rescaleStagedTo(scales) ?? IDENTITY_RESCALE;
 
     // Render with gamma-correct pipeline
     this.renderWithGammaCorrection(transform);
+  }
+
+  /** Map from the staged positions to `scales`' pixels; null when there is none. */
+  private rescaleStagedTo(scales: ScalePair): Rescale | null {
+    return this.stagedScales && rescaleBetween(this.stagedScales, scales);
   }
 
   /**
@@ -611,7 +636,7 @@ export class WebGLRenderer {
     if (density) {
       // The fields persist between frames, so a re-render that changes none of
       // their inputs (hover, tooltip) only composites them.
-      const { width, height, dpr, transform: t } = density.camera;
+      const { width, height, dpr, transform: t, rescale: r = IDENTITY_RESCALE } = density.camera;
       const key = [
         this.bufferGeneration,
         this.currentPointCount,
@@ -621,6 +646,10 @@ export class WebGLRenderer {
         t.x,
         t.y,
         t.k,
+        r.x.scale,
+        r.x.offset,
+        r.y.scale,
+        r.y.offset,
       ].join();
       if (density.res.fieldsKey !== key) {
         accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
@@ -672,6 +701,7 @@ export class WebGLRenderer {
         height: this.canvas.height,
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
+        rescale: this.positionRescale,
       },
       alpha,
       palette: this.contourPalette,
@@ -965,6 +995,8 @@ export class WebGLRenderer {
     this.lastStyleSignature = null;
     this.renderedPointIds.clear();
     this.sortedDataRef = null;
+    this.stagedScales = null;
+    this.positionRescale = IDENTITY_RESCALE;
   }
 
   private initializePointShaders(gl: WebGL2RenderingContext): boolean {
@@ -1065,6 +1097,7 @@ export class WebGLRenderer {
         height: this.canvas.height,
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
+        rescale: this.positionRescale,
         pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
@@ -1306,6 +1339,7 @@ export class WebGLRenderer {
 
     if (updatePositions) {
       this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
+      this.stagedScales = snapshotScales(scales);
     }
 
     // Hoisted from `updateStyles` alone: the reorder branch above rewrites every

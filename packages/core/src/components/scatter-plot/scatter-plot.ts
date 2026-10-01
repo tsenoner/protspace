@@ -1303,12 +1303,10 @@ export class ProtspaceScatterplot extends LitElement {
       if (!this._webglRenderer) {
         this._createWebglRenderer();
       }
+      // No re-stage: the renderer carries the staged positions to the new scales
+      // on the GPU (see WebGLRenderer.positionRescale), and nothing else it staged
+      // depends on the plot's size.
       this._webglRenderer!.resize(width, height);
-      // Force fresh style getters to ensure depth values are recomputed consistently
-      this._styleGettersCache = null;
-      this._webglRenderer!.invalidatePositionCache();
-      // Also invalidate style cache to force re-sorting of colors when point order may change
-      this._webglRenderer!.invalidateStyleCache();
     }
 
     // Keep badge canvas in sync with layout and DPR
@@ -1338,7 +1336,7 @@ export class ProtspaceScatterplot extends LitElement {
     // Synchronous, not _requestRender(): resize() just cleared the canvas, and a
     // ResizeObserver callback runs after this frame's rAF callbacks, so a
     // deferred render would paint one blank frame. One observer callback per
-    // frame keeps this at one re-stage per frame.
+    // frame keeps this at one redraw per frame.
     this._renderNow();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();

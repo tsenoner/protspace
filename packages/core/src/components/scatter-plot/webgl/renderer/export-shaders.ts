@@ -9,7 +9,9 @@
  * truth for the shader text.
  */
 
-export const CAMERA_TO_CLIP_GLSL = `  vec2 cssTransformed = a_dataPosition * u_transform.z + u_transform.xy;
+// u_transform is (tx, ty, kx, ky): the zoom transform with the staged-to-current
+// rescale folded in per axis (see setCameraUniforms). Without one, kx = ky = k.
+export const CAMERA_TO_CLIP_GLSL = `  vec2 cssTransformed = a_dataPosition * u_transform.zw + u_transform.xy;
   vec2 physicalPos = cssTransformed * u_dpr;
   vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;`;
 
@@ -25,7 +27,7 @@ in float a_shape;
 in float a_predicted;
 
 uniform vec2 u_resolution;
-uniform vec3 u_transform;
+uniform vec4 u_transform;
 uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;

@@ -229,6 +229,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     uniform2f: noop,
     uniform3f: noop,
     uniform3fv: vi.fn(),
+    // Recording: u_transform carries the zoom and the resize rescale together.
+    uniform4f: vi.fn(),
     uniformMatrix3fv: noop,
     uniform4fv: noop,
     pixelStorei: noop,

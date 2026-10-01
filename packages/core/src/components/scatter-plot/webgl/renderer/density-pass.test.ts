@@ -76,6 +76,8 @@ function mockGL(opts: { framebufferComplete?: boolean } = {}) {
     uniform2f: (loc: { n: string }, a: number, b: number) => calls.push(`u2f:${loc?.n}:${a},${b}`),
     uniform3f: (loc: { n: string }, a: number, b: number, c: number) =>
       calls.push(`u3f:${loc?.n}:${a},${b},${c}`),
+    uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) =>
+      calls.push(`u4f:${loc?.n}:${a},${b},${c},${d}`),
     uniform3fv: (loc: { n: string }, v: unknown) => {
       calls.push(`u3fv:${loc?.n}`);
       uploads3fv.push(v);

@@ -38,12 +38,12 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
   beforeEach(() => {
     renderer = makeRenderer();
     // populateBuffers is the buffer-rebuild gate render() runs iff a signature changed.
-    populateSpy = vi
-      .spyOn(
-        renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
-        'populateBuffers',
-      )
-      .mockImplementation(() => {});
+    // It runs for real: it records the scales it staged through, which the next
+    // render's gate compares against.
+    populateSpy = vi.spyOn(
+      renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
+      'populateBuffers',
+    );
     // Stub the gamma draw pass: this lock characterizes the signature/populateBuffers gate
     // only, not pixel output, so neutralizing the draw pass keeps render() cheap and leaves
     // every assertion intact.
