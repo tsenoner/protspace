@@ -525,6 +525,9 @@ export class ProtspaceScatterplot extends LitElement {
         getShape: (p: PlotDataPoint) => this._getPointShape(p),
         isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
         isMultilabel: () => this._getStyleGetters().isMultilabel(),
+        // The getters above resolve the visibility model per point; a pass
+        // resolves it once, for every point it stages.
+        createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
       },
       this._handleWebglContextLost,
       () => resolveColor(getComputedStyle(this).backgroundColor),
