@@ -155,12 +155,14 @@ export class ProtspaceControlBar extends LitElement {
   @state() private allProteinIds: string[] = [];
   @state() private selectedIdsChips: string[] = [];
 
-  // A pick from the annotation or projection menu re-stages every point. The menu
-  // closes and the pick shows in the frame of the input; the change itself runs
-  // after that frame is painted. One commit per control, so a newer pick replaces
-  // one still waiting, and a programmatic apply drops it.
+  // A pick from the annotation or projection menu, the search box or the Clear
+  // button re-stages every point. The menu closes and the pick shows in the frame
+  // of the input; the change itself runs after that frame is painted. One commit
+  // per control, so a newer pick replaces one still waiting, and a programmatic
+  // apply drops it.
   private readonly _annotationCommit = new AfterPaintCommit();
   private readonly _projectionCommit = new AfterPaintCommit();
+  private readonly _selectionCommit = new AfterPaintCommit();
   /** The menu pick waiting for its commit; the trigger shows it until then. */
   @state() private _pendingAnnotation: string | null = null;
   @state() private _pendingProjection: string | null = null;
@@ -540,10 +542,12 @@ export class ProtspaceControlBar extends LitElement {
     // clearing while `autoSync` was false (as `data-renderer.ts` sets it during a data
     // swap) emptied the chips but left the count stale — keeping the Clear button live
     // and Escape firing against an empty selection.
-    this._commitSelection([]);
+    this._commitSelection([], { afterPaint: true });
   }
 
   private handleSplitData() {
+    // Isolation reads the scatterplot's selection: land a search pick still waiting first.
+    this._selectionCommit.flush();
     const customEvent = new CustomEvent('isolate-data', {
       detail: {},
       bubbles: true,
@@ -1368,6 +1372,7 @@ export class ProtspaceControlBar extends LitElement {
   private _cancelPendingCommits() {
     this._annotationCommit.cancel();
     this._projectionCommit.cancel();
+    this._selectionCommit.cancel();
     this._pendingAnnotation = null;
     this._pendingProjection = null;
   }
@@ -1570,24 +1575,42 @@ export class ProtspaceControlBar extends LitElement {
    * state, into the scatterplot when auto-syncing, and out on `protein-selection-change`.
    * Each caller only derives `newSelection`; keeping the commit here stops the four steps
    * from drifting apart across the handlers that share them.
+   *
+   * `afterPaint` (search box picks, Clear) also sets the chips and count now, so the next
+   * pick builds on this one, and runs the commit after the cleared box is painted.
+   * `showProteinId` then loads into the structure viewers with that commit.
    */
-  private _commitSelection(newSelection: string[]) {
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
+  private _commitSelection(
+    newSelection: string[],
+    { afterPaint = false, showProteinId }: { afterPaint?: boolean; showProteinId?: string } = {},
+  ) {
+    const commit = () => {
+      this.selectedIdsChips = newSelection;
+      this.selectedProteinsCount = newSelection.length;
+      if (
+        this.autoSync &&
+        this._scatterplotElement &&
+        'selectedProteinIds' in this._scatterplotElement
+      ) {
+        (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
+      }
+      this.dispatchEvent(
+        new CustomEvent('protein-selection-change', {
+          detail: { proteinIds: newSelection.slice() },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      if (showProteinId) this._loadIntoStructureViewers(showProteinId);
+    };
+    if (afterPaint) {
+      this.selectedIdsChips = newSelection;
+      this.selectedProteinsCount = newSelection.length;
+      this._selectionCommit.schedule(commit);
+    } else {
+      this._selectionCommit.cancel();
+      commit();
     }
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   /** Load a protein into every mounted structure viewer. */
@@ -1771,8 +1794,10 @@ export class ProtspaceControlBar extends LitElement {
     const { proteinId } = event.detail;
     if (!proteinId || this.selectedIdsChips.includes(proteinId)) return;
 
-    this._commitSelection([...this.selectedIdsChips, proteinId]);
-    this._loadIntoStructureViewers(proteinId);
+    this._commitSelection([...this.selectedIdsChips, proteinId], {
+      afterPaint: true,
+      showProteinId: proteinId,
+    });
   }
 
   private _handleSearchSelectionRemove(event: CustomEvent<{ proteinId: string }>) {
@@ -1782,7 +1807,10 @@ export class ProtspaceControlBar extends LitElement {
     // No structure-viewer call here: removal has no "the protein you just picked" to show.
     // The app-level `protein-selection-change` listener still re-points the viewer at the
     // new last-remaining protein (or leaves it alone once the selection empties).
-    this._commitSelection(this.selectedIdsChips.filter((id) => id !== proteinId));
+    this._commitSelection(
+      this.selectedIdsChips.filter((id) => id !== proteinId),
+      { afterPaint: true },
+    );
   }
 
   private _handleSearchSelectionAddMultiple(event: CustomEvent<{ proteinIds: string[] }>) {
@@ -1794,8 +1822,10 @@ export class ProtspaceControlBar extends LitElement {
 
     if (newUniqueIds.length === 0) return;
 
-    this._commitSelection([...this.selectedIdsChips, ...newUniqueIds]);
-    this._loadIntoStructureViewers(newUniqueIds[newUniqueIds.length - 1]);
+    this._commitSelection([...this.selectedIdsChips, ...newUniqueIds], {
+      afterPaint: true,
+      showProteinId: newUniqueIds[newUniqueIds.length - 1],
+    });
   }
 
   private _handleBrushSelection(event: Event) {

@@ -63,6 +63,8 @@ describe('control-bar remove-selection wiring', () => {
     await controlBar.updateComplete;
 
     expect(controlBar.selectedIdsChips).toEqual(['P00596']);
+    // The selection goes out after the paint (control-bar.after-paint.test.ts).
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
     expect(changeHandler).toHaveBeenCalledTimes(1);
     expect((changeHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
       proteinIds: ['P00596'],
