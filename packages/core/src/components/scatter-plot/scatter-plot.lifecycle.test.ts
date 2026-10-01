@@ -63,6 +63,7 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
     setSelectionActive() {}
     invalidatePositionCache() {}
     invalidateStyleCache() {}
+    invalidateCategoryStyles() {}
     invalidateDepthOrder() {}
     setTrackRenderedPointIds() {}
     render() {}

@@ -85,6 +85,7 @@ function makeData(): VisualizationData {
 type WebglStub = {
   invalidateDepthOrder: ReturnType<typeof vi.fn>;
   invalidateStyleCache: ReturnType<typeof vi.fn>;
+  invalidateCategoryStyles: ReturnType<typeof vi.fn>;
   /**
    * Not asserted on, but required: `_scheduleNumericAnnotationRefresh` queues a
    * requestAnimationFrame whose callback reaches `setStyleSignature`. That fires
@@ -112,6 +113,7 @@ type Internals = HTMLElement & {
   _handleZOrderChange(event: Event): void;
   _handleColorMappingChange(event: Event): void;
   _scheduleNumericAnnotationRefresh(): void;
+  _rebuildStyleAndSignature(changed: Map<string, unknown>): void;
   requestUpdate(name?: PropertyKey, oldValue?: unknown): void;
 };
 
@@ -125,6 +127,7 @@ function makeEl(): Internals {
   (el as unknown as { _webglRenderer: WebglStub })._webglRenderer = {
     invalidateDepthOrder: vi.fn(),
     invalidateStyleCache: vi.fn(),
+    invalidateCategoryStyles: vi.fn(),
     setStyleSignature: vi.fn(),
   };
   return el;
@@ -214,6 +217,9 @@ describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stay
     );
 
     expect(el._webglRenderer.invalidateDepthOrder).not.toHaveBeenCalled();
+    // Whole categories restyle: the renderer rewrites its per-record table.
+    expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
+    expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
   });
 
   it('colorOnly=false DOES call invalidateDepthOrder', () => {
@@ -298,5 +304,26 @@ describe('numeric-recompute events removed (F-46)', () => {
     const el = makeEl();
     el._scheduleNumericAnnotationRefresh();
     expect(el._numericRecomputeRunning).toBe(true);
+  });
+});
+
+describe('legend visibility — restyle categories, not points', () => {
+  const changed = (...keys: string[]) => new Map(keys.map((k) => [k, undefined]));
+
+  it('a hide or show alone restyles the categories', () => {
+    const el = makeEl();
+    el._rebuildStyleAndSignature(changed('hiddenAnnotationValues'));
+    expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
+    expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
+  });
+
+  it('a hide that comes with an annotation, Other or EAT change re-stages', () => {
+    for (const other of ['selectedAnnotation', 'otherAnnotationValues', 'eatOverlayEnabled']) {
+      const el = makeEl();
+      Object.assign(el._webglRenderer, { invalidatePositionCache: vi.fn() });
+      el._rebuildStyleAndSignature(changed('hiddenAnnotationValues', other));
+      expect(el._webglRenderer.invalidateStyleCache).toHaveBeenCalledTimes(1);
+      expect(el._webglRenderer.invalidateCategoryStyles).not.toHaveBeenCalled();
+    }
   });
 });

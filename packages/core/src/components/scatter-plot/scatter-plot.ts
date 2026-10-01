@@ -707,11 +707,14 @@ export class ProtspaceScatterplot extends LitElement {
     this._styleGettersCache = null;
 
     if (this._plotData.length > 0) {
-      // INV-08: color-only changes skip the depth re-sort.
-      if (!colorOnly) {
+      // INV-08: color-only changes skip the depth re-sort, and restyle whole
+      // categories (colour and shape) without re-staging.
+      if (colorOnly) {
+        this._webglRenderer?.invalidateCategoryStyles();
+      } else {
         this._webglRenderer?.invalidateDepthOrder();
+        this._webglRenderer?.invalidateStyleCache();
       }
-      this._webglRenderer?.invalidateStyleCache();
       this._requestRender(); // single render path (F-31)
     }
   };
@@ -903,7 +906,14 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('eatOverlayEnabled');
     if (visibilityMembershipChanged) {
       this._schedulePointGridIndexRebuild();
-      this._webglRenderer?.invalidateStyleCache();
+      // A legend hide or show changes which categories are drawn, nothing per point.
+      const hiddenOnly =
+        changedProperties.has('hiddenAnnotationValues') &&
+        !changedProperties.has('selectedAnnotation') &&
+        !changedProperties.has('otherAnnotationValues') &&
+        !changedProperties.has('eatOverlayEnabled');
+      if (hiddenOnly) this._webglRenderer?.invalidateCategoryStyles();
+      else this._webglRenderer?.invalidateStyleCache();
       this._updateStyleSignature();
       this._webglRenderer?.setStyleSignature(this._styleSig);
 

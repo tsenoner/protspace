@@ -147,7 +147,7 @@ describe('render coalescing', () => {
   it('a flush renders a waiting request now, and the frame then finds nothing to do', () => {
     const { el, populate } = makePlot();
 
-    el._handleColorMappingChange(colors(true));
+    el._handleColorMappingChange(colors(false));
     el._flushRender();
     expect(populate).toHaveBeenCalledTimes(1);
 
@@ -173,6 +173,15 @@ describe('render coalescing', () => {
     expect(populate).toHaveBeenCalledTimes(1);
   });
 
+  it('a colour-only change restyles the categories on the next frame, without a re-stage', () => {
+    const { el, renderer, populate } = makePlot();
+    const render = vi.spyOn(renderer as unknown as { render(pd: PlotData): void }, 'render');
+    el._handleColorMappingChange(colors(true));
+    runFrame();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(populate).not.toHaveBeenCalled();
+  });
+
   it('a flush with nothing requested does not render', () => {
     const { el } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');
@@ -184,7 +193,7 @@ describe('render coalescing', () => {
     const { el, populate } = makePlot();
     vi.stubGlobal('requestAnimationFrame', undefined);
 
-    el._handleColorMappingChange(colors(true));
+    el._handleColorMappingChange(colors(false));
     expect(populate).toHaveBeenCalledTimes(1);
   });
 
@@ -197,7 +206,7 @@ describe('render coalescing', () => {
       return document.createElement('canvas');
     });
 
-    el._handleColorMappingChange(colors(true));
+    el._handleColorMappingChange(colors(false));
     el.captureAtResolution(100, 100);
     expect(order).toEqual(['stage', 'export']);
 
