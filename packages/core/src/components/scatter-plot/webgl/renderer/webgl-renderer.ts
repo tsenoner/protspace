@@ -26,7 +26,13 @@ import {
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
+import { composePaintDepth } from './point-staging';
+import {
+  beginStylePass,
+  createPassScratch,
+  restageStyles,
+  stageInPaintOrder,
+} from './pass-staging';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
@@ -49,7 +55,7 @@ import {
 } from './density-pass';
 import { densityFrameAlpha } from './density-crossfade';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
-import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
+import type { StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import {
   planLabelAtlas,
@@ -122,7 +128,7 @@ export class WebGLRenderer {
   private shapes = new Float32Array(0);
   private predicted = new Float32Array(0);
 
-  // Zero-copy view over the parallel staging arrays above, passed to `stagePoint`.
+  // Zero-copy view over the parallel staging arrays above, passed to the staging passes.
   // Re-pointed in `refreshStageArrays()` whenever capacity is reallocated.
   private stageArrays: StagePointArrays = this.buildStageArrays();
 
@@ -184,10 +190,10 @@ export class WebGLRenderer {
 
   // Reusable index-sort scratch (avoids per-render object staging + a retained mapped array).
   // `sortOrder[0..currentPointCount)` holds slot indices in far->near draw order; it indexes
-  // into `sortedDataRef` (the PlotData from the last full rebuild). `sortDepths` is the
-  // per-slot depth scratch, indexed by ORIGINAL slot index.
+  // into `sortedDataRef` (the PlotData from the last full rebuild). `passScratch` holds what
+  // a style pass resolves per slot (opacity, depth, style record), indexed by ORIGINAL slot.
   private sortOrder = new Uint32Array(0);
-  private sortDepths = new Float32Array(0);
+  private passScratch = createPassScratch(0);
   private sortedDataRef: PlotData | null = null;
 
   // Single reused scratch point for the hot loop — populated per slot, passed to style getters.
@@ -1217,101 +1223,44 @@ export class WebGLRenderer {
     if (needsReorder) {
       this.visibleCount = 0;
       const count = maxPoints;
-      const order = this.sortOrder;
-      const depthScratch = this.sortDepths;
-
-      // Build depth scratch indexed by original slot index, then sort indices far -> near.
-      // Include hidden points (opacity=0) so sort order is preserved across visibility toggles,
-      // enabling the fast color-only update path instead of a full rebuild + re-sort.
-      for (let i = 0; i < count; i++) {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[i];
-        sp.y = ys[i];
-        sp.originalIndex = origIdx;
-        depthScratch[i] = composePaintDepth(
-          this.style.getDepth(sp),
-          this.style.getOpacity(sp),
-          this.style.isPredicted(sp),
-        );
-      }
-      // Canonical painter-order plan (shared with the export path via
-      // buildPaintOrder): sort far->near, then locate the two-pass selection cut
-      // from the first sorted slot with opacity >= 0.99. The per-slot callback
-      // also performs the live side effects (ID tracking + staging) so every slot
-      // — including opacity-0 — is staged exactly as before.
-      const { selectedStartIndex } = buildPaintOrder(
-        order,
-        depthScratch,
+      // Hidden points (opacity=0) are staged too, so sort order is preserved across
+      // visibility toggles, enabling the fast color-only update path instead of a
+      // full rebuild + re-sort. Shared with the export path, which stages the same
+      // painter order and selection cut.
+      this.selectedStartIndex = stageInPaintOrder(
+        this.stageArrays,
+        beginStylePass(this.style),
+        this.passScratch,
+        this.sortOrder,
+        pd,
+        scales,
         count,
         this.selectionActive,
-        (k, srcSlot) => {
-          const origIdx = oi ? oi[srcSlot] : srcSlot;
-          sp.id = pd.proteinIds[origIdx];
-          sp.x = xs[srcSlot];
-          sp.y = ys[srcSlot];
-          sp.originalIndex = origIdx;
-          const opacity = this.style.getOpacity(sp);
-          if (opacity > 0) this.visibleCount++;
-
-          if (this.trackRenderedPointIds && opacity > 0) {
-            this.renderedPointIds.add(sp.id);
-          }
-
-          // updatePositions is always true here (see above). Positions are
-          // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
-          // original slot), NOT depthScratch[k].
-          stagePoint(
-            this.stageArrays,
-            k,
-            sp,
-            scales.x(xs[srcSlot]),
-            scales.y(ys[srcSlot]),
-            opacity,
-            depthScratch[srcSlot],
-            this.style,
-          );
-
-          return opacity;
-        },
+        (slot, opacity) => this.countStagedSlot(pd, slot, opacity),
       );
 
       idx = count;
-      this.selectedStartIndex = selectedStartIndex;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
     } else if (updateStyles) {
       this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
-      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
-      const order = this.sortOrder;
+      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last
+      // rebuild. Positions and depths are unchanged from that rebuild.
       const src = this.sortedDataRef;
       if (src) {
-        const srcOi = src.originalIndices;
-        const srcXs = src.xs;
-        const srcYs = src.ys;
-        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
-          const slot = order[i];
-          const origIdx = srcOi ? srcOi[slot] : slot;
-          sp.id = src.proteinIds[origIdx];
-          sp.x = srcXs[slot];
-          sp.y = srcYs[slot];
-          sp.originalIndex = origIdx;
-          const opacity = this.style.getOpacity(sp);
-          if (opacity > 0) this.visibleCount++;
-
-          if (this.trackRenderedPointIds && opacity > 0) {
-            this.renderedPointIds.add(sp.id);
-          }
-
-          // Update only style channels (color/alpha/size/shape/label texels) —
-          // positions and depths are unchanged from the last rebuild. Shares the
-          // exact packing the full-rebuild path uses via stagePoint (stageArrays
-          // aliases this.colors/this.sizes/... so this writes the same buffers).
-          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style);
-
-          idx++;
-        }
+        idx = Math.min(this.currentPointCount, maxPoints);
+        restageStyles(
+          this.stageArrays,
+          beginStylePass(this.style),
+          this.passScratch,
+          this.sortOrder,
+          src,
+          // The count that rebuild staged, so every slot sortOrder holds is resolved.
+          Math.min(src.length, MAX_RENDERABLE_POINTS),
+          idx,
+          (slot, opacity) => this.countStagedSlot(src, slot, opacity),
+        );
       }
     } else {
       // No reordering and no style updates: only update positions if needed.
@@ -1408,6 +1357,16 @@ export class WebGLRenderer {
     this.buffersInitialized = true;
   }
 
+  /** Count a staged slot that will be drawn, and track its id when asked to. */
+  private countStagedSlot(pd: PlotData, slot: number, opacity: number): void {
+    if (!(opacity > 0)) return;
+    this.visibleCount++;
+    if (this.trackRenderedPointIds) {
+      const oi = pd.originalIndices;
+      this.renderedPointIds.add(pd.proteinIds[oi ? oi[slot] : slot]);
+    }
+  }
+
   /**
    * Allocate or refresh the atlas texture.
    *
@@ -1474,7 +1433,7 @@ export class WebGLRenderer {
 
   /**
    * Build a fresh {@link StagePointArrays} view bound to the current parallel
-   * staging arrays. Call after any reallocation so `stagePoint` writes into the
+   * staging arrays. Call after any reallocation so staging writes into the
    * live buffers (zero copy — the struct only holds references).
    */
   private buildStageArrays(): StagePointArrays {
@@ -1525,7 +1484,7 @@ export class WebGLRenderer {
 
   /**
    * Hand the atlas back: drop the plan and its texels, and re-point the staging
-   * view so `stagePoint` writes no label texels.
+   * view so staging writes no label texels.
    *
    * Clearing `labelTextureInitialized` is what carries the release to the GPU —
    * the next `uploadLabelAtlas` takes the placeholder branch, which is the call
@@ -1623,7 +1582,7 @@ export class WebGLRenderer {
     this.shapes = new Float32Array(nextCapacity);
     this.predicted = new Float32Array(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
-    this.sortDepths = new Float32Array(nextCapacity);
+    this.passScratch = createPassScratch(nextCapacity);
     // The atlas is NOT touched here: its geometry depends on the device texture
     // limit, so `syncLabelAtlas` owns it and decides on this same populate pass
     // whether the existing plan still fits — which, since capacity can now shrink

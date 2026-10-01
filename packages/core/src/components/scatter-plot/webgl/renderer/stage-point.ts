@@ -45,17 +45,15 @@ export type StagePointStyle = Pick<
  * position and depth), plus `maxLabels`, which is an INPUT — the atlas stride it
  * clamps against, not a channel it fills.
  */
-type StagePointStyleArrays = Pick<
+export type StagePointStyleArrays = Pick<
   StagePointArrays,
   'colors' | 'sizes' | 'labelCounts' | 'shapes' | 'predicted' | 'labelColorData' | 'maxLabels'
 >;
 
 /**
  * Write a point's *style* channels (color, alpha, size, shape, label texels) into
- * `target` at slot `idx`. Shared by the full-rebuild path (via {@link stagePoint})
- * and the color-only update path in the renderer, so a legend recolor encodes a
- * point identically to a full rebuild / export — the single source of truth for
- * the per-point style packing.
+ * `target` at slot `idx`, from the per-point getters. The staging passes in
+ * `pass-staging.ts` stage through it when the host has no style records.
  *
  * Pure helper: no GL, no WebGLRenderer import.
  */
@@ -66,16 +64,40 @@ export function stagePointStyle(
   opacity: number,
   style: StagePointStyle,
 ): void {
-  const pointColors = style.getColors(sp);
+  packPointStyle(
+    target,
+    idx,
+    style.getColors(sp),
+    style.getShape(sp),
+    style.getPointSize(sp),
+    opacity,
+    style.isPredicted(sp),
+  );
+}
+
+/**
+ * Write style channels from style values that are already resolved: the single
+ * source of truth for the per-point style packing. {@link stagePointStyle} feeds
+ * it the per-point getters; a style pass feeds it one category at a time.
+ */
+export function packPointStyle(
+  target: StagePointStyleArrays,
+  idx: number,
+  pointColors: readonly string[],
+  shape: string,
+  pointSize: number,
+  opacity: number,
+  predicted: boolean,
+): void {
   const [r, g, b] = resolveColor(pointColors[0] ?? '#888888');
-  const shapeIndex = getShapeIndex(style.getShape(sp));
+  const shapeIndex = getShapeIndex(shape);
 
   target.colors[idx * 4] = r;
   target.colors[idx * 4 + 1] = g;
   target.colors[idx * 4 + 2] = b;
   target.colors[idx * 4 + 3] = Math.min(1, Math.max(0, opacity));
 
-  const diameter = 2 * pointRadiusCss(style.getPointSize(sp));
+  const diameter = 2 * pointRadiusCss(pointSize);
   target.sizes[idx] = shapeIndex === 2 ? diameter * DIAMOND_SIZE_SCALE : diameter;
   // Clamped to what the atlas actually reserves for this point. Unclamped, a point
   // with more colours than `maxLabels` told the shader to draw slices that were
@@ -88,34 +110,9 @@ export function stagePointStyle(
   // against a stale uniform — do not relax this one on the strength of that one.
   target.labelCounts[idx] = Math.min(pointColors.length, target.maxLabels);
   target.shapes[idx] = shapeIndex;
-  target.predicted[idx] = style.isPredicted(sp) ? 1 : 0;
+  target.predicted[idx] = predicted ? 1 : 0;
 
   if (target.labelColorData) {
     fillLabelColorTexels(target.labelColorData, idx, pointColors, target.maxLabels);
   }
-}
-
-/**
- * Write one staged point into the parallel target arrays at slot `idx`.
- *
- * `screenX`/`screenY` are already in device-independent screen space (the caller
- * applied `scales.x`/`scales.y`). `opacity`/`depth` were computed by the caller's
- * painter's-algorithm sort.
- *
- * Pure helper: no GL, no WebGLRenderer import.
- */
-export function stagePoint(
-  target: StagePointArrays,
-  idx: number,
-  sp: PlotDataPoint,
-  screenX: number,
-  screenY: number,
-  opacity: number,
-  depth: number,
-  style: StagePointStyle,
-): void {
-  target.dataPositions[idx * 2] = screenX;
-  target.dataPositions[idx * 2 + 1] = screenY;
-  stagePointStyle(target, idx, sp, opacity, style);
-  target.depths[idx] = depth;
 }

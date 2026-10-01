@@ -1,4 +1,5 @@
-import type { PlotDataPoint } from '@protspace/utils';
+import type { PlotData, PlotDataPoint } from '@protspace/utils';
+import type { StagePointStyleArrays } from './renderer/stage-point';
 
 // ScalePair is owned by @protspace/utils (data-processor `createScales`); re-export
 // it here so webgl code importing `ScalePair` from this module still resolves.
@@ -21,6 +22,59 @@ export interface WebGLStyleGetters {
    * never sampled when this is false.
    */
   isMultilabel: () => boolean;
+  /**
+   * Resolve the style inputs once for a staging pass over every point. Optional:
+   * without it the renderer stages through the per-point getters above, which
+   * write the same buffers, only slower.
+   */
+  createStylePass?: () => PointStylePass;
+}
+
+/** Record id of a slot whose style is not in the records table. */
+export const PER_POINT_STYLE = -1;
+
+/**
+ * Style shared by every point with the same record id. The scatter plot keys
+ * records by category code, so they can also be uploaded as a per-category table.
+ */
+export interface PointStyleRecords {
+  /** `getColors` of a point with this record. */
+  readonly colors: readonly (readonly string[])[];
+  /** `getShape` of a point with this record. */
+  readonly shapes: readonly string[];
+  /** `getPointSize`, the same for every point of the pass. */
+  readonly pointSize: number;
+}
+
+/** What {@link PointStylePass.resolve} writes per plot slot. Capacity-sized. */
+export interface SlotStyleScratch {
+  /** `getOpacity`. */
+  readonly opacity: Float64Array;
+  /** `composePaintDepth(getDepth, getOpacity, isPredicted)`. */
+  readonly depth: Float32Array;
+  /** Record id, or {@link PER_POINT_STYLE}. */
+  readonly record: Int32Array;
+  /** `isPredicted` as 0 or 1, read for slots that have a record. */
+  readonly predicted: Uint8Array;
+}
+
+/** One staging pass: every per-point style input, resolved once per pass. */
+export interface PointStylePass {
+  /** Read after `resolve`, which may add records. */
+  readonly records: PointStyleRecords;
+  /** Fill `out` for slots `[0, count)` of `pd`. */
+  resolve(pd: PlotData, count: number, out: SlotStyleScratch): void;
+  /**
+   * Write the style channels of a slot `resolve` marked {@link PER_POINT_STYLE}.
+   * A pass that gives every slot a record has none.
+   */
+  stageSlot?(
+    target: StagePointStyleArrays,
+    idx: number,
+    pd: PlotData,
+    slot: number,
+    opacity: number,
+  ): void;
 }
 
 /**

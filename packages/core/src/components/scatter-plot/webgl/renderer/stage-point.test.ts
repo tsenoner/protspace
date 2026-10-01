@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  stagePoint,
+  packPointStyle,
   stagePointStyle,
   type StagePointArrays,
   type StagePointStyle,
@@ -38,30 +38,20 @@ const style = {
   isPredicted: () => false,
 } as unknown as StagePointStyle;
 
-describe('stagePoint', () => {
-  it('writes scaled position, clamped color, CSS diameter and depth for one slot', () => {
+describe('stagePointStyle', () => {
+  it('writes clamped color, CSS diameter, shape and flags for one slot', () => {
     const a = arrays(4);
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    // screenX/screenY already scaled by the caller (scales.x/scales.y)
-    stagePoint(
-      a,
-      /*idx*/ 1,
-      sp,
-      /*screenX*/ 12,
-      /*screenY*/ 34,
-      /*opacity*/ 0.5,
-      /*depth*/ 0.7,
-      style,
-    );
-    expect(a.dataPositions[2]).toBe(12);
-    expect(a.dataPositions[3]).toBe(34);
+    stagePointStyle(a, /*idx*/ 1, sp, /*opacity*/ 0.5, style);
     expect(a.colors[4]).toBeCloseTo(1); // r
     expect(a.colors[7]).toBeCloseTo(0.5); // clamped opacity
     expect(a.sizes[1]).toBeCloseTo(4);
-    expect(a.depths[1]).toBeCloseTo(0.7);
     expect(a.labelCounts[1]).toBe(1);
     expect(a.shapes[1]).toBe(0);
     expect(a.predicted[1]).toBe(0);
+    // Position and depth are the staging pass's to write, not the style's.
+    expect(a.dataPositions[2]).toBe(0);
+    expect(a.depths[1]).toBe(0);
   });
 
   it('applies DIAMOND_SIZE_SCALE for shapeIndex 2 (diamond)', () => {
@@ -73,9 +63,19 @@ describe('stagePoint', () => {
       isPredicted: () => true,
     } as never;
     const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    stagePoint(a, 0, sp, 0, 0, 1, 0, diamond);
+    stagePointStyle(a, 0, sp, 1, diamond);
     expect(a.sizes[0]).toBeCloseTo(5);
     expect(a.predicted[0]).toBe(1);
+  });
+
+  it('packs exactly what packPointStyle packs from the same values', () => {
+    const viaGetters = arrays(2);
+    const direct = arrays(2);
+    const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
+    const pie = styleWithColors(['#123456', '#abcdef', '#fedcba']);
+    stagePointStyle(viaGetters, 1, sp, 0.7, pie);
+    packPointStyle(direct, 1, ['#123456', '#abcdef', '#fedcba'], 'circle', 36, 0.7, false);
+    expect(viaGetters).toEqual(direct);
   });
 });
 

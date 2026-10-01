@@ -11,7 +11,7 @@
  *
  * It consumes the B3 substrate (`resolvePointLocations`, `setupAttributes`,
  * `createLinearFramebuffer`, `destroyFramebuffer`, `bindAndClearTarget`,
- * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stagePoint`,
+ * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stageInPaintOrder`,
  * `drawPoints`) and the live point/gamma shader sources, so it shares no
  * resource state with the live render pipeline.
  *
@@ -23,7 +23,7 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -48,7 +48,7 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
-import { stagePoint, type StagePointArrays } from './stage-point';
+import type { StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
@@ -57,7 +57,7 @@ import {
   allocateLabelAtlas,
   uploadPlaceholderAtlas,
 } from './label-atlas-texture';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
+import { beginStylePass, createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -656,13 +656,10 @@ export class ExportRenderer {
     // export then costs nothing for a feature it is not using.
     const labelColorData = labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null;
 
-    // Stage slots by depth using the SAME canonical painter-order plan as the
-    // live path (buildPaintOrder): the live path is canonical, so the export
-    // includes opacity-0 slots (invisible — F-15 pixels unchanged) and uses the
-    // identical stable far->near sort and the same sorted-k selectedStartIndex.
-    const { xs, ys } = pd;
-    const oi = pd.originalIndices;
-    const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
+    // Stage slots by depth through the SAME staging as the live path
+    // (stageInPaintOrder): the live path is canonical, so the export includes
+    // opacity-0 slots (invisible — F-15 pixels unchanged) and uses the identical
+    // stable far->near sort and the same sorted-k selectedStartIndex.
     const count = maxPoints;
 
     const target: StagePointArrays = {
@@ -677,52 +674,18 @@ export class ExportRenderer {
       maxLabels: labelAtlas?.stride ?? MAX_LABELS,
     };
 
-    // Per-slot depth scratch indexed by ORIGINAL slot index, then the index order
-    // sorted far->near in place. Sized to the staged count (export has no persistent
-    // scratch, so allocate locally per call).
+    // The index order and the per-slot pass scratch, sized to the staged count
+    // (export has no persistent scratch, so allocate locally per call).
     const order = new Uint32Array(count);
-    const depthScratch = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
-      depthScratch[i] = composePaintDepth(
-        style.getDepth(sp),
-        style.getOpacity(sp),
-        style.isPredicted(sp),
-      );
-    }
-
-    const { selectedStartIndex } = buildPaintOrder(
+    const selectedStartIndex = stageInPaintOrder(
+      target,
+      beginStylePass(style),
+      createPassScratch(count),
       order,
-      depthScratch,
+      pd,
+      scales,
       count,
       selectionActive,
-      (k, srcSlot) => {
-        const origIdx = oi ? oi[srcSlot] : srcSlot;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[srcSlot];
-        sp.y = ys[srcSlot];
-        sp.originalIndex = origIdx;
-        const opacity = style.getOpacity(sp);
-
-        // Depth uses depthScratch[srcSlot] (indexed by original slot), NOT
-        // depthScratch[k], matching the live path.
-        stagePoint(
-          target,
-          k,
-          sp,
-          scales.x(xs[srcSlot]),
-          scales.y(ys[srcSlot]),
-          opacity,
-          depthScratch[srcSlot],
-          style,
-        );
-
-        return opacity;
-      },
     );
 
     return {
