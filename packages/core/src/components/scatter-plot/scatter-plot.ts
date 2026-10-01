@@ -1103,18 +1103,24 @@ export class ProtspaceScatterplot extends LitElement {
     const displayData =
       this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
 
-    if (this._plotData.length > 0) {
-      this._refreshSelectedAnnotationValues(displayData);
-    } else {
-      this._processData();
-    }
+    // A settings change that leaves the selected annotation's binning alone (another numeric
+    // annotation's settings, or an equal rebin) hands back the very object the plot was last built
+    // from. Re-staging then would repeat the whole upload for identical output (~500 ms at 573K).
+    const unchanged = this._plotData.length > 0 && materializedData === this._lastDataRef;
+    if (!unchanged) {
+      if (this._plotData.length > 0) {
+        this._refreshSelectedAnnotationValues(displayData);
+      } else {
+        this._processData();
+      }
 
-    this._schedulePointGridIndexRebuild();
-    this._webglRenderer?.invalidateStyleCache();
-    this._updateStyleSignature();
-    this._webglRenderer?.setStyleSignature(this._styleSig);
-    this._requestRender();
-    this._updateSelectionOverlays();
+      this._schedulePointGridIndexRebuild();
+      this._webglRenderer?.invalidateStyleCache();
+      this._updateStyleSignature();
+      this._webglRenderer?.setStyleSignature(this._styleSig);
+      this._requestRender();
+      this._updateSelectionOverlays();
+    }
 
     const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
     if (currentData) {
