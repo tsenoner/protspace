@@ -515,24 +515,28 @@ export class ProtspaceControlBar extends LitElement {
     this.showDensityMenu = false;
     this.densityHighlightIndex = -1;
     this.densityLayer = mode;
-    // Reads `densityLayer` when it runs, so a programmatic set made meanwhile wins.
     this._densityCommit.schedule(() => {
-      const densityLayer = this.densityLayer;
       if (this.autoSync && this._scatterplotElement) {
         const scatterplot = this._scatterplotElement as ScatterplotElementLike;
         scatterplot.config = {
           ...(scatterplot.config ?? {}),
-          densityLayer,
+          densityLayer: mode,
         };
       }
       this.dispatchEvent(
         new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
-          detail: { densityLayer },
+          detail: { densityLayer: mode },
           bubbles: true,
           composed: true,
         }),
       );
     });
+  }
+
+  /** Set the contours mode from outside the menu: at once, dropping a pick still waiting. */
+  applyDensityLayerSelection(mode: DensityLayerMode) {
+    this._densityCommit.cancel();
+    this.densityLayer = mode;
   }
 
   private handleClearSelections() {

@@ -8,6 +8,7 @@ import type { DensityLayerMode, ScatterplotConfig } from '@protspace/utils';
 type Bar = HTMLElement & {
   autoSync?: boolean;
   densityLayer?: DensityLayerMode;
+  applyDensityLayerSelection(mode: DensityLayerMode): void;
   updateComplete?: Promise<unknown>;
   _scatterplotElement?: unknown;
 };
@@ -87,6 +88,22 @@ describe('control-bar contours menu', () => {
       expect(plot.config).toEqual({ pointSize: 42, densityLayer: mode });
     },
   );
+
+  it('a programmatic set applies at once and drops a pick still waiting', async () => {
+    const handler = vi.fn();
+    controlBar.addEventListener('density-layer-change', handler);
+
+    await openMenu();
+    items()
+      .find((i) => i.dataset.mode === 'on')!
+      .click();
+    controlBar.applyDensityLayerSelection('auto');
+    await afterNextPaint();
+
+    expect(controlBar.densityLayer).toBe('auto');
+    expect(handler).not.toHaveBeenCalled();
+    expect(plot.config).toEqual({ pointSize: 42 });
+  });
 
   it('marks the trigger active only while contours can show', async () => {
     expect(trigger()?.classList.contains('filter-active')).toBe(false);
