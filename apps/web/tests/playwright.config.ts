@@ -255,6 +255,14 @@ export default defineConfig({
       testMatch: /examples-live\.spec\.ts/,
     }),
     {
+      name: 'legend-double-click',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /legend-double-click\.spec\.ts/,
+    },
+    {
       name: 'multi-annotation-tooltip',
       use: {
         ...devices['Desktop Chrome'],
