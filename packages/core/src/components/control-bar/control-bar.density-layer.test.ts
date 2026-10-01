@@ -12,6 +12,10 @@ type Bar = HTMLElement & {
   _scatterplotElement?: unknown;
 };
 
+/** Resolves in the task after the next frame, once a menu pick has been committed. */
+const afterNextPaint = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
 describe('control-bar contours menu', () => {
   let controlBar: Bar;
   let plot: HTMLElement & { config: Partial<ScatterplotConfig> };
@@ -60,7 +64,7 @@ describe('control-bar contours menu', () => {
   });
 
   it.each(['off', 'auto', 'on'] as const)(
-    'picking %s dispatches it, mirrors it onto the plot and closes the menu',
+    'picking %s closes the menu, then dispatches it and mirrors it onto the plot after the paint',
     async (mode) => {
       const handler = vi.fn();
       controlBar.addEventListener('density-layer-change', handler);
@@ -71,11 +75,16 @@ describe('control-bar contours menu', () => {
         .click();
       await controlBar.updateComplete;
 
+      expect(items()).toHaveLength(0);
+      expect(controlBar.densityLayer).toBe(mode);
+      expect(handler).not.toHaveBeenCalled();
+      expect(plot.config).toEqual({ pointSize: 42 });
+
+      await afterNextPaint();
+
       expect(handler).toHaveBeenCalledTimes(1);
       expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: mode });
-      expect(controlBar.densityLayer).toBe(mode);
       expect(plot.config).toEqual({ pointSize: 42, densityLayer: mode });
-      expect(items()).toHaveLength(0);
     },
   );
 
@@ -111,6 +120,7 @@ describe('control-bar contours menu', () => {
     await controlBar.updateComplete;
     trigger()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     await controlBar.updateComplete;
+    await afterNextPaint();
 
     expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: 'auto' });
     expect(items()).toHaveLength(0);

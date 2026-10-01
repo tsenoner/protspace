@@ -155,13 +155,14 @@ export class ProtspaceControlBar extends LitElement {
   @state() private allProteinIds: string[] = [];
   @state() private selectedIdsChips: string[] = [];
 
-  // A pick from the annotation or projection menu, the search box or the Clear
-  // button re-stages every point. The menu closes and the pick shows in the frame
-  // of the input; the change itself runs after that frame is painted. One commit
-  // per control, so a newer pick replaces one still waiting, and a programmatic
-  // apply drops it.
+  // A pick from the annotation, projection or contour menu, the search box or the
+  // Clear button re-stages every point. The menu closes and the pick shows in the
+  // frame of the input; the change itself runs after that frame is painted. One
+  // commit per control, so a newer pick replaces one still waiting, and a
+  // programmatic apply drops it.
   private readonly _annotationCommit = new AfterPaintCommit();
   private readonly _projectionCommit = new AfterPaintCommit();
+  private readonly _densityCommit = new AfterPaintCommit();
   private readonly _selectionCommit = new AfterPaintCommit();
   /** The menu pick waiting for its commit; the trigger shows it until then. */
   @state() private _pendingAnnotation: string | null = null;
@@ -514,20 +515,24 @@ export class ProtspaceControlBar extends LitElement {
     this.showDensityMenu = false;
     this.densityHighlightIndex = -1;
     this.densityLayer = mode;
-    if (this.autoSync && this._scatterplotElement) {
-      const scatterplot = this._scatterplotElement as ScatterplotElementLike;
-      scatterplot.config = {
-        ...(scatterplot.config ?? {}),
-        densityLayer: mode,
-      };
-    }
-    this.dispatchEvent(
-      new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
-        detail: { densityLayer: mode },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    // Reads `densityLayer` when it runs, so a programmatic set made meanwhile wins.
+    this._densityCommit.schedule(() => {
+      const densityLayer = this.densityLayer;
+      if (this.autoSync && this._scatterplotElement) {
+        const scatterplot = this._scatterplotElement as ScatterplotElementLike;
+        scatterplot.config = {
+          ...(scatterplot.config ?? {}),
+          densityLayer,
+        };
+      }
+      this.dispatchEvent(
+        new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
+          detail: { densityLayer },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    });
   }
 
   private handleClearSelections() {
@@ -1372,6 +1377,7 @@ export class ProtspaceControlBar extends LitElement {
   private _cancelPendingCommits() {
     this._annotationCommit.cancel();
     this._projectionCommit.cancel();
+    this._densityCommit.cancel();
     this._selectionCommit.cancel();
     this._pendingAnnotation = null;
     this._pendingProjection = null;
