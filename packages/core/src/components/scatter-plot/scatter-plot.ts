@@ -45,6 +45,7 @@ import {
 } from './webgl';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
+import { sameMaterialization } from './styling/same-materialization';
 import type { RendererDegradedDetail } from './scatter-plot.events';
 import { PointGridIndex } from './interaction/point-grid-index';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
@@ -1106,10 +1107,17 @@ export class ProtspaceScatterplot extends LitElement {
       this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
 
     // A settings change that leaves the selected annotation's binning alone (another numeric
-    // annotation's settings, or an equal rebin) hands back the very object the plot was last built
-    // from. Re-staging then would repeat the whole upload for identical output (~500 ms at 573K).
-    const unchanged = this._plotData.length > 0 && materializedData === this._lastDataRef;
-    if (!unchanged) {
+    // annotation's settings, or a rebin onto the same bins, as when the legend publishes the
+    // defaults the plot already used) reproduces what the plot was last built from. Re-staging
+    // then would repeat the whole upload for identical output (~500 ms at 573K).
+    const unchanged =
+      this._plotData.length > 0 &&
+      this._lastDataRef !== null &&
+      sameMaterialization(this._lastDataRef, materializedData, this.selectedAnnotation);
+    if (unchanged) {
+      // Equal in content, so later fast paths may keep treating the plot as built from it.
+      this._lastDataRef = materializedData;
+    } else {
       if (this._plotData.length > 0) {
         this._refreshSelectedAnnotationValues(displayData);
       } else {

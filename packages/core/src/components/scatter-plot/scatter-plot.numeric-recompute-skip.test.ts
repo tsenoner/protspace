@@ -138,6 +138,19 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
     expect(requestRender).not.toHaveBeenCalled();
   });
 
+  it('skips the re-stage when the first settings are the defaults the plot already used', () => {
+    build('score', {});
+
+    // What the legend publishes for a numeric annotation nobody has customised.
+    sp.numericAnnotationSettings = {
+      score: { binCount: 10, strategy: 'quantile', paletteId: 'batlow', reverseGradient: false },
+    };
+    sp._runNumericRecomputeBody();
+
+    expect(renderer.invalidateStyleCache).not.toHaveBeenCalled();
+    expect(requestRender).not.toHaveBeenCalled();
+  });
+
   it('re-stages when the selected annotation is rebinned', () => {
     build('score', { score: settings(3) });
     const plotData = sp._plotData;
@@ -150,7 +163,7 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
     expect(sp._plotData).not.toBe(plotData);
   });
 
-  it('re-stages when the first settings for the selected annotation arrive', () => {
+  it('re-stages when the first settings for the selected annotation change its bins', () => {
     build('score', {});
 
     sp.numericAnnotationSettings = { score: settings(5) };
