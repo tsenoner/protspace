@@ -4,7 +4,12 @@ import { customElement } from '../../utils/safe-custom-element';
 import { StructureService, getBaseAccession } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
-import { createMolstarViewer, type MolstarViewer, type StructureColorMode } from './molstar-loader';
+import {
+  createMolstarViewer,
+  prefetchMolstar,
+  type MolstarViewer,
+  type StructureColorMode,
+} from './molstar-loader';
 import { RESOURCE_LINKS } from './header-links';
 import {
   createStructureErrorEventDetail,
@@ -77,10 +82,22 @@ export class ProtspaceStructureViewer extends LitElement {
 
     if (this._scatterplotElement && this._proteinClickHandler) {
       this._scatterplotElement.removeEventListener('protein-click', this._proteinClickHandler);
+      this._scatterplotElement.removeEventListener('protein-hover', this._proteinHoverHandler);
     }
   }
 
   private _proteinClickHandler: (e: Event) => void = (e: Event) => this._handleProteinClick(e);
+
+  /**
+   * The first point the pointer rests on is the earliest sign the user may open a structure, and
+   * it comes seconds before the click. Prefetching then (rather than on page load) keeps the
+   * ~1.3 MB download off every visit that never reaches a structure, touch devices included.
+   */
+  private _proteinHoverHandler: (e: Event) => void = (e: Event) => {
+    if ((e as CustomEvent).detail?.proteinId == null) return;
+    this._scatterplotElement?.removeEventListener('protein-hover', this._proteinHoverHandler);
+    prefetchMolstar();
+  };
 
   private _setupAutoSync() {
     // Find scatterplot element
@@ -90,6 +107,7 @@ export class ProtspaceStructureViewer extends LitElement {
       if (this._scatterplotElement) {
         // Listen for protein clicks
         this._scatterplotElement.addEventListener('protein-click', this._proteinClickHandler);
+        this._scatterplotElement.addEventListener('protein-hover', this._proteinHoverHandler);
 
         // Initially hide if autoShow is enabled
         if (this.autoShow && !this.proteinId) {
