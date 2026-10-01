@@ -7,7 +7,8 @@
  * point grid is still rebuilt on the next frame (~30 ms at 573K).
  *
  * As in scatter-plot.render-coalescing.test.ts, the element stays unattached and
- * a real WebGLRenderer on the mock WebGL2 canvas is attached by hand.
+ * a real WebGLRenderer on the mock WebGL2 canvas is attached by hand; the last
+ * test attaches one to run Lit's update cycle.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { PlotData, ScalePair, VisualizationData } from '@protspace/utils';
@@ -132,5 +133,47 @@ describe('scatter-plot resize', () => {
     });
     // The old positions are empty now: p1 moved from (290, 136) to (542, 100).
     expect(el.pickInteractivePointAt(before.x(XS[1]), before.y(YS[1]))).toBeNull();
+  });
+
+  it('resets the duplicate overlay on the next frame', () => {
+    const { el } = makePlot();
+    const reset = vi.spyOn(el._dupOverlay, 'resetState');
+    sizeTo(el, 1000, 700);
+    el._updateSizeAndRender();
+    expect(reset).not.toHaveBeenCalled();
+    runFrame();
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cancel a rebuild that new data already asked for', () => {
+    const { el, rebuild } = makePlot();
+    el.data = makeData([0, 3, 5, 20]);
+    el._processData();
+    // What updated() schedules for a geometry change.
+    (el as unknown as { _schedulePointGridIndexRebuild(): void })._schedulePointGridIndexRebuild();
+    sizeTo(el, 1000, 700);
+    el._updateSizeAndRender();
+    runFrame();
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(el.pickInteractivePointAt(el._scales!.x(20), el._scales!.y(YS[3]))?.id).toBe('p3');
+  });
+
+  it('draws once per step: the update the new size triggers does not draw again', async () => {
+    const el = document.createElement('protspace-scatterplot') as Internals;
+    document.body.appendChild(el);
+    el.data = makeData();
+    el.selectedAnnotation = 'fam';
+    await el.updateComplete;
+    runFrame();
+    await el.updateComplete;
+    runFrame();
+
+    const render = vi.spyOn(el, '_renderPlot');
+    sizeTo(el, 1000, 700);
+    el._updateSizeAndRender();
+    await el.updateComplete;
+    runFrame();
+    expect(render).toHaveBeenCalledTimes(1);
+    el.remove();
   });
 });

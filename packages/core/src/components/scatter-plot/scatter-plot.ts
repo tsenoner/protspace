@@ -83,12 +83,16 @@ const ZOOM_IDENTITY_EPSILON = 1e-6;
 
 // Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
 // affect only the template or are rendered by the selection block. Zoom
-// transforms already redraw through the interaction controller's RAF.
+// transforms already redraw through the interaction controller's RAF. Both
+// writers of _mergedConfig render themselves: the resize path draws on the spot,
+// and a config merge happens inside the update its `config` change already
+// renders, so its echo update redrew the same frame again.
 const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   'selectedProteinIds',
   'highlightedProteinIds',
   '_focusedValues',
   '_isZoomedIn',
+  '_mergedConfig',
 ]);
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
