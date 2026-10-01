@@ -179,3 +179,60 @@ describe('sortIndicesByDepthDescending parity with the comparator', () => {
     expect(order[3]).toBe(9);
   });
 });
+
+describe('sortIndicesByDepthDescending with a radix scratch buffer', () => {
+  /** The comparator sort, as the radix sort must reproduce it. */
+  function comparatorOrder(depths: Float32Array, count: number): number[] {
+    const order = new Uint32Array(count);
+    sortIndicesByDepthDescending(order, depths, count);
+    return Array.from(order);
+  }
+
+  function radixOrder(depths: Float32Array, count: number): number[] {
+    const order = new Uint32Array(depths.length);
+    sortIndicesByDepthDescending(order, depths, count, new Uint32Array(depths.length));
+    return Array.from(order.subarray(0, count));
+  }
+
+  function randomDepths(n: number, pick: (r: number) => number): Float32Array {
+    let s = 12345;
+    const next = () => {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 2 ** 32;
+    };
+    return Float32Array.from({ length: n }, () => pick(next()));
+  }
+
+  it('orders paint depths exactly as the comparator does, ties by index', () => {
+    // Few distinct values, like painter tiers times legend ranks: long equal runs.
+    const tiers = [0.75, 0.75 + 0.24 * 0.001, 0.5, 0.25 + 0.24 * 0.2, 0.0102, 1];
+    const depths = randomDepths(20_000, (r) => tiers[Math.floor(r * tiers.length)]);
+    expect(radixOrder(depths, depths.length)).toEqual(comparatorOrder(depths, depths.length));
+  });
+
+  it('orders continuous, negative, infinite, subnormal and signed-zero depths', () => {
+    const specials = [0, -0, Infinity, -Infinity, 1e-45, -1e-45, 3.4e38, -3.4e38];
+    const depths = randomDepths(10_000, (r) =>
+      r < 0.2 ? specials[Math.floor(r * 40)] : (r - 0.6) * 1000,
+    );
+    expect(radixOrder(depths, depths.length)).toEqual(comparatorOrder(depths, depths.length));
+  });
+
+  it('sorts only the first count slots', () => {
+    const depths = randomDepths(6000, (r) => Math.round(r * 50) / 50);
+    expect(radixOrder(depths, 4000)).toEqual(comparatorOrder(depths, 4000));
+  });
+
+  it('falls back to the comparator when a depth is NaN', () => {
+    const depths = randomDepths(5000, (r) => r);
+    depths[1234] = NaN;
+    expect(radixOrder(depths, depths.length)).toEqual(comparatorOrder(depths, depths.length));
+  });
+
+  it('falls back to the comparator when the scratch is too short', () => {
+    const depths = randomDepths(5000, (r) => r);
+    const order = new Uint32Array(5000);
+    sortIndicesByDepthDescending(order, depths, 5000, new Uint32Array(10));
+    expect(Array.from(order)).toEqual(comparatorOrder(depths, 5000));
+  });
+});

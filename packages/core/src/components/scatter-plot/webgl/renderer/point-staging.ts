@@ -62,6 +62,8 @@ interface PaintOrderPlan {
  *                     position `k` (i.e. for `order[k]`). Called once per slot in
  *                     sorted order; lets the caller hook per-slot side effects
  *                     (e.g. tracking rendered IDs) while we locate `firstSelected`.
+ * @param sortScratch  Optional buffer (length >= count) that lets the sort run as a
+ *                     radix sort; the order is the same without it.
  */
 export function buildPaintOrder(
   order: Uint32Array,
@@ -69,8 +71,9 @@ export function buildPaintOrder(
   count: number,
   selectionActive: boolean,
   getOpacityAtSortedSlot: (sortedIndex: number, srcSlot: number) => number,
+  sortScratch?: Uint32Array,
 ): PaintOrderPlan {
-  sortIndicesByDepthDescending(order, depths, count);
+  sortIndicesByDepthDescending(order, depths, count, sortScratch);
 
   let firstSelected = -1;
   for (let k = 0; k < count; k++) {
