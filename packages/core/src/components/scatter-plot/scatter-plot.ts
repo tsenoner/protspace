@@ -96,6 +96,14 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
 const DEFAULT_NUMERIC_BIN_COUNT = 10;
 
+/** Same keys, same values. Style getters read these maps only by key lookup. */
+function sameMapping<T>(current: Record<string, T> | null, next: Record<string, T>): boolean {
+  if (!current) return false;
+  const keys = Object.keys(current);
+  if (keys.length !== Object.keys(next).length) return false;
+  return keys.every((k) => Object.prototype.hasOwnProperty.call(next, k) && current[k] === next[k]);
+}
+
 /**
  * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
  * field is compared by strict equality (===) in the guard in that method.
@@ -223,6 +231,12 @@ export class ProtspaceScatterplot extends LitElement {
     eatOverlayEnabled: boolean;
   } | null = null;
   private _quadtreeRebuildRafId: number | null = null;
+  // One interaction used to re-stage the buffers once per state change it
+  // touched: each plot.updated() and each legend mapping event rendered on the
+  // spot. They now call _requestRender(), which draws once on the next frame.
+  // The renderer ORs every invalidate*() into its own dirty flags, so that one
+  // render stages the union of what the requests needed.
+  private _renderRafId: number | null = null;
   // Slot list the quadtree was last rebuilt with (legend/filter-visible
   // slots). Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
@@ -550,6 +564,7 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._quadtreeRebuildRafId);
       this._quadtreeRebuildRafId = null;
     }
+    this._cancelRequestedRender();
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
@@ -625,6 +640,10 @@ export class ProtspaceScatterplot extends LitElement {
   private _handleZOrderChange = (event: Event) => {
     const { detail } = event as LegendZOrderChangeEvent;
     if (!isLegendZOrderDetail(detail)) return; // F-19: skip rather than overwrite GPU state with undefined
+    // The legend re-sends its mapping on every rebuild, including ones that
+    // cannot change it (a projection switch, a data-change echo). An equal
+    // mapping gives the same depth for every point, so there is nothing to redo.
+    if (sameMapping(this._zOrderMapping, detail.zOrderMapping)) return;
     this._zOrderMapping = detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
     this._styleGettersCache = null;
@@ -635,13 +654,20 @@ export class ProtspaceScatterplot extends LitElement {
       // plain (not @state), so updated()'s catch-all never fires a second render.
       this._webglRenderer?.invalidateDepthOrder();
       this._webglRenderer?.invalidateStyleCache();
-      this._renderPlot();
+      this._requestRender();
     }
   };
 
   private _handleColorMappingChange = (event: Event) => {
     const { detail } = event as LegendColorMappingChangeEvent;
     if (!isLegendColorMappingDetail(detail)) return; // F-19
+    // Equal maps give every point the same colour and shape: nothing to redo.
+    if (
+      sameMapping(this._colorMapping, detail.colorMapping) &&
+      sameMapping(this._shapeMapping, detail.shapeMapping)
+    ) {
+      return;
+    }
     this._colorMapping = detail.colorMapping;
     this._shapeMapping = detail.shapeMapping;
     const colorOnly = detail.colorOnly ?? false;
@@ -655,7 +681,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateDepthOrder();
       }
       this._webglRenderer?.invalidateStyleCache();
-      this._renderPlot(); // single render path (F-31)
+      this._requestRender(); // single render path (F-31)
     }
   };
 
@@ -900,13 +926,13 @@ export class ProtspaceScatterplot extends LitElement {
       this._updateSelectionOverlays();
       this._syncWebglSelectionActive();
       this._webglRenderer?.invalidateStyleCache();
-      this._renderPlot();
+      this._requestRender();
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
     const canSkipRender =
       changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
     if (!canSkipRender) {
-      this._renderPlot();
+      this._requestRender();
       this._updateSelectionOverlays();
     }
   }
@@ -1075,7 +1101,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._webglRenderer?.invalidateStyleCache();
     this._updateStyleSignature();
     this._webglRenderer?.setStyleSignature(this._styleSig);
-    this._renderPlot();
+    this._requestRender();
     this._updateSelectionOverlays();
 
     const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
@@ -1214,9 +1240,9 @@ export class ProtspaceScatterplot extends LitElement {
     // re-trigger them after the deferred quadtree rebuild.
     this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
 
-    // A rebuild can change the indexed (isInteractive) slot set, so re-render to
-    // make un-hidden points reappear without waiting for a pan or zoom.
-    this._renderPlot();
+    // No render: the canvas does not read the quadtree or the slot list. This
+    // render once refreshed the viewport-cull cache, which #456 removed, and
+    // every caller that changes what is drawn requests its own render.
   }
 
   private _scheduleQuadtreeRebuild() {
@@ -1301,7 +1327,11 @@ export class ProtspaceScatterplot extends LitElement {
     this._mergedConfig = { ...this._mergedConfig, width, height };
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
     this._scheduleQuadtreeRebuild();
-    this._renderPlot();
+    // Synchronous, not _requestRender(): resize() just cleared the canvas, and a
+    // ResizeObserver callback runs after this frame's rAF callbacks, so a
+    // deferred render would paint one blank frame. One observer callback per
+    // frame keeps this at one re-stage per frame.
+    this._renderNow();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();
   }
@@ -1389,6 +1419,40 @@ export class ProtspaceScatterplot extends LitElement {
     } else {
       clearVisual();
     }
+  }
+
+  /**
+   * Ask for a full render on the next frame. Every request made before that
+   * frame shares the one render. Without requestAnimationFrame (some test DOMs)
+   * it renders immediately, as every call site did before coalescing.
+   */
+  private _requestRender() {
+    if (this._renderRafId !== null) return;
+    if (typeof requestAnimationFrame !== 'function') {
+      this._renderPlot();
+      return;
+    }
+    this._renderRafId = requestAnimationFrame(() => this._flushRender());
+  }
+
+  /**
+   * Run a requested render now, if one is waiting. Anything that reads what the
+   * renderer last drew (export, data extent, hit-testing) calls this first.
+   */
+  private _flushRender() {
+    if (this._renderRafId !== null) this._renderNow();
+  }
+
+  /** Render now and drop any render requested for the next frame. */
+  private _renderNow() {
+    this._cancelRequestedRender();
+    this._renderPlot();
+  }
+
+  private _cancelRequestedRender() {
+    if (this._renderRafId === null) return;
+    cancelAnimationFrame(this._renderRafId);
+    this._renderRafId = null;
   }
 
   private _renderPlot() {
@@ -1813,6 +1877,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (!this._getVisibilityModel().isInteractive(nearestPoint)) return null;
 
     // Verify the point is actually rendered (not excluded due to point limits)
+    this._flushRender();
     if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
       return null;
     }
@@ -2177,7 +2242,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.requestUpdate();
 
     this.updateComplete.then(() => {
-      this._renderPlot();
+      this._requestRender();
     });
   }
 
@@ -2498,6 +2563,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (!this._webglRenderer) {
       throw new Error('WebGL renderer not initialized');
     }
+    // The export stages from the points the renderer last drew.
+    this._flushRender();
 
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw new Error('Width and height must be positive numbers');
@@ -2632,6 +2699,7 @@ export class ProtspaceScatterplot extends LitElement {
     options: { padded?: boolean } = {},
   ): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
     if (!this._webglRenderer) return null;
+    this._flushRender();
     const ext = this._webglRenderer.getDataExtent();
     if (!ext) return null;
     if (!options.padded) return ext;

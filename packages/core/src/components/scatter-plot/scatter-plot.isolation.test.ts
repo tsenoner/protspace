@@ -199,6 +199,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _buildQuadtree(): void;
     _updateStyleSignature(): void;
     _renderPlot(): void;
+    _flushRender(): void;
     _reprocessAndRefresh(): void;
     isolateSelection(): void;
     resetIsolation(): void;
@@ -267,7 +268,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildQuadtree → requestUpdate, then defers renderPlot', async () => {
+  it('isolateSelection runs processData → buildQuadtree → requestUpdate, then requests renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
@@ -278,7 +279,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildQuadtree']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
+    el._flushRender();
     expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
   });
 
@@ -304,7 +307,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildQuadtree']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
+    el._flushRender();
     expect(calls).toEqual(['processData', 'buildQuadtree', 'renderPlot']);
   });
 
