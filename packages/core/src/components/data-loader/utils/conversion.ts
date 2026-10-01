@@ -28,19 +28,7 @@ import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
 import type { Rows, GenericRow } from './types';
 import { decodeField } from './annotation-codec';
-
-/**
- * Fast yield using MessageChannel instead of setTimeout(0).
- * setTimeout(0) has a ~4ms minimum delay in browsers;
- * MessageChannel.postMessage fires in ~0.1ms.
- */
-function fastYield(): Promise<void> {
-  return new Promise((resolve) => {
-    const ch = new MessageChannel();
-    ch.port1.onmessage = () => resolve();
-    ch.port2.postMessage(null);
-  });
-}
+import { fastYield } from './fast-yield';
 
 /** Column names that should be excluded when identifying annotation columns */
 const ID_COLUMNS = [
