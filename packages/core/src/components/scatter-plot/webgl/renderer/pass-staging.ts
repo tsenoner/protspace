@@ -157,6 +157,8 @@ function copyRecordStyle(
  * The alpha a slot is staged with. With `target.recordIds` the renderer applies
  * the legend's hiding per record, so a slot with a record carries its opacity
  * as if nothing were hidden, and its record id; -1 marks a slot without one.
+ * Such an opacity is `base`, or 0 where hidden (see `hiddenRecords`), so only a
+ * zero needs `base` read.
  */
 function slotAlpha(
   target: StagePointStyleArrays,
@@ -165,10 +167,11 @@ function slotAlpha(
   slot: number,
   r: number,
 ): number {
+  const opacity = scratch.opacity[slot];
   const ids = target.recordIds;
-  if (!ids) return scratch.opacity[slot];
+  if (!ids) return opacity;
   ids[idx] = r;
-  return r === PER_POINT_STYLE ? scratch.opacity[slot] : scratch.base[slot];
+  return opacity === 0 && r !== PER_POINT_STYLE ? scratch.base[slot] : opacity;
 }
 
 /**
