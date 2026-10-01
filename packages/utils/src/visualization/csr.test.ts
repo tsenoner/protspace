@@ -148,3 +148,80 @@ describe('remapCsr', () => {
     ]);
   });
 });
+
+describe('score runs', () => {
+  /** Deterministic column: `rows` rows of 0..3 hits, each hit with 0..3 scores. */
+  function randomColumn(rows: number, seed: number): CsrAnnotationData {
+    let state = seed;
+    const next = (n: number) => {
+      state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+      return (state >>> 8) % n;
+    };
+    const offsets = [0];
+    const codes: number[] = [];
+    const scoreOffsets = [0];
+    const values: number[] = [];
+    const evidence: number[] = [];
+    for (let row = 0; row < rows; row++) {
+      const hits = next(4);
+      for (let h = 0; h < hits; h++) {
+        codes.push(next(5));
+        evidence.push(next(3) - 1);
+        const scores = next(4);
+        for (let s = 0; s < scores; s++) values.push(values.length + 0.5);
+        scoreOffsets.push(values.length);
+      }
+      offsets.push(codes.length);
+    }
+    return {
+      kind: 'csr',
+      offsets: Int32Array.from(offsets),
+      codes: Int32Array.from(codes),
+      length: rows,
+      scores: { offsets: Int32Array.from(scoreOffsets), values: Float64Array.from(values) },
+      evidence: { codes: Int32Array.from(evidence), dict: ['IDA', 'IEA'] },
+    };
+  }
+
+  it('copies a run of consecutive hits across the synthetic hits planned between them', () => {
+    const out = gatherCsr(source(), {
+      offsets: Int32Array.of(0, 3, 5),
+      hits: Int32Array.of(2, syntheticHit(4), 3, syntheticHit(4), 4),
+    });
+    expect(rowsOf(out)).toEqual([
+      [
+        [2, [20, 21], null],
+        [4, [], null],
+        [1, [30], 'ISS'],
+      ],
+      [
+        [4, [], null],
+        [0, [40], 'IDA'],
+      ],
+    ]);
+  });
+
+  it.each([
+    ['dropping one code', Int32Array.of(0, -1, 1, 2, 3), -1],
+    ['dropping two codes and filling', Int32Array.of(-1, 0, -1, 1, 2), 3],
+    ['renumbering only', Int32Array.of(4, 3, 2, 1, 0), -1],
+    ['filling only', null, 5],
+  ])('remapCsr keeps every hit with its own scores and evidence (%s)', (_label, remap, fill) => {
+    for (let seed = 1; seed <= 5; seed++) {
+      const src = randomColumn(300, seed);
+      const { column } = remapCsr(src, remap, fill);
+      // Per hit, row by row: what the column held, renumbered, empty rows filled.
+      const expected = rowsOf(src).map((hits) => {
+        const kept = hits
+          .map(([code, scores, evidence]) => [
+            remap ? remap[code as number] : code,
+            scores,
+            evidence,
+          ])
+          .filter(([code]) => (code as number) >= 0);
+        return kept.length === 0 && fill >= 0 ? [[fill, [], null]] : kept;
+      });
+      expect(rowsOf(column)).toEqual(expected);
+    }
+  });
+});

@@ -18,6 +18,9 @@ export function syntheticHit(code: number): number {
   return ~code;
 }
 
+/** Score runs up to this many values are copied in a loop rather than through a subarray. */
+const SHORT_RUN = 16;
+
 /**
  * Build a CSR column from `plan`, carrying each copied hit's score run and evidence code
  * along with its label, so a rebuild can never leave them addressing another hit.
@@ -36,41 +39,63 @@ export function gatherCsr(
     throw new Error(`CSR plan offsets do not span its ${hitCount} hits`);
   }
 
+  const srcCodes = src.codes;
+  const fromScores = src.scores?.offsets;
+  const srcEvidence = src.evidence?.codes;
   const codes = new Int32Array(hitCount);
+  const scoreOffsets = fromScores ? new Int32Array(hitCount + 1) : null;
+  const evidenceCodes = srcEvidence ? new Int32Array(hitCount) : null;
+  // One pass for the codes, the score offsets and the evidence codes.
+  let total = 0;
   for (let k = 0; k < hitCount; k++) {
     const hit = hits[k];
-    codes[k] = hit < 0 ? ~hit : remap ? remap[src.codes[hit]] : src.codes[hit];
+    if (hit < 0) {
+      codes[k] = ~hit;
+      if (evidenceCodes) evidenceCodes[k] = -1;
+    } else {
+      codes[k] = remap ? remap[srcCodes[hit]] : srcCodes[hit];
+      if (fromScores) total += fromScores[hit + 1] - fromScores[hit];
+      if (evidenceCodes) evidenceCodes[k] = srcEvidence![hit];
+    }
+    if (scoreOffsets) scoreOffsets[k + 1] = total;
   }
 
   let scores: CsrScores | undefined;
-  if (src.scores) {
-    const from = src.scores.offsets;
-    const scoreOffsets = new Int32Array(hitCount + 1);
-    let total = 0;
-    for (let k = 0; k < hitCount; k++) {
-      const hit = hits[k];
-      if (hit >= 0) total += from[hit + 1] - from[hit];
-      scoreOffsets[k + 1] = total;
-    }
+  if (src.scores && fromScores && scoreOffsets) {
+    const srcValues = src.scores.values;
     const values = new Float64Array(total);
-    for (let k = 0; k < hitCount; k++) {
-      const hit = hits[k];
-      if (hit >= 0 && from[hit + 1] > from[hit]) {
-        values.set(src.scores.values.subarray(from[hit], from[hit + 1]), scoreOffsets[k]);
+    // Scores are copied a run at a time: consecutive source hits own adjacent score
+    // runs, and so do the hits they become, since a synthetic hit in between owns none.
+    let k = 0;
+    while (k < hitCount) {
+      const first = hits[k];
+      if (first < 0) {
+        k++;
+        continue;
       }
+      let last = first;
+      let next = k + 1;
+      while (next < hitCount) {
+        const hit = hits[next];
+        if (hit >= 0 && hit !== last + 1) break;
+        if (hit >= 0) last = hit;
+        next++;
+      }
+      const start = fromScores[first];
+      const end = fromScores[last + 1];
+      const to = scoreOffsets[k];
+      if (end - start > SHORT_RUN) {
+        values.set(srcValues.subarray(start, end), to);
+      } else {
+        for (let i = start; i < end; i++) values[to + i - start] = srcValues[i];
+      }
+      k = next;
     }
     scores = { offsets: scoreOffsets, values };
   }
 
-  let evidence: CsrEvidence | undefined;
-  if (src.evidence) {
-    const evidenceCodes = new Int32Array(hitCount);
-    for (let k = 0; k < hitCount; k++) {
-      const hit = hits[k];
-      evidenceCodes[k] = hit < 0 ? -1 : src.evidence.codes[hit];
-    }
-    evidence = { codes: evidenceCodes, dict: src.evidence.dict };
-  }
+  const evidence: CsrEvidence | undefined =
+    src.evidence && evidenceCodes ? { codes: evidenceCodes, dict: src.evidence.dict } : undefined;
 
   return {
     kind: 'csr',
@@ -97,30 +122,32 @@ export function remapCsr(
 ): { column: CsrAnnotationData; filledRows: number } {
   const { offsets: srcOffsets, codes: srcCodes, length: rows } = src;
   const fill = emptyRowCode >= 0;
-  const keep = (hit: number) => !remap || remap[srcCodes[hit]] >= 0;
+  if (!remap) {
+    let emptyRow = false;
+    for (let row = 0; fill && !emptyRow && row < rows; row++) {
+      emptyRow = srcOffsets[row + 1] === srcOffsets[row];
+    }
+    if (!emptyRow) return { column: src, filledRows: 0 };
+  }
 
+  // Planned in one pass into a buffer sized for the most hits the plan can hold: every
+  // source hit, plus one synthetic hit per row when rows are filled.
+  const hitsBuffer = new Int32Array(srcOffsets[rows] - srcOffsets[0] + (fill ? rows : 0));
   const offsets = new Int32Array(rows + 1);
-  let total = 0;
+  let write = 0;
   let filledRows = 0;
   for (let row = 0; row < rows; row++) {
-    let kept = 0;
-    for (let hit = srcOffsets[row]; hit < srcOffsets[row + 1]; hit++) if (keep(hit)) kept++;
-    if (kept === 0 && fill) {
-      kept = 1;
+    const rowStart = write;
+    const end = srcOffsets[row + 1];
+    for (let hit = srcOffsets[row]; hit < end; hit++) {
+      if (!remap || remap[srcCodes[hit]] >= 0) hitsBuffer[write++] = hit;
+    }
+    if (write === rowStart && fill) {
+      hitsBuffer[write++] = syntheticHit(emptyRowCode);
       filledRows++;
     }
-    total += kept;
-    offsets[row + 1] = total;
+    offsets[row + 1] = write;
   }
-  if (!remap && filledRows === 0) return { column: src, filledRows };
-
-  const hits = new Int32Array(total);
-  let write = 0;
-  for (let row = 0; row < rows; row++) {
-    for (let hit = srcOffsets[row]; hit < srcOffsets[row + 1]; hit++) {
-      if (keep(hit)) hits[write++] = hit;
-    }
-    if (write === offsets[row] && fill) hits[write++] = syntheticHit(emptyRowCode);
-  }
+  const hits = hitsBuffer.subarray(0, write);
   return { column: gatherCsr(src, { offsets, hits }, remap ?? undefined), filledRows };
 }
