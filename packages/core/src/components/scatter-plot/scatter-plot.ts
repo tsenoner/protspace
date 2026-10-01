@@ -129,6 +129,40 @@ type VisibilityModelMemoKey = {
   focusedValues: string[] | null;
 };
 
+/** Inputs of the interactable-protein memo, compared field by field like the one above. */
+type InteractableKey = {
+  originalIndices: Int32Array | null;
+  plotLength: number;
+  data: VisualizationData | null;
+  selectedAnnotation: string;
+  hiddenAnnotationValues: string[];
+  selectedProteinIds: string[] | null;
+  highlightedProteinIds: string[] | null;
+  focusedValues: string[] | null;
+  baseOpacity: number;
+  selectedOpacity: number;
+  fadedOpacity: number;
+  eatOverlayEnabled: boolean;
+};
+
+function sameInteractableKey(a: InteractableKey | null, b: InteractableKey): boolean {
+  return (
+    !!a &&
+    a.originalIndices === b.originalIndices &&
+    a.plotLength === b.plotLength &&
+    a.data === b.data &&
+    a.selectedAnnotation === b.selectedAnnotation &&
+    a.hiddenAnnotationValues === b.hiddenAnnotationValues &&
+    a.selectedProteinIds === b.selectedProteinIds &&
+    a.highlightedProteinIds === b.highlightedProteinIds &&
+    a.focusedValues === b.focusedValues &&
+    a.baseOpacity === b.baseOpacity &&
+    a.selectedOpacity === b.selectedOpacity &&
+    a.fadedOpacity === b.fadedOpacity &&
+    a.eatOverlayEnabled === b.eatOverlayEnabled
+  );
+}
+
 // Default configuration moved to config.ts
 
 /**
@@ -221,20 +255,10 @@ export class ProtspaceScatterplot extends LitElement {
   // switch clones _plotData (new container, same originalIndices) and must
   // reuse the cache since interactivity is independent of x/y coordinates.
   private _interactableProteinIdsCache: ReadonlySet<string> | null = null;
-  private _visiblePointCountKey: {
-    originalIndices: Int32Array | null;
-    plotLength: number;
-    data: VisualizationData | null;
-    selectedAnnotation: string;
-    hiddenAnnotationValues: string[];
-    selectedProteinIds: string[] | null;
-    highlightedProteinIds: string[] | null;
-    focusedValues: string[] | null;
-    baseOpacity: number;
-    selectedOpacity: number;
-    fadedOpacity: number;
-    eatOverlayEnabled: boolean;
-  } | null = null;
+  private _visiblePointCountKey: InteractableKey | null = null;
+  // The interactable count alone, for the point-count label (see `_getVisiblePointCount`).
+  private _interactableCount = 0;
+  private _interactableCountKey: InteractableKey | null = null;
   private _pointGridIndexRebuildRafId: number | null = null;
   // One interaction used to re-stage the buffers once per state change it
   // touched: each plot.updated() and each legend mapping event rendered on the
@@ -1700,41 +1724,15 @@ export class ProtspaceScatterplot extends LitElement {
    * reuses the cache — interactivity is independent of x/y coordinates.
    */
   private _getInteractableProteinIds(): ReadonlySet<string> {
-    const data =
-      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
-      this._getMaterializedData() ??
-      this.data;
-    const pd = this._plotData;
-    const baseOpacity = this._mergedConfig.baseOpacity;
-    const selectedOpacity = this._mergedConfig.selectedOpacity;
-    const fadedOpacity = this._mergedConfig.fadedOpacity;
-    // Selection/highlight can change membership whenever any opacity tier is non-interactive.
-    // Under the default all-positive tiers, connector-owned highlights reuse this cache.
-    const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
-    const selectedProteinIdsKey = allOpacityTiersInteractive ? null : this.selectedProteinIds;
-    const highlightedProteinIdsKey = allOpacityTiersInteractive ? null : this.highlightedProteinIds;
-    const focusedValuesKey = allOpacityTiersInteractive ? null : this._focusedValues;
-
-    const key = this._visiblePointCountKey;
+    const key = this._interactableKey();
     if (
       this._interactableProteinIdsCache !== null &&
-      key &&
-      key.originalIndices === pd.originalIndices &&
-      key.plotLength === pd.length &&
-      key.data === data &&
-      key.selectedAnnotation === this.selectedAnnotation &&
-      key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
-      key.selectedProteinIds === selectedProteinIdsKey &&
-      key.highlightedProteinIds === highlightedProteinIdsKey &&
-      key.focusedValues === focusedValuesKey &&
-      key.baseOpacity === baseOpacity &&
-      key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === this.eatOverlayEnabled
+      sameInteractableKey(this._visiblePointCountKey, key)
     ) {
       return this._interactableProteinIdsCache;
     }
 
+    const pd = this._plotData;
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
     const sp = this._scratchPoint;
@@ -1748,25 +1746,65 @@ export class ProtspaceScatterplot extends LitElement {
       if (model.isInteractive(sp)) proteinIds.add(sp.id);
     }
     this._interactableProteinIdsCache = proteinIds;
-    this._visiblePointCountKey = {
+    this._visiblePointCountKey = key;
+    return proteinIds;
+  }
+
+  /** What the interactable set depends on; see `_getInteractableProteinIds`. */
+  private _interactableKey(): InteractableKey {
+    const pd = this._plotData;
+    const baseOpacity = this._mergedConfig.baseOpacity;
+    const selectedOpacity = this._mergedConfig.selectedOpacity;
+    const fadedOpacity = this._mergedConfig.fadedOpacity;
+    // Selection/highlight can change membership whenever any opacity tier is non-interactive.
+    // Under the default all-positive tiers, connector-owned highlights reuse this cache.
+    const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
+    return {
       originalIndices: pd.originalIndices,
       plotLength: pd.length,
-      data,
+      data:
+        this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
+        this._getMaterializedData() ??
+        this.data,
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
-      selectedProteinIds: selectedProteinIdsKey,
-      highlightedProteinIds: highlightedProteinIdsKey,
-      focusedValues: focusedValuesKey,
+      selectedProteinIds: allOpacityTiersInteractive ? null : this.selectedProteinIds,
+      highlightedProteinIds: allOpacityTiersInteractive ? null : this.highlightedProteinIds,
+      focusedValues: allOpacityTiersInteractive ? null : this._focusedValues,
       baseOpacity,
       selectedOpacity,
       fadedOpacity,
       eatOverlayEnabled: this.eatOverlayEnabled,
     };
-    return proteinIds;
   }
 
+  /**
+   * The size of `_getInteractableProteinIds()`, counted without building the set:
+   * each slot is a distinct protein, so the interactive slots are its members.
+   * A legend toggle changes it, and at 573K points the set took ~25 ms.
+   */
   private _getVisiblePointCount(): number {
-    return this._getInteractableProteinIds().size;
+    const key = this._interactableKey();
+    if (
+      this._interactableProteinIdsCache !== null &&
+      sameInteractableKey(this._visiblePointCountKey, key)
+    ) {
+      return this._interactableProteinIdsCache.size;
+    }
+    if (sameInteractableKey(this._interactableCountKey, key)) return this._interactableCount;
+    const pd = this._plotData;
+    const model = this._getVisibilityModel();
+    const oi = pd.originalIndices;
+    const ids = pd.proteinIds;
+    let count = 0;
+    for (let s = 0; s < pd.length; s++) {
+      const origIdx = oi ? oi[s] : s;
+      // isInteractive: opacityOf(point) > 0.
+      if (model.opacityAt(origIdx, ids[origIdx]) > 0) count++;
+    }
+    this._interactableCount = count;
+    this._interactableCountKey = key;
+    return count;
   }
 
   private _getDepth(point: PlotDataPoint): number {

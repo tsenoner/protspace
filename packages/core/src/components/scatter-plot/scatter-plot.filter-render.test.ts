@@ -360,6 +360,30 @@ describe('scatter-plot visible point count', () => {
     expect(sp._getVisiblePointCount()).toBe(6);
   });
 
+  it('counts the interactable set without building it', () => {
+    const sp = makeScatter();
+    sp._mergedConfig = { ...sp._mergedConfig, fadedOpacity: 0 };
+    sp._processData();
+    const states: [string[], string[]][] = [
+      [[], []],
+      [['B'], []],
+      [['A'], ['p0', 'p4']],
+      [[], ['p4']],
+      [['A', 'B'], []],
+    ];
+    for (const [hidden, selected] of states) {
+      sp.hiddenAnnotationValues = hidden;
+      sp.selectedProteinIds = selected;
+      const count = sp._getVisiblePointCount();
+      expect(
+        (sp as unknown as { _interactableProteinIdsCache: unknown })._interactableProteinIdsCache,
+      ).toBeNull();
+      expect(count).toBe(sp.getInteractableProteinIds().size);
+      (sp as unknown as { _interactableProteinIdsCache: unknown })._interactableProteinIdsCache =
+        null;
+    }
+  });
+
   it('recounts after the hidden set changes (memo invalidation)', () => {
     const sp = makeScatter();
     sp._processData();
