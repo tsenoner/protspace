@@ -15,6 +15,7 @@ import {
   isAnyDropdownOpen,
   scrollHighlightedIntoView,
 } from '../../utils/dropdown-helpers';
+import { AfterPaintCommit } from '../../utils/after-paint-commit';
 import {
   DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
@@ -154,6 +155,16 @@ export class ProtspaceControlBar extends LitElement {
   @state() private allProteinIds: string[] = [];
   @state() private selectedIdsChips: string[] = [];
 
+  // A pick from the annotation or projection menu re-stages every point. The menu
+  // closes and the pick shows in the frame of the input; the change itself runs
+  // after that frame is painted. One commit per control, so a newer pick replaces
+  // one still waiting, and a programmatic apply drops it.
+  private readonly _annotationCommit = new AfterPaintCommit();
+  private readonly _projectionCommit = new AfterPaintCommit();
+  /** The menu pick waiting for its commit; the trigger shows it until then. */
+  @state() private _pendingAnnotation: string | null = null;
+  @state() private _pendingProjection: string | null = null;
+
   // Stable listeners for proper add/remove
   private _onDocumentClick = (event: Event) => this.handleDocumentClick(event);
   private _onDocumentKeydown = (event: KeyboardEvent) => this.handleDocumentKeydown(event);
@@ -222,7 +233,16 @@ export class ProtspaceControlBar extends LitElement {
     }
   }
 
+  private selectProjectionFromMenu(projection: string) {
+    this.showProjectionMenu = false;
+    this.projectionHighlightIndex = -1;
+    this._pendingProjection = projection;
+    this._projectionCommit.schedule(() => this.applyProjectionSelection(projection));
+  }
+
   applyProjectionSelection(projection: string) {
+    this._projectionCommit.cancel();
+    this._pendingProjection = null;
     this.selectedProjection = projection;
     this.showProjectionMenu = false;
     this.projectionHighlightIndex = -1;
@@ -261,7 +281,7 @@ export class ProtspaceControlBar extends LitElement {
         this.projectionHighlightIndex = index;
       },
       onSelect: (index) => {
-        this.applyProjectionSelection(this.projections[index]);
+        this.selectProjectionFromMenu(this.projections[index]);
       },
       onClose: () => {
         this.showProjectionMenu = false;
@@ -351,6 +371,8 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   applyAnnotationSelection(annotation: string) {
+    this._annotationCommit.cancel();
+    this._pendingAnnotation = null;
     this.selectedAnnotation = annotation;
 
     // If auto-sync is enabled, directly update the scatterplot
@@ -377,7 +399,9 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private handleAnnotationSelected(event: CustomEvent<{ annotation: string }>) {
-    this.applyAnnotationSelection(event.detail.annotation);
+    const { annotation } = event.detail;
+    this._pendingAnnotation = annotation;
+    this._annotationCommit.schedule(() => this.applyAnnotationSelection(annotation));
   }
 
   applyTooltipAnnotationsSelection(tooltipAnnotations: string[]) {
@@ -640,6 +664,7 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   public clearForNewDataset(_datasetHash: string, _clearPersistedState: boolean = true): void {
+    this._cancelPendingCommits();
     this.exportFormat = EXPORT_DEFAULTS.FORMAT;
     // A new dataset has different protein ids, so any active filter is stale. Clear
     // the badge/query here (the canonical per-dataset reset hook); the scatter plot's
@@ -711,7 +736,7 @@ export class ProtspaceControlBar extends LitElement {
                 aria-expanded=${this.showProjectionMenu}
               >
                 <span class="dropdown-trigger-text">
-                  ${this.selectedProjection || 'Select projection'}
+                  ${(this._pendingProjection ?? this.selectedProjection) || 'Select projection'}
                 </span>
                 <svg class="chevron-down" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -736,7 +761,7 @@ export class ProtspaceControlBar extends LitElement {
                                 : ''}"
                               role="option"
                               aria-selected=${projection === this.selectedProjection}
-                              @click=${() => this.applyProjectionSelection(projection)}
+                              @click=${() => this.selectProjectionFromMenu(projection)}
                               @mouseenter=${() => {
                                 this.projectionHighlightIndex = index;
                               }}
@@ -760,7 +785,7 @@ export class ProtspaceControlBar extends LitElement {
               .annotations=${this.annotations}
               .annotationDefinitions=${this._currentData?.annotations ?? {}}
               .eatAnnotations=${this._eatAnnotationKeys}
-              .selectedAnnotation=${this.selectedAnnotation}
+              .selectedAnnotation=${this._pendingAnnotation ?? this.selectedAnnotation}
               .selectedProjection=${this.selectedProjection}
               .statisticsRows=${this._currentData?.statisticsRows ?? NO_STATISTICS}
               .tooltipAnnotations=${this.tooltipAnnotations}
@@ -1316,6 +1341,7 @@ export class ProtspaceControlBar extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._cancelPendingCommits();
     document.removeEventListener('click', this._onDocumentClick);
     document.removeEventListener('keydown', this._onDocumentKeydown);
     this.removeEventListener('annotation-opened', this._onAnnotationOpened);
@@ -1336,6 +1362,14 @@ export class ProtspaceControlBar extends LitElement {
         this._onAutoDisableSelection,
       );
     }
+  }
+
+  /** A pick made on a dataset or element that is going away must not land later. */
+  private _cancelPendingCommits() {
+    this._annotationCommit.cancel();
+    this._projectionCommit.cancel();
+    this._pendingAnnotation = null;
+    this._pendingProjection = null;
   }
 
   protected updated(changed: Map<string, unknown>): void {
