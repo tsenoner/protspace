@@ -1566,18 +1566,19 @@ export class WebGLRenderer {
   private keepRecordTable(pass: PointStylePass, table: boolean, count: number) {
     this.stagedRecords = null;
     if (!table) return;
+    const hidden = pass.hiddenRecords!;
     const staged = collectStagedRecords(
       pass.records.codes!,
-      this.sortOrder,
+      this.recordIds,
+      this.colors,
       count,
-      this.passScratch,
-      pass.hiddenRecords!,
+      hidden,
     );
     if (!staged) {
-      this.dropRecordTable(count, pass.hiddenRecords!);
+      this.dropRecordTable(count, hidden);
       return;
     }
-    writeRecordTexels(staged, this.passScratch.packed!, pass.hiddenRecords!);
+    writeRecordTexels(staged, this.passScratch.packed!, hidden);
     this.stagedRecords = staged;
   }
 

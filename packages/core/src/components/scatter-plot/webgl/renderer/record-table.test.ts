@@ -110,7 +110,13 @@ function stage(pd: PlotData, pass: PointStylePass, table: boolean, selectionActi
   const cut = stageInPaintOrder(target, pass, scratch, order, pd, scales, count, selectionActive);
   let staged: StagedRecords | null = null;
   if (table) {
-    staged = collectStagedRecords(pass.records.codes!, order, count, scratch, pass.hiddenRecords!);
+    staged = collectStagedRecords(
+      pass.records.codes!,
+      target.recordIds!,
+      target.colors,
+      count,
+      pass.hiddenRecords!,
+    );
     writeRecordTexels(staged!, scratch.packed!, pass.hiddenRecords!);
   }
   return { target, order, cut, staged };
@@ -243,12 +249,16 @@ describe('per-record style table', () => {
 
   it('keeps no table when a slot has a record that is not a category code', () => {
     const pass = passOf(data, legendConfig);
-    const scratch = createPassScratch(n);
-    pass.resolve(pd, n, scratch);
-    scratch.record[5] = pass.records.codes!.count;
-    const order = Uint32Array.from({ length: n }, (_, i) => i);
+    const { target } = stage(pd, pass, true);
+    target.recordIds![5] = pass.records.codes!.count;
     expect(
-      collectStagedRecords(pass.records.codes!, order, n, scratch, pass.hiddenRecords!),
+      collectStagedRecords(
+        pass.records.codes!,
+        target.recordIds!,
+        target.colors,
+        n,
+        pass.hiddenRecords!,
+      ),
     ).toBeNull();
   });
 

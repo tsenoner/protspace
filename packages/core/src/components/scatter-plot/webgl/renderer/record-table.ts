@@ -12,23 +12,26 @@
  * Pure: no GL.
  */
 
-import type { PointStyleRecords, SlotStyleScratch } from '../types';
+import type { PointStyleRecords } from '../types';
 import { RECORD_STYLE_WIDTH } from './export-shaders';
 import type { PackedRecords } from './pass-staging';
 import { SELECTED_OPACITY_THRESHOLD } from './point-staging';
+
+const SELECTED_TIER_MIN_ALPHA = SELECTED_OPACITY_THRESHOLD - 1e-6;
 
 type RecordCodes = NonNullable<PointStyleRecords['codes']>;
 
 /** What the staged slots say about each record, and the table drawn over them. */
 export interface StagedRecords {
   readonly codes: RecordCodes;
-  /** Slots per record. */
-  readonly slots: Uint32Array;
-  /** Slots drawn unless the record is hidden: opacity above 0. */
+  /** Slots drawn unless the record is hidden: alpha above 0. */
   readonly drawn: Uint32Array;
   /** Draw index of the first such slot, or -1. */
   readonly firstDrawn: Int32Array;
-  /** Slots in the selected paint tier, whose paint depth a hide would change. */
+  /**
+   * Slots that may be in the selected paint tier, whose paint depth a hide
+   * would change. Counted generously: a restyle it wrongly refuses re-stages.
+   */
   readonly selectedTier: Uint32Array;
   /** The hiding the table applies. */
   hidden: readonly boolean[];
@@ -41,38 +44,35 @@ export function recordTableRows(recordCount: number): number {
 }
 
 /**
- * The records of the first `count` staged slots (`order[k]` is the slot drawn
- * k-th), or null when a slot's record is not one of `codes`: a restyle could not
- * name it, so staging keeps no table.
+ * The table over `count` slots staged with record ids (`recordIds[k]` for the
+ * slot drawn k-th) and their unhidden alpha (`colors[4k + 3]`), or null when a
+ * slot's record is not one of `codes`: a restyle could not name it, so staging
+ * keeps no table. Reads both in draw order, so it is one sequential pass.
  */
 export function collectStagedRecords(
   codes: RecordCodes,
-  order: Uint32Array,
+  recordIds: Float32Array,
+  colors: Float32Array,
   count: number,
-  scratch: Pick<SlotStyleScratch, 'record' | 'base'>,
   hidden: readonly boolean[],
 ): StagedRecords | null {
   const n = codes.count;
-  const slots = new Uint32Array(n);
   const drawn = new Uint32Array(n);
   const firstDrawn = new Int32Array(n).fill(-1);
   const selectedTier = new Uint32Array(n);
-  const { record, base } = scratch;
   for (let k = 0; k < count; k++) {
-    const slot = order[k];
-    const r = record[slot];
+    const r = recordIds[k];
     if (!(r >= 0 && r < n)) return null;
-    slots[r]++;
-    const b = base[slot];
-    if (b > 0) {
+    const alpha = colors[k * 4 + 3];
+    if (alpha > 0) {
       drawn[r]++;
       if (firstDrawn[r] < 0) firstDrawn[r] = k;
     }
-    if (b >= SELECTED_OPACITY_THRESHOLD) selectedTier[r]++;
+    // Alpha is the opacity rounded to float32: count near the threshold too.
+    if (alpha >= SELECTED_TIER_MIN_ALPHA) selectedTier[r]++;
   }
   return {
     codes,
-    slots,
     drawn,
     firstDrawn,
     selectedTier,
