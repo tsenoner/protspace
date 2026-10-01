@@ -32,6 +32,8 @@ type Internals = HTMLElement & {
   _webglRenderer: unknown;
   _processData(): void;
   _runNumericRecomputeBody(): void;
+  _getMaterializedData(): VisualizationData | null;
+  _getVisibilityModel(): unknown;
 };
 
 const settings = (binCount: number): NumericAnnotationDisplaySettings => ({
@@ -183,5 +185,48 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
     sp.numericAnnotationSettings = { score: settings(5) };
     sp._runNumericRecomputeBody();
     expect(dataChanges).toBe(1);
+  });
+
+  describe('object identity of the materialized data', () => {
+    // What the legend publishes for a numeric annotation nobody has customised.
+    const defaults = (): NumericAnnotationDisplaySettings => ({
+      binCount: 10,
+      strategy: 'quantile',
+      paletteId: 'batlow',
+      reverseGradient: false,
+    });
+
+    it('stays the same object when settings that differ in content land on the same bins', () => {
+      build('score', {});
+      const before = sp._getMaterializedData();
+
+      sp.numericAnnotationSettings = { score: defaults() };
+      expect(sp._getMaterializedData()).toBe(before);
+    });
+
+    it('keeps the visibility model, so an equal copy does not redo its O(N) mask', () => {
+      build('score', {});
+      const model = sp._getVisibilityModel();
+
+      sp.numericAnnotationSettings = { score: defaults() };
+      sp._getMaterializedData();
+      expect(sp._getVisibilityModel()).toBe(model);
+    });
+
+    it('becomes a new object when the bins change', () => {
+      build('score', { score: settings(3) });
+      const before = sp._getMaterializedData();
+
+      sp.numericAnnotationSettings = { score: settings(5) };
+      expect(sp._getMaterializedData()).not.toBe(before);
+    });
+
+    it('becomes a new object when the annotation changes, even if its definition would match', () => {
+      build('fam', {});
+      const before = sp._getMaterializedData();
+
+      sp.selectedAnnotation = 'score';
+      expect(sp._getMaterializedData()).not.toBe(before);
+    });
   });
 });

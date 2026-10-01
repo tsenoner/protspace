@@ -82,4 +82,24 @@ describe('sameMaterialization', () => {
     const b = materialize(data, { score: settings(5) }, 'score');
     expect(sameMaterialization(a, b, 'nope')).toBe(false);
   });
+
+  it('compares the bins themselves, not the metadata hash', () => {
+    const data = makeData();
+    const a = materialize(data, { score: settings(3) }, 'score');
+    const b = materialize(data, { score: settings(3) }, 'score');
+    // A colliding hash with different content: same signature, one bin count off.
+    const forged = b.annotations.score.numericMetadata!;
+    forged.bins = forged.bins.map((bin, i) => (i === 0 ? { ...bin, count: bin.count + 1 } : bin));
+    expect(forged.signature).toBe(a.annotations.score.numericMetadata!.signature);
+
+    expect(sameMaterialization(a, b, 'score')).toBe(false);
+  });
+
+  it('is false when the colours differ even if the bins do not', () => {
+    const data = makeData();
+    const a = materialize(data, { score: settings(3) }, 'score');
+    const b = materialize(data, { score: settings(3) }, 'score');
+    b.annotations.score.colors = b.annotations.score.colors.map(() => '#000000');
+    expect(sameMaterialization(a, b, 'score')).toBe(false);
+  });
 });

@@ -450,7 +450,7 @@ export class ProtspaceScatterplot extends LitElement {
       return this._materializedDataCache;
     }
 
-    this._materializedDataCache = materializeEatOverlay(
+    const rematerialized = materializeEatOverlay(
       materializeVisualizationData(
         sourceData,
         this.numericAnnotationSettings,
@@ -460,6 +460,22 @@ export class ProtspaceScatterplot extends LitElement {
       this.selectedAnnotation,
       this.eatOverlayEnabled,
     );
+    // When only the numeric settings moved (same data, annotation and overlay) and they land on
+    // the bins the plot already has (the legend publishing the defaults), keep handing out the
+    // previous object. Everything keyed on its identity (the visibility model, the style
+    // getters, the plot data's source, the recompute's own change check) then holds, instead of
+    // rebuilding for an equal copy.
+    const previous = this._materializedDataCache;
+    const onlySettingsMoved =
+      previous !== null &&
+      this._lastMaterializedSource === this.data &&
+      this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
+      this._lastMaterializedSelectedAnnotation === (this.selectedAnnotation ?? null) &&
+      this._lastMaterializedEatOverlayEnabled === this.eatOverlayEnabled;
+    this._materializedDataCache =
+      onlySettingsMoved && sameMaterialization(previous, rematerialized, this.selectedAnnotation)
+        ? previous
+        : rematerialized;
     this._lastMaterializedSource = this.data;
     this._lastMaterializedNumericValues = selectedNumericValuesCacheRef;
     this._lastMaterializedSelectedAnnotation = this.selectedAnnotation ?? null;
@@ -1108,16 +1124,11 @@ export class ProtspaceScatterplot extends LitElement {
 
     // A settings change that leaves the selected annotation's binning alone (another numeric
     // annotation's settings, or a rebin onto the same bins, as when the legend publishes the
-    // defaults the plot already used) reproduces what the plot was last built from. Re-staging
-    // then would repeat the whole upload for identical output (~500 ms at 573K).
-    const unchanged =
-      this._plotData.length > 0 &&
-      this._lastDataRef !== null &&
-      sameMaterialization(this._lastDataRef, materializedData, this.selectedAnnotation);
-    if (unchanged) {
-      // Equal in content, so later fast paths may keep treating the plot as built from it.
-      this._lastDataRef = materializedData;
-    } else {
+    // defaults the plot already used) hands back the object the plot was last built from (see
+    // `_getMaterializedData`). Re-staging then would repeat the whole upload for identical
+    // output (~500 ms at 573K).
+    const unchanged = this._plotData.length > 0 && materializedData === this._lastDataRef;
+    if (!unchanged) {
       if (this._plotData.length > 0) {
         this._refreshSelectedAnnotationValues(displayData);
       } else {
