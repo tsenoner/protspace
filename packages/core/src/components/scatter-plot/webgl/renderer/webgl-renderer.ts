@@ -215,6 +215,12 @@ export class WebGLRenderer {
   private recordStyleRows = 0;
   private categoryStylesDirty = false;
   /**
+   * Set when a colour-only restage left slots whose paint depth moved in their
+   * old order. A restyle must not keep that order: the next style update's
+   * re-sort decision is staging's to make.
+   */
+  private stagedOrderStale = false;
+  /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
    * truth for the RENDER pass: `syncLabelAtlas` allocates against it, and a
@@ -1347,9 +1353,34 @@ export class WebGLRenderer {
     }
 
     const sp = this.scratchPoint;
+    const oi = pd.originalIndices;
+    const { xs, ys } = pd;
 
     if (updateStyles && !updatePositions) {
-      if (this.sampledDepthsChanged(pd)) {
+      // Check if depths have actually changed by sampling first few slots
+      // If depths are the same, we can skip re-sorting (color-only update optimization)
+      const sampleSize = Math.min(100, pd.length);
+      let depthsChanged = false;
+      for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
+        const origIdx = oi ? oi[i] : i;
+        sp.id = pd.proteinIds[origIdx];
+        sp.x = xs[i];
+        sp.y = ys[i];
+        sp.originalIndex = origIdx;
+        const opacity = this.style.getOpacity(sp);
+        if (opacity === 0) continue;
+        const newDepth = composePaintDepth(
+          this.style.getDepth(sp),
+          opacity,
+          this.style.isPredicted(sp),
+        );
+        // Compare with stored depth (note: depths array is in sorted order after last render)
+        if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
+          depthsChanged = true;
+          break;
+        }
+      }
+      if (depthsChanged) {
         needsReorder = true;
         updatePositions = true;
       }
@@ -1384,6 +1415,7 @@ export class WebGLRenderer {
       idx = count;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
+      this.stagedOrderStale = false;
       this.keepRecordTable(pass, table, idx);
     } else if (updateStyles) {
       this.visibleCount = 0;
@@ -1406,6 +1438,7 @@ export class WebGLRenderer {
           idx,
           (slot, opacity) => this.countStagedSlot(src, slot, opacity),
         );
+        this.stagedOrderStale = this.orderOutOfDate(idx);
         this.keepRecordTable(pass, table, idx);
       }
     } else {
@@ -1569,8 +1602,9 @@ export class WebGLRenderer {
     const staged = this.stagedRecords;
     const gl = this.gl;
     if (!staged || !gl || pd !== this.sortedDataRef || this.trackRenderedPointIds) return false;
-    // A style update re-sorts when its sampled depths moved, and so must this one.
-    if (this.sampledDepthsChanged(pd)) return false;
+    // A style update re-sorts when it samples moved depths. Only a re-sort fixes
+    // an order that is already out of date, and staging decides when to re-sort.
+    if (this.stagedOrderStale || this.stagedDepthsMoved(pd)) return false;
     const pass = beginStylePass(this.style);
     const hidden = pass.hiddenRecords;
     if (!hidden || !canRestyle(staged, pass.records.codes, hidden)) return false;
@@ -1629,29 +1663,37 @@ export class WebGLRenderer {
   }
 
   /**
-   * Whether a style update must re-sort: checks if depths have actually changed
-   * by sampling the first few slots. If they are the same, the update can skip
-   * re-sorting (color-only update optimization).
+   * After a colour-only restage of `count` slots: whether any slot's paint depth
+   * is no longer the one it was sorted by. The restage resolved them all.
    */
-  private sampledDepthsChanged(pd: PlotData): boolean {
+  private orderOutOfDate(count: number): boolean {
+    const { depth } = this.passScratch;
+    for (let k = 0; k < count; k++) {
+      if (depth[this.sortOrder[k]] !== this.depths[k]) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether the first staged slots no longer have the paint depth the style
+   * getters give them: a per-point change nothing reported, which a restyle
+   * would leave on screen.
+   */
+  private stagedDepthsMoved(pd: PlotData): boolean {
     const sp = this.scratchPoint;
     const oi = pd.originalIndices;
-    const sampleSize = Math.min(100, pd.length);
-    for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-      const origIdx = oi ? oi[i] : i;
+    const n = Math.min(100, this.currentPointCount);
+    for (let k = 0; k < n; k++) {
+      const slot = this.sortOrder[k];
+      const origIdx = oi ? oi[slot] : slot;
       sp.id = pd.proteinIds[origIdx];
-      sp.x = pd.xs[i];
-      sp.y = pd.ys[i];
+      sp.x = pd.xs[slot];
+      sp.y = pd.ys[slot];
       sp.originalIndex = origIdx;
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
-      const newDepth = composePaintDepth(
-        this.style.getDepth(sp),
-        opacity,
-        this.style.isPredicted(sp),
-      );
-      // Compare with stored depth (note: depths array is in sorted order after last render)
-      if (Math.abs(newDepth - this.depths[i]) > 1e-6) return true;
+      const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));
+      if (Math.abs(depth - this.depths[k]) > 1e-6) return true;
     }
     return false;
   }

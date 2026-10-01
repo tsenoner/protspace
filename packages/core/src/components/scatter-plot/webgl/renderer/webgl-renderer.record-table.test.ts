@@ -123,27 +123,34 @@ describe('legend changes through the per-record style table', () => {
   });
 
   it('re-stages a hide of a category with selected points', () => {
-    const data = makeData(9);
-    const { populate, restyle } = setup(data);
-    restyle({ selectedProteinIds: ['P0', 'P9'] }, true);
-    expect(populate).toHaveBeenCalledTimes(1);
-    populate.mockClear();
-    // P0 is c0: hiding it moves P0 out of the selected paint tier.
-    restyle({ selectedProteinIds: ['P0', 'P9'], hiddenAnnotationValues: ['c0'] });
-    expect(populate).toHaveBeenCalledTimes(1);
+    const { populate, restyle } = setup(makeData(9));
+    const selectedProteinIds = ['P0', 'P9'];
+    restyle({ selectedProteinIds }, true);
     populate.mockClear();
     // c3 has no selected point.
-    restyle({ selectedProteinIds: ['P0', 'P9'], hiddenAnnotationValues: ['c0', 'c3'] });
+    restyle({ selectedProteinIds, hiddenAnnotationValues: ['c3'] });
     expect(populate).not.toHaveBeenCalled();
+    // P0 and P9 are c0: hiding it moves them out of the selected paint tier.
+    restyle({ selectedProteinIds, hiddenAnnotationValues: ['c3', 'c0'] });
+    expect(populate).toHaveBeenCalledTimes(1);
   });
 
-  it('re-stages when the sampled depths moved, as a style update would', () => {
-    // Staged with P0 selected; a later pass without the selection moves P0's
-    // depth, which the style update's depth sample sees and re-sorts for.
+  it('leaves an out-of-date paint order to the next style update', () => {
+    // Fading nothing, a deselect moves only P0's depth, which the style update's
+    // sample misses: it restages colours and leaves P0 sorted as selected. A
+    // hide must not keep that order, so it re-stages, and staging decides.
     const { populate, restyle } = setup(makeData(9));
-    restyle({ selectedProteinIds: ['P0'] }, true);
+    const opacities = { base: 0.8, selected: 1, faded: 0.8 };
+    restyle({ opacities, selectedProteinIds: ['P0'] }, true);
+    restyle({ opacities }, true);
     populate.mockClear();
-    restyle({ hiddenAnnotationValues: ['c3'] });
+    restyle({ opacities, hiddenAnnotationValues: ['c3'] });
+    expect(populate).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-stages when the sampled depths moved without a per-point invalidation', () => {
+    const { populate, restyle } = setup(makeData(9));
+    restyle({ opacities: { base: 0.5, selected: 1, faded: 0.2 }, hiddenAnnotationValues: ['c3'] });
     expect(populate).toHaveBeenCalledTimes(1);
   });
 
