@@ -31,24 +31,26 @@ const localStorageMock = (() => {
 
 vi.stubGlobal('localStorage', localStorageMock);
 
-function makeData(): VisualizationData {
+function makeData(values = ['A', 'B', 'C']): VisualizationData {
+  // The first value is the most common: A x3, B x2, then one protein of each further value.
+  const codes = [0, 0, 0, 1, 1, ...values.slice(2).map((_, i) => i + 2)];
   return {
-    protein_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'],
-    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(12) }],
+    protein_ids: codes.map((_, i) => `p${i + 1}`),
+    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(codes.length * 2) }],
     annotations: {
       family: {
         kind: 'categorical',
-        values: ['A', 'B', 'C'],
-        colors: ['#ff0000', '#00ff00', '#0000ff'],
-        shapes: ['circle', 'circle', 'circle'],
+        values,
+        colors: values.map(() => '#888888'),
+        shapes: values.map(() => 'circle'),
       },
     },
-    annotation_data: { family: new Int32Array([0, 0, 0, 1, 1, 2]) },
+    annotation_data: { family: new Int32Array(codes) },
   };
 }
 
-async function setup() {
-  const mounted = await mountLegendWithScatterplot(makeData(), 'family');
+async function setup(values?: string[]) {
+  const mounted = await mountLegendWithScatterplot(makeData(values), 'family');
   const { legend, plot } = mounted;
 
   // Every hidden set the legend hands the plot: a state the plot would stage on its own.
@@ -138,6 +140,69 @@ describe('legend item double-click', () => {
 
     expect(visible()).toEqual(['A']);
     expect(handedToPlot.slice(hidden)).toEqual([[], ['B', 'C']]);
+  });
+
+  it('restores the full set when the isolated item is double-clicked', async () => {
+    const { click, dblclick, visible, handedToPlot, actions } = await setup();
+    click('A', 1);
+    click('A', 2);
+    dblclick('A');
+    const isolated = handedToPlot.length;
+
+    click('A', 1);
+    click('A', 2);
+    dblclick('A');
+
+    expect(visible()).toEqual(['A', 'B', 'C']);
+    // The first click already showed everything, and the dblclick has nothing more to change.
+    expect(handedToPlot.slice(isolated)).toEqual([[]]);
+    expect(actions.slice(2)).toEqual(['toggle:A', 'isolate:A']);
+  });
+
+  it('isolates a visible item from a partly hidden set', async () => {
+    const { click, dblclick, visible, handedToPlot } = await setup();
+    click('C', 1);
+    const hidden = handedToPlot.length;
+
+    click('A', 1);
+    click('A', 2);
+    dblclick('A');
+
+    expect(visible()).toEqual(['A']);
+    expect(handedToPlot.slice(hidden)).toEqual([
+      ['C', 'A'],
+      ['B', 'C'],
+    ]);
+  });
+
+  it('isolates from the current legend when something else has changed it since the first click', async () => {
+    const { legend, click, dblclick, visible } = await setup();
+    click('A', 1);
+    click('A', 2);
+    dblclick('A');
+
+    click('A', 1);
+    click('A', 2);
+    // A rebuild between the clicks: the saved legend is stale, so it is not the base.
+    const internals = legend as unknown as { _legendItems: unknown[] };
+    internals._legendItems = internals._legendItems.map((item) => ({ ...(item as object) }));
+    dblclick('A');
+
+    expect(visible()).toEqual(['A']);
+  });
+
+  it('isolates the Other group like any other row', async () => {
+    const { click, dblclick, visible, handedToPlot } = await setup(
+      Array.from({ length: 12 }, (_, i) => String.fromCharCode(65 + i)),
+    );
+
+    click('Other', 1);
+    click('Other', 2);
+    dblclick('Other');
+
+    expect(visible()).toEqual(['Other']);
+    // The plot hides the ten named rows and keeps the two values Other stands for.
+    expect([...handedToPlot.at(-1)!].sort()).toEqual('ABCDEFGHIJ'.split(''));
   });
 
   it('toggles the second click of two clicks on different items', async () => {

@@ -333,8 +333,13 @@ export class ProtspaceLegend extends LitElement {
    */
   private _annotationShapeSize: number | null = null;
 
-  // Item whose first mouse click toggled it and whose dblclick has not arrived yet.
-  private _firstClickKey: string | null = null;
+  // The mouse click that toggled an item, until its dblclick arrives: the legend before it and
+  // as it left it, so a dblclick can isolate from the former unless something else has moved.
+  private _firstClick: {
+    valueKey: string;
+    itemsBefore: LegendItem[];
+    itemsAfter: LegendItem[];
+  } | null = null;
 
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
@@ -2188,20 +2193,30 @@ export class ProtspaceLegend extends LitElement {
     const pointerType = (event as Partial<PointerEvent>).pointerType;
     if (
       event.detail === 2 &&
-      this._firstClickKey === valueKey &&
+      this._firstClick?.valueKey === valueKey &&
       pointerType !== 'touch' &&
       pointerType !== 'pen'
     ) {
       return;
     }
 
+    const itemsBefore = this._legendItems;
     this._handleItemClick(value);
-    this._firstClickKey = event.detail === 1 ? valueKey : null;
+    this._firstClick =
+      event.detail === 1 ? { valueKey, itemsBefore, itemsAfter: this._legendItems } : null;
   }
 
+  /**
+   * Isolates from the legend as it stood before the first click, so that click's hide or show
+   * does not leak into the result: double-clicking the isolated item restores the full set, as
+   * `isolateItem` intends, instead of re-isolating it.
+   */
   private _handleItemMouseDoubleClick(value: string): void {
-    this._firstClickKey = null;
-    this._handleItemDoubleClick(value);
+    const first = this._firstClick;
+    this._firstClick = null;
+    const unchanged =
+      first?.valueKey === valueToKey(value) && first.itemsAfter === this._legendItems;
+    this._handleItemDoubleClick(value, unchanged ? first.itemsBefore : this._legendItems);
   }
 
   private _handleItemClick(value: string): void {
@@ -2220,8 +2235,8 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _handleItemDoubleClick(value: string): void {
-    const result = isolateItem(this._legendItems, value);
+  private _handleItemDoubleClick(value: string, items: LegendItem[] = this._legendItems): void {
+    const result = isolateItem(items, value);
 
     this._legendItems = result.items;
     this._hiddenValues = result.hiddenValues;
