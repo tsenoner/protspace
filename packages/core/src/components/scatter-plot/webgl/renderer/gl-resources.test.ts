@@ -8,7 +8,6 @@ function makeGl() {
     createBuffer: vi.fn(() => ({ k: 'buffer' })),
     createVertexArray: vi.fn(() => ({ k: 'vao' })),
     createTexture: vi.fn(() => ({ k: 'tex' })),
-    bindTexture: vi.fn(),
     deleteBuffer: vi.fn(),
     deleteVertexArray: vi.fn(),
     deleteTexture: vi.fn(),
@@ -57,15 +56,6 @@ describe('GLResources', () => {
     expect(res.predictedBuffer).not.toBeNull();
     expect(res.quadBuffer).not.toBeNull();
     expect(res.labelColorTexture).not.toBeNull();
-  });
-
-  it('createAll binds the label texture once, so isTexture reports it as live', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    // Bound, then released: the name becomes a texture object without leaving a binding behind.
-    expect(gl.bindTexture).toHaveBeenNthCalledWith(1, undefined, res.labelColorTexture);
-    expect(gl.bindTexture).toHaveBeenNthCalledWith(2, undefined, null);
   });
 
   it('deleteAll frees every owned handle and tolerates nulls', () => {

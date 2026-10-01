@@ -60,14 +60,6 @@ export class GLResources {
     this.predictedBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
-    // A GL name is not an object until it is first bound, and `isTexture` (hence `validate`)
-    // reports an unbound one as dead. The first stage is the first thing to bind this texture, so
-    // until then every `ensureGL` would find the context state invalid, tear it down and recompile
-    // both programs. Bind once so the texture exists from the start.
-    if (this.labelColorTexture) {
-      gl.bindTexture(gl.TEXTURE_2D, this.labelColorTexture);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-    }
   }
 
   /**
