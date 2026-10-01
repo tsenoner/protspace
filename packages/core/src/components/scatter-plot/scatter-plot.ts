@@ -550,6 +550,8 @@ export class ProtspaceScatterplot extends LitElement {
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
+    // Compile the shaders while data loads rather than inside the first render.
+    this._webglRenderer.prewarm();
   }
 
   connectedCallback() {

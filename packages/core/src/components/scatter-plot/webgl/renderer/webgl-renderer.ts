@@ -23,7 +23,12 @@ import {
   MAX_RENDERABLE_POINTS,
   DEFAULT_GAMMA,
 } from '../types';
-import { createProgramFromSources } from '../shader-utils';
+import {
+  beginProgramFromSources,
+  discardProgram,
+  finishProgram,
+  type PendingProgram,
+} from '../shader-utils';
 import {
   IDENTITY_RESCALE,
   rescaleBetween,
@@ -102,12 +107,30 @@ const MIN_CAPACITY = 1024;
  */
 const CAPACITY_GRANULARITY = 256;
 
+/** The context attributes are fixed by the first `getContext` call, so every caller passes these. */
+const CONTEXT_OPTIONS: WebGLContextAttributes = {
+  antialias: true,
+  preserveDrawingBuffer: true,
+  premultipliedAlpha: false,
+  alpha: true,
+  powerPreference: 'high-performance',
+};
+
+/** Both programs the first draw needs, compiling but not yet read back. */
+interface PendingPrograms {
+  gl: WebGL2RenderingContext;
+  point: PendingProgram | null;
+  gamma: PendingProgram | null;
+}
+
 // ============================================================================
 // WebGL2 Renderer Implementation
 // ============================================================================
 
 export class WebGLRenderer {
   private gl: WebGL2RenderingContext | null = null;
+  /** Programs started by {@link prewarm} (or the first `ensureGL`) and not yet read back. */
+  private pendingPrograms: PendingPrograms | null = null;
 
   // Owned GPU handles (programs, VAO, buffers, quad, label texture, framebuffer).
   // Resource inventory (create/validate/delete/reset) lives in GLResources; the
@@ -742,6 +765,8 @@ export class WebGLRenderer {
   }
 
   dispose() {
+    this.discardPrograms(this.pendingPrograms);
+    this.pendingPrograms = null;
     if (!this.gl) return;
     const gl = this.gl;
 
@@ -891,15 +916,7 @@ export class WebGLRenderer {
       return this.gl;
     }
 
-    const contextOptions: WebGLContextAttributes = {
-      antialias: true,
-      preserveDrawingBuffer: true,
-      premultipliedAlpha: false,
-      alpha: true,
-      powerPreference: 'high-performance',
-    };
-
-    const gl = this.canvas.getContext('webgl2', contextOptions);
+    const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
     if (!gl) {
       console.error('WebGL2 not available');
       return null;
@@ -926,12 +943,19 @@ export class WebGLRenderer {
       this.handleGammaFallback('required extensions missing');
     }
 
-    if (!this.initializePointShaders(gl)) return null;
+    // Both programs compile at once (and, when prewarmed, already have); only now is the result read.
+    const pending = this.takePendingPrograms(gl) ?? this.beginPrograms(gl);
+    if (!this.initializePointShaders(gl, pending.point)) {
+      if (pending.gamma) discardProgram(gl, pending.gamma);
+      return null;
+    }
 
     if (this.gammaPipelineAvailable) {
-      if (!this.initializeGammaCorrectionShaders(gl)) {
+      if (!this.initializeGammaCorrectionShaders(gl, pending.gamma)) {
         this.handleGammaFallback('gamma shader init failed');
       }
+    } else if (pending.gamma) {
+      discardProgram(gl, pending.gamma);
     }
 
     this.resources.createAll(gl);
@@ -972,6 +996,8 @@ export class WebGLRenderer {
   }
 
   private resetRendererState() {
+    this.discardPrograms(this.pendingPrograms);
+    this.pendingPrograms = null;
     this.gl = null;
     this.resources.reset();
     this.pointAttribLocations = null;
@@ -999,12 +1025,50 @@ export class WebGLRenderer {
     this.positionRescale = IDENTITY_RESCALE;
   }
 
-  private initializePointShaders(gl: WebGL2RenderingContext): boolean {
-    this.resources.pointProgram = createProgramFromSources(
+  /**
+   * Create the context and start compiling both programs without waiting for them, so the compile
+   * overlaps whatever the page does before its first draw (loading data) instead of stalling it.
+   * The first `ensureGL` reads the results. Optional, idempotent, and silent when WebGL2 is
+   * unavailable: `ensureGL` reports that when a draw is actually attempted.
+   */
+  prewarm(): void {
+    if (this.gl || this.pendingPrograms) return;
+    const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
+    if (!gl) return;
+    this.pendingPrograms = this.beginPrograms(gl);
+  }
+
+  private beginPrograms(gl: WebGL2RenderingContext): PendingPrograms {
+    // Without this the driver compiles on first use, so the overlap above would not exist.
+    gl.getExtension('KHR_parallel_shader_compile');
+    return {
       gl,
-      POINT_VERTEX_SHADER,
-      POINT_FRAGMENT_SHADER,
-    );
+      point: beginProgramFromSources(gl, POINT_VERTEX_SHADER, POINT_FRAGMENT_SHADER),
+      gamma: beginProgramFromSources(gl, GAMMA_VERTEX_SHADER, GAMMA_FRAGMENT_SHADER),
+    };
+  }
+
+  /** The prewarmed programs if they belong to `gl`; programs of any other context are dropped. */
+  private takePendingPrograms(gl: WebGL2RenderingContext): PendingPrograms | null {
+    const pending = this.pendingPrograms;
+    this.pendingPrograms = null;
+    if (!pending) return null;
+    if (pending.gl === gl) return pending;
+    this.discardPrograms(pending);
+    return null;
+  }
+
+  private discardPrograms(pending: PendingPrograms | null): void {
+    if (!pending) return;
+    if (pending.point) discardProgram(pending.gl, pending.point);
+    if (pending.gamma) discardProgram(pending.gl, pending.gamma);
+  }
+
+  private initializePointShaders(
+    gl: WebGL2RenderingContext,
+    pending: PendingProgram | null,
+  ): boolean {
+    this.resources.pointProgram = pending && finishProgram(gl, pending);
     if (!this.resources.pointProgram) return false;
 
     const { attribs, uniforms } = resolvePointLocations(gl, this.resources.pointProgram);
@@ -1014,12 +1078,11 @@ export class WebGLRenderer {
     return true;
   }
 
-  private initializeGammaCorrectionShaders(gl: WebGL2RenderingContext): boolean {
-    this.resources.gammaCorrectionProgram = createProgramFromSources(
-      gl,
-      GAMMA_VERTEX_SHADER,
-      GAMMA_FRAGMENT_SHADER,
-    );
+  private initializeGammaCorrectionShaders(
+    gl: WebGL2RenderingContext,
+    pending: PendingProgram | null,
+  ): boolean {
+    this.resources.gammaCorrectionProgram = pending && finishProgram(gl, pending);
     if (!this.resources.gammaCorrectionProgram) return false;
 
     this.gammaCorrectionUniformLocations = {
