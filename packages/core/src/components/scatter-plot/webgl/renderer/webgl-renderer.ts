@@ -16,6 +16,7 @@ import {
   type ScatterplotConfig,
 } from '@protspace/utils';
 import {
+  type PointStylePass,
   type WebGLStyleGetters,
   type ScalePair,
   type PointAttribLocations,
@@ -42,9 +43,18 @@ import { composePaintDepth } from './point-staging';
 import {
   beginStylePass,
   createPassScratch,
+  packRecords,
   restageStyles,
   stageInPaintOrder,
 } from './pass-staging';
+import {
+  canRestyle,
+  collectStagedRecords,
+  recordTableRows,
+  shownSlotCount,
+  writeRecordTexels,
+  type StagedRecords,
+} from './record-table';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
@@ -53,6 +63,7 @@ import {
   setPointBlendState,
   drawPoints,
   bindPointDrawState,
+  RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
@@ -61,6 +72,7 @@ import {
   accumulateAndBlurDensity,
   compositeDensity,
   buildSlotPalette,
+  buildRecordSlotPalette,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
@@ -94,6 +106,7 @@ import {
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
+  RECORD_STYLE_WIDTH,
 } from './export-shaders';
 
 // Constants
@@ -157,6 +170,7 @@ export class WebGLRenderer {
   private labelCounts = new Float32Array(0);
   private shapes = new Float32Array(0);
   private predicted = new Float32Array(0);
+  private recordIds = new Float32Array(0);
 
   // Zero-copy view over the parallel staging arrays above, passed to the staging passes.
   // Re-pointed in `refreshStageArrays()` whenever capacity is reallocated.
@@ -186,11 +200,20 @@ export class WebGLRenderer {
   private densityDisabled = false;
   private contourPalette: SlotPalette | null = null;
   /**
-   * Bumped by every `populateBuffers`, the only writer of the position and
-   * colour buffers and the only place `contourPalette` is invalidated, so it
-   * keys the density fields built from them.
+   * Bumped by every `populateBuffers` and `restyleRecords`, the only writers of
+   * the position buffer and of the colours points draw with, and the only places
+   * `contourPalette` is invalidated, so it keys the density fields built from them.
    */
   private bufferGeneration = 0;
+  /**
+   * The per-record style table the staged points draw through, or null when the
+   * last stage kept none (see record-table.ts). With it, a legend change that
+   * only restyles categories rewrites the table instead of re-staging.
+   */
+  private stagedRecords: StagedRecords | null = null;
+  /** Rows the table texture is allocated with; 0 before its first upload. */
+  private recordStyleRows = 0;
+  private categoryStylesDirty = false;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -307,6 +330,15 @@ export class WebGLRenderer {
 
   invalidateStyleCache() {
     this.stylesDirty = true;
+  }
+
+  /**
+   * The style of whole categories changed (legend hide, show, colour or shape)
+   * and nothing per point did. The next render rewrites the per-record table
+   * when the staged points draw through one, and re-stages them otherwise.
+   */
+  invalidateCategoryStyles() {
+    this.categoryStylesDirty = true;
   }
 
   /**
@@ -469,6 +501,7 @@ export class WebGLRenderer {
       this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
         dataPosition: this.pointAttribLocations.dataPosition,
         color: this.pointAttribLocations.color,
+        record: this.pointAttribLocations.record,
       });
       if (!this.resources.density) {
         this.disableDensity('density shaders failed to compile');
@@ -613,15 +646,25 @@ export class WebGLRenderer {
       this.positionsDirty ||
       dataSignature !== this.lastDataSignature ||
       !this.rescaleStagedTo(scales);
-    const needsStyleUpdate = this.stylesDirty || styleSignature !== this.lastStyleSignature;
+    const needsStyleUpdate =
+      this.stylesDirty || this.categoryStylesDirty || styleSignature !== this.lastStyleSignature;
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
     if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
-      this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+      // A category restyle explains the sampled points' new opacity and colour,
+      // so the style signature may change without anything per point changing.
+      const restyled =
+        this.categoryStylesDirty &&
+        !this.stylesDirty &&
+        !needsPositionUpdate &&
+        !needsDepthOrderUpdate &&
+        this.restyleRecords(pd);
+      if (!restyled) this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
       this.stylesDirty = false;
+      this.categoryStylesDirty = false;
       // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
     }
     // Asked after staging, which may have laid the positions out afresh.
@@ -686,6 +729,7 @@ export class WebGLRenderer {
         r.y.offset,
       ].join();
       if (density.res.fieldsKey !== key) {
+        this.bindRecordStyle(gl);
         accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
         density.res.fieldsKey = key;
       }
@@ -722,7 +766,10 @@ export class WebGLRenderer {
     );
     if (alpha <= 0) return null;
 
-    this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+    // Points drawn through the record table have their staged alpha unhidden.
+    this.contourPalette ??= this.stagedRecords
+      ? buildRecordSlotPalette(this.stagedRecords, this.gamma)
+      : buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
@@ -739,6 +786,7 @@ export class WebGLRenderer {
       },
       alpha,
       palette: this.contourPalette,
+      recordStyleOn: !!this.stagedRecords,
     };
   }
 
@@ -1006,6 +1054,13 @@ export class WebGLRenderer {
     this.lossController.markLost();
   }
 
+  /** Bind the record table where the vertex shaders read it, if points draw through one. */
+  private bindRecordStyle(gl: WebGL2RenderingContext) {
+    gl.activeTexture(gl.TEXTURE0 + RECORD_STYLE_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.stagedRecords ? this.resources.recordStyleTexture : null);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
   private resetRendererState() {
     this.discardPrograms(this.pendingPrograms);
     this.pendingPrograms = null;
@@ -1034,6 +1089,8 @@ export class WebGLRenderer {
     this.sortedDataRef = null;
     this.stagedScales = null;
     this.positionRescale = IDENTITY_RESCALE;
+    this.stagedRecords = null;
+    this.recordStyleRows = 0;
   }
 
   /**
@@ -1132,6 +1189,10 @@ export class WebGLRenderer {
       },
       this.pointAttribLocations,
     );
+    // Live only: the export draws every point with its own style.
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.recordBuffer);
+    gl.enableVertexAttribArray(this.pointAttribLocations.record);
+    gl.vertexAttribPointer(this.pointAttribLocations.record, 1, gl.FLOAT, false, 0, 0);
 
     gl.bindVertexArray(null);
   }
@@ -1178,6 +1239,7 @@ export class WebGLRenderer {
         // Null when no atlas is allocated, which makes the shader's pie branch
         // unreachable and every marker fall through to its dominant colour.
         labelAtlas: this.atlas?.plan ?? null,
+        recordStyle: this.stagedRecords ? this.resources.recordStyleTexture : null,
       },
     );
 
@@ -1285,34 +1347,9 @@ export class WebGLRenderer {
     }
 
     const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
-    const { xs, ys } = pd;
 
     if (updateStyles && !updatePositions) {
-      // Check if depths have actually changed by sampling first few slots
-      // If depths are the same, we can skip re-sorting (color-only update optimization)
-      const sampleSize = Math.min(100, pd.length);
-      let depthsChanged = false;
-      for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[i];
-        sp.y = ys[i];
-        sp.originalIndex = origIdx;
-        const opacity = this.style.getOpacity(sp);
-        if (opacity === 0) continue;
-        const newDepth = composePaintDepth(
-          this.style.getDepth(sp),
-          opacity,
-          this.style.isPredicted(sp),
-        );
-        // Compare with stored depth (note: depths array is in sorted order after last render)
-        if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
-          depthsChanged = true;
-          break;
-        }
-      }
-      if (depthsChanged) {
+      if (this.sampledDepthsChanged(pd)) {
         needsReorder = true;
         updatePositions = true;
       }
@@ -1330,9 +1367,11 @@ export class WebGLRenderer {
       // visibility toggles, enabling the fast color-only update path instead of a
       // full rebuild + re-sort. Shared with the export path, which stages the same
       // painter order and selection cut.
+      const pass = beginStylePass(this.style);
+      const table = this.prepareRecordTable(pass);
       this.selectedStartIndex = stageInPaintOrder(
         this.stageArrays,
-        beginStylePass(this.style),
+        pass,
         this.passScratch,
         this.sortOrder,
         pd,
@@ -1345,6 +1384,7 @@ export class WebGLRenderer {
       idx = count;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
+      this.keepRecordTable(pass, table, idx);
     } else if (updateStyles) {
       this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
@@ -1353,9 +1393,11 @@ export class WebGLRenderer {
       const src = this.sortedDataRef;
       if (src) {
         idx = Math.min(this.currentPointCount, maxPoints);
+        const pass = beginStylePass(this.style);
+        const table = this.prepareRecordTable(pass);
         restageStyles(
           this.stageArrays,
-          beginStylePass(this.style),
+          pass,
           this.passScratch,
           this.sortOrder,
           src,
@@ -1364,6 +1406,7 @@ export class WebGLRenderer {
           idx,
           (slot, opacity) => this.countStagedSlot(src, slot, opacity),
         );
+        this.keepRecordTable(pass, table, idx);
       }
     } else {
       // No reordering and no style updates: only update positions if needed.
@@ -1421,6 +1464,12 @@ export class WebGLRenderer {
     // updateStyles leaves the GPU holding the previous permutation. Reachable via
     // updatePositions and via depthOrderDirty, neither of which sets updateStyles.
     if (updateStyles || needsReorder) {
+      // Before the colours: if the table cannot be uploaded, they take the hiding back.
+      if (this.stagedRecords && !this.uploadRecordTable(gl)) this.dropRecordTable(idx);
+      // Only read through a table, but the attribute needs its storage regardless.
+      if (allocating || this.stagedRecords) {
+        this.updateBuffer(gl, this.resources.recordBuffer, this.recordIds, idx);
+      }
       this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
       this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
       this.contourPalette = null;
@@ -1459,6 +1508,152 @@ export class WebGLRenderer {
 
     gl.bindVertexArray(null);
     this.buffersInitialized = true;
+  }
+
+  /**
+   * Whether this stage keeps a per-record table, and if so point staging at the
+   * record ids it writes. It needs a pass that hides per record and keys every
+   * record by category code: a single-valued annotation, so no pie markers, and
+   * no rendered-id tracking, which a restyle could not keep up to date.
+   */
+  private prepareRecordTable(pass: PointStylePass): boolean {
+    const codes = pass.records.codes;
+    const table =
+      !this.labelAtlasActive &&
+      !this.trackRenderedPointIds &&
+      !!codes &&
+      !!this.resources.recordStyleTexture &&
+      recordTableRows(codes.count) <= this.maxTextureSize &&
+      !!pass.hiddenRecords;
+    this.stageArrays.recordIds = table ? this.recordIds : null;
+    return table;
+  }
+
+  /** After staging `count` slots: keep the table they were staged for, if any. */
+  private keepRecordTable(pass: PointStylePass, table: boolean, count: number) {
+    this.stagedRecords = null;
+    if (!table) return;
+    const staged = collectStagedRecords(
+      pass.records.codes!,
+      this.sortOrder,
+      count,
+      this.passScratch,
+      pass.hiddenRecords!,
+    );
+    if (!staged) {
+      this.dropRecordTable(count, pass.hiddenRecords!);
+      return;
+    }
+    writeRecordTexels(staged, this.passScratch.packed!, pass.hiddenRecords!);
+    this.stagedRecords = staged;
+  }
+
+  /**
+   * Draw the first `count` staged slots without a table: a slot of a hidden
+   * record was staged unhidden, so it takes opacity 0, as staging gives it.
+   */
+  private dropRecordTable(count: number, hidden = this.stagedRecords?.hidden ?? []) {
+    this.stagedRecords = null;
+    for (let k = 0; k < count; k++) {
+      const r = this.recordIds[k];
+      if (r >= 0 && hidden[r]) this.colors[k * 4 + 3] = 0;
+    }
+  }
+
+  /**
+   * Rewrite the per-record table for the current category styles, leaving every
+   * staged buffer as it is. False when the staged points cannot be restyled that
+   * way (see `canRestyle`); the caller then re-stages them.
+   */
+  private restyleRecords(pd: PlotData): boolean {
+    const staged = this.stagedRecords;
+    const gl = this.gl;
+    if (!staged || !gl || pd !== this.sortedDataRef || this.trackRenderedPointIds) return false;
+    // A style update re-sorts when its sampled depths moved, and so must this one.
+    if (this.sampledDepthsChanged(pd)) return false;
+    const pass = beginStylePass(this.style);
+    const hidden = pass.hiddenRecords;
+    if (!hidden || !canRestyle(staged, pass.records.codes, hidden)) return false;
+    writeRecordTexels(staged, packRecords(pass.records, this.stageArrays), hidden);
+    if (!this.uploadRecordTable(gl)) return false;
+    this.visibleCount = shownSlotCount(staged);
+    this.contourPalette = null;
+    this.bufferGeneration++;
+    return true;
+  }
+
+  /** Upload the per-record table, allocating it when its size changed. */
+  private uploadRecordTable(gl: WebGL2RenderingContext): boolean {
+    const staged = this.stagedRecords;
+    const texture = this.resources.recordStyleTexture;
+    if (!staged || !texture) return false;
+    const rows = staged.texels.length / (RECORD_STYLE_WIDTH * 4);
+    gl.activeTexture(gl.TEXTURE0 + RECORD_STYLE_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    let ok = true;
+    if (rows === this.recordStyleRows) {
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        RECORD_STYLE_WIDTH,
+        rows,
+        gl.RGBA,
+        gl.FLOAT,
+        staged.texels,
+      );
+    } else {
+      drainGlErrors(gl);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA32F,
+        RECORD_STYLE_WIDTH,
+        rows,
+        0,
+        gl.RGBA,
+        gl.FLOAT,
+        staged.texels,
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      ok = gl.getError() === gl.NO_ERROR;
+      this.recordStyleRows = ok ? rows : 0;
+    }
+    if (ok) this.uploadedBytes += staged.texels.byteLength;
+    gl.activeTexture(gl.TEXTURE0);
+    return ok;
+  }
+
+  /**
+   * Whether a style update must re-sort: checks if depths have actually changed
+   * by sampling the first few slots. If they are the same, the update can skip
+   * re-sorting (color-only update optimization).
+   */
+  private sampledDepthsChanged(pd: PlotData): boolean {
+    const sp = this.scratchPoint;
+    const oi = pd.originalIndices;
+    const sampleSize = Math.min(100, pd.length);
+    for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
+      const origIdx = oi ? oi[i] : i;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = pd.xs[i];
+      sp.y = pd.ys[i];
+      sp.originalIndex = origIdx;
+      const opacity = this.style.getOpacity(sp);
+      if (opacity === 0) continue;
+      const newDepth = composePaintDepth(
+        this.style.getDepth(sp),
+        opacity,
+        this.style.isPredicted(sp),
+      );
+      // Compare with stored depth (note: depths array is in sorted order after last render)
+      if (Math.abs(newDepth - this.depths[i]) > 1e-6) return true;
+    }
+    return false;
   }
 
   /** Count a staged slot that will be drawn, and track its id when asked to. */
@@ -1551,6 +1746,7 @@ export class WebGLRenderer {
       predicted: this.predicted,
       labelColorData: this.atlas?.texels ?? null,
       maxLabels: this.atlas?.plan.stride ?? MAX_LABELS,
+      recordIds: null,
     };
   }
 
@@ -1685,6 +1881,7 @@ export class WebGLRenderer {
     this.labelCounts = new Float32Array(nextCapacity);
     this.shapes = new Float32Array(nextCapacity);
     this.predicted = new Float32Array(nextCapacity);
+    this.recordIds = new Float32Array(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
     this.passScratch = createPassScratch(nextCapacity);
     // The atlas is NOT touched here: its geometry depends on the device texture

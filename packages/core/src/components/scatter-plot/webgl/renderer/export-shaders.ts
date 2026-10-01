@@ -15,6 +15,35 @@ export const CAMERA_TO_CLIP_GLSL = `  vec2 cssTransformed = a_dataPosition * u_t
   vec2 physicalPos = cssTransformed * u_dpr;
   vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;`;
 
+/** Texels per row of the per-record style table (record-table.ts). */
+export const RECORD_STYLE_WIDTH = 1024;
+
+/**
+ * The per-record style table, for a vertex shader with `a_color`: texel 2r is
+ * record r's colour and whether it is shown (0 or 1), texel 2r + 1 its size,
+ * shape and label count. Off (the export, or a stage without a table), every
+ * point keeps its own attributes.
+ */
+export const RECORD_STYLE_GLSL = `in float a_record;
+uniform highp sampler2D u_recordStyle;
+uniform bool u_recordStyleOn;
+
+bool hasRecordStyle() {
+  return u_recordStyleOn && a_record >= 0.0;
+}
+
+vec4 recordStyle(int texel) {
+  int t = int(a_record) * 2 + texel;
+  return texelFetch(u_recordStyle, ivec2(t % ${RECORD_STYLE_WIDTH}, t / ${RECORD_STYLE_WIDTH}), 0);
+}
+
+// a_color, or the record's colour at the point's own opacity, or 0 if hidden.
+vec4 pointColor() {
+  if (!hasRecordStyle()) return a_color;
+  vec4 style = recordStyle(0);
+  return vec4(style.rgb, a_color.a * style.a);
+}`;
+
 export const POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -31,6 +60,7 @@ uniform vec4 u_transform;
 uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;
+${RECORD_STYLE_GLSL}
 
 out vec4 v_color;
 out float v_labelCount;
@@ -41,15 +71,26 @@ flat out int v_pointIndex;
 void main() {
 ${CAMERA_TO_CLIP_GLSL}
 
+  vec4 color = pointColor();
+  float pointSize = a_pointSize;
+  float labelCount = a_labelCount;
+  float shape = a_shape;
+  if (hasRecordStyle()) {
+    vec4 form = recordStyle(1);
+    pointSize = form.x;
+    shape = form.y;
+    labelCount = form.z;
+  }
+
   // Depth is computed per-point on the CPU (opacity + legend z-order tie-break)
   gl_Position = vec4(clipSpace.x, -clipSpace.y, a_depth, 1.0);
-  gl_PointSize = max(1.0, a_pointSize * u_pointScale * u_dpr);
+  gl_PointSize = max(1.0, pointSize * u_pointScale * u_dpr);
 
   // Convert sRGB input to linear RGB for proper blending
-  vec3 linearColor = pow(max(a_color.rgb, vec3(0.0)), vec3(u_gamma));
-  v_color = vec4(linearColor, a_color.a);
-  v_labelCount = a_labelCount;
-  v_shape = a_shape;
+  vec3 linearColor = pow(max(color.rgb, vec3(0.0)), vec3(u_gamma));
+  v_color = vec4(linearColor, color.a);
+  v_labelCount = labelCount;
+  v_shape = shape;
   v_predicted = a_predicted;
   v_pointIndex = gl_VertexID;
 }`;

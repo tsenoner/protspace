@@ -32,6 +32,12 @@ export interface StagePointArrays {
    * reaches the staged label count instead of being applied only at upload.
    */
   maxLabels: number;
+  /**
+   * Set when the renderer applies the legend's hiding per record (a pass with
+   * `hiddenRecords`): staging then writes each slot's record id here, and a slot
+   * with a record is staged with its opacity as if nothing were hidden.
+   */
+  recordIds?: Float32Array | null;
 }
 
 /** The subset of style getters a single staged-point write depends on. */
@@ -47,7 +53,14 @@ export type StagePointStyle = Pick<
  */
 export type StagePointStyleArrays = Pick<
   StagePointArrays,
-  'colors' | 'sizes' | 'labelCounts' | 'shapes' | 'predicted' | 'labelColorData' | 'maxLabels'
+  | 'colors'
+  | 'sizes'
+  | 'labelCounts'
+  | 'shapes'
+  | 'predicted'
+  | 'labelColorData'
+  | 'maxLabels'
+  | 'recordIds'
 >;
 
 /**

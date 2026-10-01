@@ -15,9 +15,11 @@ import { GAMMA_VERTEX_SHADER } from './export-shaders';
 import {
   bindAndClearTarget,
   setCameraUniforms,
+  RECORD_STYLE_TEXTURE_UNIT,
   type CameraParams,
   type CameraUniformLocations,
 } from './render-target';
+import type { StagedRecords } from './record-table';
 
 // The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
 const DENSITY_GRID_LONG_SIDE = 512;
@@ -55,6 +57,8 @@ export interface DensityResources {
     slotCount: WebGLUniformLocation | null;
     tailSlot: WebGLUniformLocation | null;
     group: WebGLUniformLocation | null;
+    recordStyle: WebGLUniformLocation | null;
+    recordStyleOn: WebGLUniformLocation | null;
   };
   categoryCompositeLoc: {
     fields: (WebGLUniformLocation | null)[];
@@ -77,6 +81,8 @@ export interface DensityFrame {
   camera: CameraParams;
   alpha: number;
   palette: SlotPalette;
+  /** Whether the points draw through the per-record style table bound at its unit. */
+  recordStyleOn: boolean;
 }
 
 export function computeDensityGrid(
@@ -92,17 +98,24 @@ export function computeDensityGrid(
   };
 }
 
+type SlotEntries = Map<number, { n: number; first: number }>;
+
+function colorKey(colors: Float32Array, o: number): number {
+  return (
+    (Math.round(colors[o] * 255) << 16) |
+    (Math.round(colors[o + 1] * 255) << 8) |
+    Math.round(colors[o + 2] * 255)
+  );
+}
+
 export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
-  const entries = new Map<number, { n: number; first: number }>();
+  const entries: SlotEntries = new Map();
   let prevKey = -1;
   let prev: { n: number; first: number } | undefined;
   for (let i = 0; i < count; i++) {
     const o = i * 4;
     if (!(colors[o + 3] > 0)) continue;
-    const key =
-      (Math.round(colors[o] * 255) << 16) |
-      (Math.round(colors[o + 1] * 255) << 8) |
-      Math.round(colors[o + 2] * 255);
+    const key = colorKey(colors, o);
     if (key !== prevKey) {
       prev = entries.get(key);
       if (!prev) entries.set(key, (prev = { n: 0, first: i }));
@@ -110,7 +123,29 @@ export function buildSlotPalette(colors: Float32Array, count: number, gamma: num
     }
     prev!.n++;
   }
+  return paletteFromEntries(entries, gamma);
+}
 
+/**
+ * {@link buildSlotPalette} of points drawn through the per-record style table:
+ * the same counts and first draw indices, gathered per record.
+ */
+export function buildRecordSlotPalette(staged: StagedRecords, gamma: number): SlotPalette {
+  const entries: SlotEntries = new Map();
+  for (let r = 0; r < staged.codes.count; r++) {
+    if (staged.hidden[r] || staged.drawn[r] === 0) continue;
+    const key = colorKey(staged.texels, r * 8);
+    const entry = entries.get(key);
+    if (!entry) entries.set(key, { n: staged.drawn[r], first: staged.firstDrawn[r] });
+    else {
+      entry.n += staged.drawn[r];
+      entry.first = Math.min(entry.first, staged.firstDrawn[r]);
+    }
+  }
+  return paletteFromEntries(entries, gamma);
+}
+
+function paletteFromEntries(entries: SlotEntries, gamma: number): SlotPalette {
   const byFirst = (a: [number, { first: number }], b: [number, { first: number }]) =>
     a[1].first - b[1].first;
   let slots: number[];
@@ -185,9 +220,13 @@ function destroyColorTarget(gl: WebGL2RenderingContext, t: ColorTarget): void {
 export function createDensityResources(
   gl: WebGL2RenderingContext,
   quadBuffer: WebGLBuffer,
-  pointAttribs: { dataPosition: number; color: number },
+  pointAttribs: { dataPosition: number; color: number; record: number },
 ): DensityResources | null {
-  const pointBindings = { a_dataPosition: pointAttribs.dataPosition, a_color: pointAttribs.color };
+  const pointBindings = {
+    a_dataPosition: pointAttribs.dataPosition,
+    a_color: pointAttribs.color,
+    a_record: pointAttribs.record,
+  };
   const quadBindings = { a_position: QUAD_ATTRIB_INDEX };
   const contourBlurProgram = createProgramFromSources(
     gl,
@@ -242,6 +281,8 @@ export function createDensityResources(
       slotCount: loc(categoryAccumProgram, 'u_slotCount'),
       tailSlot: loc(categoryAccumProgram, 'u_tailSlot'),
       group: loc(categoryAccumProgram, 'u_group'),
+      recordStyle: loc(categoryAccumProgram, 'u_recordStyle'),
+      recordStyleOn: loc(categoryAccumProgram, 'u_recordStyleOn'),
     },
     categoryCompositeLoc: {
       fields: DENSITY_FIELD_UNITS.map((_, g) => loc(categoryCompositeProgram, `u_field${g}`)),
@@ -377,6 +418,8 @@ export function accumulateAndBlurDensity(
   gl.uniform3fv(loc.slotKeys, palette.keys);
   gl.uniform1i(loc.slotCount, palette.count);
   gl.uniform1i(loc.tailSlot, palette.tailSlot);
+  gl.uniform1i(loc.recordStyle, RECORD_STYLE_TEXTURE_UNIT);
+  gl.uniform1i(loc.recordStyleOn, frame.recordStyleOn ? 1 : 0);
 
   const groups = Math.ceil(palette.count / 4);
   for (let g = 0; g < groups && fields[g]; g++) {

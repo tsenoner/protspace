@@ -1,6 +1,7 @@
 import type { PointAttribLocations } from '../types';
 
-type PointAttribKey = keyof PointAttribLocations;
+// The record id is wired by the live renderer alone; the export never reads it.
+type PointAttribKey = Exclude<keyof PointAttribLocations, 'record'>;
 
 interface PointAttributeSpec {
   key: PointAttribKey;

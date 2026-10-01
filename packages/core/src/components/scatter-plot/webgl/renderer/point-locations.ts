@@ -19,6 +19,7 @@ export function resolvePointLocations(
       labelCount: gl.getAttribLocation(program, 'a_labelCount'),
       shape: gl.getAttribLocation(program, 'a_shape'),
       predicted: gl.getAttribLocation(program, 'a_predicted'),
+      record: gl.getAttribLocation(program, 'a_record'),
     },
     uniforms: {
       resolution: gl.getUniformLocation(program, 'u_resolution'),
@@ -31,6 +32,8 @@ export function resolvePointLocations(
       labelTextureSize: gl.getUniformLocation(program, 'u_labelTextureSize'),
       maxLabels: gl.getUniformLocation(program, 'u_maxLabels'),
       labelAtlasCapacity: gl.getUniformLocation(program, 'u_labelAtlasCapacity'),
+      recordStyle: gl.getUniformLocation(program, 'u_recordStyle'),
+      recordStyleOn: gl.getUniformLocation(program, 'u_recordStyleOn'),
     },
   };
 }

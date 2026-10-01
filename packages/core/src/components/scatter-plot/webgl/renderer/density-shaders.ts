@@ -4,7 +4,7 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
-import { CAMERA_TO_CLIP_GLSL } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, RECORD_STYLE_GLSL } from './export-shaders';
 import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
 
 export function gaussianWeights(sigma: number, radius: number): number[] {
@@ -98,6 +98,7 @@ uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
 uniform int u_slotCount;
 uniform int u_tailSlot;
 uniform int u_group;
+${RECORD_STYLE_GLSL}
 
 out vec4 v_accum;
 
@@ -110,7 +111,8 @@ int slotOf(vec3 c) {
 }
 
 void main() {
-  int slot = a_color.a > 0.0 ? slotOf(a_color.rgb) : -1;
+  vec4 color = pointColor();
+  int slot = color.a > 0.0 ? slotOf(color.rgb) : -1;
   int local = slot - 4 * u_group;
   if (slot < 0 || local < 0 || local > 3) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);

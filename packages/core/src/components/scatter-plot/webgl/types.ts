@@ -119,6 +119,8 @@ export interface PointAttribLocations {
   labelCount: number;
   shape: number;
   predicted: number;
+  /** Record id into the per-record style table, or -1. */
+  record: number;
 }
 
 /** Uniform locations for the point shader program. */
@@ -134,6 +136,8 @@ export interface PointUniformLocations {
   maxLabels: WebGLUniformLocation | null;
   /** Points the label atlas covers; 0 disables the multi-label branch entirely. */
   labelAtlasCapacity: WebGLUniformLocation | null;
+  recordStyle: WebGLUniformLocation | null;
+  recordStyleOn: WebGLUniformLocation | null;
 }
 
 // ============================================================================

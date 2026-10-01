@@ -12,6 +12,8 @@ import { IDENTITY_RESCALE, type Rescale } from '../../rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 
 export const LABEL_ATLAS_TEXTURE_UNIT = 1;
+/** The per-record style table's unit, clear of the atlas and the density fields (0, 2-4). */
+export const RECORD_STYLE_TEXTURE_UNIT = 7;
 
 /**
  * Binds the given framebuffer (or the default framebuffer when `null`), sets the
@@ -90,6 +92,11 @@ interface PointDrawStateParams extends CameraParams {
    * all four here is what stops the two draw paths choosing different fallbacks.
    */
   labelAtlas: LabelAtlasPlan | null;
+  /**
+   * The per-record style table to draw through, or null (the export, or a stage
+   * that kept none): every point then draws with its own staged style.
+   */
+  recordStyle?: WebGLTexture | null;
 }
 
 /**
@@ -131,6 +138,14 @@ export function bindPointDrawState(
   gl.uniform1i(uniforms.maxLabels, atlas?.stride ?? MAX_LABELS);
   gl.uniform1i(uniforms.labelAtlasCapacity, atlas?.pointCapacity ?? 0);
   gl.uniform2f(uniforms.labelTextureSize, atlas?.width ?? 1, atlas?.height ?? 1);
+
+  // Bound or not, the sampler names its own unit: one left at unit 0 would read
+  // the linear framebuffer's texture while drawing into it, which WebGL rejects.
+  const recordStyle = params.recordStyle ?? null;
+  gl.activeTexture(gl.TEXTURE0 + RECORD_STYLE_TEXTURE_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, recordStyle);
+  gl.uniform1i(uniforms.recordStyle, RECORD_STYLE_TEXTURE_UNIT);
+  gl.uniform1i(uniforms.recordStyleOn, recordStyle ? 1 : 0);
 
   gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
   gl.bindTexture(gl.TEXTURE_2D, labelTexture);

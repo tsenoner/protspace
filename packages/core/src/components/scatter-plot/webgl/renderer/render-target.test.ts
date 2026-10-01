@@ -4,7 +4,10 @@ import {
   setPointBlendState,
   drawPoints,
   bindPointDrawState,
+  LABEL_ATLAS_TEXTURE_UNIT,
+  RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
+import { DENSITY_FIELD_UNITS } from './density-shaders';
 import type { PointUniformLocations } from '../types';
 
 function mockGL() {
@@ -170,6 +173,8 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       labelTextureSize: { n: 'labelTextureSize' },
       maxLabels: { n: 'maxLabels' },
       labelAtlasCapacity: { n: 'labelAtlasCapacity' },
+      recordStyle: { n: 'recordStyle' },
+      recordStyleOn: { n: 'recordStyleOn' },
     } as unknown as PointUniformLocations;
     return { gl, uniforms, pushed };
   }
@@ -210,6 +215,27 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     expect(pushed.labelAtlasCapacity).toBe(0);
     // The remaining three describe the 1x1 placeholder that stands in for the atlas.
     expect(pushed.labelTextureSize).toEqual([1, 1]);
+  });
+
+  it('points the record-style sampler at its own unit, on only with a table', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+    });
+    expect(pushed.recordStyle).toBe(RECORD_STYLE_TEXTURE_UNIT);
+    expect(pushed.recordStyleOn).toBe(0);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+      recordStyle: {} as WebGLTexture,
+    });
+    expect(pushed.recordStyleOn).toBe(1);
+  });
+
+  it('keeps the record-style unit clear of the label atlas and the density fields', () => {
+    expect(RECORD_STYLE_TEXTURE_UNIT).not.toBe(LABEL_ATLAS_TEXTURE_UNIT);
+    expect(DENSITY_FIELD_UNITS).not.toContain(RECORD_STYLE_TEXTURE_UNIT);
   });
 });
 

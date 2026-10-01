@@ -17,7 +17,7 @@
 import { sortIndicesByDepthDescending } from './depth-sort';
 
 /** Opacity threshold at/above which a point counts as selected for the two-pass cut. */
-const SELECTED_OPACITY_THRESHOLD = 0.99;
+export const SELECTED_OPACITY_THRESHOLD = 0.99;
 
 /**
  * Encode semantic painter tiers into the existing normalized depth channel.
