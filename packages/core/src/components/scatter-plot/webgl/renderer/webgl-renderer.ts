@@ -843,14 +843,14 @@ export class WebGLRenderer {
 
   private ensureGL(): WebGL2RenderingContext | null {
     if (this.lossController.isLost) return null;
-    if (this.gl) {
-      if (this.gl.isContextLost && this.gl.isContextLost()) {
-        this.markContextLost();
-        return null;
-      }
-      if (!this.isRendererStateValid(this.gl)) {
-        this.resetRendererState();
-      }
+    // Runs every frame, so it asks only what the browser answers on its own: the
+    // `is*` handle queries each wait for the GPU process. Handles go stale only
+    // when the context is lost. That latches the controller, and the owner then
+    // rebuilds the renderer on a fresh canvas, so a restored context is never
+    // drawn with the old handles.
+    if (this.gl && this.gl.isContextLost && this.gl.isContextLost()) {
+      this.markContextLost();
+      return null;
     }
     if (
       this.gl &&
@@ -923,10 +923,6 @@ export class WebGLRenderer {
     }
 
     return gl;
-  }
-
-  private isRendererStateValid(gl: WebGL2RenderingContext): boolean {
-    return this.resources.validate(gl);
   }
 
   private isContextLost(): boolean {

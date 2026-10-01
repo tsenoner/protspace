@@ -5,7 +5,7 @@ import { destroyDensityResources, type DensityResources } from './density-pass';
 /**
  * Holder for the GPU handles a WebGLRenderer owns. Centralizes the resource
  * inventory that was previously enumerated independently in ensureGL (create*),
- * isRendererStateValid (is*), dispose (delete*), and resetRendererState (null).
+ * dispose (delete*), and resetRendererState (null).
  *
  * Dirty-flag / signature / cache state is intentionally NOT held here — those
  * stay on WebGLRenderer (labelTextureInitialized, gammaPipelineAvailable,
@@ -60,28 +60,6 @@ export class GLResources {
     this.predictedBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
-  }
-
-  /**
-   * Byte-faithful mirror of the original `isRendererStateValid` resource checks.
-   * IMPORTANT (behavior-preserving): the original deliberately did NOT validate
-   * `quadBuffer` or `linearFramebuffer` — `ensureGL` reuses the context unless one
-   * of these specific handles is dead. Do not add checks here: that would change
-   * when `resetRendererState()` fires (an observable behavior change, out of scope
-   * for the F-61 extraction).
-   */
-  validate(gl: WebGL2RenderingContext): boolean {
-    if (!this.pointProgram || !gl.isProgram(this.pointProgram)) return false;
-    if (this.pointVao && !gl.isVertexArray(this.pointVao)) return false;
-    if (this.dataPositionBuffer && !gl.isBuffer(this.dataPositionBuffer)) return false;
-    if (this.sizeBuffer && !gl.isBuffer(this.sizeBuffer)) return false;
-    if (this.colorBuffer && !gl.isBuffer(this.colorBuffer)) return false;
-    if (this.depthBuffer && !gl.isBuffer(this.depthBuffer)) return false;
-    if (this.labelCountBuffer && !gl.isBuffer(this.labelCountBuffer)) return false;
-    if (this.shapeBuffer && !gl.isBuffer(this.shapeBuffer)) return false;
-    if (this.predictedBuffer && !gl.isBuffer(this.predictedBuffer)) return false;
-    if (this.labelColorTexture && !gl.isTexture(this.labelColorTexture)) return false;
-    return true;
   }
 
   /**

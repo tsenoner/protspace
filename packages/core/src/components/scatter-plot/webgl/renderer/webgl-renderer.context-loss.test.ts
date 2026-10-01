@@ -6,7 +6,12 @@ import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
-import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
+import {
+  makeRenderer,
+  makeRendererWithStyle,
+  plotData,
+  styleGetters,
+} from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
@@ -186,5 +191,93 @@ describe('WebGLRenderer gamma fallback reporting', () => {
     expect(gammaNotices(degraded)).toHaveLength(1);
     expect(gammaNotices(degraded)[0].context.detail).toBe('gamma shader init failed');
     renderer.destroy();
+  });
+});
+
+// Every query below returns only once the GPU process has caught up, so a call per
+// frame puts CPU and GPU in lockstep. The renderer asks them at (re)creation only.
+const SYNC_QUERIES = [
+  'isProgram',
+  'isVertexArray',
+  'isBuffer',
+  'isTexture',
+  'isFramebuffer',
+  'isRenderbuffer',
+  'getError',
+  'getParameter',
+  'checkFramebufferStatus',
+  'getShaderParameter',
+  'getProgramParameter',
+  'getExtension',
+] as const;
+
+describe('WebGLRenderer per-frame GPU queries', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ['contours off', undefined],
+    ['contours on', 'on' as const],
+  ])('a camera move with %s waits on no GPU query', (_label, densityLayer) => {
+    let transform = d3.zoomIdentity;
+    const { renderer, gl } = makeRendererWithStyle(
+      styleGetters(),
+      {},
+      {
+        getConfig: () => ({ width: 800, height: 600, densityLayer }),
+        getTransform: () => transform,
+      },
+    );
+    renderer.render(plotData(50));
+
+    const glRecord = gl as unknown as Record<string, () => unknown>;
+    // Some mock methods are already recording; clear what creation put in them.
+    const spies = SYNC_QUERIES.map((name) => [name, vi.spyOn(glRecord, name).mockClear()] as const);
+
+    for (let i = 1; i <= 5; i++) {
+      transform = d3.zoomIdentity.translate(i * 10, i * 5).scale(1 + i / 10);
+      renderer.render(plotData(50));
+    }
+
+    const called = spies.filter(([, spy]) => spy.mock.calls.length > 0).map(([name]) => name);
+    expect(called).toEqual([]);
+    renderer.destroy();
+  });
+});
+
+describe('WebGLRenderer context loss without a per-frame handle check', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('never draws on a restored context: its handles belong to the lost one', () => {
+    const { canvas, gl, setContextLost } = createMockCanvas();
+    const onLost = vi.fn();
+    const r = new WebGLRenderer(
+      canvas,
+      scales,
+      () => d3.zoomIdentity,
+      () => ({ width: 800, height: 600 }),
+      styleGetters(),
+      onLost,
+    );
+    r.render(pd);
+    const drawArrays = vi.spyOn(gl!, 'drawArrays');
+    r.render(pd);
+    expect(drawArrays).toHaveBeenCalled();
+    drawArrays.mockClear();
+
+    // WEBGL_lose_context.loseContext(): the flag flips before the event is dispatched.
+    setContextLost(true);
+    r.render(pd);
+    expect(onLost).toHaveBeenCalledTimes(1);
+
+    // restoreContext(): isContextLost() reads false again, with no live handles.
+    setContextLost(false);
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    r.render(pd);
+    r.render(pd);
+
+    expect(drawArrays).not.toHaveBeenCalled();
+    expect(onLost).toHaveBeenCalledTimes(1);
+    r.destroy();
   });
 });

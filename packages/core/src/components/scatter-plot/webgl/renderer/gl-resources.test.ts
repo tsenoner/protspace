@@ -14,12 +14,6 @@ function makeGl() {
     deleteProgram: vi.fn(),
     deleteFramebuffer: vi.fn(),
     deleteRenderbuffer: vi.fn(),
-    isProgram: vi.fn(() => true),
-    isVertexArray: vi.fn(() => true),
-    isBuffer: vi.fn(() => true),
-    isTexture: vi.fn(() => true),
-    isFramebuffer: vi.fn(() => true),
-    isRenderbuffer: vi.fn(() => true),
   } as unknown as WebGL2RenderingContext;
 }
 
@@ -101,35 +95,6 @@ describe('GLResources', () => {
     expect(gl.deleteTexture).toHaveBeenCalledTimes(1);
     expect(res.density).toBeNull();
   });
-
-  it('validate returns true when every present handle is live', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    res.pointProgram = { k: 'prog' } as unknown as WebGLProgram;
-    expect(res.validate(gl)).toBe(true);
-  });
-
-  it('validate returns false when there is no point program', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    expect(res.validate(gl)).toBe(false);
-  });
-
-  it('validate returns false when a present buffer is not a live GL buffer', () => {
-    const gl = makeGl();
-    const res = new GLResources();
-    res.createAll(gl);
-    res.pointProgram = { k: 'prog' } as unknown as WebGLProgram;
-    (gl.isBuffer as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
-    expect(res.validate(gl)).toBe(false);
-  });
-
-  // NOTE: validate() byte-faithfully mirrors the original isRendererStateValid,
-  // which deliberately did NOT check quadBuffer or linearFramebuffer. Tests for
-  // those checks were removed because asserting them would lock in a behavior
-  // change (changing when ensureGL resets) that is out of scope for F-61.
 
   it('reset nulls every handle without touching gl', () => {
     const gl = makeGl();

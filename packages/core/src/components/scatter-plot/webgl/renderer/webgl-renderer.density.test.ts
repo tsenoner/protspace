@@ -20,7 +20,7 @@ function setup(
   getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
   style: WebGLStyleGetters = styleGetters(),
 ) {
-  const { renderer, gl, degraded } = makeRendererWithStyle(style, opts, {
+  const { renderer, gl, degraded, setContextLost } = makeRendererWithStyle(style, opts, {
     getConfig: () => config as never,
     getTransform,
   });
@@ -29,6 +29,7 @@ function setup(
     gl,
     glRecord: gl as unknown as Record<string, (...a: unknown[]) => unknown>,
     degraded,
+    setContextLost,
     resources: (renderer as unknown as { resources: GLResources }).resources,
   };
 }
@@ -495,11 +496,11 @@ describe('density layer failure is not a gamma failure', () => {
   });
 });
 
-// A dead GL handle (`isProgram` false) rebuilds the context state through
-// resetRendererState, the same reset a context loss runs. A real loss is
-// permanent for the renderer (F-39), so the reset is only observable here.
-describe('stale-handle reset', () => {
-  it('clears the density latch so the rebuilt state can try again', () => {
+// The renderer no longer checks its handles every frame, so resetRendererState
+// runs only on a context loss. A loss is permanent for the renderer (F-39): it
+// draws nothing afterwards, so the reset is observable only on its private state.
+describe('context-loss reset', () => {
+  it('clears the density latch on a context loss', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
     // Fail only the float density target (as in the grid-allocation test above),
@@ -525,15 +526,14 @@ describe('stale-handle reset', () => {
     on.renderer.render(plotData(50));
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
 
-    vi.spyOn(on.gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
+    on.setContextLost(true);
     on.renderer.render(plotData(50));
-    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
-    expect(on.resources.density).not.toBeNull();
+    expect((on.renderer as unknown as { densityDisabled: boolean }).densityDisabled).toBe(false);
     on.renderer.destroy();
   });
 
-  it('re-arms the density-unavailable report', () => {
-    const { renderer, gl, degraded } = makeRendererWithStyle(
+  it('re-arms the density-unavailable report for the next context', () => {
+    const { renderer, degraded, setContextLost } = makeRendererWithStyle(
       styleGetters(),
       { missingFloatExtensions: true },
       { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
@@ -542,9 +542,14 @@ describe('stale-handle reset', () => {
     renderer.render(plotData(50));
     expect(reasons(degraded)).toEqual(['density-unavailable']);
 
-    vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
+    setContextLost(true);
     renderer.render(plotData(50));
-    expect(reasons(degraded)).toEqual(['density-unavailable', 'density-unavailable']);
+    const priv = renderer as unknown as {
+      degradeReported: Set<string>;
+      missingFloatExtension: string | null;
+    };
+    expect(priv.degradeReported.size).toBe(0);
+    expect(priv.missingFloatExtension).toBeNull();
     renderer.destroy();
   });
 });
