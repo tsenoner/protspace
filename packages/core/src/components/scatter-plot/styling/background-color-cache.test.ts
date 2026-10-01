@@ -92,22 +92,38 @@ describe('BackgroundColorCache', () => {
     expect(reads).toHaveBeenCalledTimes(2);
   });
 
-  it('drops the value when prefers-color-scheme changes', () => {
-    let fire: () => void = () => {};
-    const media = {
-      addEventListener: (_: string, fn: () => void) => (fire = fn),
-      removeEventListener: vi.fn(),
-    };
-    vi.stubGlobal('matchMedia', () => media);
-    try {
+  describe('prefers-color-scheme', () => {
+    let media: { matches: boolean; addEventListener: unknown; removeEventListener: unknown };
+    let fire: () => void;
+
+    beforeEach(() => {
+      fire = () => {};
+      media = {
+        matches: false,
+        addEventListener: (_: string, fn: () => void) => (fire = fn),
+        removeEventListener: vi.fn(),
+      };
+      vi.stubGlobal('matchMedia', () => media);
       cache.connect();
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('drops the value when the change event fires', () => {
       cache.get();
       fire();
       cache.get();
       expect(reads).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    });
+
+    it('drops the value before the change event fires, which waits for the next frame', () => {
+      cache.get();
+      media.matches = true;
+      cache.get();
+      expect(reads).toHaveBeenCalledTimes(2);
+      cache.get();
+      expect(reads).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('does not keep a value read while detached', () => {

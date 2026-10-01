@@ -22,6 +22,8 @@ export class BackgroundColorCache {
   private _color: Rgb | null = null;
   private _observer: MutationObserver | null = null;
   private _scheme: MediaQueryList | null = null;
+  /** The scheme the cached colour was read under. */
+  private _schemeDark = false;
 
   constructor(private readonly _host: HTMLElement) {}
 
@@ -30,10 +32,15 @@ export class BackgroundColorCache {
     // Mutations are delivered as a microtask; a read in the same task as the change must not
     // see the old colour.
     if (this._observer?.takeRecords().length) this.invalidate();
+    // Likewise a `prefers-color-scheme` flip, whose change event waits for the next frame.
+    if (this._scheme && this._scheme.matches !== this._schemeDark) this.invalidate();
     if (this._color) return this._color;
     const color = resolveColor(getComputedStyle(this._host).backgroundColor);
     // A detached host has no computed style to cache.
-    if (this._host.isConnected) this._color = color;
+    if (this._host.isConnected) {
+      this._color = color;
+      this._schemeDark = this._scheme?.matches ?? false;
+    }
     return color;
   }
 
