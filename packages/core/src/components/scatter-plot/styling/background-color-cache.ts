@@ -15,8 +15,9 @@ type Rgb = readonly [number, number, number];
  * restyle the host: attribute changes (class, style, data-theme, ...) on the host or any ancestor
  * across shadow boundaries, a stylesheet or `<style>` being added or removed in `<head>`, a
  * `prefers-color-scheme` flip, and re-attachment to the document. Rules inserted through the
- * CSSOM (`insertRule`, `adoptedStyleSheets`) cannot be observed; a host that restyles that way
- * calls `invalidate()`.
+ * CSSOM (`insertRule`, `adoptedStyleSheets`) cannot be observed, and the cache is not exposed
+ * outside the plot: an embedder that restyles the background that way must touch an attribute on
+ * the plot (any one, e.g. re-set its `class`) for the next draw to read the new colour.
  */
 export class BackgroundColorCache {
   private _color: Rgb | null = null;
