@@ -69,6 +69,16 @@ export interface VisibilityModel {
   baseOpacityOf(point: PlotDataPoint): number;
   /** Interactivity ≡ `opacityOf(point) > 0` (numeric, not tier-based). */
   isInteractive(point: PlotDataPoint): boolean;
+  /**
+   * `opacityOf` for the protein at global `originalIndex` with id `id`: 0 when
+   * `isHiddenAt`, otherwise `baseOpacityAt`. The staging loops call these index
+   * forms so they need no point object.
+   */
+  opacityAt(originalIndex: number, id: string): number;
+  /** `baseOpacityOf` by index; see {@link opacityAt}. */
+  baseOpacityAt(originalIndex: number, id: string): number;
+  /** Whether the legend hides the protein at `originalIndex` (opacity exactly 0). */
+  isHiddenAt(originalIndex: number): boolean;
 }
 
 /**
@@ -279,10 +289,9 @@ export function computeVisibilityModel(
     }
   }
 
-  const isHidden = (point: PlotDataPoint): boolean => {
+  const isHiddenAt = (idx: number): boolean => {
     if (hiddenMode === 'none') return false;
     if (hiddenMode === 'all') return true;
-    const idx = point.originalIndex;
     // Out-of-range index → accessor returns [] → vacuously hidden.
     // The mask is sized to protein_ids.length, which equals annotationRows.length under the materialized-data invariant.
     if (idx < 0 || idx >= hiddenMask!.length) return true; // hiddenMode === 'mask' guarantees non-null
@@ -301,23 +310,32 @@ export function computeVisibilityModel(
     unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
   }
 
-  const baseOpacityOf = (point: PlotDataPoint): number => {
-    const isSelected = selectedIdsSet.has(point.id);
-    const isHighlighted = highlightedIdsSet.has(point.id);
-    if (isSelected || isHighlighted) return opacities.selected;
-    if (hasSelection && !isSelected) return opacities.faded;
+  // With neither set populated the two lookups below cannot match, and staging
+  // asks once per point.
+  const anyMarked = selectedIdsSet.size > 0 || highlightedIdsSet.size > 0;
+
+  const baseOpacityAt = (originalIndex: number, id: string): number => {
+    if (anyMarked) {
+      const isSelected = selectedIdsSet.has(id);
+      const isHighlighted = highlightedIdsSet.has(id);
+      if (isSelected || isHighlighted) return opacities.selected;
+      if (hasSelection && !isSelected) return opacities.faded;
+    }
     // Focus renders like a selection: focused points on top, the rest flat-faded.
     if (unfocusedMask) {
-      return unfocusedMask[point.originalIndex] === 1 ? opacities.faded : opacities.selected;
+      return unfocusedMask[originalIndex] === 1 ? opacities.faded : opacities.selected;
     }
     return opacities.base;
   };
 
-  const opacityOf = (point: PlotDataPoint): number => {
-    if (isHidden(point)) return 0;
-    return baseOpacityOf(point);
+  const opacityAt = (originalIndex: number, id: string): number => {
+    if (isHiddenAt(originalIndex)) return 0;
+    return baseOpacityAt(originalIndex, id);
   };
 
+  const baseOpacityOf = (point: PlotDataPoint): number =>
+    baseOpacityAt(point.originalIndex, point.id);
+  const opacityOf = (point: PlotDataPoint): number => opacityAt(point.originalIndex, point.id);
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
   const model: VisibilityModel = {
@@ -325,6 +343,9 @@ export function computeVisibilityModel(
     opacityOf,
     baseOpacityOf,
     isInteractive,
+    opacityAt,
+    baseOpacityAt,
+    isHiddenAt,
   };
 
   // Stash mask-relevant inputs + the mask non-enumerably so a later call can

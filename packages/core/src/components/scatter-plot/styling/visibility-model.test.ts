@@ -581,6 +581,32 @@ describe('computeVisibilityModel', () => {
     expect(typeof model.allHidden).toBe('boolean');
   });
 
+  // ── Index forms: what the staging pass calls, with no point object ─────────
+  describe('opacityAt / baseOpacityAt / isHiddenAt', () => {
+    const data = makeData(['A', 'B', 'C', null], [[0], [1], [0, 2], [], [3], [9]]);
+    const cases: [string, Partial<VisibilityInputs>][] = [
+      ['nothing marked', {}],
+      ['hidden values', { hiddenAnnotationValues: ['A', NA_VALUE] }],
+      ['selection', { hiddenAnnotationValues: ['C'], selectedProteinIds: ['p1', 'p2'] }],
+      ['highlight only', { highlightedProteinIds: ['p0', 'p5'] }],
+      ['focus', { focusedValues: ['B'] }],
+      ['all hidden', { hiddenAnnotationValues: ['A', 'B', 'C', NA_VALUE] }],
+      ['missing annotation', { selectedAnnotation: 'other' }],
+    ];
+    for (const [name, inputs] of cases) {
+      it(`match the point forms: ${name}`, () => {
+        const model = computeVisibilityModel(baseInputs({ data, ...inputs }));
+        // Index 6 is past the end of the data: hidden by the mask, like the point form.
+        for (let i = 0; i <= 6; i++) {
+          const p = point(`p${i}`, i);
+          expect(model.opacityAt(i, p.id)).toBe(model.opacityOf(p));
+          expect(model.baseOpacityAt(i, p.id)).toBe(model.baseOpacityOf(p));
+          expect(model.isHiddenAt(i)).toBe(model.opacityOf(p) === 0);
+        }
+      });
+    }
+  });
+
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──
   // when the mask-relevant inputs (data, selectedAnnotation, hidden ref) are
   // reference-equal, so a selection-only change never redoes the pass.
