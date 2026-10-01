@@ -11,6 +11,7 @@ Click any legend row to toggle its visibility:
 - Click once to hide that value.
 - Click again to show it.
 - Double-click to isolate that value and hide the rest.
+- Double-click the isolated value again to show all values.
 - If only one value remains visible, clicking it restores the full set.
 
 ## Reordering And Draw Order

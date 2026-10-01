@@ -260,7 +260,8 @@ plot.addEventListener('brush-selection', (e) => {
   console.log('Selected:', e.detail.proteinIds);
 });
 
-// Legend item interactions
+// Legend item interactions. A mouse double-click fires 'toggle' for its first click,
+// then 'isolate'; the second click of the pair fires nothing.
 legend.addEventListener('legend-item-click', (e) => {
   console.log(`${e.detail.value}: ${e.detail.action}`);
 });
