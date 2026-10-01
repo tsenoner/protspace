@@ -287,6 +287,11 @@ When `currentExampleId` names an entry, the same info popover sits next to the c
 With `auto-sync`, the control bar also applies these changes directly to the target scatterplot, so
 hosts only need to listen for the events they want to mirror elsewhere.
 
+A pick from the projection, annotation or contours menu, the search box or the Clear button shows in
+the control bar at once and reaches the scatterplot, with its event, one frame later, after the
+browser has painted the closed menu. The newest pick wins. `applyProjectionSelection()` and
+`applyAnnotationSelection()` apply synchronously and drop a pick still waiting.
+
 ### Example
 
 ```html
