@@ -558,7 +558,11 @@ export class WebGLRenderer {
   }
 
   clear() {
-    const gl = this.ensureGL();
+    // Before the first draw the plot clears an empty canvas on every size change. That needs a
+    // context but no program, so a prewarmed renderer clears on its prewarm context and leaves
+    // the programs compiling: reading their status here would block on the compile a frame after
+    // it started. The first `render()` with points finishes them.
+    const gl = this.pendingPrograms?.gl ?? this.ensureGL();
     if (!gl) return;
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -569,6 +573,13 @@ export class WebGLRenderer {
   render(pd: PlotData) {
     // Store PlotData for potential off-screen export rendering
     this.lastRenderedData = pd;
+
+    // The zoom handler also renders the still-empty plot at startup. With nothing to draw and the
+    // programs still compiling that is a clear, not a reason to wait for them.
+    if (pd.length === 0 && this.pendingPrograms) {
+      this.clear();
+      return;
+    }
 
     const gl = this.ensureGL();
     const scales = this.getScales();
@@ -1028,8 +1039,8 @@ export class WebGLRenderer {
   /**
    * Create the context and start compiling both programs without waiting for them, so the compile
    * overlaps whatever the page does before its first draw (loading data) instead of stalling it.
-   * The first `ensureGL` reads the results. Optional, idempotent, and silent when WebGL2 is
-   * unavailable: `ensureGL` reports that when a draw is actually attempted.
+   * The first `render()` reads the results (`clear()` does not need them). Optional, idempotent,
+   * and silent when WebGL2 is unavailable: `ensureGL` reports that when a draw is attempted.
    */
   prewarm(): void {
     if (this.gl || this.pendingPrograms) return;

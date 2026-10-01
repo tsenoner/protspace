@@ -60,6 +60,47 @@ describe('WebGLRenderer shader prewarm', () => {
     expect(draw).toHaveBeenCalled();
   });
 
+  it('clears an empty canvas without reading the compile results', () => {
+    const { renderer, gl } = makeRenderer();
+    const { calls } = record(gl);
+    const clear = vi.spyOn(gl as unknown as { clear: () => void }, 'clear');
+
+    renderer.prewarm();
+    renderer.clear();
+    renderer.clear();
+
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(count(calls, 'getShaderParameter')).toBe(0);
+    expect(count(calls, 'getProgramParameter')).toBe(0);
+
+    renderer.render(plotData(3));
+    expect(count(calls, 'compileShader')).toBe(4);
+    expect(count(calls, 'getShaderParameter')).toBe(4);
+  });
+
+  it('treats a render of an empty plot as a clear while the programs compile', () => {
+    const { renderer, gl } = makeRenderer();
+    const { calls } = record(gl);
+    const clear = vi.spyOn(gl as unknown as { clear: () => void }, 'clear');
+
+    renderer.prewarm();
+    renderer.render(plotData(0));
+
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(count(calls, 'getShaderParameter')).toBe(0);
+
+    renderer.render(plotData(3));
+    expect(count(calls, 'getShaderParameter')).toBe(4);
+  });
+
+  it('still initialises on clear() when nothing was prewarmed', () => {
+    const { renderer, gl } = makeRenderer();
+    const { calls } = record(gl);
+    renderer.clear();
+    expect(count(calls, 'compileShader')).toBe(4);
+    expect(count(calls, 'getShaderParameter')).toBe(4);
+  });
+
   it('is idempotent', () => {
     const { renderer, gl } = makeRenderer();
     const { calls } = record(gl);
