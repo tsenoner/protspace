@@ -106,6 +106,7 @@ type Internals = HTMLElement & {
   _shapeMapping: Record<string, string> | null;
   _styleGettersCache: unknown;
   _renderPlot(): void;
+  _flushRender(): void;
   _webglRenderer: WebglStub;
   _numericRecomputeRunning: boolean;
   _handleZOrderChange(event: Event): void;
@@ -158,7 +159,7 @@ afterEach(() => {
 });
 
 describe('legend mapping handlers — single render path (F-31)', () => {
-  it('z-order change renders once imperatively and schedules NO second (Lit) render', () => {
+  it('z-order change renders once and schedules NO second (Lit) render', () => {
     const el = makeEl();
     const renderSpy = vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
     // requestUpdate is the Lit scheduling hook: a reactive @state write calls it
@@ -167,14 +168,16 @@ describe('legend mapping handlers — single render path (F-31)', () => {
 
     el._handleZOrderChange(zOrderEvent({ zOrderMapping: { A: 1, B: 0 } }));
 
-    expect(renderSpy).toHaveBeenCalledTimes(1); // the imperative render
+    expect(renderSpy).not.toHaveBeenCalled(); // requested for the next frame
+    el._flushRender();
+    expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._zOrderMapping).toEqual({ A: 1, B: 0 });
     // F-31: while _zOrderMapping is @state, the write schedules the second render.
     // RED on the current tree (requestUpdate called); GREEN once demoted to a plain field.
     expect(reqSpy).not.toHaveBeenCalled();
   });
 
-  it('color-mapping change renders once imperatively and schedules NO second (Lit) render', () => {
+  it('color-mapping change renders once and schedules NO second (Lit) render', () => {
     const el = makeEl();
     const renderSpy = vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
     const reqSpy = vi.spyOn(el, 'requestUpdate');
@@ -187,6 +190,7 @@ describe('legend mapping handlers — single render path (F-31)', () => {
       }),
     );
 
+    el._flushRender();
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._colorMapping).toEqual({ A: '#111111', B: '#222222' });
     expect(el._shapeMapping).toEqual({ A: 'circle', B: 'square' });

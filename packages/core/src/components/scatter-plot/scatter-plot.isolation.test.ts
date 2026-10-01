@@ -205,6 +205,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _buildPointGridIndex(): void;
     _updateStyleSignature(): void;
     _renderPlot(): void;
+    _flushRender(): void;
     isolateSelection(): void;
     resetIsolation(): void;
     resetZoom(): void;
@@ -274,7 +275,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then defers renderPlot', async () => {
+  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then requests renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
@@ -285,7 +286,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
+    el._flushRender();
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
@@ -311,7 +314,9 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
+    el._flushRender();
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
@@ -360,6 +365,8 @@ describe('scatter-plot isolation render-refresh sequence', () => {
       ];
       expect(calls).toEqual(refresh);
       await el.updateComplete;
+      // The render waits for the next frame.
+      el._flushRender();
       expect(calls).toEqual([...refresh, 'renderPlot']);
     },
   );

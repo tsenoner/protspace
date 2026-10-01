@@ -86,7 +86,7 @@ function prime(): Internals {
   sp.selectedAnnotation = 'fam';
   sp._processData(); // builds _plotData
   sp._buildPointGridIndex(); // builds point index + retains _visibleSlots (direct, no RAF)
-  // Stub the renderer AFTER _buildPointGridIndex (its tail calls _renderPlot).
+  // Stub the renderer after the point index build: only captureAtResolution reads it.
   sp._webglRenderer = {
     renderToCanvas: vi.fn((w: number, h: number, dpr: number) => {
       const c = document.createElement('canvas');
