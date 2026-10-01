@@ -333,6 +333,9 @@ export class ProtspaceLegend extends LitElement {
    */
   private _annotationShapeSize: number | null = null;
 
+  // Item whose first mouse click toggled it and whose dblclick has not arrived yet.
+  private _firstClickKey: string | null = null;
+
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
     maxVisibleValues: number;
@@ -2174,6 +2177,33 @@ export class ProtspaceLegend extends LitElement {
   // Item Interactions
   // ─────────────────────────────────────────────────────────────────
 
+  /**
+   * A mouse double-click arrives as click (detail 1), click (detail 2), dblclick, the last two in
+   * one task. Toggling on the second click only to isolate right after would hand the plot the
+   * item's hide, show and isolate as separate states, so that click is left to the dblclick.
+   * Touch and pen clicks keep toggling: not every engine sends a dblclick for a double tap.
+   */
+  private _handleItemMouseClick(value: string, event: MouseEvent): void {
+    const valueKey = valueToKey(value);
+    const pointerType = (event as Partial<PointerEvent>).pointerType;
+    if (
+      event.detail === 2 &&
+      this._firstClickKey === valueKey &&
+      pointerType !== 'touch' &&
+      pointerType !== 'pen'
+    ) {
+      return;
+    }
+
+    this._handleItemClick(value);
+    this._firstClickKey = event.detail === 1 ? valueKey : null;
+  }
+
+  private _handleItemMouseDoubleClick(value: string): void {
+    this._firstClickKey = null;
+    this._handleItemDoubleClick(value);
+  }
+
   private _handleItemClick(value: string): void {
     const valueKey = valueToKey(value);
     const result = updateItemsVisibility(this._legendItems, this._hiddenValues, valueKey);
@@ -2988,8 +3018,8 @@ export class ProtspaceLegend extends LitElement {
       classes,
       selected,
       {
-        onClick: () => this._handleItemClick(item.value),
-        onDoubleClick: () => this._handleItemDoubleClick(item.value),
+        onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
+        onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
         onViewOther: (e: Event) => {
           e.stopPropagation();
           this._showOtherDialog = true;
