@@ -1,8 +1,13 @@
 import type { TedDomain } from '@protspace/utils';
 
-export const TED_UNASSIGNED_COLOR = 0x9ca3af;
+// Matches the TED website (ted.cathdb.info): Tableau 10 cycled by domain, and its light gray
+// for residues outside every domain. TED colors domains in its own API's list order, which is
+// usually but not always TED01, TED02, …; we key by domain number, so rare out-of-order
+// entries can differ from the TED page.
+export const TED_UNASSIGNED_COLOR = 0xebebeb;
 const TED_DOMAIN_PALETTE = [
-  0x0072b2, 0xe69f00, 0x009e73, 0xcc79a7, 0xd55e00, 0x56b4e9, 0xf0e442, 0x6a3d9a, 0xb15928,
+  0x4e79a7, 0xf28e2c, 0xe15759, 0x76b7b2, 0x59a14f, 0xedc949, 0xaf7aa1, 0xff9da7, 0x9c755f,
+  0xbab0ab,
 ];
 
 export function getTedDomainColor(residueSequenceNumber: number, domains: TedDomain[]): number {

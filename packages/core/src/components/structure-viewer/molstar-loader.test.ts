@@ -19,7 +19,7 @@ describe('TED domain color mapping', () => {
   it('uses one deterministic color across all segments of a domain', () => {
     expect(getTedDomainColor(35, domains)).toBe(getTedDomainColor(60, domains));
     expect(getTedDomainColor(35, domains)).not.toBe(getTedDomainColor(105, domains));
-    expect(getTedDomainColor(50, domains)).toBe(0x9ca3af);
+    expect(getTedDomainColor(50, domains)).toBe(0xebebeb);
   });
 });
 
@@ -94,11 +94,11 @@ describe('Mol* color theme adapter', () => {
         },
       },
     };
-    expect(theme.color({ kind: 'element-location', unit: atomicUnit, element: 7 })).toBe(0x0072b2);
-    expect(theme.color({ kind: 'bond-location', aUnit: atomicUnit, aIndex: 0 })).toBe(0x0072b2);
+    expect(theme.color({ kind: 'element-location', unit: atomicUnit, element: 7 })).toBe(0x4e79a7);
+    expect(theme.color({ kind: 'bond-location', aUnit: atomicUnit, aIndex: 0 })).toBe(0x4e79a7);
     expect(
       theme.color({ kind: 'element-location', unit: { ...atomicUnit, kind: 1 }, element: 7 }),
-    ).toBe(0x9ca3af);
+    ).toBe(0xebebeb);
 
     await viewer.setColorTheme('plddt');
     expect(updateTheme).toHaveBeenLastCalledWith(components, { color: 'plddt-confidence' });

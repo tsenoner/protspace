@@ -39,7 +39,7 @@ New AlphaFold structures retain Mol\*'s existing automatic pLDDT preset. The com
 
 ### Map residue sequence numbers to stable categorical colors
 
-The TED theme will read each atomic element's `label_seq_id`, find the containing inclusive interval, and derive a color from the TED domain number using a fixed accessible categorical palette. All segments of the same domain therefore share a color. Residues outside valid TED intervals use a neutral gray.
+The TED theme will read each atomic element's `label_seq_id`, find the containing inclusive interval, and derive a color from the TED domain number using the TED website's palette (Tableau 10, cycled), so a protein looks the same in ProtSpace and on ted.cathdb.info. All segments of the same domain therefore share a color. Residues outside valid TED intervals use TED's light gray (`#EBEBEB`). TED colors by its own API's list order, which is almost always TED01, TED02, …; keying by domain number keeps colors stable, at the cost of rare mismatches when TED's list is out of order.
 
 Domain number, rather than response order or segment index, is the palette key so color assignment remains stable when discontinuous segments are present.
 
