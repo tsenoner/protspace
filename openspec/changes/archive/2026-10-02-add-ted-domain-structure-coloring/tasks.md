@@ -29,3 +29,13 @@
 - [x] 5.1 Re-run focused unit tests and the original browser reproduction
 - [x] 5.2 Run the repository test suite and mandated `pnpm precommit` gate
 - [x] 5.3 Re-run strict OpenSpec, focused and broad tests, browser proof, and bundle contract
+
+## 6. Review Hardening
+
+- [x] 6.1 Request TED only after AlphaFold DB reports a model, and abort it when the structure fails
+- [x] 6.2 Match the TED website palette (Tableau 10, `#EBEBEB` unassigned)
+- [x] 6.3 Restore each representation's preset theme and apply themes in one transaction
+- [x] 6.4 Keep focus representations in the active mode and interaction representations on their own theme
+- [x] 6.5 Keep the color toolbar mounted while loading and fit the footer in narrow panels
+- [x] 6.6 Share a segmented-control mixin between the color toolbar and the selection-tool toggle
+- [x] 6.7 Cancel a replaced load's requests and isolate each load's Mol\* mount

@@ -4,7 +4,7 @@ Protein structures currently show only AlphaFold pLDDT confidence colors, so use
 
 ## What Changes
 
-- Fetch TED domain assignments alongside AlphaFold structure metadata without making TED availability a prerequisite for viewing a structure.
+- Fetch TED domain assignments once AlphaFold DB reports a model, without making TED availability a prerequisite for viewing a structure.
 - Add a structure-viewer control that switches between the existing pLDDT confidence theme and categorical TED domain colors.
 - Color every inclusive residue segment belonging to the same TED domain consistently, including discontinuous domains, and render unassigned residues neutrally.
 - Keep pLDDT as the default and disable TED coloring when no valid domain assignments are available.

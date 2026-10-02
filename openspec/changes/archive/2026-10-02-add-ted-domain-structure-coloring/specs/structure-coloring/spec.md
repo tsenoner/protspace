@@ -15,10 +15,11 @@ The structure viewer SHALL display each newly loaded AlphaFold structure with th
 - **WHEN** a structure load finishes after its Mol\* viewer has been closed or replaced
 - **THEN** the stale completion does not report a structure error
 - **AND** the stale completion does not change the current viewer's color theme
+- **AND** the replaced load's outstanding AlphaFold and TED requests are cancelled
 
 ### Requirement: TED domain annotations are optional
 
-The system SHALL request TED domain annotations for the displayed accession and SHALL NOT fail or indefinitely delay structure loading when the TED request fails, stalls, returns no domains, or contains no valid residue segments.
+The system SHALL request TED domain annotations for a displayed accession that has an AlphaFold DB model and SHALL NOT fail or indefinitely delay structure loading when the TED request fails, stalls, returns no domains, or contains no valid residue segments.
 
 #### Scenario: TED annotations are available
 
