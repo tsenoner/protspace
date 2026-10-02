@@ -139,6 +139,13 @@ projection are finite.
 - **WHEN** Python decodes that v3 bundle back into tables
 - **THEN** the projections table has a row for `P` in `A` and none for `P` in `B`
 
+#### Scenario: A projection that places no protein
+
+- **WHEN** Python decodes a v3 bundle whose projection `B` has no finite coordinates for any
+  protein
+- **THEN** the projections table has no row for `B`, and the projections metadata does not list
+  `B` either, so the decoded tables can be written back
+
 ### Requirement: The browser protein set SHALL be the proteins with a finite coordinate
 
 The browser reader SHALL include a protein in `protein_ids`, and in every annotation array built

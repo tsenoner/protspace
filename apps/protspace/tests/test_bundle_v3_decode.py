@@ -536,6 +536,34 @@ def test_a_point_with_some_finite_axes_decides_the_numeric_type():
     assert manifest_of(parts[0])["columns"]["length"]["numericType"] == "float"
 
 
+def test_a_projection_that_places_no_protein_round_trips():
+    """The web writer writes every projection, NaN where it places nobody; the
+    decoded tables must agree on the projection set so they can be written
+    back."""
+    metadata, data = projection_tables(2, (2, 3))
+    in_pca3 = pc.equal(data.column("projection_name"), "PCA 3")
+    for axis in ("x", "y", "z"):
+        nan = pa.scalar(np.nan, data.schema.field(axis).type)
+        values = pc.if_else(in_pca3, nan, data.column(axis))
+        data = data.set_column(data.schema.get_field_index(axis), axis, values)
+    source = annotations_table(cat=["a", "b"])
+
+    decoded = decode_v3(list(encode_v3(source, metadata, data)))
+
+    assert decoded[1].column("projection_name").to_pylist() == ["PCA 2"]
+    assert set(decoded[2].column("projection_name").to_pylist()) == {"PCA 2"}
+    rewritten = encode_v3(*decoded)
+    assert [p["name"] for p in manifest_of(rewritten[0])["projections"]] == ["PCA 2"]
+    # A transfer keeps it: it does not go through the long tables.
+    transferred = replace_annotations_v3(
+        source, list(encode_v3(source, metadata, data))
+    )
+    assert [p["name"] for p in manifest_of(transferred[0])["projections"]] == [
+        "PCA 2",
+        "PCA 3",
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # corrupt payloads (a v3 bundle is user-supplied input)
 # --------------------------------------------------------------------------- #

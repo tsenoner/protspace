@@ -1230,6 +1230,10 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
       and only proteins with finite coordinates get a row: a protein absent from
       a projection, or whose coordinates there were non-finite, has none (the
       file stores NaN for it, never the origin);
+    * a projection that gives no protein a row is left out of the metadata
+      too, so the two tables agree on the projection set and can be written
+      back: the v2 browser derived that set from the rows, and the web writer
+      stores such a projection when an export places nobody in it;
     * the identifier column comes back first, wherever it sat before.
     """
     if len(parts) != 4:
@@ -1274,10 +1278,22 @@ def decode_v3(parts: list[bytes]) -> tuple[pa.Table, pa.Table, pa.Table]:
         else:
             raise ValueError(f"column '{name}' has unknown v3 kind '{kind}'")
 
+    projections = _decode_projections(
+        parts[2], manifest["projections"], columns[id_column]
+    )
+    projections_metadata = _with_manifest_dimensions(
+        read_part(parts[1]), manifest["projections"]
+    )
+    present = set(pc.unique(projections.column("projection_name")).to_pylist())
+    if len(present) < len(manifest["projections"]):
+        listed = projections_metadata.column("projection_name").to_pylist()
+        projections_metadata = projections_metadata.filter(
+            pa.array([name in present for name in listed], type=pa.bool_())
+        )
     return (
         stamp_format_version(pa.table(columns).replace_schema_metadata(metadata)),
-        _with_manifest_dimensions(read_part(parts[1]), manifest["projections"]),
-        _decode_projections(parts[2], manifest["projections"], columns[id_column]),
+        projections_metadata,
+        projections,
     )
 
 
@@ -1296,7 +1312,9 @@ def replace_annotations_v3(
     pivoted back, part 2 is kept as stored, and none of the old annotation
     columns are decoded.  The result is what the decode-then-encode round trip
     writes: a protein with finite coordinates the new table lacks is added back
-    as an all-missing row, and a new protein gets NaN.
+    as an all-missing row, and a new protein gets NaN.  The one difference is a
+    projection that covers no protein: it is kept, where the round trip's
+    decode leaves it out.
 
     A column the old part 1 stores as labels (``categorical`` or ``multi``)
     stays labels.  Its decoded cells are text, and some label columns decode to
