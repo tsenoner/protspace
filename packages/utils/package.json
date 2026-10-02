@@ -29,7 +29,7 @@
   "dependencies": {
     "d3": "^7.9.0",
     "html2canvas-pro": "^1.5.11",
-    "hyparquet-writer": "^0.7.0",
+    "hyparquet-writer": "^0.16.10",
     "jspdf": "^4.2.1"
   },
   "devDependencies": {

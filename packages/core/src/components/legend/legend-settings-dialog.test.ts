@@ -19,7 +19,7 @@ type LegendTestElement = HTMLElement & {
   data?: {
     annotations?: Record<string, { kind?: 'categorical' | 'numeric'; values: string[] }>;
     protein_ids?: string[];
-    numeric_annotation_data?: Record<string, Array<number | null>>;
+    numeric_annotation_data?: Record<string, Float64Array>;
   };
   proteinIds: string[];
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
@@ -48,7 +48,7 @@ type LegendTestElement = HTMLElement & {
       data?: {
         protein_ids?: string[];
         annotations?: Record<string, { kind?: 'categorical' | 'numeric'; values: string[] }>;
-        numeric_annotation_data?: Record<string, Array<number | null>>;
+        numeric_annotation_data?: Record<string, Float64Array>;
       };
       dispatchEvent?: (event: Event) => boolean;
     } | null;
@@ -376,7 +376,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
             score: { kind: 'numeric', values: [] },
           },
           numeric_annotation_data: {
-            score: [1, 2],
+            score: new Float64Array([1, 2]),
           },
         },
       },
@@ -393,7 +393,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         score: { kind: 'numeric', values: [] },
       },
       numeric_annotation_data: {
-        score: [1, 2],
+        score: new Float64Array([1, 2]),
       },
     });
   });
@@ -417,7 +417,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
             score: { kind: 'numeric', values: [] },
           },
           numeric_annotation_data: {
-            score: [1, 2],
+            score: new Float64Array([1, 2]),
           },
         },
       },
@@ -445,7 +445,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         score: { kind: 'numeric', values: [] },
       },
       numeric_annotation_data: {
-        score: [1, 2],
+        score: new Float64Array([1, 2]),
       },
     };
     el._numericSettingsByAnnotation = {};

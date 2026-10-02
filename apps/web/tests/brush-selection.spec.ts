@@ -321,8 +321,8 @@ async function lassoSelect(
       return [(svgX - t.x) / t.k, (svgY - t.y) / t.k] as [number, number];
     });
 
-    // Query the quadtree directly with the polygon
-    const candidates = plot._quadtreeIndex?.queryByPolygon(localVerts) ?? [];
+    // Query the point index directly with the polygon
+    const candidates = plot._pointGridIndex?.queryByPolygon(localVerts) ?? [];
     const getOpacity = plot._getOpacity?.bind(plot);
     const selectedIds = getOpacity
       ? candidates.filter((d: any) => getOpacity(d) > 0).map((d: any) => d.id)

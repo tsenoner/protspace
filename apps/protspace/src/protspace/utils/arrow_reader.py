@@ -200,6 +200,12 @@ class ArrowReader:
         # Save protein annotations
         protein_annotations_path = output_path / "protein_annotations.parquet"
         protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
+        if self.should_decode():
+            # The cells are written back as they were read, so they keep the
+            # grammar stamp that says so; unstamped they would read as v1.
+            from protspace.data.annotations.encoding import stamp_format_version
+
+            protein_annotations_table = stamp_format_version(protein_annotations_table)
         pq.write_table(protein_annotations_table, str(protein_annotations_path))
 
         # Save projections metadata
@@ -295,11 +301,19 @@ class ArrowReader:
         )
 
     def get_unique_annotation_values(self, annotation: str) -> list[Any]:
-        """Get a list of unique values for a given annotation."""
+        """Get a list of unique values for a given annotation.
+
+        Absent values are skipped, and ``""`` counts as absent: a v3 container
+        spells a missing categorical cell as the empty string (a documented
+        ``decode_v3`` non-identity), so keeping it would add an empty bucket to
+        every column that has any missing value -- 427 of them on
+        ``venom_eat_stats``'s ``ec__pred_value`` alone, which nothing filters out
+        of the annotation list.
+        """
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
             value = protein_data.get("annotations", {}).get(annotation)
-            if value is not None:
+            if value is not None and value != "":
                 unique_values.add(value)
         return list(unique_values)
 

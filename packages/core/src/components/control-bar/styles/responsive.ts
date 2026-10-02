@@ -159,7 +159,8 @@ export const responsiveStyles = css`
   /* Hide icons FIRST when space gets tight (before chevrons) */
   @media (max-width: 800px) {
     /* --breakpoint-md */
-    .right-controls .icon {
+    /* Icon-only segments keep their icons; they have no label to fall back on */
+    .right-controls .icon:not(.segmented-btn > .icon) {
       display: none;
     }
 

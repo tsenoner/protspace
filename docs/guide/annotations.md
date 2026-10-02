@@ -22,7 +22,7 @@ As of bundle format v2, annotation values containing special characters use perc
 
 Example: `PF00001 (Kinase, serine)|425.5` stores the comma in the name literally, but if a name contained a semicolon like "Superfamily; old", it would encode as `PF00001 (Superfamily%3B old)|425.5`.
 
-Format version 2 is marked in the parquet metadata of the `selected_annotations` table under the key `protspace_format_version`. Bundles without this key or with version < 2 are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) for more detail.
+In a legacy (v1/v2) bundle, format version 2 is marked in the parquet metadata of the `selected_annotations` table under the key `protspace_format_version`; bundles without this key are rendered using the legacy parser. A v3 bundle stores its labels already decoded and carries `protspace_container_version` instead. See [Data Format Reference](/guide/data-format#version-detection) for more detail.
 
 ## Sources
 

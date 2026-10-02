@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as d3 from 'd3';
-import { QuadtreeIndex, pointInPolygon } from './quadtree-index';
+import { PointGridIndex, pointInPolygon } from './point-grid-index';
 import type { PlotData } from '@protspace/utils';
 
 /** Build a minimal PlotData with identity originalIndices mapping. */
@@ -15,8 +15,8 @@ function makePD(xs: number[], ys: number[], ids?: string[]): PlotData {
   };
 }
 
-function buildIndex(pd: PlotData): QuadtreeIndex {
-  const idx = new QuadtreeIndex();
+function buildIndex(pd: PlotData): PointGridIndex {
+  const idx = new PointGridIndex();
   idx.setScales({
     x: d3.scaleLinear().domain([0, 100]).range([0, 100]),
     y: d3.scaleLinear().domain([0, 100]).range([0, 100]),
@@ -78,7 +78,7 @@ describe('pointInPolygon', () => {
 
 // ── findNearest ────────────────────────────────────────────────
 
-describe('QuadtreeIndex.findNearest', () => {
+describe('PointGridIndex.findNearest', () => {
   it('returns the slot of the nearest point within radius', () => {
     const pd = makePD([10, 50, 90], [10, 50, 90]);
     const idx = buildIndex(pd);
@@ -93,14 +93,14 @@ describe('QuadtreeIndex.findNearest', () => {
   });
 
   it('returns -1 when tree is empty', () => {
-    const idx = new QuadtreeIndex();
+    const idx = new PointGridIndex();
     expect(idx.findNearest(50, 50, 20)).toBe(-1);
   });
 });
 
-// ── QuadtreeIndex.queryByPixels ────────────────────────────────
+// ── PointGridIndex.queryByPixels ────────────────────────────────
 
-describe('QuadtreeIndex.queryByPixels', () => {
+describe('PointGridIndex.queryByPixels', () => {
   it('returns slots of points inside the AABB', () => {
     const pd = makePD([10, 50, 90], [10, 50, 90]);
     const idx = buildIndex(pd);
@@ -109,7 +109,7 @@ describe('QuadtreeIndex.queryByPixels', () => {
   });
 
   it('returns empty array when no tree is built', () => {
-    const idx = new QuadtreeIndex();
+    const idx = new PointGridIndex();
     expect(idx.queryByPixels(0, 0, 100, 100)).toEqual([]);
   });
 
@@ -121,9 +121,9 @@ describe('QuadtreeIndex.queryByPixels', () => {
   });
 });
 
-// ── QuadtreeIndex.queryByPolygon ───────────────────────────────
+// ── PointGridIndex.queryByPolygon ───────────────────────────────
 
-describe('QuadtreeIndex.queryByPolygon', () => {
+describe('PointGridIndex.queryByPolygon', () => {
   it('returns slots of points inside a triangle', () => {
     const pd = makePD([5, 0, 5], [3, 10, 1], ['inside', 'outside', 'also-inside']);
     const idx = buildIndex(pd);
@@ -151,7 +151,7 @@ describe('QuadtreeIndex.queryByPolygon', () => {
   });
 
   it('returns empty when no tree is built', () => {
-    const idx = new QuadtreeIndex();
+    const idx = new PointGridIndex();
     const square: [number, number][] = [
       [0, 0],
       [10, 0],
@@ -204,10 +204,10 @@ describe('QuadtreeIndex.queryByPolygon', () => {
 
 // ── rebuild with explicit slots ────────────────────────────────
 
-describe('QuadtreeIndex.rebuild with slot subset', () => {
+describe('PointGridIndex.rebuild with slot subset', () => {
   it('only indexes the provided slots', () => {
     const pd = makePD([10, 50, 90], [10, 50, 90]);
-    const idx = new QuadtreeIndex();
+    const idx = new PointGridIndex();
     idx.setScales({
       x: d3.scaleLinear().domain([0, 100]).range([0, 100]),
       y: d3.scaleLinear().domain([0, 100]).range([0, 100]),
@@ -222,12 +222,12 @@ describe('QuadtreeIndex.rebuild with slot subset', () => {
 
   it('sets qt to null when slots array is empty', () => {
     const pd = makePD([10, 50], [10, 50]);
-    const idx = new QuadtreeIndex();
+    const idx = new PointGridIndex();
     idx.setScales({
       x: d3.scaleLinear().domain([0, 100]).range([0, 100]),
       y: d3.scaleLinear().domain([0, 100]).range([0, 100]),
     });
     idx.rebuild(pd, []);
-    expect(idx.hasTree()).toBe(false);
+    expect(idx.isBuilt()).toBe(false);
   });
 });

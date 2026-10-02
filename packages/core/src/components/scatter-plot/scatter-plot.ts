@@ -17,7 +17,6 @@ import {
   sliceVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
-  plotDataId,
   materializePlotDataPoint,
   materializeEatOverlay,
   getProteinAnnotationValues,
@@ -46,7 +45,7 @@ import {
 } from './webgl';
 import { resolveColor } from './webgl/color-utils';
 import type { RendererDegradedDetail } from './scatter-plot.events';
-import { QuadtreeIndex } from './interaction/quadtree-index';
+import { PointGridIndex } from './interaction/point-grid-index';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
@@ -179,7 +178,7 @@ export class ProtspaceScatterplot extends LitElement {
   @query('svg') private _svg!: SVGSVGElement;
 
   // Internal
-  private _quadtreeIndex: QuadtreeIndex = new QuadtreeIndex();
+  private _pointGridIndex: PointGridIndex = new PointGridIndex();
   private resizeObserver: ResizeObserver;
   // d3 zoom/brush/lasso lifecycle, the three SVG groups, and the zoom/lasso RAF
   // loops live in the controller (F-07). Constructed in firstUpdated. Event
@@ -222,11 +221,11 @@ export class ProtspaceScatterplot extends LitElement {
     fadedOpacity: number;
     eatOverlayEnabled: boolean;
   } | null = null;
-  private _quadtreeRebuildRafId: number | null = null;
-  // Slot list the quadtree was last rebuilt with (legend/filter-visible
+  private _pointGridIndexRebuildRafId: number | null = null;
+  // Slot list the point index was last rebuilt with (legend/filter-visible
   // slots). Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
-  // of traversing the quadtree (~93× slower at 570k points, research doc 04).
+  // of traversing the point index (~93× slower at 570k points, research doc 04).
   private _visibleSlots: number[] | null = null;
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
@@ -255,7 +254,7 @@ export class ProtspaceScatterplot extends LitElement {
     getConfig: () => this._mergedConfig,
     getScales: () => this._scales,
     getPlotData: () => this._plotData,
-    getQuadtree: () => this._quadtreeIndex,
+    getPointGridIndex: () => this._pointGridIndex,
     getVisibleSlots: () => this._visibleSlots,
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
@@ -302,7 +301,7 @@ export class ProtspaceScatterplot extends LitElement {
   // the old subset while the legend (fed from getCurrentData()) shows everything.
   private _plotDataWasCulled = false;
   private _lastMaterializedSource: VisualizationData | null = null;
-  private _lastMaterializedNumericValues: Array<number | null> | null = null;
+  private _lastMaterializedNumericValues: Float64Array | null = null;
   private _materializedDataCacheKey: string | null = null;
   private _materializedDataCache: VisualizationData | null = null;
   // F-40: memoize the filtered display-data rebuild. Keyed by reference on the
@@ -546,9 +545,9 @@ export class ProtspaceScatterplot extends LitElement {
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
-    if (this._quadtreeRebuildRafId !== null) {
-      cancelAnimationFrame(this._quadtreeRebuildRafId);
-      this._quadtreeRebuildRafId = null;
+    if (this._pointGridIndexRebuildRafId !== null) {
+      cancelAnimationFrame(this._pointGridIndexRebuildRafId);
+      this._pointGridIndexRebuildRafId = null;
     }
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
@@ -785,7 +784,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
     if (this._geometryInputsChanged(changedProperties)) {
       this._processData();
-      this._scheduleQuadtreeRebuild();
+      this._schedulePointGridIndexRebuild();
       this._webglRenderer?.invalidatePositionCache();
       this._webglRenderer?.invalidateStyleCache();
       if (changedProperties.has('data')) {
@@ -818,7 +817,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /** INV-14: config shallow-merge + duplicate-UI teardown + style signature + quadtree schedule. */
+  /** INV-14: config shallow-merge + duplicate-UI teardown + style signature + point index schedule. */
   private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
@@ -834,7 +833,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._updateStyleSignature();
       this._webglRenderer?.invalidateStyleCache();
       this._webglRenderer?.setStyleSignature(this._styleSig);
-      this._scheduleQuadtreeRebuild();
+      this._schedulePointGridIndexRebuild();
     }
   }
 
@@ -845,7 +844,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('eatOverlayEnabled');
     if (visibilityMembershipChanged) {
-      this._scheduleQuadtreeRebuild();
+      this._schedulePointGridIndexRebuild();
       this._webglRenderer?.invalidateStyleCache();
       this._updateStyleSignature();
       this._webglRenderer?.setStyleSignature(this._styleSig);
@@ -998,16 +997,15 @@ export class ProtspaceScatterplot extends LitElement {
       !this.filtersActive &&
       !this._plotDataWasCulled;
 
-    if (onlyProjectionChanged) {
-      // Fast path: update coordinates in-place from the new projection data.
-      // No new object allocation — just overwrite x/y on existing PlotDataPoints.
-      this._updatePlotDataCoordinates(dataToUse);
-    } else {
+    // Fast path: update coordinates in-place from the new projection data. No new
+    // object allocation — just overwrite x/y on the existing PlotData. It bails out when
+    // the new projection is missing a point, which only a rebuild can cull.
+    if (!onlyProjectionChanged || !this._updatePlotDataCoordinates(dataToUse)) {
       // Release old data references before allocating the new dataset.
       // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
       this._plotData = EMPTY_PLOT_DATA;
-      this._quadtreeIndex.clear();
+      this._pointGridIndex.clear();
       this._webglRenderer?.releaseDataReferences();
 
       this._plotData = DataProcessor.processVisualizationData(
@@ -1018,7 +1016,8 @@ export class ProtspaceScatterplot extends LitElement {
         this.projectionPlane,
         visibleProteinIds,
       );
-      this._plotDataWasCulled = this._isolationMode || visibleProteinIds !== null;
+      // Any cull — filter, isolation or a missing coordinate — leaves an index map.
+      this._plotDataWasCulled = this._plotData.originalIndices !== null;
     }
 
     this._lastDataRef = dataToUse;
@@ -1071,7 +1070,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._processData();
     }
 
-    this._scheduleQuadtreeRebuild();
+    this._schedulePointGridIndexRebuild();
     this._webglRenderer?.invalidateStyleCache();
     this._updateStyleSignature();
     this._webglRenderer?.setStyleSignature(this._styleSig);
@@ -1138,10 +1137,14 @@ export class ProtspaceScatterplot extends LitElement {
    * Update PlotData coordinates in-place from a new projection.
    * Reads directly from VisualizationData.projections — no intermediate allocation.
    * This avoids the ~700MB memory spike from rebuilding the full PlotData container.
+   *
+   * Returns false, leaving the PlotData half-written, when the projection has a
+   * non-finite coordinate: that point has to be culled, which only
+   * `DataProcessor.processVisualizationData` does, so the caller rebuilds.
    */
-  private _updatePlotDataCoordinates(data: VisualizationData) {
+  private _updatePlotDataCoordinates(data: VisualizationData): boolean {
     const projection = data.projections[this.selectedProjectionIndex];
-    if (!projection) return;
+    if (!projection) return true;
 
     const pd = this._plotData;
     // xs/ys/zs are readonly fields, but the Float32Array contents are mutable.
@@ -1154,12 +1157,13 @@ export class ProtspaceScatterplot extends LitElement {
       const base = origIdx * dim;
       const c0 = projection.data[base];
       const c1 = projection.data[base + 1];
+      const c2 = dim === 3 ? projection.data[base + 2] : 0;
+      if (!Number.isFinite(c0) || !Number.isFinite(c1) || !Number.isFinite(c2)) return false;
 
       let xVal = c0;
       let yVal = c1;
 
       if (dim === 3) {
-        const c2 = projection.data[base + 2];
         if (zs) zs[i] = c2;
         if (this.projectionPlane === 'xz') {
           yVal = c2;
@@ -1175,10 +1179,11 @@ export class ProtspaceScatterplot extends LitElement {
 
     // New container ref so Lit detects the change and extent-cache invalidates.
     this._plotData = clonePlotData(this._plotData);
+    return true;
   }
 
-  private _buildQuadtree() {
-    // Cancel any in-flight duplicate stack computation — it uses the old quadtree
+  private _buildPointGridIndex() {
+    // Cancel any in-flight duplicate stack computation — it uses the old point index
     // and would overwrite cleared state with stale results when it finishes.
     this._dupOverlay.cancelCompute();
 
@@ -1202,16 +1207,16 @@ export class ProtspaceScatterplot extends LitElement {
       if (visibilityModel.isInteractive(sp)) visibleSlots.push(s);
     }
     this._visibleSlots = visibleSlots;
-    this._quadtreeIndex.setScales(this._scales);
-    this._quadtreeIndex.rebuild(pd, visibleSlots);
+    this._pointGridIndex.setScales(this._scales);
+    this._pointGridIndex.rebuild(pd, visibleSlots);
     // Duplicate stacks are computed lazily for the current viewport (see the
-    // controller's ensureForViewport) to keep quadtree rebuilds fast on large datasets.
+    // controller's ensureForViewport) to keep point index rebuilds fast on large datasets.
     this._dupOverlay.resetState();
 
     // Trigger a fresh duplicate overlay update so badges are recomputed for the
-    // new quadtree (e.g. after a projection switch).  Without this, the overlays
+    // new point index (e.g. after a projection switch).  Without this, the overlays
     // rendered synchronously in updated() used a stale cache and nothing would
-    // re-trigger them after the deferred quadtree rebuild.
+    // re-trigger them after the deferred point index rebuild.
     this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
 
     // A rebuild can change the indexed (isInteractive) slot set, so re-render to
@@ -1219,13 +1224,13 @@ export class ProtspaceScatterplot extends LitElement {
     this._renderPlot();
   }
 
-  private _scheduleQuadtreeRebuild() {
-    if (this._quadtreeRebuildRafId !== null) {
-      cancelAnimationFrame(this._quadtreeRebuildRafId);
+  private _schedulePointGridIndexRebuild() {
+    if (this._pointGridIndexRebuildRafId !== null) {
+      cancelAnimationFrame(this._pointGridIndexRebuildRafId);
     }
-    this._quadtreeRebuildRafId = requestAnimationFrame(() => {
-      this._quadtreeRebuildRafId = null;
-      this._buildQuadtree();
+    this._pointGridIndexRebuildRafId = requestAnimationFrame(() => {
+      this._pointGridIndexRebuildRafId = null;
+      this._buildPointGridIndex();
     });
   }
 
@@ -1244,8 +1249,8 @@ export class ProtspaceScatterplot extends LitElement {
       getSelectionTool: () => this.selectionTool,
       hasScales: () => this._scales != null,
       getTransform: () => this._transform,
-      queryByPolygon: (vertices) => this._quadtreeIndex.queryByPolygon(vertices),
-      queryByPixels: (x0, y0, x1, y1) => this._quadtreeIndex.queryByPixels(x0, y0, x1, y1),
+      queryByPolygon: (vertices) => this._pointGridIndex.queryByPolygon(vertices),
+      queryByPixels: (x0, y0, x1, y1) => this._pointGridIndex.queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
@@ -1300,7 +1305,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     this._mergedConfig = { ...this._mergedConfig, width, height };
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
-    this._scheduleQuadtreeRebuild();
+    this._schedulePointGridIndexRebuild();
     this._renderPlot();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();
@@ -1309,7 +1314,7 @@ export class ProtspaceScatterplot extends LitElement {
   // HiDPI setup and quality handled by WebGLRenderer
 
   /**
-   * Resolve a list of quadtree slots to the protein ids of the interactive
+   * Resolve a list of point index slots to the protein ids of the interactive
    * points among them, in a single allocation-free pass.
    *
    * Shared by lasso and brush selection. Reuses `_scratchPoint` and the cached
@@ -1350,7 +1355,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (!event.selection) return;
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
-    const slots = this._quadtreeIndex.queryByPixels(x0, y0, x1, y1);
+    const slots = this._pointGridIndex.queryByPixels(x0, y0, x1, y1);
     const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => {
       /* brush-rectangle clear owned by the controller for the live path */
@@ -1441,7 +1446,7 @@ export class ProtspaceScatterplot extends LitElement {
    * fresh PlotData per frame. Because the dirty check is length-sensitive, that
    * turned every pan and zoom into a full re-stage — 888 ms for a zoom at 1M
    * against 1.0 ms just below it — for a cull that removed zero points at full
-   * extent and 23% even at 3x zoom (#456). The quadtree it queried is still
+   * extent and 23% even at 3x zoom (#456). The point index it queried is still
    * built and still used, by hover, click, brush and lasso; it is only off the
    * render path.
    */
@@ -1488,7 +1493,7 @@ export class ProtspaceScatterplot extends LitElement {
    * Pull-based, memoized accessor for the shared point-visibility model.
    *
    * PULL-BASED on purpose (design D1): there is no `willUpdate`; isolation,
-   * reset, and numeric-rebin rAF all call `_processData`/`_buildQuadtree`
+   * reset, and numeric-rebin rAF all call `_processData`/`_buildPointGridIndex`
    * imperatively outside the Lit cycle; and pinned tests drive unattached
    * elements where lifecycle never runs. A lifecycle-recomputed model would be
    * stale at those sites. So the model is computed lazily and memoized purely on
@@ -1793,7 +1798,7 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Shared screen→data hit-test for hover and click (F-28). Resolves the nearest
    * INTERACTIVE, currently-RENDERED point under the cursor, or null. Owns the
-   * transform inversion, quadtree `findNearest`, the isInteractive/isPointRendered
+   * transform inversion, point index `findNearest`, the isInteractive/isPointRendered
    * guards, and the within-radius distance check. Callers branch only on the result.
    */
   pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
@@ -1804,7 +1809,7 @@ export class ProtspaceScatterplot extends LitElement {
     const dataY = (mouseY - this._transform.y) / k;
 
     const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
-    const nearestSlot = this._quadtreeIndex.findNearest(dataX, dataY, hitRadius / k);
+    const nearestSlot = this._pointGridIndex.findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
     const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
@@ -2158,14 +2163,14 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Shared isolation render-refresh: reprocess derived plot data, rebuild the
-   * quadtree, invalidate + re-sign the WebGL renderer's caches, request a Lit
+   * point index, invalidate + re-sign the WebGL renderer's caches, request a Lit
    * update, and render once the update settles. Called by isolateSelection() and
    * resetIsolation() — the only divergence (resetIsolation clears _lastDataRef to
    * force the full-rebuild path) stays at the call site, before this method runs.
    */
   private _reprocessAndRefresh(): void {
     this._processData();
-    this._buildQuadtree();
+    this._buildPointGridIndex();
 
     if (this._webglRenderer) {
       this._webglRenderer.invalidatePositionCache();
@@ -2186,11 +2191,17 @@ export class ProtspaceScatterplot extends LitElement {
       return;
     }
 
-    // Validate selected IDs against current plot data
-    const currentProteinIds = new Set(
-      Array.from({ length: this._plotData.length }, (_, s) => plotDataId(this._plotData, s)),
+    // Keep the selected ids that are in the current view: in the dataset, through the
+    // query filter and in every isolation layer. Not the plotted set: that also lacks
+    // the proteins the selected projection does not place, and isolating them away
+    // would lose them in every other projection too.
+    const inDataset = new Set(this._plotData.proteinIds);
+    const visible = this._getVisibleProteinIdsSet();
+    const inIsolation = this._isolationMembership();
+    const validSelectedIds = this.selectedProteinIds.filter(
+      (id) =>
+        inDataset.has(id) && (!visible || visible.has(id)) && (!inIsolation || inIsolation(id)),
     );
-    const validSelectedIds = this.selectedProteinIds.filter((id) => currentProteinIds.has(id));
 
     if (validSelectedIds.length === 0) {
       return;
@@ -2208,12 +2219,20 @@ export class ProtspaceScatterplot extends LitElement {
     // stale transform instead of filling the plot (#297).
     this.resetZoom();
 
+    // The isolated subset, not the points this projection places: a protein it does not
+    // place is still isolated and drawn in every projection that does, so neither the
+    // reported size nor the selection lockout below may shrink by it. The lockout is
+    // only lifted by leaving isolation, so judging it on the plotted points would lock
+    // selection out of a subset that another projection draws in full.
+    const currentData = this.getCurrentData();
+    const isolatedSize = currentData?.protein_ids.length ?? 0;
+
     this.dispatchEvent(
       new CustomEvent('data-isolation', {
         detail: {
           isolationHistory: this._isolationHistory,
           isolationMode: this._isolationMode,
-          dataSize: this._plotData.length,
+          dataSize: isolatedSize,
         },
         bubbles: true,
         composed: true,
@@ -2224,7 +2243,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.dispatchEvent(
       new CustomEvent('data-change', {
         detail: {
-          data: this.getCurrentData(),
+          data: currentData,
           isSplitData: true,
           isolationMode: true,
         },
@@ -2233,14 +2252,14 @@ export class ProtspaceScatterplot extends LitElement {
       }),
     );
 
-    // Auto-disable selection mode if only 1 point left
-    if (this._plotData.length <= 1) {
+    // Auto-disable selection mode if only 1 protein is left
+    if (isolatedSize <= 1) {
       this.selectionMode = false;
       this.dispatchEvent(
         new CustomEvent('auto-disable-selection', {
           detail: {
             reason: 'insufficient-data',
-            dataSize: this._plotData.length,
+            dataSize: isolatedSize,
           },
           bubbles: true,
           composed: true,
@@ -2388,42 +2407,34 @@ export class ProtspaceScatterplot extends LitElement {
     return this._isolationMode;
   }
 
+  /**
+   * Membership in every isolation layer, or `null` outside isolation. Isolation is a set of
+   * proteins, not what is drawn: the plotted set also lacks every protein the selected
+   * projection does not place, which stays part of the isolated subset.
+   */
+  private _isolationMembership(): ((proteinId: string) => boolean) | null {
+    if (!this._isolationMode || this._isolationHistory.length === 0) return null;
+    const layers = this._isolationHistory.map((layer) => new Set(layer));
+    return (proteinId) => layers.every((layer) => layer.has(proteinId));
+  }
+
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null {
     const currentDisplayData = this._getCurrentDisplayData(options);
     if (!currentDisplayData) return null;
 
-    // If we're in isolation mode, return filtered data based on current plot data
-    if (this._isolationMode && this._plotData.length > 0) {
-      const pd = this._plotData;
-      const currentProteinIds = Array.from({ length: pd.length }, (_, s) => plotDataId(pd, s));
-
-      // `keptIndices` are the ascending positions in currentDisplayData.protein_ids to keep.
-      // _plotData.originalIndices is the ascending list of surviving indices into
-      // pd.proteinIds (the full source id array). When no view filter is active,
-      // currentDisplayData.protein_ids IS that same full array in the same order, so
-      // originalIndices already equals keptIndices — reuse it instead of re-scanning all
-      // ~573K ids and building a throwaway Set. The length-equality check detects that
-      // unfiltered case (a filtered display is always a strict subset, so its length
-      // differs); otherwise fall back to the membership scan.
-      let keptIndices: number[];
-      if (pd.originalIndices && currentDisplayData.protein_ids.length === pd.proteinIds.length) {
-        keptIndices = Array.from(pd.originalIndices);
-      } else {
-        const currentProteinIdsSet = new Set(currentProteinIds);
-        keptIndices = [];
-        currentDisplayData.protein_ids.forEach((proteinId, index) => {
-          if (currentProteinIdsSet.has(proteinId)) keptIndices.push(index);
-        });
-      }
-
-      // Delegate the per-index slice to the shared helper (same construction the
-      // filtered-display path uses), then override protein_ids with the
-      // plotDataId-ordered current ids exactly as before. This also reslices
-      // annotation_scores/annotation_evidence consistently, silently correcting
-      // the prior isolation-mode misalignment (sanctioned by F-13; no consumer
-      // indexes scores/evidence off this result, so INV-04 holds).
-      const sliced = sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
-      return { ...sliced, protein_ids: currentProteinIds };
+    // In isolation mode the current data is the isolated subset (through the query
+    // filter, which currentDisplayData already applied). It is taken from the isolation
+    // layers, not from _plotData: a protein the selected projection does not place is
+    // culled from the plot but stays in the dataset, so the .parquetbundle export and the
+    // legend counts keep it, and an isolated subset of which no point is placed is still
+    // that subset, not the whole dataset.
+    const inIsolation = this._isolationMembership();
+    if (inIsolation) {
+      const keptIndices: number[] = [];
+      currentDisplayData.protein_ids.forEach((proteinId, index) => {
+        if (inIsolation(proteinId)) keptIndices.push(index);
+      });
+      return sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
     }
 
     return currentDisplayData;

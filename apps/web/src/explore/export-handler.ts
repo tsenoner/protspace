@@ -24,6 +24,8 @@ interface ExportEventDetail {
 interface ExportHandlerOptions {
   controlBar: ProtspaceControlBar;
   getSelectedProteins(): string[];
+  /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
+  getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
 }
@@ -56,6 +58,7 @@ function loadPublishState(): Record<string, unknown> | null {
 export function createExportHandler({
   controlBar,
   getSelectedProteins,
+  getUnplacedProteinCount,
   legendElement,
   plotElement,
 }: ExportHandlerOptions) {
@@ -226,7 +229,7 @@ export function createExportHandler({
           includeSettings,
           settings,
         });
-        notify.success(getExportSuccessNotification(filename));
+        notify.success(getExportSuccessNotification(filename, getUnplacedProteinCount()));
         return;
       }
 

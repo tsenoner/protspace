@@ -12,7 +12,13 @@
  */
 
 import { tokens } from '../../styles/tokens';
-import { buttonMixin, inputMixin, dropdownMixin, iconMixin } from '../../styles/mixins';
+import {
+  buttonMixin,
+  inputMixin,
+  dropdownMixin,
+  iconMixin,
+  segmentedControlMixin,
+} from '../../styles/mixins';
 import { layoutStyles } from './styles/layout';
 import { queryBuilderStyles } from './query-builder.styles';
 import { exportStyles } from './styles/export';
@@ -36,6 +42,7 @@ export const controlBarStyles = [
   dropdownMixin,
   queryBuilderStyles,
   iconMixin,
+  segmentedControlMixin,
   layoutStyles,
   exportStyles,
   responsiveStyles,

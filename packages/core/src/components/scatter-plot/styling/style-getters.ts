@@ -1,6 +1,8 @@
 import { NEUTRAL_VALUE_COLOR } from '../config';
 import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
 import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
   getProteinAnnotationValues,
   isMultilabelAnnotationDataCached,
   isNumericAnnotation,
@@ -91,6 +93,15 @@ export function createStyleGetters(
       ? data.annotation_data?.[styleConfig.selectedAnnotation]
       : undefined;
   const multilabel = annotationData ? isMultilabelAnnotationDataCached(annotationData) : false;
+
+  // What `getProteinAnnotationValues` resolves for the selected annotation, read in
+  // place: the shape and depth getters run per point and need no array of it.
+  const labels = annotation && Array.isArray(annotation.values) ? annotation.values : null;
+  const labelRows = labels ? annotationData : undefined;
+  const valueCountOf = (proteinIdx: number): number =>
+    labelRows ? getProteinAnnotationCount(labelRows, proteinIdx) : 0;
+  const valueOf = (proteinIdx: number, k: number): string =>
+    toInternalValue(labels![getProteinAnnotationIndexAt(labelRows!, proteinIdx, k)]);
   const valueToColor = new Map<string, string>();
   const valueToShape = new Map<string, string>();
 
@@ -131,19 +142,15 @@ export function createStyleGetters(
     if (!data || !styleConfig.selectedAnnotation) return 'circle';
     if (isNumeric) return 'circle';
 
-    const annotationValueArray = getProteinAnnotationValues(
-      data,
-      point.originalIndex,
-      styleConfig.selectedAnnotation,
-    );
+    const count = valueCountOf(point.originalIndex);
 
     // multilabel points only support circle for now
-    if (annotationValueArray.length > 1) return 'circle';
+    if (count > 1) return 'circle';
 
     // Defensive guard — shouldn't happen since DataProcessor normalizes nulls to __NA__
-    if (annotationValueArray.length === 0) return 'circle';
+    if (count === 0) return 'circle';
 
-    const annotationValue = annotationValueArray[0];
+    const annotationValue = valueOf(point.originalIndex, 0);
     if (annotationValue && otherValuesSet.has(annotationValue)) return 'circle';
 
     const k = toInternalValue(annotationValue);
@@ -229,20 +236,19 @@ export function createStyleGetters(
     let depth = 1 - Math.min(1, Math.max(0, opacity));
 
     if (data && zMap && styleConfig.selectedAnnotation) {
-      const annotationValueArray = getProteinAnnotationValues(
-        data,
-        point.originalIndex,
-        styleConfig.selectedAnnotation,
-      );
+      const count = valueCountOf(point.originalIndex);
       let key: string;
 
-      if (annotationValueArray && annotationValueArray.length > 0) {
+      if (count > 0) {
         // Check if this point belongs to the "Other" category
-        const isOther = annotationValueArray.some((v) => otherValuesSet.has(v));
+        let isOther = false;
+        for (let k = 0; k < count && !isOther; k++) {
+          isOther = otherValuesSet.has(valueOf(point.originalIndex, k));
+        }
         if (isOther) {
           key = 'Other';
         } else {
-          const raw = annotationValueArray[0];
+          const raw = valueOf(point.originalIndex, 0);
           key = toInternalValue(raw);
         }
       } else {

@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-08-01
+goal: Allow AlphaFold structures to switch between pLDDT and TED domain coloring.

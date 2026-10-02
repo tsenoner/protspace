@@ -28,7 +28,12 @@ def bundle(
         typer.Option(
             "-a",
             "--annotations",
-            help="Annotations parquet file.",
+            help=(
+                "Annotations parquet file. Output of `protspace annotate` and "
+                "the prepare cache (tmp/all_annotations.parquet) is used as is; "
+                "any other table without a protspace_format_version stamp is "
+                "read as plain text (legacy v1 cells) and encoded."
+            ),
             exists=True,
         ),
     ],
@@ -61,6 +66,12 @@ def bundle(
     Reads projections_metadata.parquet, projections_data.parquet from the
     projections directory and an annotations parquet file, then writes a
     single .parquetbundle file.
+
+    The annotations' cell grammar comes from their protspace_format_version
+    stamp. `protspace annotate` and the prepare annotation cache
+    (tmp/all_annotations.parquet) hold v2 (percent-encoded) cells, so they pass
+    through; any other unstamped table, such as one written by hand, is read as
+    legacy v1 plain text and encoded for the bundle.
     """
     setup_logging(verbose)
 
@@ -68,7 +79,13 @@ def bundle(
 
     import pyarrow.parquet as pq
 
-    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.annotations.encoding import (
+        BUNDLE_FORMAT_VERSION,
+        has_format_version,
+        is_annotation_cache,
+        read_format_version,
+        upgrade_cell_grammar,
+    )
     from protspace.data.io.bundle import write_bundle
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
@@ -85,31 +102,55 @@ def bundle(
     metadata_table = pq.read_table(str(metadata_path))
     data_table = pq.read_table(str(data_path))
 
+    # Trust boundary: the grammar is decided here, from the input's own stamp, and
+    # before the rename below drops it. `annotate` and the pipeline's annotation
+    # cache stamp v2, and a cache written before it carried the stamp is still
+    # recognised as the pipeline's own v2 output; any other unstamped table is
+    # user input in plain text, i.e. legacy v1, and is migrated explicitly.
+    if has_format_version(annotations_table):
+        grammar = read_format_version(annotations_table)
+    elif is_annotation_cache(annotations_table):
+        grammar = BUNDLE_FORMAT_VERSION
+        logger.info(
+            "%s is a protspace annotation cache without a protspace_format_version "
+            "stamp; reading its cells as v2 (percent-encoded)",
+            annotations,
+        )
+    else:
+        grammar = 1
+        logger.info(
+            "%s has no protspace_format_version stamp; reading its cells as plain "
+            "(v1) text",
+            annotations,
+        )
+
     # Rename identifier column to protein_id if needed (bundle format).
-    # Note: pa.Table.rename_columns() drops schema metadata, so the
-    # format-version stamp below must happen *after* this rename.
     col_names = annotations_table.column_names
     if "identifier" in col_names and "protein_id" not in col_names:
         annotations_table = annotations_table.rename_columns(
             [("protein_id" if c == "identifier" else c) for c in col_names]
         )
 
-    # Trust boundary: the -a annotations input is ASSUMED to be produced by the
-    # same-version annotate/prepare pipeline (i.e. already percent-encoded).
-    # We don't inspect its contents, so it's unconditionally stamped as v2 --
-    # there is currently no other producer of this parquet to distrust.
-    annotations_table = stamp_format_version(annotations_table)
+    try:
+        annotations_table = upgrade_cell_grammar(annotations_table, grammar)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{annotations}: {exc}") from exc
 
     statistics_table = (
         pq.read_table(str(statistics)) if statistics is not None else None
     )
 
     output_path = output.with_suffix(".parquetbundle")
-    write_bundle(
-        [annotations_table, metadata_table, data_table],
-        output_path,
-        settings=settings_obj,
-        statistics=statistics_table,
-    )
+    try:
+        write_bundle(
+            [annotations_table, metadata_table, data_table],
+            output_path,
+            settings=settings_obj,
+            statistics=statistics_table,
+        )
+    except ValueError as exc:
+        # The encoder validates the inputs (ids, projections, column types) and
+        # says what is wrong with them; that is a usage error, not a crash.
+        raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(f"Saved: {output_path}")

@@ -7,7 +7,7 @@ import { isParquetBundle, type VisualizationData, type BundleSettings } from '@p
 import { dataLoaderStyles } from './data-loader.styles';
 import { createDataErrorEventDetail, type DataErrorEventDetail } from './data-loader.events';
 import { readFileOptimized } from './utils/file-io';
-import { extractRowsFromParquetBundle } from './utils/bundle';
+import { decodeParquetBundle } from './utils/bundle';
 import { convertParquetToVisualizationDataOptimized } from './utils/conversion';
 import {
   assertValidFileExtension,
@@ -40,6 +40,16 @@ export interface DataLoadedEventDetail {
   source: DataLoadSource;
   /** Original file for file-based loads, used by app-level persistence flows */
   file?: File;
+  /**
+   * Container format version of a loaded `.parquetbundle` (see `decodeParquetBundle`);
+   * absent for plain parquet. Below 3 is a legacy bundle, readable until protspace 5.0.0.
+   */
+  bundleFormatVersion?: number;
+  /**
+   * Proteins the loaded bundle holds that no projection places, which `data` leaves out
+   * (see `decodeParquetBundle`); absent for plain parquet.
+   */
+  unplacedProteinCount?: number;
 }
 
 /**
@@ -152,7 +162,7 @@ export class DataLoader extends LitElement {
       // 4) Convert
       const visualizationData = await convertParquetToVisualizationDataOptimized(table);
       this.completeStep();
-      this.dispatchDataLoaded(visualizationData, null, source);
+      this.dispatchDataLoaded({ data: visualizationData, settings: null, source });
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       this.error = originalError.message;
@@ -213,29 +223,27 @@ export class DataLoader extends LitElement {
       if (file.name.endsWith('.parquetbundle') || isParquetBundle(arrayBuffer)) {
         // For bundles: decode+convert in worker (or main-thread fallback)
         this.addSteps(1);
-        let visualizationData: VisualizationData;
-        let settings: BundleSettings | null;
+        let decoded: WorkerDecodeResult;
         if (isWorkerDecodeSupported()) {
           try {
-            const result: WorkerDecodeResult = await decodeBundleInWorker(arrayBuffer);
-            visualizationData = result.data;
-            settings = result.settings;
+            decoded = await decodeBundleInWorker(arrayBuffer);
           } catch (workerError) {
             // Fallback: main-thread decode (worker unsupported / runtime failure).
             console.warn('Worker decode failed, falling back to main thread:', workerError);
-            const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-            validateRowsBasic(extraction.projections);
-            visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
-            settings = extraction.settings;
+            decoded = await decodeParquetBundle(arrayBuffer);
           }
         } else {
-          const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-          validateRowsBasic(extraction.projections);
-          visualizationData = await convertParquetToVisualizationDataOptimized(extraction);
-          settings = extraction.settings;
+          decoded = await decodeParquetBundle(arrayBuffer);
         }
         this.completeStep();
-        this.dispatchDataLoaded(visualizationData, settings, source, file);
+        this.dispatchDataLoaded({
+          data: decoded.data,
+          settings: decoded.settings,
+          source,
+          file,
+          bundleFormatVersion: decoded.formatVersion,
+          unplacedProteinCount: decoded.unplacedProteinCount,
+        });
       } else {
         // For regular parquet: validate magic -> parse -> validate rows -> convert
         this.addSteps(4);
@@ -247,7 +255,7 @@ export class DataLoader extends LitElement {
         this.completeStep();
         const visualizationData = await convertParquetToVisualizationDataOptimized(table);
         this.completeStep();
-        this.dispatchDataLoaded(visualizationData, null, source, file);
+        this.dispatchDataLoaded({ data: visualizationData, settings: null, source, file });
       }
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
@@ -303,13 +311,7 @@ export class DataLoader extends LitElement {
     );
   }
 
-  private dispatchDataLoaded(
-    data: VisualizationData,
-    settings: BundleSettings | null,
-    source: DataLoadSource,
-    file?: File,
-  ) {
-    const detail: DataLoadedEventDetail = { data, settings, source, file };
+  private dispatchDataLoaded(detail: DataLoadedEventDetail) {
     this.dispatchEvent(
       new CustomEvent('data-loaded', {
         detail,

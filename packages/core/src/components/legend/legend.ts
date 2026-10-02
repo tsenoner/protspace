@@ -33,7 +33,7 @@ import {
   type EatReliabilityState,
   type CategoryScore,
 } from '@protspace/utils';
-import type { LegendSettingsMap } from '@protspace/utils';
+import type { AnnotationData, LegendSettingsMap } from '@protspace/utils';
 
 // Configuration and styles
 import {
@@ -78,7 +78,6 @@ import {
   isolateItem,
   computeOtherConcreteValues,
 } from './legend-helpers';
-import { buildAnnotationValueList } from './annotation-values';
 import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
 
 // Dialogs
@@ -95,7 +94,7 @@ import { createLegendErrorEventDetail } from './legend.events';
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
  * visual value + percent readout update live on every tick, but the expensive
- * downstream apply (reliability query re-eval + geometry/quadtree rebuild at 570k
+ * downstream apply (reliability query re-eval + geometry/point index rebuild at 570k
  * points) is deferred to a drag-pause/release so dragging stays smooth.
  */
 const EAT_THRESHOLD_COMMIT_DELAY_MS = 150;
@@ -215,6 +214,7 @@ export class ProtspaceLegend extends LitElement {
 
   @property({ type: String }) annotationName = '';
   @property({ type: Object }) annotationData: LegendAnnotationData = { name: '', values: [] };
+  /** One value per protein, in `proteinIds` order; read only when no data is synced. */
   @property({ type: Array }) annotationValues: (string | null)[] = [];
   @property({ type: Array }) proteinIds: string[] = [];
   @property({ type: Number, reflect: true }) maxVisibleValues: number =
@@ -290,6 +290,19 @@ export class ProtspaceLegend extends LitElement {
       prev === undefined || !isSameReliability(next, prev),
   })
   private _reliability: EatReliabilityState = DEFAULT_EAT_RELIABILITY;
+  /**
+   * The annotation storage the legend counts from, captured on every scatterplot
+   * data change. Counting straight out of it (`countFromStorage`) replaces the
+   * flat `annotationValues` array, which cost one interned string per protein
+   * and misaligned isolation filtering. `null` means "no synced storage": the
+   * `autoSync === false` embedding path, which still feeds the public
+   * `annotationValues` property instead.
+   */
+  private _countSource: {
+    colData: AnnotationData;
+    values: (string | null)[];
+    proteinCount: number;
+  } | null = null;
   @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
   private _keyboardReorderSnapshot: {
@@ -1042,6 +1055,16 @@ export class ProtspaceLegend extends LitElement {
       this._syncNumericSettingsFromPersistence();
     }
 
+    // An externally fed annotationValues array (the autoSync === false embedding
+    // path) is the source of truth while it is being fed, so it drops any storage
+    // captured by an earlier sync. Only a non-empty assignment counts: Lit reports
+    // the declared `= []` initializer as a change on the very first update, which
+    // would otherwise discard the storage the sync just captured. Clearing is
+    // `clearAllState`'s job.
+    if (changedProperties.has('annotationValues') && this.annotationValues.length > 0) {
+      this._countSource = null;
+    }
+
     // Update legend items when relevant properties change
     if (
       changedProperties.has('data') ||
@@ -1190,6 +1213,7 @@ export class ProtspaceLegend extends LitElement {
     this.selectedAnnotation = '';
     this.annotationData = { name: '', values: [] };
     this.annotationValues = [];
+    this._countSource = null;
     this.proteinIds = [];
 
     this.requestUpdate();
@@ -1664,9 +1688,44 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _updateAnnotationValues(data: ScatterplotData, selectedAnnotation: string): void {
-    const colData = data.annotation_data[selectedAnnotation];
-    const values = data.annotations[selectedAnnotation].values;
-    this.annotationValues = buildAnnotationValueList(colData, values, data.protein_ids.length);
+    this._countSource = {
+      colData: data.annotation_data[selectedAnnotation],
+      values: data.annotations[selectedAnnotation].values,
+      proteinCount: data.protein_ids.length,
+    };
+  }
+
+  /**
+   * Legend counts, isolation applied: from the synced storage, or from the public
+   * `annotationValues` array when there is none. Either way the processor only ever
+   * sees the counted map.
+   *
+   * Recomputed per rebuild rather than cached: the bincount is ~2 ms at 573K,
+   * cheaper than the array scan it replaces, and it depends on the isolation
+   * state, which changes independently of the storage.
+   */
+  private _computeAnnotationCounts(knownValues: string[]): ReadonlyMap<string, number> {
+    const isolating = this.isolationMode && this.isolationHistory?.length > 0;
+    const filteredIndices = isolating
+      ? LegendDataProcessor.getFilteredIndices(true, this.isolationHistory, this.proteinIds)
+      : null;
+    const source = this._countSource;
+    if (!source) {
+      // The array holds one value per protein in `proteinIds` order, so the filter's
+      // protein indices address it directly.
+      return LegendDataProcessor.countAnnotationFrequencies(
+        this.annotationValues,
+        filteredIndices,
+        knownValues,
+      );
+    }
+    return LegendDataProcessor.countFromStorage(
+      source.colData,
+      source.values,
+      source.proteinCount,
+      filteredIndices,
+      knownValues,
+    );
   }
 
   private _hasSelectedEatAnnotation(): boolean {
@@ -1807,10 +1866,17 @@ export class ProtspaceLegend extends LitElement {
     // Aligned with PersistenceController's isNumericAnnotation callback so the
     // processor and the persistence layer agree on numeric-ness in transient states.
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    if (
-      !this.annotationData?.values?.length ||
-      (!isNumericAnnotation && !this.annotationValues?.length)
-    ) {
+    // Ahead of the bincount below, which is O(proteins) and has nothing to count for
+    // an annotation with no values at all.
+    if (!this.annotationData?.values?.length) {
+      this._legendItems = [];
+      return;
+    }
+    const knownValues = isNumericAnnotation
+      ? this.annotationData.values.map((value) => toInternalValue(value))
+      : [];
+    const frequencies = this._computeAnnotationCounts(knownValues);
+    if (!isNumericAnnotation && frequencies.size === 0) {
       this._legendItems = [];
       return;
     }
@@ -1838,9 +1904,6 @@ export class ProtspaceLegend extends LitElement {
           : new Set<string>();
       const numericOrderValues = this._getNumericOrderValues();
       const numericDisplayLabels = this._getNumericDisplayLabelMap();
-      const knownValues = isNumericAnnotation
-        ? this.annotationData.values.map((value) => toInternalValue(value))
-        : [];
       const numericManualOrderIds = isNumericAnnotation
         ? (this._buildNumericManualOrderIds(this.selectedAnnotation) ?? [])
         : [];
@@ -1862,11 +1925,9 @@ export class ProtspaceLegend extends LitElement {
       const { legendItems, otherItems } = LegendDataProcessor.processLegendItems(
         this._processorContext,
         this.annotationData.name || this.selectedAnnotation,
-        this.annotationValues,
-        this.proteinIds,
+        frequencies,
         this.maxVisibleValues,
         this.isolationMode,
-        this.isolationHistory,
         existingLegendItems,
         this._currentSortMode,
         persistedCategories,
@@ -1875,7 +1936,6 @@ export class ProtspaceLegend extends LitElement {
         !isNumericAnnotation,
         pendingExtract,
         pendingMerge,
-        knownValues,
         isNumericAnnotation,
       );
 
