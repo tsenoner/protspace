@@ -46,12 +46,15 @@
 
 ## 5. Review follow-ups
 
-- [x] 5.1 Store the dataset's size under `shape-size:<hash>`; read the legacy `point-size:<hash>`
-      while the new key is absent, with a legacy 10 (the old Reset's) as unset; a pick writes the
-      new key and drops the legacy one, Reset drops both.
+- [x] 5.1 Store the dataset's size under `shape-size:<hash>`, migrating the legacy
+      `point-size:<hash>` (5.5).
 - [x] 5.2 Saving the settings dialog with the size field emptied clears the shape size as Reset does
       and keeps the annotation's other settings; the hint says so.
 - [x] 5.3 `design.md` and `docs/guide/styling.md`: only the web app writes a top-level `shapeSize`;
       a styles file uses 9 or 11 for about 10 on a dataset above ~10,800 proteins.
 - [x] 5.4 `docs/explore/legend.md`: Reset also clears every annotation's own size, bundle-set ones
       included.
+- [x] 5.5 Migrate the legacy `point-size:<hash>` once, when the legend takes the dataset's hash: a
+      legacy 10 (the old Reset's) clears every annotation's stored size as Reset does, so a record
+      still holding the size picked before that Reset does not resurface; any other legacy size
+      moves to `shape-size:<hash>`. The legacy key is removed and never read again.

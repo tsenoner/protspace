@@ -64,9 +64,9 @@ dataset and gets the default for its own count on import.
 
 ### Precedence
 
-1. The dataset's stored size (`shape-size:<hash>`, or a legacy `point-size:<hash>` other than 10;
-   see below): a size picked in the settings dialog, or a bundle's top-level `shapeSize` applied on
-   import. They share one slot, so the later write wins: a bundle's size applies when the file is
+1. The dataset's stored size (`shape-size:<hash>`, where a legacy `point-size:<hash>` other than 10
+   is moved; see below): a size picked in the settings dialog, or a bundle's top-level `shapeSize`
+   applied on import. They share one slot, so the later write wins: a bundle's size applies when the file is
    opened, and a pick afterwards replaces it.
 2. The annotation's own `shapeSize`, unless it is 10 or 30.
 3. `defaultShapeSize(N)`.
@@ -107,11 +107,19 @@ before this change can hold a picked size, which would resurface on the next ann
 
 From #478 until this change, Reset stored 10 under `point-size:<hash>`, the same record a pick of
 10 writes, and the web app shipped that between 2026-09-30 and this change. Read as a pick, that 10
-would pin every such dataset at 10 and hide the new default. The dataset's size is therefore stored
-under `shape-size:<hash>` from now on. The legend still reads `point-size:<hash>` while the new key
-is absent, but reads a 10 there as unset: 10 was the default whenever it was written, so this is
-what the user saw as "the default" then. Any other legacy size is a real pick and still applies. A
-pick or a bundle's top-level size writes the new key and removes the legacy one; Reset removes both.
+would pin every such dataset at 10 and hide the new default. That Reset also left in each
+annotation's record the size picked before it, since records then held the live size; only its
+stored 10 kept those sizes from applying. The dataset's size is therefore stored under
+`shape-size:<hash>` from now on, and the legend migrates the legacy key once, when it takes the
+dataset's hash and before any annotation's settings load:
+
+- a legacy 10 clears every annotation's stored size as Reset does now, so the whole dataset returns
+  to its default: 10 was the default whenever it was written, so this is what the user saw as "the
+  default" then;
+- any other legacy size is a real pick and moves to the new key.
+
+The legacy key is then removed; if the new key is already set, it wins and the legacy key is only
+removed. From then on the legend reads, writes and clears only the new key.
 
 ### The dialog shows the default
 

@@ -52,7 +52,7 @@ type ShapeSizeLegend = HTMLElement & {
   _scatterplotController: { updateConfig: (config: { pointSize?: number }) => void };
   _persistenceController: {
     _datasetHash: string;
-    updateDatasetHash: (ids: string[]) => boolean;
+    updateDatasetHash: (data: typeof DATASET) => boolean;
     updateSelectedAnnotation: (annotation: string) => boolean;
     loadSettings: () => void;
     saveSettings: () => void;
@@ -63,6 +63,12 @@ type ShapeSizeLegend = HTMLElement & {
   setFileSettings: (settings: LegendSettingsMap | null, datasetHash?: string) => void;
   applyShapeSize: (size: number, datasetHash?: string) => void;
   readonly pickedShapeSize: number | undefined;
+};
+
+/** The detached legend's dataset, which keys its storage. */
+const DATASET = {
+  protein_ids: ['p1', 'p2'],
+  annotations: { a: { values: ['x'] }, b: { values: ['x'] } },
 };
 
 /**
@@ -77,7 +83,7 @@ function makeLegend(proteinCount = 2) {
   };
   el._updateLegendItems = vi.fn();
   el._dispatchLegendStateChange = vi.fn();
-  el._persistenceController.updateDatasetHash(['p1', 'p2']);
+  el._persistenceController.updateDatasetHash(DATASET);
   el._datasetProteinCount = proteinCount;
   const hash = el._persistenceController._datasetHash;
   const switchTo = (annotation: string) => {
@@ -279,45 +285,67 @@ describe('legend default shape size from the protein count', () => {
     expect(el.shapeSize).toBe(7);
   });
 
-  it('reads the 10 the old Reset stored under the legacy key as unset', () => {
-    const { el, hash, switchTo } = makeLegend(105_562);
-    localStorage.setItem(buildStorageKey('point-size', hash), '10');
+  // The legacy key is migrated when a legend first takes the dataset's hash, so these tests seed
+  // it through one legend, as an earlier session left it, and load the dataset in the next.
+
+  it('migrates the 10 the old Reset stored under the legacy key as Reset does now', () => {
+    const earlier = makeLegend(105_562);
+    // The old Reset stored 10 but left the size picked before it in each annotation's record.
+    earlier.store('a', 12);
+    earlier.store('b', 12);
+    localStorage.setItem(buildStorageKey('point-size', earlier.hash), '10');
+
+    const { el, switchTo, stored, storedPick, legacyPick } = makeLegend(105_562);
+    expect(legacyPick()).toBeNull();
+    expect(storedPick()).toBeNull();
     switchTo('a');
     expect(el.shapeSize).toBe(2);
+    switchTo('b');
+    expect(el.shapeSize).toBe(2);
+    expect(stored('a')?.shapeSize).toBe(10);
     expect(el.pickedShapeSize).toBeUndefined();
-    el.data = { annotations: { a: { values: ['x'] } } };
+    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
     expect(el.getAllPersistedSettings().a.shapeSize).toBe(10);
   });
 
-  it('keeps any other size stored under the legacy key as picked', () => {
-    const { el, hash, switchTo } = makeLegend(105_562);
-    localStorage.setItem(buildStorageKey('point-size', hash), '7');
+  it('moves any other size stored under the legacy key to the current key, as a pick', () => {
+    const earlier = makeLegend(105_562);
+    earlier.store('b', 5);
+    localStorage.setItem(buildStorageKey('point-size', earlier.hash), '7');
+
+    const { el, switchTo, stored, storedPick, legacyPick } = makeLegend(105_562);
+    expect(storedPick()).toBe('7');
+    expect(legacyPick()).toBeNull();
     switchTo('a');
     expect(el.shapeSize).toBe(7);
     expect(el.pickedShapeSize).toBe(7);
+    switchTo('b');
+    expect(el.shapeSize).toBe(7);
+    expect(stored('b')?.shapeSize).toBe(5);
   });
 
-  it('prefers the current key over the legacy one, and a pick replaces the legacy record', () => {
-    const { el, hash, switchTo, pick, storedPick, legacyPick } = makeLegend(105_562);
-    localStorage.setItem(buildStorageKey('point-size', hash), '7');
-    localStorage.setItem(buildStorageKey('shape-size', hash), '10');
+  it('keeps the current key over the legacy one, which it drops', () => {
+    const earlier = makeLegend(105_562);
+    localStorage.setItem(buildStorageKey('point-size', earlier.hash), '7');
+    localStorage.setItem(buildStorageKey('shape-size', earlier.hash), '10');
+
+    const { el, switchTo, storedPick, legacyPick } = makeLegend(105_562);
+    expect(legacyPick()).toBeNull();
     switchTo('a');
     expect(el.shapeSize).toBe(10);
-
-    pick(12);
-    expect(storedPick()).toBe('12');
-    expect(legacyPick()).toBeNull();
+    expect(storedPick()).toBe('10');
   });
 
-  it('Reset removes a size stored under the legacy key', () => {
-    const { el, hash, switchTo, legacyPick } = makeLegend(105_562);
-    localStorage.setItem(buildStorageKey('point-size', hash), '7');
-    switchTo('a');
-    expect(el.shapeSize).toBe(7);
+  it('migrates the legacy key once', () => {
+    const earlier = makeLegend(105_562);
+    localStorage.setItem(buildStorageKey('point-size', earlier.hash), '10');
+    makeLegend(105_562);
+    // An annotation's own size stored after the migration survives the next load.
+    earlier.store('b', 12);
 
-    el._handleSettingsReset();
-    expect(legacyPick()).toBeNull();
-    expect(el.shapeSize).toBe(2);
+    const { el, switchTo } = makeLegend(105_562);
+    switchTo('b');
+    expect(el.shapeSize).toBe(12);
   });
 
   it('stores no size when the default is in use', () => {

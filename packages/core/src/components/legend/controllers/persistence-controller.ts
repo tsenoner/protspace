@@ -15,19 +15,13 @@ import type {
 } from '../types';
 import { LEGEND_DEFAULTS, LEGEND_VALUES, isNAValue } from '../config';
 import { createDefaultSettings } from '../legend-helpers';
-import { BasePersistenceController } from '../../../controllers/base-persistence-controller';
+import {
+  BasePersistenceController,
+  type DatasetHashData,
+} from '../../../controllers/base-persistence-controller';
 
 /** Storage component of the dataset-wide shape size, picked or applied from a bundle. */
 const SHAPE_SIZE_KEY = 'shape-size';
-
-/**
- * Where the dataset-wide shape size was stored before the default followed the protein count.
- * Reset stored 10 there, the default of the time, in the same record a pick of 10 writes.
- */
-const LEGACY_SHAPE_SIZE_KEY = 'point-size';
-
-/** A legacy record of 10 cannot be told from that Reset, so it reads as unset. */
-const LEGACY_RESET_SHAPE_SIZE = 10;
 
 function readShapeSize(key: string): number | null {
   const size = getStorageItem<unknown>(key, null);
@@ -90,6 +84,32 @@ export class PersistenceController
     this._pendingCategories = {};
   }
 
+  /** Also migrates the legacy shape size key when the hash changes, before any settings load. */
+  override updateDatasetHash(data: DatasetHashData): boolean {
+    const changed = super.updateDatasetHash(data);
+    if (changed) {
+      this._migrateLegacyShapeSize(Array.isArray(data) ? [] : Object.keys(data.annotations ?? {}));
+    }
+    return changed;
+  }
+
+  /**
+   * Move the dataset's shape size off the key it had before the default followed the protein
+   * count, once: the key is removed, and the current key wins if both are set. The old Reset
+   * stored 10 there, the default of the time, in the record a pick of 10 writes, and left the
+   * size picked before it in each annotation's record, so a legacy 10 clears those records as
+   * Reset does now. Any other legacy size is a pick and moves to the current key.
+   */
+  private _migrateLegacyShapeSize(annotationNames: string[]): void {
+    const legacyKey = buildStorageKey('point-size', this._datasetHash);
+    if (!hasStorageItem(legacyKey)) return;
+    const legacy = readShapeSize(legacyKey);
+    removeStorageItem(legacyKey);
+    if (this.loadShapeSize() !== null) return;
+    if (legacy === 10) this._clearStoredAnnotationShapeSizes(annotationNames);
+    else if (legacy !== null) this.saveShapeSize(legacy);
+  }
+
   override getAllSettingsForExport(annotationNames: string[]): LegendSettingsMap {
     const settings = super.getAllSettingsForExport(annotationNames);
     const sanitized: LegendSettingsMap = {};
@@ -104,48 +124,46 @@ export class PersistenceController
     return sanitized;
   }
 
-  /**
-   * The dataset's picked size (or a bundle's top-level size), else a size stored under the
-   * legacy key unless it is the 10 the old Reset stored there.
-   */
+  /** The dataset's picked size, or a bundle's top-level size. */
   loadShapeSize(): number | null {
     if (!this._datasetHash) return null;
-    const size = readShapeSize(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
-    if (size !== null) return size;
-    const legacy = readShapeSize(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, this._datasetHash));
-    return legacy === LEGACY_RESET_SHAPE_SIZE ? null : legacy;
+    return readShapeSize(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
   }
 
   saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {
     if (!datasetHash) return;
     setStorageItem(buildStorageKey(SHAPE_SIZE_KEY, datasetHash), size);
-    removeStorageItem(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, datasetHash));
   }
 
   /**
    * Forget every shape size set for the dataset: the picked one, and each annotation's own,
    * stored or in bundle settings not yet applied, so the dataset's default applies everywhere.
-   * Records written before the default followed the protein count can hold a picked size.
    */
   clearShapeSize(annotationNames: string[]): void {
     if (!this._datasetHash) return;
     removeStorageItem(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
-    removeStorageItem(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, this._datasetHash));
-
-    const unset = LEGEND_DEFAULTS.symbolSize;
-    for (const annotation of annotationNames) {
-      const key = buildStorageKey(this.storageKeyPrefix, this._datasetHash, annotation);
-      const saved = getStorageItem<Partial<LegendPersistedSettings> | null>(key, null);
-      if (saved && saved.shapeSize !== unset) setStorageItem(key, { ...saved, shapeSize: unset });
-    }
+    this._clearStoredAnnotationShapeSizes(annotationNames);
 
     if (this._fileSettings) {
       this._fileSettings = Object.fromEntries(
         Object.entries(this._fileSettings).map(([annotation, settings]) => [
           annotation,
-          { ...settings, shapeSize: unset },
+          { ...settings, shapeSize: LEGEND_DEFAULTS.symbolSize },
         ]),
       );
+    }
+  }
+
+  /**
+   * Rewrite each annotation's stored shape size to the filler. Records written before the
+   * default followed the protein count can hold a picked size.
+   */
+  private _clearStoredAnnotationShapeSizes(annotationNames: string[]): void {
+    const unset = LEGEND_DEFAULTS.symbolSize;
+    for (const annotation of annotationNames) {
+      const key = buildStorageKey(this.storageKeyPrefix, this._datasetHash, annotation);
+      const saved = getStorageItem<Partial<LegendPersistedSettings> | null>(key, null);
+      if (saved && saved.shapeSize !== unset) setStorageItem(key, { ...saved, shapeSize: unset });
     }
   }
 

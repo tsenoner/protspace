@@ -72,7 +72,8 @@ SHALL apply, and without one the default from the dataset's protein count. Reset
 dialog SHALL remove the dataset's stored size and every annotation's own size, stored or from a
 bundle, so the whole dataset returns to its default, and SHALL NOT store that default. A
 dataset-wide size stored before the default followed the protein count SHALL still apply, except a
-stored 10, which the earlier Reset wrote as the default of the time and which SHALL read as unset.
+stored 10, which the earlier Reset wrote as the default of the time: the legend SHALL then clear
+every annotation's own stored size, once, as Reset does now.
 
 #### Scenario: Switching annotations
 
@@ -99,9 +100,10 @@ stored 10, which the earlier Reset wrote as the default of the time and which SH
 #### Scenario: A 10 stored by the earlier Reset
 
 - **WHEN** the browser holds a dataset-wide shape size of 10, stored before the default followed the
-  protein count, for a 105,562-protein dataset
-- **THEN** the dots are drawn at the default shape size 2, and an export carries no top-level
-  `shapeSize`
+  protein count, for a 105,562-protein dataset, and an annotation's record still holds the size 12
+  picked before that Reset
+- **THEN** every annotation, that one included, draws at the default shape size 2, and an export
+  carries no top-level `shapeSize`
 
 #### Scenario: Switching datasets
 
