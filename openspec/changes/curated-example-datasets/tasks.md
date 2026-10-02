@@ -293,8 +293,10 @@ Before every commit:
 
 ## 8. Owner-only steps (prepared by scripts; not executed by this change)
 
-- [ ] 8.1 Create the `perf-datasets` release and upload the staged assets plus `SHA256SUMS` (task 4.13); check `pnpm perf:fetch` against it.
-- [ ] 8.2 Create the `showcase-2026_03` release and upload the staged assets (task 7.6); check `pnpm examples:fetch` and the CI manifest job.
+- [x] 8.1 Create the `perf-datasets` release and upload the staged assets plus `SHA256SUMS` (task 4.13); check `pnpm perf:fetch` against it.
+  - Result: published with the owner's approval (14 assets); `pnpm perf:fetch` downloaded and verified all 13 bundles from it into a scratch directory.
+- [x] 8.2 Create the `showcase-2026_03` release and upload the staged assets (task 7.6); check `pnpm examples:fetch` and the CI manifest job.
+  - Result: published on 2026-10-02 with the owner's approval, `--latest=false` (v4.15.0 stays Latest): the four release bundles and `SHA256SUMS`, staged without `--force` after every gate passed. `pnpm examples:fetch --with-retained` downloaded and verified all four, `write_manifest.py --refresh --check` found the manifest up to date, and CI's "Example bundles match the manifest" job passed against the release.
 - [ ] 8.3 Zenodo "paper companion" deposit: the frozen paper files (all eleven old bundles, the 113K, the 832 with its query input and ProtT5 H5, the venom 811 H5) plus the new showcase files and the three-finger toxins' inputs (accession list, label CSV, mature-chain H5). Record its DOI with `write_manifest.py --refresh --examples-dir <fetched files> --zenodo-doi <doi>` (later runs keep it while the files are unchanged, so the CI check passes; no re-stamping of the bundles), then regenerate the docs page.
 - [ ] 8.4 Cloudflare cache rule for `/examples/*` (cache everything, long edge TTL, **and a Browser TTL**, since Pages sends `max-age=600`). Verify `cf-cache-status: HIT` on a second request, before the Swiss-Prot link is announced.
 - [ ] 8.5 Staging GitHub Pages deploy with a file over 100 MB (G19). It was due before 7.2 finished; 7.2 is done and the swap commits the catalog to the 135,853,395-byte `swissprot` asset, which `deploy.yml` uploads with `upload-pages-artifact`, so it now blocks the merge. If it fails, fall back to Cloudflare R2 on `data.protspace.app` with CORS.
