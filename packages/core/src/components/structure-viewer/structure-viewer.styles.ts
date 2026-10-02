@@ -237,7 +237,8 @@ const structureViewerStylesCore = css`
     font-size: 0.875rem;
   }
 
-  .viewer-content {
+  .viewer-content,
+  .molstar-mount {
     width: 100%;
     height: 100%;
     border-radius: 0 0 6px 6px;
@@ -257,6 +258,11 @@ const structureViewerStylesCore = css`
   .color-toolbar {
     gap: 0.5rem;
     padding: 0.35rem 0.5rem;
+  }
+
+  /* Without tips the toolbar is the panel's last row, so it carries the bottom corners */
+  .color-toolbar:last-child {
+    border-radius: 0 0 6px 6px;
   }
 
   .color-toolbar-label {

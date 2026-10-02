@@ -184,7 +184,12 @@ export class ProtspaceStructureViewer extends LitElement {
       if (!this._viewerContainer) {
         throw new Error('Viewer container not available');
       }
-      const viewer = await createMolstarViewer(this._viewerContainer, structureData.tedDomains);
+      // Each load mounts Mol* into its own element, which cleanup removes, so a viewer that
+      // finishes mounting after its load was replaced never shares the replacement's container
+      const mount = document.createElement('div');
+      mount.className = 'molstar-mount';
+      this._viewerContainer.appendChild(mount);
+      const viewer = await createMolstarViewer(mount, structureData.tedDomains);
       if (signal.aborted) {
         this._disposeViewer(viewer);
         return;

@@ -49,7 +49,8 @@ export class StructureService {
   ): Promise<StructureData> {
     const formattedId = getBaseAccession(proteinId);
     const tedAbortController = new AbortController();
-    signal?.addEventListener('abort', () => tedAbortController.abort(), { once: true });
+    const abortTed = () => tedAbortController.abort();
+    signal?.addEventListener('abort', abortTed, { once: true });
 
     // Fetch prediction data from AlphaFold API
     const apiUrl = `${this.ALPHAFOLD_API_URL}/${formattedId}`;
@@ -133,6 +134,8 @@ export class StructureService {
         );
       }
       throw new Error(`AlphaFold structure not available for ${formattedId}`);
+    } finally {
+      signal?.removeEventListener('abort', abortTed);
     }
   }
 

@@ -71,13 +71,17 @@ function holdTedThemeChange() {
   return tedChange;
 }
 
-async function renderViewer(tedDomains: TedDomain[]) {
+function mountViewer(tedDomains: TedDomain[]) {
   mocks.loadStructure.mockResolvedValue(structureData(tedDomains));
   const element = document.createElement('protspace-structure-viewer') as ProtspaceStructureViewer;
   element.autoSync = false;
   element.proteinId = 'A0A0B4U9L8';
   document.body.appendChild(element);
+  return element;
+}
 
+async function renderViewer(tedDomains: TedDomain[]) {
+  const element = mountViewer(tedDomains);
   await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledOnce());
   await element.updateComplete;
   return element;
@@ -204,6 +208,23 @@ describe('structure viewer color control', () => {
     await element.updateComplete;
 
     expect(firstSignal.aborted).toBe(true);
+  });
+
+  it('removes a viewer that finishes mounting after its load was replaced', async () => {
+    const staleViewer = deferred<Awaited<ReturnType<typeof mocks.createViewer>>>();
+    mocks.createViewer.mockImplementationOnce(() => staleViewer.promise);
+    const element = mountViewer(domains);
+    await vi.waitFor(() => expect(mocks.createViewer).toHaveBeenCalledOnce());
+    const staleMount = mocks.createViewer.mock.calls[0]?.[0] as HTMLElement;
+
+    element.proteinId = 'P12345';
+    await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledOnce());
+    staleViewer.resolve({ ...mocks, loadStructureFromUrl: vi.fn() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.dispose).toHaveBeenCalledOnce();
+    expect(staleMount.isConnected).toBe(false);
+    expect(element.shadowRoot?.querySelectorAll('.molstar-mount')).toHaveLength(1);
   });
 
   it('does not report an error when a structure finishes after the viewer closes', async () => {

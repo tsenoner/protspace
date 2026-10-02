@@ -51,7 +51,7 @@ The structure viewer SHALL provide pLDDT and TED domains color options after a s
 #### Scenario: User returns to pLDDT coloring
 
 - **WHEN** the user activates pLDDT after viewing TED domain colors
-- **THEN** the viewer reapplies Mol\*'s built-in pLDDT confidence theme
+- **THEN** the viewer restores each representation's preset color theme (Mol\*'s pLDDT confidence theme for an AlphaFold model)
 - **AND** the control and explanatory text identify pLDDT as active
 
 #### Scenario: User changes mode while a theme update is in progress

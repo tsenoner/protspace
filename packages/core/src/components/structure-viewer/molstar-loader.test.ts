@@ -38,10 +38,16 @@ describe('Mol* color theme adapter', () => {
     vi.restoreAllMocks();
   });
 
-  type ThemeUpdate = { color: string; colorParams?: unknown };
+  type ThemeUpdate = { color?: string; colorParams?: unknown };
   type ColorTheme = { name: string; params?: unknown };
   type FakeRepresentation = {
-    cell: { transform: { ref: string; tags?: string[]; params: { colorTheme: ColorTheme } } };
+    cell: {
+      transform: {
+        ref: string;
+        tags?: string[];
+        params: { type?: { name: string }; colorTheme: ColorTheme };
+      };
+    };
   };
   type FocusParams = {
     targetParams: { colorTheme: ColorTheme };
@@ -80,6 +86,7 @@ describe('Mol* color theme adapter', () => {
     for (const component of components) {
       for (const repr of component.representations) {
         const { color, colorParams } = themeFor(component, repr);
+        if (color === undefined) continue;
         repr.cell.transform.params.colorTheme = { name: color, params: colorParams };
       }
     }
@@ -218,6 +225,27 @@ describe('Mol* color theme adapter', () => {
     expect(focusTarget.cell.transform.params.colorTheme.name).toBe('plddt-confidence');
   });
 
+  it('leaves interaction representations on their own theme', async () => {
+    const interactions = representation('nci', 'interaction-type', undefined, [
+      'structure-focus-surr-nci-repr',
+    ]);
+    interactions.cell.transform.params.type = { name: 'interactions' };
+    installRawViewer(vi.fn(applyThemeUpdate), [
+      {
+        components: [
+          { representations: [representation('cartoon', 'plddt-confidence')] },
+          { representations: [interactions] },
+        ],
+      },
+    ]);
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
+
+    await viewer.setColorTheme('ted-domains');
+    expect(interactions.cell.transform.params.colorTheme.name).toBe('interaction-type');
+    await viewer.setColorTheme('plddt');
+    expect(interactions.cell.transform.params.colorTheme.name).toBe('interaction-type');
+  });
+
   it('updates every structure in one theme update', async () => {
     const updateTheme = vi.fn(applyThemeUpdate);
     const { components } = installRawViewer(updateTheme, [
@@ -234,11 +262,16 @@ describe('Mol* color theme adapter', () => {
 
   it('rejects when Mol* reverts the theme update', async () => {
     // A failed transform inside a transaction is reverted silently: the theme stays unchanged
-    installRawViewer(vi.fn(async () => undefined));
+    const { focusBehavior } = installRawViewer(vi.fn(async () => undefined));
     const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
     await expect(viewer.setColorTheme('ted-domains')).rejects.toThrow(
       'did not apply the ted-domains color theme',
+    );
+    // The behavior is outside the reverted data transaction, so the adapter restores it itself
+    expect(focusBehavior.transform.params.targetParams.colorTheme.name).toBe('plddt-confidence');
+    expect(focusBehavior.transform.params.surroundingsParams.colorTheme.name).toBe(
+      'plddt-confidence',
     );
   });
 

@@ -13,6 +13,7 @@ const FOCUS_PARTS = [
   { tag: 'structure-focus-target-repr', param: 'targetParams' },
   { tag: 'structure-focus-surr-repr', param: 'surroundingsParams' },
 ] as const;
+type FocusParam = (typeof FOCUS_PARTS)[number]['param'];
 
 export type StructureColorMode = 'plddt' | 'ted-domains';
 
@@ -53,7 +54,11 @@ interface MolstarColorTheme {
 
 interface MolstarRepresentationRef {
   cell: {
-    transform: { ref: string; tags?: string[]; params?: { colorTheme?: MolstarColorTheme } };
+    transform: {
+      ref: string;
+      tags?: string[];
+      params?: { type?: { name: string }; colorTheme?: MolstarColorTheme };
+    };
   };
 }
 
@@ -79,7 +84,7 @@ interface MolstarStructureRef {
 }
 
 interface MolstarThemeUpdate {
-  color: string;
+  color?: string;
   colorParams?: unknown;
 }
 
@@ -116,7 +121,7 @@ interface MolstarPlugin {
             component: MolstarComponentRef,
             representation: MolstarRepresentationRef,
           ) => MolstarThemeUpdate,
-        ) => Promise<unknown>;
+        ) => Promise<unknown> | undefined;
       };
     };
   };
@@ -301,6 +306,10 @@ export async function createMolstarViewer(
   };
   const representationKey = ({ cell }: MolstarRepresentationRef) =>
     FOCUS_PARTS.find(({ tag }) => cell.transform.tags?.includes(tag))?.param ?? cell.transform.ref;
+  // Interaction (non-covalent contact) representations keep their own interaction-type theme:
+  // TED has no residue for an interaction location and would paint every contact gray
+  const isThemeable = ({ cell }: MolstarRepresentationRef) =>
+    cell.transform.params?.type?.name !== 'interactions';
   const findFocusBehavior = () =>
     [...plugin.state.behaviors.cells.values()].find(
       (cell) => cell.transform.transformer.definition.name === FOCUS_BEHAVIOR_NAME,
@@ -310,8 +319,13 @@ export async function createMolstarViewer(
     const components = plugin.managers.structure.hierarchy.current.structures.flatMap(
       (structure) => structure.components,
     );
-    const representations = components.flatMap((component) => component.representations);
+    const representations = components
+      .flatMap((component) => component.representations)
+      .filter(isThemeable);
     const focusBehavior = findFocusBehavior();
+    const previousFocusThemes = new Map(
+      FOCUS_PARTS.map(({ param }) => [param, focusBehavior?.transform.params?.[param].colorTheme]),
+    );
     for (const repr of representations) {
       capturePresetTheme(representationKey(repr), repr.cell.transform.params?.colorTheme);
     }
@@ -321,39 +335,54 @@ export async function createMolstarViewer(
     const themeFor = (key: string): MolstarColorTheme | undefined =>
       mode === 'ted-domains' ? { name: TED_COLOR_THEME_NAME, params: {} } : presetThemes.get(key);
 
-    // One transaction for every structure, so a failed representation reverts them all
-    await plugin.dataTransaction(
-      async () => {
-        // Focus representations are created lazily from the behavior's params and drop out of
-        // the hierarchy while nothing is focused, so the behavior itself must follow the mode
-        if (focusBehavior) {
-          const update = plugin.state.behaviors.build();
-          update.to(focusBehavior.transform.ref).update((params) => {
-            for (const { param } of FOCUS_PARTS) {
-              const theme = themeFor(param);
-              if (theme) params[param].colorTheme = theme;
-            }
-          });
-          await update.commit();
+    const updateFocusBehavior = async (
+      themeForPart: (param: FocusParam) => MolstarColorTheme | undefined,
+    ) => {
+      if (!focusBehavior) return;
+      const update = plugin.state.behaviors.build();
+      update.to(focusBehavior.transform.ref).update((params) => {
+        for (const { param } of FOCUS_PARTS) {
+          const theme = themeForPart(param);
+          if (theme) params[param].colorTheme = theme;
         }
-        await plugin.managers.structure.component.updateRepresentationsTheme(
-          components,
-          (_component, repr) => {
-            const theme = themeFor(representationKey(repr));
-            return theme ? { color: theme.name, colorParams: theme.params } : { color: 'default' };
-          },
-        );
-      },
-      { rethrowErrors: true },
-    );
+      });
+      await update.commit();
+    };
 
-    // Mol* reverts a failed transform without throwing, so confirm the theme landed
-    const applied = representations.every(
-      ({ cell }) =>
-        (cell.transform.params?.colorTheme?.name === TED_COLOR_THEME_NAME) ===
-        (mode === 'ted-domains'),
-    );
-    if (!applied) throw new Error(`Mol* did not apply the ${mode} color theme`);
+    try {
+      // One transaction for every structure, so a failed representation reverts them all
+      await plugin.dataTransaction(
+        async () => {
+          // Focus representations are created lazily from the behavior's params and drop out of
+          // the hierarchy while nothing is focused, so the behavior itself must follow the mode
+          await updateFocusBehavior(themeFor);
+          await plugin.managers.structure.component.updateRepresentationsTheme(
+            components,
+            (_component, repr) => {
+              if (!isThemeable(repr)) return {};
+              const theme = themeFor(representationKey(repr));
+              return theme
+                ? { color: theme.name, colorParams: theme.params }
+                : { color: 'default' };
+            },
+          );
+        },
+        { rethrowErrors: true },
+      );
+
+      // Mol* reverts a failed transform without throwing, so confirm the theme landed
+      const applied = representations.every(
+        ({ cell }) =>
+          (cell.transform.params?.colorTheme?.name === TED_COLOR_THEME_NAME) ===
+          (mode === 'ted-domains'),
+      );
+      if (!applied) throw new Error(`Mol* did not apply the ${mode} color theme`);
+    } catch (error) {
+      // The behavior lives in a separate state tree the data transaction does not revert, so
+      // put its themes back too, or later focus representations would use the failed mode
+      await updateFocusBehavior((param) => previousFocusThemes.get(param)).catch(() => {});
+      throw error;
+    }
   };
 
   // Theme updates are serialized so the most recently requested mode is applied last
