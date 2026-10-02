@@ -424,5 +424,8 @@ describe('generateDatasetHash', () => {
     });
 
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
-  });
+    // The assertion is structural (no per-track `.map`), not a timing budget: every
+    // element read goes through the Proxy, which takes 3-6 s on a CI runner that is
+    // running the other packages' suites at the same time.
+  }, 30_000);
 });
