@@ -52,7 +52,20 @@ FINAL_UMAP = "ProtT5 — UMAP 2"
 
 
 def read_parts(name: str) -> list[bytes]:
-    return (FIXTURES / name).read_bytes().split(DELIMITER)
+    """A pinned fixture's parts, read as tables below.
+
+    The pinned fixtures are legacy (v1/v2) containers, whose parts are plain
+    tables. A v3 container (six parts) stores encoded columns instead, so it is
+    refused here rather than misread: derive from the legacy bytes (the v3
+    copies are separate `*_v3` fixtures).
+    """
+    parts = (FIXTURES / name).read_bytes().split(DELIMITER)
+    if not 3 <= len(parts) <= 5:
+        raise SystemExit(
+            f"{name} has {len(parts)} parts, not a legacy (v1/v2) bundle's 3 to 5; "
+            "this script derives the role fixtures from the legacy fixtures"
+        )
+    return parts
 
 
 def read_table(part: bytes) -> pa.Table:
