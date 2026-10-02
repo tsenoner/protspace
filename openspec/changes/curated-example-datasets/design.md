@@ -225,7 +225,7 @@ Readers ignore unknown keys. The same fields go into the manifest.
 - the protein count;
 - no `sequence`/`organism_id`, no legacy length bins, no "In the … section" or `(TC n` values;
 - `xref_pdb` has both values, and `reviewed` is plausible;
-- the v2 stamp, and settings that parse as an envelope;
+- the format: a v3 container whose cells decode in the v2 grammar (Decision 19), and settings that parse as an envelope;
 - the `defaultView` names are present;
 - the obsolete-accession count (rows left with an empty `protein_name`/`reviewed`), which is stated on the card.
 
@@ -249,7 +249,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 ### 10. Hosting: release assets, deployed same-origin, verified (D8)
 
 - **Why same-origin from a release.** Browser `fetch()` from GitHub release URLs fails CORS. jsDelivr caps files at 20 MB. Zenodo is slow and gives each version a new URL. Git would add about 70 MB of history per regeneration, and a full-feature Swiss-Prot could exceed GitHub's 100 MB per-file limit.
-- **Publishing.** The showcase files are published as assets of a versioned release `showcase-<uniprot release>` (for example `showcase-2026_03`), with versioned file names (`swissprot_2026_03.parquetbundle`), byte-identical to the Zenodo "paper companion" deposit.
+- **Publishing.** The showcase files are published as assets of a versioned release `showcase-<uniprot release>` (for example `showcase-2026_03`), with versioned file names (`swissprot_2026_03.parquetbundle`), byte-identical to the Zenodo "paper companion" deposit. Since Decision 19 the pinned files are the v3 copies (`swissprot_2026_03_v3.parquetbundle`), added to the same release next to the v2 originals.
 - **Deploying.** After `pnpm build`, `deploy.yml` runs `pnpm examples:fetch --out apps/web/dist/examples --with-retained`:
   - it downloads every release-hosted file in the manifest from `https://github.com/tsenoner/protspace/releases/download/<release>/<file>`;
   - it checks the byte count and sha256, and **fails the deploy** on a mismatch or a missing asset;
@@ -406,9 +406,19 @@ The Import menu shows annotation transfer with one example built for the purpose
 - **What the cards say.** Each of the three cards states that it has no Biocentral predictions and why, and that the Phobius `signal_peptide` column (present on nearly every protein) still covers signal peptides.
 - **Later.** An operator batch run or a lab GPU (about 2–4 h per set) can add the columns in a later refresh, under new file names. The build configuration commits the skip with its reason.
 
+### 19. The examples ship as parquetbundle v3 (owner decision, 2026-10-02)
+
+PR #477 (released in protspace 4.16.0) made v3 the only container protspace writes, in Python and on the web; v1/v2 are still read, deprecated, until 5.0.0. The five examples were built on 4.15.0 and published as v2, so they are converted now, before the merge.
+
+- **New names in the same release.** A release file name never carries other bytes, so the v2 assets of `showcase-2026_03` stay as published, and the v3 files are added to the same release as `<id>_2026_03_v3.parquetbundle` (`[build] file_pattern`), with their checksums in `SHA256SUMS_v3` (`[build] checksums_file`), since the release's `SHA256SUMS` lists the v2 files. For a release the committed manifest already names, `stage-release` prints `gh release upload` without `--clobber`, and it refuses, even with `--force`, a file whose name that release already publishes with other bytes. The demo stays `apps/web/public/data.parquetbundle`, whose bytes change in the repository. The manifest is re-pinned to the v3 files. The v2 files are not listed as `retained`: no deploy has served the v2 manifest, so no open tab or published link names them.
+- **One implementation of the format.** The build has no bundle codec of its own. `build_showcase.py` reads every container with protspace's reader (`read_tables`, which decodes a v3 core into the v2-shaped tables the gates parse) and writes the shipped file with protspace's writers (`replace_annotations_in_bundle`, then `replace_settings_in_bundle`) from the repository's own package, whatever the `--cli-root` checkout writes. The fetch steps keep their 4.15.0 CLI and caches, and only `finalize` runs again; over the CLI's v2 output it writes the bytes `protspace convert` writes from the v2 file. The build's vendored copy of the cell grammar goes too. `write_manifest.py` stays pyarrow-only (CI runs it with `--no-project --with pyarrow`): it reads a v3 file's columns, projections and protein count from the manifest in the file's first part, and a test pins its container keys to protspace's.
+- **Gates.** The format gate is `format-v3`: a v3 container whose cells decode in the v2 grammar; a legacy file fails. The coordinates gate compares at float32, the precision a v3 file stores and the browser draws. On `protspace convert` copies of the five v2 builds, every other gate gives the v2 build's status, detail and data, except Swiss-Prot's browser load, and the manifest records differ only in `file`, `bytes` and `sha256`.
+- **Sizes** (converting the published v2 files): demo 957,272 B (v2 1,039,050), `three-finger-toxins` 141,229 (135,572), `human-fly` 16,055,101 (22,677,971), `beta-lactamase` 13,308,868 (13,194,257), `swissprot` 87,783,085 (135,853,411), which is under GitHub Pages' untested 100 MB mark (task 8.5).
+- **D2 again.** The measurement is tied to the file's sha256, so Swiss-Prot's browser load is pending until it is measured on the v3 file; the catalog's `large` note follows the new measurement.
+
 ## Risks / Trade-offs
 
-- **Swiss-Prot size and memory** (135.9 MB; 27.4 s and a 1,192 MiB peak JS heap in the D2 measurement on an Apple M4 Pro, which leaves out ArrayBuffer and GPU memory). Mitigations:
+- **Swiss-Prot size and memory** (135.9 MB as v2, 87.8 MB as the v3 file that ships (Decision 19); 27.4 s and a 1,192 MiB peak JS heap in the D2 measurement of the v2 file on an Apple M4 Pro, which leaves out ArrayBuffer and GPU memory, repeated on the v3 file). Mitigations:
   - the D2 gate and its GO/TED web-cut fallback;
   - streamed progress and Cancel;
   - the Large badge and the stated memory.

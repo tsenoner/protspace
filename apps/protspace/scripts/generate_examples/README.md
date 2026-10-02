@@ -7,10 +7,16 @@ protspace.app: the startup demo, one curated EAT example and the manuscript's da
 design is in the OpenSpec change `openspec/changes/curated-example-datasets` (Decisions 1
 and 9–13, tasks §6–§7).
 
+Every bundle is written as **parquetbundle v3** (the container protspace 4.16 writes; v1/v2
+files are still read, but reading them is deprecated). The 2026_03 files were first
+published as v2 under `<id>_2026_03.parquetbundle`; those assets stay as they are, and the v3
+files are published next to them in the same release as `<id>_2026_03_v3.parquetbundle`
+(`[build] file_pattern`), since a release file name never carries other bytes.
+
 `write_manifest.py` writes the web app's example manifest
-(`apps/web/src/explore/example-manifest.ts`) from the bundle files; `build_showcase.py
-stage-release` calls it. `generate.py` and `datasets.toml` in this directory are
-unrelated: they build the Colab notebooks' `examples` release.
+(`apps/web/src/explore/example-manifest.ts`) from the bundle files, of any container
+version; `build_showcase.py stage-release` calls it. `generate.py` and `datasets.toml` in
+this directory are unrelated: they build the Colab notebooks' `examples` release.
 
 ## What the build does (strategy R)
 
@@ -121,7 +127,8 @@ The build steps for each dataset are:
    - The demo gets none.
 6. **bundle, style, finalize.**
    - `protspace bundle`, then `protspace style` with `styles/<id>.json`. Style entries for
-     values the data lacks are dropped first.
+     values the data lacks are dropped first. These write whatever container the CLI
+     checkout writes (v2 for 4.15.0).
    - Carried-over legends and the cluster legends are merged in afterwards, because
      `style` would reorder a manual legend.
    - The EAT example gets the settings envelope, with `eatConfidenceThreshold` 0 (D6).
@@ -134,6 +141,13 @@ The build steps for each dataset are:
      fetch steps recorded for their data. It must be a single release and equal
      `--release`; what UniProt serves later does not matter, so a finished build can be
      finalized after UniProt moves on.
+   - `finalize` writes the shipped file as **v3**, with this repository's protspace package
+     (`protspace.data.io.bundle`: `replace_annotations_in_bundle`, then
+     `replace_settings_in_bundle`), not with the CLI checkout. A v2 input from the CLI is
+     encoded exactly as `protspace convert` encodes one (the same bytes as converting the v2
+     file the build wrote before); a v3 input keeps its projection parts as stored. The
+     statistics part keeps its bytes either way. `builder_git_sha` names the commit whose
+     protspace wrote the container; `protspace_version` and `git_sha` remain the CLI's.
 7. **verify.** Runs the gates and writes `verify.json`, with the sha256 of the file it
    checked. The build exits non-zero if a gate fails or is pending.
 8. **report.** Writes the clustering report and thumbnails for the default-view choice
@@ -145,8 +159,12 @@ input files, the contents of its style file, and the CLI checkout's commit. A re
 step while that digest is unchanged, and runs a step whose inputs changed plus everything
 after it. So editing an author fact (`membership_release`) or `[build] zenodo_doi` re-runs
 only `finalize`, a style file re-runs `style` and `finalize`, and a new CLI commit re-runs
-the fetch steps (quickly, from the cache) and everything after them. Changes to
-`build_showcase.py` itself do not re-run finished steps: use `--redo STEP` (or `--redo all`).
+the fetch steps (quickly, from the cache) and everything after them. `finalize`'s inputs
+also hold `[build] file_pattern` and the container version it writes, so a `build` with
+the `_v3` names and the same `--cli-root` re-runs only `finalize` (then verify and
+report): the v3 file is written next to the v2 one, which stays. Other changes to
+`build_showcase.py` itself do not re-run finished steps: use `--redo STEP` (or
+`--redo all`).
 
 ## Prerequisites
 
@@ -154,8 +172,11 @@ the fetch steps (quickly, from the cache) and everything after them. Changes to
   `v4.15.0`), which includes `fix/annotation-retrieval` (PR #495) and PR #452's
   faithfulness ceiling (released in 4.13.1). The 2026_03 bundles were built on `v4.15.0`,
   and the manifest records its version and commit. Pass its root as `--cli-root`. The
-  script runs `uv run --frozen --project <cli-root> protspace …`, so it does not matter
-  which branch the script itself comes from.
+  script runs `uv run --frozen --project <cli-root> protspace …`, so the data does not
+  depend on which branch the script itself comes from. The container does: the script
+  reads and writes bundles with the protspace package of the checkout it runs from
+  (`uv run` from the repository root), which must write v3 (protspace 4.16 or later), so
+  a CLI checkout from before v3 is fine.
 - The read-only inputs named in `showcase.toml`: `[paths]` (`suite`, `nm_data`, `cli_data`)
   or `--path NAME=VALUE`. They live in `protspace_publication/nm_2026/data/` and in the
   gitignored `apps/protspace/data/` of the author's checkout. The build only reads them,
@@ -176,12 +197,12 @@ Run everything with `uv run` from the repository root. Outputs go to
 `~/protspace-showcase/2026_03/<id>/`, or to `--out-root`:
 
 ```
-<id>/<id>_2026_03.parquetbundle   the bundle
-<id>/verify.json                  gate results, with the checked file's sha256
-<id>/d2_measurement.json          swissprot: the browser measurement (record-load)
+<id>/<id>_2026_03_v3.parquetbundle   the bundle (v3)
+<id>/verify.json                     gate results, with the checked file's sha256
+<id>/d2_measurement.json             swissprot: the browser measurement (record-load)
 <id>/report/report.md, report.json, thumbs/*.png
 <id>/build.log
-<id>/work/                        intermediates, CLI caches, step markers, logs/, facts.json
+<id>/work/                           intermediates, CLI caches, step markers, logs/, facts.json
 ```
 
 ## Usage per dataset
@@ -272,7 +293,8 @@ come). Pending blocks the release like a failure.
 
 - the protein count and the paper membership;
 - no `sequence`, `organism_id` or legacy length bins;
-- the v2 format stamp;
+- the format (`format-v3`): a v3 container whose cells decode in the v2 grammar; a legacy
+  (v1/v2) file fails;
 - no `(TC n` or "In the … section" family values;
 - `xref_pdb` has both values, and `reviewed` is plausible;
 - **informative columns** (W10, G13): no column the legend could only show as N/A or
@@ -309,18 +331,24 @@ pending until `record-load` has measured exactly the built file.
 
 `stage-release` stages every dataset (or `--only` ones) whose `verify.json` passed — no
 `fail`, no `pending` — on exactly the built file's bytes; `--force` stages the others with a
-warning. Into the staging directory it writes:
+warning. A file whose name the committed manifest already publishes in this release with
+other bytes is refused, even with `--force`: give it a new name (`[build] file_pattern`).
+Into the staging directory it writes:
 
-- the release assets `<id>_2026_03.parquetbundle` and their `SHA256SUMS`, and the demo as
-  `data.parquetbundle` (it stays in the repository);
+- the release assets `<id>_2026_03_v3.parquetbundle` and their checksums
+  (`[build] checksums_file`, `SHA256SUMS_v3`: the release's `SHA256SUMS` lists the v2
+  files), and the demo as `data.parquetbundle` (it stays in the repository, so its bytes
+  change there);
 - `example-manifest.ts`, written by `write_manifest.py` from the staged files, with the
   committed `apps/web/src/explore/example-manifest.ts` as the previous manifest (so the
   previous release's files are retained for one cycle and a recorded Zenodo DOI is kept
   for unchanged files);
 - `RELEASE_NOTES.md`.
 
-It prints the owner's commands: `gh release create showcase-2026_03 …`, the copies of the
-demo and the manifest into the repository, and the check (`pnpm examples:fetch` and
+It prints the owner's commands: `gh release create showcase-2026_03 …` for a new release,
+or, when the committed manifest already names the release (as for the v3 files),
+`gh release upload showcase-2026_03 …` without `--clobber`; then the copies of the demo
+and the manifest into the repository, and the check (`pnpm examples:fetch` and
 `write_manifest.py --refresh --check`).
 
 `stage-perf` stages the `perf-datasets` release: the eleven former `apps/web/public/data/`
