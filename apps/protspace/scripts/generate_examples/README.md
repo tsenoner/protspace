@@ -9,8 +9,9 @@ and 9–13, tasks §6–§7).
 
 Every bundle is written as **parquetbundle v3** (the container protspace 4.16 writes; v1/v2
 files are still read, but reading them is deprecated). The 2026_03 files were first
-published as v2 under `<id>_2026_03.parquetbundle`; those assets stay as they are, and the v3
-files are published next to them in the same release as `<id>_2026_03_v3.parquetbundle`
+built on protspace 4.15.0 and published as v2 under `<id>_2026_03.parquetbundle`; those
+assets stay as they are. The v3 files were rebuilt on 4.16.0 from the same caches and are
+published next to them in the same release as `<id>_2026_03_v3.parquetbundle`
 (`[build] file_pattern`), since a release file name never carries other bytes.
 
 `write_manifest.py` writes the web app's example manifest
@@ -128,7 +129,7 @@ The build steps for each dataset are:
 6. **bundle, style, finalize.**
    - `protspace bundle`, then `protspace style` with `styles/<id>.json`. Style entries for
      values the data lacks are dropped first. These write whatever container the CLI
-     checkout writes (v2 for 4.15.0).
+     checkout writes (v2 for 4.15.0, v3 from 4.16.0).
    - Carried-over legends and the cluster legends are merged in afterwards, because
      `style` would reorder a manual legend.
    - The EAT example gets the settings envelope, with `eatConfidenceThreshold` 0 (D6).
@@ -170,8 +171,9 @@ report): the v3 file is written next to the v2 one, which stays. Other changes t
 
 - A checkout of a **released CLI** with the fixes: protspace 4.15.0 or later (tag
   `v4.15.0`), which includes `fix/annotation-retrieval` (PR #495) and PR #452's
-  faithfulness ceiling (released in 4.13.1). The 2026_03 bundles were built on `v4.15.0`,
-  and the manifest records its version and commit. Pass its root as `--cli-root`. The
+  faithfulness ceiling (released in 4.13.1). The 2026_03 v2 bundles were built on
+  `v4.15.0` and the v3 ones on `v4.16.0`; the manifest records the version and commit of
+  the CLI that built each file. Pass its root as `--cli-root`. The
   script runs `uv run --frozen --project <cli-root> protspace …`, so the data does not
   depend on which branch the script itself comes from. The container does: the script
   reads and writes bundles with the protspace package of the checkout it runs from
