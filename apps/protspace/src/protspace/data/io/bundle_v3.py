@@ -953,10 +953,18 @@ def _finite_rows(wide: pa.Table, projection: dict[str, Any]) -> np.ndarray:
 
 
 def _placed_rows(wide: pa.Table, projections: list[dict[str, Any]]) -> np.ndarray:
-    """Rows some projection covers: the proteins the browser shows."""
+    """Rows some projection gives a finite coordinate: the proteins the browser shows.
+
+    Any axis, not every one as in :func:`_finite_rows`: that is the browser's
+    rule (``dropUnplacedProteins``), so a 3D point missing only ``z`` is placed.
+    """
     placed = np.zeros(wide.num_rows, dtype=bool)
     for projection in projections:
-        placed |= _finite_rows(wide, projection)
+        name = projection["name"]
+        for axis in _axes(projection):
+            placed |= np.isfinite(
+                _flat(wide.column(f"{name}__{axis}")).to_numpy(zero_copy_only=False)
+            )
     return placed
 
 

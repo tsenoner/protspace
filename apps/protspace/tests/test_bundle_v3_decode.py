@@ -516,6 +516,26 @@ def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
     )
 
 
+def _with_missing_z(data: pa.Table, identifier: str) -> pa.Table:
+    """``data`` with ``identifier``'s ``z`` nulled in every projection."""
+    z = pc.if_else(
+        pc.equal(data.column("identifier"), identifier),
+        pa.scalar(None, data.schema.field("z").type),
+        data.column("z"),
+    )
+    return data.set_column(data.schema.get_field_index("z"), "z", z)
+
+
+def test_a_point_with_some_finite_axes_decides_the_numeric_type():
+    """The browser lists a protein with any finite coordinate, so a 3D point
+    missing only ``z`` is placed, and its ``2.5`` makes the column ``float``."""
+    metadata, data = projection_tables(4, (3,))
+    data = _with_missing_z(data, "p3")
+    source = annotations_table(length=["1", "2", "3", "2.5"])
+    parts = encode_v3(source, metadata, data)
+    assert manifest_of(parts[0])["columns"]["length"]["numericType"] == "float"
+
+
 # --------------------------------------------------------------------------- #
 # corrupt payloads (a v3 bundle is user-supplied input)
 # --------------------------------------------------------------------------- #
