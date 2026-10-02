@@ -63,7 +63,9 @@ A shape size the user picks SHALL be stored once per dataset in the browser and 
 annotation of that dataset. Until the user picks a size, an annotation's own stored or bundled size
 SHALL apply, and without one the default from the dataset's protein count. Reset in the settings
 dialog SHALL remove the dataset's stored size and every annotation's own size, stored or from a
-bundle, so the whole dataset returns to its default, and SHALL NOT store that default.
+bundle, so the whole dataset returns to its default, and SHALL NOT store that default. A
+dataset-wide size stored before the default followed the protein count SHALL still apply, except a
+stored 10, which the earlier Reset wrote as the default of the time and which SHALL read as unset.
 
 #### Scenario: Switching annotations
 
@@ -80,6 +82,19 @@ bundle, so the whole dataset returns to its default, and SHALL NOT store that de
 - **WHEN** the user picks shape size 20 on a 105,562-protein dataset and then presses Reset
 - **THEN** no size is stored for the dataset and the dots return to shape size 2
 - **AND** switching annotations keeps shape size 2
+
+#### Scenario: A size stored before this change
+
+- **WHEN** the browser holds a dataset-wide shape size of 7, stored before the default followed the
+  protein count, for a 105,562-protein dataset
+- **THEN** the dots are drawn at shape size 7
+
+#### Scenario: A 10 stored by the earlier Reset
+
+- **WHEN** the browser holds a dataset-wide shape size of 10, stored before the default followed the
+  protein count, for a 105,562-protein dataset
+- **THEN** the dots are drawn at the default shape size 2, and an export carries no top-level
+  `shapeSize`
 
 #### Scenario: Switching datasets
 

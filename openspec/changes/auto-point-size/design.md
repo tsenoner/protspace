@@ -64,9 +64,10 @@ dataset and gets the default for its own count on import.
 
 ### Precedence
 
-1. The dataset's stored size (`point-size:<hash>`): a size picked in the settings dialog, or a
-   bundle's top-level `shapeSize` applied on import. They share one slot, so the later write wins: a
-   bundle's size applies when the file is opened, and a pick afterwards replaces it.
+1. The dataset's stored size (`shape-size:<hash>`, or a legacy `point-size:<hash>` other than 10;
+   see below): a size picked in the settings dialog, or a bundle's top-level `shapeSize` applied on
+   import. They share one slot, so the later write wins: a bundle's size applies when the file is
+   opened, and a pick afterwards replaces it.
 2. The annotation's own `shapeSize`, unless it is 10 or 30.
 3. `defaultShapeSize(N)`.
 
@@ -96,6 +97,16 @@ it. It now removes the dataset key and rewrites every annotation's own size to t
 browser storage and in bundle settings not yet applied, so the whole dataset returns to the default,
 as the old Reset returned it to 10. Clearing only the dataset key is not enough: records written
 before this change can hold a picked size, which would resurface on the next annotation switch.
+
+### The stored size moves to a new key
+
+From #478 until this change, Reset stored 10 under `point-size:<hash>`, the same record a pick of
+10 writes, and the web app shipped that between 2026-09-30 and this change. Read as a pick, that 10
+would pin every such dataset at 10 and hide the new default. The dataset's size is therefore stored
+under `shape-size:<hash>` from now on. The legend still reads `point-size:<hash>` while the new key
+is absent, but reads a 10 there as unset: 10 was the default whenever it was written, so this is
+what the user saw as "the default" then. Any other legacy size is a real pick and still applies. A
+pick or a bundle's top-level size writes the new key and removes the legacy one; Reset removes both.
 
 ### The dialog shows the default
 
@@ -128,8 +139,12 @@ differs from the one in use.
 - **One rule for every screen.** The default does not account for the plot's pixel area beyond the
   existing plot-area scale; on a very small or very large window the user may still prefer another
   size.
-- **A Reset since #478 looks like a pick.** Reset used to store 10 as the dataset's size, the same
-  record a real pick of 10 writes, so a browser where Reset was pressed keeps 10 for that dataset
-  until the next Reset. It cannot be told apart from a deliberate 10, so it is left alone.
+- **A legacy 10 that was a real pick reads as unset.** A user who moved from another size back to 10
+  between #478 and this change gets the computed default instead. 10 was the default then, so this
+  matches what they chose; picking 10 again stores it under the new key.
+- **Bundles exported after the old Reset carry a top-level 10.** The old Reset made 10 the dataset's
+  picked size, so a web export from that window writes `"shapeSize": 10` at the top level, which
+  pins 10 on import like any bundle author's choice. It cannot be told from a deliberate 10. Reset
+  after the import clears it, and a bundle exported after that Reset no longer carries it.
 - **Perf baselines move.** The 40K and larger perf datasets now draw at 4 or below, so their fill
   cost drops; perf numbers before and after this change are not comparable.

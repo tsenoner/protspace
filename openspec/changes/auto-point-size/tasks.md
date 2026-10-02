@@ -43,3 +43,9 @@
       the clusters read as in the investigation.
 - [x] 4.3 `pnpm test:ci`, `pnpm format:check`, `pnpm lint`, `pnpm docs:build`,
       `openspec validate --all --strict`, and `pnpm precommit` through the commit hook.
+
+## 5. Review follow-ups
+
+- [x] 5.1 Store the dataset's size under `shape-size:<hash>`; read the legacy `point-size:<hash>`
+      while the new key is absent, with a legacy 10 (the old Reset's) as unset; a pick writes the
+      new key and drops the legacy one, Reset drops both.

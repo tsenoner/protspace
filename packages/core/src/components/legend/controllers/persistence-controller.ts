@@ -17,6 +17,23 @@ import { LEGEND_DEFAULTS, LEGEND_VALUES, isNAValue } from '../config';
 import { createDefaultSettings } from '../legend-helpers';
 import { BasePersistenceController } from '../../../controllers/base-persistence-controller';
 
+/** Storage component of the dataset-wide shape size, picked or applied from a bundle. */
+const SHAPE_SIZE_KEY = 'shape-size';
+
+/**
+ * Where the dataset-wide shape size was stored before the default followed the protein count.
+ * Reset stored 10 there, the default of the time, in the same record a pick of 10 writes.
+ */
+const LEGACY_SHAPE_SIZE_KEY = 'point-size';
+
+/** A legacy record of 10 cannot be told from that Reset, so it reads as unset. */
+const LEGACY_RESET_SHAPE_SIZE = 10;
+
+function readShapeSize(key: string): number | null {
+  const size = getStorageItem<unknown>(key, null);
+  return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+}
+
 /**
  * Callback interface for persistence events
  */
@@ -87,14 +104,22 @@ export class PersistenceController
     return sanitized;
   }
 
+  /**
+   * The dataset's picked size (or a bundle's top-level size), else a size stored under the
+   * legacy key unless it is the 10 the old Reset stored there.
+   */
   loadShapeSize(): number | null {
     if (!this._datasetHash) return null;
-    const size = getStorageItem<unknown>(buildStorageKey('point-size', this._datasetHash), null);
-    return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+    const size = readShapeSize(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
+    if (size !== null) return size;
+    const legacy = readShapeSize(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, this._datasetHash));
+    return legacy === LEGACY_RESET_SHAPE_SIZE ? null : legacy;
   }
 
   saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {
-    if (datasetHash) setStorageItem(buildStorageKey('point-size', datasetHash), size);
+    if (!datasetHash) return;
+    setStorageItem(buildStorageKey(SHAPE_SIZE_KEY, datasetHash), size);
+    removeStorageItem(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, datasetHash));
   }
 
   /**
@@ -104,7 +129,8 @@ export class PersistenceController
    */
   clearShapeSize(annotationNames: string[]): void {
     if (!this._datasetHash) return;
-    removeStorageItem(buildStorageKey('point-size', this._datasetHash));
+    removeStorageItem(buildStorageKey(SHAPE_SIZE_KEY, this._datasetHash));
+    removeStorageItem(buildStorageKey(LEGACY_SHAPE_SIZE_KEY, this._datasetHash));
 
     const unset = LEGEND_DEFAULTS.symbolSize;
     for (const annotation of annotationNames) {
