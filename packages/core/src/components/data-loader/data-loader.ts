@@ -162,7 +162,7 @@ export class DataLoader extends LitElement {
       // 4) Convert
       const visualizationData = await convertParquetToVisualizationDataOptimized(table);
       this.completeStep();
-      this.dispatchDataLoaded(visualizationData, null, source);
+      this.dispatchDataLoaded({ data: visualizationData, settings: null, source });
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
       this.error = originalError.message;
@@ -236,14 +236,14 @@ export class DataLoader extends LitElement {
           decoded = await decodeParquetBundle(arrayBuffer);
         }
         this.completeStep();
-        this.dispatchDataLoaded(
-          decoded.data,
-          decoded.settings,
+        this.dispatchDataLoaded({
+          data: decoded.data,
+          settings: decoded.settings,
           source,
           file,
-          decoded.formatVersion,
-          decoded.unplacedProteinCount,
-        );
+          bundleFormatVersion: decoded.formatVersion,
+          unplacedProteinCount: decoded.unplacedProteinCount,
+        });
       } else {
         // For regular parquet: validate magic -> parse -> validate rows -> convert
         this.addSteps(4);
@@ -255,7 +255,7 @@ export class DataLoader extends LitElement {
         this.completeStep();
         const visualizationData = await convertParquetToVisualizationDataOptimized(table);
         this.completeStep();
-        this.dispatchDataLoaded(visualizationData, null, source, file);
+        this.dispatchDataLoaded({ data: visualizationData, settings: null, source, file });
       }
     } catch (error) {
       const originalError = error instanceof Error ? error : new Error(String(error));
@@ -311,22 +311,7 @@ export class DataLoader extends LitElement {
     );
   }
 
-  private dispatchDataLoaded(
-    data: VisualizationData,
-    settings: BundleSettings | null,
-    source: DataLoadSource,
-    file?: File,
-    bundleFormatVersion?: number,
-    unplacedProteinCount?: number,
-  ) {
-    const detail: DataLoadedEventDetail = {
-      data,
-      settings,
-      source,
-      file,
-      bundleFormatVersion,
-      unplacedProteinCount,
-    };
+  private dispatchDataLoaded(detail: DataLoadedEventDetail) {
     this.dispatchEvent(
       new CustomEvent('data-loaded', {
         detail,
