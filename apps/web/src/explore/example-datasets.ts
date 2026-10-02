@@ -85,6 +85,20 @@ export function formatMegabytes(bytes: number): string {
 }
 
 /**
+ * A download size with its article, as a large entry's note states it: "a 44.9 MB
+ * download", "an 87.8 MB download". The article follows the number as it is read
+ * aloud, which starts with its first group of three digits: "eight…", "eleven" and
+ * "eighteen" take "an".
+ */
+export function formatDownload(bytes: number): string {
+  const size = formatMegabytes(bytes);
+  const whole = size.slice(0, size.indexOf('.'));
+  const leading = whole.slice(0, whole.length % 3 || 3);
+  const article = leading.startsWith('8') || leading === '11' || leading === '18' ? 'an' : 'a';
+  return `${article} ${size} download`;
+}
+
+/**
  * A protein count as the menu labels state it: exact below 1,000, one decimal
  * in thousands below 10,000, whole thousands below a million.
  */
@@ -364,7 +378,7 @@ export function findExampleDataset(id: string): ExampleDataset | undefined {
  */
 export function toExampleDatasetSummary(entry: ExampleDataset): ExampleDatasetSummary {
   const description = entry.large
-    ? `${entry.description} Large: a ${formatMegabytes(entry.sizeBytes)} download that needs ${entry.large.memory} of browser memory and takes ${entry.large.loadTime} to load.`
+    ? `${entry.description} Large: ${formatDownload(entry.sizeBytes)} that needs ${entry.large.memory} of browser memory and takes ${entry.large.loadTime} to load.`
     : entry.description;
   return {
     id: entry.id,

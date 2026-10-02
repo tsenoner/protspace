@@ -31,6 +31,7 @@ import {
   EXAMPLE_DATASETS,
   FINAL_CATALOG_IS_LIVE,
   FINAL_EXAMPLE_SPECS,
+  formatDownload,
   formatMegabytes,
   formatProteinCount,
   type ExampleDataset,
@@ -400,8 +401,8 @@ function builtWith(record: BundleRecord): string {
 }
 
 function largeNote(large: NonNullable<Card['large']>, record: BundleRecord | undefined): string {
-  const size = record ? formatMegabytes(record.bytes) : PENDING;
-  return `a ${size} download that needs ${large.memory} of browser memory and takes ${large.loadTime} to load.`;
+  const download = record ? formatDownload(record.bytes) : `a ${PENDING} download`;
+  return `${download} that needs ${large.memory} of browser memory and takes ${large.loadTime} to load.`;
 }
 
 const downloadHref = (record: BundleRecord) =>

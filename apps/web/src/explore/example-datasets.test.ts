@@ -5,6 +5,7 @@ import {
   FINAL_CATALOG_IS_LIVE,
   FINAL_EXAMPLE_SPECS,
   findExampleDataset,
+  formatDownload,
   formatMegabytes,
   formatProteinCount,
   toExampleDatasetSummary,
@@ -236,6 +237,21 @@ describe('toExampleDatasetSummary', () => {
   it('formats sizes the way the labels do', () => {
     expect(formatMegabytes(865_499)).toBe('0.9 MB');
     expect(formatMegabytes(44_912_345)).toBe('44.9 MB');
+  });
+
+  it('puts "an" before a size read aloud with a vowel sound', () => {
+    expect(formatDownload(44_912_345)).toBe('a 44.9 MB download');
+    expect(formatDownload(135_853_411)).toBe('a 135.9 MB download');
+    expect(formatDownload(865_499)).toBe('a 0.9 MB download');
+    // eighty-seven, eight hundred and twelve, eleven, eighteen
+    expect(formatDownload(87_783_085)).toBe('an 87.8 MB download');
+    expect(formatDownload(812_000_000)).toBe('an 812.0 MB download');
+    expect(formatDownload(11_200_000)).toBe('an 11.2 MB download');
+    expect(formatDownload(18_000_000)).toBe('an 18.0 MB download');
+    // one hundred and eighty, one thousand one hundred, eleven thousand
+    expect(formatDownload(180_000_000)).toBe('a 180.0 MB download');
+    expect(formatDownload(1_100_000_000)).toBe('a 1100.0 MB download');
+    expect(formatDownload(11_000_000_000)).toBe('an 11000.0 MB download');
   });
 
   it('formats protein counts the way the labels do', () => {
