@@ -173,7 +173,9 @@ const structureViewerStylesCore = css`
   .viewer-container {
     position: relative;
     width: 100%;
-    height: 100%;
+    /* Take only the height the header and footer leave, so the footer never overflows */
+    flex: 1 1 0;
+    min-height: 0;
     background: var(--protspace-viewer-bg);
     border-radius: 0 0 6px 6px;
   }
@@ -293,6 +295,11 @@ const structureViewerStylesCore = css`
     /* --breakpoint-lg */
     :host {
       width: calc(50% - 6px);
+    }
+
+    /* The half-width panel is too narrow for both lines; keep the color legend */
+    .interaction-tip {
+      display: none;
     }
   }
 

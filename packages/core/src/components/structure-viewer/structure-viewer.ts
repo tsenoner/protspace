@@ -463,7 +463,7 @@ export class ProtspaceStructureViewer extends LitElement {
       ${this.showTips && !this._error
         ? html`
             <div class="tips">
-              <span>
+              <span class="interaction-tip">
                 <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll
                 to zoom.
               </span>
