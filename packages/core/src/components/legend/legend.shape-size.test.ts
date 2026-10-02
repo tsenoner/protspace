@@ -1,9 +1,17 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildStorageKey } from '@protspace/utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  buildStorageKey,
+  generateDatasetHash,
+  sliceVisualizationDataByIndices,
+  type LegendSettingsMap,
+  type VisualizationData,
+} from '@protspace/utils';
 import './legend';
+import type { ProtspaceLegend } from './legend';
+import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
 // These tests seed and read the persisted settings through `localStorage` directly. Stub an
 // in-memory store rather than using the runtime's: Node does not hand jsdom a usable
@@ -47,14 +55,21 @@ type ShapeSizeLegend = HTMLElement & {
     updateDatasetHash: (ids: string[]) => boolean;
     updateSelectedAnnotation: (annotation: string) => boolean;
     loadSettings: () => void;
+    saveSettings: () => void;
   };
+  _datasetProteinCount: number;
   data: { annotations: Record<string, { values: string[] }> } | null;
   getAllPersistedSettings: () => Record<string, { shapeSize: number }>;
+  setFileSettings: (settings: LegendSettingsMap | null, datasetHash?: string) => void;
   applyShapeSize: (size: number, datasetHash?: string) => void;
   readonly pickedShapeSize: number | undefined;
 };
 
-function makeLegend() {
+/**
+ * A detached legend never runs `updated()`, which is where it counts the dataset's proteins
+ * next to the hash, so the count is set directly. The default 2 protein ids give shape size 10.
+ */
+function makeLegend(proteinCount = 2) {
   const el = document.createElement('protspace-legend') as ShapeSizeLegend;
   const pointSizes: number[] = [];
   el._scatterplotController.updateConfig = (config) => {
@@ -63,6 +78,7 @@ function makeLegend() {
   el._updateLegendItems = vi.fn();
   el._dispatchLegendStateChange = vi.fn();
   el._persistenceController.updateDatasetHash(['p1', 'p2']);
+  el._datasetProteinCount = proteinCount;
   const hash = el._persistenceController._datasetHash;
   const switchTo = (annotation: string) => {
     el.selectedAnnotation = annotation;
@@ -79,8 +95,23 @@ function makeLegend() {
     el._dialogSettings = { ...el._dialogSettings, shapeSize, annotationSortModes: {} };
     el._handleSettingsSave();
   };
-  return { el, hash, pointSizes, switchTo, store, pick };
+  const stored = (annotation: string) =>
+    JSON.parse(localStorage.getItem(buildStorageKey('legend', hash, annotation)) ?? 'null') as {
+      shapeSize: number;
+    } | null;
+  const storedPick = () => localStorage.getItem(buildStorageKey('point-size', hash));
+  return { el, hash, pointSizes, switchTo, store, pick, stored, storedPick };
 }
+
+const fileSettings = (shapeSize: number) => ({
+  maxVisibleValues: 10,
+  shapeSize,
+  sortMode: 'size-desc' as const,
+  hiddenValues: [],
+  categories: {},
+  enableDuplicateStackUI: false,
+  selectedPaletteId: 'kellys',
+});
 
 describe('legend shape size', () => {
   beforeEach(() => localStorage.clear());
@@ -118,7 +149,7 @@ describe('legend shape size', () => {
     expect(next.el.shapeSize).toBe(12);
   });
 
-  it('resets the whole dataset to 10', () => {
+  it('resets a small dataset to 10', () => {
     const { el, switchTo, pick } = makeLegend();
     switchTo('a');
     pick(12);
@@ -194,5 +225,228 @@ describe('legend shape size', () => {
     expect(el.pickedShapeSize).toBeUndefined();
     pick(12);
     expect(el.pickedShapeSize).toBe(12);
+  });
+});
+
+describe('legend default shape size from the protein count', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('defaults a large dataset by its protein count when the annotation stores the filler 10', () => {
+    const { el, pointSizes, switchTo, store } = makeLegend(105_562);
+    store('a', 10);
+    switchTo('a');
+    expect(el.shapeSize).toBe(2);
+    expect(pointSizes.at(-1)).toBe(16);
+  });
+
+  it('reads the legacy filler 30 and a missing record as unset too', () => {
+    const { el, switchTo, store } = makeLegend(573_649);
+    store('a', 30);
+    switchTo('a');
+    expect(el.shapeSize).toBe(1);
+    switchTo('b');
+    expect(el.shapeSize).toBe(1);
+  });
+
+  it("keeps an annotation's own size over the default", () => {
+    const { el, pointSizes, switchTo, store } = makeLegend(105_562);
+    store('a', 5);
+    switchTo('a');
+    expect(el.shapeSize).toBe(5);
+    expect(pointSizes.at(-1)).toBe(40);
+    switchTo('b');
+    expect(el.shapeSize).toBe(2);
+  });
+
+  it("lets a bundle's top-level size win over the annotation's own size and the default", () => {
+    const { el, hash, switchTo, store } = makeLegend(105_562);
+    store('a', 5);
+    switchTo('a');
+    el.applyShapeSize(20, hash);
+    expect(el.shapeSize).toBe(20);
+    switchTo('b');
+    expect(el.shapeSize).toBe(20);
+    switchTo('a');
+    expect(el.shapeSize).toBe(20);
+  });
+
+  it("lets a stored pick win over the annotation's own size", () => {
+    const { el, hash, switchTo, store } = makeLegend(105_562);
+    store('a', 5);
+    localStorage.setItem(buildStorageKey('point-size', hash), '7');
+    switchTo('a');
+    expect(el.shapeSize).toBe(7);
+  });
+
+  it('stores no size when the default is in use', () => {
+    const { el, switchTo, stored, storedPick } = makeLegend(105_562);
+    switchTo('a');
+    el._persistenceController.saveSettings();
+    expect(el.shapeSize).toBe(2);
+    expect(stored('a')?.shapeSize).toBe(10);
+    expect(storedPick()).toBeNull();
+    expect(el.pickedShapeSize).toBeUndefined();
+  });
+
+  it('exports the filler 10 and no picked size, never the computed default', () => {
+    const { el, switchTo } = makeLegend(105_562);
+    switchTo('b');
+    el._persistenceController.saveSettings();
+    switchTo('a');
+    expect(el.shapeSize).toBe(2);
+    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    const exported = el.getAllPersistedSettings();
+    expect(exported.a.shapeSize).toBe(10);
+    expect(exported.b.shapeSize).toBe(10);
+    expect(el.pickedShapeSize).toBeUndefined();
+  });
+
+  it('Reset clears the stored size and returns every annotation to the default', () => {
+    const { el, pointSizes, switchTo, store, pick, storedPick } = makeLegend(105_562);
+    // A record written while a size was picked can hold that size as the annotation's own.
+    store('b', 12);
+    switchTo('a');
+    pick(12);
+    expect(storedPick()).toBe('12');
+    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+
+    el._handleSettingsReset();
+    expect(el.shapeSize).toBe(2);
+    expect(pointSizes.at(-1)).toBe(16);
+    expect(storedPick()).toBeNull();
+    expect(el.pickedShapeSize).toBeUndefined();
+
+    switchTo('b');
+    expect(el.shapeSize).toBe(2);
+    const exported = el.getAllPersistedSettings();
+    expect(exported.b.shapeSize).toBe(10);
+    expect(Object.values(exported).map((settings) => settings.shapeSize)).toEqual(
+      Object.keys(exported).map(() => 10),
+    );
+
+    const next = makeLegend(105_562);
+    next.switchTo('b');
+    expect(next.el.shapeSize).toBe(2);
+  });
+
+  it('Reset also drops the per-annotation sizes of bundle settings not yet applied', () => {
+    const { el, hash, switchTo } = makeLegend(105_562);
+    el.setFileSettings({ a: fileSettings(5), b: fileSettings(7) }, hash);
+    switchTo('a');
+    expect(el.shapeSize).toBe(5);
+    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+
+    el._handleSettingsReset();
+    expect(el.shapeSize).toBe(2);
+    switchTo('b');
+    expect(el.shapeSize).toBe(2);
+  });
+});
+
+type MockPlot = Awaited<ReturnType<typeof mountLegendWithScatterplot>>['plot'];
+type ResettableLegend = ProtspaceLegend & {
+  _handleSettingsReset: () => void;
+  _handleCustomize: () => Promise<void>;
+  _handleItemClick: (value: string) => void;
+};
+
+function makeData(count: number, prefix = 'p'): VisualizationData {
+  const codes = Int32Array.from({ length: count }, (_, i) => i % 2);
+  const categorical = (values: string[]) => ({
+    kind: 'categorical' as const,
+    values,
+    colors: ['#ff0000', '#0000ff'],
+    shapes: ['circle', 'circle'],
+  });
+  return {
+    protein_ids: Array.from({ length: count }, (_, i) => `${prefix}${i}`),
+    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(count * 2) }],
+    annotations: { group: categorical(['A', 'B']), kind: categorical(['x', 'y']) },
+    annotation_data: { group: codes, kind: codes.slice() },
+  };
+}
+
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+async function settle(legend: ProtspaceLegend): Promise<void> {
+  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+}
+
+function showView(plot: MockPlot, view: VisualizationData): void {
+  plot.getCurrentData = () => view;
+  plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: view } }));
+}
+
+describe('legend default shape size with a scatterplot', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function mount(count: number) {
+    const data = makeData(count);
+    const { legend, plot } = await mountLegendWithScatterplot(data, 'group');
+    await settle(legend);
+    return { data, legend: legend as ResettableLegend, plot };
+  }
+
+  const pointSize = (plot: MockPlot) => (plot.config as { pointSize?: number }).pointSize;
+
+  it("sizes dots by the whole dataset's protein count", async () => {
+    const { legend, plot } = await mount(40_000);
+    expect(legend.shapeSize).toBe(4);
+    expect(pointSize(plot)).toBe(32);
+  });
+
+  it('keeps the default when categories are hidden', async () => {
+    const { legend, plot } = await mount(40_000);
+    legend._handleItemClick('A');
+    await settle(legend);
+    expect(legend.shapeSize).toBe(4);
+    expect(pointSize(plot)).toBe(32);
+  });
+
+  it('counts the whole dataset, not the filtered view', async () => {
+    const { data, legend, plot } = await mount(40_000);
+    const kept = Array.from({ length: 1_000 }, (_, i) => i);
+    const view = sliceVisualizationDataByIndices(data, kept);
+    plot.filtersActive = true;
+    plot.filteredProteinIds = view.protein_ids;
+    showView(plot, view);
+    await settle(legend);
+    expect(legend.proteinIds).toHaveLength(1_000);
+
+    plot.selectedAnnotation = 'kind';
+    legend.selectedAnnotation = 'kind';
+    await settle(legend);
+    expect(legend.shapeSize).toBe(4);
+
+    legend._handleSettingsReset();
+    expect(legend.shapeSize).toBe(4);
+    expect(pointSize(plot)).toBe(32);
+  });
+
+  it('recomputes the default for the next dataset', async () => {
+    const { legend, plot } = await mount(5_000);
+    expect(legend.shapeSize).toBe(10);
+
+    const next = makeData(40_000, 'q');
+    legend.clearForNewDataset(generateDatasetHash(next));
+    plot.data = next;
+    showView(plot, next);
+    await settle(legend);
+    expect(legend.shapeSize).toBe(4);
+    expect(pointSize(plot)).toBe(32);
+  });
+
+  it('names the default in the settings dialog', async () => {
+    const { legend } = await mount(40_000);
+    await legend._handleCustomize();
+    await settle(legend);
+    const input = legend.shadowRoot!.querySelector<HTMLInputElement>('#shape-size-input')!;
+    expect(input.value).toBe('4');
+    expect(input.placeholder).toBe('4');
+    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
+      'Default for this dataset: 4',
+    );
   });
 });

@@ -17,6 +17,8 @@ import {
 export interface SettingsDialogState {
   maxVisibleValues: number;
   shapeSize: number;
+  /** The dataset's default shape size, from its protein count. */
+  defaultShapeSize: number;
   enableDuplicateStackUI: boolean;
   selectedAnnotation: string;
   annotationSortModes: Record<string, LegendSortMode>;
@@ -154,11 +156,11 @@ function renderShapeSizeInput(
         min="1"
         max=${LEGEND_DEFAULTS.maxSymbolSize}
         .value=${String(state.shapeSize)}
-        placeholder=${String(LEGEND_DEFAULTS.symbolSize)}
+        placeholder=${String(state.defaultShapeSize)}
         @input=${onInput}
       />
     `,
-    undefined,
+    `Default for this dataset: ${state.defaultShapeSize}. Larger datasets default to smaller dots.`,
     '',
     'shape-size-input',
   );

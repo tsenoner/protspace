@@ -87,10 +87,36 @@ export function calculatePointSize(shapeSize: number): number {
   return Math.max(10, Math.round(shapeSize * LEGEND_DEFAULTS.symbolSizeMultiplier));
 }
 
-const LEGACY_DEFAULT_SHAPE_SIZE = 30;
+/** Datasets up to this many proteins keep the base default shape size. */
+const DEFAULT_SHAPE_SIZE_REFERENCE_COUNT = 10_000;
 
-export function seedShapeSize(persisted: number): number {
-  return persisted === LEGACY_DEFAULT_SHAPE_SIZE ? LEGEND_DEFAULTS.symbolSize : persisted;
+/**
+ * The default shape size for a dataset of `proteinCount` proteins:
+ * `clamp(round(10 · (10000 / N)^⅔), 1, 10)`. Dot area grows linearly with the shape size, so
+ * the total ink still grows as `N^⅓` and a larger dataset looks denser without the category
+ * drawn on top covering the others. 10 up to 10,000 proteins, 2 at ~105K, 1 at Swiss-Prot.
+ * A count that is not a positive finite number gives the base default.
+ */
+export function defaultShapeSize(proteinCount: number): number {
+  const base = LEGEND_DEFAULTS.symbolSize;
+  if (!Number.isFinite(proteinCount) || proteinCount <= 0) return base;
+  const size = Math.round(base * (DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount) ** (2 / 3));
+  return Math.min(base, Math.max(1, size));
+}
+
+/**
+ * Per-annotation shape sizes that mean "nobody picked one": 10 is what the CLI writers and
+ * `createDefaultSettings` emit, 30 what earlier writers emitted.
+ */
+const UNSET_SHAPE_SIZES: ReadonlySet<number> = new Set([10, 30]);
+
+/**
+ * An annotation's own shape size from a bundle or browser storage, or null when it is unset,
+ * so the dataset's default applies.
+ */
+export function explicitShapeSize(stored: number | undefined): number | null {
+  if (stored === undefined || !Number.isFinite(stored) || stored <= 0) return null;
+  return UNSET_SHAPE_SIZES.has(stored) ? null : stored;
 }
 
 /**

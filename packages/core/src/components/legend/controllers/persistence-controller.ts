@@ -13,7 +13,7 @@ import type {
   LegendSortMode,
   PersistedCategoryData,
 } from '../types';
-import { LEGEND_VALUES, isNAValue } from '../config';
+import { LEGEND_DEFAULTS, LEGEND_VALUES, isNAValue } from '../config';
 import { createDefaultSettings } from '../legend-helpers';
 import { BasePersistenceController } from '../../../controllers/base-persistence-controller';
 
@@ -95,6 +95,32 @@ export class PersistenceController
 
   saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {
     if (datasetHash) setStorageItem(buildStorageKey('point-size', datasetHash), size);
+  }
+
+  /**
+   * Forget every shape size set for the dataset: the picked one, and each annotation's own,
+   * stored or in bundle settings not yet applied, so the dataset's default applies everywhere.
+   * Records written before the default followed the protein count can hold a picked size.
+   */
+  clearShapeSize(annotationNames: string[]): void {
+    if (!this._datasetHash) return;
+    removeStorageItem(buildStorageKey('point-size', this._datasetHash));
+
+    const unset = LEGEND_DEFAULTS.symbolSize;
+    for (const annotation of annotationNames) {
+      const key = buildStorageKey(this.storageKeyPrefix, this._datasetHash, annotation);
+      const saved = getStorageItem<Partial<LegendPersistedSettings> | null>(key, null);
+      if (saved && saved.shapeSize !== unset) setStorageItem(key, { ...saved, shapeSize: unset });
+    }
+
+    if (this._fileSettings) {
+      this._fileSettings = Object.fromEntries(
+        Object.entries(this._fileSettings).map(([annotation, settings]) => [
+          annotation,
+          { ...settings, shapeSize: unset },
+        ]),
+      );
+    }
   }
 
   private _stripLegacyFields(settings: LegendPersistedSettings): LegendPersistedSettings {

@@ -1,31 +1,31 @@
 ## 1. Regression tests (red)
 
-- [ ] 1.1 `legend-helpers.test.ts`: `defaultShapeSize` at 0, 1, 10,000, 20,000, 40,000, 105,562 and
+- [x] 1.1 `legend-helpers.test.ts`: `defaultShapeSize` at 0, 1, 10,000, 20,000, 40,000, 105,562 and
       573,649 proteins, and for negative and non-finite counts; `explicitShapeSize` reads 10 and 30
       as unset and keeps any other positive size.
-- [ ] 1.2 `legend.shape-size.test.ts`: with no stored size, the filler 10 and the legacy 30 give the
+- [x] 1.2 `legend.shape-size.test.ts`: with no stored size, the filler 10 and the legacy 30 give the
       default for the dataset's count; an annotation's own 5 wins over the default; a bundle's
       top-level size and a stored pick win over both; Reset removes the stored key, rewrites stored
       and pending bundle sizes to the filler and returns every annotation to the default; an export
       without a pick writes no top-level size and the filler 10, never the default.
-- [ ] 1.3 Legend with a mock scatterplot: the default uses the whole dataset's count and does not
+- [x] 1.3 Legend with a mock scatterplot: the default uses the whole dataset's count and does not
       change when categories are hidden or the view is filtered or isolated; switching to a
       dataset of another size recomputes it.
-- [ ] 1.4 `legend-settings-dialog.test.ts`: the size field's placeholder and hint give the dataset's
+- [x] 1.4 `legend-settings-dialog.test.ts`: the size field's placeholder and hint give the dataset's
       default.
-- [ ] 1.5 Run the new tests against the unmodified legend and record that they fail.
+- [x] 1.5 Run the new tests against the unmodified legend and record that they fail.
 
 ## 2. Implementation (green)
 
-- [ ] 2.1 `legend-helpers.ts`: add `defaultShapeSize(proteinCount)` and `explicitShapeSize(stored)`,
+- [x] 2.1 `legend-helpers.ts`: add `defaultShapeSize(proteinCount)` and `explicitShapeSize(stored)`,
       replacing `seedShapeSize`.
-- [ ] 2.2 `legend.ts`: record the dataset's protein count with its hash; resolve the shape size as
+- [x] 2.2 `legend.ts`: record the dataset's protein count with its hash; resolve the shape size as
       stored pick, then the annotation's own size, then the default; store the annotation's own
       size or the filler per annotation, never the live size.
-- [ ] 2.3 Reset: clear the dataset's stored size and every annotation's own size
+- [x] 2.3 Reset: clear the dataset's stored size and every annotation's own size
       (`PersistenceController.clearShapeSize`) and apply the default.
-- [ ] 2.4 `legend-settings-dialog.ts`: placeholder and hint from the dataset's default.
-- [ ] 2.5 Run the unit suites (`pnpm test:ci`) and record that they pass.
+- [x] 2.4 `legend-settings-dialog.ts`: placeholder and hint from the dataset's default.
+- [x] 2.5 Run the unit suites (`pnpm test:ci`) and record that they pass.
 
 ## 3. Docs
 

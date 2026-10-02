@@ -104,6 +104,7 @@ function renderSettingsDialogToContainer(overrides = {}) {
       {
         maxVisibleValues: 25,
         shapeSize: 12,
+        defaultShapeSize: 10,
         enableDuplicateStackUI: false,
         selectedAnnotation: 'score',
         annotationSortModes: {},
@@ -175,6 +176,16 @@ describe('shape size input', () => {
     expect(input.min).toBe('1');
     expect(input.placeholder).toBe('10');
     expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
+  });
+
+  it("suggests the dataset's own default and names it in a hint", () => {
+    const { container } = renderSettingsDialogToContainer({ shapeSize: 2, defaultShapeSize: 2 });
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    expect(input.value).toBe('2');
+    expect(input.placeholder).toBe('2');
+    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
+      'Default for this dataset: 2',
+    );
   });
 
   it('caps typed sizes at 64', () => {
