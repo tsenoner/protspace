@@ -40,17 +40,22 @@ export class StructureService {
   /**
    * Load protein structure from available sources
    * @param proteinId - The protein identifier
+   * @param signal - optional AbortSignal that cancels every request of this load
    * @returns Promise with structure data and metadata
    */
-  public static async loadStructure(proteinId: string): Promise<StructureData> {
+  public static async loadStructure(
+    proteinId: string,
+    signal?: AbortSignal,
+  ): Promise<StructureData> {
     const formattedId = getBaseAccession(proteinId);
     const tedAbortController = new AbortController();
+    signal?.addEventListener('abort', () => tedAbortController.abort(), { once: true });
 
     // Fetch prediction data from AlphaFold API
     const apiUrl = `${this.ALPHAFOLD_API_URL}/${formattedId}`;
 
     try {
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, { signal });
 
       if (!response.ok) {
         throw new Error(`AlphaFold API request failed: ${response.status}`);
@@ -87,7 +92,7 @@ export class StructureService {
 
       // Fetch the structure file data and create a blob URL
       // This avoids CORS issues and works better with Molstar
-      const structureResponse = await fetch(structureUrl);
+      const structureResponse = await fetch(structureUrl, { signal });
       if (!structureResponse.ok) {
         throw new Error(`Failed to fetch structure file: ${structureResponse.status}`);
       }
@@ -119,8 +124,9 @@ export class StructureService {
     } catch (error) {
       // Cancels the TED request if it already started, i.e. the structure download failed
       tedAbortController.abort();
-      // Only log unexpected errors (not 404s, which are expected for proteins without structures)
-      if (error instanceof Error && !error.message.includes('404')) {
+      // Only log unexpected errors (not 404s, which are expected for proteins without structures,
+      // nor a load the caller cancelled)
+      if (error instanceof Error && !error.message.includes('404') && !signal?.aborted) {
         console.warn(
           `[StructureService] Failed to load AlphaFold structure for ${formattedId}:`,
           error.message,
@@ -148,8 +154,7 @@ export class StructureService {
 
       return annotations
         .map((entry: TedDomainApiEntry | null) => this.parseTedDomain(entry))
-        .filter((domain): domain is TedDomain => domain !== null)
-        .sort((left, right) => left.domainNumber - right.domainNumber);
+        .filter((domain): domain is TedDomain => domain !== null);
     } catch {
       return [];
     } finally {

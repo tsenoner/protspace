@@ -38,7 +38,7 @@ export class ProtspaceStructureViewer extends LitElement {
   @state() private _viewer: MolstarViewer | null = null;
   @state() private _structureData: StructureData | null = null;
   @state() private _colorMode: StructureColorMode = 'plddt';
-  private _loadGeneration = 0;
+  private _loadController: AbortController | null = null;
   private _scatterplotElement: Element | null = null;
 
   // Refs
@@ -46,9 +46,9 @@ export class ProtspaceStructureViewer extends LitElement {
 
   protected updated(changedProperties: Map<string | number | symbol, unknown>) {
     if (changedProperties.has('proteinId')) {
-      // Invalidate the in-flight load now: the deferred _cleanup runs a frame later, and until
+      // Cancel the in-flight load now: the deferred _cleanup runs a frame later, and until
       // then the old load would still count as current
-      this._loadGeneration += 1;
+      this._loadController?.abort();
       // Defer loading to avoid triggering updates during update cycle
       requestAnimationFrame(() => {
         if (this.proteinId) {
@@ -157,10 +157,11 @@ export class ProtspaceStructureViewer extends LitElement {
       return;
     }
 
-    // Clean up any existing viewer; this also invalidates any load still in flight
+    // Clean up any existing viewer; this also cancels any load still in flight
     this._cleanup();
-    const loadGeneration = this._loadGeneration;
-    const isStale = () => loadGeneration !== this._loadGeneration;
+    const loadController = new AbortController();
+    this._loadController = loadController;
+    const { signal } = loadController;
 
     this._isLoading = true;
     this._error = null;
@@ -170,8 +171,8 @@ export class ProtspaceStructureViewer extends LitElement {
 
     try {
       // Use service to load structure data
-      const structureData = await StructureService.loadStructure(this.proteinId);
-      if (isStale()) {
+      const structureData = await StructureService.loadStructure(this.proteinId, signal);
+      if (signal.aborted) {
         this._revokeBlobUrl(structureData);
         return;
       }
@@ -179,12 +180,12 @@ export class ProtspaceStructureViewer extends LitElement {
 
       // Create Mol* viewer
       await this.updateComplete;
-      if (isStale()) return;
+      if (signal.aborted) return;
       if (!this._viewerContainer) {
         throw new Error('Viewer container not available');
       }
-      const viewer = await createMolstarViewer(this._viewerContainer);
-      if (isStale()) {
+      const viewer = await createMolstarViewer(this._viewerContainer, structureData.tedDomains);
+      if (signal.aborted) {
         this._disposeViewer(viewer);
         return;
       }
@@ -192,13 +193,13 @@ export class ProtspaceStructureViewer extends LitElement {
 
       // Load structure into viewer based on source
       await this._displayStructure(structureData);
-      if (isStale()) return;
+      if (signal.aborted) return;
 
       this._isLoading = false;
       this._dispatchStructureLoadEvent('loaded');
     } catch (error) {
       // A load replaced or closed mid-flight must not surface an error for the current state
-      if (isStale()) return;
+      if (signal.aborted) return;
       const originalError = error instanceof Error ? error : undefined;
       const formattedId = this.proteinId ? getBaseAccession(this.proteinId) : '';
       const genericMessage = `No 3D structure was found for ${formattedId}.`;
@@ -251,7 +252,8 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   private _cleanup() {
-    this._loadGeneration += 1;
+    this._loadController?.abort();
+    this._loadController = null;
     this._isLoading = false;
     this._colorMode = 'plddt';
 
@@ -345,7 +347,7 @@ export class ProtspaceStructureViewer extends LitElement {
     const previousMode = this._colorMode;
     this._colorMode = mode;
     try {
-      await viewer.setColorTheme(mode, this._structureData?.tedDomains);
+      await viewer.setColorTheme(mode);
     } catch (error) {
       // Only roll back if neither a newer request nor a new structure has taken over
       if (this._viewer === viewer && this._colorMode === mode) this._colorMode = previousMode;
@@ -437,7 +439,7 @@ export class ProtspaceStructureViewer extends LitElement {
               >
                 <button
                   type="button"
-                  class="segmented-btn color-mode-button"
+                  class="segmented-btn"
                   data-color-mode="plddt"
                   aria-pressed=${this._colorMode === 'plddt'}
                   .disabled=${!this._canChangeColorMode}
@@ -447,7 +449,7 @@ export class ProtspaceStructureViewer extends LitElement {
                 </button>
                 <button
                   type="button"
-                  class="segmented-btn color-mode-button"
+                  class="segmented-btn"
                   data-color-mode="ted-domains"
                   aria-pressed=${this._colorMode === 'ted-domains'}
                   .disabled=${!this._canChangeColorMode || !this._hasTedDomains}

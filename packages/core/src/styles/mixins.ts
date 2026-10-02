@@ -465,14 +465,13 @@ export const segmentedControlMixin = css`
     justify-content: center;
     gap: var(--spacing-xs);
     margin: 0;
-    padding: var(--segmented-padding-y, var(--spacing-xs))
-      var(--segmented-padding-x, var(--spacing-sm));
+    padding: var(--spacing-xs) var(--segmented-padding-x, var(--spacing-sm));
     border: 0;
     border-radius: 0;
     background: transparent;
     color: var(--segmented-text, var(--text-secondary));
     font: inherit;
-    font-size: var(--segmented-font-size, var(--text-sm));
+    font-size: var(--text-sm);
     font-weight: var(--font-medium);
     line-height: 1.25;
     white-space: nowrap;
@@ -503,12 +502,12 @@ export const segmentedControlMixin = css`
   }
 
   .segmented > .segmented-btn[aria-pressed='true'] {
-    background: var(--segmented-active-bg, var(--primary));
-    color: var(--segmented-active-text, var(--text-light));
+    background: var(--primary);
+    color: var(--text-light);
   }
 
   .segmented > .segmented-btn[aria-pressed='true']:hover:not(:disabled) {
-    background: var(--segmented-active-hover-bg, var(--primary-hover));
+    background: var(--primary-hover);
   }
 
   /* The library-wide focus ring, lifted above neighbours; the inner ring keeps it visible on the
@@ -539,7 +538,6 @@ export const segmentedControlMixin = css`
     --segmented-padding-x: 0.375rem;
   }
 
-  /* 0,3,0 so icon-only segments survive rules that hide icons in narrow layouts */
   .segmented > .segmented-btn > .icon {
     display: block;
     flex: none;

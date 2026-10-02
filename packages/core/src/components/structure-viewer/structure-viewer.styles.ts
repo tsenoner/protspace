@@ -279,7 +279,6 @@ const structureViewerStylesCore = css`
   .tips {
     flex-direction: column;
     padding: 0.2rem 0.5rem;
-    column-gap: 5px;
     border-radius: 0 0 6px 6px;
   }
 
@@ -297,7 +296,7 @@ const structureViewerStylesCore = css`
       width: calc(50% - 6px);
     }
 
-    /* The half-width panel is too narrow for both lines; keep the color legend */
+    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
     .interaction-tip {
       display: none;
     }

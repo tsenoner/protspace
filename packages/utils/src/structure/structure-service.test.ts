@@ -133,6 +133,31 @@ describe('StructureService TED domains', () => {
     expect(tedSignal?.aborted).toBe(true);
   });
 
+  it('cancels every request when the caller aborts the load', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const signals: (AbortSignal | undefined)[] = [];
+    const caller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        signals.push(init?.signal ?? undefined);
+        if (String(input).includes('/api/prediction/')) return Response.json([prediction]);
+        // Like real fetch: the domains and structure requests settle only when aborted
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        });
+      }),
+    );
+
+    const load = StructureService.loadStructure('A0A0B4U9L8', caller.signal);
+    await vi.waitFor(() => expect(signals).toHaveLength(3));
+    caller.abort();
+
+    await expect(load).rejects.toThrow('AlphaFold structure not available');
+    expect(signals.every((signal) => signal?.aborted)).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('keeps the structure available when the TED request never settles', async () => {
     vi.useFakeTimers();
     let tedSignal: AbortSignal | null = null;

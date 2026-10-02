@@ -73,21 +73,20 @@ describe('Mol* color theme adapter', () => {
   }
 
   /** Writes the requested theme into each representation, as a committed Mol* update does. */
-  async function applyThemeUpdate(
+  function applyThemeUpdate(
     components: FakeComponent[],
-    params: ThemeUpdate | ((c: FakeComponent, r: FakeRepresentation) => ThemeUpdate),
+    themeFor: (c: FakeComponent, r: FakeRepresentation) => ThemeUpdate,
   ) {
     for (const component of components) {
       for (const repr of component.representations) {
-        const { color, colorParams } =
-          typeof params === 'function' ? params(component, repr) : params;
+        const { color, colorParams } = themeFor(component, repr);
         repr.cell.transform.params.colorTheme = { name: color, params: colorParams };
       }
     }
   }
 
   function installRawViewer(
-    updateTheme: (...args: never[]) => Promise<unknown>,
+    updateTheme: (...args: never[]) => unknown,
     structures: { components: FakeComponent[] }[] = [
       { components: [{ representations: [representation('cartoon', 'plddt-confidence')] }] },
     ],
@@ -135,11 +134,11 @@ describe('Mol* color theme adapter', () => {
   it('registers TED coloring and switches loaded representations without reloading', async () => {
     const updateTheme = vi.fn(applyThemeUpdate);
     const { addTheme, components, rawViewer } = installRawViewer(updateTheme);
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
     expect(addTheme).toHaveBeenCalledOnce();
 
-    await viewer.setColorTheme('ted-domains', domains);
+    await viewer.setColorTheme('ted-domains');
     expect(updateTheme).toHaveBeenLastCalledWith(components, expect.any(Function));
     expect(components[0]?.representations[0]?.cell.transform.params.colorTheme.name).toBe(
       'protspace-ted-domain',
@@ -182,13 +181,13 @@ describe('Mol* color theme adapter', () => {
       { components: [{ representations: [plddtCartoon] }] },
       { components: [{ representations: [chainIdCartoon] }] },
     ]);
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
-    await viewer.setColorTheme('ted-domains', domains);
+    await viewer.setColorTheme('ted-domains');
     expect(plddtCartoon.cell.transform.params.colorTheme.name).toBe('protspace-ted-domain');
     expect(chainIdCartoon.cell.transform.params.colorTheme.name).toBe('protspace-ted-domain');
 
-    await viewer.setColorTheme('plddt', domains);
+    await viewer.setColorTheme('plddt');
     expect(plddtCartoon.cell.transform.params.colorTheme).toEqual({
       name: 'plddt-confidence',
       params: { scale: 'af' },
@@ -204,16 +203,16 @@ describe('Mol* color theme adapter', () => {
       { components: [{ representations: [representation('cartoon', 'plddt-confidence')] }] },
       { components: [{ representations: [focusTarget] }] },
     ]);
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
     const { targetParams, surroundingsParams } = focusBehavior.transform.params;
 
     // Focus representations created later use the behavior's params, so those must switch too
-    await viewer.setColorTheme('ted-domains', domains);
+    await viewer.setColorTheme('ted-domains');
     expect(targetParams.colorTheme.name).toBe('protspace-ted-domain');
     expect(surroundingsParams.colorTheme.name).toBe('protspace-ted-domain');
     expect(focusTarget.cell.transform.params.colorTheme.name).toBe('protspace-ted-domain');
 
-    await viewer.setColorTheme('plddt', domains);
+    await viewer.setColorTheme('plddt');
     expect(targetParams.colorTheme.name).toBe('plddt-confidence');
     expect(surroundingsParams.colorTheme.name).toBe('plddt-confidence');
     expect(focusTarget.cell.transform.params.colorTheme.name).toBe('plddt-confidence');
@@ -225,9 +224,9 @@ describe('Mol* color theme adapter', () => {
       { components: [{ representations: [representation('a', 'plddt-confidence')] }] },
       { components: [{ representations: [representation('b', 'plddt-confidence')] }] },
     ]);
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
-    await viewer.setColorTheme('ted-domains', domains);
+    await viewer.setColorTheme('ted-domains');
 
     expect(updateTheme).toHaveBeenCalledOnce();
     expect(updateTheme.mock.calls[0]?.[0]).toEqual(components);
@@ -236,9 +235,9 @@ describe('Mol* color theme adapter', () => {
   it('rejects when Mol* reverts the theme update', async () => {
     // A failed transform inside a transaction is reverted silently: the theme stays unchanged
     installRawViewer(vi.fn(async () => undefined));
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
-    await expect(viewer.setColorTheme('ted-domains', domains)).rejects.toThrow(
+    await expect(viewer.setColorTheme('ted-domains')).rejects.toThrow(
       'did not apply the ted-domains color theme',
     );
   });
@@ -251,7 +250,7 @@ describe('Mol* color theme adapter', () => {
         components: FakeComponent[],
         params: (c: FakeComponent, r: FakeRepresentation) => ThemeUpdate,
       ) => {
-        await applyThemeUpdate(components, params);
+        applyThemeUpdate(components, params);
         const theme = components[0]?.representations[0]?.cell.transform.params.colorTheme.name;
         appliedThemes.push(theme ?? '');
         if (theme === 'protspace-ted-domain') {
@@ -260,9 +259,9 @@ describe('Mol* color theme adapter', () => {
       },
     );
     installRawViewer(updateTheme);
-    const viewer = await createMolstarViewer(document.createElement('div'));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
-    const tedChange = viewer.setColorTheme('ted-domains', domains);
+    const tedChange = viewer.setColorTheme('ted-domains');
     const plddtChange = viewer.setColorTheme('plddt');
     await vi.waitFor(() => expect(updateTheme).toHaveBeenCalledOnce());
     await Promise.resolve();

@@ -62,6 +62,15 @@ function expectActiveColorMode(element: ProtspaceStructureViewer, mode: Structur
   );
 }
 
+/** Keeps TED theme changes pending until the returned deferred resolves. */
+function holdTedThemeChange() {
+  const tedChange = deferred<void>();
+  mocks.setColorTheme.mockImplementation((mode: StructureColorMode) =>
+    mode === 'ted-domains' ? tedChange.promise : Promise.resolve(),
+  );
+  return tedChange;
+}
+
 async function renderViewer(tedDomains: TedDomain[]) {
   mocks.loadStructure.mockResolvedValue(structureData(tedDomains));
   const element = document.createElement('protspace-structure-viewer') as ProtspaceStructureViewer;
@@ -101,21 +110,13 @@ describe('structure viewer color control', () => {
 
     expectActiveColorMode(element, 'plddt');
     expect(colorButton(element, 'ted-domains')?.disabled).toBe(false);
+    expect(mocks.createViewer).toHaveBeenCalledWith(expect.any(HTMLElement), domains);
   });
 
   it('keeps the color toolbar mounted but disabled while a structure loads', async () => {
     const structureLoad = deferred<void>();
     mocks.loadStructureFromUrl.mockReturnValueOnce(structureLoad.promise);
-    mocks.loadStructure.mockResolvedValue(structureData(domains));
-    const element = document.createElement(
-      'protspace-structure-viewer',
-    ) as ProtspaceStructureViewer;
-    element.autoSync = false;
-    element.proteinId = 'A0A0B4U9L8';
-    document.body.appendChild(element);
-
-    await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledOnce());
-    await element.updateComplete;
+    const element = await renderViewer(domains);
     // Rendering the toolbar up front keeps the Mol* canvas from resizing when loading ends
     expect(element.shadowRoot?.querySelector('.color-toolbar')).not.toBeNull();
     expect(colorButton(element, 'plddt')?.disabled).toBe(true);
@@ -137,33 +138,26 @@ describe('structure viewer color control', () => {
     const element = await renderViewer(domains);
 
     colorButton(element, 'ted-domains')?.click();
-    await vi.waitFor(() =>
-      expect(mocks.setColorTheme).toHaveBeenCalledWith('ted-domains', domains),
-    );
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenCalledWith('ted-domains'));
     await element.updateComplete;
     expectActiveColorMode(element, 'ted-domains');
 
     colorButton(element, 'plddt')?.click();
-    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt', domains));
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt'));
     await element.updateComplete;
     expectActiveColorMode(element, 'plddt');
   });
 
   it('honors a rapid return to pLDDT while TED coloring is still applying', async () => {
     const element = await renderViewer(domains);
-    const tedChange = deferred<void>();
-    mocks.setColorTheme.mockImplementation((mode) =>
-      mode === 'ted-domains' ? tedChange.promise : Promise.resolve(),
-    );
+    const tedChange = holdTedThemeChange();
 
     colorButton(element, 'ted-domains')?.click();
-    await vi.waitFor(() =>
-      expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
-    );
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains'));
     colorButton(element, 'plddt')?.click();
     tedChange.resolve();
 
-    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt', domains));
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt'));
     await element.updateComplete;
     expectActiveColorMode(element, 'plddt');
   });
@@ -181,15 +175,10 @@ describe('structure viewer color control', () => {
 
   it('ignores a completed color change from a replaced viewer', async () => {
     const element = await renderViewer(domains);
-    const tedChange = deferred<void>();
-    mocks.setColorTheme.mockImplementation((mode) =>
-      mode === 'ted-domains' ? tedChange.promise : Promise.resolve(),
-    );
+    const tedChange = holdTedThemeChange();
 
     colorButton(element, 'ted-domains')?.click();
-    await vi.waitFor(() =>
-      expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
-    );
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains'));
 
     mocks.loadStructure.mockResolvedValueOnce(structureData([]));
     element.proteinId = 'P12345';
@@ -204,6 +193,17 @@ describe('structure viewer color control', () => {
     expect(colorButton(element, 'plddt')?.getAttribute('aria-pressed')).toBe('true');
     expect(colorButton(element, 'ted-domains')?.getAttribute('aria-pressed')).toBe('false');
     expect(colorButton(element, 'ted-domains')?.disabled).toBe(true);
+  });
+
+  it('cancels the requests of a load that a new protein replaces', async () => {
+    const element = await renderViewer(domains);
+    const firstSignal = mocks.loadStructure.mock.calls[0]?.[1] as AbortSignal;
+    expect(firstSignal.aborted).toBe(false);
+
+    element.proteinId = 'P12345';
+    await element.updateComplete;
+
+    expect(firstSignal.aborted).toBe(true);
   });
 
   it('does not report an error when a structure finishes after the viewer closes', async () => {
@@ -279,13 +279,11 @@ describe('structure viewer color control', () => {
     await vi.waitFor(() => expect(colorButton(element, 'ted-domains')).not.toBeNull());
 
     colorButton(element, 'ted-domains')?.click();
-    await vi.waitFor(() =>
-      expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
-    );
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains'));
 
     staleStructureLoad.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains);
+    expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains');
   });
 });
