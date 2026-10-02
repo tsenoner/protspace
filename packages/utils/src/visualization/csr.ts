@@ -151,3 +151,32 @@ export function remapCsr(
   const hits = hitsBuffer.subarray(0, write);
   return { column: gatherCsr(src, { offsets, hits }, remap ?? undefined), filledRows };
 }
+
+/**
+ * Rank the `labelCount` labels by the hits that carry them, as every v3 encoder orders a
+ * dictionary: by descending hit count, ties by first occurrence, so code 0 is the most
+ * frequent label (the palette slot order; Python's `_frequency_order` must agree). Labels
+ * no hit carries, and codes `skip` flags, are left out; hits `< 0` are ignored.
+ *
+ * `order` lists the kept codes in rank order; `remap` maps a code to its rank, `-1` when it
+ * was left out. The bundle writer and the v3 reader both rank through this one kernel, so
+ * an exported dictionary and a loaded one can never disagree on palette slots.
+ */
+export function rankByFrequency(
+  hitCodes: ArrayLike<number>,
+  labelCount: number,
+  skip?: Uint8Array | null,
+): { order: number[]; remap: Int32Array } {
+  const counts = new Int32Array(labelCount);
+  const first = new Int32Array(labelCount);
+  for (let hit = 0; hit < hitCodes.length; hit++) {
+    const code = hitCodes[hit];
+    if (code >= 0 && !skip?.[code] && counts[code]++ === 0) first[code] = hit;
+  }
+  const order: number[] = [];
+  for (let code = 0; code < labelCount; code++) if (counts[code] > 0) order.push(code);
+  order.sort((a, b) => counts[b] - counts[a] || first[a] - first[b]);
+  const remap = new Int32Array(labelCount).fill(-1);
+  for (let rank = 0; rank < order.length; rank++) remap[order[rank]] = rank;
+  return { order, remap };
+}

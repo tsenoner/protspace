@@ -46,6 +46,7 @@ import {
   type CsrEvidence,
   type CsrScores,
   type Projection,
+  rankByFrequency,
   remapCsr,
   type VisualizationData,
 } from '@protspace/utils';
@@ -890,29 +891,12 @@ function rankByHits(
   labels: string[],
   drop: Uint8Array | null,
 ): Int32Array {
-  const counts = new Int32Array(labels.length);
-  const first = new Int32Array(labels.length);
-  let hit = 0;
-  const count = (code: number) => {
-    if (code >= 0 && !drop?.[code] && counts[code]++ === 0) first[code] = hit;
-    hit++;
-  };
-  if (storage instanceof Int32Array) {
-    storage.forEach(count);
-  } else {
-    const { offsets, codes, length } = storage;
-    for (let i = offsets[0]; i < offsets[length]; i++) count(codes[i]);
-  }
-
-  const order = labels
-    .map((_, code) => code)
-    .filter((code) => counts[code] > 0)
-    .sort((a, b) => counts[b] - counts[a] || first[a] - first[b]);
-  const remap = new Int32Array(labels.length).fill(-1);
-  const ranked = order.map((code, rank) => {
-    remap[code] = rank;
-    return labels[code];
-  });
+  const hits =
+    storage instanceof Int32Array
+      ? storage
+      : storage.codes.subarray(storage.offsets[0], storage.offsets[storage.length]);
+  const { order, remap } = rankByFrequency(hits, labels.length, drop);
+  const ranked = order.map((code) => labels[code]);
   // Copied back rather than spliced in: a spread of a large dictionary overflows the stack.
   labels.length = ranked.length;
   for (let code = 0; code < ranked.length; code++) labels[code] = ranked[code];

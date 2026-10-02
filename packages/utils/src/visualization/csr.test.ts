@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gatherCsr, remapCsr, syntheticHit } from './csr';
+import { gatherCsr, rankByFrequency, remapCsr, syntheticHit } from './csr';
 import type { CsrAnnotationData } from '../types';
 
 // rows: 0 -> [0, 1], 1 -> [], 2 -> [2], 3 -> [1, 0]
@@ -223,5 +223,22 @@ describe('score runs', () => {
       });
       expect(rowsOf(column)).toEqual(expected);
     }
+  });
+});
+
+describe('rankByFrequency', () => {
+  it('ranks by descending count, ties by first hit, and leaves out unused labels', () => {
+    // label 0: 1 hit (first at 0), label 1: 2 hits (first at 1), label 2: 2 hits (first at 2),
+    // label 3: no hit; -1 is ignored.
+    const { order, remap } = rankByFrequency(new Int32Array([0, 1, 2, -1, 2, 1]), 4);
+    expect(order).toEqual([1, 2, 0]);
+    expect([...remap]).toEqual([2, 0, 1, -1]);
+  });
+
+  it('leaves out skipped codes without letting them shift the tie-break', () => {
+    const skip = new Uint8Array([1, 0, 0]);
+    const { order, remap } = rankByFrequency([0, 0, 2, 1], 3, skip);
+    expect(order).toEqual([2, 1]);
+    expect([...remap]).toEqual([-1, 1, 0]);
   });
 });

@@ -41,7 +41,7 @@ import {
   getProteinAnnotationIndexAt,
   isCsrAnnotationData,
 } from '../visualization/annotation-data-access.js';
-import { remapCsr } from '../visualization/csr.js';
+import { rankByFrequency, remapCsr } from '../visualization/csr.js';
 import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
@@ -208,19 +208,8 @@ function frequencyOrder(
   const toUnified = Int32Array.from(labels, (label) =>
     label == null || isNAValue(label) ? -1 : intern(unified, label),
   );
-  const counts = new Int32Array(unified.size);
-  const first = new Int32Array(unified.size);
-  for (let hit = 0; hit < hitCodes.length; hit++) {
-    const code = hitCodes[hit];
-    const label = code < 0 ? -1 : toUnified[code];
-    if (label >= 0 && counts[label]++ === 0) first[label] = hit;
-  }
-
-  const order = [...unified.values()]
-    .filter((label) => counts[label] > 0)
-    .sort((a, b) => counts[b] - counts[a] || first[a] - first[b]);
-  const rank = new Int32Array(unified.size).fill(-1);
-  order.forEach((label, code) => (rank[label] = code));
+  const unifiedHits = hitCodes.map((code) => (code < 0 ? -1 : toUnified[code]));
+  const { order, remap: rank } = rankByFrequency(unifiedHits, unified.size);
   const names = [...unified.keys()];
   return {
     dictionary: order.map((label) => names[label]),
