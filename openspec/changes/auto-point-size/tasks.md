@@ -29,11 +29,11 @@
 
 ## 3. Docs
 
-- [ ] 3.1 `docs/explore/legend.md`, `docs/explore/scatterplot.md`, `docs/explore/eat.md`: the default
+- [x] 3.1 `docs/explore/legend.md`, `docs/explore/scatterplot.md`, `docs/explore/eat.md`: the default
       follows the point count, how to override it, what Reset does.
-- [ ] 3.2 `docs/guide/styling.md`, `docs/guide/data-format.md`: per-annotation 10 and 30 read as
+- [x] 3.2 `docs/guide/styling.md`, `docs/guide/data-format.md`: per-annotation 10 and 30 read as
       unset.
-- [ ] 3.3 `docs/developers/api/index.md`: the legend's `shapeSize` and Reset.
+- [x] 3.3 `docs/developers/api/index.md`: the legend's `shapeSize` and Reset.
 
 ## 4. Verification
 

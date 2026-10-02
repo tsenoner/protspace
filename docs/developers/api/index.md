@@ -168,7 +168,7 @@ Category filtering and color mapping with automatic settings persistence.
 | `proteinIds`         | `string[]`                | `[]`    | Protein IDs backing the counts          |
 | `selectedItems`      | `string[]`                | `[]`    | Selected legend entries                 |
 | `maxVisibleValues`   | `number`                  | -       | Max categories (or target numeric bins) |
-| `shapeSize`          | `number`                  | -       | Size of legend symbols                  |
+| `shapeSize`          | `number`                  | -       | Dot size in use (see below)             |
 | `isolationMode`      | `boolean`                 | `false` | Reflects the plot's isolation state     |
 | `isolationHistory`   | `string[][]`              | `[]`    | Isolation stack from the plot           |
 
@@ -196,14 +196,18 @@ Category filtering and color mapping with automatic settings persistence.
 
 Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
 A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
-`shapeSize` may only be seeded from the current annotation.
+`shapeSize` may only be seeded from the current annotation, or be the default computed from the
+dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or
+exported. The legend resolves `shapeSize` from the picked or applied size, then the annotation's own
+`shapeSize` (10 and 30 read as unset), then that default.
 
 ### Persistence
 
 User customizations (visibility, colors, ordering, settings) are saved to `localStorage` per dataset
 and annotation. Per-category state is not persisted for numeric annotations, whose legend entries
 are generated bin IDs. The shape size is stored per dataset instead: once picked, it applies to
-every annotation.
+every annotation. Reset in the settings dialog clears it, and every annotation's own size, so the
+default applies again.
 
 ### Example
 
