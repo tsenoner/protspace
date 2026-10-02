@@ -345,6 +345,39 @@ def _fits_float64(arr: pa.Array) -> bool:
     return low is None or (low >= -_FLOAT64_EXACT_INT and high <= _FLOAT64_EXACT_INT)
 
 
+def _parse_hit_scores(
+    suffix: pa.Array, candidate: np.ndarray, n_hits: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse the ``|score,score`` suffixes of the ``candidate`` hits.
+
+    Returns ``(scored, hit_score_count, score_values)``: which hits carry a valid
+    score list, how many scores each holds, and every valid score flattened in
+    hit order.  A candidate with any non-numeric part is not scored; its whole
+    text stays the label.
+    """
+    scored = np.zeros(n_hits, dtype=bool)
+    hit_score_count = np.zeros(n_hits, dtype=np.int64)
+    if not candidate.size:
+        return scored, hit_score_count, np.zeros(0, dtype=np.float64)
+
+    pieces = pc.split_pattern(suffix.take(pa.array(candidate)), ",")
+    piece_len = np.asarray(pc.list_value_length(pieces)).astype(np.int64)
+    flat = pc.utf8_trim_whitespace(pc.list_flatten(pieces))
+    blank = np.asarray(pc.equal(flat, pa.scalar("")))
+    numeric = _regex_ok(flat, JS_NUMBER_RE)
+    parsed = _parse_floats(flat, numeric)
+    # ``Number("")`` is ``0`` in JavaScript, so an empty score part
+    # (``"label|1,"``) is a valid score of 0 -- ``_parse_floats`` already
+    # substituted 0 for it, because a blank never matches JS_NUMBER_RE.
+    valid = blank | (numeric & np.isfinite(parsed))
+    owner = np.repeat(np.arange(candidate.size), piece_len)
+    bad = np.bincount(owner, weights=~valid, minlength=candidate.size)
+    ok = bad == 0
+    scored[candidate[ok]] = True
+    hit_score_count[candidate[ok]] = piece_len[ok]
+    return scored, hit_score_count, parsed[np.repeat(ok, piece_len)]
+
+
 def _encode_annotation_column(
     column: pa.ChunkedArray | pa.Array,
     name: str,
@@ -460,28 +493,9 @@ def _encode_annotation_column(
     suffix = pc.utf8_trim_whitespace(suffix_raw)
     is_evidence = ~no_suffix & _regex_ok(suffix, EVIDENCE_RE)
 
-    scored = np.zeros(n_hits, dtype=bool)
-    hit_score_count = np.zeros(n_hits, dtype=np.int64)
-    score_values = np.zeros(0, dtype=np.float64)
-
-    candidate = np.flatnonzero(~no_suffix & ~is_evidence)
-    if candidate.size:
-        pieces = pc.split_pattern(suffix.take(pa.array(candidate)), ",")
-        piece_len = np.asarray(pc.list_value_length(pieces)).astype(np.int64)
-        flat = pc.utf8_trim_whitespace(pc.list_flatten(pieces))
-        blank = np.asarray(pc.equal(flat, pa.scalar("")))
-        numeric = _regex_ok(flat, JS_NUMBER_RE)
-        parsed = _parse_floats(flat, numeric)
-        # ``Number("")`` is ``0`` in JavaScript, so an empty score part
-        # (``"label|1,"``) is a valid score of 0 -- ``_parse_floats`` already
-        # substituted 0 for it, because a blank never matches JS_NUMBER_RE.
-        valid = blank | (numeric & np.isfinite(parsed))
-        owner = np.repeat(np.arange(candidate.size), piece_len)
-        bad = np.bincount(owner, weights=~valid, minlength=candidate.size)
-        ok = bad == 0
-        scored[candidate[ok]] = True
-        hit_score_count[candidate[ok]] = piece_len[ok]
-        score_values = parsed[np.repeat(ok, piece_len)]
+    scored, hit_score_count, score_values = _parse_hit_scores(
+        suffix, np.flatnonzero(~no_suffix & ~is_evidence), n_hits
+    )
 
     use_head = pa.array(is_evidence | scored)
     labels = pc.if_else(use_head, pc.utf8_trim_whitespace(head), hits)
