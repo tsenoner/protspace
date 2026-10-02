@@ -58,7 +58,7 @@
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
-    "hyparquet": "^1.26.0",
+    "hyparquet": "^1.31.1",
     "knip": "^5.87.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.4",

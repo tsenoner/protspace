@@ -112,21 +112,31 @@ describe('bundle utilities', () => {
       const bundle = createMockBundle(2);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
 
-    // 5 parts (settings + statistics) is a layout the Python producer writes, so it
-    // must pass this gate. It is not asserted here: with mock parts the call still
-    // rejects during decode, so any assertion would be about the decode error, not
-    // about acceptance. `tests/contract/bundle.contract.test.ts` proves acceptance
-    // against a real producer-written 5-part bundle instead.
+    // 5 parts (settings + statistics) and 6 (format v3, which appends the payloads
+    // part) are layouts the Python producer writes, so they must pass this gate. The
+    // 5-part case is not asserted here: with mock parts the call still rejects during
+    // decode, so any assertion would be about the decode error, not about acceptance.
+    // `tests/contract/bundle.contract.test.ts` proves acceptance against a real
+    // producer-written 5-part bundle instead.
 
-    it('should reject bundle with 5 delimiters (6 parts)', async () => {
-      const bundle = createMockBundle(6);
+    it('should let a 6-part bundle past the gate and fail on its contents instead', async () => {
+      const error: unknown = await extractRowsFromParquetBundle(createMockBundle(6)).catch(
+        (reason: unknown) => reason,
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).not.toMatch(/Expected 2 to 5 delimiters/);
+    });
+
+    it('should reject bundle with 6 delimiters (7 parts)', async () => {
+      const bundle = createMockBundle(7);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
 
@@ -134,7 +144,7 @@ describe('bundle utilities', () => {
       const buffer = createMockParquetBuffer('no delimiter');
 
       await expect(extractRowsFromParquetBundle(buffer)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
   });

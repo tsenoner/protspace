@@ -1,7 +1,7 @@
 import type { ProtspaceData } from './types';
 import type { NumericCondition, NumericOperator } from './query-types';
 import { ANY_VALUE } from './query-types';
-import { NA_VALUE } from '@protspace/utils';
+import { NA_VALUE, readNumericValue } from '@protspace/utils';
 
 /**
  * Which value fields a numeric operator needs:
@@ -120,7 +120,7 @@ export function countNumericMatches(condition: NumericCondition, data: Protspace
   const numProteins = data.protein_ids?.length ?? 0;
   let count = 0;
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(values[i] ?? null, condition)) count++;
+    if (matchesNumericValue(readNumericValue(values, i), condition)) count++;
   }
   return count;
 }

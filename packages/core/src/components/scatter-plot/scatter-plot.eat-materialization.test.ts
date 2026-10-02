@@ -17,7 +17,7 @@ type Internals = HTMLElement & {
   selectedAnnotation: string;
   eatOverlayEnabled: boolean;
   _getMaterializedData(): VisualizationData;
-  _scheduleQuadtreeRebuild(): void;
+  _schedulePointGridIndexRebuild(): void;
   updated(changedProperties: Map<string, unknown>): void;
 };
 

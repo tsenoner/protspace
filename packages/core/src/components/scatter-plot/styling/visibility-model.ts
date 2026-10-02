@@ -40,7 +40,12 @@ import type {
   PlotDataPoint,
   VisualizationData,
 } from '@protspace/utils';
-import { NA_VALUE, isSparseMultiValueAnnotationData, toInternalValue } from '@protspace/utils';
+import {
+  NA_VALUE,
+  isCsrAnnotationData,
+  isSparseMultiValueAnnotationData,
+  toInternalValue,
+} from '@protspace/utils';
 
 export interface VisibilityInputs {
   /** MATERIALIZED, un-query-filtered display data (keeps global indices). */
@@ -140,6 +145,24 @@ function buildHiddenMask(
       let everyHidden = 1;
       for (let k = 0; k < override.length; k++) {
         if (isBinHidden(override[k]) === 0) {
+          everyHidden = 0;
+          break;
+        }
+      }
+      mask[i] = everyHidden;
+    }
+  } else if (isCsrAnnotationData(annotationRows)) {
+    const { offsets, codes, length: len } = annotationRows;
+    for (let i = 0; i < n; i++) {
+      if (i >= len) {
+        mask[i] = 1;
+        continue;
+      }
+      const stop = offsets[i + 1];
+      let everyHidden = 1;
+      // Empty row (start === stop) leaves this 1 — vacuously hidden, as `[].every()`.
+      for (let k = offsets[i]; k < stop; k++) {
+        if (isBinHidden(codes[k]) === 0) {
           everyHidden = 0;
           break;
         }

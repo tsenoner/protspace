@@ -42,7 +42,7 @@ export interface ProtspaceData {
     }
   >;
   annotation_data?: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  numeric_annotation_data?: Record<string, Float64Array>;
   protein_ids?: string[];
   annotation_predicted?: AnnotationPredictedData;
   /** Rows of the bundle's optional statistics part (backend `--stats`); absent otherwise. */

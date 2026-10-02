@@ -126,18 +126,32 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [10, 20],
+        length: new Float64Array([10, 20]),
       },
     };
 
     const changedNumericDataset = {
       ...baseDataset,
       numeric_annotation_data: {
-        length: [10, 21],
+        length: new Float64Array([10, 21]),
       },
     };
 
     expect(generateDatasetHash(baseDataset)).not.toBe(generateDatasetHash(changedNumericDataset));
+  });
+
+  it('hashes a NaN in a typed column like the null an array used to hold', () => {
+    // Settings persisted before numeric columns became Float64Array are keyed by this
+    // hash, so the missing-value spelling must not change it.
+    const dataset = (length: ArrayLike<number | null>) => ({
+      protein_ids: ['P1', 'P2'],
+      annotations: { length: { kind: 'numeric' as const, values: [] } },
+      numeric_annotation_data: { length },
+    });
+
+    expect(generateDatasetHash(dataset(new Float64Array([10, NaN])))).toBe(
+      generateDatasetHash(dataset([10, null])),
+    );
   });
 
   it('changes when EAT value, confidence, or source changes', () => {
@@ -185,7 +199,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
+        length: new Float64Array([1, 2, 3]),
       },
     };
 
@@ -213,7 +227,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
+        length: new Float64Array([1, 2, 3]),
       },
     };
 
@@ -370,7 +384,7 @@ describe('generateDatasetHash', () => {
         },
       },
       numeric_annotation_data: {
-        length: [10, 20, 30],
+        length: new Float64Array([10, 20, 30]),
       },
     };
 
@@ -378,7 +392,7 @@ describe('generateDatasetHash', () => {
       protein_ids: ['P3', 'P1', 'P2'],
       annotations: orderedDataset.annotations,
       numeric_annotation_data: {
-        length: [30, 10, 20],
+        length: new Float64Array([30, 10, 20]),
       },
     };
 
@@ -408,7 +422,7 @@ describe('generateDatasetHash', () => {
       confidence: 0.9,
       source: proteinIds[0],
     };
-    const confidence = new Array<number | null>(size).fill(null);
+    const confidence = new Float64Array(size).fill(NaN);
     confidence[size - 1] = 0.9;
 
     const hash = generateDatasetHash({
@@ -424,5 +438,147 @@ describe('generateDatasetHash', () => {
     });
 
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+/**
+ * Hash values key localStorage for legend, control-bar and tooltip persistence, so
+ * the lane-based FNV must reproduce the exact strings the BigInt implementation
+ * produced, and the protein ordering must stay on `localeCompare`. These references
+ * are verbatim copies of the original implementation.
+ */
+function referenceFnv1a64(str: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const fnvPrime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+
+  for (let i = 0; i < str.length; i++) {
+    hash ^= BigInt(str.charCodeAt(i));
+    hash = (hash * fnvPrime) & mask;
+  }
+
+  return hash.toString(16).padStart(16, '0');
+}
+
+function referenceIdOnlyHash(proteinIds: readonly string[]): string {
+  const order = Array.from({ length: proteinIds.length }, (_, index) => index);
+  order.sort((left, right) => proteinIds[left].localeCompare(proteinIds[right]) || left - right);
+  return referenceFnv1a64(`${order.map((index) => proteinIds[index]).join('\x00')}\x02\x02`);
+}
+
+/** Deterministic LCG so a failure is reproducible from the seed alone. */
+function createRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => (state = (state * 1103515245 + 12345) >>> 0) / 4294967296;
+}
+
+describe('generateDatasetHash value stability', () => {
+  it('matches the BigInt FNV-1a 64 reference on 10k random and adversarial strings', () => {
+    const random = createRandom(0x5eed);
+    const corpus = [
+      '',
+      'a',
+      '\x00',
+      '￿',
+      '\ud800', // lone high surrogate
+      '\udfff', // lone low surrogate
+      '😀', // astral pair
+      'こんにちは',
+      'P12345\x1fP67890',
+      'x'.repeat(200_000),
+    ];
+    for (let index = 0; index < 10_000; index++) {
+      const length = Math.floor(random() * 40);
+      let value = '';
+      for (let position = 0; position < length; position++) {
+        value += String.fromCharCode(Math.floor(random() * 0x10000));
+      }
+      corpus.push(value);
+    }
+
+    // A single-element array joins to exactly that element, so this is the raw hash.
+    for (const value of corpus) {
+      expect(generateDatasetHash([value])).toBe(referenceFnv1a64(value));
+    }
+  });
+
+  it('matches the localeCompare reference ordering on collation-sensitive ids', () => {
+    const random = createRandom(0xc011a);
+    const alphabet = [...'abcXYZ0189-_.', 'é', 'ü', '漢', 'ß', ' ', '😀'];
+    const corpora: string[][] = [
+      ['a', 'A', 'B', 'b', 'ä', 'z', 'Z'],
+      ['P1', 'p1', 'P10', 'P2', 'P-1', 'P_1', 'P.1'],
+      ['', 'a', '', 'a'],
+      ['résumé', 'resume', 'RESUME', 'Résumé'],
+    ];
+    for (let index = 0; index < 200; index++) {
+      const size = 1 + Math.floor(random() * 30);
+      corpora.push(
+        Array.from({ length: size }, () => {
+          const length = 1 + Math.floor(random() * 6);
+          let value = '';
+          for (let position = 0; position < length; position++) {
+            value += alphabet[Math.floor(random() * alphabet.length)];
+          }
+          return value;
+        }),
+      );
+    }
+
+    for (const proteinIds of corpora) {
+      expect(generateDatasetHash({ protein_ids: proteinIds })).toBe(
+        referenceIdOnlyHash(proteinIds),
+      );
+    }
+  });
+});
+
+describe('generateDatasetHash memoization', () => {
+  const buildDataset = () => ({
+    protein_ids: ['P3', 'P1', 'P2'],
+    annotations: { length: { kind: 'numeric' as const, values: [] } },
+    numeric_annotation_data: { length: new Float64Array([30, 10, 20]) },
+    annotation_predicted: {
+      ec: [null, { value: '1.1.1.1', confidence: 0.8, source: 'P1' }, null],
+    },
+  });
+
+  it('returns the freshly computed hash on a repeat call with the same references', () => {
+    const dataset = buildDataset();
+    const memoized = generateDatasetHash(dataset);
+    // Structurally identical, but every reference is new, so this cannot hit the memo.
+    expect(memoized).toBe(generateDatasetHash(buildDataset()));
+    expect(generateDatasetHash(dataset)).toBe(memoized);
+  });
+
+  it('recomputes when annotations, numeric data, or predictions are replaced', () => {
+    const dataset = buildDataset();
+    const baseline = generateDatasetHash(dataset);
+
+    expect(
+      generateDatasetHash({
+        ...dataset,
+        numeric_annotation_data: { length: new Float64Array([30, 10, 21]) },
+      }),
+    ).not.toBe(baseline);
+
+    expect(
+      generateDatasetHash({
+        ...dataset,
+        annotations: { length: { kind: 'categorical' as const, values: ['a', 'b'] } },
+      }),
+    ).not.toBe(baseline);
+
+    expect(
+      generateDatasetHash({
+        ...dataset,
+        annotation_predicted: {
+          ec: [null, { value: '9.9.9.9', confidence: 0.8, source: 'P1' }, null],
+        },
+      }),
+    ).not.toBe(baseline);
+
+    // The original references still resolve to the original hash.
+    expect(generateDatasetHash(dataset)).toBe(baseline);
   });
 });

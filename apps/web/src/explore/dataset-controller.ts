@@ -12,6 +12,7 @@ import { notify } from '../lib/notify';
 import {
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
+  getLegacyBundleFormatNotification,
 } from './notifications';
 import {
   clearLastImportedFile,
@@ -68,6 +69,8 @@ export interface DatasetController {
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
   handleDataError(event: Event): Promise<void>;
+  /** Proteins the loaded file holds that the dataset leaves out (no projection places them). */
+  getUnplacedProteinCount(): number;
 }
 
 export function createDatasetController({
@@ -149,6 +152,7 @@ export function createDatasetController({
   };
 
   let currentDatasetHash: string | null = null;
+  let currentUnplacedProteinCount = 0;
   viewController.subscribeToViewChanges((change) => {
     if (currentDatasetHash !== null) {
       writeTooltipAnnotations(currentDatasetHash, change.effective.tooltip);
@@ -163,7 +167,14 @@ export function createDatasetController({
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
-      const { data, settings, source, file } = customEvent.detail;
+      const {
+        data,
+        settings,
+        source,
+        file,
+        bundleFormatVersion,
+        unplacedProteinCount = 0,
+      } = customEvent.detail;
       const runningLoadMeta = loadQueue.getRunningLoadMeta();
       const loadMeta = (file ? loadQueue.getLoadMetaForFile(file) : undefined) ??
         runningLoadMeta ?? {
@@ -278,6 +289,7 @@ export function createDatasetController({
       // previous dataset's key.
       const hadPreviousDataset = currentDatasetHash !== null;
       currentDatasetHash = datasetHash;
+      currentUnplacedProteinCount = unplacedProteinCount;
 
       const latestRequest = viewController.getLatestViewRequest();
       // A first-ever load (no previous dataset) that happens to be a user file drop
@@ -344,6 +356,16 @@ export function createDatasetController({
       }
 
       viewController.applyLatestViewForDatasetLoad(data);
+
+      // Only for the user's own imports: a dataset the app serves itself never shows it,
+      // whatever its format, since a visitor cannot convert it (they are all v3 anyway).
+      if (
+        loadMeta.kind === 'user' &&
+        bundleFormatVersion !== undefined &&
+        bundleFormatVersion < 3
+      ) {
+        notify.info(getLegacyBundleFormatNotification(bundleFormatVersion, unplacedProteinCount));
+      }
 
       try {
         if (loadMeta.kind === 'user' || loadMeta.kind === 'opfs') {
@@ -457,6 +479,7 @@ export function createDatasetController({
     },
     handleDataLoaded,
     handleDataError,
+    getUnplacedProteinCount: () => currentUnplacedProteinCount,
   };
 }
 

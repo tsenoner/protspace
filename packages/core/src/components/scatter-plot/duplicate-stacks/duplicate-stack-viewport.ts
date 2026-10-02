@@ -15,7 +15,7 @@ interface ViewportConfigSlice {
 
 /**
  * The visible window in base-pixel space (pre-zoom-transform, same space the
- * quadtree indexes), inflated by `padding` on every edge. Verbatim extraction
+ * point index indexes), inflated by `padding` on every edge. Verbatim extraction
  * of the invertX/invertY + min/max block previously duplicated at three sites.
  */
 export function computeViewportWindow(

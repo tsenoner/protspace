@@ -1,17 +1,36 @@
 import json
 import os
+import random
 import tempfile
+import threading
 import time
+from collections import Counter
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 import requests
 
 from src.protspace.data.annotations.retrievers.interpro_retriever import (
     CACHE_MAX_AGE_DAYS,
     INTERPRO_ANNOTATIONS,
+    MAX_CONCURRENT_REQUESTS,
     InterProRetriever,
 )
+
+# Parallel fakes need a real delay to finish out of order.
+_real_sleep = time.sleep
+
+
+def _no_backoff(monkeypatch):
+    """Take the retry backoff out of `http_utils`; a stopped fetch still
+    ends its wait at once."""
+    from protspace.data.annotations.retrievers import http_utils
+
+    monkeypatch.setattr(
+        http_utils, "_sleep", lambda _seconds, stop=None: bool(stop and stop.is_set())
+    )
+
 
 # Alias for test compatibility
 InterProAnnotationRetriever = InterProRetriever
@@ -144,7 +163,7 @@ class TestInterProAnnotationRetrieverInit:
 class TestInterProAnnotationRetrieverFetch:
     """Test InterProAnnotationRetriever fetch_annotations method."""
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.requests.post")
+    @patch("requests.Session.post")
     def test_fetch_annotations_success(self, mock_post):
         """Test successful annotation fetching."""
         headers = [TEST_PROTEIN_ID]
@@ -225,7 +244,7 @@ class TestInterProAnnotationRetrieverParsing:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_interpro_results(self, mock_name_map):
         """Test parsing of InterPro API results."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam", "superfamily"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -242,7 +261,7 @@ class TestInterProAnnotationRetrieverParsing:
         mock_name_map.return_value = {"SSF": {"SSF12345": "Entry API name"}}
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -257,14 +276,14 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_not_found(self):
         """Test parsing when protein not found in UniParc."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         api_result = create_api_result(TEST_MD5, found=False)
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -273,7 +292,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_filter_databases(self):
         """Test that only requested databases are included."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]  # Only requesting Pfam
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -282,7 +301,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -294,7 +313,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_missing_confidence_scores(self):
         """Test parsing when confidence scores are missing (None)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         # Create match without score
@@ -303,7 +322,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -313,7 +332,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_duplicate_accessions(self):
         """Test that duplicate accessions collect all scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -322,7 +341,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -332,7 +351,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_multidomain(self):
         """Test parsing of multidomain proteins (multiple different accessions)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -344,7 +363,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -357,7 +376,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_multidomain_with_duplicates(self):
         """Test multidomain proteins with some domains appearing multiple times."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match1 = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -370,7 +389,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -385,7 +404,7 @@ class TestInterProAnnotationRetrieverParsing:
 
     def test_parse_interpro_results_missing_name(self):
         """Test parsing when name is missing (should work without name)."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         # Create match without name
@@ -394,7 +413,7 @@ class TestInterProAnnotationRetrieverParsing:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
@@ -532,7 +551,7 @@ class TestParsingWithNameResolution:
     )
     def test_parse_cath_with_resolved_names(self, mock_cath_names):
         """Test that CATH annotations include resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
@@ -548,7 +567,7 @@ class TestParsingWithNameResolution:
         }
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         cath_value = result[0].annotations["cath"]
@@ -558,7 +577,7 @@ class TestParsingWithNameResolution:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_superfamily_with_resolved_names(self, mock_name_map):
         """Test that SUPERFAMILY annotations include resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["superfamily"]
 
         match1 = create_signature("SSF53098", library="SUPERFAMILY", score=1.5e-20)
@@ -574,7 +593,7 @@ class TestParsingWithNameResolution:
         )
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         sf_value = result[0].annotations["superfamily"]
@@ -584,7 +603,7 @@ class TestParsingWithNameResolution:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_cath_with_api_provided_name_takes_precedence(self, mock_name_map):
         """Test that names from the matches API take precedence over resolved names."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         # Match with a name already provided by the matches API
@@ -601,7 +620,7 @@ class TestParsingWithNameResolution:
         mock_name_map.return_value = _make_name_map()
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         # The matches API name should take precedence
         assert (
@@ -613,7 +632,7 @@ class TestParsingWithNameResolution:
         self, mock_name_map
     ):
         """Test that SUPERFAMILY names from matches API take precedence."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["superfamily"]
 
         match = create_signature(
@@ -628,7 +647,7 @@ class TestParsingWithNameResolution:
         mock_name_map.return_value = _make_name_map(SSF={"SSF53098": "XML name"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert (
             result[0].annotations["superfamily"]
@@ -640,7 +659,7 @@ class TestParsingWithNameResolution:
     )
     def test_parse_cath_partial_name_resolution(self, mock_cath_names):
         """Test when only some CATH names can be resolved."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath"]
 
         match1 = create_signature("G3DSA:1.10.10.10", library="CATH-Gene3D", score=50.2)
@@ -651,7 +670,7 @@ class TestParsingWithNameResolution:
         mock_cath_names.return_value = {"1.10.10.10": "Winged helix"}
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         cath_value = result[0].annotations["cath"]
         # First one should have a name, second one should not
@@ -660,7 +679,7 @@ class TestParsingWithNameResolution:
 
     def test_parse_no_resolution_when_not_requested(self):
         """Test that name resolution is skipped for databases not in ENTRY_API_DB_MAPPING."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["pfam"]
 
         match = create_signature("PF00001", name="7tm_1", score=50.2)
@@ -668,7 +687,7 @@ class TestParsingWithNameResolution:
         api_results = [api_result]
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
 
@@ -680,7 +699,7 @@ class TestParsingWithNameResolution:
         self, mock_name_map, mock_cath_names
     ):
         """Test that both CATH and SUPERFAMILY names are resolved in a single parse."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cath", "superfamily"]
 
         cath_match = create_signature(
@@ -698,7 +717,7 @@ class TestParsingWithNameResolution:
         )
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+        result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
         assert len(result) == 1
         assert "G3DSA:1.10.10.10 (Winged helix)|50.2" in result[0].annotations["cath"]
@@ -733,7 +752,7 @@ class TestNewInterProDatabases:
 
     def test_smart_with_name_and_score(self):
         """Test SMART database: has names and scores from matches API."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["smart"]
 
         match = create_signature(
@@ -742,21 +761,21 @@ class TestNewInterProDatabases:
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["smart"] == "SM00220 (InsulinA)|35.7"
 
     def test_cdd_with_name_no_score(self):
         """Test CDD database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["cdd"]
 
         match = create_signature("cd00205", name="IGc2", library="CDD")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["cdd"] == "cd00205 (IGc2)"
@@ -764,7 +783,7 @@ class TestNewInterProDatabases:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_panther_name_via_xml(self, mock_name_map):
         """Test PANTHER database: no names in matches API, resolved via XML."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["panther"]
 
         match = create_signature("PTHR11454", library="PANTHER", score=0.0)
@@ -773,35 +792,35 @@ class TestNewInterProDatabases:
         mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["panther"] == "PTHR11454 (Insulin)|0.0"
 
     def test_prosite_with_name_no_score(self):
         """Test PROSITE database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["prosite"]
 
         match = create_signature("PS00009", name="INSULIN", library="PROSITE patterns")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["prosite"] == "PS00009 (INSULIN)"
 
     def test_prints_with_name_no_score(self):
         """Test PRINTS database: has names, no scores."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["prints"]
 
         match = create_signature("PR00276", name="INSULIN", library="PRINTS")
         api_result = create_api_result(TEST_MD5, found=True, matches=[match])
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         assert result[0].annotations["prints"] == "PR00276 (INSULIN)"
@@ -809,7 +828,7 @@ class TestNewInterProDatabases:
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_multiple_new_databases_simultaneously(self, mock_name_map):
         """Test fetching multiple new databases in one parse call."""
-        md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+        md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
         annotations = ["smart", "cdd", "panther", "prosite", "prints"]
 
         matches = [
@@ -825,7 +844,7 @@ class TestNewInterProDatabases:
         mock_name_map.return_value = _make_name_map(PANTHER={"PTHR11454": "Insulin"})
 
         retriever = InterProAnnotationRetriever(annotations=annotations)
-        result = retriever._parse_interpro_results([api_result], md5_to_identifier)
+        result = retriever._parse_interpro_results([api_result], md5_to_identifiers)
 
         assert len(result) == 1
         ann = result[0].annotations
@@ -1021,7 +1040,7 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     """
     from protspace.data.annotations.encoding import decode_field, encode_field
 
-    md5_to_identifier = {TEST_MD5: TEST_PROTEIN_ID}
+    md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
     annotations = ["cath"]
 
     raw_name = "Ribosomal Protein L15; Chain: K; domain 2"
@@ -1032,7 +1051,7 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     mock_cath_names.return_value = {"1.10.10.10": raw_name}
 
     retriever = InterProAnnotationRetriever(annotations=annotations)
-    result = retriever._parse_interpro_results(api_results, md5_to_identifier)
+    result = retriever._parse_interpro_results(api_results, md5_to_identifiers)
 
     assert len(result) == 1
     cath_value = result[0].annotations["cath"]
@@ -1050,3 +1069,748 @@ def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     name_in_parens = cath_value.split("(", 1)[1].rsplit(")", 1)[0]
     assert name_in_parens == encoded_name
     assert decode_field(name_in_parens) == raw_name
+
+
+def _md5(sequence: str) -> str:
+    import hashlib
+
+    return hashlib.md5(sequence.encode("utf-8")).hexdigest().upper()
+
+
+def _fake_matches_endpoint(results_by_md5: dict[str, dict], submitted: list[str]):
+    """A stand-in for the InterPro matches POST that answers per submitted MD5."""
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        submitted.extend(json["md5"])
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.headers = {}
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "results": [results_by_md5[md5] for md5 in json["md5"]]
+        }
+        return response
+
+    return fake_post
+
+
+class TestIdenticalSequences:
+    """InterPro is queried per sequence MD5, so identical sequences are one
+    lookup. Keeping one identifier per MD5 silently emptied the others, and an
+    empty cell reads as "no InterPro match" (88,238 Swiss-Prot rows)."""
+
+    def test_every_protein_sharing_a_sequence_gets_its_matches(self):
+        shared, unique, unknown = "MKTAYIAKQR", "MVLSPADKTN", "MSTNPKPQRK"
+        sequences = {
+            "P1": shared,
+            "P2": shared,
+            "P3": unique,
+            "P4": unknown,
+            "P5": unknown,
+        }
+        results = {
+            _md5(shared): create_api_result(
+                _md5(shared),
+                matches=[create_signature("PF00001", name="7tm_1", score=50.2)],
+            ),
+            _md5(unique): create_api_result(
+                _md5(unique),
+                matches=[create_signature("PF00002", name="7tm_2", score=60.5)],
+            ),
+            _md5(unknown): create_api_result(_md5(unknown), found=False),
+        }
+        submitted: list[str] = []
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        with patch(
+            "requests.Session.post",
+            side_effect=_fake_matches_endpoint(results, submitted),
+        ):
+            result = retriever.fetch_annotations()
+
+        by_id = {row.identifier: row.annotations["pfam"] for row in result}
+        assert by_id == {
+            "P1": "PF00001 (7tm_1)|50.2",
+            "P2": "PF00001 (7tm_1)|50.2",
+            "P3": "PF00002 (7tm_2)|60.5",
+            "P4": "",
+            "P5": "",
+        }
+        # Identical sequences are still one lookup each.
+        assert sorted(submitted) == sorted(results)
+        assert retriever.failed_batch_count == 0
+
+
+class TestMatchRequestRetry:
+    """A lost batch makes the whole InterPro source incomplete and uncached, so
+    one unretried timeout among thousands of batches costs a full refetch."""
+
+    @staticmethod
+    def _proteins(count: int) -> dict[str, str]:
+        # Distinct sequences, so each protein is its own MD5.
+        return {f"P{i}": "M" + "A" * i for i in range(count)}
+
+    @staticmethod
+    def _serve(monkeypatch, outcomes):
+        """Answer successive POSTs from *outcomes*; a status int fails, None
+        succeeds with a Pfam match for every submitted MD5."""
+        _no_backoff(monkeypatch)
+        calls = []
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            calls.append(list(json["md5"]))
+            outcome = outcomes[len(calls) - 1]
+            response = Mock(spec=requests.Response)
+            response.headers = {}
+            if outcome is None:
+                response.status_code = 200
+                response.raise_for_status.return_value = None
+                response.json.return_value = {
+                    "results": [
+                        create_api_result(
+                            md5, matches=[create_signature("PF00001", score=1.0)]
+                        )
+                        for md5 in json["md5"]
+                    ]
+                }
+            else:
+                response.status_code = outcome
+                response.text = "unavailable"
+                response.raise_for_status.side_effect = requests.HTTPError(str(outcome))
+            return response
+
+        monkeypatch.setattr(
+            requests.Session, "post", lambda _session, url, **kw: fake_post(url, **kw)
+        )
+        return calls
+
+    def test_a_batch_that_fails_once_is_recovered(self, monkeypatch):
+        sequences = self._proteins(3)
+        calls = self._serve(monkeypatch, [503, None])
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == 2
+        assert retriever.failed_batch_count == 0
+        assert {
+            row.identifier: row.annotations["pfam"] for row in result
+        } == dict.fromkeys(sequences, "PF00001|1.0")
+
+    def test_a_batch_failing_every_attempt_is_lost_alone(self, monkeypatch):
+        import sys
+
+        from protspace.data.annotations.retrievers import http_utils
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 2)
+        sequences = self._proteins(4)  # two batches of two
+        calls = self._serve(monkeypatch, [503] * http_utils.MAX_ATTEMPTS + [None])
+
+        # The fake answers by call order, so one batch at a time.
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == http_utils.MAX_ATTEMPTS + 1
+        assert retriever.failed_batch_count == 1
+        by_id = {row.identifier: row.annotations["pfam"] for row in result}
+        # The second batch is still parsed; the lost one reads as unmatched,
+        # which is why the source must be flagged incomplete.
+        assert by_id == {"P0": "", "P1": "", "P2": "PF00001|1.0", "P3": "PF00001|1.0"}
+
+
+class TestOutageBreaker:
+    """With retries, a lost batch costs four attempts and at least 7 s of
+    backoff. During a full outage that was paid for each of the ~5,700
+    Swiss-Prot batches, over 10 hours of sleep alone, although the first lost
+    batch already made the source incomplete and uncached."""
+
+    @staticmethod
+    def _one_protein_per_batch(monkeypatch, count: int) -> dict[str, str]:
+        import sys
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        return TestMatchRequestRetry._proteins(count)
+
+    @staticmethod
+    def _limit() -> int:
+        import sys
+
+        return sys.modules[InterProRetriever.__module__]._MAX_CONSECUTIVE_LOST_BATCHES
+
+    def test_a_service_that_stays_down_is_not_asked_batch_after_batch(
+        self, monkeypatch, caplog
+    ):
+        from protspace.data.annotations.retrievers import http_utils
+
+        sequences = self._one_protein_per_batch(monkeypatch, self._limit() + 5)
+        calls = TestMatchRequestRetry._serve(monkeypatch, [503] * 1000)
+
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
+        )
+        retriever.fetch_annotations()
+
+        assert len(calls) == self._limit() * http_utils.MAX_ATTEMPTS
+        # Every batch counts as lost, requested or not.
+        assert retriever.failed_batch_count == len(sequences)
+        stopped = [r for r in caplog.records if "remaining 5 of" in r.getMessage()]
+        assert len(stopped) == 1
+
+    def test_a_batch_that_gets_through_resets_the_count(self, monkeypatch):
+        from protspace.data.annotations.retrievers import http_utils
+
+        limit = self._limit()
+        sequences = self._one_protein_per_batch(monkeypatch, 2 * limit)
+        lost = [503] * http_utils.MAX_ATTEMPTS
+        # limit - 1 lost batches, one answered, limit - 1 lost, one answered.
+        outcomes = lost * (limit - 1) + [None] + lost * (limit - 1) + [None]
+        calls = TestMatchRequestRetry._serve(monkeypatch, outcomes)
+
+        # The fake answers by call order, so one batch at a time.
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=1,
+        )
+        result = retriever.fetch_annotations()
+
+        assert len(calls) == len(outcomes)
+        assert retriever.failed_batch_count == 2 * (limit - 1)
+        matched = [row.identifier for row in result if row.annotations["pfam"]]
+        assert matched == [f"P{limit - 1}", f"P{2 * limit - 1}"]
+
+
+# Two results exactly as the InterPro Matches API returned them on 2026-09-29
+# for Swiss-Prot sequences (research sample `a_ipr_sample300.json`). Besides
+# the member databases' own matches, the API now returns AI-predicted
+# InterPro-N matches: `"source": "InterPro-N"`, the member library's name
+# (sometimes at an older release), no name and no match-level score.
+_CAPTURED_MIXED_SOURCES = {
+    "md5": "35F0A6AD880592A838EAE7B90C6F48E0",
+    "matches": [
+        {
+            "signature": {
+                "accession": "G3DSA:3.40.50.150",
+                "name": None,
+                "description": "Vaccinia Virus protein VP39",
+                "type": "Homologous_superfamily",
+                "signatureLibraryRelease": {
+                    "library": "CATH-Gene3D",
+                    "version": "4.3.0",
+                },
+                "entry": {
+                    "accession": "IPR029063",
+                    "name": "SAM-dependent_MTases_sf",
+                    "description": (
+                        "S-adenosyl-L-methionine-dependent methyltransferase "
+                        "superfamily"
+                    ),
+                    "type": "Homologous_superfamily",
+                    "parent": None,
+                },
+            },
+            "model-ac": "4lecA00",
+            "source": "CATH-Gene3D",
+            "locations": [
+                {
+                    "start": 72,
+                    "end": 365,
+                    "location-fragments": [
+                        {"start": 72, "end": 216, "dc-status": "C_TERMINAL_DISC"},
+                        {"start": 250, "end": 365, "dc-status": "N_TERMINAL_DISC"},
+                    ],
+                    "hmmStart": 23,
+                    "hmmEnd": 191,
+                    "hmmLength": 212,
+                    "hmmBounds": "INCOMPLETE",
+                    "envelopeStart": 72,
+                    "envelopeEnd": 365,
+                    "evalue": 8.8e-23,
+                    "score": 82.9,
+                }
+            ],
+            "score": 83.5,
+            "evalue": 5.8e-23,
+        },
+        {
+            "signature": {
+                "accession": "PTHR14614",
+                "name": None,
+                "description": "HEPATOCELLULAR CARCINOMA-ASSOCIATED ANTIGEN",
+                "type": "Family",
+                "signatureLibraryRelease": {"library": "PANTHER", "version": "19.0"},
+                "entry": {
+                    "accession": "IPR019410",
+                    "name": "Methyltransf_16",
+                    "description": "Lysine methyltransferase",
+                    "type": "Family",
+                    "parent": None,
+                },
+            },
+            "model-ac": "PTHR14614:SF109",
+            "source": "PANTHER",
+            "locations": [
+                {
+                    "start": 62,
+                    "end": 340,
+                    "location-fragments": [
+                        {"start": 62, "end": 340, "dc-status": "CONTINUOUS"}
+                    ],
+                    "hmmStart": 26,
+                    "hmmEnd": 200,
+                    "hmmLength": 229,
+                    "hmmBounds": "INCOMPLETE",
+                    "envelopeStart": 36,
+                    "envelopeEnd": 363,
+                    "evalue": 1.2e-16,
+                    "score": 72.8,
+                }
+            ],
+            "score": 72.8,
+            "evalue": 1.2e-16,
+            "ancestralNode": "AN448",
+        },
+        {
+            "signature": {
+                "accession": "PF10294",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "Pfam", "version": "37.3"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 92,
+                    "end": 210,
+                    "location-fragments": [
+                        {"start": 92, "end": 210, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.9990003,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "G3DSA:3.40.50.150",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {
+                    "library": "CATH-Gene3D",
+                    "version": "4.3.0",
+                },
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 73,
+                    "end": 361,
+                    "location-fragments": [
+                        {"start": 73, "end": 361, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.9980611,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "PTHR14614",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "PANTHER", "version": "19.0"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 67,
+                    "end": 351,
+                    "location-fragments": [
+                        {"start": 67, "end": 351, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.99801177,
+                }
+            ],
+        },
+    ],
+    "found": True,
+}
+
+_CAPTURED_INTERPRO_N_ONLY = {
+    "md5": "32F1BC1411E95386E089FB76C9B3314A",
+    "matches": [
+        {
+            "signature": {
+                "accession": "PS60014",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {
+                    "library": "PROSITE patterns",
+                    "version": "2025_01",
+                },
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 3,
+                    "end": 16,
+                    "location-fragments": [
+                        {"start": 3, "end": 16, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.7762832,
+                }
+            ],
+        },
+        {
+            "signature": {
+                "accession": "PF07365",
+                "name": None,
+                "description": None,
+                "type": None,
+                "signatureLibraryRelease": {"library": "Pfam", "version": "37.3"},
+                "entry": None,
+            },
+            "model-ac": None,
+            "source": "InterPro-N",
+            "locations": [
+                {
+                    "start": 1,
+                    "end": 16,
+                    "location-fragments": [
+                        {"start": 1, "end": 16, "dc-status": "CONTINUOUS"}
+                    ],
+                    "score": 0.78642863,
+                }
+            ],
+        },
+    ],
+    "found": True,
+}
+
+
+class TestInterProNPredictions:
+    """InterPro-N matches are AI predictions, not member-database matches.
+
+    They carry the member library's name, so mapping by library alone emitted
+    them into `pfam`, `cdd`, ... as unscored hits (about 3 % of Swiss-Prot
+    proteins in `pfam`). Every InterPro column holds the member databases' own
+    matches only, as the annotation registry describes them."""
+
+    @staticmethod
+    def _parse(results, annotations):
+        md5_to_identifiers = {r["md5"]: [f"P{i}"] for i, r in enumerate(results)}
+        retriever = InterProAnnotationRetriever(annotations=annotations)
+        with (
+            patch(
+                "src.protspace.data.annotations.retrievers.interpro_retriever"
+                ".get_cath_names",
+                return_value={"3.40.50.150": "Vaccinia Virus protein VP39"},
+            ),
+            patch.object(
+                InterProRetriever,
+                "_get_member_db_name_map",
+                return_value={"PANTHER": {"PTHR14614": "HCC-ASSOCIATED ANTIGEN"}},
+            ),
+        ):
+            rows = retriever._parse_interpro_results(results, md5_to_identifiers)
+        return {row.identifier: row.annotations for row in rows}
+
+    def test_a_member_database_match_is_kept_beside_its_interpro_n_twin(self):
+        by_id = self._parse([_CAPTURED_MIXED_SOURCES], ["cath", "panther", "pfam"])
+
+        assert (
+            by_id["P0"]["cath"]
+            == "G3DSA:3.40.50.150 (Vaccinia Virus protein VP39)|83.5"
+        )
+        assert by_id["P0"]["panther"] == "PTHR14614 (HCC-ASSOCIATED ANTIGEN)|72.8"
+
+    def test_a_signature_predicted_only_by_interpro_n_is_dropped(self):
+        by_id = self._parse(
+            [_CAPTURED_MIXED_SOURCES, _CAPTURED_INTERPRO_N_ONLY],
+            ["pfam", "prosite", "pfam_clan"],
+        )
+
+        # PF10294 and PS60014/PF07365 are InterPro-N predictions only.
+        assert by_id["P0"]["pfam"] == ""
+        assert by_id["P1"]["pfam"] == ""
+        assert by_id["P1"]["prosite"] == ""
+
+    def test_the_source_is_compared_without_regard_to_case(self):
+        match = create_signature("cd12951", library="CDD")
+        match["source"] = "interpro-n"
+        result = create_api_result(TEST_MD5, matches=[match])
+
+        by_id = self._parse([result], ["cdd"])
+
+        assert by_id["P0"]["cdd"] == ""
+
+    def test_a_match_without_a_source_field_is_kept(self):
+        """Older responses, and every fixture above, carry no `source`."""
+        result = create_api_result(
+            TEST_MD5, matches=[create_signature("PF00001", name="7tm_1", score=5.0)]
+        )
+
+        assert self._parse([result], ["pfam"])["P0"]["pfam"] == "PF00001 (7tm_1)|5.0"
+
+
+class _MatchesServer:
+    """A thread-safe stand-in for the Matches API, answering by batch content.
+
+    Every MD5 gets a Pfam match of its own. A batch holding an MD5 from
+    *down* answers 503 on every attempt; one holding an MD5 from *flaky*
+    answers 503 once, then succeeds. Each call takes up to *jitter* seconds,
+    so parallel batches finish out of order.
+    """
+
+    def __init__(self, down=(), flaky=(), jitter=0.002):
+        self.down, self.flaky, self.jitter = set(down), set(flaky), jitter
+        self.calls: list[tuple[str, ...]] = []
+        self.sessions: set[int] = set()
+        self.active = self.peak = 0
+        self._lock = threading.Lock()
+
+    def install(self, monkeypatch):
+        _no_backoff(monkeypatch)
+        # A plain function, so the session binds as its first argument.
+        monkeypatch.setattr(
+            requests.Session,
+            "post",
+            lambda session, url, **kwargs: self._post(session, url, **kwargs),
+        )
+
+    def _post(self, session, url, json=None, headers=None, timeout=None):
+        batch = tuple(json["md5"])
+        with self._lock:
+            tries = self.calls.count(batch)
+            self.calls.append(batch)
+            self.sessions.add(id(session))
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            _real_sleep(random.Random(f"{batch}{tries}").uniform(0, self.jitter))
+            response = Mock(spec=requests.Response)
+            response.headers = {}
+            if self.down & set(batch) or (self.flaky & set(batch) and tries == 0):
+                response.status_code = 503
+                response.raise_for_status.side_effect = requests.HTTPError("503")
+                return response
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            response.json.return_value = {
+                "results": [
+                    create_api_result(
+                        md5,
+                        matches=[
+                            create_signature(
+                                f"PF{int(md5[:4], 16):05d}", score=int(md5[4:6], 16)
+                            )
+                        ],
+                    )
+                    for md5 in batch
+                ]
+            }
+            return response
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+class TestParallelBatches:
+    """One batch at a time held InterPro to about 35 sequences a second (3.8 h
+    for Swiss-Prot); 4 in parallel over one session measured 92. Parallel
+    batches must give exactly the values and lost-batch count of one batch
+    at a time."""
+
+    @staticmethod
+    def _retriever(monkeypatch, sequences, **kwargs):
+        import sys
+
+        # Patch the module the retriever under test was loaded from.
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 2)
+        return InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences, **kwargs
+        )
+
+    @staticmethod
+    def _sequences(count):
+        # Every fifth protein repeats an earlier one's sequence.
+        return {
+            f"P{i:03d}": "M" + "A" * (i - 1 if i % 5 == 4 else i) for i in range(count)
+        }
+
+    def test_parallel_batches_give_the_values_of_one_at_a_time(self, monkeypatch):
+        sequences = self._sequences(100)
+        md5s = sorted({_md5(s) for s in sequences.values()})
+        # Lost batches are never 10 in a row, so the breaker stays out of it.
+        down, flaky = md5s[3::17], md5s[5::11]
+
+        outputs = {}
+        for workers in (1, 4, 8):
+            _MatchesServer(down, flaky).install(monkeypatch)
+            retriever = self._retriever(
+                monkeypatch, sequences, max_concurrent_requests=workers
+            )
+            rows = retriever.fetch_annotations()
+            outputs[workers] = (rows, retriever.failed_batch_count)
+
+        rows, lost = outputs[1]
+        assert lost > 0
+        assert sum(1 for row in rows if row.annotations["pfam"]) > 50
+        assert outputs[4] == outputs[1]
+        assert outputs[8] == outputs[1]
+
+    def test_by_default_four_batches_share_one_session(self, monkeypatch):
+        server = _MatchesServer(jitter=0.004)
+        server.install(monkeypatch)
+        sequences = self._sequences(120)
+
+        self._retriever(monkeypatch, sequences).fetch_annotations()
+
+        assert MAX_CONCURRENT_REQUESTS == 4
+        assert 1 < server.peak <= MAX_CONCURRENT_REQUESTS
+        assert len(server.sessions) == 1
+
+    @pytest.mark.parametrize("workers", [4, 8])
+    def test_the_breaker_bounds_parallel_batches(self, monkeypatch, caplog, workers):
+        """Lost batches in a row are counted in input order, so parallel
+        batches stop after the same 10; only the batches already submitted
+        ahead still go out. The lookahead is cut to two per worker here so
+        that bound is tighter than the 60 batches."""
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(http_utils, "_SUBMITTED_AHEAD_PER_WORKER", 2)
+        sequences = TestMatchRequestRetry._proteins(120)  # 60 batches of 2
+        server = _MatchesServer(down={_md5(s) for s in sequences.values()})
+        server.install(monkeypatch)
+
+        retriever = self._retriever(
+            monkeypatch, sequences, max_concurrent_requests=workers
+        )
+        retriever.fetch_annotations()
+
+        batches = len(set(server.calls))
+        assert 10 <= batches <= 10 + 2 * workers
+        # The ten batches that tripped it spent their retry budget; a batch
+        # still running then gives up after the attempt it is making.
+        attempts = Counter(server.calls)
+        consumed = sorted(attempts, key=server.calls.index)[:10]
+        assert all(attempts[b] == http_utils.MAX_ATTEMPTS for b in consumed)
+        assert max(attempts.values()) == http_utils.MAX_ATTEMPTS
+        assert retriever.failed_batch_count == 60
+        stopped = [r for r in caplog.records if "remaining 50 of 60" in r.getMessage()]
+        assert len(stopped) == 1
+
+    def test_a_slow_batch_does_not_hold_up_the_others(self, monkeypatch):
+        """The first batch answers only once 100 others have: far more than
+        two per worker, which is all a lookahead that short let run while one
+        slow batch (the slowest seen took 24 s) held up the rest."""
+        import sys
+
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        sequences = TestMatchRequestRetry._proteins(200)
+        md5s = [_md5(s) for s in sequences.values()]
+        server = _MatchesServer(jitter=0)
+        server.install(monkeypatch)
+        post = requests.Session.post
+        answered = 0
+        lock = threading.Lock()
+        enough = threading.Event()
+        released = []
+
+        def first_is_slow(session, url, **kwargs):
+            nonlocal answered
+            if kwargs["json"]["md5"] == [md5s[0]]:
+                released.append(enough.wait(5))
+            response = post(session, url, **kwargs)
+            with lock:
+                answered += 1
+                if answered == 100:
+                    enough.set()
+            return response
+
+        monkeypatch.setattr(requests.Session, "post", first_is_slow)
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences), annotations=["pfam"], sequences=sequences
+        )
+
+        rows = retriever.fetch_annotations()
+
+        assert released == [True]
+        assert [row.identifier for row in rows] == list(sequences)
+        assert all(row.annotations["pfam"] for row in rows)
+        assert retriever.failed_batch_count == 0
+
+    def test_a_tripped_breaker_stops_the_batches_still_retrying(self, monkeypatch):
+        """Batches after the tenth are made to back off for 5 s. Once the
+        breaker trips they give up after the attempt they made, instead of
+        holding the fetch for their whole retry budget."""
+        import sys
+
+        from protspace.data.annotations.retrievers import http_utils
+
+        monkeypatch.setattr(sys.modules[InterProRetriever.__module__], "CHUNK_SIZE", 1)
+        sequences = TestMatchRequestRetry._proteins(40)
+        md5s = [_md5(s) for s in sequences.values()]
+        server = _MatchesServer(down=md5s, jitter=0)
+        server.install(monkeypatch)
+        serving = threading.local()
+        post = requests.Session.post
+        # The tenth batch is answered only once a later one is backing off,
+        # so the breaker always trips with a batch still retrying.
+        later_backing_off = threading.Event()
+
+        def noting_the_batch(session, url, **kwargs):
+            serving.batch = kwargs["json"]["md5"][0]
+            if serving.batch == md5s[9]:
+                later_backing_off.wait(2)
+            return post(session, url, **kwargs)
+
+        def backoff(_seconds, stop=None):
+            if serving.batch in md5s[:10]:
+                return stop.is_set()
+            later_backing_off.set()
+            return stop.wait(5)
+
+        monkeypatch.setattr(requests.Session, "post", noting_the_batch)
+        monkeypatch.setattr(http_utils, "_sleep", backoff)
+        retriever = InterProAnnotationRetriever(
+            headers=list(sequences),
+            annotations=["pfam"],
+            sequences=sequences,
+            max_concurrent_requests=4,
+        )
+
+        started = time.monotonic()
+        retriever.fetch_annotations()
+
+        assert time.monotonic() - started < 2
+        attempts = Counter(batch for (batch,) in server.calls)
+        assert all(attempts[md5] == http_utils.MAX_ATTEMPTS for md5 in md5s[:10])
+        later = [attempts[md5] for md5 in md5s[10:] if md5 in attempts]
+        assert later and set(later) == {1}
+        assert retriever.failed_batch_count == 40

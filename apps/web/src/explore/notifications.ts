@@ -159,7 +159,48 @@ export function getUnknownExampleDatasetNotification(id: string): NotifyOptions 
   };
 }
 
-export function getExportSuccessNotification(filename: string): NotifyOptions {
+/** "1 protein" / "3 proteins": proteins a loaded file holds without coordinates. */
+function unplacedProteins(count: number): string {
+  return `${count.toLocaleString()} protein${count === 1 ? '' : 's'} without coordinates`;
+}
+
+/**
+ * A user imported a v1/v2 bundle: it loads, but reading that format ends in 5.0.0.
+ *
+ * An export from the app holds only the proteins it shows, so a file that also holds
+ * proteins no projection places is pointed at `protspace convert` alone, which keeps them.
+ */
+export function getLegacyBundleFormatNotification(
+  formatVersion: number,
+  unplacedProteinCount = 0,
+): NotifyOptions {
+  const upgrade =
+    unplacedProteinCount > 0
+      ? `To upgrade this file, run "protspace convert" on it. It also holds ${unplacedProteins(unplacedProteinCount)}, which an export from here leaves out.`
+      : 'To upgrade this file, export it again as a .parquetbundle from here, or run "protspace convert" on it.';
+  return {
+    title: 'This file uses an older bundle format.',
+    description: `Format v${formatVersion} bundles will stop opening in ProtSpace 5.0.0. ${upgrade}`,
+    durationMs: 12_000,
+    dedupeKey: 'legacy-bundle-format',
+  };
+}
+
+/**
+ * `unplacedProteinCount` is what the loaded file holds beyond the dataset the app shows (see
+ * `DataLoadedEventDetail`): a .parquetbundle export leaves those proteins out, so it says so.
+ */
+export function getExportSuccessNotification(
+  filename: string,
+  unplacedProteinCount = 0,
+): NotifyOptions {
+  if (unplacedProteinCount > 0) {
+    return {
+      title: 'Export ready.',
+      description: `${filename} leaves out the ${unplacedProteins(unplacedProteinCount)} the loaded file holds. "protspace convert" keeps them.`,
+      durationMs: 10_000,
+    };
+  }
   return {
     title: 'Export ready.',
     description: filename,

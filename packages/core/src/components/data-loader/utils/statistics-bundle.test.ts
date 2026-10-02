@@ -9,7 +9,7 @@ import {
   concatenateBuffers,
   createParquetBundle,
 } from '@protspace/utils';
-import { extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
@@ -205,7 +205,7 @@ describe('statistics part of a parquetbundle', () => {
     const extraction = await extractRowsFromParquetBundle(bundleWith(SETTINGS, STATISTICS));
     const data = convertParquetToVisualizationData(extraction);
 
-    const exported = await extractRowsFromParquetBundle(createParquetBundle(data));
+    const { data: exported } = await decodeParquetBundle(createParquetBundle(data));
 
     // Byte equality, not row equality. Row equality is what the deleted re-serializer used to
     // assert, and it passed while silently dropping every column the matcher didn't name.
@@ -237,7 +237,7 @@ describe('statistics part of a parquetbundle', () => {
     expect(extraction.statisticsRows).toHaveLength(1);
 
     const data = convertParquetToVisualizationData(extraction);
-    const exported = await extractRowsFromParquetBundle(createParquetBundle(data));
+    const { data: exported } = await decodeParquetBundle(createParquetBundle(data));
 
     expect(new Uint8Array(exported.statistics!)).toEqual(withFutureColumn);
     expect(exported.statisticsRows![0]).toHaveProperty(
@@ -246,18 +246,18 @@ describe('statistics part of a parquetbundle', () => {
     );
   });
 
-  it('round-trips settings alongside statistics (full 5-part bundle)', async () => {
+  it('round-trips settings alongside statistics', async () => {
     const extraction = await extractRowsFromParquetBundle(bundleWith(SETTINGS, STATISTICS));
     const data = convertParquetToVisualizationData(extraction);
     const settings = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0.75 };
 
-    const exported = await extractRowsFromParquetBundle(
+    const exported = await decodeParquetBundle(
       createParquetBundle(data, { includeSettings: true, settings }),
     );
 
     expect(exported.settings).not.toBeNull();
     expect(exported.settings!.eatConfidenceThreshold).toBe(0.75);
-    expect(new Uint8Array(exported.statistics!)).toEqual(STATISTICS);
+    expect(new Uint8Array(exported.data.statistics!)).toEqual(STATISTICS);
   });
 
   it('does not misparse the settings slot from a 3-part bundle (partAt range guard)', async () => {

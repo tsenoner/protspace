@@ -5,7 +5,10 @@
 import { SHAPE_PATH_GENERATORS, renderPathOnCanvas, toDisplayValue } from './shapes';
 import { NA_VALUE } from './missing-values';
 import type { AnnotationData } from '../types.js';
-import { getProteinAnnotationIndices } from './annotation-data-access.js';
+import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+} from './annotation-data-access.js';
 
 // PDF generation libraries are imported dynamically for better browser compatibility
 declare const window: Window & typeof globalThis;
@@ -452,19 +455,21 @@ export class ProtSpaceExporter {
     if (annotationIndices && annotationInfo && Array.isArray(annotationInfo.values)) {
       const hiddenSet = new Set(hiddenValues);
       visibleIds = data.protein_ids.filter((_id, i) => {
-        const viArray = getProteinAnnotationIndices(annotationIndices, i);
+        const count = getProteinAnnotationCount(annotationIndices, i);
         // A protein is visible if at least one of its annotation values is not hidden
-        if (viArray.length === 0) {
+        if (count === 0) {
           return !hiddenSet.has(NA_VALUE);
         }
-        return viArray.some((vi) => {
+        for (let k = 0; k < count; k++) {
+          const vi = getProteinAnnotationIndexAt(annotationIndices, i, k);
           const value: string | null =
-            typeof vi === 'number' && vi >= 0 && vi < annotationInfo.values.length
+            vi >= 0 && vi < annotationInfo.values.length
               ? (annotationInfo.values[vi] ?? null)
               : null;
           const key = value === null ? NA_VALUE : String(value);
-          return !hiddenSet.has(key);
-        });
+          if (!hiddenSet.has(key)) return true;
+        }
+        return false;
       });
     } else {
       // Fallback: if we cannot determine annotation visibility, export all ids
@@ -580,8 +585,9 @@ export class ProtSpaceExporter {
     const counts = new Array(annotationInfo.values.length).fill(0) as number[];
     for (let i = 0; i < indices.length; i += 1) {
       if (allowedIndexSet && !allowedIndexSet.has(i)) continue;
-      const viArray = getProteinAnnotationIndices(indices, i);
-      for (const vi of viArray) {
+      const count = getProteinAnnotationCount(indices, i);
+      for (let k = 0; k < count; k++) {
+        const vi = getProteinAnnotationIndexAt(indices, i, k);
         if (vi >= 0 && vi < counts.length) {
           counts[vi] += 1;
         }
