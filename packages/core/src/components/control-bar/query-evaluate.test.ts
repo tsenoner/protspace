@@ -31,7 +31,7 @@ function createTestData(): ProtspaceData {
     },
     numeric_annotation_data: {
       // P1=100, P2=250, P3=400, P4=550, P5=null
-      length: [100, 250, 400, 550, null],
+      length: new Float64Array([100, 250, 400, 550, NaN]),
     },
   };
 }
@@ -431,7 +431,7 @@ describe('evaluateQuery', () => {
         return {
           protein_ids: ['P1', 'P2', 'P3', 'P4'],
           numeric_annotation_data: {
-            conf: [0.2, 0.8, null, null],
+            conf: new Float64Array([0.2, 0.8, NaN, NaN]),
           },
         };
       }

@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.configuration import (
@@ -18,6 +19,8 @@ from protspace.data.annotations.configuration import (
     AnnotationConfiguration,
 )
 from protspace.data.annotations.encoding import (
+    BUNDLE_FORMAT_VERSION,
+    FORMAT_VERSION_KEY,
     annotation_cache_version_attrs,
     stale_cache_columns,
 )
@@ -700,17 +703,28 @@ class ProteinAnnotationManager:
         recorded only when at least one is known, since no stamp already reads
         as unknown. An empty set is recorded as an empty stamp: none of the
         values came from UniProt.
+
+        The cells are already percent-encoded (the emit sites encode them), so
+        the file also declares the v2 cell grammar: ``protspace bundle -a`` on
+        the cache then passes the cells through instead of migrating them again.
         """
         df = df.copy()
         df.attrs.pop(UNIPROT_RELEASE_ATTR, None)
         df.attrs.update(annotation_cache_version_attrs())
         if releases is not None and releases != {UNKNOWN_RELEASE}:
             df.attrs[UNIPROT_RELEASE_ATTR] = ",".join(sorted(releases))
+        schema = pa.Schema.from_pandas(df, preserve_index=False)
+        schema = schema.with_metadata(
+            {
+                **(schema.metadata or {}),
+                FORMAT_VERSION_KEY: str(BUNDLE_FORMAT_VERSION).encode(),
+            }
+        )
         # Staged: with retained rows folded in, this frame is a superset holding
         # rows for identifiers no other file has, so a half-written cache loses
         # data rather than costing one refetch.
         with staged_write(self.output_path) as staged:
-            df.to_parquet(staged, index=False)
+            df.to_parquet(staged, index=False, schema=schema)
 
     def _fill_missing_fasta_lengths(
         self, proteins: list[ProteinAnnotations]

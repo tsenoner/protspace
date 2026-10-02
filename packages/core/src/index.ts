@@ -48,6 +48,12 @@ export { pxToMm } from './components/publish/dimension-utils';
 
 // Utilities for data loading
 export { readFileOptimized } from './components/data-loader/utils/file-io';
-export { extractRowsFromParquetBundle } from './components/data-loader/utils/bundle';
-export type { BundleExtractionResult } from './components/data-loader/utils/bundle';
+export {
+  decodeParquetBundle,
+  extractRowsFromParquetBundle,
+} from './components/data-loader/utils/bundle';
+export type {
+  BundleExtractionResult,
+  DecodedParquetBundle,
+} from './components/data-loader/utils/bundle';
 export { convertParquetToVisualizationDataOptimized } from './components/data-loader/utils/conversion';

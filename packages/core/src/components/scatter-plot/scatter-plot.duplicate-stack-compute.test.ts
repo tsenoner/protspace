@@ -28,7 +28,7 @@ type Internals = HTMLElement & {
   selectedAnnotation: string;
   config: { enableDuplicateStackUI: boolean };
   _processData(): void;
-  _buildQuadtree(): void;
+  _buildPointGridIndex(): void;
   _dupOverlay: DupOverlay;
 };
 
@@ -62,11 +62,11 @@ function prime(): Internals {
   sp.data = dupData();
   sp.selectedAnnotation = 'fam';
   sp._processData(); // builds _plotData
-  // The quadtree builds lazily on render (RAF-scheduled). Build it directly here so
+  // The point index builds lazily on render (RAF-scheduled). Build it directly here so
   // _ensureDuplicateStacksForViewport's queryByPixels has a populated index to scan.
-  // Called directly (not via _scheduleQuadtreeRebuild) so it doesn't enqueue into the
+  // Called directly (not via _schedulePointGridIndexRebuild) so it doesn't enqueue into the
   // stubbed RAF queue installed by the test's beforeEach.
-  sp._buildQuadtree();
+  sp._buildPointGridIndex();
   return sp;
 }
 

@@ -64,7 +64,7 @@ function makeFamilyData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-type QuadtreeStub = {
+type PointIndexStub = {
   queryByPolygon: (vertices: ReadonlyArray<[number, number]>) => number[];
   queryByPixels: (minX: number, minY: number, maxX: number, maxY: number) => number[];
 };
@@ -75,7 +75,7 @@ type SelectionInternals = HTMLElement & {
   hiddenAnnotationValues: string[];
   selectedProteinIds: string[];
   _plotData: PlotData;
-  _quadtreeIndex: QuadtreeStub;
+  _pointGridIndex: PointIndexStub;
   _interactionHost(): PlotInteractionHost;
   _handleBrushEnd(event: { selection: [[number, number], [number, number]] | null }): void;
 };
@@ -138,7 +138,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
   it('lasso selection excludes non-interactive (hidden) points, in slot order', () => {
     const sp = makeSelectionScatter(null);
     sp.hiddenAnnotationValues = ['B']; // p3–p5 → opacity 0 → non-interactive
-    sp._quadtreeIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
+    sp._pointGridIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
 
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
@@ -154,7 +154,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
   it('brush selection excludes non-interactive (hidden) points, in slot order', () => {
     const sp = makeSelectionScatter(null);
     sp.hiddenAnnotationValues = ['B'];
-    sp._quadtreeIndex.queryByPixels = () => [0, 1, 2, 3, 4, 5];
+    sp._pointGridIndex.queryByPixels = () => [0, 1, 2, 3, 4, 5];
 
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
@@ -180,7 +180,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     // Hide family A (originalIndices 0,1,2 → p0,p1,p2). Those sit at slots 5,4,3.
     sp.hiddenAnnotationValues = ['A'];
     // Query returns all slots in ascending order.
-    sp._quadtreeIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
+    sp._pointGridIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
 
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
@@ -200,7 +200,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     // hit is non-interactive. (Hiding BOTH values would trip the all-hidden
     // escape hatch and make everything visible again.)
     sp.hiddenAnnotationValues = ['B'];
-    sp._quadtreeIndex.queryByPixels = () => [3, 4, 5]; // only family B (hidden)
+    sp._pointGridIndex.queryByPixels = () => [3, 4, 5]; // only family B (hidden)
 
     const events: CustomEvent[] = [];
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));

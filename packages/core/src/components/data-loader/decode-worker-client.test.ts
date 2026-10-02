@@ -124,7 +124,13 @@ describe('decodeBundleInWorker', () => {
           if (self.onmessage) {
             self.onmessage(
               new MessageEvent('message', {
-                data: { type: 'decode-result', ok: true, data: fakeData, settings: null },
+                data: {
+                  type: 'decode-result',
+                  ok: true,
+                  data: fakeData,
+                  settings: null,
+                  formatVersion: 2,
+                },
               }),
             );
           }
@@ -136,6 +142,7 @@ describe('decodeBundleInWorker', () => {
     const result = await decodeBundleInWorker(buf);
     expect(result.data).toBe(fakeData);
     expect(result.settings).toBeNull();
+    expect(result.formatVersion).toBe(2);
     mod.default = OrigClass;
   });
 

@@ -25,7 +25,10 @@ export default defineConfig({
       fileName: (format) => `index.${format === 'es' ? 'esm.js' : 'js'}`,
     },
     rollupOptions: {
-      external: ['lit', 'd3', 'html2canvas-pro', 'jspdf'],
+      // hyparquet-writer (and the hyparquet modules it deep-imports) stay bare imports, as
+      // hyparquet does in @protspace/core, so the app bundles one copy of hyparquet for both
+      // the bundle reader and the bundle writer instead of one inlined into each package.
+      external: ['lit', 'd3', 'html2canvas-pro', 'jspdf', /^hyparquet(-writer)?(\/|$)/],
       output: {
         globals: {
           lit: 'Lit',

@@ -472,7 +472,7 @@ test.describe('Scatterplot Animation Captures', () => {
     });
 
     // Wait for the scatter-plot to (re)compute its duplicate stacks. The
-    // overlay update is debounced behind the config change + a quadtree
+    // overlay update is debounced behind the config change + a point-grid
     // rebuild, so poll until at least one stack appears.
     await page.waitForFunction(
       () => {
@@ -655,7 +655,7 @@ test.describe('Scatterplot Animation Captures', () => {
     // Click the badge to collapse. The badge is drawn at screen offset
     // (+10, -10) from the stack's transformed center (BADGE_OFFSET in
     // duplicate-stacks/duplicate-badges-canvas-renderer.ts). The canvas click
-    // handler first collapses the expanded stack, then runs a quadtree
+    // handler first collapses the expanded stack, then runs a point-grid
     // hit-test; clicking the badge lands outside the underlying point's hit
     // radius, so the collapse sticks instead of re-toggling.
     const badgeX = target.screenX + 10;

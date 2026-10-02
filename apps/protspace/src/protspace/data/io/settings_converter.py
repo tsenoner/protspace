@@ -17,11 +17,11 @@ import re
 NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
 NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
 NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
-# Every spelling a missing cell can arrive under. "None" is what ``str()`` yields
-# for a parquet NULL, which is how the frontend writer now stores a missing
-# categorical cell (it no longer writes the __NA__ sentinel), so without it a
-# styled N/A group lands under the key "None" and the frontend's __NA__ lookup
-# misses it.
+# Every spelling a missing cell can arrive under. A v3 bundle's missing cell
+# decodes as "". "None" is what ``str()`` yields for a parquet NULL, which is
+# how a v2 bundle exported by a web build before v3 stored a missing categorical
+# cell (it no longer wrote the __NA__ sentinel), so without it a styled N/A group
+# lands under the key "None" and the frontend's __NA__ lookup misses it.
 _NA_LABELS = {"", "<NA>", "NaN", "__NA__", "None"}
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
 

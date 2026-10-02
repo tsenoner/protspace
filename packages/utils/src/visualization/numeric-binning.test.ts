@@ -59,7 +59,7 @@ describe('numeric-binning', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        length: [1, 2, 10, 11, 100, 101],
+        length: new Float64Array([1, 2, 10, 11, 100, 101]),
       },
     };
 
@@ -199,7 +199,7 @@ describe('numeric-binning', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        abundance: [1200, 2500, 3900],
+        abundance: new Float64Array([1200, 2500, 3900]),
       },
     };
 
@@ -236,8 +236,8 @@ describe('numeric-binning', () => {
         weight: [[], [], []],
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
-        weight: [10, 20, 30],
+        length: new Float64Array([1, 2, 3]),
+        weight: new Float64Array([10, 20, 30]),
       },
     };
 
@@ -627,8 +627,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        a: [1.0, 2.0],
-        b: [3, 4],
+        a: new Float64Array([1.0, 2.0]),
+        b: new Float64Array([3, 4]),
       },
     };
 
@@ -667,8 +667,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        a: [1.0, 2.0],
-        b: [3, 4],
+        a: new Float64Array([1.0, 2.0]),
+        b: new Float64Array([3, 4]),
       },
     };
 

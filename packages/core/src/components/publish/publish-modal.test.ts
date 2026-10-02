@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
 
@@ -1017,6 +1017,28 @@ describe('<protspace-publish-modal> disconnect guard', () => {
       expect(setupCalls).toBe(0);
     } finally {
       HTMLCanvasElement.prototype.getContext = origGetContext;
+    }
+  });
+
+  it('queues no redraw frame once disconnected', async () => {
+    const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
+      _scheduleRedraw: () => void;
+      updateComplete: Promise<unknown>;
+    };
+    document.body.appendChild(modal);
+    await modal.updateComplete;
+    // Let any queued frame run, so no stale handle short-circuits the call.
+    await new Promise((r) => requestAnimationFrame(r));
+    modal.remove();
+
+    // A redraw still running after disconnect can arm the settle timer, which
+    // calls _scheduleRedraw; it must not reach requestAnimationFrame.
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
+    try {
+      modal._scheduleRedraw();
+      expect(raf).not.toHaveBeenCalled();
+    } finally {
+      raf.mockRestore();
     }
   });
 });

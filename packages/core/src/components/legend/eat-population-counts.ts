@@ -1,4 +1,8 @@
-import { getProteinAnnotationIndices, isNAValue } from '@protspace/utils';
+import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isNAValue,
+} from '@protspace/utils';
 import type { ScatterplotData } from './types';
 
 export interface EatPopulationCounts {
@@ -26,11 +30,13 @@ export function computeEatPopulationCounts(
       predicted += 1;
       continue;
     }
-    const hasObservedValue = getProteinAnnotationIndices(rows, index).some((valueIndex) => {
-      const value = annotation.values[valueIndex];
-      return value != null && !isNAValue(value);
-    });
-    if (hasObservedValue) observed += 1;
+    for (let k = 0, count = getProteinAnnotationCount(rows, index); k < count; k++) {
+      const value = annotation.values[getProteinAnnotationIndexAt(rows, index, k)];
+      if (value != null && !isNAValue(value)) {
+        observed += 1;
+        break;
+      }
+    }
   }
 
   return { observed, predicted, total: data.protein_ids.length };

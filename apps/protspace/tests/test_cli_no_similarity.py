@@ -7,7 +7,6 @@ the message names the extra that fixes it.
 """
 
 import importlib.util
-import re
 import subprocess
 import sys
 
@@ -19,21 +18,7 @@ from protspace.cli.common_options import (
     require_similarity_extra,
 )
 from protspace.data.loaders.similarity import MMSEQS_INSTALL_HINT
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def _plain(output: str) -> str:
-    """Rich's error box, flattened to one line of matchable text.
-
-    Three things stand between the message and a substring check: colour codes,
-    which Rich emits whenever a `FORCE_COLOR`/`TTY` says to and which land
-    *inside* the message so it is no longer contiguous; the box border glyphs;
-    and the wrapping that splits it across lines. GitHub Actions sets
-    FORCE_COLOR, so a test that skips the first step passes locally and fails
-    only in CI.
-    """
-    return " ".join(_ANSI.sub("", output).replace("│", " ").split())
+from tests.cli_output import plain
 
 
 def _stub_pymmseqs(monkeypatch, spec):
@@ -96,7 +81,7 @@ def test_cli_rejects_similarity_before_doing_work(command, tmp_path, monkeypatch
     result = CliRunner().invoke(app, args)
 
     assert result.exit_code != 0
-    assert MMSEQS_INSTALL_HINT in _plain(result.output)
+    assert MMSEQS_INSTALL_HINT in plain(result.output)
 
 
 def test_prepare_rejects_similarity_without_fasta_before_loading(tmp_path, monkeypatch):
@@ -116,7 +101,7 @@ def test_prepare_rejects_similarity_without_fasta_before_loading(tmp_path, monke
     )
 
     assert result.exit_code != 0
-    assert "-s requires FASTA" in _plain(result.output)
+    assert "-s requires FASTA" in plain(result.output)
     assert loads == [], "the HDF5 was read before the argument check"
 
 

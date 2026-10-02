@@ -334,12 +334,18 @@ the host installs a `loadFromFileHandler` that prepares them, see
 
 ### Events
 
-| Event                   | Detail                                                   | Description                 |
-| ----------------------- | -------------------------------------------------------- | --------------------------- |
-| `data-loading-start`    | none                                                     | Load started                |
-| `data-loading-progress` | `{ current, total, percentage }`                         | Incremental progress update |
-| `data-loaded`           | `{ data, settings, source, file? }`                      | Dataset loaded successfully |
-| `data-error`            | `{ message, severity, source, context, originalError? }` | Host-consumed error event   |
+| Event                   | Detail                                                                           | Description                 |
+| ----------------------- | -------------------------------------------------------------------------------- | --------------------------- |
+| `data-loading-start`    | none                                                                             | Load started                |
+| `data-loading-progress` | `{ current, total, percentage }`                                                 | Incremental progress update |
+| `data-loaded`           | `{ data, settings, source, file?, bundleFormatVersion?, unplacedProteinCount? }` | Dataset loaded successfully |
+| `data-error`            | `{ message, severity, source, context, originalError? }`                         | Host-consumed error event   |
+
+For a `.parquetbundle`, `bundleFormatVersion` is the format version it was read as: `3` for a
+columnar bundle (part 1 declares `protspace_container_version`), or `1`/`2` for a legacy bundle
+(its `protspace_format_version` cell grammar), whose support ends in protspace 5.0.0.
+`unplacedProteinCount` is the number of proteins the bundle holds that no projection places;
+`data` leaves them out, so an export of it does too. Both are absent for plain parquet.
 
 ## Data Loading Utilities
 
@@ -361,39 +367,60 @@ Check whether an `ArrayBuffer` looks like a parquet bundle. Exported from `@prot
 function isParquetBundle(arrayBuffer: ArrayBuffer): boolean;
 ```
 
-### extractRowsFromParquetBundle
+### decodeParquetBundle
 
-Split a bundle into its projection rows, annotation rows and optional settings.
+Read a bundle of any format version into the shape the scatterplot consumes, along with its
+optional settings and the format version it was read as (`3`, or `1`/`2` for a legacy bundle,
+whose support ends in protspace 5.0.0). A six-part file without `protspace_container_version`
+in part 1, or with a container version other than `3`, is rejected rather than guessed at.
+`unplacedProteinCount` counts the proteins the file holds without a coordinate in any projection,
+which `data` leaves out (0 when every protein is placed).
+
+```typescript
+function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle>;
+
+interface DecodedParquetBundle {
+  data: VisualizationData;
+  settings: BundleSettings | null;
+  formatVersion: number;
+  unplacedProteinCount: number;
+}
+```
+
+### convertParquetToVisualizationDataOptimized
+
+Convert the rows of a plain `.parquet` table into the shape the scatterplot consumes.
+
+```typescript
+function convertParquetToVisualizationDataOptimized(
+  input: Rows | BundleExtractionResult,
+): Promise<VisualizationData>;
+```
+
+### extractRowsFromParquetBundle (deprecated)
+
+::: warning Deprecated
+Reads only v1 and v2 bundles and throws on a v3 bundle. It is removed in protspace 5.0.0. Use
+`decodeParquetBundle` instead.
+:::
+
+Split a v1/v2 bundle into its projection rows, annotation rows and optional settings, for
+`convertParquetToVisualizationDataOptimized`.
 
 ```typescript
 function extractRowsFromParquetBundle(arrayBuffer: ArrayBuffer): Promise<BundleExtractionResult>;
 ```
 
-### convertParquetToVisualizationDataOptimized
-
-Convert the extraction result into the shape the scatterplot consumes.
-
-```typescript
-function convertParquetToVisualizationDataOptimized(
-  input: BundleExtractionResult,
-): Promise<VisualizationData>;
-```
-
 ### Usage Example
 
 ```javascript
-import {
-  readFileOptimized,
-  extractRowsFromParquetBundle,
-  convertParquetToVisualizationDataOptimized,
-} from '@protspace/core';
+import { readFileOptimized, decodeParquetBundle } from '@protspace/core';
 import { isParquetBundle } from '@protspace/utils';
 
 const arrayBuffer = await readFileOptimized(file);
 
 if (isParquetBundle(arrayBuffer)) {
-  const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-  const data = await convertParquetToVisualizationDataOptimized(bundle);
+  const { data } = await decodeParquetBundle(arrayBuffer);
   document.getElementById('plot').data = data;
 }
 ```
