@@ -229,7 +229,9 @@ test.describe('Product Tour', () => {
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
 
-    // Give the auto-start delay time to fire (800 ms + buffer)
+    // A negative check needs a fixed wait: the tour auto-starts 800 ms after the first
+    // `data-loaded`, and a tour that decides not to start leaves no signal to wait on.
+    // 1500 ms covers the 800 ms timer with margin, measured from the load settling.
     await page.waitForTimeout(1500);
 
     // The tour should NOT have started

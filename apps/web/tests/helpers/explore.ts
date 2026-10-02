@@ -27,36 +27,75 @@ export async function dismissTourIfPresent(page: Page): Promise<void> {
   }
 }
 
-export async function waitForExploreDataLoad(page: Page, timeout = 30_000): Promise<void> {
+interface ExploreDataLoadOptions {
+  /** Applies to each stage of the wait. Defaults to 30 s. */
+  timeout?: number;
+  /** Wait for exactly this many proteins, so the wait cannot pass on the previous dataset. */
+  proteinCount?: number;
+  /**
+   * Wait for any protein count other than this one, for a replacement dataset whose size the
+   * test does not know. Pass the count read before the load was started.
+   */
+  changedFrom?: number;
+}
+
+/**
+ * Wait until an Explore load has settled: the plot holds the expected data and the loading
+ * overlay is gone.
+ *
+ * The app removes the overlay synchronously once a load's post-load work (view restore,
+ * persistence bookkeeping) has finished, so its absence is the settle signal. An overlay that
+ * stays up is a bug, and the wait fails instead of swallowing it. The protein-count gate comes
+ * first because the overlay is also absent before a queued load has started. The closing
+ * animation frame lets the scatterplot rebuild its point index, which it does in a
+ * requestAnimationFrame after a data or projection update.
+ */
+export async function waitForExploreDataLoad(
+  page: Page,
+  { timeout = 30_000, proteinCount, changedFrom }: ExploreDataLoadOptions = {},
+): Promise<void> {
   await page.waitForSelector('#myPlot', { timeout });
   await page.waitForFunction(
-    () => {
+    ({ exact, previous }) => {
       const plot = document.querySelector('#myPlot') as
         | (Element & {
             data?: { protein_ids?: string[] };
           })
         | null;
-      return (plot?.data?.protein_ids?.length ?? 0) > 0;
+      const count = plot?.data?.protein_ids?.length ?? 0;
+      if (exact !== null) return count === exact;
+      return count > 0 && count !== previous;
     },
-    undefined,
-    { timeout, polling: 500 },
+    { exact: proteinCount ?? null, previous: changedFrom ?? null },
+    { timeout, polling: 100 },
   );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await expect(page.locator('#progressive-loading')).toHaveCount(0, { timeout });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
+/** {@link waitForExploreDataLoad} for a dataset of a known size. */
+export async function waitForProteinCount(
+  page: Page,
+  proteinCount: number,
+  timeout = 30_000,
+): Promise<void> {
+  await waitForExploreDataLoad(page, { timeout, proteinCount });
+}
+
+/** How many proteins the plot currently holds. */
+export async function getProteinCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { data?: { protein_ids?: string[] } })
+      | null;
+    return plot?.data?.protein_ids?.length ?? 0;
+  });
 }
 
 export async function waitForExploreInteractionReady(page: Page, timeout = 10_000): Promise<void> {
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await expect(page.locator('#progressive-loading')).toHaveCount(0, { timeout });
   await dismissTourIfPresent(page);
-  await page
-    .locator('.driver-overlay')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await expect(page.locator('.driver-overlay')).toBeHidden({ timeout });
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {

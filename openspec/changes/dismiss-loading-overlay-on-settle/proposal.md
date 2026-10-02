@@ -42,7 +42,8 @@ The user approved removing both fixed delays for every user.
 - **No fixed hold, no fade.** The 800 ms hold and its "Ready to explore!" step are deleted.
   `update(false)` removes the overlay element synchronously, and the removal timer goes.
 - **One set of E2E load helpers.** `apps/web/tests/helpers/explore.ts` provides
-  `waitForExploreDataLoad(page, { timeout, proteinCount? })`. It waits for plot data, then for
+  `waitForExploreDataLoad(page, { timeout, proteinCount?, changedFrom? })`, and
+  `waitForProteinCount(page, n)` as its exact-count form. It waits for plot data, then for
   `#progressive-loading` to be gone, without swallowing the timeout, polls every 100 ms, and
   waits one animation frame before returning so the scatterplot has rebuilt its point index.
   Local copies and `polling: 500` waits across `apps/web/tests` move to it.

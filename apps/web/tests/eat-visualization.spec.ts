@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, waitForProteinCount } from './helpers/explore';
 
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
@@ -27,14 +27,7 @@ async function loadEatFixture(page: Page): Promise<void> {
   });
 
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          data?: { protein_ids?: string[] };
-        })
-      | null;
-    return plot?.data?.protein_ids?.length === 832;
-  });
+  await waitForProteinCount(page, 832);
 }
 
 async function selectEcAnnotation(page: Page): Promise<void> {

@@ -5,39 +5,17 @@ import {
   clickLegendItem,
   dismissTourIfPresent,
   getFirstLegendItemValue,
+  getProteinCount,
   isLegendItemHidden,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
+  waitForProteinCount,
 } from './helpers/explore';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
 const CUSTOM_5K_PROTEIN_COUNT = 5181;
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as any;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
-}
 
 async function clearPersistedDataset(page: Page): Promise<void> {
   await page.evaluate(async () => {
@@ -340,16 +318,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
     const customCount = await getProteinCount(page);
@@ -371,16 +340,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
     await loadDemoDatasetFromImportMenu(page);
@@ -515,16 +475,7 @@ test.describe('Persisted dataset failure handling', () => {
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await expect(
       page.getByText('Dataset loaded, but automatic reload is unavailable.'),
@@ -553,16 +504,7 @@ test.describe('Persisted dataset failure handling', () => {
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await expect(
       page.getByText('Dataset loaded, but automatic reload is unavailable.'),
@@ -735,16 +677,7 @@ test.describe('Bundle format notice', () => {
   async function importAndWait(page: Page, datasetPath: string): Promise<void> {
     const defaultCount = await getProteinCount(page);
     await loadCustomDatasetFromImportMenu(page, datasetPath);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForExploreDataLoad(page, { changedFrom: defaultCount });
   }
 
   for (const { version, path: bundlePath } of LEGACY_BUNDLES) {

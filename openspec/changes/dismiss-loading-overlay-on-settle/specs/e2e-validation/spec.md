@@ -29,7 +29,7 @@ An E2E helper that conditionally dismisses an optional UI element SHALL return w
 
 ### Requirement: Explore load waits observe overlay removal and plot data
 
-An E2E helper that waits for an Explore dataset load SHALL require both plot data on `#myPlot` (a non-empty protein list, or exactly the expected protein count when one is given) and the absence of `#progressive-loading`, and SHALL then wait one animation frame before returning. Load waits SHALL poll at 100 ms and SHALL NOT use a fixed delay as load completion. Load-wait helpers SHALL be defined once in `apps/web/tests/helpers/explore.ts` rather than copied into spec files.
+An E2E helper that waits for an Explore dataset load SHALL require both plot data on `#myPlot` (a non-empty protein list; exactly the expected protein count when one is given; or, for a replacement dataset of unknown size, a count different from the one read before the load started) and the absence of `#progressive-loading`, and SHALL then wait one animation frame before returning. Load waits SHALL poll at 100 ms and SHALL NOT use a fixed delay as load completion. Load-wait helpers SHALL be defined once in `apps/web/tests/helpers/explore.ts` rather than copied into spec files.
 
 #### Scenario: Plot data is present while the overlay is still shown
 
@@ -40,6 +40,11 @@ An E2E helper that waits for an Explore dataset load SHALL require both plot dat
 
 - **WHEN** a spec waits for the plot to hold a given number of proteins
 - **THEN** it uses the shared helper with that count rather than a local `waitForFunction` copy
+
+#### Scenario: A spec replaces a dataset of unknown size
+
+- **WHEN** a spec imports a dataset whose protein count it does not know
+- **THEN** it passes the count read before the import, and the wait cannot pass on the dataset it replaces
 
 #### Scenario: The overlay is removed
 

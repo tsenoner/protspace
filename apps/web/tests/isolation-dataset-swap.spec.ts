@@ -2,8 +2,10 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
+  getProteinCount,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
+  waitForProteinCount,
 } from './helpers/explore';
 
 /**
@@ -17,6 +19,7 @@ import {
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
+const CUSTOM_5K_PROTEIN_COUNT = 5181;
 
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
@@ -42,31 +45,6 @@ async function loadDemoDataset(page: Page): Promise<void> {
     const cb = document.querySelector('protspace-control-bar');
     cb?.dispatchEvent(new CustomEvent('load-demo-dataset', { bubbles: true, composed: true }));
   });
-}
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as {
-        data?: { protein_ids?: string[] };
-      } | null;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
 }
 
 /** Engage isolation deterministically: take the first N plot points as the selection
@@ -122,24 +100,12 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
   });
 
   test('Reset clears when swapping demo → custom while isolated', async ({ page }) => {
-    const demoCount = await getProteinCount(page);
-
     await engageIsolation(page);
     await expect(resetButton(page)).toBeVisible();
     expect(await readControlBarIsolationMode(page)).toBe(true);
 
     await loadCustomDataset(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as {
-          data?: { protein_ids?: string[] };
-        } | null;
-        const len = plot?.data?.protein_ids?.length ?? 0;
-        return len > 0 && len !== originalCount;
-      },
-      demoCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await expect(resetButton(page)).toHaveCount(0);
     expect(await readControlBarIsolationMode(page)).toBe(false);
@@ -149,17 +115,7 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
     const demoCount = await getProteinCount(page);
 
     await loadCustomDataset(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as {
-          data?: { protein_ids?: string[] };
-        } | null;
-        const len = plot?.data?.protein_ids?.length ?? 0;
-        return len > 0 && len !== originalCount;
-      },
-      demoCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await engageIsolation(page);
     await expect(resetButton(page)).toBeVisible();

@@ -24,14 +24,14 @@
 
 ## 3. Canonical E2E load helpers
 
-- [ ] 3.1 `waitForExploreDataLoad(page, { timeout, proteinCount? })` in
+- [x] 3.1 `waitForExploreDataLoad(page, { timeout, proteinCount?, changedFrom? })` in
       `apps/web/tests/helpers/explore.ts`: plot data present (or the exact count), overlay count
       0 with no swallowed failure, 100 ms polling, then one animation frame.
-- [ ] 3.2 Make `waitForProteinCount` the same helper with a count.
-- [ ] 3.3 Migrate local copies and `polling: 500` waits across `apps/web/tests` and remove
+- [x] 3.2 Make `waitForProteinCount` the same helper with a count.
+- [x] 3.3 Migrate local copies and `polling: 500` waits across `apps/web/tests` and remove
       `.catch(() => {})` on overlay waits, including `waitForExploreInteractionReady`.
-- [ ] 3.4 Keep the product-tour 1500 ms negative wait only if it is still needed, and say why.
-- [ ] 3.5 Check `scripts/docs-screenshots` for waits on the fade.
+- [x] 3.4 Keep the product-tour 1500 ms negative wait only if it is still needed, and say why.
+- [x] 3.5 Check `scripts/docs-screenshots` for waits on the fade.
 
 ## 4. CI
 
