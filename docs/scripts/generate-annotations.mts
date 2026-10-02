@@ -119,10 +119,11 @@ function build(): string {
   );
   lines.push('');
   lines.push(
-    'Format version 2 is marked in the parquet metadata of the `selected_annotations` table ' +
-      'under the key `protspace_format_version`. Bundles without this key or with version < 2 ' +
-      'are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) ' +
-      'for more detail.',
+    'In a legacy (v1/v2) bundle, format version 2 is marked in the parquet metadata of the ' +
+      '`selected_annotations` table under the key `protspace_format_version`; bundles without ' +
+      'this key are rendered using the legacy parser. A v3 bundle stores its labels already ' +
+      'decoded and carries `protspace_container_version` instead. See ' +
+      '[Data Format Reference](/guide/data-format#version-detection) for more detail.',
   );
   lines.push('');
   lines.push('## Sources');

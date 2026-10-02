@@ -1,11 +1,9 @@
 /**
  * Lossless percent-decoding for annotation value deserialization (bundle format v2).
  *
- * The matching encoder is `encodeAnnotationField` in `@protspace/utils`
- * (`packages/utils/src/parquet/annotation-codec.ts`): the write path lives in the
- * utils bundle-writer, this decode is the read path. Keeping a single encoder there
- * (utils cannot import core) avoids a second hand-written copy that could silently
- * diverge from this decoder. Both mirror the Python backend `encoding.py`. Reserved
+ * The matching encoder is the Python backend's `encode_field`
+ * (`apps/protspace/src/protspace/data/annotations/encoding.py`). The browser has no
+ * encoder: the web exporter writes format v3, which stores labels decoded. Reserved
  * set: `%` `;` `|` and all C0/DEL control chars; `,` `(` `)` are intentionally left
  * literal (positionally safe / display sugar) so names stay readable.
  */

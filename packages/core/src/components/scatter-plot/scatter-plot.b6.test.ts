@@ -29,7 +29,7 @@
  *  - F-17 (virtualization cache)           : REMOVED — #456 deleted the cull it
  *                                            served, so there is no visible-set
  *                                            memo left to keep fresh. The
- *                                            quadtree is unchanged, and still
+ *                                            point index is unchanged, and still
  *                                            covered by the hover, click, brush
  *                                            and lasso tests that use it.
  *  - F-18 filter clear before reprocess    : GREEN  (existing order)
@@ -116,7 +116,7 @@ function makeFamilyData(opts?: { n?: number; idPrefix?: string }): Visualization
       other: families.map((v) => [families.indexOf(v)]),
     },
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -143,7 +143,7 @@ function makeSingleAnnotationData(n = 4): VisualizationData {
       only: values.map((v) => [v === 'x' ? 0 : 1]),
     },
     numeric_annotation_data: {
-      score: values.map((_, i) => i),
+      score: Float64Array.from(values, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }

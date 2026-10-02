@@ -117,9 +117,10 @@ of such a bundle has no visible effect.
 ### N/A values
 
 Missing values (`""`, `"<NA>"`, `"NaN"`, `"__NA__"`, `"None"`) are normalized automatically, use any
-form in the styles file. `"None"` is the form a web-app-exported bundle reads back as: it writes a
-missing cell as a Parquet NULL, which stringifies to `None`. In the output bundle N/A is stored with
-the key `__NA__` (the frontend's internal format).
+form in the styles file. A missing cell of a v3 bundle, from the web app or from Python, reads back
+as `""`. `"None"` is how one reads back from a v2 bundle exported by a web build before v3, which
+wrote the cell as a Parquet NULL. In the output bundle N/A is stored with the key `__NA__` (the
+frontend's internal format).
 
 ### Example: custom colors and shapes
 

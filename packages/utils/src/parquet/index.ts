@@ -9,6 +9,16 @@ export {
 
 // Constants
 export { BUNDLE_DELIMITER, BUNDLE_DELIMITER_BYTES } from './constants';
+export {
+  V3_AXES,
+  V3_CONTAINER_VERSION,
+  V3_CONTAINER_VERSION_KEY,
+  V3_EVIDENCE_DICT_NAME,
+  V3_MANIFEST_KEY,
+  v3AxisColumn,
+  v3Payload,
+  v3PhysicalColumn,
+} from './v3-format';
 
 // Delimiter utilities
 export {
@@ -20,9 +30,6 @@ export {
 
 // BigInt utilities
 export { sanitizeValue, bigIntReplacer } from './bigint-utils';
-
-// Annotation bundle format v2 codec
-export { encodeAnnotationField } from './annotation-codec';
 
 // Settings validation
 export {

@@ -31,6 +31,14 @@ export interface Annotation {
   sourceKind?: AnnotationKind;
   numericType?: NumericAnnotationType;
   numericMetadata?: NumericAnnotationMetadata;
+  /**
+   * The Arrow type the column had in Python (`bool`, `int32`, `string`, ...), as a v3 manifest's
+   * `sourceType` records it. Nothing in the browser reads it: the bundle writer echoes it back
+   * when the column still fits it, so a web re-export decodes in Python to the column type the
+   * Python writer started from instead of a re-inferred one. Absent for a legacy load and for
+   * columns the app builds itself.
+   */
+  sourceType?: string;
   /** Runtime-only identity for derived annotations that must never be persisted as user data. */
   runtime?: {
     role: 'eat-confidence';
@@ -44,6 +52,7 @@ export interface Annotation {
  *   index, or `-1` when the protein has no value for this column.
  * - `SparseMultiValueAnnotationData`: compact single-value base plus overrides for the uncommon
  *   multi-valued rows.
+ * - `CsrAnnotationData`: flat compressed-sparse-row codes, as delivered by bundle format v3.
  * - `(readonly number[])[]`: densely multi-valued column. `data[proteinIdx]` is the
  *   list of indices; an empty array means missing.
  */
@@ -54,9 +63,53 @@ export interface SparseMultiValueAnnotationData {
   readonly length: number;
 }
 
+/**
+ * Compressed sparse row storage for a multi-valued column (bundle format v3).
+ *
+ * Row `i` owns hits `offsets[i] .. offsets[i + 1]`, so a row with no values has
+ * `offsets[i] === offsets[i + 1]`. `offsets` has `length + 1` entries, starts at 0,
+ * is non-decreasing and ends at `codes.length`.
+ *
+ * Per-hit scores and evidence live on the column itself, numbered by the same hits as
+ * `codes`, so anything that rebuilds the hits rebuilds them too (see `gatherCsr`).
+ */
+export interface CsrAnnotationData {
+  readonly kind: 'csr';
+  readonly offsets: Int32Array;
+  readonly codes: Int32Array;
+  readonly length: number;
+  readonly scores?: CsrScores;
+  readonly evidence?: CsrEvidence;
+}
+
+/**
+ * Per-hit scores of a CSR column: hit `h` owns `values[offsets[h] .. offsets[h + 1]]`,
+ * with `offsets` one longer than the column's `codes`. An empty range means the hit
+ * carries no score.
+ */
+export interface CsrScores {
+  readonly offsets: Int32Array;
+  /**
+   * float64, matching the `scores:<col>` payload the v3 encoder writes. float32
+   * cannot carry an E-value — the canonical Pfam / InterPro score — at all: 1e-200
+   * flushes to 0 and 1e40 saturates to Infinity.
+   */
+  readonly values: Float64Array;
+}
+
+/**
+ * Per-hit evidence of a CSR column, one code per hit: `-1` means none,
+ * otherwise the evidence string is `dict[code]`.
+ */
+export interface CsrEvidence {
+  readonly codes: Int32Array;
+  readonly dict: readonly string[];
+}
+
 export type AnnotationData =
   | Int32Array
   | SparseMultiValueAnnotationData
+  | CsrAnnotationData
   | readonly (readonly number[])[];
 
 /** A value transferred from a reference protein by Embedding Annotation Transfer (EAT). */
@@ -148,9 +201,14 @@ export interface VisualizationData {
   projections: Projection[];
   annotations: Record<string, Annotation>;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  /**
+   * One value per protein, NaN where it is missing. A typed column so a v3 read hands its
+   * decoded array over as is and the decode worker can transfer it instead of cloning it.
+   */
+  numeric_annotation_data?: Record<string, Float64Array>;
   /** Display-independent EAT provenance, keyed by the curated base annotation. */
   annotation_predicted?: AnnotationPredictedData;
+  /** Nested per-protein scores of a v1/v2 load; a CSR column carries its own instead. */
   annotation_scores?: Record<string, (number[] | null)[][]>;
   annotation_evidence?: Record<string, (string | null)[][]>;
   /**

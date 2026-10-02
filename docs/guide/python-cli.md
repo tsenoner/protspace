@@ -36,6 +36,7 @@ pip install protspace
 | `protspace bundle`   | Merge projections + annotations → `.parquetbundle`           |
 | `protspace transfer` | Fill missing annotations from nearest neighbours (EAT)       |
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
+| `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
 | `protspace serve`    | Run a local viewer                                           |
 
 Run `protspace <command> -h` for the built-in help of any command.
@@ -522,7 +523,7 @@ Score the quality of the projections in an existing project directory and write 
 `statistics.parquet`, the optional fifth part of a
 [`.parquetbundle`](/guide/data-format).
 
-Folding it in with `bundle -s` produces a five-part bundle, and the web app reads that table: it
+Folding it in with `bundle -s` fills the bundle's statistics slot, and the web app reads that table: it
 draws separation-score strips in the legend, adds a `By separation` legend sort mode and fills the
 Separation section of the projection metadata panel. See
 [Separation Scores](/explore/separation-scores) for how the scores read in the app, and
@@ -612,13 +613,24 @@ protspace bundle -p projections/ -a annotations.parquet \
 | `-s, --statistics`  | Projection-statistics parquet → fifth bundle part.               | -       |
 | `--settings`        | Settings JSON (for example cluster legend styles) → fourth part. | -       |
 
-A bundle written with `-s` has five parts and the web app renders that table, see
+Every bundle is written with six parts (format v3); `-s` fills the fifth, the statistics slot, and
+the web app renders that table, see
 [Separation Scores](/explore/separation-scores).
+
+The annotations parquet can be the output of `protspace annotate`, the annotation cache `prepare`
+keeps (`tmp/all_annotations.parquet`), or a table of your own. `annotate` and the cache hold
+percent-encoded v2 cells, stamped `protspace_format_version` = `2`, and those pass through
+unchanged; a cache written before the cache carried that stamp is recognised as one and read the
+same way. Any other table without the stamp, for example one you built with pandas, is read as
+plain text (the legacy v1 cell grammar): a literal `%` stays a percent sign, and a `;` inside
+parentheses, as in `Membrane (single-pass; type I)`, stays part of one label. Separate several
+values in one cell with `;` outside parentheses.
 
 A bundle never carries the internal `organism_id` and `sequence` columns, which ProtSpace fetches
 only to look up taxonomy and sequence-based annotations. `bundle` drops them even when the
 annotations parquet has them (for example from `annotate -a sequence`, whose own parquet keeps
-them), and `transfer` drops them from an older bundle that still carries them.
+them), and `transfer`, `convert` and `style` drop them from an older bundle that still carries
+them.
 
 ## `protspace transfer`
 
@@ -678,6 +690,12 @@ protspace transfer \
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
 
+The output is always a format v3 bundle. A v1 or v2 input is read the way
+[`protspace convert`](#protspace-convert) reads it, protein IDs included, so the transfer runs
+over the proteins the web app showed: a row with no ID, or an earlier row whose ID a later row
+repeats, is neither a query nor a reference. A legacy input that `convert` refuses is refused
+here too, with the same reason, and nothing is written.
+
 ### Reliability index
 
 The exact form of `COL__pred_confidence` depends on `--metric` and `--k`:
@@ -718,6 +736,46 @@ protspace style data.parquetbundle --dump-settings
 
 The output path is only required when you are writing styles, not for `--dump-settings` or
 `--generate-template`.
+
+The output is always a format v3 bundle. A v3 input keeps its data parts byte for byte and only
+its settings change. A v1 or v2 input is upgraded on the way, exactly as
+[`protspace convert`](#protspace-convert) would write it, and `style` logs a warning saying so,
+because builds from before format v3 cannot open the result. A legacy input that `convert`
+refuses is refused here too, with the same reason, and nothing is written.
+
+## `protspace convert`
+
+Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:
+they still open, with a warning, until protspace 5.0.0 removes support for them.
+
+```bash
+protspace convert old.parquetbundle new.parquetbundle
+protspace convert old.parquetbundle --in-place
+```
+
+| Flag            | Description                                 |
+| --------------- | ------------------------------------------- |
+| `--in-place`    | Overwrite the input with its v3 conversion. |
+| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.      |
+
+Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
+(legend colors, shapes, order) and projection statistics are kept as they are, and the file is
+written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
+is reported as current and nothing is written. The internal `organism_id` and `sequence`
+columns an older bundle may carry are dropped, as from every bundle ProtSpace writes.
+
+The converted bundle holds the proteins the web app showed for the old file. Older web builds
+were lenient about the protein ID column, and `convert` reads it the way they did, with a
+warning each time: without a `protein_id` or `identifier` column, the first column whose name
+contains `id`, `uniprot` or `entry` (else the first column) is the ID; a row with no ID is
+dropped; and when two rows share an ID, the later one is kept. A bundle whose projection metadata
+and projection rows name different projections, or that has two rows for one protein in one
+projection, is refused with a message saying so.
+
+Without a Python install, load the bundle at [protspace.app/explore](https://protspace.app/explore)
+and export it again: the web app always exports v3. That export leaves out any protein no
+projection places (an annotations row without coordinates), which `convert` keeps. See
+[Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
 
 ## `protspace serve`
 

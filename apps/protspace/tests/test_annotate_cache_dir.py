@@ -4,8 +4,6 @@ All HTTP is mocked: each retriever's `fetch_annotations` is replaced, and a
 source the test says must not be called raises instead.
 """
 
-import re
-
 import pandas as pd
 import pytest
 from typer.testing import CliRunner
@@ -25,6 +23,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.processors.pipeline import PipelineConfig, ReductionPipeline
+from tests.cli_output import plain
 
 CACHE_NAME = "all_annotations.parquet"
 SEQUENCES = {"P01308": "MALWMRLLPL", "P01315": "MGKISSLPTQ"}
@@ -88,19 +87,6 @@ def _forbid(monkeypatch, retriever_cls, name):
 
 def _annotate(*args):
     return CliRunner().invoke(app, ["annotate", *map(str, args)])
-
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def _plain(output: str) -> str:
-    """*output* without Rich's colour codes.
-
-    GitHub Actions sets FORCE_COLOR, and Rich then styles option names such as
-    `--cache-dir` with escape codes that split them, so a substring check that
-    passes locally fails only in CI.
-    """
-    return _ANSI.sub("", output)
 
 
 class TestResume:
@@ -289,7 +275,7 @@ class TestRefetch:
         result = _annotate("-i", fasta, "-o", out, "--refetch", "uniprot")
 
         assert result.exit_code == 2
-        assert "--cache-dir" in _plain(result.output)
+        assert "--cache-dir" in plain(result.output)
         assert not out.exists()
 
     @pytest.mark.parametrize("stage", ["embed", "all", "bogus"])
@@ -303,7 +289,7 @@ class TestRefetch:
         )
 
         assert result.exit_code == 2
-        assert "Unknown refetch stage" in _plain(result.output)
+        assert "Unknown refetch stage" in plain(result.output)
 
 
 class TestNoCacheDir:

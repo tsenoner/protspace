@@ -50,11 +50,7 @@ Then `pnpm install` and import it from your entry module.
 
 <script type="module">
   import '@protspace/core';
-  import {
-    readFileOptimized,
-    extractRowsFromParquetBundle,
-    convertParquetToVisualizationDataOptimized,
-  } from '@protspace/core';
+  import { readFileOptimized, decodeParquetBundle } from '@protspace/core';
 
   const fileInput = document.getElementById('fileInput');
   const plot = document.getElementById('plot');
@@ -64,8 +60,7 @@ Then `pnpm install` and import it from your entry module.
     if (!file) return;
 
     const arrayBuffer = await readFileOptimized(file);
-    const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-    const data = await convertParquetToVisualizationDataOptimized(bundle);
+    const { data } = await decodeParquetBundle(arrayBuffer);
 
     plot.data = data;
     plot.selectedProjectionIndex = 0;
@@ -168,11 +163,7 @@ duplicating it with a global toast.
 ```jsx
 import { useRef } from 'react';
 import '@protspace/core';
-import {
-  readFileOptimized,
-  extractRowsFromParquetBundle,
-  convertParquetToVisualizationDataOptimized,
-} from '@protspace/core';
+import { readFileOptimized, decodeParquetBundle } from '@protspace/core';
 
 export default function ProtSpaceViewer() {
   const plotRef = useRef(null);
@@ -183,8 +174,7 @@ export default function ProtSpaceViewer() {
 
     try {
       const arrayBuffer = await readFileOptimized(file);
-      const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-      const data = await convertParquetToVisualizationDataOptimized(bundle);
+      const { data } = await decodeParquetBundle(arrayBuffer);
 
       // Object props must be assigned imperatively, JSX would stringify them.
       plotRef.current.data = data;
@@ -225,11 +215,7 @@ export default function ProtSpaceViewer() {
 <script setup>
 import { ref } from 'vue';
 import '@protspace/core';
-import {
-  readFileOptimized,
-  extractRowsFromParquetBundle,
-  convertParquetToVisualizationDataOptimized,
-} from '@protspace/core';
+import { readFileOptimized, decodeParquetBundle } from '@protspace/core';
 
 const plot = ref(null);
 
@@ -239,8 +225,7 @@ const handleFileChange = async (e) => {
 
   try {
     const arrayBuffer = await readFileOptimized(file);
-    const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-    const data = await convertParquetToVisualizationDataOptimized(bundle);
+    const { data } = await decodeParquetBundle(arrayBuffer);
 
     plot.value.data = data;
     plot.value.selectedProjectionIndex = 0;
@@ -335,8 +320,8 @@ plot.addEventListener('file-dropped', async (e) => {
   if (!file.name.endsWith('.parquetbundle')) return;
 
   const arrayBuffer = await readFileOptimized(file);
-  const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-  plot.data = await convertParquetToVisualizationDataOptimized(bundle);
+  const { data } = await decodeParquetBundle(arrayBuffer);
+  plot.data = data;
 });
 ```
 
@@ -347,8 +332,7 @@ async function loadFromUrl(url) {
   const response = await fetch(url);
   const arrayBuffer = await response.arrayBuffer();
 
-  const bundle = await extractRowsFromParquetBundle(arrayBuffer);
-  const data = await convertParquetToVisualizationDataOptimized(bundle);
+  const { data } = await decodeParquetBundle(arrayBuffer);
 
   document.getElementById('plot').data = data;
 }

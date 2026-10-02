@@ -2,12 +2,9 @@
 """Inspect a .parquetbundle: per-table rows/cols/schema, sample, and settings."""
 
 import argparse
-import io
 from pathlib import Path
 
-import pyarrow.parquet as pq
-
-from protspace.data.io.bundle import read_bundle
+from protspace.data.io.bundle import read_settings_from_bundle, read_tables
 
 TABLE_NAMES = ["selected_annotations", "projections_metadata", "projections_data"]
 
@@ -20,10 +17,12 @@ def main():
     )
     args = parser.parse_args()
 
-    parts, settings = read_bundle(Path(args.bundle))
+    # read_tables decodes a v3 core back to the v2 shape, so a v3 bundle
+    # inspects as the three tables it logically holds, not as its parts.
+    tables = read_tables(Path(args.bundle))
+    settings = read_settings_from_bundle(Path(args.bundle))
 
-    for name, blob in zip(TABLE_NAMES, parts, strict=True):
-        table = pq.read_table(io.BytesIO(blob))
+    for name, table in zip(TABLE_NAMES, tables, strict=True):
         print(f"== {name}: {table.num_rows} rows × {table.num_columns} cols ==")
         print(table.schema)
         if args.sample_rows > 0 and table.num_rows > 0:

@@ -98,16 +98,19 @@ def test_write_mature_fasta_strips_correctly(tmp_path):
 
 
 def _make_synthetic_bundle(path: Path, settings: dict | None = None) -> Path:
+    from protspace.data.annotations.encoding import stamp_format_version
     from protspace.data.io.bundle import write_bundle
 
-    annotations = pa.table(
-        {
-            "protein_id": ["P1", "P2"],
-            "length": [100, 200],
-            "ec": ["3.4.21.-", "__NA__"],
-            "signal_peptide": ["yes", ""],
-            "protein_families": ["fam_a", "fam_b"],
-        }
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["P1", "P2"],
+                "length": [100, 200],
+                "ec": ["3.4.21.-", "__NA__"],
+                "signal_peptide": ["yes", ""],
+                "protein_families": ["fam_a", "fam_b"],
+            }
+        )
     )
     metadata = pa.table(
         {

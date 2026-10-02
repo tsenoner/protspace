@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from typer.testing import CliRunner
 
 from protspace.cli.app import app
@@ -93,24 +94,25 @@ def test_write_bundle_drops_internal_columns_and_keeps_the_stamp(tmp_path):
     assert read_format_version(table) == 2
 
 
-def test_write_bundle_does_not_stamp_an_unstamped_table(tmp_path):
+def test_write_bundle_still_refuses_an_unstamped_table(tmp_path):
+    """Dropping the lookup columns does not stamp the grammar: v3 never guesses it."""
     out = tmp_path / "out.parquetbundle"
     meta, data = _projections()
-    write_bundle([_cache_shaped_annotations(), meta, data], out)
-
-    table = _annotations_part(out)
-    _assert_internal_dropped(table)
-    assert FORMAT_VERSION_KEY not in (table.schema.metadata or {})
+    with pytest.raises(ValueError, match=FORMAT_VERSION_KEY.decode()):
+        write_bundle([_cache_shaped_annotations(), meta, data], out)
+    assert not out.exists()
 
 
 def test_write_bundle_leaves_the_projection_parts_alone(tmp_path):
     out = tmp_path / "out.parquetbundle"
     meta, data = _projections()
-    data = data.append_column("sequence", pa.array(["s1", "s2"]))
-    write_bundle([_cache_shaped_annotations(), meta, data], out)
+    write_bundle([stamp_format_version(_cache_shaped_annotations()), meta, data], out)
 
     parts, _ = read_bundle(out)
-    assert "sequence" in pq.read_table(io.BytesIO(parts[2])).column_names
+    decoded = pq.read_table(io.BytesIO(parts[2]))
+    assert decoded.select(["projection_name", "identifier", "x", "y"]).to_pylist() == (
+        data.to_pylist()
+    )
 
 
 def test_write_bundle_without_internal_columns_is_unchanged(tmp_path):
@@ -149,9 +151,11 @@ def test_replace_annotations_drops_internal_columns(tmp_path):
     src = tmp_path / "in.parquetbundle"
     out = tmp_path / "out.parquetbundle"
     meta, data = _projections()
-    write_bundle([pa.table({"protein_id": IDS}), meta, data], src)
+    write_bundle([stamp_format_version(pa.table({"protein_id": IDS})), meta, data], src)
 
-    replace_annotations_in_bundle(src, out, _cache_shaped_annotations())
+    replace_annotations_in_bundle(
+        src, out, stamp_format_version(_cache_shaped_annotations())
+    )
 
     table = _annotations_part(out)
     _assert_internal_dropped(table)

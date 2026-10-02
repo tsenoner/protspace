@@ -5,10 +5,32 @@ delimiter.  The first three parts are the core data tables; an optional
 fourth part carries settings (annotation colours, shapes, etc.); an optional
 fifth part carries projection statistics.
 
-Positional layout: ``core(3) + settings? + statistics?``.  When statistics are
-present but settings are absent, the fourth part is written as **zero bytes** so
-the statistics part is unambiguously the fifth — readers and writers branch on
-the fourth part's emptiness, not on the raw part count.
+Positional layout: ``core(3) + settings? + statistics?`` for a legacy (v1/v2)
+container, and always ``core(3) + settings + statistics + payloads`` for v3.
+When statistics are present but settings are absent, the fourth part is written
+as **zero bytes** so the statistics part is unambiguously the fifth — readers
+and writers branch on the fourth part's emptiness, not on the raw part count.
+A v3 container writes both of those slots unconditionally (zero bytes when
+absent) because the browser reads its payload part positionally, from
+``parts[5]``.
+
+What a bundle *is* comes from part 1's footer: ``protspace_container_version``
+= 3 marks a v3 container, and its absence a legacy one, whose annotation cell
+grammar is then ``protspace_format_version`` (1 when absent).  The part count
+has to agree with the container key in both directions.
+
+v3 is a *container-boundary* encoding: :func:`write_bundle` takes the v2-shaped
+tables the pipeline already builds and emits v3 parts, and every read here
+(:func:`read_tables`, :func:`read_bundle`, :func:`extract_bundle_to_dir`) hands
+back v2-shaped tables again, so nothing above this module has to know.  See
+:mod:`protspace.data.io.bundle_v3`.
+
+Reading a legacy container is deprecated: every public *read* of one logs a
+single warning pointing at ``protspace convert`` (:func:`convert_bundle`), and
+support is removed in protspace 5.0.0.  The writers here read their input
+silently and always emit v3 (``replace_settings_in_bundle`` keeps a v3 input's
+parts byte for byte and upgrades a legacy one), so a command that reads and
+then rewrites a bundle warns once.
 """
 
 import io
@@ -20,8 +42,21 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from protspace.data.annotations.encoding import stamp_format_version
+from protspace.data.annotations.encoding import (
+    migrate_legacy_annotation_table,
+    read_format_version,
+)
 from protspace.data.io.atomic import atomic_write_bytes
+from protspace.data.io.bundle_v3 import (
+    CONTAINER_VERSION,
+    CONTAINER_VERSION_KEY,
+    decode_v3,
+    encode_v3,
+    read_container_version,
+    read_part,
+    replace_annotations_v3,
+    write_part,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,30 +71,99 @@ CORE_FILENAMES = [
 SETTINGS_FILENAME = "settings.parquet"
 STATISTICS_FILENAME = "statistics.parquet"
 
+#: The release that drops reading v1/v2 containers.
+LEGACY_REMOVAL_VERSION = "5.0.0"
 
-def _parse_bundle(bundle_path: Path) -> tuple[list[bytes], bytes | None, bytes | None]:
-    """Read a bundle → ``(core_parts, settings_bytes, statistics_bytes)``.
 
-    The single place the on-disk layout is decoded: reads the file, validates the
-    3-to-5 part count, and normalises the optional parts (the zero-byte settings
-    sentinel and an absent/empty statistics part both become ``None``).
+def _part_container_version(part: bytes) -> int | None:
+    """The ``protspace_container_version`` in a part's parquet footer, or ``None``.
+
+    Every read parses part 1's footer, including the settings-only
+    :func:`read_settings_from_bundle`, so a corrupt part 1 has to fail as a
+    bundle error and not as a raw pyarrow traceback out of
+    ``protspace style --dump-settings``.  pyarrow raises ``ArrowInvalid`` for a
+    part that is not parquet at all, but a plain ``OSError`` (thrift) for a
+    footer that ends in ``PAR1`` and cannot be deserialized.
     """
-    with open(bundle_path, "rb") as f:
-        parts = f.read().split(PARQUET_BUNDLE_DELIMITER)
+    try:
+        schema = pq.read_schema(io.BytesIO(part))
+    except (pa.ArrowInvalid, OSError) as exc:
+        raise ValueError(
+            f"parquetbundle part 1 is not readable as parquet: {exc}"
+        ) from exc
+    return read_container_version(schema)
 
-    if len(parts) < 3 or len(parts) > 5:
-        raise ValueError(f"Expected 3 to 5 parts in parquetbundle, found {len(parts)}")
+
+def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
+    """Split raw bundle bytes → ``(core_parts, settings, statistics, payloads)``.
+
+    Six parts is v3 and the part-1 footer has to say so with its container key;
+    three to five parts is a legacy container, which has no payloads and must
+    not carry that key.  The optional parts are normalised
+    (the zero-byte settings sentinel and an absent/empty statistics part both
+    become ``None``), so callers never branch on the raw part count.
+    """
+    parts = data.split(PARQUET_BUNDLE_DELIMITER)
+
+    if len(parts) < 3 or len(parts) > 6:
+        raise ValueError(f"Expected 3 to 6 parts in parquetbundle, found {len(parts)}")
+
+    payloads = None
+    version = _part_container_version(parts[0])
+    key = CONTAINER_VERSION_KEY.decode()
+    if len(parts) == 6:
+        if version is None:
+            raise ValueError(
+                f"6-part parquetbundle carries no {key} in part 1's footer; "
+                f"a v3 container declares {key}={CONTAINER_VERSION}"
+            )
+        if version != CONTAINER_VERSION:
+            raise ValueError(
+                f"6-part parquetbundle declares container version {version}, "
+                f"expected {CONTAINER_VERSION}"
+            )
+        payloads = parts[5]
+    elif version is not None:
+        raise ValueError(
+            f"{len(parts)}-part parquetbundle declares {key}={version}; "
+            "a v3 container has 6 parts, a legacy one carries no container version"
+        )
 
     settings = parts[3] if len(parts) >= 4 and parts[3] else None
-    statistics = parts[4] if len(parts) == 5 and parts[4] else None
-    return parts[:3], settings, statistics
+    statistics = parts[4] if len(parts) >= 5 and parts[4] else None
+    return parts[:3], settings, statistics, payloads
 
 
-def _table_to_parquet_bytes(table: pa.Table) -> bytes:
-    """Serialize an Arrow table to in-memory parquet bytes."""
-    buf = io.BytesIO()
-    pq.write_table(table, buf)
-    return buf.getvalue()
+def _parse_bundle(
+    source: Path | str | bytes, *, warn_legacy: bool = True
+) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
+    """:func:`_split` over a file or raw bytes: the single place a read is decoded.
+
+    Logs the legacy-format deprecation warning, once per call, unless
+    ``warn_legacy`` is false (the writers and :func:`convert_bundle`).
+    """
+    data = source if isinstance(source, bytes) else Path(source).read_bytes()
+    parsed = _split(data)
+    if warn_legacy and parsed[3] is None:
+        name = "This parquetbundle" if isinstance(source, bytes) else str(source)
+        logger.warning(
+            "%s uses the v1/v2 parquetbundle format. Reading v1/v2 bundles is "
+            "deprecated and will be removed in protspace %s; run `protspace convert` "
+            "to rewrite it as v3 (or re-export it from protspace.app).",
+            name,
+            LEGACY_REMOVAL_VERSION,
+        )
+    return parsed
+
+
+def _core_tables(
+    core: list[bytes], payloads: bytes | None
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    """The three core tables in their v2 shape, from :func:`_split`'s output."""
+    if payloads is not None:
+        return decode_v3([*core, payloads])
+    annotations, metadata, projections = (read_part(p) for p in core)
+    return annotations, metadata, projections
 
 
 def _drop_internal_columns(annotations: pa.Table) -> pa.Table:
@@ -98,12 +202,67 @@ def _check_no_delimiter(part_bytes: bytes) -> None:
         )
 
 
+def _write_parts(
+    path: Path,
+    core: list[bytes],
+    settings: bytes | None = None,
+    statistics: bytes | None = None,
+    *,
+    payloads: bytes,
+) -> None:
+    """Assemble and atomically write one v3 container from its serialized parts.
+
+    The single writer for every bundle this module produces; it only ever emits
+    v3.  The container always has **six** slots: the browser reads the payloads
+    from ``parts[5]`` positionally, so omitting an absent settings or statistics
+    part would file the payloads under statistics and the reader would report no
+    payloads part.  Every part, part 6 included, is checked for the delimiter — a
+    label carrying those bytes would corrupt the split on read-back.
+    """
+    if len(core) != 3:
+        raise ValueError(f"a parquetbundle needs exactly 3 core parts, got {len(core)}")
+
+    parts = [*core, settings or b"", statistics or b"", payloads]
+
+    for part in parts:
+        _check_no_delimiter(part)
+
+    atomic_write_bytes(path, PARQUET_BUNDLE_DELIMITER.join(parts))
+
+
+def read_tables(
+    path_or_bytes: Path | str | bytes,
+    *,
+    keyed: bool = False,
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    """Read a bundle's three core tables in their v2 shape.
+
+    A v3 container is decoded (all-string annotation cells, long-format
+    projections, stamped ``protspace_format_version=2``); a legacy
+    container's parts are read as they are, so a v1 bundle stays v1-stamped and
+    is never silently migrated.
+
+    ``keyed=True`` is for a caller that rewrites the bundle: a legacy
+    container's annotation rows are then keyed as the v2 browser keyed them, as
+    ``convert`` and ``style`` key them (see
+    :func:`_keyed_as_the_legacy_reader_keyed_it`), so the caller works on the
+    dataset the browser showed and the v3 write accepts its ids.  The cells and
+    the stamp are untouched.  A v3 container's ids are unique already.
+    """
+    core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes)
+    annotations, metadata, projections = _core_tables(core, payloads)
+    if keyed and payloads is None:
+        annotations = _keyed_as_the_legacy_reader_keyed_it(annotations)
+    return annotations, metadata, projections
+
+
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
     """Extract a .parquetbundle into separate parquet files on disk.
 
-    Supports bundles with 3 parts (core data only), 4 parts (core + settings),
-    or 5 parts (core + settings + statistics, where the settings part may be
-    zero bytes).
+    Supports legacy bundles with 3 parts (core data only), 4 parts (core +
+    settings) or 5 parts (core + settings + statistics, where the settings part
+    may be zero bytes), and 6-part v3 bundles — whose core is decoded back to the
+    v2 shape so everything downstream reads the files it always did.
 
     Args:
         bundle_path: Path to the .parquetbundle file.
@@ -119,11 +278,17 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-    core, settings, statistics = _parse_bundle(bundle_path)
+    core, settings, statistics, payloads = _parse_bundle(bundle_path)
 
-    for part_bytes, filename in zip(core, CORE_FILENAMES, strict=False):
-        if part_bytes:
-            (target_dir / filename).write_bytes(part_bytes)
+    if payloads is not None:
+        for table, filename in zip(
+            decode_v3([*core, payloads]), CORE_FILENAMES, strict=True
+        ):
+            pq.write_table(table, str(target_dir / filename))
+    else:
+        for part_bytes, filename in zip(core, CORE_FILENAMES, strict=False):
+            if part_bytes:
+                (target_dir / filename).write_bytes(part_bytes)
     if settings:
         (target_dir / SETTINGS_FILENAME).write_bytes(settings)
     if statistics:
@@ -133,24 +298,38 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
 
 
 def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
-    """Read a bundle and return raw core part bytes plus parsed settings.
+    """Read a bundle and return v2-shaped core part bytes plus parsed settings.
 
     The return shape is preserved (``(core_parts, settings)``) so existing
     callers keep working; use :func:`read_statistics_from_bundle` for the
-    optional fifth part.
+    optional statistics part.  A v3 container is decoded and re-serialized, so
+    the parts callers ``pq.read_table`` are always the v2 shape — prefer
+    :func:`read_tables` when you want the tables themselves and not the bytes.
 
     Returns:
         (core_parts_bytes, settings_dict_or_None)
     """
-    core, settings_bytes, _ = _parse_bundle(bundle_path)
+    core, settings_bytes, _statistics, payloads = _parse_bundle(bundle_path)
+    if payloads is not None:
+        core = [write_part(t) for t in decode_v3([*core, payloads])]
     settings = read_settings_from_bytes(settings_bytes) if settings_bytes else None
     return core, settings
 
 
+def read_settings_from_bundle(bundle_path: Path) -> dict | None:
+    """Return the parsed settings (fourth part), or None if absent.
+
+    The settings-only read: unlike :func:`read_bundle` it never touches the
+    core, so ``protspace style`` no longer pays a full v3 decode plus
+    re-serialization of every annotation column just to look at a JSON blob.
+    """
+    settings = _parse_bundle(bundle_path)[1]
+    return read_settings_from_bytes(settings) if settings else None
+
+
 def read_statistics_from_bundle(bundle_path: Path) -> bytes | None:
     """Return the raw statistics parquet bytes (fifth part), or None if absent."""
-    _, _, statistics = _parse_bundle(bundle_path)
-    return statistics
+    return _parse_bundle(bundle_path)[2]
 
 
 def write_bundle(
@@ -161,6 +340,14 @@ def write_bundle(
 ) -> None:
     """Write Arrow tables (and optional settings/statistics) to a .parquetbundle.
 
+    The tables come in v2-shaped (all-string annotation cells, long-format
+    projections) and go out as a six-part v3 container.
+
+    **``tables[0]`` must be stamped as v2 cell grammar**; an unstamped or v1
+    table raises ``ValueError``.  A caller holding v1 cells migrates them first
+    (see :func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`), so
+    an already-v2 table that lost its stamp is never migrated a second time.
+
     Args:
         tables: List of 3 Arrow tables (annotations, projections_metadata,
             projections_data). The internal lookup columns (``organism_id``,
@@ -168,37 +355,28 @@ def write_bundle(
         bundle_path: Output file path.
         settings: Optional settings dict to include as 4th part.
         statistics: Optional projection-statistics Arrow table to include as the
-            5th part.  When given without ``settings``, a zero-byte settings slot
-            is written so the statistics part stays at position five.
+            5th part.  A zero-byte slot is written for whichever of the two is
+            absent, so the v3 payloads part stays at position six.
     """
-    if tables:
-        tables = [_drop_internal_columns(tables[0]), *tables[1:]]
+    if len(tables) != 3:
+        raise ValueError(
+            f"write_bundle expects 3 core tables (annotations, projections_metadata, "
+            f"projections_data), got {len(tables)}"
+        )
 
-    buf = io.BytesIO()
-    for i, table in enumerate(tables):
-        if i > 0:
-            buf.write(PARQUET_BUNDLE_DELIMITER)
-        part_bytes = _table_to_parquet_bytes(table)
-        _check_no_delimiter(part_bytes)
-        buf.write(part_bytes)
+    annotations, projections_metadata, projections_data = tables
+    annotations = _drop_internal_columns(annotations)
+    part1, part2, part3, payloads = encode_v3(
+        annotations, projections_metadata, projections_data
+    )
 
-    # A settings slot must exist whenever statistics follow it, so the parts
-    # keep fixed positions (settings = 4th, statistics = 5th).
-    if settings is not None or statistics is not None:
-        buf.write(PARQUET_BUNDLE_DELIMITER)
-        if settings is not None:
-            settings_bytes = create_settings_parquet(settings)
-            _check_no_delimiter(settings_bytes)
-            buf.write(settings_bytes)
-        # else: zero-byte settings slot keeps statistics at position five
-
-    if statistics is not None:
-        buf.write(PARQUET_BUNDLE_DELIMITER)
-        stats_bytes = _table_to_parquet_bytes(statistics)
-        _check_no_delimiter(stats_bytes)
-        buf.write(stats_bytes)
-
-    atomic_write_bytes(bundle_path, buf.getvalue())
+    _write_parts(
+        bundle_path,
+        [part1, part2, part3],
+        create_settings_parquet(settings) if settings is not None else None,
+        write_part(statistics) if statistics is not None else None,
+        payloads=payloads,
+    )
     logger.info(f"Saved bundled output to: {bundle_path}")
 
 
@@ -209,20 +387,29 @@ def replace_settings_in_bundle(
 ) -> None:
     """Append or replace the settings (4th) part in a bundle.
 
-    The three core parts are preserved byte-for-byte, and an existing statistics
-    (5th) part is preserved so styling a statistics-bearing bundle is non-lossy.
+    A v3 input keeps every other part byte for byte.  A legacy (v1/v2) input is
+    upgraded to v3 on the way, exactly as :func:`convert_bundle` would write it,
+    because every write emits v3; that is logged once.  An existing statistics
+    part survives either way, so styling a statistics-bearing bundle is
+    non-lossy.
     """
-    core, _, statistics = _parse_bundle(input_path)
-
-    # core(3) + new settings, preserving a trailing statistics part if present.
-    settings_bytes = create_settings_parquet(settings)
-    _check_no_delimiter(settings_bytes)
-    new_parts = [*core, settings_bytes]
-    if statistics is not None:
-        new_parts.append(statistics)
-    new_content = PARQUET_BUNDLE_DELIMITER.join(new_parts)
-
-    atomic_write_bytes(output_path, new_content)
+    core, _settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
+    if payloads is None:
+        core, payloads, version = _legacy_core_as_v3(core)
+        logger.warning(
+            "%s is a v%d parquetbundle; writing %s as v3, which protspace builds "
+            "from before format v3 cannot open.",
+            input_path,
+            version,
+            output_path,
+        )
+    _write_parts(
+        output_path,
+        core,
+        create_settings_parquet(settings),
+        statistics,
+        payloads=payloads,
+    )
 
 
 def replace_annotations_in_bundle(
@@ -232,39 +419,136 @@ def replace_annotations_in_bundle(
 ) -> None:
     """Replace the annotations (1st) part of a bundle, preserving the rest.
 
-    Projection parts (2nd, 3rd) are kept byte-for-byte; existing settings (4th)
-    and statistics (5th) parts are carried over unchanged. The internal lookup
-    columns (``organism_id``, ``sequence``) are dropped from the new annotations,
-    so a bundle that carried them loses them here.
+    Part 1 and the payloads part are re-encoded together, because the payloads
+    hold the label dictionaries and CSR buffers *for* part 1.  A v3 input keeps
+    its projections as stored (realigned to the new rows, never re-pivoted);
+    settings and statistics are carried over unchanged.  A legacy input
+    container comes out as v3, which is correct — this is a write, and every
+    write emits v3.
+
+    ``annotations_table`` must be stamped as v2 cell grammar, as for
+    :func:`write_bundle`: a caller whose operations dropped the stamp restores
+    it from the version it read before
+    (:func:`~protspace.data.annotations.encoding.upgrade_cell_grammar`).
+
+    The internal lookup columns (``organism_id``, ``sequence``) are dropped from
+    the new annotations, so a bundle that carried them loses them here.
     """
-    core, settings, statistics = _parse_bundle(input_path)
+    core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
 
     annotations_table = _drop_internal_columns(annotations_table)
 
-    # Re-stamp the format version at this single annotations-write chokepoint.
-    # pyarrow table ops (rename_columns, concat) drop schema metadata, and
-    # callers (transfer, prediction overlay) build the replacement table from
-    # exactly such ops — so without this the stamp is silently lost and a v2
-    # bundle re-reads as v1 (raw %XX names). Callers must provide v2-safe cells;
-    # transfer explicitly migrates legacy v1 categorical grammar before it
-    # reaches this write boundary.
-    annotations_table = stamp_format_version(annotations_table)
+    if payloads is not None:
+        parts = replace_annotations_v3(annotations_table, [*core, payloads])
+    else:
+        metadata, projections = (read_part(p) for p in core[1:])
+        parts = encode_v3(annotations_table, metadata, projections)
 
-    new_annotations_bytes = _table_to_parquet_bytes(annotations_table)
-    _check_no_delimiter(new_annotations_bytes)
-
-    # Preserve the projection parts byte-for-byte; keep the settings/statistics
-    # tail with the same zero-byte-settings sentinel write_bundle uses, so a
-    # statistics-bearing bundle round-trips without losing its 5th part.
-    new_parts = [new_annotations_bytes, core[1], core[2]]
-    if settings is not None or statistics is not None:
-        new_parts.append(settings if settings is not None else b"")
-    if statistics is not None:
-        new_parts.append(statistics)
-
-    atomic_write_bytes(output_path, PARQUET_BUNDLE_DELIMITER.join(new_parts))
+    _write_parts(output_path, list(parts[:3]), settings, statistics, payloads=parts[3])
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
+
+
+def convert_bundle(input_path: Path, output_path: Path) -> int:
+    """Rewrite a v1/v2 bundle as v3 and return the input's format version.
+
+    The legacy annotations part is read with its stamp intact, so its grammar is
+    known: a v1 table is migrated to the v2 cell grammar here, explicitly, and a
+    v2 one passes through.  Settings and statistics are carried over as stored
+    bytes.  A v3 input returns :data:`CONTAINER_VERSION` and nothing is written.
+    ``output_path`` may be ``input_path``: the write is atomic.
+    """
+    core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
+    if payloads is not None:
+        return CONTAINER_VERSION
+
+    core, payloads, version = _legacy_core_as_v3(core)
+    _write_parts(output_path, core, settings, statistics, payloads=payloads)
+    return version
+
+
+def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
+    """Encode a legacy container's three core parts as v3.
+
+    Returns ``(core_parts, payloads, cell_grammar_version)``.  The annotations
+    part is read with its stamp intact, so a v1 table is migrated to the v2 cell
+    grammar here, explicitly, and a v2 one passes through.  The rows are keyed
+    first, so the id column is ``protein_id`` or ``identifier`` by the time the
+    migration runs, which leaves those two alone: an id is a key, and escaping
+    one (``sp|P1|A_HUMAN`` to ``sp%7CP1|A_HUMAN``) would detach it from its
+    projection rows.
+
+    The internal lookup columns (``organism_id``, ``sequence``) a bundle written
+    before they were dropped still carries are dropped here too, as by every
+    other write of an annotations part.  That happens after the keying, which
+    may have taken ``organism_id`` as the id column and renamed it.
+    """
+    annotations, projections_metadata, projections_data = _core_tables(core, None)
+    version = read_format_version(annotations)
+    part1, part2, part3, payloads = encode_v3(
+        migrate_legacy_annotation_table(
+            _drop_internal_columns(_keyed_as_the_legacy_reader_keyed_it(annotations))
+        ),
+        projections_metadata,
+        projections_data,
+    )
+    return [part1, part2, part3], payloads, version
+
+
+#: The id-column candidates of the v2 browser reader (``bundle.ts``,
+#: ``extractRowsFromParts``), each matched as a case-insensitive substring.
+_LEGACY_ID_CANDIDATES = ("protein_id", "identifier", "id", "uniprot", "entry")
+
+
+def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
+    """A legacy annotations table with the one id per protein the v2 browser saw.
+
+    The encoder takes its ids from a unique, non-null ``protein_id`` or
+    ``identifier`` column, and v3 refuses anything else.  The v2 browser reader
+    was looser, and a bundle it rendered has to convert (and ``style``) to the
+    same dataset: it took the first column whose name contains ``protein_id``,
+    ``identifier``, ``id``, ``uniprot`` or ``entry``, in that order, else the
+    first column; it skipped a row with a null id; and a later row with the same
+    id replaced an earlier one.  A column the encoder would not recognise is
+    renamed ``protein_id``, which it then is, and the rows the browser never
+    showed are dropped, each time with a warning.
+    """
+    names = annotations.column_names
+    metadata = annotations.schema.metadata
+    id_column = next((c for c in ("protein_id", "identifier") if c in names), None)
+    if id_column is None and names:
+        id_column = next(
+            (
+                name
+                for candidate in _LEGACY_ID_CANDIDATES
+                for name in names
+                if candidate in name.lower()
+            ),
+            names[0],
+        )
+        logger.warning(
+            "legacy annotations have no 'protein_id' or 'identifier' column; "
+            "reading '%s' as the protein id, as the v2 browser did",
+            id_column,
+        )
+        annotations = annotations.rename_columns(
+            ["protein_id" if name == id_column else name for name in names]
+        )
+        id_column = "protein_id"
+    if id_column is None:
+        return annotations
+
+    ids = annotations.column(id_column).to_pylist()
+    last = {str(value): row for row, value in enumerate(ids) if value is not None}
+    if len(last) != len(ids):
+        logger.warning(
+            "legacy annotations hold %d row(s) with a null or repeated '%s'; keeping "
+            "the last row per id, as the v2 browser did",
+            len(ids) - len(last),
+            id_column,
+        )
+        annotations = annotations.take(pa.array(sorted(last.values()), pa.int64()))
+    return annotations.replace_schema_metadata(metadata)
 
 
 def create_settings_parquet(settings_dict: dict) -> bytes:
@@ -274,12 +558,12 @@ def create_settings_parquet(settings_dict: dict) -> bytes:
     holding the JSON-encoded settings string.
     """
     settings_json = json.dumps(settings_dict)
-    return _table_to_parquet_bytes(pa.table({"settings_json": [settings_json]}))
+    return write_part(pa.table({"settings_json": [settings_json]}))
 
 
 def read_settings_from_bytes(data: bytes) -> dict:
     """Deserialize settings parquet bytes into a dict."""
-    table = pq.read_table(io.BytesIO(data))
+    table = read_part(data)
     settings_json = table.column("settings_json")[0].as_py()
     return json.loads(settings_json)
 

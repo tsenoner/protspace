@@ -20,7 +20,7 @@ export interface PlotInteractionHost {
   // rather than keeping a parallel copy. applyZoom funnels new transforms through
   // onTransform first, so reads here always see the latest value.
   getTransform(): d3.ZoomTransform;
-  // host-owned spatial selection (reuses _quadtreeIndex / _slotsToInteractiveIds)
+  // host-owned spatial selection (reuses _pointGridIndex / _slotsToInteractiveIds)
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
   resolveSlotsToIds(slots: number[]): string[];
@@ -39,7 +39,7 @@ export interface PlotInteractionHost {
  * zoom/lasso RAF loops, lifted out of the scatter-plot god component (F-07). It
  * signals the host via callbacks; the host keeps event dispatch and owns the
  * transform value (written back via onTransform — F-48). Hover throttling and
- * picking stay on the host (host-only quadtree/visibility access).
+ * picking stay on the host (host-only point index/visibility access).
  */
 export class PlotInteractionController {
   private _zoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;

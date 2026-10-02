@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * End-to-end regression for #301 + #302 at the host level: a real
- * ProtspaceScatterplot with real PlotData / QuadtreeIndex / overlay
+ * ProtspaceScatterplot with real PlotData / PointGridIndex / overlay
  * controller, and a stubbed WebGL renderer whose createExportScales delegates
  * to the REAL ExportRenderer static. Asserts the badges composited by
  * captureAtResolution (a) cover stacks outside the last zoomed live viewport
@@ -30,7 +30,7 @@ type Internals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
   _processData(): void;
-  _buildQuadtree(): void;
+  _buildPointGridIndex(): void;
   _plotData: PlotData;
   _mergedConfig: Required<ScatterplotConfig>;
   _scales: { x: (n: number) => number; y: (n: number) => number } | null;
@@ -85,8 +85,8 @@ function prime(): Internals {
   sp.data = dupData();
   sp.selectedAnnotation = 'fam';
   sp._processData(); // builds _plotData
-  sp._buildQuadtree(); // builds quadtree + retains _visibleSlots (direct, no RAF)
-  // Stub the renderer AFTER _buildQuadtree (its tail calls _renderPlot).
+  sp._buildPointGridIndex(); // builds point index + retains _visibleSlots (direct, no RAF)
+  // Stub the renderer AFTER _buildPointGridIndex (its tail calls _renderPlot).
   sp._webglRenderer = {
     renderToCanvas: vi.fn((w: number, h: number, dpr: number) => {
       const c = document.createElement('canvas');
