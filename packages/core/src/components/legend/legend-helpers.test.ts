@@ -170,11 +170,9 @@ describe('legend-helpers', () => {
       expect(defaultShapeSize(10_000_000)).toBe(1);
     });
 
-    it('gives the base default 10 without a usable count', () => {
+    it('gives the base default 10 for a count of 0 or below', () => {
       expect(defaultShapeSize(0)).toBe(10);
       expect(defaultShapeSize(-5)).toBe(10);
-      expect(defaultShapeSize(Number.NaN)).toBe(10);
-      expect(defaultShapeSize(Number.POSITIVE_INFINITY)).toBe(10);
     });
 
     it('returns whole sizes', () => {
@@ -200,8 +198,9 @@ describe('legend-helpers', () => {
       expect(explicitShapeSize(200)).toBe(200);
     });
 
-    it('reads a missing, non-positive or non-finite size as unset', () => {
+    it('reads a missing, non-numeric, non-positive or non-finite size as unset', () => {
       expect(explicitShapeSize(undefined)).toBeNull();
+      expect(explicitShapeSize('12')).toBeNull();
       expect(explicitShapeSize(0)).toBeNull();
       expect(explicitShapeSize(-3)).toBeNull();
       expect(explicitShapeSize(Number.NaN)).toBeNull();

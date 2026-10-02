@@ -13,8 +13,8 @@ import type {
   LegendSortMode,
   PersistedCategoryData,
 } from '../types';
-import { LEGEND_DEFAULTS, LEGEND_VALUES, isNAValue } from '../config';
-import { createDefaultSettings } from '../legend-helpers';
+import { LEGEND_VALUES, isNAValue } from '../config';
+import { SHAPE_SIZE_FILLER, createDefaultSettings, positiveSize } from '../legend-helpers';
 import {
   BasePersistenceController,
   type DatasetHashData,
@@ -24,8 +24,7 @@ import {
 const SHAPE_SIZE_KEY = 'shape-size';
 
 function readShapeSize(key: string): number | null {
-  const size = getStorageItem<unknown>(key, null);
-  return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+  return positiveSize(getStorageItem<unknown>(key, null));
 }
 
 /**
@@ -148,7 +147,7 @@ export class PersistenceController
       this._fileSettings = Object.fromEntries(
         Object.entries(this._fileSettings).map(([annotation, settings]) => [
           annotation,
-          { ...settings, shapeSize: LEGEND_DEFAULTS.symbolSize },
+          { ...settings, shapeSize: SHAPE_SIZE_FILLER },
         ]),
       );
     }
@@ -159,11 +158,12 @@ export class PersistenceController
    * default followed the protein count can hold a picked size.
    */
   private _clearStoredAnnotationShapeSizes(annotationNames: string[]): void {
-    const unset = LEGEND_DEFAULTS.symbolSize;
     for (const annotation of annotationNames) {
       const key = buildStorageKey(this.storageKeyPrefix, this._datasetHash, annotation);
       const saved = getStorageItem<Partial<LegendPersistedSettings> | null>(key, null);
-      if (saved && saved.shapeSize !== unset) setStorageItem(key, { ...saved, shapeSize: unset });
+      if (saved && saved.shapeSize !== SHAPE_SIZE_FILLER) {
+        setStorageItem(key, { ...saved, shapeSize: SHAPE_SIZE_FILLER });
+      }
     }
   }
 

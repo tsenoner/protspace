@@ -8,7 +8,7 @@
 ### Requirement: The legend shape size SHALL default from the dataset's protein count and never exceed 64
 
 The legend's default shape size SHALL be `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, where `N` is
-the number of proteins in the whole dataset, and SHALL be 10 when `N` is 0, negative or not finite.
+the number of proteins in the whole dataset, and SHALL be 10 when `N` is 0.
 `N` SHALL count every protein of the loaded dataset, so hiding categories, filtering or isolating
 SHALL NOT change the default. The settings dialog SHALL accept whole sizes from 1 to 64 and SHALL
 cap a larger entry at 64, showing the capped value. A larger size from a bundle, top-level or

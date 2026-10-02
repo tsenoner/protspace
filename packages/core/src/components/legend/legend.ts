@@ -70,6 +70,7 @@ import {
   calculatePointSize,
   defaultShapeSize,
   explicitShapeSize,
+  SHAPE_SIZE_FILLER,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
@@ -403,7 +404,7 @@ export class ProtspaceLegend extends LitElement {
       const isNumericAnnotation = this._isCurrentAnnotationNumeric();
       return {
         maxVisibleValues: this.maxVisibleValues,
-        shapeSize: this._annotationShapeSize ?? LEGEND_DEFAULTS.symbolSize,
+        shapeSize: this._annotationShapeSize ?? SHAPE_SIZE_FILLER,
         sortMode: this._normalizeSortModeForEffectiveType(
           this._annotationSortModes[this.selectedAnnotation],
           isNumericAnnotation,
@@ -2091,7 +2092,7 @@ export class ProtspaceLegend extends LitElement {
   private _clearShapeSize(): void {
     this._persistenceController.clearShapeSize(Object.keys(this.data?.annotations ?? {}));
     this._annotationShapeSize = null;
-    this.shapeSize = this._resolveShapeSize();
+    this.shapeSize = defaultShapeSize(this._datasetProteinCount);
   }
 
   private _computeNumericSettingsSignatures(
@@ -2492,10 +2493,8 @@ export class ProtspaceLegend extends LitElement {
     if (dialogShapeSize === null) {
       // An emptied size field returns the dataset to its default, as Reset does for the size.
       this._clearShapeSize();
-    } else {
-      if (dialogShapeSize !== this.shapeSize) {
-        this._persistenceController.saveShapeSize(dialogShapeSize);
-      }
+    } else if (dialogShapeSize !== this.shapeSize) {
+      this._persistenceController.saveShapeSize(dialogShapeSize);
       this.shapeSize = dialogShapeSize;
     }
     this._annotationSortModes = nextAnnotationSortModes;

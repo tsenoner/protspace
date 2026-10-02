@@ -51,8 +51,7 @@ defaultShapeSize(N) = clamp(round(10 · (10000 / N)^⅔), 1, 10)
 - **Whole sizes from 1 to 10.** The dialog takes whole sizes from 1, so a default of 2.08 would show
   a value the user cannot type. The rule never goes above the old default of 10. Shape size 1 is
   already point size 10, the floor of `calculatePointSize`, about 2 CSS px across.
-- **A count that is 0, negative or not finite gives 10**, the base default, so a legend without
-  data behaves as before.
+- **A count of 0 gives 10**, the base default, so a legend without data behaves as before.
 
 ### N is the whole dataset
 

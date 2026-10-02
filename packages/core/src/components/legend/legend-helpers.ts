@@ -94,29 +94,44 @@ const DEFAULT_SHAPE_SIZE_REFERENCE_COUNT = 10_000;
  * The default shape size for a dataset of `proteinCount` proteins:
  * `clamp(round(10 · (10000 / N)^⅔), 1, 10)`. Dot area grows linearly with the shape size, so
  * the total ink still grows as `N^⅓` and a larger dataset looks denser without the category
- * drawn on top covering the others. 10 up to 10,000 proteins, 2 at ~105K, 1 at Swiss-Prot.
- * A count that is not a positive finite number gives the base default.
+ * drawn on top covering the others. 10 up to 10,000 proteins (and for an empty dataset), 2 at
+ * ~105K, 1 at Swiss-Prot.
  */
 export function defaultShapeSize(proteinCount: number): number {
   const base = LEGEND_DEFAULTS.symbolSize;
-  if (!Number.isFinite(proteinCount) || proteinCount <= 0) return base;
-  const size = Math.round(base * (DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount) ** (2 / 3));
-  return Math.min(base, Math.max(1, size));
+  if (proteinCount <= DEFAULT_SHAPE_SIZE_REFERENCE_COUNT) return base;
+  return Math.max(
+    1,
+    Math.round(base * (DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount) ** (2 / 3)),
+  );
 }
 
 /**
- * Per-annotation shape sizes that mean "nobody picked one": 10 is what the CLI writers and
- * `createDefaultSettings` emit, 30 what earlier writers emitted.
+ * The per-annotation shape size a bundle or browser record carries when nobody picked one: what
+ * the CLI writers and `createDefaultSettings` emit. It reads as unset.
  */
-const UNSET_SHAPE_SIZES: ReadonlySet<number> = new Set([10, 30]);
+export const SHAPE_SIZE_FILLER = 10;
+
+/** The filler earlier writers emitted. */
+const LEGACY_SHAPE_SIZE_FILLER = 30;
+
+const UNSET_SHAPE_SIZES: ReadonlySet<number> = new Set([
+  SHAPE_SIZE_FILLER,
+  LEGACY_SHAPE_SIZE_FILLER,
+]);
+
+/** A stored shape size, or null unless it is a positive finite number. */
+export function positiveSize(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
 
 /**
  * An annotation's own shape size from a bundle or browser storage, or null when it is unset,
  * so the dataset's default applies.
  */
-export function explicitShapeSize(stored: number | undefined): number | null {
-  if (stored === undefined || !Number.isFinite(stored) || stored <= 0) return null;
-  return UNSET_SHAPE_SIZES.has(stored) ? null : stored;
+export function explicitShapeSize(stored: unknown): number | null {
+  const size = positiveSize(stored);
+  return size !== null && UNSET_SHAPE_SIZES.has(size) ? null : size;
 }
 
 /**
@@ -126,7 +141,7 @@ export function createDefaultSettings(selectedAnnotation: string): LegendPersist
   void selectedAnnotation;
   return {
     maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
-    shapeSize: LEGEND_DEFAULTS.symbolSize,
+    shapeSize: SHAPE_SIZE_FILLER,
     sortMode: 'size-desc',
     hiddenValues: [],
     categories: {},
