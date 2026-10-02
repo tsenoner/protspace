@@ -89,7 +89,7 @@ function buildController(
     },
   } as unknown as Parameters<typeof createDatasetController>[0];
 
-  return { controller: createDatasetController(options), overlayUpdate };
+  return { controller: createDatasetController(options), overlayUpdate, options };
 }
 
 const loadedEvent = {
@@ -278,5 +278,88 @@ describe('dataset controller loading overlay on failure', () => {
     expect(overlayUpdate).toHaveBeenLastCalledWith(false);
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
     consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller loading overlay on settle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    mocks.saveLastImportedFile.mockResolvedValue(undefined);
+    mocks.loadData.mockResolvedValue(undefined);
+  });
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('keeps the overlay up while the dataset renders', async () => {
+    let finishRender = () => {};
+    mocks.loadData.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRender = () => resolve();
+        }),
+    );
+    const { controller, overlayUpdate } = buildController('user');
+    const pending = controller.handleDataLoaded(loadedEvent);
+    await flush();
+
+    // A small dataset used to lose its overlay here, before anything was drawn.
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(overlayUpdate).not.toHaveBeenCalledWith(false);
+
+    finishRender();
+    await pending;
+    expect(overlayUpdate).toHaveBeenLastCalledWith(false);
+  });
+
+  it('dismisses the overlay after the post-load work, before the next load may start', async () => {
+    let finishStatus = () => {};
+    mocks.markLastLoadStatus.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStatus = () => resolve();
+        }),
+    );
+    const { controller, overlayUpdate, options } = buildController('user');
+    const pending = controller.handleDataLoaded(loadedEvent);
+    await flush();
+
+    expect(options.viewController.applyLatestViewForDatasetLoad).toHaveBeenCalledOnce();
+    expect(overlayUpdate).not.toHaveBeenCalledWith(false);
+
+    finishStatus();
+    await pending;
+
+    expect(overlayUpdate).toHaveBeenLastCalledWith(false);
+    const updateOrder = overlayUpdate.mock.invocationCallOrder;
+    const dismissOrder = updateOrder[updateOrder.length - 1];
+    expect(dismissOrder).toBeGreaterThan(
+      vi.mocked(options.viewController.applyLatestViewForDatasetLoad).mock.invocationCallOrder[0],
+    );
+    expect(dismissOrder).toBeGreaterThan(mocks.markLastLoadStatus.mock.invocationCallOrder[0]);
+    expect(dismissOrder).toBeLessThan(
+      mocks.resolvePendingLoadFinalization.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('dismisses the overlay when the render returns nothing', async () => {
+    mocks.loadData.mockResolvedValue(null);
+    const { controller, overlayUpdate } = buildController('default');
+    await controller.handleDataLoaded({
+      detail: { data, settings: null, source: 'auto' },
+    } as unknown as Event);
+
+    expect(overlayUpdate).toHaveBeenLastCalledWith(false);
+  });
+
+  it("leaves the running load's overlay alone when a stale result arrives", async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // The file belongs to load 3, but load 4 is running and owns the overlay.
+    const { controller, overlayUpdate } = buildController('user', { runningSequence: 4 });
+    await controller.handleDataLoaded(loadedEvent);
+
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(overlayUpdate).not.toHaveBeenCalled();
+    consoleLog.mockRestore();
   });
 });

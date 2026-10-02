@@ -10,16 +10,16 @@
 
 ## 2. Dismiss on settle, no hold, no fade
 
-- [ ] 2.1 Delete the 800 ms hold and the "Ready to explore!" step from `loadData`.
-- [ ] 2.2 Remove the small-dataset early hide and the `finally` hide from `loadData`.
-- [ ] 2.3 Dismiss in `handleDataLoaded`'s `finally`, after the post-load work and
+- [x] 2.1 Delete the 800 ms hold and the "Ready to explore!" step from `loadData`.
+- [x] 2.2 Remove the small-dataset early hide and the `finally` hide from `loadData`.
+- [x] 2.3 Dismiss in `handleDataLoaded`'s `finally`, after the post-load work and
       `markLastLoadStatus`, before `resolvePendingLoadFinalization`; skip it on the stale-result
       early return; still dismiss when `loadData` returns `null` or the controller is disposed.
-- [ ] 2.4 Make `update(false)` remove the element synchronously; delete `overlayRemovalTimeout`
+- [x] 2.4 Make `update(false)` remove the element synchronously; delete `overlayRemovalTimeout`
       and adjust `dispose`.
-- [ ] 2.5 Check the FASTA paths (`runtime.ts` hides on FASTA error; FASTA success enters a normal
+- [x] 2.5 Check the FASTA paths (`runtime.ts` hides on FASTA error; FASTA success enters a normal
       load), the other readers of `#progressive-loading`, and the perf harness.
-- [ ] 2.6 Unit tests: a small dataset is not dismissed before render; dismissal follows the
+- [x] 2.6 Unit tests: a small dataset is not dismissed before render; dismissal follows the
       post-load work; a stale result does not dismiss; removal is synchronous.
 
 ## 3. Canonical E2E load helpers

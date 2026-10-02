@@ -98,6 +98,9 @@ export function createDatasetController({
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
+    // Set once this call is known to finish the running load, which is the load that
+    // showed the overlay. A stale result must leave that load's overlay alone.
+    let ownsOverlay = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -125,6 +128,7 @@ export function createDatasetController({
         });
         return;
       }
+      ownsOverlay = true;
 
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
@@ -270,10 +274,16 @@ export function createDatasetController({
       }
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
-      // A failure here would otherwise leave the overlay this load showed (e.g.
-      // "Saving imported dataset...") covering the page for good.
-      overlayController.update(false);
+      // Nothing later would take the overlay down after a failure here, even one
+      // thrown before the stale check could establish ownership.
+      ownsOverlay = true;
     } finally {
+      // The load has settled — rendered, settings and view restored, status recorded,
+      // or failed along the way — so take the overlay down now, and before the next
+      // queued load may start and show its own.
+      if (ownsOverlay) {
+        overlayController.update(false);
+      }
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence);
       }

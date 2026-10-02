@@ -20,7 +20,6 @@ const CANCEL_BUTTON_ID = 'progressive-loading-cancel';
 const CANCEL_DEFAULT_LABEL = 'Cancel';
 
 export function createLoadingOverlayController(doc: Document = document): LoadingOverlayController {
-  let overlayRemovalTimeout = 0;
   let cancelHandler: (() => void) | null = null;
   let cancelLabel = CANCEL_DEFAULT_LABEL;
   let currentNote: OverlayNote | null = null;
@@ -88,23 +87,10 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
 
     if (!show) {
       currentNote = null;
-      if (overlay) {
-        if (overlayRemovalTimeout) {
-          clearTimeout(overlayRemovalTimeout);
-        }
-        overlay.style.transition = 'opacity 0.5s ease';
-        overlay.style.opacity = '0';
-        overlayRemovalTimeout = window.setTimeout(() => {
-          overlay?.remove();
-          overlayRemovalTimeout = 0;
-        }, 500);
-      }
+      // Removed at once, with no fade: callers dismiss only when the load has settled,
+      // and a fading overlay still covers (and blocks clicks on) the page meanwhile.
+      overlay?.remove();
       return;
-    }
-
-    if (overlayRemovalTimeout) {
-      clearTimeout(overlayRemovalTimeout);
-      overlayRemovalTimeout = 0;
     }
 
     if (!overlay) {
@@ -137,9 +123,6 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
         </div>
       `;
       doc.body.appendChild(overlay);
-    } else {
-      overlay.style.opacity = '1';
-      overlay.style.transition = 'none';
     }
 
     overlay.setAttribute('aria-label', [subMessage, message].filter(Boolean).join('. '));
@@ -170,10 +153,6 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     update,
     setCancelHandler,
     dispose() {
-      if (overlayRemovalTimeout) {
-        clearTimeout(overlayRemovalTimeout);
-        overlayRemovalTimeout = 0;
-      }
       cancelHandler = null;
       currentNote = null;
       doc.getElementById('progressive-loading')?.remove();
