@@ -42,6 +42,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import encode_field
+from protspace.stats.base import STATS_SCHEMA
 
 # Small enough to eyeball a failure, big enough for a category to have members.
 PROTEIN_COUNT = 10
@@ -58,6 +59,10 @@ PROJECTIONS = [("PCA_2", 2), ("PCA_3", 3)]
 
 # The protein whose `length` is null, distinguishing "missing" from 0 and NaN.
 NULL_LENGTH_INDEX = 3
+
+# The category on the statistics part's per-category row. Published in the
+# manifest so the reader asserts against what was written, not a copy of it.
+STATISTICS_CATEGORY = "Hydrolase"
 
 
 def protein_ids(count: int) -> list[str]:
@@ -184,17 +189,46 @@ def build_settings() -> dict:
 
 
 def build_statistics_table() -> pa.Table:
-    """A plausible tidy statistics table for the optional fifth part.
+    """A tidy statistics table for the optional fifth part.
 
-    The web reader must ignore this part entirely, so only its presence and
-    validity as parquet matter -- not its columns.
+    Built by handing ``protspace.stats.base.STATS_SCHEMA`` to ``pa.table`` rather
+    than by restating the column list: pyarrow then raises here the moment the
+    producer adds or renames a column, which is the drift this file exists to
+    catch. A hand-mirrored list cannot -- it silently kept emitting the
+    pre-``category`` shape after the producer had moved on.
+
+    The columns used to be invented outright, on the premise that the web reader
+    ignores this part entirely -- but the reader now also parses it into rows for
+    rendering, and warns when the schema is not one it recognises. A fixture with
+    made-up columns would either trip that warning or, worse, silently pass while
+    proving nothing about the schema the producer actually writes.
+
+    Three rows, so both shapes the producer emits are covered: the
+    whole-annotation aggregates (``category`` NULL, what the ⓘ popover reads) and
+    the per-category decomposition (what the legend's score strips read). The
+    reader distinguishes the two by exactly that NULL.
+
+    The part is still carried verbatim through a web export; parsing is a
+    render-side concern layered on top of that, never a precondition for it.
     """
     return pa.table(
         {
-            "projection_name": pa.array(["PCA_2", "PCA_3"], pa.string()),
-            "metric": pa.array(["trustworthiness", "trustworthiness"], pa.string()),
-            "value": pa.array([0.91, 0.88], pa.float64()),
-        }
+            "space_kind": ["projection", "projection", "projection"],
+            "space_name": ["PCA_2", "PCA_3", "PCA_2"],
+            "annotation": ["group", "group", "group"],
+            "stat_family": [
+                "annotation_validity",
+                "annotation_validity",
+                "annotation_validity",
+            ],
+            "label_kind": ["annotation", "annotation", "annotation"],
+            "metric": ["silhouette", "silhouette", "silhouette"],
+            "metric_kind": ["validity", "validity", "validity"],
+            "value": [0.91, 0.88, 0.72],
+            "category": [None, None, STATISTICS_CATEGORY],
+            "extra_json": ['{"seed": 42}', None, None],
+        },
+        schema=STATS_SCHEMA,
     )
 
 
@@ -309,6 +343,8 @@ def main(out_dir: Path) -> None:
                 "projectionCount": len(PROJECTIONS),
                 "labelWithReservedChar": LABEL_WITH_RESERVED_CHAR,
                 "nullLengthIndex": NULL_LENGTH_INDEX,
+                "statisticsColumns": STATS_SCHEMA.names,
+                "statisticsCategory": STATISTICS_CATEGORY,
             }
         ),
         encoding="utf-8",

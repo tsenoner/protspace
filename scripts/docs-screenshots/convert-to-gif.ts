@@ -6,7 +6,9 @@
  * 1. Reads all .webm files from temp-videos/
  * 2. Converts each to an optimized GIF with good quality and small file size
  * 3. Outputs GIFs to docs/explore/images/
- * 4. Cleans up the temp video files
+ * 4. Deletes each video once its GIF is written, so the next run cannot
+ *    re-convert a stale recording; a video whose conversion failed is kept.
+ *    Pass --keep to keep them all (e.g. to re-tune GIF settings).
  *
  * Prerequisites:
  * - ffmpeg must be installed: `brew install ffmpeg`
@@ -15,59 +17,28 @@
 import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-
-const TEMP_VIDEOS_DIR = path.join(__dirname, '../../temp-videos');
-const IMAGES_DIR = path.join(__dirname, '../../docs/explore/images');
+import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
 
 // GIF conversion settings
 const GIF_FPS = 30; // Increased for smoother animation
 const GIF_WIDTH = 1000; // Increased for better quality (less pixelation)
 
-// Mapping from video filename to output GIF name
-const VIDEO_TO_GIF_MAP: Record<string, string> = {
-  'zoom-gif---zooming-and-panning-animation': 'zoom.gif',
-  zoom: 'zoom.gif',
-  'select-single-gif---clicking-to-select-a-protein': 'select-single.gif',
-  'select-single': 'select-single.gif',
-  'select-box-gif---box-selection-animation': 'select-box.gif',
-  'select-box': 'select-box.gif',
-  'legend-toggle-gif---toggling-category-visibility': 'legend-toggle.gif',
-  'legend-toggle': 'legend-toggle.gif',
-  'legend-reorder-gif---dragging-to-reorder-labels': 'legend-reorder.gif',
-  'legend-reorder': 'legend-reorder.gif',
-  'legend-others-gif---expanding-and-collapsing-others-group': 'legend-others.gif',
-  'legend-others': 'legend-others.gif',
-  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 'duplicate-badges.gif',
-  'duplicate-badges': 'duplicate-badges.gif',
-};
+// Per-video output-name override. Normally empty: `saveTestVideo` already names
+// the recording after the test title with everything from `.gif` onwards
+// stripped, so `getGifName`'s default (`<video basename>.gif`) is the rule and a
+// new animation needs no entry here. Add one only for a video whose GIF name
+// genuinely differs from its recording name.
+const VIDEO_TO_GIF_MAP: Record<string, string> = {};
 
-// Mapping for videos that need trimming (remove loading screen from start)
-// Value is seconds to trim from the beginning
-// All animations use INITIAL_PAUSE (2000ms) which we trim as 2.5s to account for any variance
-// This removes the loading screen and shows only the animation content
-const VIDEO_TRIM_MAP: Record<string, number> = {
-  // Zoom animation
-  'zoom-gif---zooming-and-panning-animation': 2.5,
-  zoom: 2.5,
-  // Select single animation
-  'select-single-gif---clicking-to-select-a-protein': 2.5,
-  'select-single': 2.5,
-  // Select box animation
-  'select-box-gif---box-selection-animation': 2.5,
-  'select-box': 2.5,
-  // Legend toggle animation
-  'legend-toggle-gif---toggling-category-visibility': 2.5,
-  'legend-toggle': 2.5,
-  // Legend reorder animation
-  'legend-reorder-gif---dragging-to-reorder-labels': 2.5,
-  'legend-reorder': 2.5,
-  // Legend others animation
-  'legend-others-gif---expanding-and-collapsing-others-group': 2.5,
-  'legend-others': 2.5,
-  // Duplicate-badges animation
-  'duplicate-badges-gif---cross-projection-duplicate-badge-and-spiderfy': 2.5,
-  'duplicate-badges': 2.5,
-};
+// Seconds trimmed off the start of every animation, removing the loading
+// screen so the GIF opens on content. Every animation spec pauses for
+// INITIAL_PAUSE (2000ms) up front; 2.5s covers that plus timing variance.
+// This is the rule rather than a per-video setting: a new animation that had
+// to opt in here would otherwise silently ship with the loading screen in it.
+const DEFAULT_TRIM_SECONDS = 2.5;
+
+// Per-video trim override, for animations that genuinely differ from the rule.
+const VIDEO_TRIM_MAP: Record<string, number> = {};
 
 // Per-video frame-rate override (falls back to GIF_FPS).
 // Use this for animations whose content is too long for 30 fps to fit a
@@ -138,7 +109,7 @@ async function convertToGif(
       if (result.error || result.status !== 0) {
         throw result.error || new Error(`ffmpeg exited with code ${result.status}`);
       }
-    } catch (error) {
+    } catch {
       // Fall back to single-pass if palette generation fails
       console.log(`  Palette generation failed, using single-pass conversion...`);
       const singlePassFilter =
@@ -250,7 +221,7 @@ function getGifName(videoFilename: string): string | null {
  */
 function getTrimDuration(videoFilename: string): number {
   const baseName = path.basename(videoFilename, '.webm');
-  return VIDEO_TRIM_MAP[baseName] || 0;
+  return VIDEO_TRIM_MAP[baseName] ?? DEFAULT_TRIM_SECONDS;
 }
 
 /**
@@ -273,6 +244,7 @@ function getWidth(videoFilename: string): number {
  * Main function to convert all videos
  */
 async function main() {
+  const keepVideos = process.argv.includes('--keep');
   console.log('🎬 Converting videos to GIFs...\n');
 
   // Check ffmpeg
@@ -349,6 +321,7 @@ async function main() {
       const inputSize = stats.size;
       const outputSize = fs.statSync(outputPath).size;
       console.log(`   ✅ Done (${formatSize(inputSize)} → ${formatSize(outputSize)})\n`);
+      if (!keepVideos) fs.rmSync(inputPath);
 
       successCount++;
     } catch (error) {
@@ -364,10 +337,8 @@ async function main() {
     console.log(`   ❌ Failed: ${errorCount}`);
   }
 
-  // Ask about cleanup
-  if (successCount > 0) {
-    console.log(`\n📁 Temp videos are in: ${TEMP_VIDEOS_DIR}`);
-    console.log(`   To clean up, run: rm -rf temp-videos/`);
+  if (fs.readdirSync(TEMP_VIDEOS_DIR).some((f) => f.endsWith('.webm'))) {
+    console.log(`\n📁 Remaining videos are in: ${TEMP_VIDEOS_DIR}`);
   }
 }
 

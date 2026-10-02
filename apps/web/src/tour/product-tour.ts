@@ -17,12 +17,11 @@ import { type Config, driver, type DriveStep, type PopoverDOM, type State } from
 import { isMacOrIos } from '@protspace/utils';
 import './product-tour.css';
 import { waitForElement } from './wait-for-element';
+import { TOUR_STORAGE_KEY } from './storage-key';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const STORAGE_KEY = 'driver.overviewTour';
 
 /** Host selector for the control-bar custom element. */
 const CONTROL_BAR = '[data-driver-id="control-bar"]';
@@ -195,7 +194,7 @@ const steps: DriveStep[] = [
   shadowStep(CONTROL_BAR, 'import', {
     title: 'Import Your Data',
     description:
-      'Click <strong>Import</strong> or drag-and-drop a <code>.parquetbundle</code> file onto the canvas to load your own dataset. <a href="/docs/guide/data-preparation.html" target="_blank" rel="noopener">Learn how to prepare your data<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.',
+      'Click <strong>Import</strong> or drag-and-drop a file onto the canvas. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is uploaded to our server to be prepared first. <a href="/docs/guide/data-preparation.html" target="_blank" rel="noopener">Learn how to prepare your data<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.',
   }),
 
   // ── Step 3 – Projections & Annotations (Shadow DOM) ─────────
@@ -307,7 +306,7 @@ interface ProductTourOptions {
  * user explicitly clicks "Take a Tour").
  */
 export function startProductTour(options: ProductTourOptions = {}) {
-  const hasCompleted = localStorage.getItem(STORAGE_KEY) === 'true';
+  const hasCompleted = localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
 
   if (!options.force && hasCompleted) {
     return;
@@ -315,7 +314,7 @@ export function startProductTour(options: ProductTourOptions = {}) {
 
   // Mark as completed immediately so it won't auto-start again even if the
   // user closes the tour early.
-  localStorage.setItem(STORAGE_KEY, 'true');
+  localStorage.setItem(TOUR_STORAGE_KEY, 'true');
 
   driverObj.drive();
 }

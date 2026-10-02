@@ -12,13 +12,16 @@ Use transient notifications for recoverable warnings and errors that affect the 
 - Example: a dataset import failed
 - Example: selection mode was auto-disabled after the filtered dataset became too small
 
-In the demo application, `apps/web/src/lib/notify.ts` is the only supported transient notification entry point.
+In `apps/web`, the deployed web application, `apps/web/src/lib/notify.ts` is the only supported transient notification
+entry point. It wraps the toast layer, applies per-severity durations, and de-duplicates repeat
+messages within a 5-second window via `dedupeKey`. `apps/web/src/explore/notifications.ts` maps
+normalized component events onto those `notify` calls.
 
 ### Blocking and progress UI
 
 Use dedicated progress UI for long-running or stateful operations.
 
-- Example: the `/explore` dataset loading overlay
+- Example: the `/explore` dataset loading overlay (`apps/web/src/explore/loading-overlay.ts`)
 
 Do not replace this layer with toasts.
 
@@ -44,20 +47,24 @@ Use `aria-live` and related accessibility primitives for assistive feedback with
 
 ## Event Contract
 
-Host-consumed warning and error events should expose:
+Host-consumed warning and error events share the `HostMessageEventDetail` shape defined in
+`packages/core/src/events/index.ts`:
 
 - `message`: user-facing summary
-- `severity`: `info`, `warning`, or `error`
+- `severity`: `info`, `warning`, `error`, or `success` (`HostMessageSeverity`)
 - `source`: emitter identifier
 - `context`: optional structured metadata
-- `originalError`: optional low-level error object
+- `originalError`: optional underlying error (typed `unknown`)
 
+Each event narrows the generic parameters to the source, severity, and context it actually emits.
 Current normalized host-facing events:
 
-- `selection-disabled-notification`
-- `data-error`
-- `legend-error`
-- `structure-error`
+| Event                             | Source                                                                   | Severity  | Emitted by         |
+| --------------------------------- | ------------------------------------------------------------------------ | --------- | ------------------ |
+| `selection-disabled-notification` | `control-bar`                                                            | `warning` | `control-bar`      |
+| `data-error`                      | `data-loader`                                                            | `error`   | `data-loader`      |
+| `legend-error`                    | one of `data-processing`, `persistence`, `scatterplot-sync`, `rendering` | `error`   | `legend`           |
+| `structure-error`                 | `structure-viewer`                                                       | `error`   | `structure-viewer` |
 
 ## Host Responsibilities
 

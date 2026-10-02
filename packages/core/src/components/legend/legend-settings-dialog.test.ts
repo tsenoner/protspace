@@ -113,6 +113,7 @@ function renderSettingsDialogToContainer(overrides = {}) {
         hasPersistedSettings: false,
         selectedPaletteId: 'viridis',
         reverseGradient: false,
+        hasCategoryScores: false,
         ...overrides,
       },
       callbacks,
@@ -134,6 +135,52 @@ describe('renderSettingsDialog', () => {
       section.textContent?.trim(),
     );
     expect(sections).not.toContain('Annotation type');
+  });
+
+  it('keeps "By separation" checked on reload, before this projection\'s scores arrive', () => {
+    // The deliberate reload case: hasCategoryScores is false (statistics have not synced
+    // yet) but the persisted sort mode is still 'silhouette-desc'. Dropping the option here
+    // would render the radio group with nothing checked.
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'major_group',
+      isNumericAnnotation: false,
+      annotationSortModes: { major_group: 'silhouette-desc' },
+      hasCategoryScores: false,
+    });
+
+    const labels = [...container.querySelectorAll('label')].map((label) =>
+      label.textContent?.trim(),
+    );
+    expect(labels).toContain('By separation');
+
+    const checkedLabel = [...container.querySelectorAll('input[type="radio"]')]
+      .find((input) => (input as HTMLInputElement).checked)
+      ?.closest('label')
+      ?.textContent?.trim();
+    expect(checkedLabel).toBe('By separation');
+  });
+});
+
+describe('shape size input', () => {
+  function typeSize(value: string) {
+    const { container, callbacks } = renderSettingsDialogToContainer();
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    return { input, callbacks };
+  }
+
+  it('accepts sizes down to 1 and suggests the default 10', () => {
+    const { input, callbacks } = typeSize('1');
+    expect(input.min).toBe('1');
+    expect(input.placeholder).toBe('10');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
+  });
+
+  it('caps typed sizes at 64', () => {
+    const { input, callbacks } = typeSize('100');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
+    expect(input.value).toBe('64');
   });
 });
 

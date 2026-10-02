@@ -32,6 +32,9 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      hyparquet:
+        specifier: ^1.26.0
+        version: 1.26.0
       knip:
         specifier: ^5.87.0
         version: 5.88.0(@types/node@22.18.10)(typescript@6.0.3)
@@ -168,6 +171,9 @@ importers:
       eslint:
         specifier: ^10.5.0
         version: 10.5.0(jiti@2.7.0)
+      hyparquet-writer:
+        specifier: ^0.7.0
+        version: 0.7.0
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0

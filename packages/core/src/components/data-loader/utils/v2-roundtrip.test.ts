@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  NA_VALUE,
   createParquetBundle,
   getProteinAnnotationIndices,
   isNAValue,
@@ -9,6 +10,12 @@ import {
 } from '@protspace/utils';
 import { extractRowsFromParquetBundle } from './bundle';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
+
+async function loadGoldenBundle(): Promise<VisualizationData> {
+  const file = readFileSync(new URL('./__fixtures__/v2-sample.parquetbundle', import.meta.url));
+  const buffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
+  return convertParquetToVisualizationDataOptimized(await extractRowsFromParquetBundle(buffer));
+}
 
 function perProteinAnnotationSets(
   data: VisualizationData,
@@ -33,7 +40,7 @@ function perProteinAnnotationSets(
 }
 
 /**
- * Task J1: cross-repo golden-fixture proof (#56/#57/#58).
+ * Task J1: cross-repo golden-fixture proof (tsenoner/protspace-legacy issues #56, #57, #58).
  *
  * `__fixtures__/v2-sample.parquetbundle` is a REAL bundle produced by the
  * `protspace` backend's v2 writer (`stamp_format_version` + `encode_field` +
@@ -115,11 +122,7 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
   });
 
   it('writes and reloads golden v2 categorical structure plus every EAT companion', async () => {
-    const file = readFileSync(new URL('./__fixtures__/v2-sample.parquetbundle', import.meta.url));
-    const goldenBuffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
-    const golden = await convertParquetToVisualizationDataOptimized(
-      await extractRowsFromParquetBundle(goldenBuffer),
-    );
+    const golden = await loadGoldenBundle();
     const p2Index = golden.protein_ids.indexOf('P2');
     golden.annotation_predicted = {
       go_bp: golden.protein_ids.map((_, proteinIndex) =>
@@ -161,6 +164,45 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
       source: 'P1|reference;literal%',
     });
     expect(reloaded.annotation_predicted?.go_bp?.[p2Index]?.confidence).toBeCloseTo(0.83, 6);
+  });
+
+  /**
+   * tsenoner/protspace#303 — the last lossy corner of the frontend re-export.
+   *
+   * A missing categorical cell is materialised on import as the synthetic
+   * `__NA__` category (`appendSyntheticNACategory`), which is an in-memory
+   * sentinel, not a value that exists in any bundle. The writer must map it
+   * back to NULL, exactly as `readCategoricalStorageValues` already does on the
+   * read side — otherwise `__NA__` is written as a literal 6-char string,
+   * re-imports as a genuine frequency-sorted category (it is not in
+   * `MISSING_VALUE_TOKENS`), steals a palette slot from `NA_DEFAULT_COLOR`, and
+   * is scored as a real class by `protspace stats` downstream.
+   *
+   * The golden fixture's `go_bp` cell for P2 is empty, and this test
+   * deliberately leaves it unmasked by an EAT prediction — the EAT overlay in
+   * the test above forces the writer down its `annotation_predicted` null
+   * branch, which is why that test cannot catch this.
+   */
+  it('writes a missing categorical cell as NULL, not the internal __NA__ sentinel', async () => {
+    const golden = await loadGoldenBundle();
+
+    // Precondition: import really did synthesise the sentinel for P2's empty cell.
+    expect(golden.annotations.go_bp.values).toContain(NA_VALUE);
+
+    const extraction = await extractRowsFromParquetBundle(createParquetBundle(golden));
+
+    // The exported cell is absent/NULL — never the literal sentinel text.
+    expect(extraction.annotationsById.get('P2')?.go_bp ?? null).toBeNull();
+    for (const row of extraction.annotationsById.values()) {
+      expect(Object.values(row)).not.toContain(NA_VALUE);
+    }
+
+    // On reload the sentinel is re-synthesised, so it stays in its locked last
+    // slot with the NA colour instead of being frequency-sorted into the palette.
+    const reloaded = await convertParquetToVisualizationDataOptimized(extraction);
+    expect(reloaded.annotations.go_bp.values.filter(isNAValue)).toHaveLength(1);
+    expect(reloaded.annotations.go_bp.values).toEqual(golden.annotations.go_bp.values);
+    expect(reloaded.annotations.go_bp.colors).toEqual(golden.annotations.go_bp.colors);
   });
 });
 

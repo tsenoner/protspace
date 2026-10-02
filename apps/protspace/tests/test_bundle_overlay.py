@@ -89,7 +89,7 @@ def test_in_place_overwrite_works_and_leaves_no_temp(tmp_path):
 def test_failed_replace_preserves_original_in_place(tmp_path, monkeypatch):
     # If the rename is interrupted, the original bundle must survive intact
     # (atomic write) rather than being left truncated.
-    import protspace.data.io.bundle as bundle_mod
+    import protspace.data.io.atomic as atomic_mod
 
     path = tmp_path / "b.parquetbundle"
     write_bundle(_tables(), path)
@@ -101,7 +101,7 @@ def test_failed_replace_preserves_original_in_place(tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("simulated interrupt before rename")
 
-    monkeypatch.setattr(bundle_mod.os, "replace", boom)
+    monkeypatch.setattr(atomic_mod.os, "replace", boom)
     with pytest.raises(OSError):
         replace_annotations_in_bundle(path, path, new_annotations)
     assert path.read_bytes() == original  # untouched

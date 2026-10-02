@@ -13,16 +13,23 @@ name: protspace CI (Python)
 # 3.12 handed to `uv sync` is silently discarded in favour of the system Python.
 # Pinning through uv makes the requested version the one uv actually provisions.
 
+# docs/guide/python-cli.md is in the filter because test_docs_extras_sync.py pins
+# the optional-extras section identical between it and apps/protspace/README.md.
+# Without it, an edit to only the docs-site copy runs ci.yml instead — which never
+# invokes pytest — so the pin would miss the half of the pair most likely to drift.
+
 on:
   push:
     branches: [main]
     paths:
       - 'apps/protspace/**'
+      - 'docs/guide/python-cli.md'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
   pull_request:
     paths:
       - 'apps/protspace/**'
+      - 'docs/guide/python-cli.md'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
 

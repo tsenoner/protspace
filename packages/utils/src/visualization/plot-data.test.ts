@@ -5,7 +5,6 @@ import {
   plotDataId,
   materializePlotDataPoint,
   clonePlotData,
-  gatherPlotData,
 } from './plot-data';
 import type { PlotData } from '../types';
 
@@ -119,44 +118,5 @@ describe('clonePlotData', () => {
     expect(clone.length).toBe(pd.length);
     expect(clone.originalIndices).toBeNull();
     expect(clone.proteinIds).toBe(pd.proteinIds);
-  });
-});
-
-describe('gatherPlotData', () => {
-  it('gathers a subset of slots into a new PlotData', () => {
-    const pd = makeIdentityPD([10, 20, 30, 40], [1, 2, 3, 4], ['a', 'b', 'c', 'd']);
-    const gathered = gatherPlotData(pd, [1, 3]);
-    expect(gathered.length).toBe(2);
-    expect(Array.from(gathered.xs)).toEqual([20, 40]);
-    expect(Array.from(gathered.ys)).toEqual([2, 4]);
-    expect(gathered.originalIndices).not.toBeNull();
-    expect(Array.from(gathered.originalIndices!)).toEqual([1, 3]);
-    expect(gathered.proteinIds).toBe(pd.proteinIds); // shared ref
-  });
-
-  it('propagates zs when source has zs', () => {
-    const pd: PlotData = {
-      length: 3,
-      xs: new Float32Array([1, 2, 3]),
-      ys: new Float32Array([4, 5, 6]),
-      zs: new Float32Array([7, 8, 9]),
-      originalIndices: null,
-      proteinIds: ['p0', 'p1', 'p2'],
-    };
-    const gathered = gatherPlotData(pd, [0, 2]);
-    expect(gathered.zs).not.toBeNull();
-    expect(Array.from(gathered.zs!)).toEqual([7, 9]);
-  });
-
-  it('returns null zs when source has no zs', () => {
-    const pd = makeIdentityPD([1, 2], [3, 4]);
-    const gathered = gatherPlotData(pd, [0]);
-    expect(gathered.zs).toBeNull();
-  });
-
-  it('handles empty slots array', () => {
-    const pd = makeIdentityPD([1, 2, 3], [4, 5, 6]);
-    const gathered = gatherPlotData(pd, []);
-    expect(gathered.length).toBe(0);
   });
 });

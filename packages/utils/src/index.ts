@@ -3,6 +3,7 @@ export * from './visualization/shapes';
 export * from './visualization/annotation-data-access';
 export * from './visualization/slice-visualization-data';
 export * from './visualization/annotation-metadata';
+export * from './visualization/annotation-statistics';
 export * from './visualization/plot-data-accessors';
 export * from './visualization/eat-overlay';
 export * from './visualization/data-processor';

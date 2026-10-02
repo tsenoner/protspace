@@ -1,9 +1,11 @@
 import { parquetReadObjects, parquetMetadata, type FileMetaData } from 'hyparquet';
 import {
   BUNDLE_DELIMITER_BYTES,
+  PROJECTION_STATISTIC_COLUMNS,
   findBundleDelimiterPositions,
   normalizeBundleSettings,
   type BundleSettings,
+  type ProjectionStatisticRow,
 } from '@protspace/utils';
 import type { Rows, GenericRow } from './types';
 import { assertValidParquetMagic, validateProjectionRows } from './validation';
@@ -11,6 +13,10 @@ import { sanitizePublishState } from '../../publish/publish-state-validator';
 
 /** Key-value metadata key the Python writer stamps with the bundle's annotation format version. */
 const FORMAT_VERSION_KEY = 'protspace_format_version';
+
+/** Parquet physical types that identify a stored annotation column as numeric. */
+const INTEGER_PARQUET_TYPES = new Set(['INT32', 'INT64']);
+const FLOAT_PARQUET_TYPES = new Set(['FLOAT', 'DOUBLE']);
 
 /**
  * Result of extracting data from a parquetbundle.
@@ -27,8 +33,19 @@ export interface BundleExtractionResult {
   projectionsMetadata: Rows;
   /** Settings loaded from bundle (null if not present) */
   settings: BundleSettings | null;
-  /** Raw projection-statistics part (part 5), unparsed, null if not present. */
+  /**
+   * Raw projection-statistics part (part 5), unparsed, null if not present. This is the
+   * authoritative copy: an export re-emits these bytes verbatim, so a column this reader
+   * does not model still survives the round trip.
+   */
   statistics: ArrayBuffer | null;
+  /**
+   * The same part parsed for rendering, derived once from `statistics` and never written
+   * back to it; null when the bundle has none or the part was unreadable. Optional so
+   * callers that build this shape by hand — chiefly tests — need not restate it, matching
+   * how `VisualizationData.statisticsRows` is declared.
+   */
+  statisticsRows?: readonly ProjectionStatisticRow[] | null;
   /**
    * Bundle annotation format version, read from the `protspace_format_version`
    * parquet key-value metadata on the annotations part (part 1). `1` when the
@@ -36,6 +53,12 @@ export interface BundleExtractionResult {
    * legacy v1 behavior — plain-string labels, raw `;`-delimited multi-hit cells).
    */
   formatVersion: number;
+  /**
+   * Stored numeric columns with their int/float identity, read from the
+   * annotations part's parquet schema. Empty for bundles that store their
+   * annotations as text, where the type is inferred from the values instead.
+   */
+  numericColumnTypes?: Readonly<Record<string, 'int' | 'float'>>;
 }
 
 /**
@@ -56,17 +79,47 @@ function readFormatVersion(metadata: FileMetaData): number {
 }
 
 /**
+ * Derives each stored numeric column's int/float identity from the annotations
+ * part's own parquet schema.
+ *
+ * The physical type is the wire record of what the writer meant, and it is the
+ * only one that survives everywhere: it holds for a column whose rows are all
+ * null (nothing left to infer from), and it rides through the Python rewrite
+ * paths, which rebuild the table with pyarrow and drop key-value metadata.
+ * Columns stored as text (the `protspace` CLI stringifies its annotation frame)
+ * are absent here, so those keep falling back to value inference.
+ *
+ * Only an *unannotated* physical type counts. A logical/converted type means the
+ * physical type is a carrier, not the identity: pyarrow stores an all-null
+ * (arrow `null`) column as INT32 + logical NULL, and DECIMAL rides on INT32/INT64
+ * as well — reading either as an integer annotation would turn a text column into
+ * a numeric one. Annotated fields fall back to value inference, exactly as they
+ * did before this reader existed.
+ */
+function readNumericColumnTypes(metadata: FileMetaData): Record<string, 'int' | 'float'> {
+  const numericColumns: Record<string, 'int' | 'float'> = {};
+  for (const field of metadata.schema) {
+    if (!field.name || !field.type) continue;
+    if (field.logical_type != null || field.converted_type != null) continue;
+    if (INTEGER_PARQUET_TYPES.has(field.type)) numericColumns[field.name] = 'int';
+    else if (FLOAT_PARQUET_TYPES.has(field.type)) numericColumns[field.name] = 'float';
+  }
+  return numericColumns;
+}
+
+/**
  * Extract rows and optional settings from a parquetbundle.
  *
  * Supports every layout the Python producer can write (see `_parse_bundle` in
  * `apps/protspace/src/protspace/data/io/bundle.py`, which bounds itself to 3-5 parts):
  * - 2 delimiters (3 parts): Original format without settings
  * - 3 delimiters (4 parts): Extended format with settings
- * - 4 delimiters (5 parts): Settings plus a projection-statistics part, which the
- *   web reader does not parse but returns verbatim so an export can re-emit it.
- *   The settings slot may be zero bytes when the producer wrote statistics
- *   without settings — it exists only to keep the statistics part at a fixed
- *   position.
+ * - 4 delimiters (5 parts): Settings plus a projection-statistics part (backend `--stats`).
+ *   The part is returned verbatim so an export can re-emit it byte for byte, and
+ *   separately parsed into rows for rendering — the parse is a derived view and never
+ *   the source of the re-emitted bytes. The settings slot may be zero bytes when the
+ *   producer wrote statistics without settings — it exists only to keep the statistics
+ *   part at a fixed position.
  */
 export async function extractRowsFromParquetBundle(
   arrayBuffer: ArrayBuffer,
@@ -74,39 +127,44 @@ export async function extractRowsFromParquetBundle(
   const uint8Array = new Uint8Array(arrayBuffer);
   const delimiterPositions = findBundleDelimiterPositions(uint8Array);
 
-  // 2 delimiters (original), 3 (with settings), or 4 (settings + statistics).
+  // 2 delimiters (core only), 3 (with settings), or 4 (settings + statistics).
   if (delimiterPositions.length < 2 || delimiterPositions.length > 4) {
     throw new Error(
       `Expected 2 to 4 delimiters in parquetbundle, found ${delimiterPositions.length}`,
     );
   }
 
-  const delimiterLength = BUNDLE_DELIMITER_BYTES.length;
+  /**
+   * Copy out part `index` — part 0 starts at byte 0, every later part right after the
+   * preceding delimiter, and the final part runs to the end of the buffer. Order is
+   * fixed by the writer: annotations, projections metadata, projections, settings,
+   * statistics. Bounding each part by the *next* delimiter is what keeps a trailing part
+   * from being glued onto its predecessor's tail — without it, a 5-part bundle would hand
+   * the settings parser the statistics part too. Returns null for a zero-byte slot (an
+   * empty settings placeholder when a bundle carries statistics but no settings).
+   */
+  const partAt = (index: number): ArrayBuffer | null => {
+    // Out of range must be null, not a slice: `delimiterPositions[index - 1]` is undefined,
+    // `undefined + 8` is NaN, and `subarray(NaN, len)` coerces NaN to 0 — returning the whole
+    // bundle as if it were one part.
+    if (index < 0 || index > delimiterPositions.length) return null;
+    const view = uint8Array.subarray(
+      index === 0 ? 0 : delimiterPositions[index - 1] + BUNDLE_DELIMITER_BYTES.length,
+      index < delimiterPositions.length ? delimiterPositions[index] : uint8Array.length,
+    );
+    return view.byteLength > 0 ? view.slice().buffer : null;
+  };
 
-  // Every part runs from just past its opening delimiter to the next delimiter,
-  // or to end-of-file when none follows. Bounding by the next delimiter is what
-  // keeps a trailing part from being glued onto its predecessor's tail — without
-  // it, a 5-part bundle would hand the settings parser the statistics part too.
-  const partBetween = (start: number, end: number = uint8Array.length): ArrayBuffer =>
-    uint8Array.subarray(start, end).slice().buffer;
+  // The three required core parts.
+  let part1: ArrayBuffer | null = partAt(0);
+  let part2: ArrayBuffer | null = partAt(1);
+  let part3: ArrayBuffer | null = partAt(2);
+  const part4 = partAt(3);
+  const part5 = partAt(4);
 
-  let part1: ArrayBuffer | null = partBetween(0, delimiterPositions[0]);
-  let part2: ArrayBuffer | null = partBetween(
-    delimiterPositions[0] + delimiterLength,
-    delimiterPositions[1],
-  );
-  let part3: ArrayBuffer | null = partBetween(
-    delimiterPositions[1] + delimiterLength,
-    delimiterPositions[2],
-  );
-  // The settings part exists only when a third delimiter opens it.
-  const part4: ArrayBuffer | null =
-    delimiterPositions.length >= 3
-      ? partBetween(delimiterPositions[2] + delimiterLength, delimiterPositions[3])
-      : null;
-  // The statistics part is never parsed here — only carried so re-export is non-lossy.
-  const part5: ArrayBuffer | null =
-    delimiterPositions.length === 4 ? partBetween(delimiterPositions[3] + delimiterLength) : null;
+  if (!part1 || !part2 || !part3) {
+    throw new Error('Parquetbundle is missing one of its three required core parts');
+  }
 
   // Validate parquet magic for each part before parsing
   assertValidParquetMagic(part1);
@@ -121,9 +179,11 @@ export async function extractRowsFromParquetBundle(
   // re-attempt the parse itself, surfacing the same error it would have before.
   let part1Metadata: FileMetaData | null = null;
   let formatVersion = 1;
+  let numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = {};
   try {
     part1Metadata = parquetMetadata(part1);
     formatVersion = readFormatVersion(part1Metadata);
+    numericColumnTypes = readNumericColumnTypes(part1Metadata);
   } catch {
     formatVersion = 1;
   }
@@ -149,6 +209,10 @@ export async function extractRowsFromParquetBundle(
   if (part4 && part4.byteLength > 0) {
     settings = await extractSettings(part4);
   }
+
+  // Derived view only. `part5` itself is what gets re-exported, so a parse failure here
+  // costs the charts, never the bytes.
+  const statisticsRows = part5 ? await extractStatistics(part5) : null;
 
   // Validate projection rows for expected bundle shape
   validateProjectionRows(projectionsData);
@@ -191,8 +255,54 @@ export async function extractRowsFromParquetBundle(
     projectionsMetadata: projectionsMetadataData,
     settings,
     statistics: part5,
+    statisticsRows,
     formatVersion,
+    numericColumnTypes,
   };
+}
+
+/**
+ * Extract the optional statistics part (5th) — projection-quality metrics written by the
+ * backend's `--stats` flag, in tidy long format (one row per space × annotation × metric).
+ *
+ * Returns null when the part is unreadable or doesn't look like the statistics table:
+ * statistics are supplementary, so a malformed part must never fail the whole load.
+ *
+ * This is a render-only view. The caller keeps the original bytes and re-exports those, so
+ * nothing here — a failed parse, an unmodelled column, a coerced type — can reach a file the
+ * user saves.
+ */
+async function extractStatistics(
+  statisticsBuffer: ArrayBuffer,
+): Promise<readonly ProjectionStatisticRow[] | null> {
+  try {
+    assertValidParquetMagic(statisticsBuffer);
+    const rows = await parquetReadObjects({ file: statisticsBuffer });
+    if (!rows.length) return null;
+
+    // Guard against a future/renamed schema landing in this slot. `annotationStatSummary`
+    // branches on all three `*_kind` columns, so a rename there yields zero ⓘ icons and no
+    // warning at all — indistinguishable from a bundle prepared without `--stats`.
+    // Deliberately a subset check, not an equality one: a newer backend adding a column
+    // must still render here, and it rides out on the verbatim bytes regardless.
+    const columns = Object.keys(rows[0]);
+    if (!PROJECTION_STATISTIC_COLUMNS.every((column) => columns.includes(column))) {
+      console.warn('Statistics parquet has an unexpected schema, ignoring it');
+      return null;
+    }
+
+    // hyparquet yields BigInt for INT64 columns, which `formatStatValue` cannot render.
+    // The official writer types `value` DOUBLE, but a third-party part with an all-integer
+    // value column must still display as numbers.
+    for (const row of rows) {
+      if (typeof row.value === 'bigint') row.value = Number(row.value);
+    }
+
+    return rows as unknown as ProjectionStatisticRow[];
+  } catch (error) {
+    console.warn('Failed to parse statistics from bundle, ignoring them:', error);
+    return null;
+  }
 }
 
 /**

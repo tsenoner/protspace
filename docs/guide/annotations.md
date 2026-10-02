@@ -1,11 +1,13 @@
 <!--
-  AUTO-GENERATED — do not edit by hand.
+  AUTO-GENERATED: do not edit by hand.
   Brief text + metadata: packages/utils/src/visualization/annotation-metadata.ts
   Detailed text + source links: docs/scripts/annotation-details.ts
   Regenerate: pnpm docs:annotations
 -->
 
 # Annotation Reference
+
+This page is the reference for every annotation column you can colour and filter by: what each value means, how it is produced, and where it comes from. The always-included identifier columns that only surface in tooltips are covered in [Using Python CLI](/guide/python-cli), which also documents how to _request_ annotations when you prepare a dataset, the `-a` groups, custom CSV columns, and the input requirements of each source.
 
 ## Annotation Value Format (v2 Encoding)
 
@@ -24,7 +26,7 @@ Format version 2 is marked in the parquet metadata of the `selected_annotations`
 
 ## Sources
 
-ProtSpace annotations come from several sources. **Computational predictions** — from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation — what the value means, how it is produced, and what it looks like — with a link to the authoritative source.
+ProtSpace annotations come from several sources. **Computational predictions**, from a machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius `signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) are not. For each annotation, the **bold lead line** is the same short summary shown in the app's info popover, and the paragraph beneath it is a fuller explanation of what the value means, how it is produced, and what it looks like, with a link to the authoritative source.
 
 ## Predicted (Biocentral)
 
@@ -58,13 +60,13 @@ LightAttention is a lightweight neural network that uses softmax-weighted aggreg
 
 **Transmembrane** · ⚡ Predicted
 
-Transmembrane type (none / alpha-helical / beta-barrel) predicted by TMbed.
+Transmembrane type (non-transmembrane / alpha-helical / beta-barrel) predicted by TMbed.
 
-From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into a single protein-level category. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `none` when neither is present. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
+From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into protein-level categories. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `non-transmembrane` when neither is present. A protein with both segment types carries both the `alpha-helical` and `beta-barrel` categories. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
 
 ## UniProt
 
-These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies — Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).
+These columns come from the UniProt Knowledgebase (UniProtKB), retrieved by ProtSpace through the [UniProt REST API](https://rest.uniprot.org) and attached to each protein as an annotation column. They cover entry identity and curation status (gene name, reviewed, annotation score, protein existence), sequence properties (length, fragment), high-level classification (keywords, protein family, subcellular location, PDB structure availability), and two standardized function ontologies: Enzyme Commission (EC) numbers and Gene Ontology (GO) terms. Where an annotation carries supporting evidence, ProtSpace appends a UniProt evidence code after a pipe (`|`), ranked from experimental (`EXP`) down to electronically inferred (`IEA`) and drawn from a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences).
 
 ### `annotation_score` {#annotation_score}
 
@@ -112,7 +114,7 @@ This is the gene symbol UniProt designates as primary for the protein, typically
 
 Gene Ontology Biological Process terms, with evidence codes.
 
-Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to — broad programmes such as "signal transduction" or "DNA repair" accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).
+Biological Process is one of the three orthogonal aspects of the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/), capturing the larger biological objective a gene product contributes to: broad programmes such as "signal transduction" or "DNA repair", accomplished by ordered assemblies of molecular functions. Terms come from a controlled vocabulary organised as a directed acyclic graph, so a term can have several more-general parents and a protein is typically annotated to several BP terms of differing granularity. ProtSpace strips the aspect prefix and keeps the term name plus its evidence code, joining multiple terms with `;` (e.g. `apoptotic process|IDA;signal transduction|IEA`); evidence ranges from experimental (EXP, IDA, IMP) to computational and electronic (ISS, IEA).
 
 ### `go_cc` {#go_cc}
 
@@ -120,7 +122,7 @@ Biological Process is one of the three orthogonal aspects of the [Gene Ontology]
 
 Gene Ontology Cellular Component terms, with evidence codes.
 
-Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located — subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.
+Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing where in the cell a gene product is located: subcellular structures such as membranes and organelles, macromolecular complexes, and (where relevant) the extracellular environment. Like the other aspects it is a directed acyclic graph of controlled-vocabulary terms, so localisations nest from general (e.g. "membrane") to specific (e.g. "mitochondrial inner membrane"). ProtSpace strips the aspect prefix and retains each term name with its evidence code, multiple terms separated by `;`; the strongest-to-weakest evidence ladder (EXP, HDA, IDA, TAS … IEA) lets you distinguish experimentally localised proteins from electronically inferred ones.
 
 ### `go_mf` {#go_mf}
 
@@ -128,7 +130,7 @@ Cellular Component is the [Gene Ontology](https://geneontology.org/docs/ontology
 
 Gene Ontology Molecular Function terms, with evidence codes.
 
-Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs — for example "catalytic activity", "protein kinase activity", or "transcription factor binding" — independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.
+Molecular Function is the [Gene Ontology](https://geneontology.org/docs/ontology-documentation/) aspect describing the molecular-level activity a gene product performs (for example "catalytic activity", "protein kinase activity", or "transcription factor binding"), independent of where or when it acts. Terms are drawn from a controlled vocabulary structured as a directed acyclic graph, so a protein usually carries several MF terms spanning general and specific activities. ProtSpace strips the aspect prefix and keeps each term name with its evidence code, joining multiple terms with `;` (e.g. `ATP binding|IDA;protein serine/threonine kinase activity|IEA`); MF annotations frequently mirror the catalytic activity captured by the EC number for enzymes.
 
 ### `keyword` {#keyword}
 
@@ -142,9 +144,9 @@ Keywords are a hierarchical controlled vocabulary, mostly assigned by curators, 
 
 **Sequence length**
 
-Length of the protein sequence in amino acids.
+UniProt sequence length, or a matching local FASTA length when missing.
 
-This is the number of amino acid residues in the entry's canonical sequence and is the most direct measure of protein size. Values are positive integers, ranging from a few dozen residues for short peptides to tens of thousands for the largest proteins such as titin. Because sequence length influences how a pLM pools its per-residue representation, colouring by length can reveal whether apparent embedding structure tracks protein size. See [UniProt: Sequences](https://www.uniprot.org/help/sequences).
+When UniProt provides a length, this is the number of amino acid residues in the entry's canonical sequence. If UniProt does not provide a length and a matching FASTA sequence is available, ProtSpace derives the value from that local sequence, excluding `*` terminator and `-` gap markers; a non-empty UniProt length always takes precedence. Values are positive integers, ranging from a few dozen residues for short peptides to tens of thousands for the largest proteins such as titin. Because sequence length influences how a pLM pools its per-residue representation, colouring by length can reveal whether apparent embedding structure tracks protein size. See [UniProt: Sequences](https://www.uniprot.org/help/sequences).
 
 ### `protein_existence` {#protein_existence}
 
@@ -158,9 +160,9 @@ UniProt assigns one of five protein-existence (PE) levels in decreasing order of
 
 **Protein family**
 
-Protein family membership (first family), with evidence code.
+Protein family membership, one family per UniProt family statement, each with its evidence code.
 
-This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first family listed, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
+This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first (broadest) level of each family statement, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Names are kept whole, including transporter classifications such as `(TC 3.A.3)`. A multi-domain protein whose entry assigns a family to each section (`In the N-terminal section; belongs to the …`) lists every family in UniProt order, like other multi-valued columns, e.g. `aspartokinase family|IC;homoserine dehydrogenase family|IC`. Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
 
 ### `reviewed` {#reviewed}
 
@@ -174,13 +176,13 @@ Reviewed entries belong to UniProtKB/Swiss-Prot, the manually curated section wh
 
 **Has PDB structure**
 
-Whether an experimental 3D structure exists in the PDB for this protein.
+Whether a resolved UniProt entry has an experimental PDB structure; unavailable mappings are N/A.
 
-This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores it as a boolean, `True` or `False`. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).
+This flag reflects whether the entry has at least one cross-reference to the [Protein Data Bank](https://www.uniprot.org/help/PDB), i.e. an experimentally determined 3D structure (X-ray, NMR, or cryo-EM) covering all or part of the protein. It distinguishes structurally characterised proteins from those known only by sequence, which is useful when relating embedding clusters to structural coverage. ProtSpace stores `True` when a resolved UniProt entry has a PDB cross-reference, `False` when a resolved entry has none, and an empty value (displayed as `N/A`) when no UniProt entry was resolved. See [UniProt: PDB cross-references](https://www.uniprot.org/help/PDB).
 
 ## InterPro
 
-[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
+[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. The API also returns matches that InterPro-N, an AI model, predicts for these databases; ProtSpace leaves them out, so every column holds only the matches of its own database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
 
 ### `cath` {#cath}
 
@@ -272,7 +274,7 @@ The nine taxonomy columns trace the source organism up the standard Linnaean / N
 
 Cellular / acellular classification at the root of the taxonomy.
 
-The root sits above the three-domain system and separates cellular life (organisms with a cell — Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
+The root is the top node of the organism's lineage. It sits above the three-domain system and separates cellular life (organisms with a cell: Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. Values are `cellular organisms` or `Viruses`, and, for sequences with no organism of origin, `other entries` (such as synthetic constructs) or `unclassified entries` (such as metagenomes). In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
 
 ### `domain` {#domain}
 
@@ -288,7 +290,7 @@ This is the highest rank of the three-domain system proposed by Woese, Kandler a
 
 Taxonomic kingdom of the source organism.
 
-Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage — many bacterial and archaeal entries have no formal kingdom — so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
+Kingdom is the rank below domain (e.g. Metazoa, Viridiplantae, Fungi within Eukaryota). NCBI Taxonomy does not assign a kingdom to every lineage (many bacterial and archaeal entries have no formal kingdom), so this column can be empty for some organisms. Values are the kingdom-rank node returned by the [UniProt Taxonomy API](https://www.uniprot.org/help/taxonomy) for the entry's organism.
 
 ### `phylum` {#phylum}
 
@@ -348,4 +350,4 @@ TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) provides structure
 
 Structure-based domains with CATH classification and pLDDT confidence, from TED (AlphaFold).
 
-TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers — Chainsaw, Merizo, and UniDoc — and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `unclassified|{plddt}` when no CATH superfamily is assigned. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.
+TED ([The Encyclopedia of Domains](https://ted.cathdb.info/)) segments AlphaFold structures into domains by taking a consensus of three structure-based parsers (Chainsaw, Merizo, and UniDoc) and matches each against [CATH](https://www.cathdb.info/), whose four hierarchical levels are Class, Architecture, Topology, and Homologous superfamily (the four numbers in a code such as `2.60.40.720`). Each domain carries a pLDDT score, AlphaFold's per-residue model confidence on a 0–100 scale, here averaged over the domain's residues. ProtSpace fetches these per accession from the AlphaFold Database API and joins multiple domains with `;`, formatting each as `code (name)|pLDDT`, or `-|{plddt}` when no CATH superfamily is assigned; bundles prepared by older versions spell that unassigned case `unclassified`. The underlying resource was published by Lau, Bordin, Kandathil, Orengo, Jones et al. in [Science (2024)](https://doi.org/10.1126/science.adq4946), describing nearly 365 million domains across the AlphaFold Database, of which roughly 77% of nonredundant domains match a known CATH superfamily.

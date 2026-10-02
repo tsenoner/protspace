@@ -1,5 +1,19 @@
 export type LogicalOp = 'AND' | 'OR' | 'NOT';
-export type NumericOperator = 'gt' | 'lt' | 'between';
+export type NumericOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'between';
+
+/**
+ * Presence sentinel meaning "this annotation has a value at all".
+ *
+ * Companion to `NA_VALUE` ('__NA__') from @protspace/utils, and its exact
+ * complement over a given annotation: NA_VALUE selects the proteins missing a
+ * value, ANY_VALUE selects precisely the rest. Kept here rather than in
+ * missing-values.ts because it is a filter-query concept, not an ingestion one
+ * — nothing in the data pipeline ever produces it.
+ *
+ * Categorical conditions carry it in `values` alongside real values; numeric
+ * conditions carry it in `presence`. Both kinds evaluate it identically.
+ */
+export const ANY_VALUE = '__ANY__';
 
 interface BaseCondition {
   id: string;
@@ -17,6 +31,13 @@ export interface NumericCondition extends BaseCondition {
   operator: NumericOperator;
   min: number | null;
   max: number | null;
+  /**
+   * Presence sentinels (`NA_VALUE` / `ANY_VALUE`) unioned with the comparison,
+   * mirroring how a categorical condition carries them among its `values`.
+   * `>= 0.5` with `[NA_VALUE]` reads "at least 0.5, or no value at all".
+   * A condition is configured when it has bounds OR a presence chip.
+   */
+  presence?: string[];
 }
 
 export type FilterCondition = CategoricalCondition | NumericCondition;
@@ -54,6 +75,7 @@ export function createNumericCondition(overrides?: Partial<NumericCondition>): N
     operator: 'gt',
     min: null,
     max: null,
+    presence: [],
     ...overrides,
   };
 }
@@ -70,4 +92,31 @@ export function createGroup(overrides?: Partial<FilterGroup>): FilterGroup {
 
 export function isFilterGroup(item: FilterQueryItem): item is FilterGroup {
   return 'conditions' in item;
+}
+
+/**
+ * Clears a leftover leading 'AND'/'OR' from an item that has become the new first
+ * item (top-level, or first condition of a group). The first-row operator `<select>`
+ * offers only blank/NOT, so a stale 'AND'/'OR' would render blank while the data
+ * disagrees. 'NOT' stays (it is displayable and meaningfully complements the first
+ * item); 'undefined' is already correct.
+ *
+ * Pure: returns a new object only when a change is needed.
+ */
+function clearLeadingOp(item: FilterQueryItem): FilterQueryItem {
+  if (item.logicalOp === 'AND' || item.logicalOp === 'OR') {
+    return { ...item, logicalOp: undefined };
+  }
+  return item;
+}
+
+/**
+ * `clearLeadingOp` applied to a list's first item, if it has one — the only form the
+ * callers need. Stated once here so the query builder (removing a row) and the
+ * annotation-condition rewrite (replacing one) cannot drift on what a first item may
+ * carry.
+ */
+export function clearLeadingOpInList<T extends FilterQueryItem>(items: T[]): T[] {
+  const first = items[0];
+  return first ? [clearLeadingOp(first) as T, ...items.slice(1)] : items;
 }

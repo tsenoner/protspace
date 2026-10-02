@@ -11,7 +11,6 @@ interface ExploreElements {
   dataLoader: ProtspaceDataLoader;
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
-  selectedProteinElement: HTMLElement | null;
   structureViewer: ProtspaceStructureViewer;
 }
 
@@ -52,7 +51,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
     dataLoader,
     legendElement,
     plotElement,
-    selectedProteinElement: doc.getElementById('selectedProtein') as HTMLElement | null,
     structureViewer,
   };
 }

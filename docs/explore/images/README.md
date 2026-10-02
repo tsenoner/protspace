@@ -12,41 +12,20 @@ Run `pnpm docs:images` to automatically generate all images. This command:
 
 You can also run these commands individually if needed.
 
-## Static Screenshots
+## Where each image comes from
 
-### Interface Overview (`index.md`)
+Every file here is generated, so the capture specs in `scripts/docs-screenshots/` are the
+inventory — no list is maintained in this README, because a hand-copied one goes stale the
+first time someone adds a capture without updating it.
 
-- `interface-overview.png` - Full page layout
-- `scatterplot-example.png` - Scatterplot with colored proteins
-- `legend-panel.png` - Legend panel
-- `structure-viewer.png` - 3D structure viewer
+- Static screenshots: `capture-static.spec.ts`, named by the test title
+- Animated GIFs: `capture-animations.spec.ts`, converted by `convert-to-gif.ts`
 
-### Control Bar (`control-bar.md`)
+To find which pages use an image, grep the docs for its filename.
 
-- `control-bar-annotated.png` - Full control bar with numbered annotations (1-9)
-- `control-bar-projection.png` - Projection dropdown
-- `control-bar-annotation.png` - Annotation dropdown
-- `control-bar-export.png` - Export menu
+## The EAT captures
 
-## Animated GIFs
-
-### Scatterplot (`scatterplot.md`)
-
-- `zoom.gif` - Zooming and panning
-- `select-single.gif` - Single protein selection
-- `select-box.gif` - Box selection
-- `duplicate-badges.gif` - Duplicate count badge: spiderfy and per-point selection
-
-### Legend (`legend.md`)
-
-- `legend-toggle.gif` - Toggling category visibility
-- `legend-reorder.gif` - Reordering labels
-- `legend-others.gif` - Expanding/collapsing Others group
-
-## Shared Images
-
-These images are used in multiple documentation pages:
-
-- `control-bar-annotated.png` - `index.md`, `control-bar.md`
-- `control-bar-export.png` - `control-bar.md`, `exporting.md`
-- `structure-viewer.png` - `index.md`, `structures.md`
+The EAT captures are the only ones that do not use the app's built-in demo dataset. They load
+`apps/web/public/data/venom_eat_stats.parquetbundle` through the real file input, because the demo
+dataset carries no `*__pred_*` columns. They live in `capture-eat-static.spec.ts` and
+`capture-eat-animations.spec.ts` with shared setup in `eat-helpers.ts`.

@@ -36,7 +36,7 @@ export const annotationSelectStyles = [
     }
 
     /* Hug the content (the widest annotation row) rather than stretching to the trigger button's
-       full width — matching the button left a large empty gap on short labels once the row's
+       full width: matching the button left a large empty gap on short labels once the row's
        flex-grow label pushed the visibility toggle to the far edge. The floor keeps the search box
        comfortable; the cap stops very long names from over-widening the menu or running off-screen.
        Uses the .align-left specificity (0,2,0) to beat the shared dropdown mixin, which otherwise
@@ -132,25 +132,8 @@ export const annotationSelectStyles = [
       background: var(--primary);
     }
 
-    .dropdown-item-label {
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .predicted-badge {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      font-size: 0.8rem;
-      line-height: 1;
-      cursor: default;
-      user-select: none;
-    }
-
-    .eat-badge {
+    .eat-badge,
+    .stats-badge {
       flex: 0 0 auto;
       padding: 0.1rem 0.3rem;
       border: var(--border-width) solid var(--primary);

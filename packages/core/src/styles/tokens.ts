@@ -71,6 +71,8 @@ export const tokens = css`
     --text-primary: #334155;
     --text-secondary: #5b6b7a;
     --text-tertiary: #4a5568;
+    /* De-emphasised captions: scope lines, column headings, unit suffixes. */
+    --text-muted: #94a3b8;
 
     /* Dark Mode Support (for future) */
     --surface-dark: #1f2937;
@@ -104,6 +106,9 @@ export const tokens = css`
     /* Typography Scale */
     --font-family: system-ui, -apple-system, sans-serif;
     --text-xs: 0.625rem; /* 10px */
+    /* 11px. Named for its role, not slotted into the xs/sm/base/md ramp: it sits between
+       --text-xs and --text-sm, so any scale name for it would read as the wrong size. */
+    --text-caption: 0.6875rem;
     --text-sm: 0.75rem; /* 12px */
     --text-base: 0.875rem; /* 14px */
     --text-md: 1rem; /* 16px */

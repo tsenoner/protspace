@@ -111,13 +111,18 @@ def main():
         help="Max proteins per clan (default: all)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="count", default=0,
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
     )
     args = parser.parse_args()
 
     level = {0: logging.WARNING, 1: logging.INFO}.get(args.verbose, logging.DEBUG)
     logging.basicConfig(
-        level=level, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%H:%M:%S"
+        level=level,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%H:%M:%S",
     )
 
     for clan_id in args.clans:
@@ -125,9 +130,9 @@ def main():
         try:
             meta = fetch_clan_metadata(clan_id)
             clan_name = meta["name"]["name"]
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"{clan_id} — {clan_name}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
         except Exception as e:
             print(f"\nERROR fetching metadata for {clan_id}: {e}")
             continue
@@ -148,7 +153,9 @@ def main():
 
         lengths = [len(seq) for _, _, seq in proteins]
         print(f"  Sequences: {len(proteins):,}")
-        print(f"  Lengths:   min={min(lengths)}, median={sorted(lengths)[len(lengths)//2]}, max={max(lengths)}")
+        print(
+            f"  Lengths:   min={min(lengths)}, median={sorted(lengths)[len(lengths) // 2]}, max={max(lengths)}"
+        )
         print(f"  Output:    {output_path}")
 
     print("\nDone.")

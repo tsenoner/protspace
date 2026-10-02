@@ -1,0 +1,197 @@
+/**
+ * Blur and composite adapted from Embedding Atlas (Copyright (c) 2025 Apple Inc.
+ * Licensed under MIT License), packages/component/src/lib/webgl2_renderer/gaussian_blur.ts
+ * and paint_density_map.ts at ccd4eee^.
+ */
+
+import { CAMERA_TO_CLIP_GLSL } from './export-shaders';
+import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
+
+export function gaussianWeights(sigma: number, radius: number): number[] {
+  const w: number[] = [];
+  for (let i = -radius; i <= radius; i++) w.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  const sum = w.reduce((a, b) => a + b, 0);
+  return w.map((x) => x / sum);
+}
+
+export const DENSITY_ACCUM_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+in vec4 v_accum;
+out vec4 fragColor;
+
+void main() {
+  fragColor = v_accum;
+}`;
+
+// The ping and fields are RGBA16F, and past ~492K same-slot points in a cell the horizontal
+// pass overflows; SwiftShader writes that as NaN and the dense core loses its fill. Clamping
+// cannot move a ring, since the rings stop far below this.
+const HALF_FLOAT_MAX = 65504;
+
+function blurSource(sigma: number, radius: number): string {
+  const taps = gaussianWeights(sigma, radius)
+    .map(
+      (w, i) =>
+        `  c += texture(u_source, v_texCoord + u_direction * ${(i - radius).toFixed(1)}) * ${w.toFixed(8)};`,
+    )
+    .join('\n');
+  return `#version 300 es
+precision highp float;
+
+uniform sampler2D u_source;
+uniform vec2 u_direction;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+  vec4 c = vec4(0.0);
+${taps}
+  fragColor = min(c, vec4(${HALF_FLOAT_MAX.toFixed(1)}));
+}`;
+}
+
+export const DENSITY_CATEGORY_CAP = 16;
+// Skips the label-atlas unit so the composite never unbinds the point draw's atlas.
+export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4 }, (_, g) =>
+  g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
+);
+
+// In cells of the density grid, which spans the plot: about 6.4 CSS px on an 1100 px plot.
+export const DENSITY_CONTOUR_SIGMA_GRID_PX = 3;
+export const DENSITY_CONTOUR_BLUR_RADIUS = Math.ceil(3 * DENSITY_CONTOUR_SIGMA_GRID_PX);
+export const DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER = blurSource(
+  DENSITY_CONTOUR_SIGMA_GRID_PX,
+  DENSITY_CONTOUR_BLUR_RADIUS,
+);
+
+export const DENSITY_CONTOUR_MIN_POINTS = 5;
+const DENSITY_ONE_POINT_PEAK =
+  gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
+    DENSITY_CONTOUR_BLUR_RADIUS
+  ] ** 2;
+export const DENSITY_CONTOUR_FLOOR = DENSITY_CONTOUR_MIN_POINTS * DENSITY_ONE_POINT_PEAK;
+
+const DENSITY_CONTOUR_LEVELS = 4;
+const DENSITY_CONTOUR_SPACING = 1.0;
+// In CSS px, so a line is equally thick at every pixel density: u_lineRamp is this times dpr.
+export const DENSITY_CONTOUR_LINE_CSS_PX = 1;
+export const DENSITY_CONTOUR_LIGHTEN = 0.15;
+const DENSITY_CONTOUR_FILL_CORE = 0.8;
+const DENSITY_CONTOUR_FILL_OUTER = DENSITY_CONTOUR_FILL_CORE / 4;
+// Levels one line's ramp may span; past that the rings smear together, so none is drawn.
+const DENSITY_CONTOUR_MAX_RAMP = 2.0;
+
+const SLOT_MATCH_TOLERANCE = '0.5 / 255.0';
+
+export const DENSITY_CATEGORY_ACCUM_VERTEX_SHADER = `#version 300 es
+precision highp float;
+
+in vec2 a_dataPosition;
+in vec4 a_color;
+
+uniform vec2 u_resolution;
+uniform vec3 u_transform;
+uniform float u_dpr;
+uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
+uniform int u_slotCount;
+uniform int u_tailSlot;
+uniform int u_group;
+
+out vec4 v_accum;
+
+int slotOf(vec3 c) {
+  for (int i = 0; i < ${DENSITY_CATEGORY_CAP}; i++) {
+    if (i >= u_slotCount) break;
+    if (all(lessThan(abs(c - u_slotKeys[i]), vec3(${SLOT_MATCH_TOLERANCE})))) return i;
+  }
+  return u_tailSlot;
+}
+
+void main() {
+  int slot = a_color.a > 0.0 ? slotOf(a_color.rgb) : -1;
+  int local = slot - 4 * u_group;
+  if (slot < 0 || local < 0 || local > 3) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 1.0;
+    v_accum = vec4(0.0);
+    return;
+  }
+
+${CAMERA_TO_CLIP_GLSL}
+
+  gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
+  gl_PointSize = 1.0;
+
+  v_accum = vec4(equal(ivec4(local), ivec4(0, 1, 2, 3)));
+}`;
+
+/**
+ * Unrolled at module load, and every slot block is guarded by a UNIFORM
+ * condition, so control flow stays uniform and fwidth stays defined.
+ */
+function categoryCompositeSource(cap: number): string {
+  const fields = cap / 4;
+  const channel = (i: number) => `d${i >> 2}.${'xyzw'[i & 3]}`;
+  const samplers = Array.from({ length: fields }, (_, g) => `uniform sampler2D u_field${g};`);
+  const fetches = Array.from(
+    { length: fields },
+    (_, g) => `  vec4 d${g} = texture(u_field${g}, v_texCoord);`,
+  );
+  const dominant = Array.from(
+    { length: cap },
+    (_, i) =>
+      `  if (u_slotCount > ${i} && ${channel(i)} > best) { best = ${channel(i)}; bestColor = u_slotColors[${i}]; }`,
+  );
+  const lines = Array.from(
+    { length: cap },
+    (_, i) => `  if (u_slotCount > ${i}) acc = over(ring(${channel(i)}), u_slotColors[${i}], acc);`,
+  );
+  return `#version 300 es
+precision highp float;
+
+${samplers.join('\n')}
+uniform vec3 u_slotColors[${cap}];
+uniform int u_slotCount;
+uniform float u_densityAlpha;
+uniform float u_contourFloor;
+uniform float u_lineRamp;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+float level(float n) {
+  return log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;
+}
+
+float ring(float n) {
+  float o = level(n);
+  float f = fract(o);
+  float w = fwidth(o);
+  float line = 1.0 - smoothstep(0.0, max(w * u_lineRamp, 1e-6), min(f, 1.0 - f));
+  return line * step(u_contourFloor, n) * step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})
+       * step(w * u_lineRamp, ${DENSITY_CONTOUR_MAX_RAMP.toFixed(1)});
+}
+
+vec4 over(float a, vec3 c, vec4 acc) {
+  return vec4(c * a, a) + acc * (1.0 - a);
+}
+
+void main() {
+${fetches.join('\n')}
+  float best = 0.0;
+  vec3 bestColor = vec3(0.0);
+${dominant.join('\n')}
+  float coats = clamp(floor(level(best)) + 1.0, 0.0, ${(DENSITY_CONTOUR_LEVELS + 1).toFixed(1)});
+  float fill = step(0.5, coats)
+    * mix(${DENSITY_CONTOUR_FILL_OUTER.toFixed(2)}, ${DENSITY_CONTOUR_FILL_CORE.toFixed(2)},
+          (coats - 1.0) / ${DENSITY_CONTOUR_LEVELS.toFixed(1)});
+  vec4 acc = vec4(bestColor * fill, fill);
+${lines.join('\n')}
+  fragColor = acc * u_densityAlpha;
+}`;
+}
+
+export const DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER =
+  categoryCompositeSource(DENSITY_CATEGORY_CAP);

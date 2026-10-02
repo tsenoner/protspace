@@ -133,6 +133,11 @@ describe('getAnnotationHeaderType', () => {
   it('returns "evidence" when at least one entry has evidence among nulls', () => {
     expect(getAnnotationHeaderType([null, null], [null, 'IDA'])).toBe('evidence');
   });
+
+  // Auto-cluster columns used to reach this with a per-point silhouette and get their
+  // own 'silhouette' header. buildAnnotationBlock now drops those scores, so every
+  // score arriving here is a bit score again; the replacement guard lives in
+  // plot-data-accessors.test.ts.
 });
 
 describe('formatRawNumericTooltipValue', () => {

@@ -1,5 +1,5 @@
 import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
-import type { VisualizationData } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -32,6 +32,7 @@ export interface ViewController {
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
+  handleUserDensityLayerChange(): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
   dispose(): void;
 }
@@ -41,25 +42,11 @@ export function createViewController({
   controlBar,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
-  let activeViewChangeSource: ExploreViewChangeSource | null = null;
-  let activeViewChangeResetFrame = 0;
+  let isApplyingView = false;
   const subscribers = new Set<(change: ExploreViewChange) => void>();
 
   const emitViewChange = (change: ExploreViewChange) => {
     subscribers.forEach((callback) => callback(change));
-  };
-
-  const scheduleActiveViewChangeSourceReset = (source: ExploreViewChangeSource) => {
-    if (activeViewChangeResetFrame) {
-      cancelAnimationFrame(activeViewChangeResetFrame);
-    }
-
-    activeViewChangeResetFrame = requestAnimationFrame(() => {
-      if (activeViewChangeSource === source) {
-        activeViewChangeSource = null;
-      }
-      activeViewChangeResetFrame = 0;
-    });
   };
 
   const getViewOptions = (data: VisualizationData | undefined) => ({
@@ -111,6 +98,7 @@ export function createViewController({
       annotation,
       projection,
       tooltip,
+      density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
     };
   };
 
@@ -124,6 +112,11 @@ export function createViewController({
 
   const selectTooltipAnnotations = (tooltipAnnotations: string[]) => {
     controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
+  };
+
+  const selectDensityLayer = (density: DensityLayerMode) => {
+    controlBar.densityLayer = density;
+    plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
   };
 
   const arraysEqual = (a: readonly string[], b: readonly string[]) => {
@@ -169,18 +162,30 @@ export function createViewController({
     const projectionChanged = currentView?.projection !== effective.projection;
     const annotationChanged = currentView?.annotation !== effective.annotation;
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
+    const densityChanged = currentView?.density !== effective.density;
 
-    activeViewChangeSource = source;
-    if (projectionChanged) {
-      selectProjection(effective.projection);
+    // The control bar dispatches its change events synchronously from these
+    // apply* calls, and the app routes them back here as user changes. Guard
+    // only that synchronous window: anything arriving later is a real user
+    // interaction, not an echo of what we just applied.
+    const wasApplyingView = isApplyingView;
+    isApplyingView = true;
+    try {
+      if (projectionChanged) {
+        selectProjection(effective.projection);
+      }
+      if (annotationChanged) {
+        selectAnnotation(effective.annotation);
+      }
+      if (tooltipChanged) {
+        selectTooltipAnnotations(effective.tooltip);
+      }
+      if (densityChanged) {
+        selectDensityLayer(effective.density);
+      }
+    } finally {
+      isApplyingView = wasApplyingView;
     }
-    if (annotationChanged) {
-      selectAnnotation(effective.annotation);
-    }
-    if (tooltipChanged) {
-      selectTooltipAnnotations(effective.tooltip);
-    }
-    scheduleActiveViewChangeSourceReset(source);
 
     emitViewChange({
       effective,
@@ -192,7 +197,7 @@ export function createViewController({
   };
 
   const emitCurrentUserViewChange = () => {
-    if (activeViewChangeSource) {
+    if (isApplyingView) {
       return;
     }
 
@@ -208,6 +213,7 @@ export function createViewController({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
   };
@@ -233,6 +239,9 @@ export function createViewController({
     handleUserTooltipAnnotationsChange() {
       emitCurrentUserViewChange();
     },
+    handleUserDensityLayerChange() {
+      emitCurrentUserViewChange();
+    },
     subscribeToViewChanges(callback: (change: ExploreViewChange) => void) {
       subscribers.add(callback);
       return () => {
@@ -240,10 +249,6 @@ export function createViewController({
       };
     },
     dispose() {
-      if (activeViewChangeResetFrame) {
-        cancelAnimationFrame(activeViewChangeResetFrame);
-        activeViewChangeResetFrame = 0;
-      }
       subscribers.clear();
     },
   };

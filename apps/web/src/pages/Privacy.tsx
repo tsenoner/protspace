@@ -118,9 +118,14 @@ const Privacy = () => {
             <section>
               <h2 className="text-xl font-semibold text-foreground mb-3">Your Data</h2>
               <p>
-                All data you load into ProtSpace (Parquet files, protein annotations) is processed
-                entirely in your browser. No data is uploaded to any server. We have no access to
-                your datasets.
+                Datasets you load directly (a .parquetbundle with its Parquet tables and protein
+                annotations) are processed entirely in your browser, and we have no access to them.
+                The one exception is FASTA instant-prep: when you upload a FASTA file, its sequences
+                are sent to the ProtSpace preparation service, which computes the embeddings,
+                projections and annotations and returns the resulting bundle to your browser. The
+                uploaded file and the prepared bundle are deleted from that service shortly after
+                you download the bundle, and in any case within two hours. Preparing a bundle also
+                forwards your sequences to the third-party services listed below.
               </p>
             </section>
 
@@ -138,6 +143,20 @@ const Privacy = () => {
                 </a>{' '}
                 to fetch structural data. These requests contain only protein identifiers, not
                 personal data.
+              </p>
+              <p className="mt-3">
+                FASTA instant-prep additionally sends your sequences to the{' '}
+                <a
+                  href="https://biocentral.rostlab.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Biocentral API
+                </a>{' '}
+                (Rostlab, TUM) to compute the protein language model embeddings, and queries public
+                annotation resources (UniProt, InterPro, NCBI Taxonomy, the AlphaFold Database) for
+                the annotation columns. Loading a .parquetbundle does none of this.
               </p>
             </section>
 

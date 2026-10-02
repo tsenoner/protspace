@@ -2,7 +2,7 @@
 
 A ``Statistic`` describes a projection (and optionally its source embedding). It
 declares the inputs it needs and returns one or more ``StatRow`` records. The
-tidy long-format table produced by ``StatsReport.to_arrow`` (nine columns) is
+tidy long-format table produced by ``StatsReport.to_arrow`` (ten columns) is
 the bundle-boundary contract consumed downstream.
 
 Heavy imports (scikit-learn) live inside the metric/cluster modules, function-
@@ -44,6 +44,7 @@ STATS_SCHEMA = pa.schema(
         ("metric", pa.string()),
         ("metric_kind", pa.string()),
         ("value", pa.float64()),
+        ("category", pa.string()),
         ("extra_json", pa.string()),
     ]
 )
@@ -93,10 +94,10 @@ class StatRow:
     """One statistic value.
 
     ``destination`` routes the row to a bundle part at carriage time:
-    ``statistics_part`` (the tidy 9-column table — the default), ``projection_metadata``
-    (folded into a projection's ``info_json``), or ``annotation`` (a per-protein
-    column). It is carriage metadata, not a tidy-table column, so ``to_record``
-    never emits it.
+    ``statistics_part`` (the tidy 10-column table, the default),
+    ``projection_metadata`` (folded into a projection's ``info_json``), or
+    ``annotation`` (a per-protein column). It is carriage metadata, not a
+    tidy-table column, so ``to_record`` never emits it.
     """
 
     space_kind: str
@@ -107,6 +108,10 @@ class StatRow:
     metric: str
     metric_kind: str
     value: float
+    # One category of `annotation` when the metric was decomposed per category;
+    # None for the aggregate row. NULL rather than "" so a reader can tell
+    # "not category-scoped" from "the category whose label is empty".
+    category: str | None = None
     extra: dict = field(default_factory=dict)
     destination: str = "statistics_part"
 
@@ -120,6 +125,7 @@ class StatRow:
             "metric": self.metric,
             "metric_kind": self.metric_kind,
             "value": float(self.value),
+            "category": self.category,
             "extra_json": json.dumps(self.extra, sort_keys=True, default=_json_default),
         }
 

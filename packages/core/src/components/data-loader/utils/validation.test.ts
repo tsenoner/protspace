@@ -56,3 +56,24 @@ describe('validateRowsBasic', () => {
     expect(() => validateRowsBasic(makeRows({ col: value }))).toThrow(/Cell value too long/);
   });
 });
+
+describe('validateRowsBasic row limit message', () => {
+  it('names the count, the limit, what it counts, and what to do', () => {
+    // The old message was `Too many rows: 2400000 exceeds limit` — an
+    // unexplained number, no limit, no remediation. It reached the user as a
+    // toast whose only action was "Report this", inviting a bug report about
+    // entirely intended behaviour (#456).
+    const rows = Array.from({ length: 11 }, () => ({ a: 1 }));
+    let message = '';
+    try {
+      validateRowsBasic(rows, { maxRows: 10 });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('11');
+    expect(message).toContain('10');
+    expect(message).toMatch(/proteins x projections/);
+    expect(message).toMatch(/separate bundles|subset/i);
+  });
+});

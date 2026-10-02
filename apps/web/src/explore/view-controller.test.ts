@@ -1,27 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createViewController } from './view-controller';
 import type { ExploreViewChange } from './types';
 import type { ExploreViewRequestState } from './view-state';
-
-// Stub requestAnimationFrame/cancelAnimationFrame for Node environment
-beforeEach(() => {
-  let nextId = 1;
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-    const id = nextId++;
-    setTimeout(() => cb(0), 0);
-    return id;
-  });
-  vi.stubGlobal('cancelAnimationFrame', (_id: number) => {});
-});
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+import type { DensityLayerMode } from '@protspace/utils';
 
 function createMockElements() {
   const plotElement = {
     selectedProjectionIndex: 0,
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    config: { pointSize: 240 } as Record<string, unknown>,
     getCurrentData: () => ({
       annotations: { ec: {}, pfam: {}, go: {} },
       projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
@@ -33,6 +21,7 @@ function createMockElements() {
     selectedProjection: 'UMAP',
     selectedAnnotation: 'ec',
     tooltipAnnotations: [] as string[],
+    densityLayer: 'off' as DensityLayerMode,
     applyProjectionSelection: vi.fn((projection: string) => {
       controlBar.selectedProjection = projection;
       // Simulate the real control-bar updating the plot
@@ -58,15 +47,17 @@ function makeRequest(
   annotation?: string,
   projection?: string,
   tooltip?: string[],
+  density?: DensityLayerMode,
 ): ExploreViewRequestState {
   return {
-    requested: { annotation, projection, tooltip },
+    requested: { annotation, projection, tooltip, density },
     present: {
       annotation: annotation !== undefined,
       projection: projection !== undefined,
       tooltip: tooltip !== undefined,
+      density: density !== undefined,
     },
-    normalize: { annotation: false, projection: false, tooltip: false },
+    normalize: { annotation: false, projection: false, tooltip: false, density: false },
   };
 }
 
@@ -84,7 +75,12 @@ describe('createViewController', () => {
     const { viewController } = setup();
     const view = viewController.getCurrentEffectiveView();
 
-    expect(view).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(view).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('returns null when no data is available', () => {
@@ -106,7 +102,12 @@ describe('createViewController', () => {
     const request = makeRequest('pfam', 'PCA');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
     expect(controlBar.applyProjectionSelection).toHaveBeenCalledWith('PCA');
     expect(controlBar.applyAnnotationSelection).toHaveBeenCalledWith('pfam');
   });
@@ -116,7 +117,12 @@ describe('createViewController', () => {
     const request = makeRequest('NONEXISTENT', 'UNKNOWN');
     const result = viewController.applyViewSelection(request, 'url');
 
-    expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(result).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('returns null from applyViewSelection when dataset has no options', () => {
@@ -142,7 +148,12 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'user');
 
     expect(changes).toHaveLength(1);
-    expect(changes[0].effective).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(changes[0].effective).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
     expect(changes[0].source).toBe('user');
   });
 
@@ -174,7 +185,12 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('pfam', 'PCA'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'pfam', projection: 'PCA', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'pfam',
+      projection: 'PCA',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('resolveLatestView falls back for invalid requests', () => {
@@ -182,7 +198,12 @@ describe('createViewController', () => {
     viewController.setRequestedView(makeRequest('NONEXISTENT', 'UNKNOWN'));
 
     const resolved = viewController.resolveLatestView();
-    expect(resolved).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [] });
+    expect(resolved).toEqual({
+      annotation: 'ec',
+      projection: 'UMAP',
+      tooltip: [],
+      density: 'off',
+    });
   });
 
   it('applyLatestViewForDatasetLoad uses dataset-load source', () => {
@@ -210,6 +231,43 @@ describe('createViewController', () => {
     expect(fresh.requested.annotation).toBe('pfam');
   });
 
+  it('suppresses the control-bar echo of an applied view', () => {
+    const { controlBar, viewController } = setup();
+    const changes: ExploreViewChange[] = [];
+    viewController.subscribeToViewChanges((change) => changes.push(change));
+
+    // The real control bar dispatches annotation-change synchronously, which the
+    // app forwards back into the view controller as a user change.
+    const applyAnnotation = controlBar.applyAnnotationSelection;
+    controlBar.applyAnnotationSelection = vi.fn((annotation: string) => {
+      applyAnnotation(annotation);
+      viewController.handleUserAnnotationChange();
+    });
+
+    viewController.applyViewSelection(makeRequest('pfam', 'UMAP'), 'url');
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].source).toBe('url');
+  });
+
+  it('emits a user change that lands right after a url-applied view', () => {
+    const { controlBar, plotElement, viewController } = setup();
+    const changes: ExploreViewChange[] = [];
+    viewController.subscribeToViewChanges((change) => changes.push(change));
+
+    viewController.applyViewSelection(makeRequest('ec', 'UMAP', ['pfam']), 'url');
+    changes.length = 0;
+
+    // User toggles the extra tooltip annotation back off before the next frame.
+    controlBar.tooltipAnnotations = [];
+    plotElement.tooltipAnnotations = [];
+    viewController.handleUserTooltipAnnotationsChange();
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].source).toBe('user');
+    expect(changes[0].effective.tooltip).toEqual([]);
+  });
+
   it('dispose clears subscribers', () => {
     const { viewController } = setup();
     const changes: ExploreViewChange[] = [];
@@ -219,5 +277,28 @@ describe('createViewController', () => {
     viewController.applyViewSelection(makeRequest('pfam', 'PCA'), 'url');
 
     expect(changes).toHaveLength(0);
+  });
+
+  it('applies a requested density mode to the plot config and the control bar', () => {
+    const { plotElement, controlBar, viewController } = setup();
+
+    const effective = viewController.applyViewSelection(
+      makeRequest('ec', 'UMAP', [], 'auto'),
+      'url',
+    );
+
+    expect(effective?.density).toBe('auto');
+    expect(controlBar.densityLayer).toBe('auto');
+    expect(plotElement.config).toEqual({
+      pointSize: 240,
+      densityLayer: 'auto',
+    });
+  });
+
+  it('reads the current density mode back off the plot config', () => {
+    const { plotElement, viewController } = setup();
+    plotElement.config = { densityLayer: 'on' };
+
+    expect(viewController.getCurrentEffectiveView()?.density).toBe('on');
   });
 });

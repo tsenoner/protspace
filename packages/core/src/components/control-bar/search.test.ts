@@ -1,27 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
 /**
- * Filter protein IDs based on search query
- * (Extracted logic from component for testing)
- */
-export function filterProteinIds(
-  availableIds: string[],
-  query: string,
-  selectedIds: string[] = [],
-): string[] {
-  const q = query.trim().toLowerCase();
-  const selectedSet = new Set(selectedIds);
-
-  if (!q) {
-    // Return all available (not selected) if no query
-    return availableIds.filter((id) => !selectedSet.has(id));
-  }
-
-  // Filter by startsWith match, excluding already selected
-  return availableIds.filter((id) => !selectedSet.has(id) && id.toLowerCase().startsWith(q));
-}
-
-/**
  * Validate and normalize a protein ID against available IDs
  */
 export function validateProteinId(
@@ -85,61 +64,6 @@ export function processBulkProteinIds(
 }
 
 describe('search', () => {
-  describe('filterProteinIds', () => {
-    const availableIds = ['P12345', 'P23456', 'P34567', 'Q12345', 'Q23456'];
-
-    it('returns all available IDs when query is empty', () => {
-      const result = filterProteinIds(availableIds, '');
-      expect(result).toEqual(availableIds);
-    });
-
-    it('filters by prefix match (case insensitive)', () => {
-      const result = filterProteinIds(availableIds, 'p');
-      expect(result).toEqual(['P12345', 'P23456', 'P34567']);
-    });
-
-    it('filters with case insensitive query', () => {
-      const result = filterProteinIds(availableIds, 'P12');
-      expect(result).toEqual(['P12345']);
-    });
-
-    it('excludes already selected IDs from results', () => {
-      const result = filterProteinIds(availableIds, 'p', ['P12345']);
-      expect(result).toEqual(['P23456', 'P34567']);
-    });
-
-    it('returns empty array when no matches', () => {
-      const result = filterProteinIds(availableIds, 'X');
-      expect(result).toEqual([]);
-    });
-
-    it('handles exact prefix match', () => {
-      const result = filterProteinIds(availableIds, 'Q23456');
-      expect(result).toEqual(['Q23456']);
-    });
-
-    it('excludes selected IDs even with empty query', () => {
-      const result = filterProteinIds(availableIds, '', ['P12345', 'Q12345']);
-      expect(result).toEqual(['P23456', 'P34567', 'Q23456']);
-    });
-
-    it('trims whitespace from query', () => {
-      const result = filterProteinIds(availableIds, '  P12  ');
-      expect(result).toEqual(['P12345']);
-    });
-
-    it('handles empty available IDs', () => {
-      const result = filterProteinIds([], 'P');
-      expect(result).toEqual([]);
-    });
-
-    it('only matches start of string, not substring', () => {
-      const ids = ['ABC123', 'XYZ123', 'ABC456'];
-      const result = filterProteinIds(ids, '123');
-      expect(result).toEqual([]);
-    });
-  });
-
   describe('validateProteinId', () => {
     const availableIds = ['P12345', 'Q23456', 'R34567'];
 

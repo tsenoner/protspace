@@ -38,18 +38,23 @@ def generate_dataset(name: str, cfg: dict, skip_existing: bool = False) -> bool:
     cmd = [
         "protspace",
         "prepare",
-        "-q", cfg["query"],
-        "-e", cfg["embedder"],
-        "-m", cfg["methods"],
-        "-a", cfg.get("annotations", "default"),
-        "-o", str(output_dir),
+        "-q",
+        cfg["query"],
+        "-e",
+        cfg["embedder"],
+        "-m",
+        cfg["methods"],
+        "-a",
+        cfg.get("annotations", "default"),
+        "-o",
+        str(output_dir),
         "-v",
     ]
 
     if cfg.get("similarity", False):
         cmd.append("-s")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Generating: {name}")
     print(f"  Query:      {cfg['query']}")
     print(f"  Embedder:   {cfg['embedder']}")
@@ -57,7 +62,7 @@ def generate_dataset(name: str, cfg: dict, skip_existing: bool = False) -> bool:
     print(f"  Similarity: {cfg.get('similarity', False)}")
     print(f"  Output:     {output_dir}")
     print(f"  Command:    {' '.join(cmd)}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     result = subprocess.run(cmd)
 
@@ -79,19 +84,24 @@ def main():
 
     parser = argparse.ArgumentParser(description="Generate ProtSpace example datasets")
     parser.add_argument(
-        "--dataset", action="append", default=None,
+        "--dataset",
+        action="append",
+        default=None,
         help="Dataset name(s) to generate. Repeat for multiple. Default: all.",
     )
     parser.add_argument(
-        "--all", action="store_true",
+        "--all",
+        action="store_true",
         help="Generate all datasets.",
     )
     parser.add_argument(
-        "--skip-existing", action="store_true",
+        "--skip-existing",
+        action="store_true",
         help="Skip datasets where .parquetbundle already exists.",
     )
     parser.add_argument(
-        "--list", action="store_true",
+        "--list",
+        action="store_true",
         help="List available datasets and exit.",
     )
     args = parser.parse_args()
@@ -123,7 +133,7 @@ def main():
         )
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Summary:")
     for name, ok in results.items():
         status = "OK" if ok else "FAIL"

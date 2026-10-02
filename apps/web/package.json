@@ -15,7 +15,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "eslint src tests --ext .ts,.tsx",
     "type-check": "tsc -b tsconfig.json --pretty false",
     "build": "pnpm type-check && vite build",
     "build:dev": "vite build --mode development",

@@ -37,6 +37,22 @@ export function setStorageItem<Value>(key: string, value: Value): boolean {
   }
 }
 
+/**
+ * Whether `key` is present, without deserialising its value.
+ *
+ * Guarded like the accessors above, and for the same reason: `localStorage` is not merely empty
+ * but *absent* under Safari private browsing, in a browser configured to block site data, and in
+ * a test runner with no storage backend. A bare `localStorage.getItem` throws outright in those
+ * cases rather than returning `null`, so "is anything saved?" must answer no, not raise.
+ */
+export function hasStorageItem(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function removeStorageItem(key: string): boolean {
   try {
     localStorage.removeItem(key);

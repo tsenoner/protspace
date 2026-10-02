@@ -20,6 +20,8 @@ const VALID_SORT_MODES: LegendSortMode[] = [
   'alpha-desc',
   'manual',
   'manual-reverse',
+  'silhouette-desc',
+  'silhouette-asc',
 ];
 
 const VALID_NUMERIC_BINNING_STRATEGIES: NumericBinningStrategy[] = [
@@ -303,6 +305,9 @@ function sanitizeExportOptionsMap(obj: unknown): ExportOptionsMap | null {
   return result;
 }
 
+const positiveOrUndefined = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+
 export interface NormalizeBundleSettingsOptions {
   /** Optional sanitizer applied to `publishState` before it leaves the boundary.
    *  Injected because `@protspace/utils` cannot depend on `@protspace/core`. */
@@ -326,6 +331,7 @@ export function normalizeBundleSettings(
           : obj.publishState,
       eatOverlayEnabled: obj.eatOverlayEnabled,
       eatConfidenceThreshold: obj.eatConfidenceThreshold,
+      shapeSize: positiveOrUndefined(obj.shapeSize),
     };
   }
 
@@ -366,6 +372,7 @@ export function normalizeBundleSettings(
           settings.eatConfidenceThreshold <= 1
             ? settings.eatConfidenceThreshold
             : undefined,
+        shapeSize: positiveOrUndefined(settings.shapeSize),
       };
     }
   }

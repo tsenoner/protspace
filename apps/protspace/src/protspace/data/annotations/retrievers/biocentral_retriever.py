@@ -4,6 +4,8 @@ import logging
 import re
 import warnings
 
+from tqdm import tqdm
+
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,25 @@ _PREDICTION_MODELS = {
     "predicted_transmembrane": "TMBED",
 }
 
+# Unique sequences per prediction request. One request with every sequence is
+# untested beyond a few thousand, and an example-scale run is 100K-485K.
 _BATCH_SIZE = 1000
+
+# The server's per-sequence length limits (biocentral.rostlab.org v1.2.1). It
+# answers a request holding any sequence outside them with 422 for the whole
+# request, so such sequences are never sent: they cannot be predicted at all.
+_MIN_SEQUENCE_LENGTH = 7
+_MAX_SEQUENCE_LENGTH = 5000
+# How a 422 names the offending sequence, should the server's limits change.
+_REFUSED_SEQUENCE = re.compile(r"(\S+) is too (?:short|long)\b")
+# Resends of one batch after the server names a refused sequence.
+_MAX_REFUSAL_RESENDS = 5
+# Total residues per request. The models fail on ~500K (820 phosphatases) and
+# succeed on the same sequences as two requests of ~250K each.
+_MAX_BATCH_RESIDUES = 200_000
+# A batch that fails for no stated reason is split in half and resent, at most
+# this many levels deep (1 + 2 + 4 requests), so an outage is not hammered.
+_MAX_SPLIT_DEPTH = 2
 
 
 class BiocentralPredictionRetriever(BaseAnnotationRetriever):
@@ -39,6 +59,10 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         self.headers = headers or []
         self.annotations = annotations or BIOCENTRAL_ANNOTATIONS
         self.sequences = sequences or {}
+        # Set when any predictions could not be produced (no healthy server, or
+        # a failed batch), so empty predictions are not mistaken for negative
+        # ones and the source is kept out of the cache.
+        self.prediction_failed = False
 
     def fetch_annotations(self) -> list[tuple]:
         """Fetch prediction annotations for all proteins."""
@@ -85,7 +109,9 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         """Run Biocentral predictions and return raw results.
 
         Returns:
-            Dict keyed by sequence hash, values are lists of Prediction objects.
+            Dict of Prediction lists keyed by the submitted (representative)
+            identifier, as the server returns them; ``_extract_annotation`` also
+            accepts a sequence-hash key.
         """
         from biocentral_api import BiocentralAPI, BiocentralPredictionModel
 
@@ -93,6 +119,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
             api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
             api = api.wait_until_healthy(max_wait_seconds=30)
         except Exception as e:
+            self.prediction_failed = True
             logger.warning(f"Biocentral API not available: {e}")
             return {}
 
@@ -130,26 +157,163 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                 f"Deduplicated {len(all_seqs)} → {len(seq_data)} unique sequences"
             )
 
+        # Representatives the server cannot predict: never a fetch failure,
+        # so their empty columns are genuine absences and stay cacheable.
+        unpredictable = {
+            header
+            for header, seq in seq_data.items()
+            if not _MIN_SEQUENCE_LENGTH <= len(seq) <= _MAX_SEQUENCE_LENGTH
+        }
+        for header in unpredictable:
+            del seq_data[header]
+
+        batches = self._batches(seq_data)
         logger.info(
             f"Running Biocentral predictions ({', '.join(m.name for m in model_enums)}) "
-            f"for {len(seq_data)} proteins..."
+            f"for {len(seq_data)} proteins in {len(batches)} batch(es)..."
         )
 
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=".*longer than the recommended.*",
-                    category=UserWarning,
+        predictions: dict = {}
+        failed_representatives: set[str] = set()
+        failed_batches = 0
+        with tqdm(
+            total=len(seq_data), desc="Fetching Biocentral predictions", unit="seq"
+        ) as pbar:
+            for number, batch in enumerate(batches, 1):
+                label = (
+                    f"Biocentral prediction batch {number} of {len(batches)} "
+                    f"({len(batch)} sequences)"
                 )
-                result = api.predict(
-                    model_names=model_enums,
-                    sequence_data=seq_data,
-                ).run_with_progress()
-            return result
-        except Exception as e:
-            logger.warning(f"Biocentral prediction failed: {e}")
-            return {}
+                batch_predictions, batch_failed = self._predict_with_fallbacks(
+                    api, model_enums, batch, unpredictable, label
+                )
+                # Keyed by the batch's own representative identifiers, which
+                # are unique across batches, so merging cannot clash.
+                predictions.update(batch_predictions)
+                if batch_failed:
+                    failed_batches += 1
+                    failed_representatives.update(batch_failed)
+                pbar.update(len(batch))
+
+        if unpredictable:
+            skipped = sum(
+                1
+                for header in all_seqs
+                if self._seq_duplicates.get(header, header) in unpredictable
+            )
+            # A length limit, not a shortfall: these are left empty and cached.
+            logger.warning(
+                f"Biocentral cannot predict {skipped:,} of {len(all_seqs):,} "
+                f"proteins (shorter than {_MIN_SEQUENCE_LENGTH} or longer than "
+                f"{_MAX_SEQUENCE_LENGTH:,} residues); their predictions stay empty"
+            )
+
+        if failed_batches:
+            self.prediction_failed = True
+            missing = sum(
+                1
+                for header in all_seqs
+                if self._seq_duplicates.get(header, header) in failed_representatives
+            )
+            # Worded as a coverage shortfall on purpose: the prep service reads
+            # outage phrases on stderr as "Biocentral is down", and this is not.
+            logger.warning(
+                f"Biocentral predictions missing for {missing:,} of "
+                f"{len(all_seqs):,} proteins ({failed_batches} of {len(batches)} "
+                "batches failed); they are not cached and will be requested again"
+            )
+        return predictions
+
+    @staticmethod
+    def _batches(seq_data: dict[str, str]) -> list[dict[str, str]]:
+        """Split unique sequences into consecutive batches of at most
+        ``_BATCH_SIZE`` sequences and ``_MAX_BATCH_RESIDUES`` residues (a longer
+        sequence gets a batch of its own)."""
+        batches: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+        residues = 0
+        for header, seq in seq_data.items():
+            if current and (
+                len(current) >= _BATCH_SIZE or residues + len(seq) > _MAX_BATCH_RESIDUES
+            ):
+                batches.append(current)
+                current, residues = {}, 0
+            current[header] = seq
+            residues += len(seq)
+        if current:
+            batches.append(current)
+        return batches
+
+    @classmethod
+    def _predict_with_fallbacks(
+        cls,
+        api,
+        model_enums: list,
+        batch: dict[str, str],
+        unpredictable: set[str],
+        label: str,
+        depth: int = 0,
+    ) -> tuple[dict, set[str]]:
+        """Predict one batch; return its predictions and the representatives
+        left without any.
+
+        A sequence the server refuses on length is added to *unpredictable* and
+        the batch resent without it. A batch that fails otherwise, or comes back
+        empty, is split in half and each half resent, ``_MAX_SPLIT_DEPTH`` levels
+        deep, so one bad request loses as few proteins as possible.
+        """
+        remaining = dict(batch)
+        for _ in range(_MAX_REFUSAL_RESENDS + 1):
+            if not remaining:
+                return {}, set()
+            try:
+                result = cls._predict_batch(api, model_enums, remaining)
+            except Exception as e:
+                refused = set(_REFUSED_SEQUENCE.findall(str(e))) & set(remaining)
+                if refused:
+                    unpredictable.update(refused)
+                    for header in refused:
+                        del remaining[header]
+                    continue
+                reason = f"failed: {e}"
+            else:
+                if result:
+                    return result, set()
+                reason = "returned no predictions"
+            break
+        else:
+            reason = f"was refused {_MAX_REFUSAL_RESENDS + 1} times"
+
+        if depth < _MAX_SPLIT_DEPTH and len(remaining) > 1:
+            items = list(remaining.items())
+            half = len(items) // 2
+            predictions: dict = {}
+            failed: set[str] = set()
+            for part in (dict(items[:half]), dict(items[half:])):
+                part_predictions, part_failed = cls._predict_with_fallbacks(
+                    api, model_enums, part, unpredictable, label, depth + 1
+                )
+                predictions.update(part_predictions)
+                failed |= part_failed
+            return predictions, failed
+
+        scope = f"{label}" if depth == 0 else f"{label}, a part of {len(remaining)}"
+        logger.warning(f"{scope} {reason}")
+        return {}, set(remaining)
+
+    @staticmethod
+    def _predict_batch(api, model_enums: list, batch: dict[str, str]) -> dict | None:
+        """Run one prediction request; results are keyed by submitted identifier."""
+        with warnings.catch_warnings():
+            # Long sequences are predicted like any other: their length alone
+            # must never make the source fail.
+            warnings.filterwarnings(
+                "ignore",
+                message=".*longer than the recommended.*",
+                category=UserWarning,
+            )
+            # .run(), not .run_with_progress(): one bar covers the whole source.
+            return api.predict(model_names=model_enums, sequence_data=batch).run()
 
     def _extract_annotation(self, ann_name: str, header: str, predictions: dict) -> str:
         """Extract a specific annotation value for a protein from predictions."""
@@ -212,11 +376,15 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
     def _extract_transmembrane(predictions: list) -> str:
         """Derive transmembrane type from TMbed per-residue output.
 
-        Returns: 'alpha-helical', 'beta-barrel', or 'none'
+        Returns: 'alpha-helical', 'beta-barrel', or 'non-transmembrane', and
+        '' when TMbed predicted nothing
         """
         for pred in predictions:
             if pred.model_name == "TMbed":
                 topology = str(pred.value) if pred.value else ""
+                if not topology:
+                    # No topology is no prediction, not a negative one.
+                    return ""
                 has_helix = bool(re.search(r"[Hh]", topology))
                 has_beta = bool(re.search(r"[Bb]", topology))
                 if has_helix and has_beta:
@@ -225,5 +393,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                     return "alpha-helical"
                 elif has_beta:
                     return "beta-barrel"
-                return "none"
+                # Not "none": the CLI and the web app both read that as a
+                # missing value, which showed every negative prediction as N/A.
+                return "non-transmembrane"
         return ""

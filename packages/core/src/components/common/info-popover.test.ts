@@ -128,6 +128,46 @@ describe('protspace-info-popover', () => {
     expect(el.shadowRoot!.querySelector('.popover-arrow')).not.toBeNull();
   });
 
+  it('anchors a side popover to a panel that opted in, not to the icon', async () => {
+    // The projection-metadata card is short and fully visible, so nothing about it clips and
+    // overflow detection alone cannot find it — yet dropping a bubble under an icon there
+    // buries the rows below. The panel marks itself instead.
+    const panel = document.createElement('div');
+    panel.setAttribute('data-info-popover-boundary', '');
+    Object.defineProperty(panel, 'getBoundingClientRect', {
+      value: () => ({ left: 40, right: 340, top: 0, bottom: 400, width: 300, height: 400 }),
+    });
+    document.body.appendChild(panel);
+
+    const el = document.createElement('protspace-info-popover') as PopoverEl;
+    el.description = 'A brief summary.';
+    el.placement = 'side';
+    panel.appendChild(el);
+    await el.updateComplete;
+
+    el.dispatchEvent(new Event('pointerenter'));
+    await el.updateComplete;
+    // The first update renders the bubble unpositioned so it can be measured; `updated()`
+    // then computes `sideCoords`, whose reactive write schedules the update that applies it.
+    await el.updateComplete;
+
+    // jsdom gives every element a zero-sized rect, so the two candidates are distinguishable
+    // by the resulting x alone: anchored to the panel's left edge it is 40 - 12(gap) = 28px;
+    // anchored to the icon it would be 0 - 12 = -12, clamped below the margin and flipped to
+    // 12px. 28px is therefore proof the boundary attribute was honoured.
+    const pop = popover(el) as HTMLElement;
+    expect(pop.style.left).toBe('28px');
+    expect(pop.classList.contains('flipped')).toBe(false);
+  });
+
+  it('has no native title tooltip to collide with its own popover', async () => {
+    // A `title` repeating the aria-label rendered a second, browser-styled tooltip on top of
+    // the popover that already explains the icon.
+    const el = await setup({ label: 'kNN Overlap' });
+    expect(button(el)!.hasAttribute('title')).toBe(false);
+    expect(button(el)!.getAttribute('aria-label')).toBe('Information about kNN Overlap');
+  });
+
   it('side placement stays open until the pointer leaves the whole row', async () => {
     vi.useFakeTimers();
     const row = document.createElement('div');
@@ -169,12 +209,28 @@ describe('protspace-info-popover', () => {
     await el.updateComplete;
     const trigger = button(el)!;
     const dialog = popover(el)!;
-    const description = dialog.querySelector('.popover-description')!;
 
     expect(trigger.getAttribute('aria-controls')).toBe(dialog.id);
-    expect(trigger.getAttribute('aria-describedby')).toBe(description.id);
+    // Describing the dialog itself would announce its aria-label instead of its contents,
+    // so the description target is the paragraph.
+    expect(trigger.getAttribute('aria-describedby')).toBe(
+      dialog.querySelector('.popover-description')!.id,
+    );
     expect(dialog.getAttribute('role')).toBe('dialog');
     expect(dialog.getAttribute('aria-label')).toBe('No annotation information');
+  });
+
+  it('keeps a description-only popover describing its description text', async () => {
+    // Regression guard: pointing aria-describedby at the dialog would make screen readers
+    // announce the dialog's aria-label instead of this sentence.
+    const el = await setup({ description: 'Predictions below this reliability are hidden.' });
+    button(el)!.click();
+    await el.updateComplete;
+
+    const describedBy = button(el)!.getAttribute('aria-describedby')!;
+    const described = popover(el)!.querySelector(`#${describedBy}`) as HTMLElement;
+    expect(described.textContent).toContain('Predictions below this reliability are hidden.');
+    expect(described.getAttribute('aria-label')).toBeNull();
   });
 
   it('clamps a right-aligned bottom popover to the left viewport margin', async () => {

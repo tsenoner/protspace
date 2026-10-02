@@ -19,6 +19,14 @@ interface TedDomainApiSegment {
 }
 
 /**
+ * Extract the base accession from a protein ID.
+ * Strips any version suffix after the first dot (e.g., "P0DQE9.2" → "P0DQE9").
+ */
+export function getBaseAccession(proteinId: string): string {
+  return proteinId.split('.')[0];
+}
+
+/**
  * Service for handling protein structure loading from various sources
  */
 export class StructureService {
@@ -35,7 +43,7 @@ export class StructureService {
    * @returns Promise with structure data and metadata
    */
   public static async loadStructure(proteinId: string): Promise<StructureData> {
-    const formattedId = this.formatProteinId(proteinId);
+    const formattedId = getBaseAccession(proteinId);
     const tedAbortController = new AbortController();
     const tedDomainsPromise = this.loadTedDomains(formattedId, tedAbortController);
 
@@ -181,7 +189,7 @@ export class StructureService {
     proteinId: string,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    const formattedId = this.formatProteinId(proteinId);
+    const formattedId = getBaseAccession(proteinId);
 
     if (this.alphaFoldModelPageCache.has(formattedId)) {
       return this.alphaFoldModelPageCache.get(formattedId) ?? null;
@@ -222,14 +230,6 @@ export class StructureService {
       this.alphaFoldModelPageCache.set(formattedId, null);
       return null;
     }
-  }
-
-  /**
-   * Format protein ID by removing version numbers
-   * @private
-   */
-  private static formatProteinId(proteinId: string): string {
-    return proteinId.split('.')[0];
   }
 }
 

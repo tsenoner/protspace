@@ -1,7 +1,8 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { handleDropdownEscape } from '../../utils/dropdown-helpers';
+import { infoPopoverStyles } from './info-popover.styles';
 
 /** Computed viewport coordinates for a `placement="side"` popover (escapes overflow clipping). */
 interface SideCoords {
@@ -16,6 +17,17 @@ interface SideCoords {
 let infoPopoverSequence = 0;
 
 /**
+ * Marks the element a `placement="side"` popover should sit beside, when the containing panel is
+ * not itself a scroll container. Put it on the panel, not on the row.
+ *
+ * Written literally by the panels that opt in (`projection-metadata.ts`) rather than imported:
+ * Lit can interpolate an attribute's value but not its name. `info-popover.test.ts` spells it
+ * out too, so renaming it here without updating the panels fails that test rather than silently
+ * dropping the anchoring.
+ */
+const POPOVER_BOUNDARY_ATTRIBUTE = 'data-info-popover-boundary';
+
+/**
  * Small reusable "ⓘ" information control that opens a popover with an annotation description and an
  * optional "Learn more" link.
  *
@@ -27,8 +39,13 @@ let infoPopoverSequence = 0;
  *   click "Learn more ↗" without it disappearing.
  * - **Click** still toggles a pinned state. Escape or an outside click closes it.
  *
+ * The button carries no `title`. A native tooltip would repeat the `aria-label` it was set
+ * from, and the browser renders it on its own schedule and in its own place — so it surfaced
+ * *on top of* this component's popover, which is the one thing on screen already explaining
+ * the icon. Assistive tech reads `aria-label`; sighted users get the popover.
+ *
  * Placement:
- * - `"bottom"` (default) drops the popover below the icon — used by the legend header.
+ * - `"bottom"` (default) drops the popover below the icon, used by the legend header.
  * - `"side"` floats it beside the dropdown *panel* (left by default, flipping right near the
  *   viewport edge), level with the hovered row and with an arrow pointing at it, rendered
  *   `position: fixed` so it escapes the dropdown's `overflow` clipping. Anchoring to the panel
@@ -39,122 +56,7 @@ let infoPopoverSequence = 0;
  */
 @customElement('protspace-info-popover')
 class ProtspaceInfoPopover extends LitElement {
-  static styles = css`
-    :host {
-      display: inline-flex;
-      position: relative;
-    }
-
-    .info-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      height: 18px;
-      padding: 0;
-      border: none;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--legend-text-secondary, #6b7280);
-      cursor: pointer;
-      line-height: 1;
-    }
-
-    .info-button:hover,
-    .info-button.open {
-      color: var(--legend-text-color, #111827);
-      background: color-mix(in srgb, currentColor 12%, transparent);
-    }
-
-    .info-button:focus-visible {
-      outline: 2px solid var(--accent-color, #3b82f6);
-      outline-offset: 1px;
-    }
-
-    .popover {
-      position: absolute;
-      top: calc(100% + 6px);
-      left: 0;
-      z-index: 1000;
-      width: max-content;
-      box-sizing: border-box;
-      max-width: min(260px, calc(100vw - 24px));
-      padding: 0.55rem 0.65rem;
-      border-radius: 8px;
-      background: var(--surface-color, #ffffff);
-      color: var(--text-color, #111827);
-      border: 1px solid var(--border-color, #e5e7eb);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
-      font-size: 0.78rem;
-      line-height: 1.35;
-      text-align: left;
-      white-space: normal;
-    }
-
-    /* Open leftward (align right edge to the icon) when there isn't room on the right,
-       e.g. the info icon sits near the right edge of the annotation dropdown. */
-    .popover.flip-left {
-      left: auto;
-      right: 0;
-    }
-
-    /* Side placement: positioned via fixed viewport coordinates (set inline) so it escapes the
-       dropdown's overflow clipping and sits beside the row instead of over the list. */
-    .popover.placement-side {
-      position: fixed;
-      top: 0;
-      left: 0;
-      z-index: 2000;
-    }
-
-    /* Hidden until measured, to avoid a one-frame flash at the default (0,0) position. */
-    .popover.placement-side.measuring {
-      visibility: hidden;
-    }
-
-    /* Caret: a rotated square sharing the popover's surface + border, half-poking out the edge. */
-    .popover-arrow {
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      background: var(--surface-color, #ffffff);
-      border: 1px solid var(--border-color, #e5e7eb);
-      transform: rotate(45deg);
-    }
-
-    /* Left placement → caret on the right edge pointing toward the icon. */
-    .popover.placement-side .popover-arrow {
-      right: -6px;
-      border-left: none;
-      border-bottom: none;
-    }
-
-    /* Flipped to the right → caret on the left edge. */
-    .popover.placement-side.flipped .popover-arrow {
-      right: auto;
-      left: -6px;
-      border-left: 1px solid var(--border-color, #e5e7eb);
-      border-bottom: 1px solid var(--border-color, #e5e7eb);
-      border-right: none;
-      border-top: none;
-    }
-
-    .popover-description {
-      margin: 0;
-    }
-
-    .popover-link {
-      display: inline-block;
-      margin-top: 0.45rem;
-      color: var(--accent-color, #3b82f6);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .popover-link:hover {
-      text-decoration: underline;
-    }
-  `;
+  static styles = infoPopoverStyles;
 
   /** Short description text shown in the popover. */
   @property({ type: String }) description = '';
@@ -187,6 +89,12 @@ class ProtspaceInfoPopover extends LitElement {
   @state() private sideCoords: SideCoords | null = null;
 
   private readonly popoverId = `protspace-info-popover-${++infoPopoverSequence}`;
+
+  /**
+   * `aria-describedby` target. It is the description paragraph, never the popover itself: the
+   * popover carries an `aria-label`, and accname step 2C returns that label rather than
+   * descending into the contents, which would silently empty the description for every consumer.
+   */
   private readonly descriptionId = `${this.popoverId}-description`;
 
   /** Whether the popover is currently visible (any of the three triggers). */
@@ -212,7 +120,7 @@ class ProtspaceInfoPopover extends LitElement {
   firstUpdated() {
     // In side placement the bubble floats outside the dropdown panel, so the path from the icon to
     // the bubble crosses the row. Treat the whole row (this popover's parent) as the keep-open
-    // region — the bubble is a DOM descendant of it — so the user can glide from the ⓘ into the
+    // region (the bubble is a DOM descendant of it), so the user can glide from the ⓘ into the
     // bubble to click "Learn more" without it closing, while only the tiny panel↔bubble gap relies
     // on the grace period.
     if (this.placement === 'side' && this.parentElement) {
@@ -251,7 +159,7 @@ class ProtspaceInfoPopover extends LitElement {
 
   private _onPointerLeave = () => {
     // For side placement, closing is driven by leaving the whole row (see `_onRowPointerLeave`), so
-    // leaving just the icon must not start the close timer — otherwise crossing the row toward the
+    // leaving just the icon must not start the close timer; otherwise crossing the row toward the
     // bubble would dismiss it.
     if (this.placement === 'side') return;
     this._scheduleClose();
@@ -335,6 +243,11 @@ class ProtspaceInfoPopover extends LitElement {
         continue;
       }
       if (node instanceof Element) {
+        // An explicit opt-in comes first. A panel can want the bubble anchored to its edge
+        // without being a scroll container — the projection-metadata card is a short, fully
+        // visible list, so nothing about it clips, yet dropping the bubble under an icon
+        // still buries the rows below. Overflow detection alone cannot express that.
+        if (node.hasAttribute(POPOVER_BOUNDARY_ATTRIBUTE)) return node.getBoundingClientRect();
         const s = getComputedStyle(node);
         const clips = /(auto|scroll|hidden|clip)/;
         if (clips.test(s.overflowX) || clips.test(s.overflowY)) {
@@ -451,7 +364,7 @@ class ProtspaceInfoPopover extends LitElement {
   }
 
   private _onPointerDown = () => {
-    // A focus that immediately follows a pointerdown is a mouse/touch focus, not keyboard tabbing —
+    // A focus that immediately follows a pointerdown is a mouse/touch focus, not keyboard tabbing, so
     // don't open via `kbFocused` in that case (click handles the pinned state instead).
     this.pointerInitiatedFocus = true;
     setTimeout(() => {
@@ -515,7 +428,6 @@ class ProtspaceInfoPopover extends LitElement {
         aria-expanded=${open}
         aria-controls=${open ? this.popoverId : nothing}
         aria-describedby=${open && this.description ? this.descriptionId : nothing}
-        title=${ariaLabel}
         @pointerdown=${this._onPointerDown}
         @focus=${this._onFocus}
         @click=${this._onClick}

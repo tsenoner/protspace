@@ -18,3 +18,5 @@
 # from upstream via filter-repo. Keep it out of the web prettier pass so
 # re-syncs stay byte-for-byte and conflict-free (data JSON must not be reflowed).
 apps/protspace/
+# Generated landing-page data (see scripts/landing-data/build-landing-data.mts)
+apps/web/public/landing/

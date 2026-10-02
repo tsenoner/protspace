@@ -486,3 +486,86 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
     assert (
         rows["TRINITY_1"]["protein_category__pred_source"] == "P0%7Cref%3Bliteral%253B"
     )
+
+
+# ── Self-transfer: no query/reference rules (#393) ──────────────────────────
+#
+# "Apply EAT to all NA values in the current dataset": with no rules, every
+# protein missing a value in the target column is a query and every protein
+# holding one is a reference — no marker column, no second dataset.
+
+
+def _transfer_rows(query_rule=None):
+    """Transfer ``protein_category`` over the 3-protein fixture, keyed by id."""
+    annotations, embeddings = _three_protein_inputs()
+    out = run_transfer(
+        annotations=annotations,
+        embeddings=embeddings,
+        transfer_columns=["protein_category"],
+        query_rule=query_rule or Rule(),
+        reference_rule=Rule(),
+        k=1,
+        metric="euclidean",
+    )
+    return {r["identifier"]: r for r in out.to_pylist()}
+
+
+def test_run_transfer_without_rules_fills_missing_values():
+    by_id = _transfer_rows()
+    # TRINITY_1 is the only protein with a missing value; it sits on top of the
+    # neurotoxin reference P00001.
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+
+
+def test_run_transfer_without_rules_never_predicts_over_a_curated_value():
+    by_id = _transfer_rows()
+    for annotated in ("P00001", "P00002"):
+        assert by_id[annotated]["protein_category__pred_value"] is None
+        assert by_id[annotated]["protein_category"] != ""
+
+
+def test_run_transfer_without_rules_never_uses_a_protein_as_its_own_source():
+    for identifier, row in _transfer_rows().items():
+        source = row["protein_category__pred_source"]
+        if source is not None:
+            assert source != identifier
+
+
+def test_run_transfer_with_only_a_query_rule_still_finds_references():
+    # Regression: an absent reference rule used to yield an empty reference set,
+    # so the column was skipped and the bundle written back unchanged.
+    by_id = _transfer_rows(query_rule=Rule(id_prefixes=["TRINITY_"]))
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_without_rules_fills_missing_values(tmp_path):
+    import io
+
+    import pyarrow.parquet as pq
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_bundle
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            "-b",
+            str(bundle),
+            "-e",
+            str(h5),
+            "-t",
+            "protein_category",
+            "-o",
+            str(out_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    parts, _ = read_bundle(out_path)
+    rows = {r["protein_id"]: r for r in pq.read_table(io.BytesIO(parts[0])).to_pylist()}
+    assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    assert rows["P00001"]["protein_category__pred_value"] is None

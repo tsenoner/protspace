@@ -72,17 +72,31 @@ def test_discrete_path_produces_full_matrix(tmp_path):
     reductions = _load_reductions(proj)
     report = compute_statistics([emb], reductions, rng_seed=42)
     metrics = {r.metric for r in report.rows}
-    # Without annotations, cluster_validity emits only the K-selection meta row
-    # (n_clusters) — silhouette/DBI/CH now live in annotation_validity and require
-    # `annotations=`, which this call doesn't supply. Faithfulness (embedding
-    # matched by id-join) is unconditional.
+    # Without annotations, cluster_validity emits the K-selection meta row
+    # (n_clusters) plus annotation_validity rows for its own membership labels —
+    # curated annotations need `annotations=`, which this call doesn't supply.
+    # Faithfulness (embedding matched by id-join) is unconditional.
     assert {"n_clusters"} <= metrics
     assert {"knn_overlap", "trustworthiness", "continuity"} <= metrics
     # The fifth part (to_arrow) now carries aggregate validity only — faithfulness
     # routes to projection metadata, not this table (route-projection-statistics).
     table = report.to_arrow()
     assert table.schema.names[0] == "space_kind"
-    assert set(table.column("stat_family").to_pylist()) == {"cluster_validity"}
+    assert set(table.column("stat_family").to_pylist()) == {
+        "cluster_validity",
+        "annotation_validity",
+    }
+    # The only thing scored here is the auto-clustering itself.
+    scored = {
+        annotation
+        for annotation, family in zip(
+            table.column("annotation").to_pylist(),
+            table.column("stat_family").to_pylist(),
+            strict=True,
+        )
+        if family == "annotation_validity"
+    }
+    assert scored == {"cluster_elbow_E — PCA 2"}
     assert table.num_rows == len(report.partition()["statistics_part"])
 
 
@@ -225,10 +239,9 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     assert not [c for c in df.columns if c.startswith("silhouette_")]  # no 2nd column
     assert "organism" in df.columns  # pre-existing annotation preserved
     assert "identifier" in df.columns
-    # membership value = "cluster N|<silhouette>" (category + attached confidence)
-    label, _, score = str(df[cluster_cols[0]].iloc[0]).partition("|")
-    assert label.startswith("cluster ")
-    float(score)  # attached per-point silhouette parses as a number
+    # membership value = a bare "cluster N" category, like any curated annotation
+    value = str(df[cluster_cols[0]].iloc[0])
+    assert value.startswith("cluster ") and "|" not in value
 
 
 def test_stats_without_annotations_does_not_compute_per_protein(tmp_path):
@@ -517,7 +530,8 @@ def test_prepare_stats_annotation_validity_in_bundle(tmp_path):
     assert (st.stat_family == "annotation_validity").any()
     assert "annotation" in st.columns
     av = st[st.stat_family == "annotation_validity"]
-    assert set(av["annotation"]) == {"grp"}
+    # The curated annotation, plus the auto-clustering scored on its own labels.
+    assert set(av["annotation"]) == {"grp", "cluster_elbow_E — PCA 2"}
 
 
 def test_stats_rejects_bad_cluster_selection(tmp_path):
@@ -578,7 +592,9 @@ def test_stats_command_computes_annotation_validity(tmp_path):
     assert result.exit_code == 0, result.output
     st = pq.read_table(str(out)).to_pandas()
     assert "annotation" in st.columns
-    av = st[st.stat_family == "annotation_validity"]
+    # `label_kind` separates what the *selection* picked from the auto-clusterings,
+    # which are scored on their own labels regardless of `--stats-annotation`.
+    av = st[(st.stat_family == "annotation_validity") & (st.label_kind == "annotation")]
     assert set(av["annotation"]) == {"major_group"}
     assert {"embedding", "projection"} <= set(av["space_kind"])
 
@@ -624,7 +640,9 @@ def test_stats_command_scores_explicit_annotation_list(tmp_path):
     )
     assert result.exit_code == 0, result.output
     st = pq.read_table(str(out)).to_pandas()
-    av = st[st.stat_family == "annotation_validity"]
+    # `label_kind == "annotation"` isolates the selection's own scores from the
+    # auto-clusterings', which are scored regardless of `--stats-annotation`.
+    av = st[(st.stat_family == "annotation_validity") & (st.label_kind == "annotation")]
     # Exactly the two named columns — the explicit list is honoured, not auto.
     assert set(av["annotation"]) == {"major_group", "clade"}
     assert "unnamed_grp" not in set(av["annotation"])

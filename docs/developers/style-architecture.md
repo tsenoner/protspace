@@ -210,9 +210,29 @@ When refactoring a component:
 | control-bar       | Modular      | ✅ Reference  |
 | legend            | Modular      | ✅ Refactored |
 | structure-viewer  | Monolithic   | ✅ Updated    |
-| scatter-plot      | Monolithic   | ✓ Good as-is  |
+| scatter-plot      | Per-feature  | ✅ Refactored |
 | annotation-select | Monolithic   | ✓ Good as-is  |
 | search            | Monolithic   | ✓ Good as-is  |
+
+### scatter-plot
+
+`scatter-plot` does not follow the `styles/` pattern because the component itself is split by
+feature rather than by stylesheet. `packages/core/src/components/scatter-plot/` contains six
+feature subdirectories:
+
+| Directory              | Responsibility                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `webgl/`               | WebGL2 rendering, shaders, GL resources, and `renderer/` (on-screen and offscreen export renderers, framebuffers, point staging, context-loss handling) |
+| `interaction/`         | Pointer interaction controller and the quadtree hit-test index                                                                                          |
+| `duplicate-stacks/`    | Duplicate-point detection, badge rendering, and the spiderfy overlay                                                                                    |
+| `tooltips/`            | Protein tooltip and tips surfaces, plus positioning and height estimation                                                                               |
+| `styling/`             | Style getters, the visibility model, and numeric re-binning                                                                                             |
+| `projection-metadata/` | The projection metadata panel                                                                                                                           |
+
+Host-level CSS stays in the 183-line `scatter-plot.styles.ts`, which is inside the 150–300 band
+above. The sub-components that render their own shadow DOM (`tooltips/`, `projection-metadata/`)
+each ship their own co-located `.styles.ts`, so no single stylesheet grows large enough to need a
+`styles/` directory.
 
 ---
 

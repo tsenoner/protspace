@@ -10,6 +10,7 @@ class Settings:
     job_root: Path
     max_concurrent_jobs: int
     max_pending_jobs: int
+    # Retention. See `retention_worst_case_seconds` and the bound below.
     bundle_ttl_seconds: int
     upload_max_bytes: int
     sequence_max_count: int
@@ -26,13 +27,44 @@ class Settings:
     cors_allowed_origins: tuple[str, ...]
     rate_limit: str
 
+    @property
+    def retention_worst_case_seconds(self) -> int:
+        """Longest an upload and its bundle can exist on disk, measured from upload.
+
+        Three settings stack up. A job is deleted once its directory is older
+        than the TTL, but the sweeper only runs every `sweep_interval_seconds`,
+        so becoming eligible is not the same as being removed. And the
+        directory's mtime tracks the last pipeline write rather than the
+        upload, so the clock effectively starts up to a full
+        `pipeline_timeout_seconds` late.
+        """
+        return (
+            self.pipeline_timeout_seconds
+            + self.bundle_ttl_seconds
+            + self.sweep_interval_seconds
+        )
+
+
+# The retention bound published to users, in `apps/web/src/pages/Privacy.tsx`
+# ("Your Data": deleted "in any case within two hours").
+#
+# This is a promise, not a readout: the page states a figure a human chose, and
+# this constant is what holds the configuration to it. `load_settings` refuses
+# to start the service when the configured worst case exceeds it, so a TTL
+# raised here or via PREP_* in deploy-protspace-backend cannot silently make a
+# published privacy commitment false. Going under it is fine — the page is then
+# merely conservative.
+#
+# To change the promise, edit the page and this constant together.
+PUBLISHED_RETENTION_BOUND_SECONDS = 7200
+
 
 def _parse_origins(raw: str) -> tuple[str, ...]:
     return tuple(o.strip() for o in raw.split(",") if o.strip())
 
 
 def load_settings() -> Settings:
-    return Settings(
+    settings = Settings(
         job_root=Path(os.getenv("PREP_JOB_ROOT", "/var/lib/protspace-prep/jobs")),
         max_concurrent_jobs=int(os.getenv("PREP_MAX_CONCURRENT_JOBS", "5")),
         max_pending_jobs=int(os.getenv("PREP_MAX_PENDING_JOBS", "50")),
@@ -56,3 +88,21 @@ def load_settings() -> Settings:
         cors_allowed_origins=_parse_origins(os.getenv("CORS_ALLOWED_ORIGIN", "")),
         rate_limit=(os.getenv("PREP_RATE_LIMIT", "").strip() or "5/15minutes"),
     )
+
+    # Fail fast rather than serve while contradicting the published policy: a
+    # service that is down is a visible problem someone fixes, whereas one that
+    # quietly retains uploads for longer than users were told is not.
+    worst_case = settings.retention_worst_case_seconds
+    if worst_case > PUBLISHED_RETENTION_BOUND_SECONDS:
+        raise ValueError(
+            f"Retention worst case is {worst_case}s "
+            f"(PREP_PIPELINE_TIMEOUT_SECONDS={settings.pipeline_timeout_seconds} "
+            f"+ PREP_BUNDLE_TTL_SECONDS={settings.bundle_ttl_seconds} "
+            f"+ PREP_SWEEP_INTERVAL_SECONDS={settings.sweep_interval_seconds}), "
+            f"which exceeds the {PUBLISHED_RETENTION_BOUND_SECONDS}s bound "
+            "published in apps/web/src/pages/Privacy.tsx. Lower one of those "
+            "settings, or change the published promise and "
+            "PUBLISHED_RETENTION_BOUND_SECONDS together."
+        )
+
+    return settings

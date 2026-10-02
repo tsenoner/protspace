@@ -692,4 +692,77 @@ describe('style-getters', () => {
       expect(typeof surface.getPointShape).toBe('function');
     });
   });
+
+  describe('isMultilabel', () => {
+    /**
+     * The atlas gate. Pinned HERE, at the layer that decides it, because the
+     * property that makes it safe to gate a 32 B/point GPU allocation on is a
+     * property of `createStyleGetters` — that it answers from stored values and
+     * not from rendered colours — and nothing downstream can restate it.
+     */
+    const multiLabelData = (): VisualizationData => ({
+      protein_ids: ['p0', 'p1'],
+      projections: [{ name: 'test', data: new Float32Array(6), dimension: 3 }],
+      annotations: {
+        family: {
+          values: ['A', 'B'],
+          colors: ['#ff0000', '#00ff00'],
+          shapes: ['circle', 'circle'],
+        },
+      },
+      annotation_data: {
+        family: [
+          [0, 1],
+          [0, 1],
+        ],
+      },
+    });
+
+    const config = (overrides: Partial<StyleConfig> = {}): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'family',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 1, selected: 1, faded: 0.3 },
+      ...overrides,
+    });
+
+    it('is true when the selected annotation stores more than one value for a protein', () => {
+      expect(createStyleGetters(multiLabelData(), config()).isMultilabel()).toBe(true);
+    });
+
+    it('is false for a single-value annotation, and for no data or no selection', () => {
+      const single: VisualizationData = {
+        ...multiLabelData(),
+        annotation_data: { family: new Int32Array([0, 1]) },
+      };
+      expect(createStyleGetters(single, config()).isMultilabel()).toBe(false);
+      expect(createStyleGetters(null, config()).isMultilabel()).toBe(false);
+      expect(
+        createStyleGetters(multiLabelData(), config({ selectedAnnotation: '' })).isMultilabel(),
+      ).toBe(false);
+    });
+
+    it('answers from STORAGE, so hiding a value cannot retract it', () => {
+      // The regression this exists to catch: a colour-shaped gate
+      // (`getColors(p).length > 1`) reads false the moment hiding collapses every
+      // point to one colour — releasing the atlas exactly one un-hide before it is
+      // needed again, at 573K points a full realloc and upload per legend click.
+      const getters = createStyleGetters(
+        multiLabelData(),
+        config({ hiddenAnnotationValues: ['B'] }),
+      );
+      const point: PlotDataPoint = { id: 'p0', x: 0, y: 0, originalIndex: 0 };
+
+      // Colour-shaped would now say "single"...
+      expect(getters.getColors(point)).toHaveLength(1);
+      // ...storage-shaped still says multi.
+      expect(getters.isMultilabel()).toBe(true);
+    });
+  });
 });

@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as ProtspaceUtils from '@protspace/utils';
 import type { StructureData, TedDomain } from '@protspace/utils';
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +11,8 @@ const mocks = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 
-vi.mock('@protspace/utils', () => ({
+vi.mock('@protspace/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof ProtspaceUtils>()),
   StructureService: { loadStructure: mocks.loadStructure },
 }));
 

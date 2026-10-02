@@ -160,7 +160,7 @@ def test_build_cluster_legend_settings_produces_valid_envelope():
     # just types) so a regression like maxVisibleValues=0 — which would hide every
     # legend entry — is caught rather than passing an isinstance-only check.
     assert env["maxVisibleValues"] == 10  # max(10, len(labels)); 2 labels → 10
-    assert env["shapeSize"] == 30
+    assert env["shapeSize"] == 10
     assert env["sortMode"] == "size-desc"
     assert env["enableDuplicateStackUI"] is False
     assert env["hiddenValues"] == []
@@ -268,13 +268,11 @@ def test_annotation_columns_are_typed_in_protein_annotations_table():
 
     table = BaseProcessor({}, {})._create_protein_annotations_table(metadata)
     cols = table.column_names
-    # Single membership column; per-point silhouette is attached to its value.
+    # Single membership column, holding a bare category with no attached score.
     assert "cluster_elbow_P" in cols and "silhouette_P" not in cols
     d = table.to_pydict()
     for v in d["cluster_elbow_P"]:
-        label, _, score = v.partition("|")
-        assert label.startswith("cluster ")  # categorical part
-        float(score)  # attached per-point silhouette parses as a number
+        assert v.startswith("cluster ") and "|" not in v
 
 
 def test_router_multi_embedding_routes_each_projection_to_its_own_scores():

@@ -115,3 +115,35 @@ describe('fillLabelColorTexels', () => {
     expect(data.every((b) => b === 0)).toBe(true);
   });
 });
+
+describe('atlas layout matches what the shader recomputes', () => {
+  // The CPU writes at a linear texel index; the shader recovers the texel from
+  // that index and the atlas WIDTH. Row-major upload makes them the same texel at
+  // any width — this pins that, because a width change would otherwise be a
+  // silent, invisible corruption.
+  it.each([
+    [2048, 8],
+    [4096, 8],
+    [8192, 8],
+    [2048, 4],
+    [2048, 2],
+  ])('width %i, stride %i', (width, stride) => {
+    const points = 5;
+    const data = new Uint8Array(points * stride * 4);
+    const idx = 3;
+    const colors = ['#ff0000', '#00ff00'];
+    fillLabelColorTexels(data, idx, colors, stride);
+
+    for (let slice = 0; slice < colors.length; slice++) {
+      const globalIndex = idx * stride + slice;
+      // The shader's arithmetic, verbatim: tx = globalIndex % texW, ty = globalIndex / texW.
+      const tx = globalIndex % width;
+      const ty = Math.floor(globalIndex / width);
+      // A row-major RGBA8 texture puts texel (tx, ty) at this byte offset.
+      const shaderByteOffset = (ty * width + tx) * 4;
+      const cpuByteOffset = globalIndex * 4;
+      expect(shaderByteOffset).toBe(cpuByteOffset);
+      expect(data[cpuByteOffset + 3]).toBe(255);
+    }
+  });
+});

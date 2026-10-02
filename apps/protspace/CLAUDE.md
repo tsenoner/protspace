@@ -46,7 +46,7 @@ Single entry point: `protspace = protspace.cli.app:app`
 | Command | Purpose |
 |---------|---------|
 | `protspace prepare` | Full pipeline: embed → reduce → annotate → bundle |
-| `protspace embed` | FASTA → HDF5 embeddings (Biocentral API or local GPU/CPU via `--backend local`) |
+| `protspace embed` | FASTA → HDF5 embeddings (Biocentral API or local GPU/CPU via `--backend local`). Exits non-zero on an incomplete embedding; capability-limited sequences (`--max-length`, GPU OOM) are skipped and named instead |
 | `protspace project` | HDF5 → dimensionality reduction |
 | `protspace annotate` | Fetch protein annotations |
 | `protspace bundle` | Combine projections + annotations → .parquetbundle |
@@ -77,7 +77,7 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 
 ### protspace stats Usage
 
-Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Validity is **annotation-based**: silhouette/DBI/CH are scored on a user-selected annotation's own category labels (not auto-clustering), computed once for the source embedding and again for each projection — `statistics.parquet` (bundle 5th part) gains an `annotation` column and `space_kind ∈ {embedding, projection}`. `--stats-annotation auto|name1,name2` (default `auto`) picks which annotation column(s) to score (all "suitable" low-cardinality categoricals, or an explicit list); requires `-a/--annotations`. Auto-clustering (KMeans elbow/silhouette) is retained for the per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership columns (each value a `cluster N` label with the per-point silhouette attached as `|score`) + auto legend styles, but is no longer self-scored — instead its **ARI**/**NMI** agreement against each scored annotation is recorded (`stat_family=cluster_agreement`). Faithfulness (local kNN + global metrics, tagged `scope`) → each projection's `info_json.quality`. `--cluster-selection elbow|silhouette|both` picks the K-selection method(s).
+Compute per-projection quality statistics for an existing project directory (also available inline via `prepare --stats`). Validity is **annotation-based**: silhouette/DBI/CH are scored on a user-selected annotation's own category labels (not auto-clustering), computed once for the source embedding and again for each projection — `statistics.parquet` (bundle 5th part) gains an `annotation` column and `space_kind ∈ {embedding, projection}`. `--stats-annotation auto|name1,name2` (default `auto`) picks which annotation column(s) to score (all "suitable" low-cardinality categoricals, or an explicit list); requires `-a/--annotations`. Auto-clustering (KMeans elbow/silhouette) produces the per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership columns (each value a bare `cluster N` label) + auto legend styles. Each labelling is scored on its own categories through `AnnotationValidityStatistic` (`label_kind=kmeans_elbow|kmeans_silhouette`, filed under the membership column's name), so a cluster column carries the same validity rows as any annotation — optimistic by construction, which the frontend caveats. Its **ARI**/**NMI** agreement against each scored annotation is recorded separately (`stat_family=cluster_agreement`). Faithfulness (local kNN + global metrics, tagged `scope`) → each projection's `info_json.quality`. `--cluster-selection elbow|silhouette|both` picks the K-selection method(s).
 
 ```bash
 # Standalone (embeddings needed for faithfulness + the once-per-embedding annotation-validity pass)
@@ -106,10 +106,14 @@ protspace bundle -p project_dir -a annotations.parquet -s statistics.parquet --s
 | `ankh_base` | ElnaggarLab/ankh-base | 768 | CC-BY-NC-SA-4.0 |
 | `ankh_large` | ElnaggarLab/ankh-large | 1536 | CC-BY-NC-SA-4.0 |
 | `ankh3_large` | ElnaggarLab/ankh3-large | 1536 | CC-BY-NC-SA-4.0 |
-| `esmc_300m` | Synthyra/ESMplusplus_small | 960 | Cambrian Open |
-| `esmc_600m` | Synthyra/ESMplusplus_large | 1152 | Cambrian Non-Commercial |
+| `esmc_300m` | Synthyra/ESMplusplus_small | 960 | MIT |
+| `esmc_600m` | Synthyra/ESMplusplus_large | 1152 | MIT |
 
-Ankh models, ankh3_large, and esmc_600m are non-commercial only. ESMC models use Synthyra's HuggingFace-compatible reimplementation of EvolutionaryScale's ESM-C (near-identical embeddings, MSE ~7.74e-10).
+Only the Ankh models (`ankh_base`, `ankh_large`, `ankh3_large`) are non-commercial. ESM-C was relicensed under MIT on 2026-05-27, retroactively covering the Dec-2024 checkpoints, when it moved to the Chan Zuckerberg Biohub, and Synthyra's derivatives passed that grant through on 2026-06-02 — `esmc_600m` is no longer Cambrian Non-Commercial, so do not re-add that warning.
+
+ESM-C still goes through Synthyra's HuggingFace-compatible reimplementation of EvolutionaryScale's ESM-C (near-identical embeddings, MSE ~7.74e-10) for a purely technical reason, not a licensing one: `transformers` has no `esmc` model type (the port, huggingface/transformers#46419, is still open) and the `biohub/ESMC-*` repos ship no remote code, so loading the official weights would require the `esm` SDK, which pins `transformers<4.48.2` and Python `<3.13`. Revisit if #46419 merges; dims already match exactly (960 / 1152).
+
+The user-facing copy of this licensing note lives in `docs/guide/python-cli.md` and the `prepare`/`embed` CLI help; keep the three in step.
 
 Model shortcuts are defined in `MODEL_SHORT_KEYS` (CommonEmbedder models) and `EXTRA_SHORT_KEYS` (additional HuggingFace models) in `src/protspace/data/embedding/biocentral.py`. Display names are in `src/protspace/data/loaders/embedding_set.py`.
 
@@ -137,8 +141,9 @@ src/protspace/
 │   │   ├── query.py            # UniProt query → FASTA download
 │   │   └── similarity.py       # FASTA → MMseqs2 → similarity matrix
 │   ├── annotations/
+│   │   ├── cache.py            # all_annotations.parquet reuse: fill-in, legacy refresh, --refetch (prepare + annotate --cache-dir)
 │   │   ├── configuration.py    # Annotation category definitions
-│   │   ├── encoding.py         # Bundle format v2 wire contract (percent-encoding)
+│   │   ├── encoding.py         # Bundle format v2 wire contract (percent-encoding) + cache semantics versions
 │   │   ├── manager.py          # ProteinAnnotationManager orchestrator
 │   │   ├── merging.py          # Merge UniProt + InterPro annotations
 │   │   ├── scores.py           # Annotation score computation
@@ -152,6 +157,7 @@ src/protspace/
 │   │   ├── settings_converter.py # Settings table conversion
 │   │   └── writers.py          # Annotation output writers
 │   ├── embedding/
+│   │   ├── store.py            # Shared HDF5 layer + completeness contract (owned by neither backend)
 │   │   ├── biocentral.py       # Biocentral API client, model shortcut mappings
 │   │   └── local.py            # Local GPU/CPU backend (HF transformers, [local] extra)
 │   ├── parsers/
@@ -215,6 +221,10 @@ Six methods supported, all in `src/protspace/utils/reducers.py`:
 - **HDF5 loading:** `load_h5()` in `data/loaders/h5.py` handles both flat and grouped HDF5 layouts, validates embedding dimensions are consistent, and rejects per-residue embeddings with a clear error message.
 - **Multi-input merging:** `merge_same_name_sets()` in `data/loaders/embedding_set.py` unions proteins when multiple `-i` inputs share the same embedding name (e.g., two species with ProtT5). Inputs with different names are intersected for multi-embedding comparison. Duplicate proteins with identical embeddings are deduplicated; conflicting embeddings raise an error.
 - **UniProt ID validation:** `uniprot_retriever.py` pre-filters identifiers with a UniProt accession regex — non-matching IDs (e.g., `NCBI|...`, `sp|P12345|NAME`) are skipped with a summary warning. Identifiers must be bare accessions (e.g., `P12345`, `A0A2P1BSS8`). Inactive entries are resolved via `fetch_one()` (returns merged target or inactive reason + UniParc ID). Deleted entries recover their sequence from UniParc.
+- **Annotation cache (`all_annotations.parquet`):** `data/annotations/cache.py:fetch_annotations` decides what to reuse and fetch, for both `prepare` (via `ReductionPipeline._fetch_annotations`) and `annotate --cache-dir`. `ProteinAnnotationManager.to_pd` writes a checkpoint after each source fetched over the network (except the last, which the final write covers) under the final write's rules: a pending source keeps its cached columns, and new fill-in rows wait until every pending source the cache holds has filled them in. An incomplete source (plus its dependents) never reaches the cache; where the cache already holds current values for it, those are read back from the file and kept beside the sources that finished (`_kept_cached_values`, stale columns excluded), and the write is skipped only when no other fetched source finished. InterPro/Biocentral count as incomplete when UniProt lost a batch and a requested protein has no sequence. A cache holds values per identifier, not per sequence. `encoding.CACHE_SEMANTICS_CHANGES` versions stored meaning (v1 `xref_pdb`; v2 `protein_families` + every InterPro column, whose refresh also drops InterPro-N matches; v3 `root`, now the lineage's top node, and `predicted_transmembrane`, whose negative is `non-transmembrane` instead of `none`): a requested stale column refetches its source once (plus UniProt when the cache lacks the source's lookup key, via `determine_sources_to_fetch`; Biocentral needs `sequence` like InterPro, unless a FASTA covers the run), an unrequested one is dropped. A refresh widens its fetch to every cached column of each refreshed source the run queries anyway, then cuts the frame back to the request (`_requested_columns`), so it drops no current column. The cache also carries `protspace_uniprot_release` (from the `X-UniProt-Release` header, collected on `UniProtRetriever.releases`), which `prepare` writes to `run.log` as `uniprot_release:`; an empty stamp means no identifier was a UniProt accession (`UniProtRetriever.queried_accessions == 0`) and reads as `none`.
+- **Retrieval robustness:** InterPro is queried once per sequence MD5 and fans the matches out to every identifier sharing it, and its POST goes through `http_utils.post_with_retry` (same loop as `get_with_retry`). It skips InterPro-N matches (`source == "InterPro-N"`, AI predictions under a member library's name, unscored), so each column holds member-database matches only. Biocentral predicts in batches of `_BATCH_SIZE` (1,000); a failed batch sets `prediction_failed` and one stderr warning that stays clear of `_BIOCENTRAL_DOWN_PATTERNS`. Sequences outside the server's 7–5,000-residue limits (`_MIN/_MAX_SEQUENCE_LENGTH`) are never sent, because one of them makes the server refuse the whole request (422); they stay empty without failing the source, and a 422 that names a sequence resends the batch without it. Batches are also bounded at `_MAX_BATCH_RESIDUES` (200,000; the models fail on ~500K-residue requests), and a batch that fails otherwise is split in half and resent `_MAX_SPLIT_DEPTH` (2) levels deep. TED retries first-pass failures once more after the pass with the full budget, stopping after 10 consecutive failures. **Throughput:** TED (8) and InterPro (4) run a bounded number of requests at once (`MAX_CONCURRENT_REQUESTS` per module, `max_concurrent_requests=` per retriever, no CLI flag) on one `http_utils.PooledSession`. TED's first pass takes results as they finish (`http_utils.map_as_completed`, filed by position, failures sorted afterwards), so a lookup that times out holds up only its worker; TED's final pass and InterPro take them in input order (`http_utils.map_in_order`, 64 calls per worker submitted ahead), so values, failure counts and the 10-in-a-row breakers match one request at a time. Ending a pass early (a breaker, Ctrl-C) sets `PooledSession.stop`: queued calls are cancelled, running ones give up after their current attempt, and nothing more is sent (`FetchStopped`). A `Retry-After` on a `PooledSession` pauses every request on it, re-checked after each sleep; UniProt's single-attempt inactive-entry lookups go through `get_with_retry(attempts=1)` so they honour it too. UniProt reuses one session, sequentially. Tests take the backoff out by patching `http_utils._sleep` (plus `http_utils.time` for a fake clock), not the global `time.sleep`. Tests that fake these servers must patch `requests.Session.get/post`, not `requests.get/post`, or the real API is called. Each source's manager-facing failure signal (`failed_batch_count` / `prediction_failed` / `failed_lookup_count`) keeps an incomplete source out of the cache.
+- **Family names:** `UniProtEntry.protein_families` keeps the first sentence of every SIMILARITY text, never splitting inside parentheses (`(TC 3.A.3)` survives), drops `In the … section;` qualifiers, and `;`-joins distinct families with their evidence; `transform_protein_families` passes values through unchanged.
+- **Bundle columns:** `data/io/bundle.py` drops `INTERNAL_ANNOTATIONS` (`organism_id`, `sequence`) in `write_bundle` and `replace_annotations_in_bundle`, so `bundle`/`transfer` never carry them; `annotate -a sequence` still writes `sequence` to its own parquet.
 - **EC name resolution:** `uniprot_transforms.py` appends enzyme names to EC numbers using the ExPASy ENZYME database (`enzyme.dat` for fully specified ECs, `enzclass.txt` for partial ECs like `3.4.-.-`). Both files are downloaded and cached together in `~/.cache/protspace/enzyme/` with a 7-day TTL.
 - **Warning suppression:** `base_processor.py` suppresses harmless sklearn RuntimeWarnings (randomized SVD overflow) and umap/pacmap UserWarnings during `fit_transform`.
 - **Config validation:** `DimensionReductionConfig` (frozen dataclass in `utils/constants.py`) validates all parameters on init.
@@ -238,7 +248,7 @@ HDF5 file (float16 embeddings)
 ## Output Format
 
 `.parquetbundle` = concatenated Apache Parquet tables separated by `---PARQUET_DELIMITER---`:
-1. `protein_annotations` — identifier + annotation columns (incl. per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership, with per-point silhouette attached as `value|score`, when `--stats`)
+1. `protein_annotations` — identifier + annotation columns (incl. per-protein `cluster_elbow_*` / `cluster_silhouette_*` membership, a bare `cluster N` label, when `--stats`)
 2. `projections_metadata` — projection names, dimensions, parameters (faithfulness rides in `info_json.quality` when `--stats`)
 3. `projections_data` — reduced coordinates per protein per projection
 4. `settings` (optional) — annotation styles, pinned values, display config
@@ -263,30 +273,41 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 
 | File | What it covers |
 |------|---------------|
-| `test_annotation_manager.py` | Annotation fetch, merge, cache, configuration, evidence parsing |
+| `test_annotation_manager.py` | Annotation fetch, merge, cache, configuration, evidence parsing; per-identifier reuse (a source is fetched only for the identifiers the cache lacks, taxonomy only for unseen organisms, rows outside the run are kept, a failed fill-in caches nothing) |
 | `test_transformer.py` | Annotation transformers (field normalization, EC names) |
 | `test_reducers.py` | All 6 DR methods: shapes, finite output, float16, config validation |
-| `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing |
+| `test_interpro_annotation_retriever.py` | InterPro API mocking, parsing, identical sequences all receiving the matches, POST retry before a batch counts as lost, InterPro-N matches dropped (captured real responses), parallel batches equal to one at a time, breaker bound under concurrency, a tripped breaker stopping batches still retrying, a slow batch not holding up the others |
+| `test_http_retry.py` | `get_with_retry` / `post_with_retry`: transient status + network errors retried, `Retry-After` honoured and capped, 4xx not retried, bounded attempts; `paginated_get`'s `on_response` sees every page; sending through a `PooledSession`, whose `Retry-After` pauses every request (re-checked when another extends it) and whose `stop` ends waits and sends nothing more; `map_in_order` order, concurrency bound, submit-ahead bound, a slow call not idling the pool, early close setting `stop`; `map_as_completed` (completion order, bounded queue, slow call holding only its worker) |
+| `test_annotation_checkpoints.py` | Per-source cache checkpoints: an interrupt during TED keeps UniProt + InterPro cached, a later incomplete source, pending sources keep their cached columns, fill-in rows wait for pending sources, nothing written on a cache hit or without a cache |
+| `test_annotate_cache_dir.py` | `annotate --cache-dir` / `--refetch`: resume after an interrupt, reusing a `prepare` cache, `--refetch` without a cache is a usage error, no cache without the flag, internal columns only when requested |
+| `test_run_log.py` | UniProt release stamp on the cache (full fetch, fill-in, refetch, unstamped → `unknown`, `Mock`/missing `releases`, no UniProt accession → `none`) and the `run.log` `uniprot_release:` line |
+| `test_failed_source_cache.py` | A failed source whose values the cache holds keeps them while finished sources (e.g. TED) are saved; uncovered proteins left out; kept UniProt values keep their release; no rewrite when nothing else finished; InterPro/Biocentral incomplete when a lost UniProt batch left them without sequences |
+| `test_legacy_cache_refresh.py` | Cache versions 2 and 3: `protein_families` refetches UniProt once, an InterPro column refetches InterPro once (and fetches sequences the cache lacks), `root` refetches taxonomy once (and fetches `organism_id` the cache lacks), `predicted_transmembrane` refetches Biocentral once (and fetches sequences the cache lacks), a refresh keeps every cached column of its source, a default run pays no taxonomy/Biocentral refresh, no other source is fetched, unrequested stale columns are dropped, a failed refresh stamps nothing stale as current; the literal InterPro list in `encoding.py` pinned to `INTERPRO_ANNOTATIONS` |
+| `test_annotation_retrieval_e2e.py` | One offline `prepare` through the real UniProt + InterPro retrievers: the release header reaches `run.log`, shared-sequence proteins both get Pfam in the bundle, no internal columns |
+| `test_protein_families_parser.py` | Family parsing on real UniProt text shapes: `(TC …)` kept whole, section qualifiers dropped, multi-section entries `;`-joined with evidence, repeats once; transformer + `--no-scores` on multi-family cells |
+| `test_bundle_internal_columns.py` | `write_bundle`, `bundle -a`, `replace_annotations_in_bundle` and `transfer` drop `organism_id`/`sequence` and keep the v2 stamp; `annotate -a sequence` still writes `sequence` |
 | `test_settings_converter.py` | Settings table ↔ visualization state conversion |
-| `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution |
-| `test_pipeline_utils.py` | ReductionPipeline, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
-| `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
+| `test_uniprot_annotation_retriever.py` | UniProt API mocking, inactive entry resolution, `X-UniProt-Release` collected from every response on `releases`, every request through one session, a `Retry-After` on an inactive-entry or UniParc lookup holding the next request |
+| `test_pipeline_utils.py` | ReductionPipeline, projection cache identity (a changed, reordered or grown matrix under one embedding name misses; an unchanged rerun hits; `--refetch projections` always recomputes), annotation cache fill-in wiring, EmbeddingSet, method parsing, multi-input merging, inline param overrides |
+| `test_stats.py` | Projection statistics: elbow, annotation-based validity (silhouette/DBI/CH per annotation), auto-cluster ARI/NMI agreement, auto-cluster self-validity (filed under the membership column, gated on it, and equal to driving `AnnotationValidityStatistic` directly so an out-of-band re-score cannot drift), faithfulness (dual continuity + global metrics), cluster-selection (elbow/silhouette/both), subsample determinism/order-invariance, silhouette consistency, `_align` no-id guard, silhouette→elbow fallback |
 | `test_stats_cli.py` | `protspace stats` CLI + `prepare` stats wiring, `--stats-annotation` (auto/list) wiring, `--settings-out` guard, `--cluster-selection` validation |
 | `test_stats_carriage.py` | Routing rows to bundle parts (metadata quality, annotation columns, cluster legend) |
 | `test_stats_bundle.py` | Optional 5th (statistics) bundle part round-trip |
 | `test_annotation_select.py` | Annotation selection: suitability filter (cardinality/numeric/id-like exclusion), `auto` vs explicit-list label building (explicit names bypass the heuristic), missing-value dropping |
 | `test_annotation_validity.py` | `AnnotationValidityStatistic`: silhouette/DBI/CH scored per annotation on `ctx.coords`, embedding vs. projection `space_kind`, missing-value exclusion, single-category no-op, id-canonical subsample determinism |
-| `test_biocentral_embedder.py` | Biocentral API client, embedding flow |
-| `test_backend_switch.py` | Embedding backend switch: `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
-| `test_local_embedder.py` | Local embedding backend: checkpoint resolution (12 short keys, Synthyra ESM-C), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, empty-output guard, esm2_8m end-to-end + resume (slow) |
+| `test_biocentral_embedder.py` | Biocentral API client, embedding flow, completeness gate (reads the .h5, not a counter), `/`-in-header rejection, producer stamping, and a local-written cache refused before any API call |
+| `test_embed_completeness.py` | Shared embed contract (`data/embedding/store.py`): `expected = requested - skipped`, skip-vs-fail, skip reporting, resume-covered runs, FASTA coverage direction + identifier normalisation; producer ownership (another backend or model is refused with the remedies and the file left byte-identical, an unstamped file is adopted then owned) and residue identity (a changed sequence is outstanding again and replaces its vector + digest, an unchanged one resumes, a digest-less protein is trusted, digests read in one file open) |
+| `test_backend_switch.py` | Embedding backend switch: `embed_fasta` refuses another backend's cache and resumes its own, and returns only the requested FASTA's proteins; `resolve_default_backend` (Colab+GPU→local), `embed_fasta` local/biocentral dispatch (short key vs resolved name), `protspace embed --backend` CLI wiring + enum validation + non-positive batch_size rejection |
+| `test_local_embedder.py` | Local embedding backend: producer/digest stamping, refusing a Biocentral cache before a checkpoint loads, re-embedding a changed sequence; checkpoint resolution (12 short keys, Synthyra ESM-C), the notebook-gating sets pinned to the registry each constrains (`COLAB_OVERSIZED`→`LOCAL_CHECKPOINTS`, `BIOCENTRAL_INVALID`→`ALL_SHORT_KEYS`), per-family preprocessing/residue pooling, `/`-in-header guard, LocalEmbedConfig validation, over-length + OOM skips reported not failed, non-skip shortfall fails, esm2_8m end-to-end + resume (slow) |
 | `test_fasta.py` | FASTA parsing, edge cases, CSV annotation loading |
-| `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence) |
+| `test_query.py` | UniProt query FASTA download: a truncated download is never published, atomic cache publication, umask-derived permissions, and a retained FASTA owned by its query text (`prepare -q A` then `-q B` in one output directory) |
+| `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence), batches of at most `_BATCH_SIZE`, a failed batch keeps the others and warns clear of `_BIOCENTRAL_DOWN_PATTERNS`, long sequences still sent |
 | `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
-| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
+| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
-| `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names) |
+| `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
 | `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_output_combinations.py` | Output format flag combinations |
@@ -297,11 +318,15 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
 | `test_bundle_overlay.py` | Round-trip replacement of the annotations part of a bundle |
+| `test_atomic_publication.py` | `data/io/atomic.py`: staged rename keeps the previous content on failure, and a published file (bundle, statistics parquet, retained FASTA) carries the process umask rather than `mkstemp`'s owner-only mode |
 | `test_classification.py` | Query/reference rules: id-prefix and case-insensitive `where` substring, query-over-reference precedence, empty-match and missing-column errors |
 | `test_bundle_version.py` | `format_version=2` stamped into the annotations parquet |
 | `test_uniprot_parser_encoding.py` | UniProtEntry free-text emit points percent-encode reserved chars |
 | `test_cath_names.py` | CATH names file parsing |
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
+| `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
+| `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
+| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing |
 | `test_encoding_e2e.py` | Backend end-to-end round-trip proof for v2 annotation encoding |
 | `test_scores_ted.py` | `--no-scores` strips TED domains |
 
@@ -319,13 +344,17 @@ Located in `notebooks/`:
 
 ## Dependencies
 
-**Core:** h5py, scikit-learn, umap-learn, pacmap, numpy, pandas, pyarrow, tqdm, requests, pymmseqs, biocentral-api, typer, rich, protlabel (workspace member)
+**Core:** h5py, scikit-learn, umap-learn, pacmap, numpy, pandas, pyarrow, tqdm, requests, biocentral-api, typer, rich, protlabel (workspace member)
 
 **Frontend (optional):** dash, plotly, dash-bootstrap-components, dash-molstar
 
-**Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops — enables on-device embedding via `protspace.data.embedding.local` (issue #59; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
+**Similarity (optional, `[similarity]` extra):** pymmseqs, only reached via `-s/--similarity`. Install with `pip install "protspace[similarity]"`.
 
-**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (Synthyra ESM++) is bit-identical to native EvolutionaryScale ESM-C but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed. See `docs/superpowers/plans/2026-07-13-colab-biocentral-independence.md` (PR3 results).
+The two reasons it was moved out of core are **fixed upstream as of pymmseqs 1.2.0** (2026-08-11): every release through 1.1.0 shipped cp310-only wheels, so on this package's `requires-python = ">=3.12"` it always compiled from sdist, and its `ipython<9` pin upgraded Colab's pinned ipython. 1.2.0 ships `py3-none-*` wheels for macOS/manylinux/musllinux and depends only on numpy/pandas/pyyaml — all already core. **The floor is `>=1.2.0` so that is guaranteed, not incidental.** It stays an extra anyway: it is reachable through one flag, and a smaller base install is worth keeping on its own. Revisit only if `-s` stops being niche.
+
+**Local embedding (optional, `[local]` extra):** torch, transformers, sentencepiece, protobuf, einops, enabling on-device embedding via `protspace.data.embedding.local` (issue #320; alternative to the Biocentral API). Install with `pip install "protspace[local]"`.
+
+**Local↔Biocentral parity (verified 2026-07-16):** local embeddings match the Biocentral API at **cosine ≥ 0.9999** for ProtT5, ProstT5, ESM2, Ankh, and Ankh3 (25-seq Pla2g2 cross-check; small rel-L2 is half-vs-full precision drift). **Exception — ESM-C:** local ESM-C (Synthyra ESM++) is bit-identical to native EvolutionaryScale ESM-C but **orthogonal to Biocentral's ESM-C** (cosine ~0.02). Root cause is on Biocentral's side: its engine (`biotrainer`) has no dedicated ESM-C embedder and its generic loader substring-matches `"esm"` in `ESMplusplus`, loading the ESM-C checkpoint as a vanilla ESM-2 model (wrong architecture/tokenizer) — so it never runs the real ESM-C. Do **not** mix local and Biocentral `esmc_*` embeddings in one dataset until Biocentral is fixed.
 
 **Dev:** pytest, pytest-cov, ruff
 

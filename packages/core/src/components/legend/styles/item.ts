@@ -447,4 +447,10 @@ export const itemStyles = css`
     height: 100%;
     padding: 0 0 0 9px;
   }
+
+  .legend-item-score-hover {
+    box-shadow:
+      0 1px 2px 0 rgba(0, 0, 0, 0.05),
+      inset 2px 0 0 var(--legend-text-color);
+  }
 `;

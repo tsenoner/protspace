@@ -2,20 +2,28 @@ name: protspace future-Python canary
 
 # Early-warning for the NEXT Python release (not yet in protspace-ci.yml's
 # matrix). It fresh-resolves the whole dev environment on that interpreter and
-# runs the fast test suite. GitHub emails the workflow's last editor when a
-# scheduled run fails, so a break surfaces here — before a user hits it.
+# runs the fast test suite.
 #
 # WHY THIS EXISTS: protspace-ci.yml tests only released Pythons against the
 # pinned lock. Nothing there would tell you a coming release broke you until you
 # manually added it. This job watches ahead so adding the next version to the
 # matrix is a known-good one-line change, not a gamble.
 #
-# EXPECTED TO BE RED UNTIL THE ECOSYSTEM CATCHES UP: a new CPython ships months
-# before numba/llvmlite/pyarrow publish wheels for it, so early failures here are
-# usually "the stack isn't ready yet", not a protspace bug. When it fails, read
-# the log: a missing-wheel/source-build error for a dependency ≠ a protspace
-# regression. Once this goes green, promote the version into protspace-ci.yml and
-# bump the version below to the next one.
+# RED MEANS ACT, GREEN MEANS WAIT. A new CPython ships months before torch,
+# numba, pyarrow et al. publish wheels for it, so for most of this workflow's
+# life the install cannot succeed at all. That is the ecosystem's state, not a
+# protspace regression, and reporting it as a failure every month trains you to
+# ignore the one mail that matters. So the run classifies uv's error instead:
+# a recognised packaging gap writes a wheel-readiness table to the job summary
+# and ends GREEN. Two things turn it red, and GitHub emails the workflow's last
+# editor for both:
+#
+#   1. uv failed in a way that is NOT a known packaging gap, or the stack
+#      installed and the tests failed — a real problem, read the log.
+#   2. Everything passed — the ecosystem has caught up. Promote the version into
+#      protspace-ci.yml's matrix and bump the one below to the next release.
+#
+# Every run's job summary tracks how close case 2 is.
 
 on:
   schedule:
@@ -50,12 +58,73 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Resolve + install on the next Python (fresh, ignoring the pinned lock)
+        id: sync
+        # Failure here is the expected state for most of this workflow's life, so
+        # it must not end the job — the next two steps decide what it meant.
+        continue-on-error: true
         # --upgrade, NOT --locked: the committed lock has no wheels for the next
         # Python. A fresh resolve pulls the newest versions that support it; a
         # dependency with no compatible release is exactly the signal we want.
-        run: uv sync --group dev --upgrade
+        run: |
+          set -o pipefail
+          uv sync --group dev --upgrade 2>&1 | tee "$RUNNER_TEMP/sync.log"
+
+      - name: Report wheel readiness
+        if: steps.sync.outcome == 'failure'
+        # uv names only the first distribution it cannot install, which says
+        # nothing about how far off the rest of the stack is. This walks every
+        # direct dependency so the summary answers "how close are we?".
+        # Needs Python 3.11+ for tomllib; every current runner image has 3.12+.
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 .github/scripts/next_python_readiness.py \
+            --pyproject apps/protspace/pyproject.toml \
+            --python-version '${{ matrix.python-version }}' \
+            --group dev
+
+      - name: Classify the failure — packaging gap (green) or real problem (red)
+        if: steps.sync.outcome == 'failure'
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          log="$RUNNER_TEMP/sync.log"
+
+          # uv's vocabulary for "no artifact this interpreter can install or build".
+          no_artifact="doesn't have a source distribution or wheel for the current platform|only has wheels with the following Python ABI tags|Failed to build "
+
+          if grep -qE "$no_artifact" "$log"; then
+            reason="a dependency publishes nothing installable for CPython ${PYTHON_VERSION} yet"
+          elif grep -q 'No solution found when resolving dependencies' "$log" \
+            && grep -q 'requires Python' "$log"; then
+            # A dependency caps requires-python below the target, so resolution
+            # never even gets as far as picking artifacts.
+            reason="a dependency declares it does not support Python ${PYTHON_VERSION} yet"
+          else
+            {
+              echo "## Unrecognised failure on Python ${PYTHON_VERSION}"
+              echo
+              echo "\`uv sync\` failed, but not with a known packaging gap. This may be a real"
+              echo "protspace problem — read the log of the resolve step above."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::uv sync failed in a way this canary does not recognise as an ecosystem gap — read the log."
+            exit 1
+          fi
+
+          {
+            echo "## Ecosystem not ready for Python ${PYTHON_VERSION}"
+            echo
+            echo "Ending green: ${reason}. Nothing to do — this is not a protspace regression."
+            echo
+            echo "uv stopped at:"
+            echo
+            echo '```'
+            grep -E '^(error|hint):' "$log" | head -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Ecosystem not ready for Python ${PYTHON_VERSION} — ${reason}. Ending green."
 
       - name: Assert the leg actually runs its matrix version
+        if: steps.sync.outcome == 'success'
         run: |
           uv run python -c "
           import sys
@@ -66,4 +135,25 @@ jobs:
           "
 
       - name: Run tests
+        if: steps.sync.outcome == 'success'
         run: uv run pytest -m "not slow" -q
+
+      - name: Signal that the next Python is ready to promote
+        if: steps.sync.outcome == 'success'
+        # Reached only when the install AND the tests passed — the whole point of
+        # the canary. Fails deliberately: a green run sends no mail, and this is
+        # the one moment there is something to do.
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          {
+            echo "## Python ${PYTHON_VERSION} is ready"
+            echo
+            echo "The dev environment resolved and installed on CPython ${PYTHON_VERSION} and the"
+            echo "fast suite passed. Promote it:"
+            echo
+            echo "1. Add \`'${PYTHON_VERSION}'\` to \`protspace-ci.yml\`'s test matrix."
+            echo "2. Bump this workflow's matrix to the next Python release."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Python ${PYTHON_VERSION} is ready — promote it into protspace-ci.yml and bump this canary to the next release."
+          exit 1

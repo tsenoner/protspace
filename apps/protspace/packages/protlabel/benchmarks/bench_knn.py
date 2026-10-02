@@ -11,8 +11,6 @@ n_queries=128; cosine; k=1. Dims span the pLMs ProtSpace embeds with:
 Timings use time.perf_counter. BLAS is warmed up once before timing.
 peak_mb is whole-process peak RSS sampled during each method's build+query window
 (best-effort; includes interpreter + shared ref/query arrays baseline).
-
-See docs/superpowers/research/2026-06-29-usearch-vs-bruteforce.md for results + analysis.
 """
 
 from __future__ import annotations

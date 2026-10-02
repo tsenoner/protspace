@@ -1,5 +1,12 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
-import { setStorageItem, removeStorageItem, type LegendSettingsMap } from '@protspace/utils';
+import {
+  buildStorageKey,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+  hasStorageItem,
+  type LegendSettingsMap,
+} from '@protspace/utils';
 import type {
   LegendPersistedSettings,
   LegendItem,
@@ -69,12 +76,25 @@ export class PersistenceController
   override getAllSettingsForExport(annotationNames: string[]): LegendSettingsMap {
     const settings = super.getAllSettingsForExport(annotationNames);
     const sanitized: LegendSettingsMap = {};
+    const picked = this.loadShapeSize();
 
     for (const [annotation, annotationSettings] of Object.entries(settings)) {
-      sanitized[annotation] = this._stripLegacyFields(annotationSettings);
+      sanitized[annotation] = this._stripLegacyFields(
+        picked === null ? annotationSettings : { ...annotationSettings, shapeSize: picked },
+      );
     }
 
     return sanitized;
+  }
+
+  loadShapeSize(): number | null {
+    if (!this._datasetHash) return null;
+    const size = getStorageItem<unknown>(buildStorageKey('point-size', this._datasetHash), null);
+    return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+  }
+
+  saveShapeSize(size: number, datasetHash: string = this._datasetHash): void {
+    if (datasetHash) setStorageItem(buildStorageKey('point-size', datasetHash), size);
   }
 
   private _stripLegacyFields(settings: LegendPersistedSettings): LegendPersistedSettings {
@@ -196,12 +216,17 @@ export class PersistenceController
   }
 
   /**
-   * Check if there are persisted settings for current dataset/annotation
+   * Check if there are persisted settings for current dataset/annotation.
+   *
+   * Goes through `hasStorageItem` rather than touching `localStorage` directly: this runs on the
+   * legend's main rebuild path (`_updateLegendItems`), so a throw here — Safari private browsing,
+   * site data blocked — took down legend rendering entirely rather than just losing the saved
+   * settings it is asking about.
    */
   hasPersistedSettings(): boolean {
     const key = this._getStorageKey();
     if (!key) return false;
-    return localStorage.getItem(key) !== null;
+    return hasStorageItem(key);
   }
 
   /**

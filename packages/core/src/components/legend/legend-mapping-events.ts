@@ -8,7 +8,7 @@
 export interface LegendColorMappingDetail {
   colorMapping: Record<string, string>;
   shapeMapping: Record<string, string>;
-  /** INV-08 contract: true skips depth re-sort + virtualization invalidation. */
+  /** INV-08 contract: true skips the depth re-sort. */
   colorOnly: boolean;
 }
 

@@ -9,13 +9,21 @@
  * spelling to MISSING_VALUE_TOKENS here and every consumer picks it up.
  */
 
-/** Strings that mean "this value is missing". Compared case-insensitively. */
+/**
+ * Strings that mean "this value is missing". Compared case-insensitively.
+ *
+ * `__na__` is here to reserve the spelling of NA_VALUE below: the bundle writer
+ * drops that token unconditionally (it is the sentinel a missing cell carries),
+ * so a genuine category literally spelled `__NA__` would be silently deleted on
+ * export. Normalizing it to missing at ingestion makes the two agree.
+ */
 export const MISSING_VALUE_TOKENS: ReadonlySet<string> = new Set([
   'na',
   'n/a',
   'nan',
   'null',
   'none',
+  '__na__',
 ]);
 
 /** Internal identity token for NA after ingestion. Never displayed to users. */

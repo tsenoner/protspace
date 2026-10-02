@@ -21,8 +21,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import './control-bar';
-import type { FilterQuery } from './query-types';
+import type { FilterQuery, NumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
+import { findConditionsForAnnotation } from './query-annotation-conditions';
+import { NA_VALUE } from '@protspace/utils';
 
 interface StubScatterplot {
   filteredProteinIds?: string[];
@@ -44,7 +46,7 @@ interface ControlBarInternals extends HTMLElement {
   selectedAnnotation: string;
   filterActive: boolean;
   filterQuery: FilterQuery;
-  _lastEmittedThreshold: number;
+  clearForNewDataset(datasetHash: string, clearPersistedState?: boolean): void;
   setEatConfidenceThreshold(baseKey: string, x: number): void;
   _handleQueryApply(event: CustomEvent<{ matchedIndices: Set<number> }>): void;
   _handleQueryChanged(event: CustomEvent<{ query: FilterQuery }>): void;
@@ -151,8 +153,9 @@ describe('control-bar filter query apply', () => {
 
 /**
  * Two-way mirror between the legend reliability slider and the query filter (#6b).
- * Forward: `setEatConfidenceThreshold(base, x)` upserts `NOT(EAT_confidence < x)`
- * for x>0 and removes it for x<=0, running the same apply path as a real query.
+ * Forward: `setEatConfidenceThreshold(base, x)` upserts `EAT_confidence >= x`
+ * carrying the N/A presence chip for x>0 and removes it for x<=0, running the
+ * same apply path as a real query.
  * Reverse: a query change carrying (or dropping) that condition emits
  * `eat-threshold-mirror` so the slider can follow. The eat-confidence column is
  * resolved by runtime identity, not the `__eat_confidence` string suffix, so the
@@ -183,10 +186,47 @@ function makeEatData(): ProtspaceData {
   };
 }
 
-function eatCondition(query: FilterQuery) {
-  return query.find(
-    (item) => 'kind' in item && item.kind === 'numeric' && item.annotation === EAT_KEY,
-  );
+/**
+ * Mounts a control bar wired to a stub scatter plot. The stub is a hand-maintained
+ * contract with the component — every method the control bar reaches for through
+ * `_scatterplotElement` — so it is stated once: a copy per describe block meant a new
+ * call surfaced as `TypeError: sp.foo is not a function` inside the component, reading
+ * as a component bug rather than a fixture gap.
+ *
+ * `selectedAnnotation` matters because the reverse mirror is scoped to the SELECTED
+ * base's eat-confidence column; it is what makes the derived threshold resolve.
+ */
+async function mountControlBar(
+  makeData: () => ProtspaceData,
+  selectedAnnotation?: string,
+): Promise<{ controlBar: ControlBarInternals; scatter: StubScatterplot }> {
+  document.body.innerHTML = '';
+  const controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
+  controlBar.autoSync = false;
+  document.body.appendChild(controlBar);
+  await controlBar.updateComplete;
+
+  const scatter: StubScatterplot = {
+    selectedProteinIds: ['sentinel'],
+    isolateSelection: vi.fn(),
+    resetIsolation: vi.fn(),
+    getCurrentData: vi.fn(() => makeData()),
+    getMaterializedData: vi.fn(() => makeData()),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  };
+
+  controlBar._scatterplotElement = scatter;
+  controlBar._currentData = makeData();
+  if (selectedAnnotation !== undefined) controlBar.selectedAnnotation = selectedAnnotation;
+  await controlBar.updateComplete;
+
+  return { controlBar, scatter };
+}
+
+/** The column's live reliability condition, which is always the first (and only) one. */
+function eatCondition(query: FilterQuery, key: string = EAT_KEY): NumericCondition | undefined {
+  return findConditionsForAnnotation(query, key)[0];
 }
 
 describe('control-bar EAT reliability slider <-> query mirror', () => {
@@ -194,42 +234,22 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
   let scatter: StubScatterplot;
 
   beforeEach(async () => {
-    document.body.innerHTML = '';
-    controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
-    controlBar.autoSync = false;
-    document.body.appendChild(controlBar);
-    await controlBar.updateComplete;
-
-    scatter = {
-      selectedProteinIds: ['sentinel'],
-      isolateSelection: vi.fn(),
-      resetIsolation: vi.fn(),
-      getCurrentData: vi.fn(() => makeEatData()),
-      getMaterializedData: vi.fn(() => makeEatData()),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    };
-
-    controlBar._scatterplotElement = scatter;
-    controlBar._currentData = makeEatData();
-    // The reverse mirror is scoped to the SELECTED base's eat-confidence column,
-    // so the color-by annotation must name the base ('family') for the derived
-    // threshold to resolve.
-    controlBar.selectedAnnotation = 'family';
-    await controlBar.updateComplete;
+    ({ controlBar, scatter } = await mountControlBar(makeEatData, 'family'));
   });
 
-  it('forward: upserts a single NOT(EAT_confidence < x) condition and applies it', () => {
+  it('forward: upserts a single "EAT_confidence >= x or N/A" condition and applies it', () => {
     controlBar.setEatConfidenceThreshold('family', 0.5);
 
     const eat = eatCondition(controlBar.filterQuery);
     expect(eat).toMatchObject({
       kind: 'numeric',
       annotation: EAT_KEY,
-      operator: 'lt',
-      max: 0.5,
-      logicalOp: 'NOT',
+      operator: 'gte',
+      min: 0.5,
+      presence: [NA_VALUE],
     });
+    // Un-negated: the N/A chip is what retains curated points now, not NOT.
+    expect(eat?.logicalOp).not.toBe('NOT');
     expect(controlBar.filterQuery).toHaveLength(1);
     expect(scatter.filtersActive).toBe(true);
     expect(controlBar.filterActive).toBe(true);
@@ -256,7 +276,9 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
     expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
       1,
     );
-    expect(eatCondition(controlBar.filterQuery)).toMatchObject({ max: 0.8 });
+    expect(eatCondition(controlBar.filterQuery)).toMatchObject({
+      min: 0.8,
+    });
     // Kept = curated (5) + predictions >= 0.8 (p16–p19 = 4) = 9.
     expect(scatter.filteredProteinIds).toHaveLength(9);
   });
@@ -315,19 +337,23 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
               id: 'x',
               kind: 'numeric',
               annotation: EAT_KEY,
-              operator: 'lt',
-              min: null,
-              max: 0.6,
-              logicalOp: 'NOT',
+              operator: 'gte',
+              min: 0.6,
+              max: null,
+              presence: [NA_VALUE],
             },
           ],
         },
       }),
     );
-    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.6 } }));
+    expect(mirror).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: expect.objectContaining({ value: 0.6 }) }),
+    );
 
     controlBar._handleQueryChanged(new CustomEvent('query-changed', { detail: { query: [] } }));
-    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0 } }));
+    expect(mirror).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: expect.objectContaining({ value: 0 }) }),
+    );
   });
 
   it('guards the loop: a query change echoing the forward value does not re-emit', () => {
@@ -341,6 +367,64 @@ describe('control-bar EAT reliability slider <-> query mirror', () => {
       new CustomEvent('query-changed', { detail: { query: controlBar.filterQuery } }),
     );
     expect(mirror).not.toHaveBeenCalled();
+  });
+
+  it('keeps a mode that constrains nothing, across an unrelated query edit', () => {
+    // Start from a freshly loaded dataset: `clearForNewDataset` empties the per-column
+    // record, and the colour-by annotation is unchanged so nothing repopulates it.
+    controlBar.clearForNewDataset('hash');
+    controlBar._currentData = makeEatData();
+    controlBar.selectedAnnotation = 'family';
+
+    // "Hide above" picked before its bound is moved constrains nothing, so the forward
+    // mirror emits no condition and returns early. It must still record the position:
+    // otherwise the next unrelated edit finds no entry, and pushing the `atLeast`
+    // default back snaps the legend's mode select off "Hide above".
+    controlBar.setEatReliability('family', { mode: 'atMost', min: 0, max: 1 });
+
+    const mirror = vi.fn();
+    controlBar.addEventListener('eat-threshold-mirror', mirror as EventListener);
+
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', {
+        detail: {
+          query: [{ id: 'other', kind: 'numeric', annotation: 'length', operator: 'gt', min: 10 }],
+        },
+      }),
+    );
+
+    expect(mirror).not.toHaveBeenCalled();
+  });
+
+  it('guards the loop for a condition that is not first in the query', () => {
+    // The builder gives every row after the first an `AND`, and the reliability
+    // condition is emitted bare — so comparing the raw logicalOp made the guard miss,
+    // and every repeat emit rebuilt the query and re-evaluated the whole dataset.
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', {
+        detail: {
+          query: [
+            { id: 'a', kind: 'categorical', annotation: 'family', values: ['A'] },
+            {
+              id: 'x',
+              kind: 'numeric',
+              annotation: EAT_KEY,
+              operator: 'gte',
+              min: 0.5,
+              max: null,
+              presence: [NA_VALUE],
+              logicalOp: 'AND',
+            },
+          ],
+        },
+      }),
+    );
+
+    const before = controlBar.filterQuery;
+    controlBar.setEatReliability('family', { mode: 'atLeast', min: 0.5, max: 1 });
+
+    // Identity, not equality: the guard must skip the rewrite entirely.
+    expect(controlBar.filterQuery).toBe(before);
   });
 });
 
@@ -379,33 +463,11 @@ function makeMultiEatData(): ProtspaceData {
   };
 }
 
-function conditionFor(query: FilterQuery, key: string) {
-  return query.find((item) => 'kind' in item && item.kind === 'numeric' && item.annotation === key);
-}
-
 describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
   let controlBar: ControlBarInternals;
-  let scatter: StubScatterplot;
 
   beforeEach(async () => {
-    document.body.innerHTML = '';
-    controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
-    controlBar.autoSync = false;
-    document.body.appendChild(controlBar);
-    await controlBar.updateComplete;
-
-    scatter = {
-      selectedProteinIds: ['sentinel'],
-      isolateSelection: vi.fn(),
-      resetIsolation: vi.fn(),
-      getCurrentData: vi.fn(() => makeMultiEatData()),
-      getMaterializedData: vi.fn(() => makeMultiEatData()),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    };
-
-    controlBar._scatterplotElement = scatter;
-    controlBar._currentData = makeMultiEatData();
+    ({ controlBar } = await mountControlBar(makeMultiEatData));
   });
 
   it('scopes the condition to the base: setting GO does not clobber EC', () => {
@@ -418,15 +480,15 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
     expect(numericConditions).toHaveLength(2);
 
     // Both bases' conditions coexist with their own thresholds.
-    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({
-      operator: 'lt',
-      logicalOp: 'NOT',
-      max: 0.5,
+    expect(findConditionsForAnnotation(controlBar.filterQuery, EC_KEY)[0]).toMatchObject({
+      operator: 'gte',
+      presence: [NA_VALUE],
+      min: 0.5,
     });
-    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({
-      operator: 'lt',
-      logicalOp: 'NOT',
-      max: 0.8,
+    expect(findConditionsForAnnotation(controlBar.filterQuery, GO_KEY)[0]).toMatchObject({
+      operator: 'gte',
+      presence: [NA_VALUE],
+      min: 0.8,
     });
   });
 
@@ -435,8 +497,12 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
     controlBar.setEatConfidenceThreshold('go', 0.8);
     controlBar.setEatConfidenceThreshold('ec', 0.3);
 
-    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toMatchObject({ max: 0.3 });
-    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+    expect(findConditionsForAnnotation(controlBar.filterQuery, EC_KEY)[0]).toMatchObject({
+      min: 0.3,
+    });
+    expect(findConditionsForAnnotation(controlBar.filterQuery, GO_KEY)[0]).toMatchObject({
+      min: 0.8,
+    });
     expect(controlBar.filterQuery.filter((i) => 'kind' in i && i.kind === 'numeric')).toHaveLength(
       2,
     );
@@ -447,8 +513,10 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
     controlBar.setEatConfidenceThreshold('go', 0.8);
     controlBar.setEatConfidenceThreshold('ec', 0);
 
-    expect(conditionFor(controlBar.filterQuery, EC_KEY)).toBeUndefined();
-    expect(conditionFor(controlBar.filterQuery, GO_KEY)).toMatchObject({ max: 0.8 });
+    expect(findConditionsForAnnotation(controlBar.filterQuery, EC_KEY)[0]).toBeUndefined();
+    expect(findConditionsForAnnotation(controlBar.filterQuery, GO_KEY)[0]).toMatchObject({
+      min: 0.8,
+    });
   });
 
   it('reverse mirror follows the SELECTED base when the annotation switches', async () => {
@@ -460,10 +528,140 @@ describe('control-bar per-base EAT reliability filter (multi-EAT)', () => {
 
     controlBar.selectedAnnotation = 'ec';
     await controlBar.updateComplete;
-    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.5 } }));
+    expect(mirror).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: expect.objectContaining({ value: 0.5 }) }),
+    );
 
     controlBar.selectedAnnotation = 'go';
     await controlBar.updateComplete;
-    expect(mirror).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { value: 0.8 } }));
+    expect(mirror).toHaveBeenLastCalledWith(
+      expect.objectContaining({ detail: expect.objectContaining({ value: 0.8 }) }),
+    );
+  });
+});
+
+/**
+ * #380 — "make the EAT reliability filtering work for all kind of different
+ * settings: smaller then, larger then, and between and sync between filter and drag."
+ *
+ * The mirror used to recognise exactly one condition shape, `NOT(conf < X)` matched on
+ * operator AND logical op, at the top level only. Everything else was invisible: a
+ * drag appended a second, contradictory condition instead of replacing the first, and
+ * the slider read 0% while the plot was heavily filtered.
+ */
+describe('control-bar EAT reliability filter — all operators (#380)', () => {
+  let controlBar: ControlBarInternals;
+  let scatter: StubScatterplot;
+
+  beforeEach(async () => {
+    ({ controlBar, scatter } = await mountControlBar(makeEatData, 'family'));
+  });
+
+  // A hand-built condition on the eat-confidence column IS the reliability filter,
+  // whatever operator it carries, so the slider must replace it rather than AND a
+  // second, contradictory condition beside it (#380). `gt` is the query builder's
+  // default for an eat-confidence column, so it is the likeliest thing on screen;
+  // a NON-negated `lt` is the one that used to blank the canvas, because
+  // `conf < 0.5 AND NOT(conf < 0.5)` is the empty set and that was pushed as an
+  // ACTIVE filter with no way back.
+  it.each([
+    ['greater than', { operator: 'gt' as const, min: 0.5, max: null }],
+    ['between', { operator: 'between' as const, min: 0.4, max: 0.9 }],
+    ['non-negated less than', { operator: 'lt' as const, min: null, max: 0.5 }],
+  ])('replaces a hand-built "%s" rather than appending beside it', (_name, seed) => {
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', {
+        detail: { query: [{ id: 'x', kind: 'numeric', annotation: EAT_KEY, ...seed }] },
+      }),
+    );
+
+    controlBar.setEatConfidenceThreshold('family', 0.5);
+
+    expect(findConditionsForAnnotation(controlBar.filterQuery, EAT_KEY)).toHaveLength(1);
+    // And the plot keeps points: the replacement is a single coherent condition, not
+    // an unsatisfiable pair.
+    expect(scatter.filteredProteinIds?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('never hides the curated points, in any mode', () => {
+    // p0-p4 carry a null confidence: they are curated, and the slider's own help text
+    // promises they always stay visible. The N/A presence chip is what keeps them:
+    // no comparison can match a null, and under #416's NOT ("has a value AND does not
+    // match") the old negated spelling would hide them instead.
+    const curated = ['p0', 'p1', 'p2', 'p3', 'p4'];
+    const modes = [
+      { mode: 'atLeast' as const, min: 0.5, max: 1 },
+      { mode: 'atMost' as const, min: 0, max: 0.5 },
+      { mode: 'between' as const, min: 0.4, max: 0.8 },
+    ];
+
+    for (const state of modes) {
+      controlBar.setEatReliability('family', state);
+      for (const id of curated) {
+        expect(scatter.filteredProteinIds).toContain(id);
+      }
+    }
+  });
+
+  it('applies an upper bound that actually removes the high-confidence points', () => {
+    controlBar.setEatReliability('family', { mode: 'atMost', min: 0, max: 0.5 });
+    // p19 has confidence 0.95 — above the bound, so it must be gone; p5 (0.25) stays.
+    expect(scatter.filteredProteinIds).not.toContain('p19');
+    expect(scatter.filteredProteinIds).toContain('p5');
+  });
+
+  it('applies a band from both sides', () => {
+    controlBar.setEatReliability('family', { mode: 'between', min: 0.4, max: 0.6 });
+    expect(scatter.filteredProteinIds).not.toContain('p5'); // 0.25, below the band
+    expect(scatter.filteredProteinIds).not.toContain('p19'); // 0.95, above the band
+    expect(scatter.filteredProteinIds).toContain('p10'); // 0.50, inside
+  });
+
+  it('finds and replaces a reliability condition nested in a group', () => {
+    controlBar._handleQueryChanged(
+      new CustomEvent('query-changed', {
+        detail: {
+          query: [
+            {
+              id: 'g',
+              conditions: [
+                {
+                  id: 'x',
+                  kind: 'numeric',
+                  annotation: EAT_KEY,
+                  operator: 'lt',
+                  min: null,
+                  max: 0.2,
+                  logicalOp: 'NOT',
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    controlBar.setEatConfidenceThreshold('family', 0.7);
+
+    // Exactly one reliability condition survives, at any depth — the nested one was
+    // replaced in place rather than left behind and duplicated at top level.
+    const conditions = findConditionsForAnnotation(controlBar.filterQuery, EAT_KEY);
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0]).toMatchObject({ operator: 'gte', min: 0.7 });
+  });
+
+  it('does not blank the plot when the query matches nothing', () => {
+    // Start from a live filter, so the empty apply has to actively release the channel
+    // rather than just decline to touch it.
+    controlBar._handleQueryApply(applyEvent(new Set([5, 6, 7])));
+    expect(scatter.filtersActive).toBe(true);
+
+    // An active-but-empty filter channel reads as "hide everything" downstream, and
+    // there is no way back: Apply is disabled at 0 matches and Cancel does not revert.
+    controlBar._handleQueryApply(applyEvent(new Set<number>()));
+
+    expect(scatter.filtersActive).toBe(false);
+    expect(scatter.filteredProteinIds ?? []).toHaveLength(0);
+    expect(controlBar.filterActive).toBe(false);
   });
 });

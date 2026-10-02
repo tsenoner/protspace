@@ -138,7 +138,7 @@ def test_annotate_command_stamps_format_version(tmp_path, monkeypatch):
 
     class _FakeManager:
         def __init__(self, *args, **kwargs):
-            pass
+            self.incomplete_sources = set()
 
         def to_pd(self):
             return pd.DataFrame(

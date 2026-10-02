@@ -24,7 +24,7 @@ SAMPLE_PROTEINS_WITH_LENGTH = [
         annotations={
             "length": "110",
             "annotation_score": "5.0",
-            "protein_families": "Insulin family, Growth factor family",
+            "protein_families": "Insulin family|IC;Growth factor family|IC",
             "reviewed": "Swiss-Prot",
             "xref_pdb": "1INS;2INS",
             "fragment": "fragment",
@@ -100,7 +100,11 @@ class TestAnnotationTransformerTransform:
 
         # Should have transformed annotations
         assert result[0].annotations["annotation_score"] == "5"
-        assert result[0].annotations["protein_families"] == "Insulin family"
+        # Every family of a multi-section entry survives, evidence included
+        assert (
+            result[0].annotations["protein_families"]
+            == "Insulin family|IC;Growth factor family|IC"
+        )
         assert result[0].annotations["reviewed"] == "Swiss-Prot"
         assert result[0].annotations["xref_pdb"] == "True"
         assert result[0].annotations["fragment"] == "yes"
@@ -136,6 +140,60 @@ class TestAnnotationTransformerTransform:
         assert len(result) == 2
         assert result[0].identifier == "P01308"
         assert result[1].identifier == "P01315"
+
+    @pytest.mark.parametrize(
+        ("uniprot_kb_id", "xref_pdb", "expected"),
+        [
+            ("", "", ""),
+            ("NO_PDB_HUMAN", "", "False"),
+            ("HBA_HUMAN", "1A3N", "True"),
+        ],
+    )
+    def test_transform_xref_pdb_preserves_uniprot_mapping_state(
+        self, uniprot_kb_id, xref_pdb, expected
+    ):
+        """PDB availability is missing unless a UniProt entry resolved."""
+        proteins = [
+            ProteinAnnotations(
+                identifier="protein",
+                annotations={
+                    "uniprot_kb_id": uniprot_kb_id,
+                    "xref_pdb": xref_pdb,
+                },
+            )
+        ]
+
+        result = AnnotationTransformer().transform(proteins)
+
+        assert result[0].annotations["xref_pdb"] == expected
+
+    @pytest.mark.parametrize(
+        ("uniprot_kb_id", "xref_pdb", "expected"),
+        [
+            (float("nan"), float("nan"), ""),
+            ("HBA_HUMAN", float("nan"), "False"),
+        ],
+    )
+    def test_transform_xref_pdb_treats_nan_cells_as_missing(
+        self, uniprot_kb_id, xref_pdb, expected
+    ):
+        """A parquet null reads back as NaN, which is truthy and stringifies.
+
+        Without an explicit blank check it would be read as a PDB hit.
+        """
+        proteins = [
+            ProteinAnnotations(
+                identifier="protein",
+                annotations={
+                    "uniprot_kb_id": uniprot_kb_id,
+                    "xref_pdb": xref_pdb,
+                },
+            )
+        ]
+
+        result = AnnotationTransformer().transform(proteins)
+
+        assert result[0].annotations["xref_pdb"] == expected
 
     def test_transform_with_interpro_annotations(self):
         """Test transformation with InterPro annotations."""
@@ -233,7 +291,7 @@ class TestAnnotationTransformerTransformRow:
         row = [
             "P01308",
             "5.0",  # annotation_score
-            "Insulin family, Growth factor",  # protein_families
+            "Insulin family;Growth factor family",  # protein_families
             "TrEMBL",  # reviewed
             "1INS;2INS",  # xref_pdb
             "fragment",  # fragment
@@ -253,7 +311,7 @@ class TestAnnotationTransformerTransformRow:
 
         assert result[0] == "P01308"
         assert result[1] == "5"
-        assert result[2] == "Insulin family"
+        assert result[2] == "Insulin family;Growth factor family"
         assert result[3] == "TrEMBL"
         assert result[4] == "True"
         assert result[5] == "yes"
@@ -336,7 +394,7 @@ class TestAnnotationTransformerTransformAnnotations:
         transformer = AnnotationTransformer()
         annotations = {
             "annotation_score": "5.0",
-            "protein_families": "Family1, Family2",
+            "protein_families": "Family1;Family2",
             "reviewed": "Swiss-Prot",
             "xref_pdb": "1ABC;2DEF",
             "fragment": "fragment",
@@ -346,7 +404,7 @@ class TestAnnotationTransformerTransformAnnotations:
         result = transformer._transform_annotations(annotations)
 
         assert result["annotation_score"] == "5"
-        assert result["protein_families"] == "Family1"
+        assert result["protein_families"] == "Family1;Family2"
         assert result["reviewed"] == "Swiss-Prot"
         assert result["xref_pdb"] == "True"
         assert result["fragment"] == "yes"

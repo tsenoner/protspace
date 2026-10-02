@@ -58,6 +58,12 @@ describe('settings-validation', () => {
       expect(isValidSortMode('alpha-desc')).toBe(true);
       expect(isValidSortMode('manual')).toBe(true);
       expect(isValidSortMode('manual-reverse')).toBe(true);
+      expect(isValidSortMode('silhouette-desc')).toBe(true);
+      // The legend header's reverse button derives its result by string surgery on the
+      // current mode, so this is what it produces from `silhouette-desc`. An invalid
+      // sortMode makes `sanitizeLegendSettingsEntry` discard the WHOLE entry — colours,
+      // shapes, z-order, hidden values — so a missing mode here is silent data loss.
+      expect(isValidSortMode('silhouette-asc')).toBe(true);
     });
 
     it('rejects invalid sort modes', () => {
@@ -341,6 +347,30 @@ describe('settings-validation', () => {
         eatConfidenceThreshold: undefined,
         publishState: undefined,
       });
+    });
+  });
+
+  describe('dataset-level shape size', () => {
+    it('keeps a positive size', () => {
+      const result = normalizeBundleSettings({
+        legendSettings: {},
+        exportOptions: {},
+        shapeSize: 12,
+      });
+      expect(result?.shapeSize).toBe(12);
+    });
+
+    it('drops a malformed size and keeps the other fields', () => {
+      for (const shapeSize of ['x', -1, Number.NaN, 0]) {
+        const result = normalizeBundleSettings({
+          legendSettings: {},
+          exportOptions: {},
+          eatOverlayEnabled: true,
+          shapeSize,
+        });
+        expect(result?.shapeSize).toBeUndefined();
+        expect(result?.eatOverlayEnabled).toBe(true);
+      }
     });
   });
 });

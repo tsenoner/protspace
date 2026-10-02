@@ -213,10 +213,15 @@ export function createExportHandler({
             // The reliability slider position lives on the legend now (it drives
             // the query filter, not scatter-plot dimming), so persist it from there.
             eatConfidenceThreshold: legendElement.reliabilityThreshold,
+            // Only a picked size: the live one may be seeded from the current
+            // annotation, and as a top-level size it would override every other one.
+            shapeSize: legendElement.pickedShapeSize,
           };
         }
 
         const filename = generateBundleFilename(includeSettings);
+        // Subset exports carry no statistics by construction: sliceVisualizationDataByIndices
+        // strips them, so whole-dataset scores can never describe an isolated/filtered slice.
         exportParquetBundle(currentData, filename, {
           includeSettings,
           settings,

@@ -1,0 +1,198 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildStorageKey } from '@protspace/utils';
+import './legend';
+
+// These tests seed and read the persisted settings through `localStorage` directly. Stub an
+// in-memory store rather than using the runtime's: Node does not hand jsdom a usable
+// `localStorage` without `--localstorage-file`, which made the `clear()` below throw outright.
+// Same shape as the mock in `legend.score-sync.test.ts`.
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+  };
+})();
+
+vi.stubGlobal('localStorage', localStorageMock);
+
+type ShapeSizeLegend = HTMLElement & {
+  shapeSize: number;
+  selectedAnnotation: string;
+  annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
+  _dialogSettings: Record<string, unknown> & { shapeSize: number };
+  _handleCustomize: () => Promise<void>;
+  _handleSettingsSave: () => void;
+  _handleSettingsReset: () => void;
+  _updateLegendItems: () => void;
+  _dispatchLegendStateChange: () => void;
+  _scatterplotController: { updateConfig: (config: { pointSize?: number }) => void };
+  _persistenceController: {
+    _datasetHash: string;
+    updateDatasetHash: (ids: string[]) => boolean;
+    updateSelectedAnnotation: (annotation: string) => boolean;
+    loadSettings: () => void;
+  };
+  data: { annotations: Record<string, { values: string[] }> } | null;
+  getAllPersistedSettings: () => Record<string, { shapeSize: number }>;
+  applyShapeSize: (size: number, datasetHash?: string) => void;
+  readonly pickedShapeSize: number | undefined;
+};
+
+function makeLegend() {
+  const el = document.createElement('protspace-legend') as ShapeSizeLegend;
+  const pointSizes: number[] = [];
+  el._scatterplotController.updateConfig = (config) => {
+    if (config.pointSize !== undefined) pointSizes.push(config.pointSize);
+  };
+  el._updateLegendItems = vi.fn();
+  el._dispatchLegendStateChange = vi.fn();
+  el._persistenceController.updateDatasetHash(['p1', 'p2']);
+  const hash = el._persistenceController._datasetHash;
+  const switchTo = (annotation: string) => {
+    el.selectedAnnotation = annotation;
+    el.annotationData = { name: annotation, values: ['x'], kind: 'categorical' };
+    el._persistenceController.updateSelectedAnnotation(annotation);
+    el._persistenceController.loadSettings();
+  };
+  const store = (annotation: string, shapeSize: number) =>
+    localStorage.setItem(
+      buildStorageKey('legend', hash, annotation),
+      JSON.stringify({ shapeSize, maxVisibleValues: 10, hiddenValues: [], categories: {} }),
+    );
+  const pick = (shapeSize: number) => {
+    el._dialogSettings = { ...el._dialogSettings, shapeSize, annotationSortModes: {} };
+    el._handleSettingsSave();
+  };
+  return { el, hash, pointSizes, switchTo, store, pick };
+}
+
+describe('legend shape size', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('starts a fresh dataset at 10, drawn as point size 80', () => {
+    const { el, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    expect(el.shapeSize).toBe(10);
+    expect(pointSizes.at(-1)).toBe(80);
+  });
+
+  it('shows the new default for a legacy 30 record and keeps any other stored size', () => {
+    const { el, switchTo, store } = makeLegend();
+    store('a', 30);
+    store('b', 50);
+    switchTo('a');
+    expect(el.shapeSize).toBe(10);
+    switchTo('b');
+    expect(el.shapeSize).toBe(50);
+  });
+
+  it('carries a picked size across annotation switches and a new legend', () => {
+    const { el, pointSizes, switchTo, store, pick } = makeLegend();
+    store('b', 50);
+    switchTo('a');
+    pick(12);
+    switchTo('b');
+    expect(el.shapeSize).toBe(12);
+    expect(pointSizes.at(-1)).toBe(96);
+    switchTo('a');
+    expect(el.shapeSize).toBe(12);
+
+    const next = makeLegend();
+    next.switchTo('b');
+    expect(next.el.shapeSize).toBe(12);
+  });
+
+  it('resets the whole dataset to 10', () => {
+    const { el, switchTo, pick } = makeLegend();
+    switchTo('a');
+    pick(12);
+    switchTo('b');
+    el._handleSettingsReset();
+    expect(el.shapeSize).toBe(10);
+    switchTo('a');
+    expect(el.shapeSize).toBe(10);
+  });
+
+  it('takes a bundle size as picked, including 30', () => {
+    const { el, hash, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    el.applyShapeSize(30, hash);
+    expect(pointSizes.at(-1)).toBe(240);
+    switchTo('b');
+    expect(el.shapeSize).toBe(30);
+  });
+
+  it('caps a bundle size at 64 and saves the capped size', () => {
+    const { el, hash, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    el.applyShapeSize(200, hash);
+    expect(el.shapeSize).toBe(64);
+    expect(pointSizes.at(-1)).toBe(512);
+    expect(el.pickedShapeSize).toBe(64);
+  });
+
+  it('caps a stored size at 64', () => {
+    const { el, hash, switchTo, store } = makeLegend();
+    store('a', 200);
+    switchTo('a');
+    expect(el.shapeSize).toBe(64);
+
+    localStorage.setItem(buildStorageKey('point-size', hash), '200');
+    switchTo('b');
+    expect(el.shapeSize).toBe(64);
+  });
+
+  it('caps a host-set size when the settings dialog is saved', async () => {
+    const { el, pointSizes, switchTo } = makeLegend();
+    switchTo('a');
+    el.shapeSize = 200;
+    // Opening the dialog awaits a render, which a detached element never does.
+    document.body.appendChild(el);
+    try {
+      await el._handleCustomize();
+      expect(el._dialogSettings.shapeSize).toBe(64);
+      el._handleSettingsSave();
+      expect(el.shapeSize).toBe(64);
+      expect(pointSizes.at(-1)).toBe(512);
+    } finally {
+      el.remove();
+    }
+  });
+
+  it('exports the picked size on every annotation', () => {
+    const { el, switchTo, store, pick } = makeLegend();
+    store('b', 50);
+    switchTo('a');
+    pick(12);
+    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    const exported = el.getAllPersistedSettings();
+    expect(exported.a.shapeSize).toBe(12);
+    expect(exported.b.shapeSize).toBe(12);
+  });
+
+  it('reports a dataset-level size only once one is picked', () => {
+    const { el, store, switchTo, pick } = makeLegend();
+    store('a', 50);
+    switchTo('a');
+    expect(el.shapeSize).toBe(50);
+    expect(el.pickedShapeSize).toBeUndefined();
+    pick(12);
+    expect(el.pickedShapeSize).toBe(12);
+  });
+});
