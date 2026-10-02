@@ -35,6 +35,7 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
         data?: VisualizationData;
         settings?: BundleSettings | null;
         formatVersion?: number;
+        unplacedProteinCount?: number;
         error?: string;
       };
       cleanup();
@@ -43,6 +44,7 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
           data: d.data as VisualizationData,
           settings: d.settings ?? null,
           formatVersion: d.formatVersion ?? 1,
+          unplacedProteinCount: d.unplacedProteinCount ?? 0,
         });
       } else {
         reject(new Error(d?.error || 'worker decode failed'));

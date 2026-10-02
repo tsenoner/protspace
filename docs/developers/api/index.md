@@ -334,17 +334,18 @@ the host installs a `loadFromFileHandler` that prepares them, see
 
 ### Events
 
-| Event                   | Detail                                                    | Description                 |
-| ----------------------- | --------------------------------------------------------- | --------------------------- |
-| `data-loading-start`    | none                                                      | Load started                |
-| `data-loading-progress` | `{ current, total, percentage }`                          | Incremental progress update |
-| `data-loaded`           | `{ data, settings, source, file?, bundleFormatVersion? }` | Dataset loaded successfully |
-| `data-error`            | `{ message, severity, source, context, originalError? }`  | Host-consumed error event   |
+| Event                   | Detail                                                                           | Description                 |
+| ----------------------- | -------------------------------------------------------------------------------- | --------------------------- |
+| `data-loading-start`    | none                                                                             | Load started                |
+| `data-loading-progress` | `{ current, total, percentage }`                                                 | Incremental progress update |
+| `data-loaded`           | `{ data, settings, source, file?, bundleFormatVersion?, unplacedProteinCount? }` | Dataset loaded successfully |
+| `data-error`            | `{ message, severity, source, context, originalError? }`                         | Host-consumed error event   |
 
 For a `.parquetbundle`, `bundleFormatVersion` is the format version it was read as: `3` for a
 columnar bundle (part 1 declares `protspace_container_version`), or `1`/`2` for a legacy bundle
-(its `protspace_format_version` cell grammar), whose support ends in protspace 5.0.0. It is absent
-for plain parquet.
+(its `protspace_format_version` cell grammar), whose support ends in protspace 5.0.0.
+`unplacedProteinCount` is the number of proteins the bundle holds that no projection places;
+`data` leaves them out, so an export of it does too. Both are absent for plain parquet.
 
 ## Data Loading Utilities
 
@@ -372,6 +373,8 @@ Read a bundle of any format version into the shape the scatterplot consumes, alo
 optional settings and the format version it was read as (`3`, or `1`/`2` for a legacy bundle,
 whose support ends in protspace 5.0.0). A six-part file without `protspace_container_version`
 in part 1, or with a container version other than `3`, is rejected rather than guessed at.
+`unplacedProteinCount` counts the proteins the file holds without a coordinate in any projection,
+which `data` leaves out (0 when every protein is placed).
 
 ```typescript
 function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle>;
@@ -380,6 +383,7 @@ interface DecodedParquetBundle {
   data: VisualizationData;
   settings: BundleSettings | null;
   formatVersion: number;
+  unplacedProteinCount: number;
 }
 ```
 

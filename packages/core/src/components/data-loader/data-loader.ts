@@ -45,6 +45,11 @@ export interface DataLoadedEventDetail {
    * absent for plain parquet. Below 3 is a legacy bundle, readable until protspace 5.0.0.
    */
   bundleFormatVersion?: number;
+  /**
+   * Proteins the loaded bundle holds that no projection places, which `data` leaves out
+   * (see `decodeParquetBundle`); absent for plain parquet.
+   */
+  unplacedProteinCount?: number;
 }
 
 /**
@@ -237,6 +242,7 @@ export class DataLoader extends LitElement {
           source,
           file,
           decoded.formatVersion,
+          decoded.unplacedProteinCount,
         );
       } else {
         // For regular parquet: validate magic -> parse -> validate rows -> convert
@@ -311,8 +317,16 @@ export class DataLoader extends LitElement {
     source: DataLoadSource,
     file?: File,
     bundleFormatVersion?: number,
+    unplacedProteinCount?: number,
   ) {
-    const detail: DataLoadedEventDetail = { data, settings, source, file, bundleFormatVersion };
+    const detail: DataLoadedEventDetail = {
+      data,
+      settings,
+      source,
+      file,
+      bundleFormatVersion,
+      unplacedProteinCount,
+    };
     this.dispatchEvent(
       new CustomEvent('data-loaded', {
         detail,

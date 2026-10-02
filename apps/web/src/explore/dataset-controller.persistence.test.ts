@@ -151,9 +151,16 @@ describe('dataset controller legacy bundle notice', () => {
     mocks.loadData.mockResolvedValue(undefined);
   });
 
-  const eventFor = (bundleFormatVersion: number | undefined) =>
+  const eventFor = (bundleFormatVersion: number | undefined, unplacedProteinCount?: number) =>
     ({
-      detail: { data, settings: null, source: 'user', file, bundleFormatVersion },
+      detail: {
+        data,
+        settings: null,
+        source: 'user',
+        file,
+        bundleFormatVersion,
+        unplacedProteinCount,
+      },
     }) as unknown as Event;
 
   it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
@@ -166,6 +173,27 @@ describe('dataset controller legacy bundle notice', () => {
     expect(notice.description).toMatch(/5\.0\.0/);
     expect(notice.description).toMatch(/export it again/);
     expect(notice.description).toMatch(/protspace convert/);
+  });
+
+  it('sends a v2 bundle holding proteins without coordinates to protspace convert only', async () => {
+    // An export from the app holds the proteins it shows, so it would drop these three.
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(2, 3));
+
+    const [notice] = mocks.info.mock.calls[0];
+    expect(notice.description).toMatch(/protspace convert/);
+    expect(notice.description).toMatch(/3 proteins without coordinates/);
+    expect(notice.description).toMatch(/an export from here leaves out/);
+    expect(notice.description).not.toMatch(/export it again/);
+    expect(controller.getUnplacedProteinCount()).toBe(3);
+  });
+
+  it('remembers how many proteins each loaded file holds without coordinates', async () => {
+    const { controller } = buildController();
+    await controller.handleDataLoaded(eventFor(3, 2));
+    expect(controller.getUnplacedProteinCount()).toBe(2);
+    await controller.handleDataLoaded(eventFor(3));
+    expect(controller.getUnplacedProteinCount()).toBe(0);
   });
 
   it.each([

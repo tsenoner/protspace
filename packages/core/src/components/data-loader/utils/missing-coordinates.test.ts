@@ -191,6 +191,10 @@ describe.each(cases)('missing coordinates in a %s bundle', (_label, build) => {
     }
   });
 
+  it('counts the protein it leaves out, which an export of the dataset cannot carry', async () => {
+    expect((await decodeParquetBundle(build())).unplacedProteinCount).toBe(1);
+  });
+
   it('carries the statistics part across the protein-set cut', async () => {
     const { data } = await decodeParquetBundle(build());
     expect(new Uint8Array(data.statistics!)).toEqual(STATISTICS);

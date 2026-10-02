@@ -1001,7 +1001,11 @@ function placedNumericValues(
 export async function readV3Bundle(
   parts: BundleParts,
   metadata: FileMetaData,
-): Promise<{ data: VisualizationData; settings: BundleSettings | null }> {
+): Promise<{
+  data: VisualizationData;
+  settings: BundleSettings | null;
+  unplacedProteinCount: number;
+}> {
   const [, part2, , part4, part5] = parts;
   // The three large parts are released as soon as they are decoded.
   let part1: ArrayBuffer | null = parts[0];
@@ -1156,5 +1160,7 @@ export async function readV3Bundle(
       statisticsRows: part5 ? await extractStatistics(part5) : null,
     }),
     settings: part4 ? await extractSettings(part4) : null,
+    // Part 1 rows the protein set left out: the file keeps them, an export from here does not.
+    unplacedProteinCount: numRows - data.protein_ids.length,
   };
 }

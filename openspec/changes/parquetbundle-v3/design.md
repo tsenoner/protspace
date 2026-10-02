@@ -179,6 +179,15 @@ is `int` when every value is integral, as v2 read the same cells. The alternativ
 in the browser without the mark, cannot tell a label `1` from a v2 cell `1;` whose blank hit the
 encoder dropped, which v2 showed as a category.
 
+What the browser drops it cannot export: the web writer writes the loaded dataset, so a
+`.parquetbundle` export of a file with annotation-only rows is not lossless, while
+`protspace convert` is. Carrying the dropped rows through the browser would mean keeping a second,
+unranked annotation model beside the one the app renders, merging both on export, and writing
+`placedNumeric` from the browser. The browser instead counts them (`unplacedProteinCount`, from
+`decodeParquetBundle` through the `data-loaded` event), and the app says so where the loss happens:
+the legacy-format notice names only `protspace convert` for such a file, and the export
+notification says how many proteins the export leaves out.
+
 "Ties by first occurrence" is only v2's order if part 1 is in v2's protein order, and v2 built
 that order from the projection rows (first appearance, across projections), not from the
 annotations table. The encoder therefore writes part 1 in that order, with the proteins no

@@ -390,9 +390,12 @@ To upgrade a file, either:
   alone; or
 
 - open the file at [protspace.app/explore](https://protspace.app/explore) and export it again. The
-  web app always exports v3, so this needs no install.
+  web app always exports v3, so this needs no install. It exports the proteins it shows, though,
+  so a protein that no projection places (an annotations row with no coordinates) is left out.
+  When the file holds such proteins, the notice says how many and names only `protspace convert`.
 
-A converted file holds the same proteins, projections, annotations, settings and statistics. Cells
+A file from `protspace convert` holds the same proteins, projections, annotations, settings and
+statistics; a web export holds the same apart from those unplaced proteins. Cells
 come back in their canonical spelling (see
 [What a v3 round trip does not preserve](#what-a-v3-round-trip-does-not-preserve)), and a protein
 that a projection did not cover is stored as missing rather than at the origin (see
@@ -689,6 +692,7 @@ If the saved numeric topology no longer matches the realized one, incompatible n
 What else an export from the web app does:
 
 - the export is a format v3 bundle, whatever format the dataset was loaded from, so loading a v1 or v2 file and exporting it upgrades it without a Python install (see [Legacy formats](#legacy-formats-v1-and-v2)).
+- the export holds the proteins the app loaded, which are those with a coordinate in some projection. A protein the source file holds without any (an annotation-only row, which Python keeps in part 1) is not loaded, so it is not exported either, and the export notice says how many were left out. `protspace convert` keeps them.
 - a numeric column is written as `DOUBLE`, with its int/float identity in the manifest (`numericType`). An integral column is also declared `int64` to Python, so it reads back as `100`, not `100.0`.
 - a column loaded from a v3 bundle keeps the `sourceType` its manifest recorded, so Python reads a web re-export of a `bool`, `int32` or string column as that type again. The recorded type is kept only while the column still fits it: an integer type needs every value to be a whole number in its range that a `DOUBLE` holds exactly (up to ±2^53), or, for a column Python stored as exact decimal labels, every label to be a decimal integer in its range, `bool` needs the labels `true` and `false`, and a float type needs a numeric column. A column that no longer fits, or one loaded from a v1/v2 file, gets the exporter's own choice (`string`, `int64` or `double`). The EAT companion columns are the exception: the app folds them into its prediction overlay on load, so it writes them with the types `protspace transfer` gives them, `float` for `<col>__pred_confidence` and `string` for the other two.
 - a boolean column is written with the labels `true` and `false`, and a protein a projection does not cover gets `NaN` coordinates there, exactly as in a Python-written bundle.

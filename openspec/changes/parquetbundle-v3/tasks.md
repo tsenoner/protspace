@@ -155,6 +155,11 @@
       an open port behind, which kept a Node process that called `decodeParquetBundle` on a
       legacy bundle from exiting; a Node test decodes one through 120+ yields and checks that no
       port is left open
+- [x] 3.29 `decodeParquetBundle` reports `unplacedProteinCount`, the proteins the file holds that
+      no projection places, through the decode worker and the `data-loaded` event. A web export
+      leaves those out, so the legacy notice names only `protspace convert` for such a file and the
+      `.parquetbundle` export notification says how many it leaves out; the data-format and CLI
+      guides no longer say a web re-export holds the same proteins as `convert`
 
 ## 4. Contract suite (`tests/contract`)
 

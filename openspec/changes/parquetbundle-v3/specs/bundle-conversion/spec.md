@@ -167,3 +167,22 @@ without a Python install.
 - **WHEN** a user imports a v1 bundle and exports it as a `.parquetbundle`
 - **THEN** the exported file is v3, and importing it shows the same proteins, projections,
   annotation values and legend settings without the format notice
+
+### Requirement: A web export SHALL say which proteins of the loaded file it leaves out
+
+A `.parquetbundle` export from the web app SHALL hold the proteins the app loaded, which leaves
+out every protein the source file holds without a coordinate in any projection. When the source
+file held such proteins, the export's notification SHALL say how many it leaves out and name
+`protspace convert`, which keeps them.
+
+#### Scenario: Exporting a bundle that holds an annotation-only protein
+
+- **WHEN** a user loads a bundle whose part 1 holds protein `Q`, which no projection covers, and
+  exports it as a `.parquetbundle`
+- **THEN** the exported file does not hold `Q`, and the export notification says it leaves out 1
+  protein without coordinates and names `protspace convert`
+
+#### Scenario: Exporting a bundle whose every protein is placed
+
+- **WHEN** a user exports a dataset loaded from a bundle whose every protein has a coordinate
+- **THEN** the export notification names only the file

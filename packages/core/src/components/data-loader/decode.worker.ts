@@ -14,9 +14,10 @@ const ctx = self as unknown as {
 ctx.onmessage = async (event: MessageEvent<DecodeRequest>) => {
   const { arrayBuffer } = event.data;
   try {
-    const { data, settings, formatVersion } = await decodeParquetBundle(arrayBuffer);
+    const { data, settings, formatVersion, unplacedProteinCount } =
+      await decodeParquetBundle(arrayBuffer);
     ctx.postMessage(
-      { type: 'decode-result', ok: true, data, settings, formatVersion },
+      { type: 'decode-result', ok: true, data, settings, formatVersion, unplacedProteinCount },
       collectTransferables(data),
     );
   } catch (error) {

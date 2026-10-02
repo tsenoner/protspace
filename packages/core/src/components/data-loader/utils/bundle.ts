@@ -290,6 +290,12 @@ export interface DecodedParquetBundle {
    * `protspace_format_version`), whose support ends in protspace 5.0.0.
    */
   formatVersion: number;
+  /**
+   * Proteins the file holds that no projection places (annotation-only rows, or rows whose
+   * every coordinate is missing). They are not in `data`, so an export of it leaves them
+   * out, while `protspace convert` keeps them. 0 when every protein is placed.
+   */
+  unplacedProteinCount: number;
 }
 
 /**
@@ -318,11 +324,32 @@ export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<Dec
 
   const extraction = await extractRowsFromParts(parts, part1Metadata);
   validateRowsBasic(extraction.projections);
+  const data = await convertParquetToVisualizationDataOptimized(extraction);
   return {
-    data: await convertParquetToVisualizationDataOptimized(extraction),
+    data,
     settings: extraction.settings,
     formatVersion: extraction.formatVersion,
+    unplacedProteinCount: countLegacyUnplacedProteins(extraction, data),
   };
+}
+
+/**
+ * The proteins a legacy bundle names, in its annotations part or its projection rows, that
+ * the browser's protein set does not hold: an annotation-only row, which v2 never showed,
+ * or a protein whose every coordinate is missing.
+ */
+function countLegacyUnplacedProteins(
+  { annotationsById, projections, projectionIdColumn }: BundleExtractionResult,
+  data: VisualizationData,
+): number {
+  const placed = new Set(data.protein_ids);
+  const unplaced = new Set<string>();
+  for (const id of annotationsById.keys()) if (!placed.has(id)) unplaced.add(id);
+  for (const row of projections) {
+    const id = row[projectionIdColumn];
+    if (id != null && !placed.has(String(id))) unplaced.add(String(id));
+  }
+  return unplaced.size;
 }
 
 export function findColumn(columnNames: string[], candidates: string[]): string | null {

@@ -397,8 +397,10 @@ describe('proteins the annotations and projections disagree on', () => {
 
   it('leaves out a protein no projection covers', async () => {
     // The file keeps it in part 1 (lossless); the browser shows only placed proteins.
-    const { data } = await decodeParquetBundle(loadBundle('coverage'));
+    const { data, unplacedProteinCount } = await decodeParquetBundle(loadBundle('coverage'));
     expect(data.protein_ids).not.toContain(manifest.annotationOnlyId);
+    // Counted, so the app can say an export of this dataset leaves it out.
+    expect(unplacedProteinCount).toBe(1);
     expect(data.protein_ids).toHaveLength(Object.keys(manifest.booleanById).length);
     // Nor a label only it carries: the dictionary is built over the placed proteins.
     expect(data.annotations.family.values).not.toContain(manifest.annotationOnlyFamily);

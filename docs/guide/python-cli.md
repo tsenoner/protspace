@@ -773,7 +773,8 @@ and projection rows name different projections, or that has two rows for one pro
 projection, is refused with a message saying so.
 
 Without a Python install, load the bundle at [protspace.app/explore](https://protspace.app/explore)
-and export it again: the web app always exports v3. See
+and export it again: the web app always exports v3. That export leaves out any protein no
+projection places (an annotations row without coordinates), which `convert` keeps. See
 [Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
 
 ## `protspace serve`

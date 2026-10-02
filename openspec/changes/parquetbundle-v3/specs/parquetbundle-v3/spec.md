@@ -66,13 +66,21 @@ reading v1/v2 bundles is deprecated, that support will be removed in protspace 5
 When a user-provided bundle that is format v1 or v2 finishes loading, the web app SHALL show a
 notice through its existing notification mechanism that says the file uses an older format whose
 support will end in protspace 5.0.0, and that re-exporting it from the app or running
-`protspace convert` upgrades it. The notice SHALL NOT block or delay rendering. Datasets the app
-serves itself SHALL NOT trigger it.
+`protspace convert` upgrades it. When the file holds proteins that no projection places, the
+notice SHALL instead name only `protspace convert` and say how many proteins an export from the
+app would leave out. The notice SHALL NOT block or delay rendering. Datasets the app serves itself
+SHALL NOT trigger it.
 
 #### Scenario: A user imports a v2 bundle
 
 - **WHEN** a user imports a v2 bundle
 - **THEN** the dataset renders and a dismissible notice names re-export and `protspace convert`
+
+#### Scenario: A user imports a v2 bundle holding annotation-only proteins
+
+- **WHEN** a user imports a v2 bundle whose annotations part holds 3 proteins no projection places
+- **THEN** the notice names `protspace convert` and not re-export, and says an export from the app
+  leaves out 3 proteins without coordinates
 
 #### Scenario: A user imports a v3 bundle
 
