@@ -298,6 +298,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const handleExport = createExportHandler({
     controlBar,
     getSelectedProteins: interactionController.getSelectedProteins,
+    getUnplacedProteinCount: datasetController.getUnplacedProteinCount,
     legendElement,
     plotElement,
   });

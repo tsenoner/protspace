@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  getProteinAnnotationIndexAt,
   getProteinAnnotationIndices,
   getProteinAnnotationCount,
   getFirstAnnotationIndex,
+  isCsrAnnotationData,
   isMultilabelAnnotationData,
   isMultilabelAnnotationDataCached,
   sliceAnnotationData,
 } from './annotation-data-access';
+import type { CsrAnnotationData } from '../types';
 
 describe('annotation-data-access', () => {
   describe('Int32Array storage', () => {
@@ -131,6 +134,189 @@ describe('annotation-data-access', () => {
       expect(isMultilabelAnnotationData(Int32Array.from([0, 1]))).toBe(false);
       expect(isMultilabelAnnotationData([[0], [1, 2]])).toBe(true);
     });
+  });
+});
+
+describe('CSR storage', () => {
+  // rows: 0 -> [5, 6], 1 -> [], 2 -> [2], 3 -> [], 4 -> [0, 1, 9]
+  // First and last rows carry hits.
+  const csr = (): CsrAnnotationData => ({
+    kind: 'csr',
+    offsets: Int32Array.from([0, 2, 2, 3, 3, 6]),
+    codes: Int32Array.from([5, 6, 2, 0, 1, 9]),
+    length: 5,
+  });
+
+  it('is recognised without being mistaken for the other tagged shape', () => {
+    expect(isCsrAnnotationData(csr())).toBe(true);
+    expect(isCsrAnnotationData(Int32Array.from([0, 1]))).toBe(false);
+    expect(isCsrAnnotationData([[0], [1]])).toBe(false);
+    expect(
+      isCsrAnnotationData({
+        kind: 'sparse-multi',
+        base: Int32Array.from([0]),
+        overrides: new Map(),
+        length: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it('reads each index in place, in hit order', () => {
+    const data = csr();
+    const read = (row: number) =>
+      Array.from({ length: getProteinAnnotationCount(data, row) }, (_, k) =>
+        getProteinAnnotationIndexAt(data, row, k),
+      );
+    expect(read(0)).toEqual([5, 6]);
+    expect(read(1)).toEqual([]);
+    expect(read(4)).toEqual([0, 1, 9]);
+    expect(read(5)).toEqual([]);
+  });
+
+  it('returns indices for empty, single-hit, first and last rows', () => {
+    const data = csr();
+    expect(getProteinAnnotationIndices(data, 0)).toEqual([5, 6]);
+    expect(getProteinAnnotationIndices(data, 1)).toEqual([]);
+    expect(getProteinAnnotationIndices(data, 2)).toEqual([2]);
+    expect(getProteinAnnotationIndices(data, 3)).toEqual([]);
+    expect(getProteinAnnotationIndices(data, 4)).toEqual([0, 1, 9]);
+  });
+
+  it('treats an empty first row as the [0, 0) range', () => {
+    const data: CsrAnnotationData = {
+      kind: 'csr',
+      offsets: Int32Array.from([0, 0, 1]),
+      codes: Int32Array.from([3]),
+      length: 2,
+    };
+    expect(getProteinAnnotationIndices(data, 0)).toEqual([]);
+    expect(getProteinAnnotationCount(data, 0)).toBe(0);
+    expect(getFirstAnnotationIndex(data, 0)).toBe(-1);
+    expect(getProteinAnnotationIndices(data, 1)).toEqual([3]);
+  });
+
+  it('returns a real Array, not a typed-array view', () => {
+    // Callers run `.map`/`.flatMap`/`.some` on the result; a subarray would only
+    // fail on `.flatMap`, so the shape itself is asserted.
+    const indices = getProteinAnnotationIndices(csr(), 0);
+    expect(Array.isArray(indices)).toBe(true);
+    expect(indices.flatMap((i) => [i, i])).toEqual([5, 5, 6, 6]);
+  });
+
+  it('counts hits per row', () => {
+    const data = csr();
+    expect(getProteinAnnotationCount(data, 0)).toBe(2);
+    expect(getProteinAnnotationCount(data, 1)).toBe(0);
+    expect(getProteinAnnotationCount(data, 2)).toBe(1);
+    expect(getProteinAnnotationCount(data, 4)).toBe(3);
+  });
+
+  it('returns the first hit or -1', () => {
+    const data = csr();
+    expect(getFirstAnnotationIndex(data, 0)).toBe(5);
+    expect(getFirstAnnotationIndex(data, 1)).toBe(-1);
+    expect(getFirstAnnotationIndex(data, 2)).toBe(2);
+    expect(getFirstAnnotationIndex(data, 4)).toBe(0);
+  });
+
+  it('matches the other shapes on out-of-range and negative indices', () => {
+    const data = csr();
+    for (const idx of [5, 99, -1]) {
+      expect(getProteinAnnotationIndices(data, idx)).toEqual([]);
+      expect(getProteinAnnotationCount(data, idx)).toBe(0);
+      expect(getFirstAnnotationIndex(data, idx)).toBe(-1);
+    }
+  });
+
+  it('detects multilabel rows from the offset deltas', () => {
+    expect(isMultilabelAnnotationData(csr())).toBe(true);
+    expect(isMultilabelAnnotationDataCached(csr())).toBe(true);
+    const singles: CsrAnnotationData = {
+      kind: 'csr',
+      offsets: Int32Array.from([0, 1, 1, 2]),
+      codes: Int32Array.from([4, 7]),
+      length: 3,
+    };
+    expect(isMultilabelAnnotationData(singles)).toBe(false);
+    expect(isMultilabelAnnotationDataCached(singles)).toBe(false);
+  });
+
+  it('slices to CSR, preserving hit order and dropping out-of-range rows', () => {
+    const sliced = sliceAnnotationData(csr(), [4, 1, 0, 99]);
+    expect(isCsrAnnotationData(sliced)).toBe(true);
+    const out = sliced as CsrAnnotationData;
+    expect(out.length).toBe(4);
+    expect(Array.from(out.offsets)).toEqual([0, 3, 3, 5, 5]);
+    expect(Array.from(out.codes)).toEqual([0, 1, 9, 5, 6]);
+    expect(getProteinAnnotationIndices(out, 0)).toEqual([0, 1, 9]);
+    expect(getProteinAnnotationIndices(out, 1)).toEqual([]);
+    expect(getProteinAnnotationIndices(out, 2)).toEqual([5, 6]);
+    expect(getProteinAnnotationIndices(out, 3)).toEqual([]);
+  });
+
+  it('slices into fresh buffers that do not alias the source', () => {
+    const data = csr();
+    const out = sliceAnnotationData(data, [0, 1, 2, 3, 4]) as CsrAnnotationData;
+    expect(Array.from(out.codes)).toEqual(Array.from(data.codes));
+    expect(Array.from(out.offsets)).toEqual(Array.from(data.offsets));
+    expect(out.codes.buffer).not.toBe(data.codes.buffer);
+    expect(out.offsets.buffer).not.toBe(data.offsets.buffer);
+    out.codes[0] = 42;
+    out.offsets[1] = 0;
+    expect(data.codes[0]).toBe(5);
+    expect(data.offsets[1]).toBe(2);
+  });
+
+  it('slices an all-empty selection to zero-length codes', () => {
+    const out = sliceAnnotationData(csr(), [1, 3]) as CsrAnnotationData;
+    expect(out.codes.length).toBe(0);
+    expect(Array.from(out.offsets)).toEqual([0, 0, 0]);
+  });
+
+  it('slices scores and evidence along with their hits', () => {
+    const data: CsrAnnotationData = {
+      ...csr(),
+      // One score run per hit of row 4 only; hit 1 (code 6) has evidence 0.
+      scores: {
+        offsets: Int32Array.from([0, 0, 0, 0, 1, 1, 3]),
+        values: Float64Array.from([0.5, 0.25, 0.125]),
+      },
+      evidence: { codes: Int32Array.from([-1, 0, -1, -1, -1, -1]), dict: ['EXP'] },
+    };
+    const out = sliceAnnotationData(data, [4, 0]) as CsrAnnotationData;
+    expect(Array.from(out.codes)).toEqual([0, 1, 9, 5, 6]);
+    expect(Array.from(out.scores!.offsets)).toEqual([0, 1, 1, 3, 3, 3]);
+    expect(Array.from(out.scores!.values)).toEqual([0.5, 0.25, 0.125]);
+    expect(Array.from(out.evidence!.codes)).toEqual([-1, -1, -1, -1, 0]);
+  });
+});
+
+describe('getProteinAnnotationIndexAt', () => {
+  it('agrees with getProteinAnnotationIndices on every storage shape', () => {
+    const shapes = [
+      Int32Array.from([0, -1, 2]),
+      [[0], [], [2, 1]],
+      {
+        kind: 'sparse-multi' as const,
+        base: Int32Array.from([0, -1, 2]),
+        overrides: new Map([[2, [2, 1]]]),
+        length: 3,
+      },
+      {
+        kind: 'csr' as const,
+        offsets: Int32Array.from([0, 1, 1, 3]),
+        codes: Int32Array.from([0, 2, 1]),
+        length: 3,
+      },
+    ];
+    for (const data of shapes) {
+      for (let row = 0; row < 3; row++) {
+        const read = Array.from({ length: getProteinAnnotationCount(data, row) }, (_, k) =>
+          getProteinAnnotationIndexAt(data, row, k),
+        );
+        expect(read).toEqual([...getProteinAnnotationIndices(data, row)]);
+      }
+    }
   });
 });
 

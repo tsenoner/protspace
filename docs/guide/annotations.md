@@ -22,7 +22,7 @@ As of bundle format v2, annotation values containing special characters use perc
 
 Example: `PF00001 (Kinase, serine)|425.5` stores the comma in the name literally, but if a name contained a semicolon like "Superfamily; old", it would encode as `PF00001 (Superfamily%3B old)|425.5`.
 
-Format version 2 is marked in the parquet metadata of the `selected_annotations` table under the key `protspace_format_version`. Bundles without this key or with version < 2 are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) for more detail.
+In a legacy (v1/v2) bundle, format version 2 is marked in the parquet metadata of the `selected_annotations` table under the key `protspace_format_version`; bundles without this key are rendered using the legacy parser. A v3 bundle stores its labels already decoded and carries `protspace_container_version` instead. See [Data Format Reference](/guide/data-format#version-detection) for more detail.
 
 ## Sources
 
@@ -60,9 +60,9 @@ LightAttention is a lightweight neural network that uses softmax-weighted aggreg
 
 **Transmembrane** · ⚡ Predicted
 
-Transmembrane type (none / alpha-helical / beta-barrel) predicted by TMbed.
+Transmembrane type (non-transmembrane / alpha-helical / beta-barrel) predicted by TMbed.
 
-From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into a single protein-level category. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `none` when neither is present. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
+From the same TMbed per-residue topology (H = transmembrane helix, B = transmembrane beta strand, S = signal peptide), ProtSpace summarizes the membrane-spanning segments into protein-level categories. Values are `alpha-helical` when transmembrane helices (H) are predicted, `beta-barrel` when transmembrane beta strands (B) are predicted, and `non-transmembrane` when neither is present. A protein with both segment types carries both the `alpha-helical` and `beta-barrel` categories. See [Bernhofer & Rost, BMC Bioinformatics 2022](https://doi.org/10.1186/s12859-022-04873-x).
 
 ## UniProt
 
@@ -160,9 +160,9 @@ UniProt assigns one of five protein-existence (PE) levels in decreasing order of
 
 **Protein family**
 
-Protein family membership (first family), with evidence code.
+Protein family membership, one family per UniProt family statement, each with its evidence code.
 
-This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first family listed, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
+This records the protein's family or superfamily classification as curated by UniProt, capturing evolutionary and functional relatedness. ProtSpace keeps the first (broadest) level of each family statement, with its evidence code appended after a pipe, e.g. `Protein kinase superfamily|ISS` (ISS = inferred from sequence or structural similarity); evidence codes follow a UniProt subset of the [Evidence & Conclusion Ontology](https://www.uniprot.org/help/evidences). Names are kept whole, including transporter classifications such as `(TC 3.A.3)`. A multi-domain protein whose entry assigns a family to each section (`In the N-terminal section; belongs to the …`) lists every family in UniProt order, like other multi-valued columns, e.g. `aspartokinase family|IC;homoserine dehydrogenase family|IC`. Because pLM embeddings often cluster by family, this column is a natural reference for checking how well an embedding recovers known family structure. See [UniProt: Family and domains section](https://www.uniprot.org/help/family_and_domains_section).
 
 ### `reviewed` {#reviewed}
 
@@ -182,7 +182,7 @@ This flag reflects whether the entry has at least one cross-reference to the [Pr
 
 ## InterPro
 
-[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
+[InterPro](https://www.ebi.ac.uk/interpro/) integrates predictive models ("signatures") from a consortium of member databases into a single classification of protein families, domains, and functional sites. ProtSpace queries the InterPro Matches API by MD5 sequence hash and exposes the per-member-database hits directly, one ProtSpace column per member database. The API also returns matches that InterPro-N, an AI model, predicts for these databases; ProtSpace leaves them out, so every column holds only the matches of its own database. Each value is a semicolon-separated list of `accession (name)|score` entries, where the score is the value reported by that database's own tool (a bit score for the HMMER-based members such as Pfam); higher means a stronger match, and scores are not comparable across different databases. Most members match a sequence against curated reference models of known families and domains, so ProtSpace treats them as reference annotations; the exception is Phobius (`signal_peptide`), a de-novo topology predictor, which carries the ⚡ Predicted badge.
 
 ### `cath` {#cath}
 
@@ -274,7 +274,7 @@ The nine taxonomy columns trace the source organism up the standard Linnaean / N
 
 Cellular / acellular classification at the root of the taxonomy.
 
-The root sits above the three-domain system and separates cellular life (organisms with a cell: Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
+The root is the top node of the organism's lineage. It sits above the three-domain system and separates cellular life (organisms with a cell: Bacteria, Archaea, Eukaryota) from acellular agents (viruses and viroids); NCBI Taxonomy formalises this split with its top ranks `cellular root` and `acellular root`. Values are `cellular organisms` or `Viruses`, and, for sequences with no organism of origin, `other entries` (such as synthetic constructs) or `unclassified entries` (such as metagenomes). In practice this column is near-binary and is most useful for quickly distinguishing viral from cellular proteins in an embedding. It is the broadest of the nine ranks ProtSpace resolves from the organism's `organism_id` via the UniProt Taxonomy API, backed by [NCBI Taxonomy](https://www.ncbi.nlm.nih.gov/taxonomy).
 
 ### `domain` {#domain}
 

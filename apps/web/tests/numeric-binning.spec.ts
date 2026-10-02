@@ -1870,7 +1870,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            numeric_annotation_data?: Record<string, (number | null)[]>;
+            numeric_annotation_data?: Record<string, Float64Array>;
           };
         })
       | null;
@@ -1878,9 +1878,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
       throw new Error('ProtSpace components were not found');
     }
     const fullData = plot.getCurrentData?.({ includeFilteredProteinIds: false });
-    return (fullData?.numeric_annotation_data?.length ?? []).filter(
-      (value): value is number => value != null && Number.isFinite(value),
-    );
+    return Array.from(fullData?.numeric_annotation_data?.length ?? []).filter(Number.isFinite);
   });
   expect(lengths.length).toBeGreaterThan(0);
 
@@ -2414,14 +2412,12 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            numeric_annotation_data?: Record<string, (number | null)[]>;
+            numeric_annotation_data?: Record<string, Float64Array>;
           };
         })
       | null;
     const data = plot?.getCurrentData?.({ includeFilteredProteinIds: false });
-    const lengths = (data?.numeric_annotation_data?.length ?? []).filter(
-      (value): value is number => value != null && Number.isFinite(value),
-    );
+    const lengths = Array.from(data?.numeric_annotation_data?.length ?? []).filter(Number.isFinite);
     return lengths.length ? Math.max(...lengths) : 0;
   });
 

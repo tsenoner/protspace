@@ -1,629 +1,761 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-import { extractRowsFromParquetBundle } from './bundle';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { parquetMetadata, parquetReadObjects } from 'hyparquet';
+import { parquetWriteBuffer } from 'hyparquet-writer';
 import {
-  convertParquetToVisualizationData,
-  convertParquetToVisualizationDataOptimized,
-} from './conversion';
-import {
+  BUNDLE_DELIMITER_BYTES,
+  concatenateBuffers,
   createParquetBundle,
-  countBundleDelimiters,
-  findBundleDelimiterPositions,
-  isParquetBundle,
+  generateDatasetHash,
+  getProteinAnnotationIndices,
+  getProteinEvidence,
+  getProteinScores,
+  isNAValue,
+  materializeEatOverlay,
+  materializeVisualizationData,
   type Annotation,
+  type BundleSettings,
   type VisualizationData,
 } from '@protspace/utils';
-import { parquetMetadata } from 'hyparquet';
+import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { splitBundleParts } from './bundle-parts';
+import { convertParquetToVisualizationData } from './conversion';
 
-function loadArrayBuffer(filePath: string): ArrayBuffer {
-  const buffer = readFileSync(filePath);
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+const repoFile = (path: string): ArrayBuffer => {
+  const file = readFileSync(resolve(__dirname, '../../../../../..', path));
+  return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+};
+const fixture = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(resolve(__dirname, '__fixtures__', name)));
+
+/** Write `data` as a bundle and read it back through the one public entry point. */
+async function exportAndDecode(data: VisualizationData, settings?: BundleSettings) {
+  const decoded = await decodeParquetBundle(
+    createParquetBundle(data, { includeSettings: settings !== undefined, settings }),
+  );
+  expect(decoded.formatVersion).toBe(3);
+  return decoded;
 }
 
 /**
- * Round-trip integration tests for parquetbundle files.
- * These tests verify that we can:
- * 1. Read existing parquetbundle files
- * 2. Convert them to VisualizationData
- * 3. Export them back to parquetbundle format without errors
- *
- * This specifically tests that BigInt values from parquet parsing
- * are properly handled and don't cause JSON serialization errors.
+ * What a dataset means, independent of how it is stored: per protein, the hits of every
+ * categorical annotation with their scores and evidence, and the values of every numeric
+ * one. Missing cells read as no hits, whichever NA representation the reader chose (a v2
+ * load keeps no hit for them, a CSR load a synthetic `__NA__` hit), and the runtime-only
+ * EAT confidence view is left out because every reader rebuilds it.
  */
-describe('round-trip with real data files', () => {
-  it('should successfully export the 5,181-protein fixture after loading', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
-    );
-    const arrayBuffer = loadArrayBuffer(filePath);
-
-    // Extract from the bundle
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-
-    // Convert to VisualizationData
-    const data = convertParquetToVisualizationData(extraction);
-
-    // Verify data was loaded correctly
-    expect(data.protein_ids.length).toBeGreaterThan(0);
-    expect(data.projections.length).toBeGreaterThan(0);
-
-    // This should not throw "Do not know how to serialize a BigInt"
-    const exportedBuffer = createParquetBundle(data);
-    expect(exportedBuffer).toBeInstanceOf(ArrayBuffer);
-    expect(exportedBuffer.byteLength).toBeGreaterThan(0);
-    expect(isParquetBundle(exportedBuffer)).toBe(true);
-  });
-
-  it('should successfully export with settings after loading the 5,181-protein fixture', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
-    );
-    const arrayBuffer = loadArrayBuffer(filePath);
-
-    // Extract from the bundle
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-
-    // Convert to VisualizationData
-    const data = convertParquetToVisualizationData(extraction);
-
-    // Create mock settings
-    const mockSettings = {
-      legendSettings: {
-        testAnnotation: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc' as const,
-          hiddenValues: [],
-          categories: {
-            category1: { zOrder: 0, color: '#ff0000', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-        },
-      },
-      exportOptions: {
-        testAnnotation: {
-          imageWidth: 2048,
-          imageHeight: 1024,
-          lockAspectRatio: true,
-          legendWidthPercent: 25,
-          legendFontSizePx: 24,
-          includeLegendSettings: true,
-          includeExportOptions: true,
-        },
-      },
-    };
-
-    // Export with settings - should not throw
-    const exportedBuffer = createParquetBundle(data, {
-      includeSettings: true,
-      settings: mockSettings,
-    });
-
-    expect(exportedBuffer).toBeInstanceOf(ArrayBuffer);
-    expect(exportedBuffer.byteLength).toBeGreaterThan(0);
-    expect(isParquetBundle(exportedBuffer)).toBe(true);
-
-    // Count delimiters - should be 3 for 4-part bundle with settings
-    const uint8Array = new Uint8Array(exportedBuffer);
-    const delimiterCount = countBundleDelimiters(uint8Array);
-    expect(delimiterCount).toBe(3);
-  });
-
-  it('re-emits a statistics part behind the zero-byte settings sentinel', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
-    );
-    const extraction = await extractRowsFromParquetBundle(loadArrayBuffer(filePath));
-    const data = convertParquetToVisualizationData(extraction);
-
-    // Stand-in bytes: the writer must carry the part through, never parse it.
-    data.statistics = new TextEncoder().encode('PAR1-statistics').buffer as ArrayBuffer;
-
-    const exported = new Uint8Array(createParquetBundle(data));
-
-    // 5 parts even without settings, so statistics stays at position five.
-    expect(countBundleDelimiters(exported)).toBe(4);
-    expect(new TextDecoder().decode(exported.slice(-15))).toBe('PAR1-statistics');
-  });
-
-  it('should preserve raw numeric annotations through export/import', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/phosphatase_no_binning.parquetbundle',
-    );
-    const arrayBuffer = loadArrayBuffer(filePath);
-
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-    const original = convertParquetToVisualizationData(extraction);
-
-    expect(original.annotations.length?.kind).toBe('numeric');
-    expect(original.numeric_annotation_data?.length).toBeDefined();
-
-    const exportedBuffer = createParquetBundle(original);
-    const reimportedExtraction = await extractRowsFromParquetBundle(exportedBuffer);
-    const reimported = convertParquetToVisualizationData(reimportedExtraction);
-
-    expect(reimported.annotations.length?.kind).toBe('numeric');
-    expect(reimported.numeric_annotation_data?.length).toEqual(
-      original.numeric_annotation_data?.length,
-    );
-  });
-
-  it('normalizes and losslessly round-trips the supplied phosphatase EAT fixture', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/phosphatase_eat.parquetbundle',
-    );
-    const original = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(loadArrayBuffer(filePath)),
-    );
-
-    expect(original.protein_ids).toHaveLength(832);
-    expect(Object.keys(original.annotation_predicted ?? {})).toEqual(['ec', 'protein_families']);
-    expect(original.annotation_predicted?.ec.filter(Boolean)).toHaveLength(213);
-    expect(original.annotation_predicted?.protein_families.filter(Boolean)).toHaveLength(213);
-    expect(Object.keys(original.annotations).some((key) => key.includes('__pred_'))).toBe(false);
-    expect(original.annotations).toHaveProperty('ec__eat_confidence');
-    const ecCells = original.annotation_predicted?.ec.filter((cell) => cell !== null);
-    expect(Math.min(...(ecCells ?? []).map((cell) => cell.confidence))).toBeCloseTo(
-      0.3018029332,
-      6,
-    );
-    expect(Math.max(...(ecCells ?? []).map((cell) => cell.confidence))).toBe(1);
-    expect(ecCells?.some((cell) => cell.value.includes(';'))).toBe(true);
-    expect(ecCells?.every((cell) => cell.source.length > 0)).toBe(true);
-
-    const reloaded = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(createParquetBundle(original)),
-    );
-    for (const base of ['ec', 'protein_families']) {
-      const before = original.annotation_predicted?.[base] ?? [];
-      const after = reloaded.annotation_predicted?.[base] ?? [];
-      expect(after).toHaveLength(before.length);
-      for (let index = 0; index < before.length; index++) {
-        expect(after[index]?.value ?? null).toBe(before[index]?.value ?? null);
-        expect(after[index]?.source ?? null).toBe(before[index]?.source ?? null);
-        if (before[index]) {
-          expect(after[index]?.confidence).toBeCloseTo(before[index]!.confidence, 6);
-        }
-      }
+function meaning(data: VisualizationData) {
+  const annotations: Record<string, unknown> = {};
+  for (const [key, annotation] of Object.entries(data.annotations)) {
+    if (annotation.runtime) continue;
+    if (annotation.kind === 'numeric') {
+      annotations[key] = {
+        numericType: annotation.numericType,
+        values: Array.from(data.numeric_annotation_data?.[key] ?? []),
+      };
+      continue;
     }
-  });
-
-  it('round-trips numeric legend settings through bundle settings', async () => {
-    const original = {
-      protein_ids: ['P1', 'P2', 'P3'],
-      projections: [
-        {
-          name: 'UMAP',
-          data: Float32Array.of(0, 0, 1, 1, 2, 2),
-          dimension: 2 as const,
-        },
-      ],
-      annotations: {
-        length: { kind: 'numeric' as const, values: [], colors: [], shapes: [] },
-      },
-      annotation_data: {},
-      numeric_annotation_data: {
-        length: [10, 50, 100],
-      },
-      annotation_scores: {},
-      annotation_evidence: {},
-    };
-
-    const settings = {
-      legendSettings: {
-        length: {
-          maxVisibleValues: 5,
-          shapeSize: 24,
-          sortMode: 'alpha-asc' as const,
-          hiddenValues: ['10 - <28'],
-          categories: {},
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'cividis',
-          numericSettings: {
-            strategy: 'logarithmic' as const,
-            signature: 'abc12345',
-            topologySignature: 'def67890',
-            reverseGradient: false,
-          },
-        },
-      },
-      exportOptions: {},
-    };
-
-    const exportedBuffer = createParquetBundle(original, {
-      includeSettings: true,
-      settings,
+    annotations[key] = data.protein_ids.map((_, row) => {
+      const scores = getProteinScores(data, row, key);
+      const evidence = getProteinEvidence(data, row, key);
+      return getProteinAnnotationIndices(data.annotation_data[key], row).flatMap((code, k) => {
+        const label = annotation.values[code];
+        if (label == null || isNAValue(label)) return [];
+        return [{ label, scores: scores[k] ?? null, evidence: evidence[k] ?? null }];
+      });
     });
-    const extracted = await extractRowsFromParquetBundle(exportedBuffer);
-
-    expect(extracted.settings).toEqual(settings);
-  });
-
-  it('drops the legacy includeShapes field when extracting a bundle', async () => {
-    const original = {
-      protein_ids: ['P1', 'P2'],
-      projections: [
-        {
-          name: 'UMAP',
-          data: Float32Array.of(0, 0, 1, 1),
-          dimension: 2 as const,
-        },
-      ],
-      annotations: {
-        family: {
-          kind: 'categorical' as const,
-          values: ['A', 'B'],
-          colors: ['#1F77B4', '#FF7F0E'],
-          shapes: ['circle', 'circle'],
-        },
-      },
-      annotation_data: {
-        family: [[0], [1]],
-      },
-      annotation_scores: {},
-      annotation_evidence: {},
-    };
-
-    // Simulate a bundle authored before issue #252: legendSettings carries the
-    // removed `includeShapes` flag. The extraction path must accept it and
-    // strip it via normalizeBundleSettings, never surfacing it to callers.
-    const legacySettings = {
-      legendSettings: {
-        family: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc' as const,
-          hiddenValues: [],
-          categories: {
-            A: { zOrder: 0, color: '#1F77B4', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-          includeShapes: true,
-        },
-      },
-      exportOptions: {},
-    };
-
-    const exportedBuffer = createParquetBundle(original, {
-      includeSettings: true,
-      settings: legacySettings,
-    });
-    const extracted = await extractRowsFromParquetBundle(exportedBuffer);
-
-    const familySettings = extracted.settings?.legendSettings?.family;
-    expect(familySettings).toBeDefined();
-    expect(familySettings).not.toHaveProperty('includeShapes');
-    // The rest of the legacy settings survive normalization untouched.
-    expect(familySettings?.selectedPaletteId).toBe('kellys');
-    expect(familySettings?.categories.A).toEqual({
-      zOrder: 0,
-      color: '#1F77B4',
-      shape: 'circle',
-    });
-  });
-});
-
-describe('metadata preservation through round-trip', () => {
-  /**
-   * Helper to normalize metadata for comparison.
-   * Removes internal fields that are expected to differ (dimensions vs dimension).
-   */
-  function normalizeMetadata(metadata: Record<string, unknown> | undefined) {
-    if (!metadata) return {};
-    const { dimension, dimensions, ...rest } = metadata;
-    return rest;
   }
+  return {
+    protein_ids: data.protein_ids,
+    projections: data.projections.map(({ name, dimension, data: coordinates, metadata }) => ({
+      name,
+      dimension,
+      coordinates: Array.from(coordinates),
+      metadata,
+    })),
+    annotations,
+    predicted: data.annotation_predicted ?? {},
+  };
+}
 
-  it('should preserve projection metadata fields through export/import cycle (5,181-protein fixture)', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
-    );
-    const arrayBuffer = loadArrayBuffer(filePath);
-
-    // Load original
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-    const original = convertParquetToVisualizationData(extraction);
-
-    // Export (without settings)
-    const exportedBuffer = createParquetBundle(original);
-
-    // Re-import
-    const extraction2 = await extractRowsFromParquetBundle(exportedBuffer);
-    const reimported = convertParquetToVisualizationData(extraction2);
-
-    // 1. Protein IDs must be identical
-    expect(reimported.protein_ids).toEqual(original.protein_ids);
-
-    // 2. Projections count must match
-    expect(reimported.projections.length).toBe(original.projections.length);
-
-    // 3. Each projection must match
-    for (let i = 0; i < original.projections.length; i++) {
-      const origProj = original.projections[i];
-      const reimportedProj = reimported.projections[i];
-
-      // Name must match
-      expect(reimportedProj.name).toBe(origProj.name);
-
-      // Coordinates must be identical
-      expect(reimportedProj.data).toEqual(origProj.data);
-
-      // Metadata fields must match (excluding dimension/dimensions)
-      const origMeta = normalizeMetadata(origProj.metadata);
-      const reimportedMeta = normalizeMetadata(reimportedProj.metadata);
-      expect(reimportedMeta).toEqual(origMeta);
-    }
-
-    // 4. Annotation names must be identical
-    expect(Object.keys(reimported.annotations).sort()).toEqual(
-      Object.keys(original.annotations).sort(),
-    );
-  });
-
-  it('should preserve projection metadata fields (n_components, svd_solver, etc.)', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle',
-    );
-    const arrayBuffer = loadArrayBuffer(filePath);
-
-    // Load original
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-    const original = convertParquetToVisualizationData(extraction);
-
-    // Get first projection's metadata
-    const origMeta = original.projections[0]?.metadata || {};
-
-    // Should have actual metadata fields, not info_json
-    expect(origMeta).not.toHaveProperty('info_json');
-
-    // Common PCA metadata fields should exist at top level
-    if (origMeta.n_components !== undefined) {
-      expect(typeof origMeta.n_components).toBe('number');
-    }
-    if (origMeta.svd_solver !== undefined) {
-      expect(typeof origMeta.svd_solver).toBe('string');
-    }
-    if (origMeta.explained_variance_ratio !== undefined) {
-      expect(Array.isArray(origMeta.explained_variance_ratio)).toBe(true);
-    }
-
-    // Export and re-import
-    const exportedBuffer = createParquetBundle(original);
-    const extraction2 = await extractRowsFromParquetBundle(exportedBuffer);
-    const reimported = convertParquetToVisualizationData(extraction2);
-
-    // Re-imported should NOT have info_json at top level
-    const reimportedMeta = reimported.projections[0]?.metadata || {};
-    expect(reimportedMeta).not.toHaveProperty('info_json');
-
-    // All original metadata fields should be preserved
-    for (const [key, value] of Object.entries(origMeta)) {
-      if (key !== 'dimension' && key !== 'dimensions') {
-        expect(reimportedMeta[key]).toEqual(value);
-      }
-    }
-  });
+const categorical = (values: (string | null)[]): Annotation => ({
+  kind: 'categorical',
+  values,
+  colors: values.map(() => '#000000'),
+  shapes: values.map(() => 'circle'),
 });
-
-describe('numeric annotation round-trip', () => {
-  it('preserves raw numeric annotations through bundle export and import', async () => {
-    const original = {
-      protein_ids: ['P1', 'P2', 'P3'],
-      projections: [
-        {
-          name: 'UMAP',
-          data: Float32Array.of(0, 0, 1, 1, 2, 2),
-          dimension: 2 as const,
-        },
-      ],
-      annotations: {
-        length: { kind: 'numeric' as const, values: [], colors: [], shapes: [] },
-        family: {
-          kind: 'categorical' as const,
-          values: ['A', 'B'],
-          colors: ['#1F77B4', '#FF7F0E'],
-          shapes: ['circle', 'circle'],
-        },
-      },
-      annotation_data: {
-        family: [[0], [1], [0]],
-      },
-      numeric_annotation_data: {
-        length: [100, 250, null],
-      },
-      annotation_scores: {},
-      annotation_evidence: {},
-    };
-
-    const exportedBuffer = createParquetBundle(original);
-    const reimportedExtraction = await extractRowsFromParquetBundle(exportedBuffer);
-    const reimported = convertParquetToVisualizationData(reimportedExtraction);
-
-    expect(reimported.annotations.length.kind).toBe('numeric');
-    expect(reimported.numeric_annotation_data?.length).toEqual([100, 250, null]);
-    expect(reimported.annotation_data.length).toBeUndefined();
-    expect(reimported.annotations.family.kind).toBe('categorical');
-    expect(reimported.annotation_data.family).toEqual([[0], [1], [0]]);
-  });
+const numeric = (numericType: 'int' | 'float'): Annotation => ({
+  kind: 'numeric',
+  numericType,
+  values: [],
+  colors: [],
+  shapes: [],
 });
 
 /**
- * tsenoner/protspace#303 follow-ups: the numeric half of the export contract.
- *
- * Parquet stores values, not intent. Two things the writer previously threw
- * away — the physical integer type, and the numeric kind of a column with no
- * surviving values — are re-asserted here.
+ * Every storage shape the writer reads from: dense codes (with an unused label, labels out
+ * of frequency order and a missing cell), nested multi-valued hits with scores and
+ * evidence as a v1/v2 load holds them, CSR hits as a v3 load holds them, numerics with a
+ * missing value, and a 2D and a 3D projection, one of which does not place P3.
  */
-describe('numeric annotation type fidelity', () => {
-  const numeric = (numericType: 'int' | 'float'): Annotation => ({
-    kind: 'numeric',
-    numericType,
-    values: [],
-    colors: [],
-    shapes: [],
+const handBuilt = (): VisualizationData => ({
+  protein_ids: ['P1', 'P2', 'P3', 'P4'],
+  projections: [
+    {
+      name: 'pca2',
+      dimension: 2,
+      data: Float32Array.of(0, 0, 1.5, -2, 3, 4, -5, 6.25),
+      metadata: { dimension: 2, dimensions: 2, method: 'pca' },
+    },
+    {
+      name: 'umap3',
+      dimension: 3,
+      data: Float32Array.of(1, 2, 3, 4, 5, 6, NaN, NaN, NaN, 7, 8, 9),
+      metadata: { dimension: 3, dimensions: 3, n_neighbors: 15 },
+    },
+  ],
+  annotations: {
+    organism: categorical(['Mouse', 'unused', 'Human', null]),
+    go: categorical(['binding', 'transport; active', 'folding|x']),
+    pfam: categorical(['PF00001', 'PF00002', '__NA__']),
+    length: numeric('int'),
+    ratio: numeric('float'),
+  },
+  annotation_data: {
+    organism: Int32Array.of(2, 0, 2, -1),
+    go: [[0, 1], [], [2], [1]],
+    pfam: {
+      kind: 'csr',
+      offsets: Int32Array.of(0, 2, 3, 4, 5),
+      codes: Int32Array.of(1, 0, 2, 0, 1),
+      length: 4,
+      scores: {
+        offsets: Int32Array.of(0, 2, 3, 3, 3, 3),
+        values: Float64Array.of(1e-200, 2.5, 0.25),
+      },
+      evidence: { codes: Int32Array.of(-1, 0, -1, 1, -1), dict: ['IDA', 'ECO:0000269'] },
+    },
+  },
+  numeric_annotation_data: {
+    length: Float64Array.of(100, NaN, 250, 7),
+    ratio: Float64Array.of(0.5, 1.25, NaN, -3),
+  },
+  annotation_scores: { go: [[[0.5], null], [], [null], [[1e40, 2]]] },
+  annotation_evidence: { go: [[null, 'EXP'], [], ['IDA'], [null]] },
+});
+
+/** Part `index` (0-based) of a bundle, `null` for a zero-byte slot. */
+const partOf = (buffer: ArrayBuffer, index: number) => splitBundleParts(buffer)[index] ?? null;
+
+/** The v3 manifest in part 1's footer. */
+const manifestOf = (buffer: ArrayBuffer) =>
+  JSON.parse(
+    parquetMetadata(partOf(buffer, 0)!).key_value_metadata!.find(
+      ({ key }) => key === 'protspace_v3_manifest',
+    )!.value!,
+  ) as { columns: Record<string, { kind: string; sourceType: string }> };
+
+describe('v3 export: the container', () => {
+  it('writes the six-part layout the reader validates, every column REQUIRED and PLAIN', () => {
+    const buffer = createParquetBundle(handBuilt());
+    const parts = splitBundleParts(buffer);
+    expect(parts).toHaveLength(6);
+    expect(parts[3]).toBeNull();
+    expect(parts[4]).toBeNull();
+
+    for (const index of [0, 2, 5]) {
+      const metadata = parquetMetadata(parts[index]!);
+      expect(metadata.row_groups).toHaveLength(1);
+      for (const field of metadata.schema.slice(1)) {
+        expect(field.repetition_type, field.name).toBe('REQUIRED');
+      }
+      for (const chunk of metadata.row_groups[0].columns) {
+        expect(chunk.meta_data?.encodings, chunk.meta_data?.path_in_schema.join('.')).toEqual([
+          'PLAIN',
+        ]);
+      }
+    }
+
+    const part1 = parquetMetadata(parts[0]!);
+    const kv = Object.fromEntries(part1.key_value_metadata!.map(({ key, value }) => [key, value]));
+    expect(kv.protspace_container_version).toBe('3');
+    // No cell-grammar key: a v3 part 1 stores decoded labels, not cells.
+    expect(kv.protspace_format_version).toBeUndefined();
+    expect(JSON.parse(kv.protspace_v3_manifest!)).toEqual({
+      idColumn: 'identifier',
+      columns: {
+        organism: { kind: 'categorical', sourceType: 'string' },
+        go: { kind: 'multi', sourceType: 'string', scores: true, evidence: true },
+        pfam: { kind: 'multi', sourceType: 'string', scores: true, evidence: true },
+        length: { kind: 'numeric', numericType: 'int', sourceType: 'int64' },
+        ratio: { kind: 'numeric', numericType: 'float', sourceType: 'double' },
+      },
+      projections: [
+        { name: 'pca2', dimension: 2 },
+        { name: 'umap3', dimension: 3 },
+      ],
+    });
+    expect(part1.schema.slice(1).map(({ name, type }) => [name, type])).toEqual([
+      ['identifier', 'BYTE_ARRAY'],
+      ['organism', 'INT32'],
+      ['go__count', 'INT32'],
+      ['pfam__count', 'INT32'],
+      ['length', 'DOUBLE'],
+      ['ratio', 'DOUBLE'],
+    ]);
+    expect(
+      parquetMetadata(parts[2]!)
+        .schema.slice(1)
+        .map(({ name, type }) => [name, type]),
+    ).toEqual([
+      ['pca2__x', 'FLOAT'],
+      ['pca2__y', 'FLOAT'],
+      ['umap3__x', 'FLOAT'],
+      ['umap3__y', 'FLOAT'],
+      ['umap3__z', 'FLOAT'],
+    ]);
   });
 
-  const baseData = (
-    annotations: VisualizationData['annotations'],
-    numericData: Record<string, (number | null)[]>,
-  ): VisualizationData => ({
-    protein_ids: ['P1', 'P2', 'P3'],
-    projections: [{ name: 'UMAP', data: Float32Array.of(0, 0, 1, 1, 2, 2), dimension: 2 as const }],
-    annotations,
-    annotation_data: {},
-    numeric_annotation_data: numericData,
+  it('writes NaN, never 0, for a protein a projection does not place', async () => {
+    const buffer = createParquetBundle(handBuilt());
+    const rows = await parquetReadObjects({ file: partOf(buffer, 2)! });
+    expect(rows[2]).toMatchObject({ pca2__x: 3, pca2__y: 4 });
+    expect([rows[2].umap3__x, rows[2].umap3__y, rows[2].umap3__z]).toEqual([NaN, NaN, NaN]);
+
+    const { data } = await exportAndDecode(handBuilt());
+    expect(Array.from(data.projections[1].data.subarray(6, 9))).toEqual([NaN, NaN, NaN]);
+  });
+
+  it('stores labels decoded, one dictionary per column, evidence in one shared dictionary', async () => {
+    const payloads = await parquetReadObjects({
+      file: partOf(createParquetBundle(handBuilt()), 5)!,
+      utf8: false,
+    });
+    const byName = new Map(
+      payloads.map(({ name, data }) => [String(name), new Uint8Array(data as Uint8Array)]),
+    );
+    const text = (name: string) => new TextDecoder().decode(byName.get(name));
+    expect(text('dict:go')).toBe('transport; activebindingfolding|x');
+    // First use across columns in part 1 order: go's EXP and IDA, then pfam's ECO code.
+    expect(text('dict:__evidence')).toBe('EXPIDAECO:0000269');
+    expect([...byName.keys()].filter((name) => name.startsWith('dict:__evidence'))).toHaveLength(2);
+    // float64, so the E-value survives; the NA hit of P2 owned no score and is gone.
+    expect(Array.from(new Float64Array(byName.get('scores:pfam')!.slice().buffer))).toEqual([
+      1e-200, 2.5, 0.25,
+    ]);
+  });
+});
+
+describe('v3 export: round trip through decodeParquetBundle', () => {
+  it('decodes back to the proteins, hits, scores, evidence, numerics and projections written', async () => {
+    const original = handBuilt();
+    const { data } = await exportAndDecode(original);
+
+    expect(meaning(data)).toEqual(meaning(original));
+  });
+
+  it('orders every dictionary by descending hit count, ties by first occurrence', async () => {
+    const { data } = await exportAndDecode(handBuilt());
+
+    // The unused label is dropped and the NA the reader appends goes last.
+    expect(data.annotations.organism.values).toEqual(['Human', 'Mouse', '__NA__']);
+    expect(data.annotations.go.values).toEqual([
+      'transport; active',
+      'binding',
+      'folding|x',
+      '__NA__',
+    ]);
+    // Two hits each: P1 lists PF00002 first. The in-memory `__NA__` sentinel of P2 is not
+    // written as a label; the reader appends its own for the empty row.
+    expect(data.annotations.pfam.values).toEqual(['PF00002', 'PF00001', '__NA__']);
+  });
+
+  it('is idempotent: re-exporting a decoded export decodes to an equal dataset', async () => {
+    const once = (await exportAndDecode(handBuilt())).data;
+    const twice = (await exportAndDecode(once)).data;
+
+    expect(twice).toEqual(once);
+  });
+
+  it('keeps an all-missing numeric column numeric, with its numeric type', async () => {
+    const original = handBuilt();
+    original.numeric_annotation_data!.length.fill(NaN);
+
+    const { data } = await exportAndDecode(original);
+
+    expect(data.annotations.length).toMatchObject({ kind: 'numeric', numericType: 'int' });
+    expect(Array.from(data.numeric_annotation_data!.length)).toEqual([NaN, NaN, NaN, NaN]);
+  });
+
+  it('declares an integer column past 2^53 to Python as float64', () => {
+    const original = handBuilt();
+    original.numeric_annotation_data!.length[0] = 2 ** 60;
+
+    expect(manifestOf(createParquetBundle(original)).columns.length).toEqual({
+      kind: 'numeric',
+      numericType: 'int',
+      sourceType: 'double',
+    });
+  });
+
+  it('keeps an integer column holding exactly ±2^53 int64, as Python classifies it', () => {
+    // Python keeps |v| <= 2^53 numeric (every such integer is exact as a float64), so
+    // 2^53 itself must not fall back to double on a re-export.
+    const original = handBuilt();
+    original.numeric_annotation_data!.length = Float64Array.of(2 ** 53, 1, NaN, -(2 ** 53));
+    original.numeric_annotation_data!.ratio = Float64Array.of(0, 2 ** 53, NaN, 1);
+    original.annotations.ratio = { ...numeric('int'), sourceType: 'uint64' };
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.length.sourceType).toBe('int64'); // the writer's own choice
+    expect(columns.ratio.sourceType).toBe('uint64'); // the carried type still fits
+  });
+
+  it('echoes an integer sourceType on a column Python stored as exact decimal labels', () => {
+    // A 64-bit hash or ID past 2^53 is written by Python as a categorical column of its
+    // exact labels; decode_v3 casts them back only while the manifest says int64.
+    const original = handBuilt();
+    const labelled = (sourceType: string, values: (string | null)[]) => {
+      const name = `h_${Object.keys(original.annotations).length}`;
+      original.annotations[name] = { ...categorical(values), sourceType };
+      original.annotation_data[name] = Int32Array.of(0, 1, values.length - 1, -1);
+      return name;
+    };
+    const hash = labelled('int64', ['1152921504606846977', '-5', '__NA__']);
+    const top = labelled('int64', ['9223372036854775807', '-9223372036854775808', null]);
+    const unsigned = labelled('uint64', ['18446744073709551615', '0', '7']);
+    const pastInt64 = labelled('int64', ['9223372036854775808', '1', '2']);
+    const negativeUnsigned = labelled('uint64', ['-1', '1', '2']);
+    const text = labelled('int64', ['12', 'abc', '3']);
+    const spelled = labelled('int32', ['+1', '2', '3']);
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns[hash].sourceType).toBe('int64');
+    expect(columns[top].sourceType).toBe('int64');
+    expect(columns[unsigned].sourceType).toBe('uint64');
+    expect(columns[pastInt64].sourceType).toBe('string');
+    expect(columns[negativeUnsigned].sourceType).toBe('string');
+    expect(columns[text].sourceType).toBe('string');
+    // Python casts back only the decimal spelling it wrote.
+    expect(columns[spelled].sourceType).toBe('string');
+  });
+
+  it('echoes a carried sourceType for a column that still fits it', () => {
+    const original = handBuilt();
+    original.annotations.reviewed = {
+      ...categorical(['true', 'false', '__NA__']),
+      sourceType: 'bool',
+    };
+    original.annotation_data.reviewed = Int32Array.of(0, 1, 2, 0);
+    original.annotations.length.sourceType = 'int32';
+    original.annotations.ratio.sourceType = 'float';
+    original.annotations.organism.sourceType = 'large_string';
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.reviewed.sourceType).toBe('bool');
+    expect(columns.length.sourceType).toBe('int32');
+    expect(columns.ratio.sourceType).toBe('float');
+    expect(columns.organism.sourceType).toBe('large_string');
+    expect(columns.go.sourceType).toBe('string'); // nothing carried, the writer's default
+  });
+
+  it('falls back to the inferred sourceType for a column that no longer fits', () => {
+    const original = handBuilt();
+    original.annotations.organism.sourceType = 'bool'; // labels are not true / false
+    original.annotations.length.sourceType = 'int32';
+    original.numeric_annotation_data!.length[0] = 2 ** 40; // past int32
+    original.annotations.ratio.sourceType = 'int8'; // ratio holds fractions
+
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.organism.sourceType).toBe('string');
+    expect(columns.length.sourceType).toBe('int64');
+    expect(columns.ratio.sourceType).toBe('double');
+  });
+
+  it('names the id column protein_id when an annotation is called identifier', async () => {
+    // Python bundles a table holding both protein_id and identifier with protein_id as the
+    // id column and identifier as an ordinary annotation; such a dataset must export.
+    const original = handBuilt();
+    original.annotations.identifier = categorical(['alt1', 'alt2', 'alt3', 'alt4']);
+    original.annotation_data.identifier = Int32Array.of(0, 1, 2, 3);
+
+    const buffer = createParquetBundle(original);
+    const { data } = await decodeParquetBundle(buffer);
+
+    expect(
+      JSON.parse(
+        parquetMetadata(partOf(buffer, 0)!).key_value_metadata!.find(
+          ({ key }) => key === 'protspace_v3_manifest',
+        )!.value!,
+      ).idColumn,
+    ).toBe('protein_id');
+    expect(data.protein_ids).toEqual(original.protein_ids);
+    expect(meaning(data)).toEqual(meaning(original));
+  });
+
+  it('refuses a dataset whose annotations occupy both id column names', () => {
+    const original = handBuilt();
+    for (const name of ['identifier', 'protein_id']) {
+      original.annotations[name] = categorical(['a', 'b', 'c', 'd']);
+      original.annotation_data[name] = Int32Array.of(0, 1, 2, 3);
+    }
+    expect(() => createParquetBundle(original)).toThrow(/identifier.*protein_id/);
+  });
+
+  it('writes an empty dictionary for a categorical column with no values at all', async () => {
+    const original = handBuilt();
+    original.annotation_data.organism = Int32Array.of(-1, -1, -1, -1);
+
+    const { data } = await exportAndDecode(original);
+
+    expect(data.annotations.organism.values).toEqual(['__NA__']);
+    expect(Array.from(data.annotation_data.organism as Int32Array)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('carries settings and a statistics part byte for byte', async () => {
+    const statistics = fixture('stats-sample-statistics.parquet');
+    const settings: BundleSettings = {
+      legendSettings: {},
+      exportOptions: {},
+      eatConfidenceThreshold: 0.75,
+      shapeSize: 12,
+    };
+    const original = { ...handBuilt(), statistics: statistics.slice().buffer as ArrayBuffer };
+
+    const decoded = await exportAndDecode(original, settings);
+
+    expect(decoded.settings).toEqual(settings);
+    expect(new Uint8Array(decoded.data.statistics!)).toEqual(statistics);
+    expect(decoded.data.statisticsRows!.length).toBeGreaterThan(0);
+  });
+});
+
+describe('v3 import: proteins no projection places', () => {
+  /**
+   * P1-P3 are placed; Q1-Q3 are in the file but no projection covers them, as when
+   * `prepare` annotates a sequence it could not embed. The Q rows make `C` and `z` the
+   * most frequent labels, carry the only missing `family` cell and break the `go` tie.
+   */
+  const dataset = (rows: number): VisualizationData => ({
+    protein_ids: ['P1', 'P2', 'P3', 'Q1', 'Q2', 'Q3'].slice(0, rows),
+    projections: [
+      {
+        name: 'pca2',
+        dimension: 2,
+        data: Float32Array.of(0, 1, 2, 3, 4, 5, NaN, NaN, NaN, NaN, NaN, NaN).slice(0, rows * 2),
+        metadata: { dimension: 2 },
+      },
+    ],
+    annotations: {
+      family: categorical(['A', 'B', 'C']),
+      go: categorical(['x', 'y', 'z']),
+      length: numeric('int'),
+    },
+    annotation_data: {
+      family: Int32Array.of(0, 0, 1, 2, 2, -1).slice(0, rows),
+      go: [[0], [0, 1], [1], [2], [2], [2, 1]].slice(0, rows),
+    },
+    numeric_annotation_data: { length: Float64Array.of(1, 2, 3, 4, 5, 6).slice(0, rows) },
     annotation_scores: {},
     annotation_evidence: {},
   });
 
-  function physicalType(buffer: ArrayBuffer, column: string): string | undefined {
-    // Part 1 ends at the first delimiter; parquetMetadata needs exactly that slice.
-    const bytes = new Uint8Array(buffer);
-    const end = findBundleDelimiterPositions(bytes)[0];
-    const part1 = bytes.subarray(0, end).slice().buffer;
-    return parquetMetadata(part1).schema.find((field) => field.name === column)?.type;
-  }
+  it('builds every dictionary over the placed proteins only, as if the file held no others', async () => {
+    const { data } = await decodeParquetBundle(createParquetBundle(dataset(6)));
+    const { data: placedOnly } = await decodeParquetBundle(createParquetBundle(dataset(3)));
 
-  it('writes an integer annotation as INT32, not a widened DOUBLE', async () => {
-    // Python keys legends/styles off str(value), so a DOUBLE round trip turns the
-    // style key '100' into '100.0' and breaks a previously valid style template.
-    // INT32 covers every realistic protein annotation and passes values through
-    // untouched — no per-protein bigint array.
-    const original = baseData({ residues: numeric('int') }, { residues: [100, 250, null] });
-
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'residues')).toBe('INT32');
-
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(exported),
-    );
-    expect(reimported.annotations.residues.kind).toBe('numeric');
-    expect(reimported.annotations.residues.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.residues).toEqual([100, 250, null]);
+    expect(data.protein_ids).toEqual(['P1', 'P2', 'P3']);
+    // No phantom C, z or N/A slot, and the placed labels keep their palette colours.
+    expect(data.annotations.family.values).toEqual(['A', 'B']);
+    expect(data.annotations.go.values).toEqual(['x', 'y']);
+    expect(data.annotations).toEqual(placedOnly.annotations);
+    expect(meaning(data)).toEqual(meaning(placedOnly));
+    // Saved legend settings are keyed by this hash.
+    expect(generateDatasetHash(data)).toBe(generateDatasetHash(placedOnly));
   });
+});
 
-  it('widens to INT64 for an integer beyond the int32 range', async () => {
-    const original = baseData({ big: numeric('int') }, { big: [2 ** 40, 1, null] });
-
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'big')).toBe('INT64');
-
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(exported),
-    );
-    expect(reimported.annotations.big.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.big).toEqual([2 ** 40, 1, null]);
-  });
-
-  it('keeps a fractional annotation on DOUBLE', async () => {
-    const original = baseData({ score: numeric('float') }, { score: [0.5, 1.25, null] });
-
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'score')).toBe('DOUBLE');
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(exported),
-    );
-    expect(reimported.numeric_annotation_data?.score).toEqual([0.5, 1.25, null]);
-  });
-
-  it('falls back to DOUBLE for an integral value too large to encode as INT64', async () => {
-    const original = baseData(
-      { huge: numeric('int') },
-      { huge: [Number.MAX_SAFE_INTEGER * 4, 1, null] },
-    );
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'huge')).toBe('DOUBLE');
-  });
-
-  it('keeps an all-missing numeric column numeric instead of flipping it categorical', async () => {
-    // Reachable from a real export: isolation mode / an active query filter can
-    // leave a numeric column with no surviving values (sliceVisualizationDataByIndices).
-    const original = baseData({ length: numeric('int') }, { length: [null, null, null] });
-
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(createParquetBundle(original)),
-    );
-
-    expect(reimported.annotations.length.kind).toBe('numeric');
-    expect(reimported.annotations.length.numericType).toBe('int');
-    expect(reimported.numeric_annotation_data?.length).toEqual([null, null, null]);
-    expect(reimported.annotation_data.length).toBeUndefined();
-  });
-
-  it('lets inference decide int/float for a DOUBLE column, rather than re-labelling it', async () => {
-    // Bundles exported before this writer stored EVERY numeric column as DOUBLE,
-    // so DOUBLE carries no int/float information. Treating it as a declaration
-    // would re-label their integer annotations as float and change bin labels.
-    const original = baseData({ ratio: numeric('float') }, { ratio: [1, 2, null] });
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'ratio')).toBe('DOUBLE');
-
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(exported),
-    );
-    // Integral values in a DOUBLE column ⇒ inference wins, exactly as before this PR.
-    expect(reimported.annotations.ratio.numericType).toBe('int');
-  });
-
-  it('treats an integer physical type as authoritative over inference', async () => {
-    // The inverse: only this writer emits INT32/INT64, and only for a declared
-    // integer column, so it may override a fractional inference.
-    const original = baseData({ residues: numeric('int') }, { residues: [7, 8, null] });
-    const exported = createParquetBundle(original);
-    expect(physicalType(exported, 'residues')).toBe('INT32');
-
-    const reimported = convertParquetToVisualizationData(
-      await extractRowsFromParquetBundle(exported),
-    );
-    expect(reimported.annotations.residues.numericType).toBe('int');
-  });
-
-  it('leaves a column carrying real categories alone even when a numeric type is declared', async () => {
-    // Guard against the restore pass hijacking a column that carries real values:
-    // a STRING column is never in numericColumnTypes, so it must stay categorical.
-    const original: VisualizationData = {
-      ...baseData({}, {}),
-      annotations: {
-        family: {
-          kind: 'categorical',
-          values: ['A', 'B'],
-          colors: ['#1F77B4', '#FF7F0E'],
-          shapes: ['circle', 'circle'],
+describe('v3 export: EAT predictions', () => {
+  const withPrediction = (): VisualizationData => {
+    const data = handBuilt();
+    data.annotation_predicted = {
+      organism: [
+        null,
+        null,
+        null,
+        {
+          value: 'Rat;Human',
+          values: ['Rat', 'Human'],
+          scores: [[0.91], null],
+          evidence: [null, 'EXP'],
+          confidence: 0.83,
+          source: 'P1|reference;literal%',
         },
-      },
-      annotation_data: { family: [[0], [1], [0]] },
+      ],
+    };
+    return data;
+  };
+
+  it('writes the companion trio and rebuilds the prediction from it', async () => {
+    const original = withPrediction();
+    const { data } = await exportAndDecode(original);
+
+    expect(data.annotation_predicted?.organism).toEqual(original.annotation_predicted?.organism);
+    expect(Object.keys(data.annotations).filter((key) => key.includes('__pred_'))).toEqual([]);
+    // The prediction-only label is back in the legend, after the observed ones.
+    expect(data.annotations.organism.values).toEqual(['Human', 'Mouse', 'Rat', '__NA__']);
+  });
+
+  it('writes a predicted row as missing in the curated column, even from a materialized overlay', async () => {
+    const original = withPrediction();
+    const displayed = materializeEatOverlay(original, 'organism', true);
+
+    const { data } = await exportAndDecode(displayed);
+
+    expect(meaning(data)).toEqual(meaning(original));
+  });
+
+  it('never writes the runtime confidence view, even materialized as a legend column', async () => {
+    const { data: loaded } = await exportAndDecode(withPrediction());
+    const [confidenceKey] = Object.entries(loaded.annotations).find(
+      ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
+    )!;
+    const selectedView = materializeVisualizationData(loaded, {}, 10, confidenceKey);
+
+    const manifest = JSON.parse(
+      parquetMetadata(partOf(createParquetBundle(selectedView), 0)!).key_value_metadata!.find(
+        ({ key }) => key === 'protspace_v3_manifest',
+      )!.value!,
+    );
+
+    expect(Object.keys(manifest.columns)).not.toContain(confidenceKey);
+    expect(manifest.columns.organism__pred_confidence).toEqual({
+      kind: 'numeric',
+      numericType: 'float',
+      sourceType: 'float',
+    });
+    const { data } = await exportAndDecode(selectedView);
+    expect(data.annotation_predicted?.organism[3]?.confidence).toBe(0.83);
+  });
+});
+
+/**
+ * Loading a legacy bundle and exporting it is the browser's converter: it must come out v3
+ * and mean exactly what the legacy file meant.
+ */
+describe('legacy import, v3 export', () => {
+  const statsBundle = () =>
+    concatenateBuffers(
+      [
+        fixture('v2-sample.parquetbundle'),
+        fixture('stats-sample-settings.parquet'),
+        fixture('stats-sample-statistics.parquet'),
+      ].map((part) => part.slice().buffer as ArrayBuffer),
+      BUNDLE_DELIMITER_BYTES,
+    );
+
+  it.each([
+    ['v1', () => repoFile('apps/web/tests/fixtures/data_custom.parquetbundle'), 1],
+    [
+      'v1, raw numerics',
+      () => repoFile('apps/web/tests/fixtures/phosphatase_no_binning.parquetbundle'),
+      1,
+    ],
+    [
+      'v1, EAT companions',
+      () => repoFile('apps/web/tests/fixtures/phosphatase_eat.parquetbundle'),
+      1,
+    ],
+    ['v2', () => fixture('v2-sample.parquetbundle').slice().buffer as ArrayBuffer, 2],
+    ['v2 with settings and statistics', statsBundle, 2],
+  ])(
+    '%s: exports as v3 with the same data, legend, settings and statistics',
+    async (_, file, version) => {
+      const legacy = await decodeParquetBundle(file());
+      expect(legacy.formatVersion).toBe(version);
+
+      const exported = await exportAndDecode(legacy.data, legacy.settings ?? undefined);
+
+      expect(meaning(exported.data)).toEqual(meaning(legacy.data));
+      // Same dictionary order, so the same palette lands on the same categories.
+      for (const [key, annotation] of Object.entries(legacy.data.annotations)) {
+        expect(exported.data.annotations[key]?.values, key).toEqual(annotation.values);
+      }
+      expect(exported.settings).toEqual(legacy.settings);
+      expect(exported.data.statistics).toEqual(legacy.data.statistics);
+    },
+  );
+
+  it('keeps a BOOLEAN column as the labels true and false', async () => {
+    const part = (columnData: Parameters<typeof parquetWriteBuffer>[0]['columnData']) =>
+      parquetWriteBuffer({ columnData });
+    const v2 = concatenateBuffers(
+      [
+        part([
+          { name: 'identifier', data: ['P1', 'P2', 'P3'], type: 'STRING' },
+          { name: 'reviewed', data: [true, false, true], type: 'BOOLEAN' },
+        ]),
+        part([
+          { name: 'projection_name', data: ['pca2'], type: 'STRING' },
+          { name: 'dimensions', data: [2], type: 'INT32' },
+          { name: 'info_json', data: ['{}'], type: 'STRING' },
+        ]),
+        part([
+          { name: 'projection_name', data: ['pca2', 'pca2', 'pca2'], type: 'STRING' },
+          { name: 'identifier', data: ['P1', 'P2', 'P3'], type: 'STRING' },
+          { name: 'x', data: [0, 1, 2], type: 'DOUBLE' },
+          { name: 'y', data: [0, 1, 2], type: 'DOUBLE' },
+        ]),
+      ],
+      BUNDLE_DELIMITER_BYTES,
+    );
+    const legacy = await decodeParquetBundle(v2);
+    expect(legacy.data.annotations.reviewed.values).toEqual(['true', 'false']);
+
+    const { data } = await exportAndDecode(legacy.data);
+
+    expect(data.annotations.reviewed.values).toEqual(['true', 'false']);
+    expect(Array.from(data.annotation_data.reviewed as Int32Array)).toEqual([0, 1, 0]);
+  });
+
+  it('keeps a scored or evidenced hit spelled as a missing value, as v2 showed it', async () => {
+    // v2 tests the whole hit (`none|0.5`) for a missing value, so only the bare `none`
+    // of P4 folds into N/A; v3 stores the bare label and has to fold per hit.
+    const v2 = concatenateBuffers(
+      [
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'identifier', data: ['P1', 'P2', 'P3', 'P4'], type: 'STRING' },
+            {
+              name: 'pfam',
+              data: ['none|0.5', 'PF1|0.2', 'NA|IEA', 'PF1|0.1;none|0.9;none'],
+              type: 'STRING',
+            },
+          ],
+          kvMetadata: [{ key: 'protspace_format_version', value: '2' }],
+        }),
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'projection_name', data: ['pca2'], type: 'STRING' },
+            { name: 'dimensions', data: [2], type: 'INT32' },
+            { name: 'info_json', data: ['{}'], type: 'STRING' },
+          ],
+        }),
+        parquetWriteBuffer({
+          columnData: [
+            { name: 'projection_name', data: ['pca2', 'pca2', 'pca2', 'pca2'], type: 'STRING' },
+            { name: 'identifier', data: ['P1', 'P2', 'P3', 'P4'], type: 'STRING' },
+            { name: 'x', data: [0, 1, 2, 3], type: 'DOUBLE' },
+            { name: 'y', data: [0, 1, 2, 3], type: 'DOUBLE' },
+          ],
+        }),
+      ],
+      BUNDLE_DELIMITER_BYTES,
+    );
+    const legacy = await decodeParquetBundle(v2);
+    expect(meaning(legacy.data).annotations.pfam).toEqual([
+      [{ label: 'none', scores: [0.5], evidence: null }],
+      [{ label: 'PF1', scores: [0.2], evidence: null }],
+      [{ label: 'NA', scores: null, evidence: 'IEA' }],
+      [
+        { label: 'PF1', scores: [0.1], evidence: null },
+        { label: 'none', scores: [0.9], evidence: null },
+      ],
+    ]);
+
+    const exported = await exportAndDecode(legacy.data);
+
+    expect(meaning(exported.data)).toEqual(meaning(legacy.data));
+    expect(exported.data.annotations.pfam.values).toEqual(legacy.data.annotations.pfam.values);
+  });
+
+  it('re-exports a converted v3 dataset (5,181 proteins) to an equal dataset', async () => {
+    // The 5K bundle the app once served, as `protspace convert` wrote it in #477.
+    const shipped = await decodeParquetBundle(
+      repoFile('apps/web/tests/fixtures/toxprot_5181_pca3d_v3.parquetbundle'),
+    );
+    expect(shipped.formatVersion).toBe(3);
+
+    const exported = await exportAndDecode(shipped.data, shipped.settings ?? undefined);
+
+    expect(meaning(exported.data)).toEqual(meaning(shipped.data));
+    expect(exported.data.annotations).toEqual(shipped.data.annotations);
+    expect(exported.settings).toEqual(shipped.settings);
+  });
+
+  it('re-exports the golden v3 fixture to an equal dataset', async () => {
+    const { data: original } = await decodeParquetBundle(
+      fixture('v3-sample.parquetbundle').slice().buffer as ArrayBuffer,
+    );
+
+    const { data } = await exportAndDecode(original);
+
+    expect(meaning(data)).toEqual(meaning(original));
+    expect(data.annotations).toEqual(original.annotations);
+  });
+
+  it('keeps the column type of every EAT companion Python wrote through a re-export', async () => {
+    // `protspace transfer` writes `__pred_confidence` as float32; the reader folds the
+    // companions into `annotation_predicted`, so their carried sourceType is not on any
+    // annotation the writer could echo.
+    const file = repoFile('apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle');
+    const written = manifestOf(file).columns;
+    const companions = Object.keys(written).filter((name) => name.includes('__pred_'));
+    expect(companions.length).toBeGreaterThan(0);
+    const { data } = await decodeParquetBundle(file);
+
+    const echoed = manifestOf(createParquetBundle(data)).columns;
+    for (const name of companions) {
+      expect(echoed[name]?.sourceType, name).toBe(written[name].sourceType);
+    }
+  });
+
+  it('keeps a bool column bool when a prediction adds a label the column never holds', () => {
+    // `protspace transfer` spells a predicted bool `str(value)`, so the overlay appends
+    // `False` to the base column's labels. The curated column is written without the
+    // predicted rows, so its dictionary is still `true` / `false`, and Python can
+    // restore it as bool.
+    const original = handBuilt();
+    original.annotations.reviewed = {
+      ...categorical(['true', 'false', 'False', '__NA__']),
+      sourceType: 'bool',
+    };
+    original.annotation_data.reviewed = Int32Array.of(0, 1, 2, 3);
+    original.annotation_predicted = {
+      reviewed: [null, null, { value: 'False', confidence: 0.9, source: 'P1' }, null],
     };
 
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-    expect(extraction.numericColumnTypes).not.toHaveProperty('family');
-
-    const reimported = convertParquetToVisualizationData(extraction);
-    expect(reimported.annotations.family.kind).toBe('categorical');
-    expect(reimported.annotation_data.family).toEqual([[0], [1], [0]]);
+    const columns = manifestOf(createParquetBundle(original)).columns;
+    expect(columns.reviewed.sourceType).toBe('bool');
   });
 
-  it('derives the declared types from the parquet schema, with no bespoke metadata key', async () => {
-    const original = baseData(
-      { residues: numeric('int'), score: numeric('float') },
-      {
-        residues: [1, 2, 3],
-        score: [0.5, 1.5, 2.5],
-      },
-    );
+  it("carries the golden fixture's sourceType through a re-export", async () => {
+    const file = fixture('v3-sample.parquetbundle').slice().buffer as ArrayBuffer;
+    const written = manifestOf(file).columns;
+    const { data } = await decodeParquetBundle(file);
 
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-    expect(extraction.numericColumnTypes).toMatchObject({ residues: 'int', score: 'float' });
+    // A Python string column the reader sees as numbers stays a string column for Python.
+    expect(written.length).toMatchObject({ kind: 'numeric', sourceType: 'string' });
+    expect(data.annotations.length.sourceType).toBe('string');
+
+    const echoed = manifestOf(createParquetBundle(data)).columns;
+    for (const [name, annotation] of Object.entries(data.annotations)) {
+      if (annotation.runtime) continue;
+      expect(echoed[name]?.sourceType, name).toBe(written[name].sourceType);
+    }
   });
+});
+
+/**
+ * The legacy reader's numeric typing, read from fixture files. These do not go through
+ * the writer, which no longer produces a legacy bundle.
+ */
+describe('legacy numeric type inference', () => {
+  const loadArrayBuffer = (path: string): ArrayBuffer => {
+    const buffer = readFileSync(path);
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  };
 
   it('does not re-label a real DOUBLE-stored integer fixture as float', async () => {
     // raw_numeric_test.parquetbundle stores `length`/`weight` as DOUBLE with
@@ -693,37 +825,5 @@ describe('numeric annotation type fidelity', () => {
     const data = convertParquetToVisualizationData(extraction);
     expect(Object.keys(data.annotations).filter((key) => key.includes('__pred_'))).toEqual([]);
     expect(data.numeric_annotation_data?.ec__pred_confidence).toBeUndefined();
-  });
-
-  it('restores the numeric kind on the >=10k optimized path production uses at scale', async () => {
-    // convertParquetToVisualizationDataOptimized branches on projection-row count:
-    // below 10k it delegates to the small-dataset converter (covered above), at or
-    // above it takes convertLargeDatasetOptimized. Swiss-Prot-scale bundles only
-    // ever take the second branch, so the restore pass must be wired into both.
-    const count = 10_001;
-    const proteinIds = Array.from({ length: count }, (_, i) => `P${i}`);
-    const coords = new Float32Array(count * 2);
-    for (let i = 0; i < count; i++) {
-      coords[i * 2] = i;
-      coords[i * 2 + 1] = i;
-    }
-
-    const original: VisualizationData = {
-      protein_ids: proteinIds,
-      projections: [{ name: 'UMAP', data: coords, dimension: 2 }],
-      annotations: { length: numeric('int') },
-      annotation_data: {},
-      numeric_annotation_data: { length: new Array<number | null>(count).fill(null) },
-      annotation_scores: {},
-      annotation_evidence: {},
-    };
-
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-    expect(extraction.projections.length).toBeGreaterThanOrEqual(10_000);
-
-    const reimported = await convertParquetToVisualizationDataOptimized(extraction);
-    expect(reimported.annotations.length.kind).toBe('numeric');
-    expect(reimported.annotations.length.numericType).toBe('int');
-    expect(reimported.annotation_data.length).toBeUndefined();
   });
 });

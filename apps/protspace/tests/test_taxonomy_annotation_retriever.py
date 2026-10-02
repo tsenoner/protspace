@@ -389,6 +389,187 @@ class TestTaxonomyRetrieverMocked:
         assert mock_get.call_count == 2
 
 
+def _lineage(*nodes):
+    """Lineage items from ``(taxonId, scientificName, rank)`` triples."""
+    return [
+        {"taxonId": tid, "scientificName": name, "rank": rank, "hidden": False}
+        for tid, name, rank in nodes
+    ]
+
+
+# Lineages as the UniProt Taxonomy API returned them (2026-09), root-first. Most
+# end in one or more unranked clades, which is what made `root` pick the
+# deepest one ("melanogaster subgroup") rather than the top of the tree.
+FLY_LINEAGE = _lineage(
+    (131567, "cellular organisms", "no rank"),
+    (2759, "Eukaryota", "domain"),
+    (33154, "Opisthokonta", "clade"),
+    (33208, "Metazoa", "kingdom"),
+    (6072, "Eumetazoa", "clade"),
+    (33213, "Bilateria", "clade"),
+    (33317, "Protostomia", "clade"),
+    (1206794, "Ecdysozoa", "clade"),
+    (88770, "Panarthropoda", "clade"),
+    (6656, "Arthropoda", "phylum"),
+    (197563, "Mandibulata", "clade"),
+    (197562, "Pancrustacea", "clade"),
+    (3701028, "Altocrustacea", "clade"),
+    (3701030, "Allotriocarida", "clade"),
+    (6960, "Hexapoda", "subphylum"),
+    (50557, "Insecta", "class"),
+    (85512, "Dicondylia", "clade"),
+    (7496, "Pterygota", "subclass"),
+    (33340, "Neoptera", "infraclass"),
+    (3701061, "Eumetabola", "clade"),
+    (33392, "Endopterygota", "cohort"),
+    (3701062, "Aparaglossata", "clade"),
+    (3701063, "Panorpida", "clade"),
+    (7147, "Diptera", "order"),
+    (7203, "Brachycera", "suborder"),
+    (43733, "Muscomorpha", "infraorder"),
+    (480118, "Eremoneura", "clade"),
+    (480117, "Cyclorrhapha", "clade"),
+    (43738, "Schizophora", "no rank"),
+    (43741, "Acalyptratae", "no rank"),
+    (43746, "Ephydroidea", "superfamily"),
+    (7214, "Drosophilidae", "family"),
+    (43845, "Drosophilinae", "subfamily"),
+    (46877, "Drosophilini", "tribe"),
+    (7215, "Drosophila", "genus"),
+    (32341, "Sophophora", "subgenus"),
+    (32346, "melanogaster group", "no rank"),
+    (32351, "melanogaster subgroup", "no rank"),
+)
+BACILLUS_CEREUS_LINEAGE = _lineage(
+    (131567, "cellular organisms", "no rank"),
+    (2, "Bacteria", "domain"),
+    (1783272, "Bacillati", "kingdom"),
+    (1239, "Bacillota", "phylum"),
+    (91061, "Bacilli", "class"),
+    (1385, "Caryophanales", "order"),
+    (186817, "Bacillaceae", "family"),
+    (1386, "Bacillus", "genus"),
+    (86661, "Bacillus cereus group", "no rank"),
+)
+HIV1_LINEAGE = _lineage(
+    (10239, "Viruses", "no rank"),
+    (2559587, "Riboviria", "realm"),
+    (2732397, "Pararnavirae", "kingdom"),
+    (2732409, "Artverviricota", "phylum"),
+    (2732514, "Revtraviricetes", "class"),
+    (2169561, "Ortervirales", "order"),
+    (11632, "Retroviridae", "family"),
+    (327045, "Orthoretrovirinae", "subfamily"),
+    (11646, "Lentivirus", "genus"),
+    (3418650, "Lentivirus humimdef1", "species"),
+)
+
+
+class TestRootIsTheTopOfTheLineage:
+    """`root` is the lineage's top-level node, not its deepest unranked clade."""
+
+    def _root(self, mock_get, *entries):
+        mock_get.return_value = _make_api_response(list(entries))
+        ids = [entry["taxonId"] for entry in entries]
+        result = TaxonomyRetriever(
+            taxon_ids=ids, annotations=["root", "domain", "species"]
+        ).fetch_annotations()
+        return {tid: result[tid]["annotations"]["root"] for tid in ids}
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_the_four_reference_taxa(self, mock_get):
+        roots = self._root(
+            mock_get,
+            _make_entry(9606, "Homo sapiens", "species", HUMAN_LINEAGE),
+            _make_entry(7227, "Drosophila melanogaster", "species", FLY_LINEAGE),
+            _make_entry(1396, "Bacillus cereus", "species", BACILLUS_CEREUS_LINEAGE),
+            _make_entry(
+                11676, "Human immunodeficiency virus type 1", "no rank", HIV1_LINEAGE
+            ),
+        )
+
+        assert roots == {
+            9606: "cellular organisms",
+            7227: "cellular organisms",
+            1396: "cellular organisms",
+            11676: "Viruses",
+        }
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_the_other_ranks_are_unchanged(self, mock_get):
+        mock_get.return_value = _make_api_response(
+            [_make_entry(7227, "Drosophila melanogaster", "species", FLY_LINEAGE)]
+        )
+        annotations = TaxonomyRetriever(
+            taxon_ids=[7227], annotations=TAXONOMY_ANNOTATIONS
+        ).fetch_annotations()[7227]["annotations"]
+
+        assert annotations == {
+            "root": "cellular organisms",
+            "domain": "Eukaryota",
+            "kingdom": "Metazoa",
+            "phylum": "Arthropoda",
+            "class": "Insecta",
+            "order": "Diptera",
+            "family": "Drosophilidae",
+            "genus": "Drosophila",
+            "species": "Drosophila melanogaster",
+        }
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_a_top_level_taxon_is_its_own_root(self, mock_get):
+        # The API ranks these nodes `cellular root` / `acellular root` as
+        # entries of their own, but "no rank" when they appear as an ancestor,
+        # and lists no ancestors for them.
+        roots = self._root(
+            mock_get,
+            _make_entry(131567, "cellular organisms", "cellular root", []),
+            _make_entry(10239, "Viruses", "acellular root", []),
+            _make_entry(2787823, "unclassified entries", "no rank", []),
+        )
+
+        assert roots == {
+            131567: "cellular organisms",
+            10239: "Viruses",
+            2787823: "unclassified entries",
+        }
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_the_root_does_not_depend_on_the_rank_label(self, mock_get):
+        # Should the lineage start carrying NCBI's new top ranks, the first
+        # node is still the root.
+        lineage = _lineage(
+            (10239, "Viruses", "acellular root"),
+            (2559587, "Riboviria", "realm"),
+        )
+        roots = self._root(mock_get, _make_entry(11676, "HIV-1", "no rank", lineage))
+
+        assert roots == {11676: "Viruses"}
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_ncbis_unnamed_root_node_is_skipped(self, mock_get):
+        # NCBI's taxon 1 ("root") tops every lineage; were UniProt to list it,
+        # every protein would share the one value.
+        lineage = [*_lineage((1, "root", "no rank")), *FLY_LINEAGE]
+        roots = self._root(
+            mock_get, _make_entry(7227, "Drosophila melanogaster", "species", lineage)
+        )
+
+        assert roots == {7227: "cellular organisms"}
+
+    @patch("protspace.data.annotations.retrievers.http_utils.requests.get")
+    def test_an_inactive_taxon_has_no_root(self, mock_get):
+        # A deleted taxon comes back without a name or a lineage.
+        mock_get.return_value = _make_api_response(
+            [{"taxonId": 12884, "inactiveReason": {"inactiveReasonType": "DELETED"}}]
+        )
+        annotations = TaxonomyRetriever(
+            taxon_ids=[12884], annotations=["root", "species"]
+        ).fetch_annotations()[12884]["annotations"]
+
+        assert annotations == {"root": "", "species": ""}
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 class TestTaxonomyRetrieverIntegration:
@@ -444,3 +625,18 @@ class TestTaxonomyRetrieverIntegration:
         assert result[2697049]["annotations"]["domain"] == "Riboviria"
         assert result[3702]["annotations"]["kingdom"] == "Viridiplantae"
         assert result[559292]["annotations"]["kingdom"] == "Fungi"
+
+    def test_root_is_the_top_of_the_lineage(self):
+        """Deep unranked clades (fly, B. cereus) do not leak into `root`."""
+        taxon_ids = [9606, 7227, 1396, 11676, 10239]
+        result = TaxonomyAnnotationRetriever(
+            taxon_ids=taxon_ids, annotations=["root"]
+        ).fetch_annotations()
+
+        assert {tid: result[tid]["annotations"]["root"] for tid in taxon_ids} == {
+            9606: "cellular organisms",
+            7227: "cellular organisms",
+            1396: "cellular organisms",
+            11676: "Viruses",
+            10239: "Viruses",
+        }

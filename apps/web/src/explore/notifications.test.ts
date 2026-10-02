@@ -190,6 +190,13 @@ describe('explore notifications', () => {
     });
   });
 
+  it('says which proteins of the loaded file a bundle export leaves out', () => {
+    const notice = getExportSuccessNotification('dataset.parquetbundle', 1);
+    expect(notice.title).toBe('Export ready.');
+    expect(notice.description).toMatch(/^dataset\.parquetbundle leaves out the 1 protein without/);
+    expect(notice.description).toMatch(/protspace convert/);
+  });
+
   it('builds clear recovery copy for corrupted persisted datasets and export failures', () => {
     expect(getCorruptedPersistedDatasetNotification('could not be loaded').description).toMatch(
       /loaded the default demo dataset/i,

@@ -71,7 +71,7 @@ async function readEcEatConfidences(
           data?: {
             protein_ids: string[];
             annotations: Record<string, { runtime?: { role?: string; baseAnnotation?: string } }>;
-            numeric_annotation_data?: Record<string, Array<number | null>>;
+            numeric_annotation_data?: Record<string, Float64Array>;
           };
         })
       | null;
@@ -85,7 +85,10 @@ async function readEcEatConfidences(
     if (!data || !values) {
       throw new Error('The EAT confidence column for `ec` is not loaded');
     }
-    return data.protein_ids.map((id, index) => ({ id, confidence: values[index] ?? null }));
+    return data.protein_ids.map((id, index) => ({
+      id,
+      confidence: Number.isFinite(values[index]) ? values[index] : null,
+    }));
   });
 }
 

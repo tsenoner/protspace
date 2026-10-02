@@ -54,23 +54,26 @@ def style(
         generate_template as _generate_template,
     )
 
-    if dump_settings:
-        _dump_settings(input_file)
-        return
+    if not (dump_settings or generate_template):
+        if not annotation_styles:
+            raise typer.BadParameter(
+                "--annotation-styles is required when not using --dump-settings or --generate-template"
+            )
+        if not output_file:
+            raise typer.BadParameter(
+                "output_file is required when not using --dump-settings or --generate-template"
+            )
 
-    if generate_template:
-        template = _generate_template(input_file)
-        print(json.dumps(template, indent=2))
-        return
-
-    if not annotation_styles:
-        raise typer.BadParameter(
-            "--annotation-styles is required when not using --dump-settings or --generate-template"
-        )
-    if not output_file:
-        raise typer.BadParameter(
-            "output_file is required when not using --dump-settings or --generate-template"
-        )
-
-    styles = load_annotation_styles(annotation_styles)
-    add_annotation_styles(input_file, styles, output_file)
+    # A bundle the reader or the v3 encoder refuses (a corrupt part, a legacy
+    # input v3 cannot represent) is a usage error, as in `protspace convert`,
+    # not a traceback.
+    try:
+        if dump_settings:
+            _dump_settings(input_file)
+        elif generate_template:
+            print(json.dumps(_generate_template(input_file), indent=2))
+        else:
+            styles = load_annotation_styles(annotation_styles)
+            add_annotation_styles(input_file, styles, output_file)
+    except ValueError as exc:
+        raise typer.BadParameter(f"cannot style {input_file}: {exc}") from exc

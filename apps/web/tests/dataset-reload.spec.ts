@@ -13,8 +13,9 @@ import {
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
 
+const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 const CUSTOM_5K_BUNDLE_NAME = path.basename(CUSTOM_5K_BUNDLE_PATH);
 const CUSTOM_5K_PROTEIN_COUNT = 5181;
@@ -668,5 +669,60 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('No data available for export')).toBeVisible();
     expect(dialogSeen).toBe(false);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
+  });
+});
+
+test.describe('Bundle format notice', () => {
+  const LEGACY_BUNDLES = [
+    { version: 1, path: path.resolve(SPEC_DIR, 'fixtures/raw_numeric_test.parquetbundle') },
+    {
+      version: 2,
+      path: path.resolve(
+        SPEC_DIR,
+        '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+      ),
+    },
+  ];
+  const NOTICE = 'This file uses an older bundle format.';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+  });
+
+  async function importAndWait(page: Page, datasetPath: string): Promise<void> {
+    const defaultCount = await getProteinCount(page);
+    await loadCustomDatasetFromImportMenu(page, datasetPath);
+    await page.waitForFunction(
+      (originalCount) => {
+        const plot = document.querySelector('#myPlot') as any;
+        return (
+          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
+        );
+      },
+      defaultCount,
+      { polling: 500, timeout: 30_000 },
+    );
+  }
+
+  for (const { version, path: bundlePath } of LEGACY_BUNDLES) {
+    test(`importing a v${version} bundle points to re-export and protspace convert`, async ({
+      page,
+    }) => {
+      await importAndWait(page, bundlePath);
+
+      await expect(page.getByText(NOTICE)).toBeVisible();
+      await expect(page.getByText(`Format v${version} bundles will stop opening`)).toBeVisible();
+      await expect(page.getByText(/protspace convert/)).toBeVisible();
+    });
+  }
+
+  test('neither the startup demo nor an imported v3 bundle shows the notice', async ({ page }) => {
+    // The demo loaded in beforeEach; the import is the 5K bundle as `protspace convert` wrote it.
+    await importAndWait(page, TOXPROT_5181_V3_FIXTURE);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
   });
 });

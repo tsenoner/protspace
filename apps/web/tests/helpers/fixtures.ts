@@ -31,6 +31,12 @@ export const STARTUP_URL_GLOB = `**/${basename(STARTUP_FIXTURE)}`;
 /** 5,181 proteins; `phylum`, `protein_existence`, `length_fixed`, `length_quantile`; PCA 2 and PCA 3 (3D). */
 export const TOXPROT_5181_FIXTURE = fixture('toxprot_5181_pca3d.parquetbundle');
 
+/**
+ * The same 5,181 proteins in the v3 format, as `protspace convert` wrote them:
+ * an import that shows no legacy-format notice.
+ */
+export const TOXPROT_5181_V3_FIXTURE = fixture('toxprot_5181_pca3d_v3.parquetbundle');
+
 /** Phosphatases: 1,587 proteins, 40 annotations, ESM2-650M PCA 2 and UMAP 2. */
 export const PHOSPHATASE_1587_FIXTURE = fixture('phosphatase_1587.parquetbundle');
 

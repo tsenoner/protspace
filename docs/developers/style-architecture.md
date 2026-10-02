@@ -223,7 +223,7 @@ feature subdirectories:
 | Directory              | Responsibility                                                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `webgl/`               | WebGL2 rendering, shaders, GL resources, and `renderer/` (on-screen and offscreen export renderers, framebuffers, point staging, context-loss handling) |
-| `interaction/`         | Pointer interaction controller and the quadtree hit-test index                                                                                          |
+| `interaction/`         | Pointer interaction controller and the uniform-grid point hit-test index                                                                                |
 | `duplicate-stacks/`    | Duplicate-point detection, badge rendering, and the spiderfy overlay                                                                                    |
 | `tooltips/`            | Protein tooltip and tips surfaces, plus positioning and height estimation                                                                               |
 | `styling/`             | Style getters, the visibility model, and numeric re-binning                                                                                             |

@@ -25,7 +25,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parquetReadObjects } from 'hyparquet';
+import { parquetMetadata, parquetReadObjects } from 'hyparquet';
 import type { LegendPersistedSettings } from '../../packages/utils/src/types.ts';
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants.ts';
 import { findBundleDelimiterPositions } from '../../packages/utils/src/parquet/delimiter-utils.ts';
@@ -73,6 +73,72 @@ function splitBundle(path: string): (ArrayBuffer | null)[] {
 
 const readRows = (part: ArrayBuffer | null, columns?: string[]): Promise<Row[]> =>
   part ? parquetReadObjects({ file: part, columns }) : Promise.resolve([]);
+
+/** Part 1's v3 manifest, or null for a legacy (v1/v2) bundle whose part 1 holds cells. */
+function v3Manifest(parts: (ArrayBuffer | null)[]): {
+  columns: Record<string, { kind: 'categorical' | 'multi' | 'numeric' }>;
+  projections: { name: string; dimension: number }[];
+} | null {
+  const kv = parquetMetadata(parts[0]!).key_value_metadata ?? [];
+  if (!kv.some(({ key }) => key === 'protspace_container_version')) return null;
+  return JSON.parse(kv.find(({ key }) => key === 'protspace_v3_manifest')!.value!);
+}
+
+/**
+ * The annotation rows of a bundle, one per protein, with each column as the cell the rest
+ * of this script reads: a v1/v2 part 1 as stored; a v3 part 1 (integer codes whose labels
+ * live in part 6, see docs/guide/data-format.md) rebuilt as its labels joined by `;`, a
+ * number for a numeric column and null for a missing value.
+ */
+async function readAnnotationRows(parts: (ArrayBuffer | null)[], columns: string[]) {
+  const manifest = v3Manifest(parts);
+  if (!manifest) return readRows(parts[0], columns);
+
+  const payloads = new Map(
+    (await parquetReadObjects({ file: parts[5]!, utf8: false })).map(({ name, data }) => [
+      String(name),
+      new Uint8Array(data as Uint8Array),
+    ]),
+  );
+  const int32s = (name: string) => {
+    const bytes = payloads.get(name)!.slice();
+    return new Int32Array(bytes.buffer, 0, bytes.byteLength / 4);
+  };
+  const labelsOf = (name: string) => {
+    const blob = payloads.get(`dict:${name}`)!;
+    let at = 0;
+    return Array.from(int32s(`dict:${name}:len`), (length) =>
+      new TextDecoder().decode(blob.subarray(at, (at += length))),
+    );
+  };
+
+  const physical = columns.map((name) =>
+    manifest.columns[name]?.kind === 'multi' ? `${name}__count` : name,
+  );
+  const stored = await readRows(parts[0], physical);
+  const decoders = columns.map((name, k): ((row: Row) => unknown) => {
+    const kind = manifest.columns[name]?.kind;
+    const column = physical[k];
+    if (kind === undefined) return (row) => row[column];
+    if (kind === 'numeric') {
+      return (row) => (Number.isNaN(Number(row[column])) ? null : Number(row[column]));
+    }
+    const labels = labelsOf(name);
+    if (kind === 'categorical') {
+      return (row) => (Number(row[column]) < 0 ? null : labels[Number(row[column])]);
+    }
+    const codes = int32s(`csr:${name}`);
+    let hit = 0;
+    return (row) => {
+      const count = Number(row[column]);
+      const cell = Array.from(codes.subarray(hit, (hit += count)), (code) => labels[code]);
+      return cell.length ? cell.join(';') : null;
+    };
+  });
+  return stored.map((row) =>
+    Object.fromEntries(columns.map((name, k) => [name, decoders[k](row)])),
+  );
+}
 
 /** Per-column legend settings, in either the current or the legacy flat settings format. */
 async function readLegendSettings(
@@ -170,8 +236,19 @@ function categorize(
 
 const round = (value: number, digits: number) => Number(value.toFixed(digits));
 
-async function readProjection(parts: (ArrayBuffer | null)[], name: string) {
+async function readProjection(parts: (ArrayBuffer | null)[], name: string, idColumn: string) {
   const coords = new Map<string, [number, number]>();
+  if (v3Manifest(parts)) {
+    // v3: one row per protein, aligned with part 1; NaN where the projection has no point.
+    const ids = await readRows(parts[0], [idColumn]);
+    const axes = await readRows(parts[2], [`${name}__x`, `${name}__y`]);
+    axes.forEach((row, i) => {
+      const [x, y] = [Number(row[`${name}__x`]), Number(row[`${name}__y`])];
+      if (Number.isFinite(x) && Number.isFinite(y)) coords.set(String(ids[i][idColumn]), [x, y]);
+    });
+    if (!coords.size) throw new Error(`Projection "${name}" not found`);
+    return coords;
+  }
   for (const row of await readRows(parts[2], ['projection_name', 'identifier', 'x', 'y'])) {
     if (row.projection_name === name) {
       coords.set(String(row.identifier), [Number(row.x), Number(row.y)]);
@@ -227,13 +304,13 @@ async function buildDemo() {
   const ANNOTATIONS = ['protein_families', 'phylum', 'class', 'order'];
 
   const parts = splitBundle(DEMO_BUNDLE);
-  const rows = await readRows(parts[0], ['protein_id', 'protein_name', ...ANNOTATIONS]);
+  const rows = await readAnnotationRows(parts, ['protein_id', 'protein_name', ...ANNOTATIONS]);
   const settings = await readLegendSettings(parts[3]);
   const ids = rows.map((row) => String(row.protein_id));
 
   const projections = [];
   for (const name of PROJECTIONS) {
-    const coords = await readProjection(parts, name);
+    const coords = await readProjection(parts, name, 'protein_id');
     if (!ids.every((id) => coords.has(id)))
       throw new Error(`${name}: proteins without coordinates`);
     projections.push(
@@ -307,7 +384,7 @@ async function buildVenom() {
   const SCORED = 'family';
 
   const parts = splitBundle(VENOM_BUNDLE);
-  const rows = await readRows(parts[0], [
+  const rows = await readAnnotationRows(parts, [
     'protein_id',
     SCORED,
     TARGET,
