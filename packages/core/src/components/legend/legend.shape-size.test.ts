@@ -196,6 +196,16 @@ describe('legend shape size', () => {
     expect(el.shapeSize).toBe(64);
   });
 
+  it("stores and exports an annotation's oversized own size as 64", () => {
+    const { el, switchTo, store, stored, annotate } = makeLegend();
+    store('a', 200);
+    switchTo('a');
+    el._persistenceController.saveSettings();
+    expect(stored('a')?.shapeSize).toBe(64);
+    annotate('a');
+    expect(el.getAllPersistedSettings().a.shapeSize).toBe(64);
+  });
+
   it('caps a host-set size when the settings dialog is saved', async () => {
     const { el, pointSizes, switchTo } = makeLegend();
     switchTo('a');

@@ -1185,6 +1185,10 @@ export class ProtspaceLegend extends LitElement {
 
     // Clear persistence state for the new dataset
     this._persistenceController.clearForNewDataset(datasetHash, clearPersistedState);
+    // The previous dataset's count and annotation size must not size the new one before
+    // `updated()` takes its hash.
+    this._datasetProteinCount = 0;
+    this._annotationShapeSize = null;
 
     // Reset UI state
     this._showSettingsDialog = false;
@@ -2026,7 +2030,10 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this._annotationShapeSize = explicitShapeSize(settings.shapeSize);
+      // Capped here, not only when resolved: the record and the export keep this value.
+      const ownShapeSize = explicitShapeSize(settings.shapeSize);
+      this._annotationShapeSize =
+        ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize);
       this.shapeSize = this._resolveShapeSize();
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
@@ -2092,7 +2099,7 @@ export class ProtspaceLegend extends LitElement {
   private _clearShapeSize(): void {
     this._persistenceController.clearShapeSize(Object.keys(this.data?.annotations ?? {}));
     this._annotationShapeSize = null;
-    this.shapeSize = defaultShapeSize(this._datasetProteinCount);
+    this.shapeSize = this._resolveShapeSize();
   }
 
   private _computeNumericSettingsSignatures(

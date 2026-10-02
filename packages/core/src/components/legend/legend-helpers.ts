@@ -99,7 +99,8 @@ const DEFAULT_SHAPE_SIZE_REFERENCE_COUNT = 10_000;
  */
 export function defaultShapeSize(proteinCount: number): number {
   const base = LEGEND_DEFAULTS.symbolSize;
-  if (proteinCount <= DEFAULT_SHAPE_SIZE_REFERENCE_COUNT) return base;
+  // Negated so a NaN count gives the base size too, not NaN.
+  if (!(proteinCount > DEFAULT_SHAPE_SIZE_REFERENCE_COUNT)) return base;
   return Math.max(
     1,
     Math.round(base * (DEFAULT_SHAPE_SIZE_REFERENCE_COUNT / proteinCount) ** (2 / 3)),

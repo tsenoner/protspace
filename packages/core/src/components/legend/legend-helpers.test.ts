@@ -175,6 +175,11 @@ describe('legend-helpers', () => {
       expect(defaultShapeSize(-5)).toBe(10);
     });
 
+    it('gives a whole size for a non-finite count', () => {
+      expect(defaultShapeSize(Number.NaN)).toBe(10);
+      expect(defaultShapeSize(Number.POSITIVE_INFINITY)).toBe(1);
+    });
+
     it('returns whole sizes', () => {
       for (const n of [12_345, 33_333, 77_777, 250_000]) {
         expect(Number.isInteger(defaultShapeSize(n))).toBe(true);

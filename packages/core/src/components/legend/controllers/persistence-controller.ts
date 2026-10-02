@@ -23,6 +23,12 @@ import {
 /** Storage component of the dataset-wide shape size, picked or applied from a bundle. */
 const SHAPE_SIZE_KEY = 'shape-size';
 
+/** Storage component the dataset-wide size had before the default followed the protein count. */
+const LEGACY_SHAPE_SIZE_KEY = 'point-size';
+
+/** What the old Reset stored under the legacy key: the default of the time. */
+const LEGACY_RESET_SHAPE_SIZE = 10;
+
 function readShapeSize(key: string): number | null {
   return positiveSize(getStorageItem<unknown>(key, null));
 }
@@ -100,12 +106,12 @@ export class PersistenceController
    * Reset does now. Any other legacy size is a pick and moves to the current key.
    */
   private _migrateLegacyShapeSize(annotationNames: string[]): void {
-    const legacyKey = buildStorageKey('point-size', this._datasetHash);
+    const legacyKey = buildStorageKey(LEGACY_SHAPE_SIZE_KEY, this._datasetHash);
     if (!hasStorageItem(legacyKey)) return;
     const legacy = readShapeSize(legacyKey);
     removeStorageItem(legacyKey);
     if (this.loadShapeSize() !== null) return;
-    if (legacy === 10) this._clearStoredAnnotationShapeSizes(annotationNames);
+    if (legacy === LEGACY_RESET_SHAPE_SIZE) this._clearStoredAnnotationShapeSizes(annotationNames);
     else if (legacy !== null) this.saveShapeSize(legacy);
   }
 
