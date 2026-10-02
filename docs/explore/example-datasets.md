@@ -22,9 +22,9 @@ Figure numbers refer to the ProtSpace web-server paper and may differ from its p
 | ------------------------------------------------------- | -------- | -------- | -------------------------------------- |
 | [Venom toxins (demo)](#demo)                            | 7,831    | 1.0 MB   | `ProtT5 — UMAP 2` · `protein_families` |
 | [Snake three-finger toxins (EAT)](#three-finger-toxins) | 1,089    | 0.1 MB   | `ProtT5 — UMAP 2` · `toxin_class`      |
-| [Human + fly](#human-fly)                               | 105,562  | 22.7 MB  | `ProtT5 — UMAP 2` · `species`          |
-| [β-lactamases](#beta-lactamase)                         | 113,015  | 13.2 MB  | `ProtT5 — UMAP 2` · `protein_families` |
-| [Swiss-Prot](#swissprot)                                | 573,649  | 135.9 MB | `ProtT5 — UMAP 2` · `domain`           |
+| [Human + fly](#human-fly)                               | 105,562  | 16.1 MB  | `ProtT5 — UMAP 2` · `species`          |
+| [β-lactamases](#beta-lactamase)                         | 113,015  | 13.3 MB  | `ProtT5 — UMAP 2` · `protein_families` |
+| [Swiss-Prot](#swissprot)                                | 573,649  | 87.8 MB  | `ProtT5 — UMAP 2` · `domain`           |
 
 ## Venom toxins (demo) {#demo}
 
@@ -43,7 +43,7 @@ Each colour in the `protein_families` legend is one toxin family, and the smalle
 - **Projections:** UMAP 2D (50 neighbours, minimum distance 0.5, Euclidean, seed 42) and PCA 2D, for each model.
 - **Annotations:** 40 columns from UniProt, Taxonomy, InterPro, TED and Biocentral, fetched at UniProt release 2026_03, except the columns kept from the source bundle (2026_01).
 - **Extras:** None.
-- **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
+- **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Not one of the paper's figures; ProtSpace opens with it because it is small.
 
 The sequence-based annotations (InterPro and the Biocentral predictions) were computed on the full-length sequences, signal peptides included, since that is what their sources annotate.
@@ -77,7 +77,7 @@ Coloured by `toxin_class`, each colour is one functional class of three-finger t
 - **Projections:** UMAP 2D (25 neighbours, minimum distance 0.1, Euclidean, seed 42) and PCA 2D. Transfer: EAT with k = 1 and the Euclidean distance.
 - **Annotations:** 24 columns from UniProt, Taxonomy, InterPro, TED and Biocentral, fetched at UniProt release 2026_03; 7 the build derived (`toxin_class`, `toxin_subfamily`, `eat_split`, `toxin_class_withheld`, `toxin_subfamily_withheld`, `toxin_class_uniprot_rule` and `mature_length`); and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [transferred annotations (EAT)](/explore/eat) for `toxin_class` and `toxin_subfamily` and [separation scores](/explore/separation-scores).
-- **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
+- **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Not one of the paper's datasets. The paper's annotation-transfer sets are benchmarks, built to measure transfer rather than to show it, so this example was built for the web; their exact files stay in the paper's data deposit.
 
 The classes are the curators' subfamilies, assigned from sequence similarity, not measured activities.
@@ -92,7 +92,7 @@ _Naja_ (the cobras) supplies 183 of the 537 reviewed toxins, about a third, so t
 
 The sequence-based annotations (InterPro and the Biocentral predictions) were computed on the full-length sequences, signal peptides included.
 
-<a href="/explore?dataset=three-finger-toxins" target="_self">Open in ProtSpace</a> · <a href="/examples/three-finger-toxins_2026_03.parquetbundle" download>Download the bundle (0.1 MB)</a>
+<a href="/explore?dataset=three-finger-toxins" target="_self">Open in ProtSpace</a> · <a href="/examples/three-finger-toxins_2026_03_v3.parquetbundle" download>Download the bundle (0.1 MB)</a>
 
 ::: details How this bundle was built
 
@@ -119,7 +119,7 @@ Coloured by `species`, human and fly proteins share most of the map, and the reg
 - **Projections:** UMAP 2D (50 neighbours, minimum distance 0.2, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
 - **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
-- **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
+- **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Fig. 2B.
 
 UniProt no longer publishes an embedding for 146 of these proteins; they keep their position from the paper.
@@ -130,7 +130,7 @@ The paper counts 1,703 protein kinases; this build counts about 2,000, mostly be
 
 This bundle has no Biocentral predictions (the `predicted_*` columns). Their models read per-residue ProtT5 embeddings, which UniProt does not publish, so they would have to be computed for every protein: 10 to 25 hours per 100,000 proteins on the public Biocentral server. Signal peptides are still covered, by the Phobius `signal_peptide` column.
 
-<a href="/explore?dataset=human-fly" target="_self">Open in ProtSpace</a> · <a href="/examples/human-fly_2026_03.parquetbundle" download>Download the bundle (22.7 MB)</a>
+<a href="/explore?dataset=human-fly" target="_self">Open in ProtSpace</a> · <a href="/examples/human-fly_2026_03_v3.parquetbundle" download>Download the bundle (16.1 MB)</a>
 
 ::: details How this bundle was built
 
@@ -157,7 +157,7 @@ Coloured by `protein_families`, the serine β-lactamases of Ambler classes A, C 
 - **Projections:** UMAP 2D (200 neighbours, minimum distance 0.4, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
 - **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
-- **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
+- **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Fig. 3.
 
 In the paper's statistics the class C proteins stood out, with a silhouette of +0.32 in the embedding; with the refreshed labels they score about +0.17 there and below zero on the UMAP. UniProt has relabelled β-lactamases since (class C grew from 3,140 to 3,236 proteins), and proteins with several families now count as categories of their own.
@@ -166,7 +166,7 @@ In the paper's statistics the class C proteins stood out, with a silhouette of +
 
 This bundle has no Biocentral predictions (the `predicted_*` columns). Their models read per-residue ProtT5 embeddings, which UniProt does not publish, so they would have to be computed for every protein: 10 to 25 hours per 100,000 proteins on the public Biocentral server. Signal peptides are still covered, by the Phobius `signal_peptide` column.
 
-<a href="/explore?dataset=beta-lactamase" target="_self">Open in ProtSpace</a> · <a href="/examples/beta-lactamase_2026_03.parquetbundle" download>Download the bundle (13.2 MB)</a>
+<a href="/explore?dataset=beta-lactamase" target="_self">Open in ProtSpace</a> · <a href="/examples/beta-lactamase_2026_03_v3.parquetbundle" download>Download the bundle (13.3 MB)</a>
 
 ::: details How this bundle was built
 
@@ -193,9 +193,9 @@ The colours are `domain`: the domain of life, or the realm for viruses. Scored o
 - **Projections:** UMAP 2D (500 neighbours, minimum distance 0.2, Euclidean, seed 42) and PCA 2D, both the paper's coordinates.
 - **Annotations:** 36 columns from UniProt, Taxonomy, InterPro and TED, fetched at UniProt release 2026_03; and 4 K-means [cluster columns](/explore/separation-scores#cluster-annotations) that `protspace stats` computed.
 - **Extras:** [separation scores](/explore/separation-scores).
-- **Built with:** ProtSpace 4.15.0 (git 621ea94), 2026-09-30.
+- **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Fig. 2A and the abstract.
-- **Large:** a 135.9 MB download that needs at least 1.2 GB of browser memory and takes about 30 s on a fast laptop to load.
+- **Large:** an 87.8 MB download that needs at least 1.2 GB of browser memory and takes about 30 s on a fast laptop to load.
 
 The viral realm Fig. 2A labels Monodnaviria appears here as Floreoviria (1,293 proteins): NCBI Taxonomy has renamed it since.
 
@@ -203,7 +203,7 @@ The viral realm Fig. 2A labels Monodnaviria appears here as Floreoviria (1,293 p
 
 This bundle has no Biocentral predictions (the `predicted_*` columns). Their models read per-residue ProtT5 embeddings, which UniProt does not publish, so they would have to be computed for every protein: 10 to 25 hours per 100,000 proteins on the public Biocentral server. Signal peptides are still covered, by the Phobius `signal_peptide` column.
 
-<a href="/explore?dataset=swissprot" target="_self">Open in ProtSpace</a> · <a href="/examples/swissprot_2026_03.parquetbundle" download>Download the bundle (135.9 MB)</a>
+<a href="/explore?dataset=swissprot" target="_self">Open in ProtSpace</a> · <a href="/examples/swissprot_2026_03_v3.parquetbundle" download>Download the bundle (87.8 MB)</a>
 
 ::: details How this bundle was built
 

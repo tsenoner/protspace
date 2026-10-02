@@ -53,8 +53,8 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
     "demo": {
       "file": "data.parquetbundle",
       "hosting": "repo",
-      "bytes": 1039050,
-      "sha256": "46f8b364029a75c0fa0761d8c9b7d754227b097383288d56c3a49453b067a117",
+      "bytes": 957284,
+      "sha256": "ab291e05e149646a5e3bbe62019584f62d98cc35ec59abc7cd6e1caad78b22b1",
       "proteins": 7831,
       "columns": [
         "protein_families",
@@ -112,17 +112,17 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
           "source": "2026_01"
         }
       },
-      "protspaceVersion": "4.15.0",
-      "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
+      "protspaceVersion": "4.16.0",
+      "gitSha": "b5f324f8b3d380dfc90ddf35469d4ac293d83427",
       "command": "build_showcase.py build --only demo --cli-root $CLI",
-      "builtAt": "2026-09-30T16:57:47+00:00",
+      "builtAt": "2026-10-02T22:23:18+00:00",
       "zenodoDoi": null
     },
     "three-finger-toxins": {
-      "file": "three-finger-toxins_2026_03.parquetbundle",
+      "file": "three-finger-toxins_2026_03_v3.parquetbundle",
       "hosting": "release",
-      "bytes": 135572,
-      "sha256": "1d237bfc97e4448b76d121e8d5760060532a098f35ae950ffdbce753bb955ec1",
+      "bytes": 141224,
+      "sha256": "5ac49490ec10831c03babfea8f9d7a42d21cc171c9626476778b3d70bacbcfe8",
       "proteins": 1089,
       "columns": [
         "toxin_class",
@@ -179,17 +179,17 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
           "withheld-truth": "2026_03"
         }
       },
-      "protspaceVersion": "4.15.0",
-      "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
+      "protspaceVersion": "4.16.0",
+      "gitSha": "b5f324f8b3d380dfc90ddf35469d4ac293d83427",
       "command": "build_showcase.py build --only three-finger-toxins --cli-root $CLI",
-      "builtAt": "2026-09-30T16:40:01+00:00",
+      "builtAt": "2026-10-02T22:23:12+00:00",
       "zenodoDoi": null
     },
     "human-fly": {
-      "file": "human-fly_2026_03.parquetbundle",
+      "file": "human-fly_2026_03_v3.parquetbundle",
       "hosting": "release",
-      "bytes": 22677971,
-      "sha256": "8c29273de6c4ba4677236ddfb04087fad4d36cc9637b89557c71c95a081bb38b",
+      "bytes": 16055099,
+      "sha256": "a2fe8de232d976087564b4d1239928518e0e9e074444d809e8484151bf0bb558",
       "proteins": 105562,
       "columns": [
         "species",
@@ -244,17 +244,17 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
           "refreshed": "2026_03"
         }
       },
-      "protspaceVersion": "4.15.0",
-      "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
+      "protspaceVersion": "4.16.0",
+      "gitSha": "b5f324f8b3d380dfc90ddf35469d4ac293d83427",
       "command": "build_showcase.py build --only human-fly --cli-root $CLI",
-      "builtAt": "2026-09-30T21:54:33+00:00",
+      "builtAt": "2026-10-02T22:35:18+00:00",
       "zenodoDoi": null
     },
     "beta-lactamase": {
-      "file": "beta-lactamase_2026_03.parquetbundle",
+      "file": "beta-lactamase_2026_03_v3.parquetbundle",
       "hosting": "release",
-      "bytes": 13194257,
-      "sha256": "605b750be5740c5f37b2318bd68cfc3ac507402a609fea571f7ee6f7b581e2ad",
+      "bytes": 13308868,
+      "sha256": "3bc6df0e901e6cd93f8464f470d1169f5524f91d3304b799cb06653ef5b3af06",
       "proteins": 113015,
       "columns": [
         "protein_families",
@@ -309,17 +309,17 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
           "refreshed": "2026_03"
         }
       },
-      "protspaceVersion": "4.15.0",
-      "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
+      "protspaceVersion": "4.16.0",
+      "gitSha": "b5f324f8b3d380dfc90ddf35469d4ac293d83427",
       "command": "build_showcase.py build --only beta-lactamase --cli-root $CLI",
-      "builtAt": "2026-09-30T17:00:16+00:00",
+      "builtAt": "2026-10-02T22:25:04+00:00",
       "zenodoDoi": null
     },
     "swissprot": {
-      "file": "swissprot_2026_03.parquetbundle",
+      "file": "swissprot_2026_03_v3.parquetbundle",
       "hosting": "release",
-      "bytes": 135853411,
-      "sha256": "90e44a8cf13abbdac8e0991686ca95ca0500bdf21238948ba67025db65e211f2",
+      "bytes": 87783085,
+      "sha256": "a566bacf207d3c5f2b4afcbad23660ba7b52bc4a12894654565ea6325cc407b3",
       "proteins": 573649,
       "columns": [
         "domain",
@@ -374,10 +374,10 @@ export const EXAMPLE_MANIFEST: ExampleManifest = {
           "refreshed": "2026_03"
         }
       },
-      "protspaceVersion": "4.15.0",
-      "gitSha": "621ea942223ad487fcb7418022d9a3fd17acaf39",
+      "protspaceVersion": "4.16.0",
+      "gitSha": "b5f324f8b3d380dfc90ddf35469d4ac293d83427",
       "command": "build_showcase.py build --only swissprot --cli-root $CLI",
-      "builtAt": "2026-09-30T21:56:02+00:00",
+      "builtAt": "2026-10-02T22:29:29+00:00",
       "zenodoDoi": null
     }
   }
