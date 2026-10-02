@@ -65,5 +65,8 @@ None.
   interior may close, a limit the overlay already had at the smallest sizes.
 - Perf: the 40K and larger perf datasets draw smaller sprites, so their fill cost drops; perf
   numbers are not comparable across this change.
-- Docs: legend, scatterplot, EAT, styling and developer API pages. Docs screenshots of large
-  datasets show the old size until `pnpm docs:images` is re-run.
+- Docs: legend, scatterplot, EAT, styling, data-format and developer API pages. The docs
+  screenshots use the demo (7,831 proteins) and the venom EAT dataset (811), so they do not change.
+- E2E: every fixture the default suite loads has at most 7,831 proteins and keeps size 10; the
+  opt-in Swiss-Prot spec asserts nothing about dot size. The 40K dataset is used only by the perf
+  suite.

@@ -37,9 +37,9 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Run the e2e projects that touch the legend settings or dot size against a local server;
+- [x] 4.1 Run the e2e projects that touch the legend settings or dot size against a local server;
       update an expectation only where the new default changes it.
-- [ ] 4.2 Capture the 105K and 573K example bundles before and after the change and check that
+- [x] 4.2 Capture the 105K and 573K example bundles before and after the change and check that
       the clusters read as in the investigation.
-- [ ] 4.3 `pnpm test:ci`, `pnpm format:check`, `pnpm lint`, `pnpm docs:build`,
+- [x] 4.3 `pnpm test:ci`, `pnpm format:check`, `pnpm lint`, `pnpm docs:build`,
       `openspec validate --all --strict`, and `pnpm precommit` through the commit hook.

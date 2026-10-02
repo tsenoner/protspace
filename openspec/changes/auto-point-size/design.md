@@ -128,6 +128,8 @@ differs from the one in use.
 - **One rule for every screen.** The default does not account for the plot's pixel area beyond the
   existing plot-area scale; on a very small or very large window the user may still prefer another
   size.
+- **A Reset since #478 looks like a pick.** Reset used to store 10 as the dataset's size, the same
+  record a real pick of 10 writes, so a browser where Reset was pressed keeps 10 for that dataset
+  until the next Reset. It cannot be told apart from a deliberate 10, so it is left alone.
 - **Perf baselines move.** The 40K and larger perf datasets now draw at 4 or below, so their fill
   cost drops; perf numbers before and after this change are not comparable.
-- **Stale docs screenshots** of large datasets until `pnpm docs:images` is re-run.
