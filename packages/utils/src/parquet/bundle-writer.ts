@@ -33,6 +33,15 @@ import type {
   VisualizationData,
 } from '../types';
 import { BUNDLE_DELIMITER_BYTES } from './constants';
+import {
+  V3_CONTAINER_VERSION,
+  V3_CONTAINER_VERSION_KEY,
+  V3_EVIDENCE_DICT_NAME,
+  V3_MANIFEST_KEY,
+  v3AxisColumn,
+  v3Payload,
+  v3PhysicalColumn,
+} from './v3-format';
 import { assertNoBundleDelimiter } from './delimiter-utils';
 import { bigIntReplacer } from './bigint-utils';
 import { isNumericAnnotation } from '../visualization/numeric-binning.js';
@@ -47,14 +56,6 @@ import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/
 import { isNAValue } from '../visualization/missing-values.js';
 
 /**
- * Part 1's container-version key. The writer never sets `protspace_format_version`: that key
- * is the legacy cell-grammar version, and a v3 part 1 has no cells to parse. It encodes
- * already-decoded labels, so there is no grammar to declare or migrate here either.
- */
-const CONTAINER_VERSION_KEY = 'protspace_container_version';
-const CONTAINER_VERSION = '3';
-const MANIFEST_KEY = 'protspace_v3_manifest';
-/**
  * The names Python's encoder takes the id column from, in its order of preference
  * (`protein_id`, else `identifier`). The writer uses the default unless an annotation
  * occupies it: a Python bundle of a table holding both has `protein_id` as its id column
@@ -62,9 +63,6 @@ const MANIFEST_KEY = 'protspace_v3_manifest';
  */
 const ID_COLUMN = 'identifier';
 const FALLBACK_ID_COLUMN = 'protein_id';
-/** Payload name of the dictionary every column's evidence codes index into. */
-const EVIDENCE_DICT_NAME = '__evidence';
-const AXES = ['x', 'y', 'z'] as const;
 
 const ENCODER = new TextEncoder();
 
@@ -161,7 +159,7 @@ function addColumn(
   entry: ColumnEntry,
   data: Int32Array | Float64Array,
 ): void {
-  const physical = entry.kind === 'multi' ? `${name}__count` : name;
+  const physical = v3PhysicalColumn(name, entry.kind);
   if (parts.columns.some((column) => column.name === physical)) {
     throw new Error(
       `Annotation "${name}" is stored as part 1 column "${physical}", which already exists; ` +
@@ -186,8 +184,8 @@ function addDictionary(parts: AnnotationParts, name: string, labels: readonly st
     blob.set(bytes, at);
     at += bytes.length;
   }
-  addPayload(parts, `dict:${name}`, blob);
-  addPayload(parts, `dict:${name}:len`, bytesOf(lengths));
+  addPayload(parts, v3Payload.dictionary(name), blob);
+  addPayload(parts, v3Payload.dictionaryLengths(name), bytesOf(lengths));
   parts.dictionaries.set(name, labels);
 }
 
@@ -276,16 +274,16 @@ function addHitsColumn(
     },
     countsOf(offsets),
   );
-  addPayload(parts, `csr:${name}`, bytesOf(codes));
+  addPayload(parts, v3Payload.codes(name), bytesOf(codes));
   if (hasScores) {
-    addPayload(parts, `score_count:${name}`, bytesOf(countsOf(scores.offsets)));
-    addPayload(parts, `scores:${name}`, bytesOf(scores.values));
+    addPayload(parts, v3Payload.scoreCounts(name), bytesOf(countsOf(scores.offsets)));
+    addPayload(parts, v3Payload.scores(name), bytesOf(scores.values));
   }
   if (hasEvidence) {
     const global = Int32Array.from(evidence.codes, (code) =>
       code < 0 ? -1 : intern(parts.evidence, evidence.dict[code]),
     );
-    addPayload(parts, `evidence:${name}`, bytesOf(global));
+    addPayload(parts, v3Payload.evidence(name), bytesOf(global));
   }
 }
 
@@ -549,7 +547,7 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
   }
 
   if (parts.evidence.size > 0) {
-    addDictionary(parts, EVIDENCE_DICT_NAME, [...parts.evidence.keys()]);
+    addDictionary(parts, V3_EVIDENCE_DICT_NAME, [...parts.evidence.keys()]);
   }
 
   const idColumn = pickIdColumn(parts);
@@ -560,9 +558,11 @@ function createAnnotationParts(data: VisualizationData): [ArrayBuffer, ArrayBuff
     projections: data.projections.map(({ name, dimension }) => ({ name, dimension })),
   };
   return [
+    // Never `protspace_format_version`: that key is the legacy cell-grammar version, and a v3
+    // part 1 holds already-decoded labels, so there is no grammar to declare or migrate.
     writePart(parts.columns, [
-      { key: CONTAINER_VERSION_KEY, value: CONTAINER_VERSION },
-      { key: MANIFEST_KEY, value: JSON.stringify(manifest) },
+      { key: V3_CONTAINER_VERSION_KEY, value: String(V3_CONTAINER_VERSION) },
+      { key: V3_MANIFEST_KEY, value: JSON.stringify(manifest) },
     ]),
     writePart([
       { name: 'name', data: [...parts.payloads.keys()], type: 'STRING' },
@@ -606,7 +606,7 @@ function createProjectionsParquet(data: VisualizationData): ArrayBuffer {
     for (let axis = 0; axis < dimension; axis++) {
       const values = new Float32Array(rows);
       for (let row = 0; row < rows; row++) values[row] = coordinates[row * dimension + axis];
-      columns.push({ name: `${name}__${AXES[axis]}`, data: values, type: 'FLOAT' });
+      columns.push({ name: v3AxisColumn(name, axis), data: values, type: 'FLOAT' });
     }
   }
   return writePart(columns);

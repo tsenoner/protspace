@@ -48,6 +48,11 @@ import {
   type Projection,
   rankByFrequency,
   remapCsr,
+  V3_EVIDENCE_DICT_NAME,
+  V3_MANIFEST_KEY,
+  v3AxisColumn,
+  v3Payload,
+  v3PhysicalColumn,
   type VisualizationData,
 } from '@protspace/utils';
 import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
@@ -62,14 +67,6 @@ import {
   normalizeEatCompanionColumns,
 } from './conversion';
 import type { Rows } from './types';
-
-/** Key-value metadata key part 1 carries the v3 manifest under. */
-const MANIFEST_KEY = 'protspace_v3_manifest';
-
-/** Payload name of the dictionary every column's evidence codes index into. */
-const EVIDENCE_DICT_NAME = '__evidence';
-
-const AXES = ['x', 'y', 'z'] as const;
 
 // ignoreBOM keeps a leading U+FEFF as a character: it is part of a label, not an
 // encoding marker, and stripping it would silently rename the category.
@@ -99,11 +96,6 @@ interface V3Manifest {
   idColumn: string;
   columns: Record<string, V3ColumnManifest>;
   projections: { name: string; dimension: 2 | 3 }[];
-}
-
-/** Physical part-1 column backing a manifest column: multi stores per-row hit counts. */
-function physicalColumn(name: string, kind: V3ColumnKind): string {
-  return kind === 'multi' ? `${name}__count` : name;
 }
 
 /** Leaf (data) columns of a parquet schema as `name -> physical type`; the root carries no type. */
@@ -136,9 +128,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * producer is reported instead of half-rendered.
  */
 function readManifest(metadata: FileMetaData): V3Manifest {
-  const raw = metadata.key_value_metadata?.find((entry) => entry.key === MANIFEST_KEY)?.value;
+  const raw = metadata.key_value_metadata?.find((entry) => entry.key === V3_MANIFEST_KEY)?.value;
   if (!raw) {
-    throw new Error(`Bundle declares format v3 but carries no "${MANIFEST_KEY}" metadata`);
+    throw new Error(`Bundle declares format v3 but carries no "${V3_MANIFEST_KEY}" metadata`);
   }
 
   let parsed: unknown;
@@ -186,7 +178,7 @@ function readManifest(metadata: FileMetaData): V3Manifest {
     if (name === idColumn) {
       throw new Error(`v3 manifest declares idColumn "${name}" as an annotation column too`);
     }
-    const physical = physicalColumn(name, kind);
+    const physical = v3PhysicalColumn(name, kind);
     const claimant = physical === idColumn ? `idColumn "${idColumn}"` : claimed.get(physical);
     if (claimant !== undefined) {
       throw new Error(
@@ -521,7 +513,7 @@ async function readAnnotationColumns(
   targets.set(manifest.idColumn, new Array<string>(numRows).fill(''));
   for (const [name, column] of Object.entries(manifest.columns)) {
     targets.set(
-      physicalColumn(name, column.kind),
+      v3PhysicalColumn(name, column.kind),
       column.kind === 'numeric' ? new Float64Array(numRows) : new Int32Array(numRows),
     );
   }
@@ -568,7 +560,7 @@ async function readProjections(
   for (const { name, dimension } of manifest.projections) {
     const data = new Float32Array(numRows * dimension);
     for (let axis = 0; axis < dimension; axis++) {
-      const column = `${name}__${AXES[axis]}`;
+      const column = v3AxisColumn(name, axis);
       if (!schemaColumns.has(column)) {
         throw new Error(
           `v3 projection "${name}" declares ${dimension}D but part 3 has no ${column}`,
@@ -654,8 +646,8 @@ function asTypedPayload<T extends Int32Array | Float64Array>(
  * moment it is not, each label is decoded from its own byte range instead.
  */
 function readLabels(payloads: ReadonlyMap<string, Uint8Array>, name: string): string[] {
-  const lengths = asTypedPayload(payloads, `dict:${name}:len`, Int32Array);
-  const bytes = payloads.get(`dict:${name}`);
+  const lengths = asTypedPayload(payloads, v3Payload.dictionaryLengths(name), Int32Array);
+  const bytes = payloads.get(v3Payload.dictionary(name));
   if (!bytes) throw new Error(`v3 bundle is missing the "dict:${name}" payload`);
 
   const labels = new Array<string>(lengths.length);
@@ -812,7 +804,7 @@ function readCsrColumn(
   payloads: ReadonlyMap<string, Uint8Array>,
   evidenceDict: () => readonly string[],
 ): CsrAnnotationData {
-  const codes = asTypedPayload(payloads, `csr:${name}`, Int32Array);
+  const codes = asTypedPayload(payloads, v3Payload.codes(name), Int32Array);
   const offsets = prefixSum(counts, `column "${name}" hit counts`);
   const total = offsets[counts.length];
   if (total !== codes.length) {
@@ -830,13 +822,13 @@ function readCsrColumn(
 
   let scores: CsrScores | undefined;
   if (column.scores) {
-    const scoreCounts = asTypedPayload(payloads, `score_count:${name}`, Int32Array);
+    const scoreCounts = asTypedPayload(payloads, v3Payload.scoreCounts(name), Int32Array);
     if (scoreCounts.length !== codes.length) {
       throw new Error(
         `v3 column "${name}" has ${scoreCounts.length} score counts for ${codes.length} hits`,
       );
     }
-    const values = asTypedPayload(payloads, `scores:${name}`, Float64Array);
+    const values = asTypedPayload(payloads, v3Payload.scores(name), Float64Array);
     const scoreOffsets = prefixSum(scoreCounts, `column "${name}" score counts`);
     const scoreTotal = scoreOffsets[scoreCounts.length];
     if (scoreTotal !== values.length) {
@@ -849,7 +841,7 @@ function readCsrColumn(
 
   let evidence: CsrEvidence | undefined;
   if (column.evidence) {
-    const evidenceCodes = asTypedPayload(payloads, `evidence:${name}`, Int32Array);
+    const evidenceCodes = asTypedPayload(payloads, v3Payload.evidence(name), Int32Array);
     if (evidenceCodes.length !== codes.length) {
       throw new Error(
         `v3 column "${name}" has ${evidenceCodes.length} evidence codes for ${codes.length} hits`,
@@ -1035,7 +1027,7 @@ export async function readV3Bundle(
   part6 = null;
   let evidenceDict: readonly string[] | null = null;
   const readEvidenceDict = (): readonly string[] =>
-    (evidenceDict ??= readLabels(payloads, EVIDENCE_DICT_NAME));
+    (evidenceDict ??= readLabels(payloads, V3_EVIDENCE_DICT_NAME));
 
   const annotations: Record<string, Annotation> = {};
   const annotation_data: Record<string, AnnotationData> = {};
@@ -1044,7 +1036,7 @@ export async function readV3Bundle(
   const dictionaries: { name: string; column: V3ColumnManifest; labels: string[] }[] = [];
 
   for (const [name, column] of Object.entries(manifest.columns)) {
-    const stored = columns.get(physicalColumn(name, column.kind))!;
+    const stored = columns.get(v3PhysicalColumn(name, column.kind))!;
 
     if (column.kind === 'numeric') {
       // Kept as decoded, so the worker can transfer it. NaN is already the in-memory

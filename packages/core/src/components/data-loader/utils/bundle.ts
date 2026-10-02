@@ -1,5 +1,11 @@
 import { parquetReadObjects, parquetMetadata, type FileMetaData } from 'hyparquet';
-import type { BundleSettings, ProjectionStatisticRow, VisualizationData } from '@protspace/utils';
+import {
+  V3_CONTAINER_VERSION,
+  V3_CONTAINER_VERSION_KEY,
+  type BundleSettings,
+  type ProjectionStatisticRow,
+  type VisualizationData,
+} from '@protspace/utils';
 import type { Rows, GenericRow } from './types';
 import { validateProjectionRows, validateRowsBasic } from './validation';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
@@ -10,15 +16,6 @@ import {
   splitBundleParts,
   type BundleParts,
 } from './bundle-parts';
-
-/**
- * Part 1 key-value metadata key carrying the container version. Its presence is what makes a
- * bundle format v3; a legacy (v1/v2) bundle never carries it.
- */
-const CONTAINER_VERSION_KEY = 'protspace_container_version';
-
-/** The only container version this reader understands. */
-const V3_CONTAINER_VERSION = 3;
 
 /**
  * Part 1 key-value metadata key carrying a legacy bundle's annotation cell-grammar version
@@ -101,13 +98,13 @@ function readFormatVersion(metadata: FileMetaData): number {
  * legacy reader, which would misread v3's integer codes as labels.
  */
 function readContainerVersion(metadata: FileMetaData | null): number | null {
-  const raw = metadata ? readFooterValue(metadata, CONTAINER_VERSION_KEY) : undefined;
+  const raw = metadata ? readFooterValue(metadata, V3_CONTAINER_VERSION_KEY) : undefined;
   if (raw === undefined) return null;
   const version = Number(raw);
   if (version !== V3_CONTAINER_VERSION) {
     throw new Error(
       `Parquetbundle declares container version "${raw}"; this reader supports ` +
-        `${CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
+        `${V3_CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
     );
   }
   return version;
@@ -196,7 +193,7 @@ async function extractRowsFromParts(
   // v3 stores its annotations as dictionary codes plus payloads, which this row-object
   // reader cannot make sense of: it would get as far as part 3 and complain about
   // missing 'projection_name'/'x'/'y' columns. Say what is actually wrong instead.
-  if (part1Metadata && readFooterValue(part1Metadata, CONTAINER_VERSION_KEY) !== undefined) {
+  if (part1Metadata && readFooterValue(part1Metadata, V3_CONTAINER_VERSION_KEY) !== undefined) {
     throw new Error(
       'Parquetbundle is a format v3 container, which only decodeParquetBundle can read; ' +
         'extractRowsFromParquetBundle handles v1 and v2.',
@@ -317,8 +314,8 @@ export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<Dec
   }
   if (parts.length === 6) {
     throw new Error(
-      `Parquetbundle has 6 parts but part 1 carries no ${CONTAINER_VERSION_KEY}; ` +
-        `a format v3 container declares ${CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
+      `Parquetbundle has 6 parts but part 1 carries no ${V3_CONTAINER_VERSION_KEY}; ` +
+        `a format v3 container declares ${V3_CONTAINER_VERSION_KEY}=${V3_CONTAINER_VERSION}`,
     );
   }
 
