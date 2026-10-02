@@ -335,7 +335,10 @@ pending until `record-load` has measured exactly the built file.
 `fail`, no `pending` — on exactly the built file's bytes; `--force` stages the others with a
 warning. A file whose name the committed manifest already publishes in this release with
 other bytes is refused, even with `--force`: give it a new name (`[build] file_pattern`).
-Into the staging directory it writes:
+The re-pinned manifest no longer lists the v2 names, so it also reads the release itself
+(`gh release view`, read-only; a warning when `gh` cannot): a name the release holds as an
+asset with another sha256 (its `digest`) is refused too, and a file it holds with the same
+bytes is left out of the upload. Into the staging directory it writes:
 
 - the release assets `<id>_2026_03_v3.parquetbundle` and their checksums
   (`[build] checksums_file`, `SHA256SUMS_v3`: the release's `SHA256SUMS` lists the v2
@@ -345,12 +348,14 @@ Into the staging directory it writes:
   committed `apps/web/src/explore/example-manifest.ts` as the previous manifest (so the
   previous release's files are retained for one cycle and a recorded Zenodo DOI is kept
   for unchanged files);
-- `RELEASE_NOTES.md`.
+- `RELEASE_NOTES.md`: for a new release, every file; for a published one, its published
+  notes with the added files appended (`gh release upload` leaves the notes as they are).
 
 It prints the owner's commands: `gh release create showcase-2026_03 …` for a new release,
-or, when the committed manifest already names the release (as for the v3 files),
-`gh release upload showcase-2026_03 …` without `--clobber`; then the copies of the demo
-and the manifest into the repository, and the check (`pnpm examples:fetch` and
+or, when the committed manifest already names the release or GitHub has it (as for the v3
+files), `gh release upload showcase-2026_03 …` without `--clobber`, followed by
+`gh release edit showcase-2026_03 --notes-file …/RELEASE_NOTES.md`; then the copies of the
+demo and the manifest into the repository, and the check (`pnpm examples:fetch` and
 `write_manifest.py --refresh --check`).
 
 `stage-perf` stages the `perf-datasets` release: the eleven former `apps/web/public/data/`

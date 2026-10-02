@@ -27,7 +27,8 @@ Subcommands::
     report         clustering report + thumbnails for the default-view choice
     record-load    record the D2 browser measurement of a built bundle (tied to its sha256)
     stage-release  stage the verified showcase bundles, write the example manifest with
-                   write_manifest.py, and print the owner's commands
+                   write_manifest.py, and print the owner's commands (reads the
+                   release's assets and notes with `gh release view`)
     stage-perf     stage the perf-datasets release assets, rewrite
                    perf/datasets.manifest.json, and print the owner's commands
 
@@ -5597,6 +5598,65 @@ def published_name_conflicts(
     ]
 
 
+def live_release(repo: str, tag: str) -> dict | None:
+    """The release ``tag`` as GitHub serves it: its ``assets`` and notes (``body``).
+
+    ``{}`` when ``repo`` has no such release; None when ``gh`` cannot tell (not
+    installed, offline, not logged in). Read-only (``gh release view``).
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "release", "view", tag, "--repo", repo, "--json", "assets,body"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return {} if "release not found" in result.stderr else None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def live_asset_conflicts(
+    live: dict | None, tag: str | None, staged: dict[str, str]
+) -> tuple[list[str], set[str]]:
+    """Check the files to upload (name → sha256) against the assets ``tag`` holds.
+
+    The committed manifest names only the files it serves, so a name it no
+    longer lists (the v2 files once the manifest is re-pinned to the v3 ones)
+    is known only to the release, which records each asset's sha256 as its
+    ``digest``. Returns the conflicts, a name the release holds with other bytes
+    or with no digest to compare, and the names it already holds with exactly
+    these bytes, which need no upload.
+    """
+    if not live or not tag:
+        return [], set()
+    held = {asset["name"]: asset.get("digest") for asset in live.get("assets", [])}
+    conflicts: list[str] = []
+    uploaded: set[str] = set()
+    for name, digest in staged.items():
+        if name not in held:
+            continue
+        if held[name] == f"sha256:{digest}":
+            uploaded.add(name)
+        elif held[name]:
+            conflicts.append(
+                f"{name} is already an asset of {tag} with other bytes; give the "
+                "new file a new name ([build] file_pattern, [build] checksums_file)"
+            )
+        else:
+            conflicts.append(
+                f"{name} is already an asset of {tag}, and GitHub reports no "
+                "digest to compare its bytes with; give the new file a new name"
+            )
+    return conflicts, uploaded
+
+
 def stage_release(
     config: Config,
     out_root: Path,
@@ -5606,6 +5666,7 @@ def stage_release(
     *,
     force: bool = False,
     previous_manifest: Path = EXAMPLE_MANIFEST,
+    live: dict | None = None,
 ) -> dict:
     """Stage the showcase files and the example manifest; print the owner's steps.
 
@@ -5616,7 +5677,11 @@ def stage_release(
     Zenodo DOIs), so it is the module the web app, the docs page and
     ``pnpm examples:fetch`` read. A release file whose name the committed
     manifest already publishes in this release with other bytes is refused, even
-    with ``force`` (:func:`published_name_conflicts`). Returns the manifest.
+    with ``force`` (:func:`published_name_conflicts`), and so is one whose name
+    the release itself holds with other bytes (``live``, :func:`live_release`;
+    None when GitHub could not be asked, :func:`live_asset_conflicts`). For a
+    published release, ``RELEASE_NOTES.md`` is its notes with the added files
+    appended. Returns the manifest.
     """
     writer = manifest_writer()
     ids = list(ids or config.datasets)
@@ -5636,17 +5701,36 @@ def stage_release(
         tag,
         {ds_id: path for ds_id, path in release_files.items() if path.is_file()},
     )
-    # The committed manifest already names this release: it is published, so
-    # the new files are uploaded into it, next to the files it holds.
-    published = bool(previous) and previous.get("release") == tag
+    # The committed manifest already names this release, or GitHub has it: it
+    # is published, so the new files are uploaded into it, next to its files.
+    published = (bool(previous) and previous.get("release") == tag) or bool(live)
     sums_name = config.build.get("checksums_file", "SHA256SUMS")
     if published and release_files and sums_name == "SHA256SUMS":
         conflicts.append(
             f"{tag} is published and holds its SHA256SUMS; set [build] "
             "checksums_file to a new name for the added files' checksums"
         )
+    release_digests = {
+        path.name: sha256_file(path)
+        for path in release_files.values()
+        if path.is_file()
+    }
+    sums = "".join(f"{digest}  {name}\n" for name, digest in release_digests.items())
+    live_conflicts, already_uploaded = live_asset_conflicts(
+        live,
+        tag,
+        {**release_digests, sums_name: hashlib.sha256(sums.encode()).hexdigest()}
+        if release_digests
+        else {},
+    )
+    conflicts.extend(live_conflicts)
     if conflicts:
         raise BuildError("refusing to stage:\n  " + "\n  ".join(conflicts))
+    if release_digests and tag and live is None:
+        print(
+            f"WARNING: could not read {tag} from GitHub (gh release view): only "
+            "the names the committed manifest publishes were checked"
+        )
     problems = []
     for ds_id in ids:
         built = built_file(config, out_root, ds_id, release)
@@ -5696,35 +5780,62 @@ def stage_release(
     manifest_out = staging / "example-manifest.ts"
     manifest_out.write_text(writer.render_manifest(manifest))
 
-    sums = "".join(f"{sha256_file(path)}  {path.name}\n" for _, path in assets)
     (staging / sums_name).write_text(sums)
-    notes = ["Curated example datasets for protspace.app.", ""]
+    lines: dict[str, str] = {}
     for ds_id, record in manifest["examples"].items():
         annotations = ", ".join(
             f"{g} {r}" for g, r in record["releases"]["annotations"].items()
         )
-        notes.append(
+        lines[ds_id] = (
             f"- `{record['file']}` ({ds_id}, {record['hosting']}): "
             f"{record['proteins']:,} proteins, {record['bytes'] / 1e6:.1f} MB; "
             f"UniProt {annotations or 'n/a'}"
         )
-    (staging / "RELEASE_NOTES.md").write_text("\n".join(notes) + "\n")
+    body = (live or {}).get("body", "").rstrip()
+    added = [
+        lines[ds_id]
+        for ds_id, _ in assets
+        if f"`{manifest['examples'][ds_id]['file']}`" not in body
+    ]
+    if not published:
+        notes = ["Curated example datasets for protspace.app.", "", *lines.values()]
+    else:
+        # The release keeps its files and its notes: the added files are
+        # appended to the published text, which `gh release upload` leaves as is.
+        notes = [body, ""] if body else []
+        if added:
+            notes += [f"Added to this release (checksums in `{sums_name}`):", ""]
+        notes += added
+    (staging / "RELEASE_NOTES.md").write_text("\n".join(notes).rstrip() + "\n")
 
     print(f"Staged {len(repo) + len(assets)} bundles and the manifest in {staging}")
     print("\nThe repository owner publishes them with (not run by this script):\n")
     if assets:
         files = " ".join(
-            shlex.quote(str(p)) for p in [*(p for _, p in assets), staging / sums_name]
+            shlex.quote(str(p))
+            for p in [*(p for _, p in assets), staging / sums_name]
+            if p.name not in already_uploaded
         )
         repo_name = config.build.get("github_repo", GITHUB_REPO)
         if published:
             # No --clobber: a name the release already holds must fail, not
             # take new bytes.
-            print(
-                f"# {tag} is published; add the new files to it (RELEASE_NOTES.md "
-                "describes them for its notes):\n"
-                f"gh release upload {tag} --repo {repo_name} {files}"
-            )
+            notes_file = shlex.quote(str(staging / "RELEASE_NOTES.md"))
+            if files:
+                print(
+                    f"# {tag} is published; add the new files to it:\n"
+                    f"gh release upload {tag} --repo {repo_name} {files}"
+                )
+            else:
+                print(f"# {tag} already holds every staged file with these bytes")
+            if added and body:
+                print(
+                    "# then list them in its notes (RELEASE_NOTES.md is the "
+                    "published text with the added files appended):\n"
+                    f"gh release edit {tag} --repo {repo_name} --notes-file {notes_file}"
+                )
+            elif added:
+                print(f"# then add RELEASE_NOTES.md's lines to {tag}'s notes by hand")
         else:
             print(
                 # --latest=false: a data release must not become the repository's
@@ -6140,6 +6251,7 @@ def cmd_record_load(args: argparse.Namespace, config: Config) -> int:
 def cmd_stage_release(args: argparse.Namespace, config: Config) -> int:
     staging = args.staging or args.out_root / "staging" / "showcase"
     check_output_location(staging, config, "--staging")
+    tag = config.build.get("release_tag")
     stage_release(
         config,
         args.out_root,
@@ -6147,6 +6259,9 @@ def cmd_stage_release(args: argparse.Namespace, config: Config) -> int:
         staging,
         selected_ids(args, config, default_all=True),
         force=args.force,
+        live=live_release(config.build.get("github_repo", GITHUB_REPO), tag)
+        if tag
+        else None,
     )
     return 0
 

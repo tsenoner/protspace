@@ -2608,6 +2608,138 @@ def test_stage_release_adds_the_v3_files_to_the_published_release(
         )
 
 
+def _published_v3_build(config, tmp_path):
+    """A built three-finger-toxins v3 file and a committed manifest that names
+    only it: the re-pinned manifest, which no longer lists the v2 names."""
+    ctx = _context(config, "three-finger-toxins", tmp_path, dry_run=False)
+    ctx.root.mkdir(parents=True)
+    _write_bundle(ctx.final, bs.stamp_format_version(_annotations()), v3=True)
+    previous = tmp_path / "example-manifest.ts"
+    previous.write_text(
+        bs.manifest_writer().render_manifest(
+            _published(
+                config.build["release_tag"], ctx.file_name, bs.sha256_file(ctx.final)
+            )
+        )
+    )
+    return ctx, previous
+
+
+def _asset(name, digest):
+    return {"name": name, "digest": digest and f"sha256:{digest}"}
+
+
+def test_stage_release_checks_the_names_the_release_itself_holds(
+    config, tmp_path, capsys
+):
+    """A name the committed manifest no longer lists is still an asset of the
+    release: it never gets new bytes, and one it holds with these bytes is not
+    uploaded again."""
+    ctx, previous = _published_v3_build(config, tmp_path)
+    tag = config.build["release_tag"]
+
+    def stage(live, staging):
+        return bs.stage_release(
+            config,
+            tmp_path,
+            "2026_03",
+            tmp_path / staging,
+            ["three-finger-toxins"],
+            force=True,  # not verified: a synthetic file
+            previous_manifest=previous,
+            live=live,
+        )
+
+    for digest in ("0" * 64, None):
+        with pytest.raises(bs.BuildError, match=f"already an asset of {tag}"):
+            stage({"assets": [_asset(ctx.file_name, digest)], "body": ""}, "s1")
+    assert not (tmp_path / "s1").exists()
+    with pytest.raises(bs.BuildError, match="SHA256SUMS_v3 is already an asset"):
+        stage({"assets": [_asset("SHA256SUMS_v3", "0" * 64)], "body": ""}, "s1")
+
+    # Already uploaded with exactly these bytes: only the checksums are left.
+    stage({"assets": [_asset(ctx.file_name, bs.sha256_file(ctx.final))]}, "s2")
+    printed = capsys.readouterr().out
+    upload = next(line for line in printed.splitlines() if "gh release upload" in line)
+    assert ctx.file_name not in upload and "SHA256SUMS_v3" in upload
+    assert "could not read" not in printed
+
+    # Without GitHub the committed manifest's names are all that is checked.
+    stage(None, "s3")
+    assert "could not read" in capsys.readouterr().out
+
+
+def test_stage_release_keeps_the_published_notes(config, tmp_path, capsys):
+    """`gh release upload` leaves the notes as they are: RELEASE_NOTES.md is the
+    published text with the added files appended, for `gh release edit`."""
+    ctx, previous = _published_v3_build(config, tmp_path)
+    tag = config.build["release_tag"]
+    body = (
+        "Curated example datasets for protspace.app.\n\n"
+        "- `three-finger-toxins_2026_03.parquetbundle` (three-finger-toxins, "
+        "release): 1,089 proteins, 0.1 MB\n"
+    )
+    live = {
+        "assets": [_asset("three-finger-toxins_2026_03.parquetbundle", "0" * 64)],
+        "body": body,
+    }
+    staging = tmp_path / "s"
+
+    bs.stage_release(
+        config,
+        tmp_path,
+        "2026_03",
+        staging,
+        ["three-finger-toxins"],
+        force=True,  # not verified: a synthetic file
+        previous_manifest=previous,
+        live=live,
+    )
+
+    notes = (staging / "RELEASE_NOTES.md").read_text()
+    assert notes.startswith(body + "\nAdded to this release (checksums in ")
+    assert f"- `{ctx.file_name}` (three-finger-toxins, release)" in notes
+    printed = capsys.readouterr().out
+    assert (
+        f"gh release edit {tag} --repo {bs.GITHUB_REPO} --notes-file "
+        f"{staging / 'RELEASE_NOTES.md'}"
+    ) in printed
+
+    # Notes that already list the file are left as they are.
+    live["body"] = notes
+    bs.stage_release(
+        config,
+        tmp_path,
+        "2026_03",
+        tmp_path / "s2",
+        ["three-finger-toxins"],
+        force=True,
+        previous_manifest=previous,
+        live=live,
+    )
+    assert (tmp_path / "s2" / "RELEASE_NOTES.md").read_text() == notes
+    assert "gh release edit" not in capsys.readouterr().out
+
+
+def test_live_release_tells_a_missing_release_from_an_unknown_one(monkeypatch):
+    def run(stdout="", stderr="", returncode=0):
+        def fake(*args, **kwargs):
+            return bs.subprocess.CompletedProcess(args, returncode, stdout, stderr)
+
+        monkeypatch.setattr(bs.subprocess, "run", fake)
+        return bs.live_release("o/r", "t")
+
+    assert run('{"assets": [], "body": "x"}') == {"assets": [], "body": "x"}
+    assert run(stderr="release not found\n", returncode=1) == {}
+    assert run(stderr="HTTP 401: Bad credentials\n", returncode=1) is None
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(bs.subprocess, "run", missing)
+    assert bs.live_release("o/r", "t") is None
+
+
 def test_outputs_may_not_land_in_the_repository_or_an_input(config, tmp_path):
     with pytest.raises(bs.BuildError, match="inside the repository"):
         bs.check_output_location(REPO_ROOT / "build-out", config, "--out-root")
