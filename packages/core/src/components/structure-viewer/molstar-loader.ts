@@ -44,11 +44,33 @@ interface MolstarLocation {
   aIndex?: number;
 }
 
+interface MolstarColorTheme {
+  name: string;
+  params?: unknown;
+}
+
+interface MolstarRepresentationRef {
+  cell: { transform: { ref: string; params?: { colorTheme?: MolstarColorTheme } } };
+}
+
+interface MolstarComponentRef {
+  representations: MolstarRepresentationRef[];
+}
+
 interface MolstarStructureRef {
-  components: unknown[];
+  components: MolstarComponentRef[];
+}
+
+interface MolstarThemeUpdate {
+  color: string;
+  colorParams?: unknown;
 }
 
 interface MolstarPlugin {
+  dataTransaction: (
+    edits: () => Promise<void>,
+    options?: { rethrowErrors?: boolean },
+  ) => Promise<void>;
   representation: {
     structure: {
       themes: {
@@ -61,8 +83,13 @@ interface MolstarPlugin {
       hierarchy: { current: { structures: MolstarStructureRef[] } };
       component: {
         updateRepresentationsTheme: (
-          components: unknown[],
-          params: { color: string },
+          components: MolstarComponentRef[],
+          params:
+            | MolstarThemeUpdate
+            | ((
+                component: MolstarComponentRef,
+                representation: MolstarRepresentationRef,
+              ) => MolstarThemeUpdate),
         ) => Promise<unknown> | undefined;
       };
     };
@@ -234,14 +261,54 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
     createTedColorThemeProvider(() => tedDomains),
   );
 
+  const { plugin } = viewer;
+  // Each representation's preset theme (pLDDT for AlphaFold mmCIF, chain-id for a model without
+  // confidence data), captured before the first switch away so pLDDT mode restores exactly it
+  const presetThemes = new Map<string, MolstarColorTheme>();
+  const restorePresetTheme = (
+    _component: MolstarComponentRef,
+    { cell }: MolstarRepresentationRef,
+  ): MolstarThemeUpdate => {
+    const preset = presetThemes.get(cell.transform.ref);
+    return preset ? { color: preset.name, colorParams: preset.params } : { color: 'default' };
+  };
+
   const applyColorTheme = async (mode: StructureColorMode, domains: TedDomain[]) => {
+    const components = plugin.managers.structure.hierarchy.current.structures.flatMap(
+      (structure) => structure.components,
+    );
+    const representations = components.flatMap((component) => component.representations);
+    for (const { cell } of representations) {
+      const theme = cell.transform.params?.colorTheme;
+      if (theme && theme.name !== TED_COLOR_THEME_NAME && !presetThemes.has(cell.transform.ref)) {
+        presetThemes.set(cell.transform.ref, theme);
+      }
+    }
+
+    const previousDomains = tedDomains;
     tedDomains = domains;
-    const color = mode === 'ted-domains' ? TED_COLOR_THEME_NAME : 'plddt-confidence';
-    for (const structure of viewer.plugin.managers.structure.hierarchy.current.structures) {
-      await viewer.plugin.managers.structure.component.updateRepresentationsTheme(
-        structure.components,
-        { color },
+    try {
+      // One transaction for every structure, so a failed representation reverts them all
+      await plugin.dataTransaction(
+        async () => {
+          await plugin.managers.structure.component.updateRepresentationsTheme(
+            components,
+            mode === 'ted-domains' ? { color: TED_COLOR_THEME_NAME } : restorePresetTheme,
+          );
+        },
+        { rethrowErrors: true },
       );
+
+      // Mol* reverts a failed transform without throwing, so confirm the theme landed
+      const applied = representations.every(
+        ({ cell }) =>
+          (cell.transform.params?.colorTheme?.name === TED_COLOR_THEME_NAME) ===
+          (mode === 'ted-domains'),
+      );
+      if (!applied) throw new Error(`Mol* did not apply the ${mode} color theme`);
+    } catch (error) {
+      tedDomains = previousDomains;
+      throw error;
     }
   };
 

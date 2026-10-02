@@ -31,7 +31,7 @@ This keeps the component on one data-loading path and avoids a second UI-owned n
 
 ### Encapsulate Mol\* theme details in the existing adapter
 
-The Mol* loader will wrap the CDN viewer with a `setColorTheme` method. It will register one custom color-theme provider against the viewer's public plugin theme registry and use the structure component manager to update loaded representations. The adapter will switch back with Mol*'s built-in `plddt-confidence` theme name.
+The Mol\* loader will wrap the CDN viewer with a `setColorTheme` method. It will register one custom color-theme provider against the viewer's public plugin theme registry and use the structure component manager to update loaded representations. Before the first switch to TED, the adapter records each representation's preset color theme and switching back restores exactly that (Mol\*'s `plddt-confidence` with its params for AlphaFold mmCIF; the preset's fallback, e.g. chain-id, for a model without confidence data, where forcing `plddt-confidence` would render uniform gray). Every structure's representations are updated in one `dataTransaction`, so a failed representation reverts the whole switch; because Mol\* reverts without throwing, the adapter confirms the theme landed and rejects otherwise.
 
 Using a custom provider was chosen over rewriting mmCIF or applying permanent overpaint because it maps residues at render time, preserves pLDDT data, and supports reversible switching. Adding the npm Mol\* package was rejected because the runtime is already intentionally pinned and dynamically loaded from the CDN.
 
