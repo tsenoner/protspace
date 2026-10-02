@@ -690,6 +690,12 @@ protspace transfer \
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
 
+The output is always a format v3 bundle. A v1 or v2 input is read the way
+[`protspace convert`](#protspace-convert) reads it, protein IDs included, so the transfer runs
+over the proteins the web app showed: a row with no ID, or an earlier row whose ID a later row
+repeats, is neither a query nor a reference. A legacy input that `convert` refuses is refused
+here too, with the same reason, and nothing is written.
+
 ### Reliability index
 
 The exact form of `COL__pred_confidence` depends on `--metric` and `--k`:

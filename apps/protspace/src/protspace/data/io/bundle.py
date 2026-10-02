@@ -239,6 +239,8 @@ def _write_parts(
 
 def read_tables(
     path_or_bytes: Path | str | bytes,
+    *,
+    keyed: bool = False,
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
     """Read a bundle's three core tables in their v2 shape.
 
@@ -246,9 +248,19 @@ def read_tables(
     projections, stamped ``protspace_format_version=2``); a legacy
     container's parts are read as they are, so a v1 bundle stays v1-stamped and
     is never silently migrated.
+
+    ``keyed=True`` is for a caller that rewrites the bundle: a legacy
+    container's annotation rows are then keyed as the v2 browser keyed them, as
+    ``convert`` and ``style`` key them (see
+    :func:`_keyed_as_the_legacy_reader_keyed_it`), so the caller works on the
+    dataset the browser showed and the v3 write accepts its ids.  The cells and
+    the stamp are untouched.  A v3 container's ids are unique already.
     """
     core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes)
-    return _core_tables(core, payloads)
+    annotations, metadata, projections = _core_tables(core, payloads)
+    if keyed and payloads is None:
+        annotations = _keyed_as_the_legacy_reader_keyed_it(annotations)
+    return annotations, metadata, projections
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:

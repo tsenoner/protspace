@@ -98,9 +98,12 @@ conversion helper now reads them the way the browser did, with a warning each: a
 named other than `protein_id` or `identifier` (the browser took the first column whose name
 contains `protein_id`, `identifier`, `id`, `uniprot` or `entry`, else the first column), and null
 or repeated ids (it skipped a null, and a later row replaced an earlier one in its `Map`). Both
-`convert` and `style` go through it. What is still refused (projection sets that disagree
-between metadata and data, two rows for one protein in one projection) is a usage error with
-the encoder's reason in both commands, never a traceback, and nothing is written.
+`convert` and `style` go through it, and `transfer` keys a legacy input's rows the same way
+when it reads them (`read_tables(..., keyed=True)`), before the kNN runs: keying only at the
+write would let a row the browser never showed serve as a reference. What is still refused
+(projection sets that disagree between metadata and data, two rows for one protein in one
+projection) is a usage error with the encoder's reason in all three commands, never a traceback,
+and nothing is written.
 
 The alternative, keeping `style` a pure settings edit and leaving `convert` as the only upgrade
 path, was the first version of this change. It was dropped because "every write emits v3" is the

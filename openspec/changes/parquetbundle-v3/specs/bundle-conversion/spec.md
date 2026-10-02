@@ -25,12 +25,13 @@ is encoded, so its labels keep their parsed hit structure.
 
 ### Requirement: A legacy bundle's protein ids SHALL be read as the v2 browser read them
 
-When converting a v1 or v2 bundle, the package SHALL key its annotation rows as the v2 browser
-reader did, logging a warning for each departure from the v3 rules. Without a `protein_id` or
-`identifier` column, the id column SHALL be the first column whose name contains `protein_id`,
-`identifier`, `id`, `uniprot` or `entry` (case-insensitive, tried in that order), else the first
-column, and it SHALL be written as `protein_id`. A row with a null id SHALL be dropped, and of the
-rows sharing an id only the last SHALL be kept.
+When converting, styling or transferring onto a v1 or v2 bundle, the package SHALL key its
+annotation rows as the v2 browser reader did, logging a warning for each departure from the v3
+rules; `protspace transfer` keys them before it transfers, so it runs over the same rows.
+Without a `protein_id` or `identifier` column, the id column SHALL be the first column whose name
+contains `protein_id`, `identifier`, `id`, `uniprot` or `entry` (case-insensitive, tried in that
+order), else the first column, and it SHALL be written as `protein_id`. A row with a null id SHALL
+be dropped, and of the rows sharing an id only the last SHALL be kept.
 
 #### Scenario: The id column is named `id`
 
@@ -50,10 +51,17 @@ rows sharing an id only the last SHALL be kept.
 - **THEN** the converted bundle has one `P2`, carrying the later row's annotations, and no row
   for the null id
 
+#### Scenario: Transfer on a bundle with a repeated id
+
+- **WHEN** `protspace transfer` rewrites a v2 bundle whose annotations hold two rows for `P2`,
+  the earlier one labelled, and one row with a null id
+- **THEN** the command succeeds, the earlier `P2` row's label is never a reference, and the v3
+  bundle has one `P2` and no row for the null id
+
 #### Scenario: A legacy bundle v3 cannot hold
 
 - **WHEN** a v2 bundle whose projections metadata and data name different projections is
-  converted
+  converted, styled or transferred onto
 - **THEN** the command exits with a usage error that says why, without a traceback, and writes
   nothing
 

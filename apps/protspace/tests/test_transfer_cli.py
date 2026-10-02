@@ -587,3 +587,149 @@ def test_cli_transfer_without_rules_fills_missing_values(tmp_path):
     # not. get_unique_annotation_values skips "" for exactly that reason -- see
     # test_unique_annotation_values_skip_empty_strings.
     assert rows["P00001"]["protein_category__pred_value"] == ""
+
+
+# ── Transfer on a legacy bundle the v2 browser keyed loosely ────────────────
+#
+# A v1/v2 bundle can hold rows v3 refuses: a repeated or null id, or an id
+# column named other than protein_id/identifier.  `convert` and `style` key such
+# rows as the v2 browser did; `transfer` reads the same dataset, so it neither
+# crashes at the write nor transfers from rows the browser never showed.
+
+
+def _write_legacy_bundle_and_h5(tmp_path, annotations, projected, names=("p", "p")):
+    import io
+
+    import h5py
+    import pyarrow.parquet as pq
+
+    from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER
+
+    def _part(table):
+        buf = io.BytesIO()
+        pq.write_table(table, buf)
+        return buf.getvalue()
+
+    meta = pa.table({"projection_name": [names[0]], "dimensions": [2]})
+    data = pa.table(
+        {
+            "projection_name": [names[1]] * len(projected),
+            "identifier": list(projected),
+            "x": [float(i) for i in range(len(projected))],
+            "y": [0.0] * len(projected),
+        }
+    )
+    bundle_path = tmp_path / "legacy.parquetbundle"
+    bundle_path.write_bytes(
+        PARQUET_BUNDLE_DELIMITER.join(
+            [_part(stamp_format_version(annotations)), _part(meta), _part(data)]
+        )
+    )
+    h5_path = tmp_path / "legacy.h5"
+    with h5py.File(h5_path, "w") as handle:
+        handle.attrs["model_name"] = "test_model"
+        handle.create_dataset("TRINITY_1", data=np.array([1.0, 0.05], dtype=np.float32))
+        handle.create_dataset("P00001", data=np.array([1.0, 0.0], dtype=np.float32))
+        handle.create_dataset("P00002", data=np.array([0.0, 1.0], dtype=np.float32))
+    return bundle_path, h5_path
+
+
+def _transfer_cli(bundle_path, h5_path, out_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    return CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            "-b",
+            str(bundle_path),
+            "-e",
+            str(h5_path),
+            "-t",
+            "protein_category",
+            "-o",
+            str(out_path),
+        ],
+    )
+
+
+def test_cli_transfer_keys_a_legacy_bundle_as_the_v2_browser_did(tmp_path):
+    from protspace.data.io.bundle import read_tables
+
+    # P00001 twice: the earlier row's label is one the v2 browser never showed
+    # (the later row replaced it), and a row with a null id it skipped.
+    annotations = pa.table(
+        {
+            "protein_id": ["TRINITY_1", "P00001", "P00002", "P00001", None],
+            "protein_category": ["", "hidden", "enzyme", "neurotoxin", "orphan"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path, annotations, ["TRINITY_1", "P00001", "P00002"]
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == 0, result.output
+    rows = read_tables(out_path)[0].to_pylist()
+    assert sorted(row["protein_id"] for row in rows) == [
+        "P00001",
+        "P00002",
+        "TRINITY_1",
+    ]
+    by_id = {row["protein_id"]: row for row in rows}
+    assert by_id["P00001"]["protein_category"] == "neurotoxin"
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_reads_a_legacy_id_column_as_the_v2_browser_did(tmp_path):
+    from protspace.data.io.bundle import read_tables
+
+    annotations = pa.table(
+        {
+            "Entry": ["TRINITY_1", "P00001", "P00002"],
+            "protein_category": ["", "neurotoxin", "enzyme"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path, annotations, ["TRINITY_1", "P00001", "P00002"]
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == 0, result.output
+    by_id = {row["protein_id"]: row for row in read_tables(out_path)[0].to_pylist()}
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_reports_a_legacy_bundle_v3_cannot_hold_as_a_usage_error(
+    tmp_path,
+):
+    import click
+
+    # Projection metadata and data that name different projections: the v2
+    # reader tolerated it, the v3 encoder refuses it at the write.
+    annotations = pa.table(
+        {
+            "protein_id": ["TRINITY_1", "P00001", "P00002"],
+            "protein_category": ["", "neurotoxin", "enzyme"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path,
+        annotations,
+        ["TRINITY_1", "P00001", "P00002"],
+        names=("p", "q"),
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "cannot write" in result.output
+    assert not out_path.exists()

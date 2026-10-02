@@ -273,8 +273,11 @@ def transfer(
 
     # Read the annotations part of the bundle.  read_tables hands back the v2
     # shape for a v3 container too, without the parquet round trip read_bundle
-    # would do on the way out of the decoder.
-    annotations, _metadata, _projections = read_tables(bundle)
+    # would do on the way out of the decoder.  A legacy bundle's rows are keyed
+    # as the v2 browser keyed them (as `convert` does), so a repeated or null id
+    # neither feeds the transfer a row the browser never showed nor fails the
+    # v3 write at the end.
+    annotations, _metadata, _projections = read_tables(bundle, keyed=True)
     input_format_version = read_format_version(annotations)
 
     # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
@@ -336,5 +339,11 @@ def transfer(
     # off the bundle: a v1 bundle's cells are migrated, v2 cells are re-stamped.
     augmented = upgrade_cell_grammar(augmented, input_format_version)
 
-    replace_annotations_in_bundle(bundle, output, augmented)
+    # A legacy input the v3 encoder still refuses (projection sets that disagree
+    # between metadata and data, ...) is a usage error, as in `convert` and
+    # `style`, not a traceback; nothing is written.
+    try:
+        replace_annotations_in_bundle(bundle, output, augmented)
+    except ValueError as exc:
+        raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)

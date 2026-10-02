@@ -70,6 +70,10 @@
 - [x] 2.22 `convert` and `style` drop the internal lookup columns (`organism_id`, `sequence`)
       when they rewrite a v1/v2 input, as `main`'s `write_bundle` and
       `replace_annotations_in_bundle` (#495) drop them from every other bundle write
+- [x] 2.23 `transfer` keys a legacy bundle's annotation rows as `convert` does when it reads
+      them (`read_tables(..., keyed=True)`), so a repeated or null id no longer crashes the v3
+      write after the kNN ran, and reports a legacy input the encoder still refuses as a usage
+      error, not a traceback
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 
