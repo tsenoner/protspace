@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   markLastLoadStatus: vi.fn(),
   saveLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
+  clearCorruptedPersistedDataset: vi.fn(),
+  recoverFromCorruptedPersistedDataset: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
 }));
@@ -20,8 +22,8 @@ vi.mock('./persisted-dataset', () => ({
     loadDefaultDatasetAndClearPersistedFile: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
-    clearCorruptedPersistedDataset: vi.fn(),
-    recoverFromCorruptedPersistedDataset: vi.fn(),
+    clearCorruptedPersistedDataset: mocks.clearCorruptedPersistedDataset,
+    recoverFromCorruptedPersistedDataset: mocks.recoverFromCorruptedPersistedDataset,
   }),
 }));
 
@@ -54,9 +56,19 @@ const file = new File(['bundle'], 'import.parquetbundle');
 
 function buildController(
   kind: 'user' | 'default' | 'opfs' = 'user',
-  { runningSequence = 3 }: { runningSequence?: number } = {},
+  {
+    runningSequence = 3,
+    latestSequence = 3,
+  }: { runningSequence?: number; latestSequence?: number } = {},
 ) {
   const overlayUpdate = vi.fn();
+  let runningLoadMeta: { sequence: number; kind: string } | null = {
+    sequence: runningSequence,
+    kind,
+  };
+  const setRunningLoadMeta = (meta: typeof runningLoadMeta) => {
+    runningLoadMeta = meta;
+  };
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
     dataLoader: {},
@@ -71,8 +83,8 @@ function buildController(
     loadQueue: {
       registerFileLoad: vi.fn(),
       getLoadMetaForFile: () => ({ sequence: 3, kind }),
-      getRunningLoadMeta: () => ({ sequence: runningSequence, kind }),
-      getLatestSequence: () => 3,
+      getRunningLoadMeta: () => runningLoadMeta,
+      getLatestSequence: () => latestSequence,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
     overlayController: { update: overlayUpdate },
@@ -89,7 +101,12 @@ function buildController(
     },
   } as unknown as Parameters<typeof createDatasetController>[0];
 
-  return { controller: createDatasetController(options), overlayUpdate, options };
+  return {
+    controller: createDatasetController(options),
+    overlayUpdate,
+    options,
+    setRunningLoadMeta,
+  };
 }
 
 const loadedEvent = {
@@ -222,6 +239,8 @@ describe('dataset controller legacy bundle notice', () => {
 describe('dataset controller loading overlay on failure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.recoverFromCorruptedPersistedDataset.mockResolvedValue(undefined);
+    mocks.clearCorruptedPersistedDataset.mockResolvedValue(undefined);
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
     mocks.saveLastImportedFile.mockResolvedValue(undefined);
     mocks.loadData.mockResolvedValue(undefined);
@@ -259,12 +278,51 @@ describe('dataset controller loading overlay on failure', () => {
     consoleLog.mockRestore();
   });
 
-  it('dismisses the overlay when a persisted dataset fails to load', async () => {
+  it('keeps a failed persisted dataset covered until the demo load takes over', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { controller, overlayUpdate } = buildController('opfs');
+    const { controller, overlayUpdate, setRunningLoadMeta } = buildController('opfs');
+    let overlayCallsDuringRecovery: unknown[][] = [];
+    mocks.recoverFromCorruptedPersistedDataset.mockImplementation(async () => {
+      overlayCallsDuringRecovery = [...overlayUpdate.mock.calls];
+      // The demo load (sequence 4) starts and is still running when recovery returns.
+      setRunningLoadMeta({ sequence: 4, kind: 'default' });
+    });
     await controller.handleDataError(errorEvent(new Error('corrupt')));
 
-    expect(dismissed(overlayUpdate)).toBe(true);
+    // Nothing may be imported in the gap before the demo load is queued.
+    expect(overlayCallsDuringRecovery.length).toBeGreaterThan(0);
+    expect(overlayCallsDuringRecovery.every(([show]) => show === true)).toBe(true);
+    // The running demo load owns the overlay now and takes it down when it settles.
+    expect(dismissed(overlayUpdate)).toBe(false);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    consoleError.mockRestore();
+  });
+
+  it('dismisses the overlay when the demo dataset never starts loading', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, overlayUpdate, setRunningLoadMeta } = buildController('opfs');
+    mocks.recoverFromCorruptedPersistedDataset.mockImplementation(async () => {
+      // The demo fetch failed, so no load was queued and the failed one has finished.
+      setRunningLoadMeta(null);
+    });
+    await controller.handleDataError(errorEvent(new Error('corrupt')));
+
+    expect(overlayUpdate).toHaveBeenLastCalledWith(false);
+    consoleError.mockRestore();
+  });
+
+  it('dismisses the overlay before releasing a failed persisted dataset to a newer load', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, overlayUpdate } = buildController('opfs', { latestSequence: 4 });
+    await controller.handleDataError(errorEvent(new Error('corrupt')));
+
+    expect(overlayUpdate).toHaveBeenCalledWith(false);
+    const overlayOrder = overlayUpdate.mock.invocationCallOrder;
+    expect(overlayOrder[overlayOrder.length - 1]).toBeLessThan(
+      mocks.resolvePendingLoadFinalization.mock.invocationCallOrder[0],
+    );
+    expect(mocks.clearCorruptedPersistedDataset).toHaveBeenCalled();
+    expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
 

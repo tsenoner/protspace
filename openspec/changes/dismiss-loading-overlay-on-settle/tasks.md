@@ -1,10 +1,13 @@
 ## 1. Error-path dismissal
 
 - [x] 1.1 Dismiss the overlay as the first action of `handleDataError`, on every branch including
-      `AbortError`.
+      `AbortError`, except a failed persisted dataset that falls back to the demo dataset: keep it
+      up through the demo fetch and dismiss after recovery only if no load is running.
 - [x] 1.2 Dismiss the overlay in `handleDataLoaded`'s catch path.
 - [x] 1.3 Unit tests in the existing `dataset-controller` test files: a failed load, an aborted
-      load and a post-load failure each dismiss the overlay.
+      load and a post-load failure each dismiss the overlay; a failed persisted dataset keeps it up
+      through the demo fallback, dismisses it when no demo load starts, and dismisses it before
+      releasing to a newer queued load.
 - [x] 1.4 E2E: in `dataset-reload.spec.ts`, "dataset load failures show a toast instead of a
       browser dialog" asserts `#progressive-loading` has count 0 after the toast.
 

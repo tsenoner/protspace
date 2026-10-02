@@ -33,13 +33,21 @@ runs on every path through the `finally` that belongs to the current load, inclu
 disposed result from `loadData`. The stale-result early return, which handles a load superseded by
 a newer one, does not dismiss: the overlay on screen then belongs to the newer load.
 
-### Dismiss first on every error path
+### Dismiss on every error path
 
-`handleDataError` calls `overlayController.update(false)` before it branches, so `AbortError`,
-recovery and generic failures all leave the app usable. `handleDataLoaded`'s catch does the same
-for failures in the post-load work (for example while "Saving imported dataset..." is shown). A
-newer queued load shows the overlay again through its own `data-loading-start`, so an early
-dismissal cannot hide a later load's progress.
+`handleDataError` calls `overlayController.update(false)` before it branches, so `AbortError` and
+generic failures leave the app usable. The one exception is a persisted (OPFS) dataset that fails
+with no newer load queued: the app then clears it and fetches the demo dataset, and the demo load
+is only queued once that fetch returns. Dismissing first would leave the page uncovered and the
+queue idle for that whole gap, so a file imported in it would run first and then be replaced by
+the demo load. That branch keeps the overlay up ("Loading the demo dataset...") and dismisses it
+after recovery only when no load is running, which is the case when the demo fetch failed; a demo
+load that did start dismisses it itself. When a newer load is already queued, the branch
+dismisses before releasing the failed load, as the other branches do.
+
+`handleDataLoaded`'s catch does the same for failures in the post-load work (for example while
+"Saving imported dataset..." is shown). A newer queued load shows the overlay again through its
+own `data-loading-start`, so an early dismissal cannot hide a later load's progress.
 
 ### Synchronous removal
 

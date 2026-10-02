@@ -2,7 +2,7 @@
 
 ### Requirement: The loading overlay is dismissed once a load has settled
 
-The Explore loading overlay SHALL be dismissed once the load that showed it has settled: after a successful load has finished rendering and its post-load work (file settings, dataset name, view restore and the persisted load status), and immediately when a load fails or is cancelled. The overlay SHALL be dismissed before the next queued load is allowed to start. A load result that a newer load has superseded SHALL NOT dismiss the overlay of the load that is running.
+The Explore loading overlay SHALL be dismissed once the load that showed it has settled: after a successful load has finished rendering and its post-load work (file settings, dataset name, view restore and the persisted load status), and immediately when a load fails or is cancelled. When a persisted dataset fails to load and no newer load is queued, the overlay SHALL instead stay up while the demo dataset that replaces it is fetched, and SHALL be dismissed once that demo load settles or fails to start. The overlay SHALL be dismissed before the next queued load is allowed to start. A load result that a newer load has superseded SHALL NOT dismiss the overlay of the load that is running.
 
 #### Scenario: A load succeeds
 
@@ -19,6 +19,12 @@ The Explore loading overlay SHALL be dismissed once the load that showed it has 
 
 - **WHEN** an imported bundle cannot be read or its post-load work throws
 - **THEN** the overlay is dismissed and the application is usable without a page reload
+
+#### Scenario: A persisted dataset fails and the demo dataset replaces it
+
+- **WHEN** the dataset restored from browser storage fails to load and no newer load is queued
+- **THEN** the overlay stays up while the demo dataset is fetched, so nothing can be imported in the gap and then be replaced by the demo load
+- **AND** it is dismissed when the demo load settles, or when the demo dataset cannot be fetched
 
 #### Scenario: A load is cancelled
 

@@ -577,6 +577,21 @@ test.describe('Unified app notifications', () => {
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
+  test('an unreadable persisted dataset falls back to the demo and then clears the overlay', async ({
+    page,
+  }) => {
+    const defaultCount = await getProteinCount(page);
+    await writeUnreadablePersistedDataset(page);
+
+    await page.reload();
+    // The overlay stays up through the demo fetch and must be gone once the demo has loaded.
+    await waitForExploreDataLoad(page, { proteinCount: defaultCount });
+    await dismissTourIfPresent(page);
+
+    await expect(page.getByText('Saved dataset was cleared.')).toBeVisible();
+    expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
+  });
+
   test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
     await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
       message: 'Selection mode disabled: Only 1 point remaining',

@@ -32,7 +32,9 @@ The user approved removing both fixed delays for every user.
 ## What Changes
 
 - **Dismiss the overlay on failure.** `handleDataError` dismisses the overlay first, on every
-  branch including `AbortError`, and `handleDataLoaded`'s catch path dismisses it too. A newer
+  branch including `AbortError`, and `handleDataLoaded`'s catch path dismisses it too. A failed
+  persisted dataset that falls back to the demo dataset keeps it up through the demo fetch, so
+  nothing can be imported in that gap and then be overwritten by the demo load. A newer
   queued load shows it again through its own `data-loading-start`.
 - **Dismiss the overlay once a load has settled.** `loadData` no longer touches the overlay's
   visibility after rendering starts. `handleDataLoaded` dismisses it in its `finally`, after the
