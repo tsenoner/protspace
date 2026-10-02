@@ -35,7 +35,7 @@
 
 ## 4. CI
 
-- [ ] 4.1 Replace the hard-coded test counts in `.github/workflows/e2e.yml` comments with wording
+- [x] 4.1 Replace the hard-coded test counts in `.github/workflows/e2e.yml` comments with wording
       that does not go stale.
 
 ## 5. Verification

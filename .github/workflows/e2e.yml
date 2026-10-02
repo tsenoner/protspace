@@ -27,12 +27,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 118 of the 127 tests. No apt: every Chromium system library is already on the
-  # ubuntu-24.04 image. `--with-deps chromium firefox webkit` used to pull ~180 packages
-  # (125 MB, nearly all WebKit's GStreamer/GTK4 stack) from azure.archive.ubuntu.com on every
-  # run, and when that mirror stalls the fetch alone took 19 min (run 36728112695) and 31 min
-  # (run 34576016462) — actions/runner-images#14594. Playwright checks the host libraries at
-  # launch, so a library the image drops fails the first test loudly rather than hanging.
+  # Every default project except the Firefox/WebKit compatibility projects below. No apt:
+  # every Chromium system library is already on the ubuntu-24.04 image. `--with-deps chromium
+  # firefox webkit` used to pull ~180 packages (125 MB, nearly all WebKit's GStreamer/GTK4
+  # stack) from azure.archive.ubuntu.com on every run, and when that mirror stalls the fetch
+  # alone took 19 min (run 36728112695) and 31 min (run 34576016462) —
+  # actions/runner-images#14594. Playwright checks the host libraries at launch, so a library
+  # the image drops fails the first test loudly rather than hanging.
   e2e-chromium:
     name: E2E Tests (Chromium)
     runs-on: ubuntu-latest
@@ -113,10 +114,11 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # The @cross-browser/@opfs-browser compatibility journeys (9 tests). They run in the official
-  # image, which ships Firefox, WebKit and their system libraries, so this job does no apt at
-  # all. The tag must match @playwright/test in pnpm-lock.yaml exactly: bump both together;
-  # the version check below fails fast if they drift.
+  # The Firefox/WebKit projects, which run only the @cross-browser/@opfs-browser compatibility
+  # journeys. They run in the official image, which ships Firefox, WebKit and their system
+  # libraries, so this job does no apt at all. The tag must match @playwright/test in
+  # pnpm-lock.yaml exactly: bump both together; the version check below fails fast if they
+  # drift.
   e2e-cross-browser:
     name: E2E Tests (Firefox, WebKit)
     runs-on: ubuntu-latest
