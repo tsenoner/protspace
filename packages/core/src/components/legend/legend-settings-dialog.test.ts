@@ -3,7 +3,11 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'lit';
-import { renderSettingsDialog, type SettingsDialogCallbacks } from './legend-settings-dialog';
+import {
+  renderSettingsDialog,
+  type SettingsDialogCallbacks,
+  type SettingsDialogState,
+} from './legend-settings-dialog';
 import type { LegendPersistedSettings, LegendSortMode } from './types';
 import {
   DEFAULT_NUMERIC_PALETTE_ID,
@@ -171,21 +175,24 @@ describe('shape size input', () => {
     return { input, callbacks };
   }
 
-  it('accepts sizes down to 1 and suggests the default 10', () => {
+  function renderSize(state: Partial<SettingsDialogState>) {
+    const { container } = renderSettingsDialogToContainer(state);
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    const hint = input.parentElement?.querySelector('.settings-note')?.textContent ?? '';
+    return { input, hint };
+  }
+
+  it('accepts sizes down to 1', () => {
     const { input, callbacks } = typeSize('1');
     expect(input.min).toBe('1');
-    expect(input.placeholder).toBe('10');
     expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
   });
 
   it("suggests the dataset's own default and names it in a hint", () => {
-    const { container } = renderSettingsDialogToContainer({ shapeSize: 2, defaultShapeSize: 2 });
-    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    const { input, hint } = renderSize({ shapeSize: 2, defaultShapeSize: 2 });
     expect(input.value).toBe('2');
     expect(input.placeholder).toBe('2');
-    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
-      'Default for this dataset: 2',
-    );
+    expect(hint).toContain('Default for this dataset: 2');
   });
 
   it('caps typed sizes at 64', () => {
@@ -205,13 +212,10 @@ describe('shape size input', () => {
   });
 
   it('shows an emptied field as empty, with the default as placeholder', () => {
-    const { container } = renderSettingsDialogToContainer({ shapeSize: null, defaultShapeSize: 2 });
-    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    const { input, hint } = renderSize({ shapeSize: null, defaultShapeSize: 2 });
     expect(input.value).toBe('');
     expect(input.placeholder).toBe('2');
-    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
-      'clear the field to use it',
-    );
+    expect(hint).toContain('clear the field to use it');
   });
 });
 

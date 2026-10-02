@@ -11,6 +11,7 @@ import {
 } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
+import { createDefaultSettings } from './legend-helpers';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
 // These tests seed and read the persisted settings through `localStorage` directly. Stub an
@@ -97,9 +98,16 @@ function makeLegend(proteinCount = 2) {
       buildStorageKey('legend', hash, annotation),
       JSON.stringify({ shapeSize, maxVisibleValues: 10, hiddenValues: [], categories: {} }),
     );
-  const pick = (shapeSize: number) => {
+  /** Save the settings dialog with `shapeSize` in the size field, null for an emptied one. */
+  const pick = (shapeSize: number | null) => {
     el._dialogSettings = { ...el._dialogSettings, shapeSize, annotationSortModes: {} };
     el._handleSettingsSave();
+  };
+  /** Give the legend data with these annotations, which Reset and exports go through. */
+  const annotate = (...annotations: string[]) => {
+    el.data = {
+      annotations: Object.fromEntries(annotations.map((name) => [name, { values: ['x'] }])),
+    };
   };
   const stored = (annotation: string) =>
     JSON.parse(localStorage.getItem(buildStorageKey('legend', hash, annotation)) ?? 'null') as {
@@ -107,18 +115,10 @@ function makeLegend(proteinCount = 2) {
     } | null;
   const storedPick = () => localStorage.getItem(buildStorageKey('shape-size', hash));
   const legacyPick = () => localStorage.getItem(buildStorageKey('point-size', hash));
-  return { el, hash, pointSizes, switchTo, store, pick, stored, storedPick, legacyPick };
+  return { el, hash, pointSizes, switchTo, store, pick, annotate, stored, storedPick, legacyPick };
 }
 
-const fileSettings = (shapeSize: number) => ({
-  maxVisibleValues: 10,
-  shapeSize,
-  sortMode: 'size-desc' as const,
-  hiddenValues: [],
-  categories: {},
-  enableDuplicateStackUI: false,
-  selectedPaletteId: 'kellys',
-});
+const fileSettings = (shapeSize: number) => ({ ...createDefaultSettings('x'), shapeSize });
 
 describe('legend shape size', () => {
   beforeEach(() => localStorage.clear());
@@ -214,11 +214,11 @@ describe('legend shape size', () => {
   });
 
   it('exports the picked size on every annotation', () => {
-    const { el, switchTo, store, pick } = makeLegend();
+    const { el, switchTo, store, pick, annotate } = makeLegend();
     store('b', 50);
     switchTo('a');
     pick(12);
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
     const exported = el.getAllPersistedSettings();
     expect(exported.a.shapeSize).toBe(12);
     expect(exported.b.shapeSize).toBe(12);
@@ -295,7 +295,7 @@ describe('legend default shape size from the protein count', () => {
     earlier.store('b', 12);
     localStorage.setItem(buildStorageKey('point-size', earlier.hash), '10');
 
-    const { el, switchTo, stored, storedPick, legacyPick } = makeLegend(105_562);
+    const { el, switchTo, annotate, stored, storedPick, legacyPick } = makeLegend(105_562);
     expect(legacyPick()).toBeNull();
     expect(storedPick()).toBeNull();
     switchTo('a');
@@ -304,7 +304,7 @@ describe('legend default shape size from the protein count', () => {
     expect(el.shapeSize).toBe(2);
     expect(stored('a')?.shapeSize).toBe(10);
     expect(el.pickedShapeSize).toBeUndefined();
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
     expect(el.getAllPersistedSettings().a.shapeSize).toBe(10);
   });
 
@@ -359,12 +359,12 @@ describe('legend default shape size from the protein count', () => {
   });
 
   it('exports the filler 10 and no picked size, never the computed default', () => {
-    const { el, switchTo } = makeLegend(105_562);
+    const { el, switchTo, annotate } = makeLegend(105_562);
     switchTo('b');
     el._persistenceController.saveSettings();
     switchTo('a');
     expect(el.shapeSize).toBe(2);
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
     const exported = el.getAllPersistedSettings();
     expect(exported.a.shapeSize).toBe(10);
     expect(exported.b.shapeSize).toBe(10);
@@ -372,13 +372,13 @@ describe('legend default shape size from the protein count', () => {
   });
 
   it('Reset clears the stored size and returns every annotation to the default', () => {
-    const { el, pointSizes, switchTo, store, pick, storedPick } = makeLegend(105_562);
+    const { el, pointSizes, switchTo, store, pick, annotate, storedPick } = makeLegend(105_562);
     // A record written while a size was picked can hold that size as the annotation's own.
     store('b', 12);
     switchTo('a');
     pick(12);
     expect(storedPick()).toBe('12');
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
 
     el._handleSettingsReset();
     expect(el.shapeSize).toBe(2);
@@ -400,14 +400,13 @@ describe('legend default shape size from the protein count', () => {
   });
 
   it('an emptied size field returns the dataset to its default on Save', () => {
-    const { el, pointSizes, switchTo, store, pick, storedPick } = makeLegend(105_562);
+    const { el, pointSizes, switchTo, store, pick, annotate, storedPick } = makeLegend(105_562);
     store('b', 12);
     switchTo('a');
     pick(12);
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
 
-    el._dialogSettings = { ...el._dialogSettings, shapeSize: null, annotationSortModes: {} };
-    el._handleSettingsSave();
+    pick(null);
     expect(el.shapeSize).toBe(2);
     expect(pointSizes.at(-1)).toBe(16);
     expect(storedPick()).toBeNull();
@@ -419,14 +418,13 @@ describe('legend default shape size from the protein count', () => {
   });
 
   it("an emptied size field also drops an annotation's own size", () => {
-    const { el, switchTo, store } = makeLegend(105_562);
+    const { el, switchTo, store, pick, annotate } = makeLegend(105_562);
     store('a', 5);
     switchTo('a');
     expect(el.shapeSize).toBe(5);
-    el.data = { annotations: { a: { values: ['x'] } } };
+    annotate('a');
 
-    el._dialogSettings = { ...el._dialogSettings, shapeSize: null, annotationSortModes: {} };
-    el._handleSettingsSave();
+    pick(null);
     expect(el.shapeSize).toBe(2);
     switchTo('b');
     switchTo('a');
@@ -434,11 +432,11 @@ describe('legend default shape size from the protein count', () => {
   });
 
   it('Reset also drops the per-annotation sizes of bundle settings not yet applied', () => {
-    const { el, hash, switchTo } = makeLegend(105_562);
+    const { el, hash, switchTo, annotate } = makeLegend(105_562);
     el.setFileSettings({ a: fileSettings(5), b: fileSettings(7) }, hash);
     switchTo('a');
     expect(el.shapeSize).toBe(5);
-    el.data = { annotations: { a: { values: ['x'] }, b: { values: ['x'] } } };
+    annotate('a', 'b');
 
     el._handleSettingsReset();
     expect(el.shapeSize).toBe(2);
@@ -495,14 +493,11 @@ describe('legend default shape size with a scatterplot', () => {
 
   const pointSize = (plot: MockPlot) => (plot.config as { pointSize?: number }).pointSize;
 
-  it("sizes dots by the whole dataset's protein count", async () => {
+  it("sizes dots by the whole dataset's protein count, also with categories hidden", async () => {
     const { legend, plot } = await mount(40_000);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
-  });
 
-  it('keeps the default when categories are hidden', async () => {
-    const { legend, plot } = await mount(40_000);
     legend._handleItemClick('A');
     await settle(legend);
     expect(legend.shapeSize).toBe(4);
@@ -542,7 +537,7 @@ describe('legend default shape size with a scatterplot', () => {
     expect(pointSize(plot)).toBe(32);
   });
 
-  it('returns to the default when the size field is emptied and saved', async () => {
+  it('names the default in the settings dialog and returns to it from an emptied field', async () => {
     const { legend, plot } = await mount(40_000);
     legend.applyShapeSize(10);
     expect(pointSize(plot)).toBe(80);
@@ -551,6 +546,10 @@ describe('legend default shape size with a scatterplot', () => {
     await settle(legend);
     const input = legend.shadowRoot!.querySelector<HTMLInputElement>('#shape-size-input')!;
     expect(input.value).toBe('10');
+    expect(input.placeholder).toBe('4');
+    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
+      'Default for this dataset: 4',
+    );
     input.value = '';
     input.dispatchEvent(new Event('input'));
     legend.shadowRoot!.querySelector<HTMLButtonElement>('.modal-footer .btn-primary')!.click();
@@ -559,17 +558,5 @@ describe('legend default shape size with a scatterplot', () => {
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
     expect(legend.pickedShapeSize).toBeUndefined();
-  });
-
-  it('names the default in the settings dialog', async () => {
-    const { legend } = await mount(40_000);
-    await legend._handleCustomize();
-    await settle(legend);
-    const input = legend.shadowRoot!.querySelector<HTMLInputElement>('#shape-size-input')!;
-    expect(input.value).toBe('4');
-    expect(input.placeholder).toBe('4');
-    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
-      'Default for this dataset: 4',
-    );
   });
 });
