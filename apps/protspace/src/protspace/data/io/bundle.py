@@ -207,29 +207,22 @@ def _write_parts(
     core: list[bytes],
     settings: bytes | None = None,
     statistics: bytes | None = None,
-    payloads: bytes | None = None,
+    *,
+    payloads: bytes,
 ) -> None:
-    """Assemble and atomically write one container from its already-serialized parts.
+    """Assemble and atomically write one v3 container from its serialized parts.
 
-    The single writer for every bundle this module produces.  A v3 container
-    (``payloads`` given) always emits **six** slots: the browser reads the
-    payloads from ``parts[5]`` positionally, so omitting an absent settings or
-    statistics part would file the payloads under statistics and the reader would
-    report no payloads part.  A legacy container keeps the old trailing-optional
-    layout.  Every part, part 6 included, is checked for the delimiter — a label
-    carrying those bytes would corrupt the split on read-back.
+    The single writer for every bundle this module produces; it only ever emits
+    v3.  The container always has **six** slots: the browser reads the payloads
+    from ``parts[5]`` positionally, so omitting an absent settings or statistics
+    part would file the payloads under statistics and the reader would report no
+    payloads part.  Every part, part 6 included, is checked for the delimiter — a
+    label carrying those bytes would corrupt the split on read-back.
     """
     if len(core) != 3:
         raise ValueError(f"a parquetbundle needs exactly 3 core parts, got {len(core)}")
 
-    if payloads is not None:
-        parts = [*core, settings or b"", statistics or b"", payloads]
-    else:
-        parts = list(core)
-        if settings is not None or statistics is not None:
-            parts.append(settings if settings is not None else b"")
-        if statistics is not None:
-            parts.append(statistics)
+    parts = [*core, settings or b"", statistics or b"", payloads]
 
     for part in parts:
         _check_no_delimiter(part)
@@ -382,7 +375,7 @@ def write_bundle(
         [part1, part2, part3],
         create_settings_parquet(settings) if settings is not None else None,
         write_part(statistics) if statistics is not None else None,
-        payloads,
+        payloads=payloads,
     )
     logger.info(f"Saved bundled output to: {bundle_path}")
 
@@ -411,7 +404,11 @@ def replace_settings_in_bundle(
             output_path,
         )
     _write_parts(
-        output_path, core, create_settings_parquet(settings), statistics, payloads
+        output_path,
+        core,
+        create_settings_parquet(settings),
+        statistics,
+        payloads=payloads,
     )
 
 
@@ -447,7 +444,7 @@ def replace_annotations_in_bundle(
         metadata, projections = (read_part(p) for p in core[1:])
         parts = encode_v3(annotations_table, metadata, projections)
 
-    _write_parts(output_path, list(parts[:3]), settings, statistics, parts[3])
+    _write_parts(output_path, list(parts[:3]), settings, statistics, payloads=parts[3])
 
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 
@@ -466,7 +463,7 @@ def convert_bundle(input_path: Path, output_path: Path) -> int:
         return CONTAINER_VERSION
 
     core, payloads, version = _legacy_core_as_v3(core)
-    _write_parts(output_path, core, settings, statistics, payloads)
+    _write_parts(output_path, core, settings, statistics, payloads=payloads)
     return version
 
 
