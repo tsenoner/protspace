@@ -408,7 +408,7 @@ The Import menu shows annotation transfer with one example built for the purpose
 
 ## Risks / Trade-offs
 
-- **Swiss-Prot size and memory** (135.9 MB; 30.1 s and a 1,139 MiB peak JS heap in the D2 measurement on an Apple M4 Pro, which leaves out ArrayBuffer and GPU memory). Mitigations:
+- **Swiss-Prot size and memory** (135.9 MB; 27.4 s and a 1,192 MiB peak JS heap in the D2 measurement on an Apple M4 Pro, which leaves out ArrayBuffer and GPU memory). Mitigations:
   - the D2 gate and its GO/TED web-cut fallback;
   - streamed progress and Cancel;
   - the Large badge and the stated memory.
