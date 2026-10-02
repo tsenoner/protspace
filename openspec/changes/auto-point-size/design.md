@@ -77,9 +77,14 @@ Every source is capped at 64, as before.
 
 10 is what the CLI writers (`settings_converter.py`, `add_annotation_style.py`, `carriage.py`) and
 the legend's own `createDefaultSettings` emit when nobody picked a size; 30 is what earlier writers
-emitted. Neither says anything about the data, so both read as "no size set". A bundle author who
-wants exactly 10 per annotation on a large dataset cannot say so per annotation; the top-level
-`shapeSize: 10` can.
+emitted. Neither says anything about the data, so both read as "no size set". So nobody can ask for
+exactly 10 per annotation on a dataset above about 10,800 proteins, where the default falls under
+ten. A top-level `shapeSize: 10` can, but only the web app writes one: an export after the user
+picked 10 carries it. The CLI cannot. `protspace style` takes per-annotation keys only, and keeps a
+top-level size only from an input bundle that already had the web app's settings envelope
+(`settings_converter.py`, `rewrap_settings`). A CLI author who wants about 10 writes 9 or 11, as the
+styling guide says. Letting the CLI write a top-level size, or stop writing the filler, is left to a
+follow-up under `apps/protspace/`.
 
 ### The default is never written
 

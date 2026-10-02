@@ -51,3 +51,5 @@
       new key and drops the legacy one, Reset drops both.
 - [x] 5.2 Saving the settings dialog with the size field emptied clears the shape size as Reset does
       and keeps the annotation's other settings; the hint says so.
+- [x] 5.3 `design.md` and `docs/guide/styling.md`: only the web app writes a top-level `shapeSize`;
+      a styles file uses 9 or 11 for about 10 on a dataset above ~10,800 proteins.

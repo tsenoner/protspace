@@ -103,7 +103,8 @@ The web app's legend accepts shape sizes from 1 to 64, and the web app caps a la
 from a bundle, top-level or per-annotation, at 64. A per-annotation `10` or `30` is the filler the
 writers emit, so the web app reads it as unset and uses the
 [default from the protein count](/explore/legend#default-dot-size) (10 up to 10,000 proteins,
-smaller above). A bundle exported from the web app after the
+smaller above). A styles file therefore cannot set exactly 10 on a larger dataset; use `9` or `11`
+for about that size. A bundle exported from the web app after the
 user picked a size carries it as a top-level `shapeSize` in its settings, next to the per-annotation
 ones. On import, that top-level value overrides every annotation's `shapeSize`, and
 `protspace style` keeps it when it rewrites the settings, so editing the per-annotation `shapeSize`
