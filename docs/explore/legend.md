@@ -222,7 +222,8 @@ Legend settings are saved per dataset and per annotation in the browser.
 - The shape size is the exception: it is saved once per dataset, applies to every annotation, and
   travels in exported bundles with **Include legend settings**
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation; it also
-  clears the dataset's shape size, so the [default](#default-dot-size) applies again
+  clears the dataset's shape size and every annotation's own size, including sizes a bundle set
+  per annotation, so the [default](#default-dot-size) applies to every annotation again
 
 ## Styling From The Python CLI
 

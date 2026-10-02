@@ -53,3 +53,5 @@
       and keeps the annotation's other settings; the hint says so.
 - [x] 5.3 `design.md` and `docs/guide/styling.md`: only the web app writes a top-level `shapeSize`;
       a styles file uses 9 or 11 for about 10 on a dataset above ~10,800 proteins.
+- [x] 5.4 `docs/explore/legend.md`: Reset also clears every annotation's own size, bundle-set ones
+      included.
