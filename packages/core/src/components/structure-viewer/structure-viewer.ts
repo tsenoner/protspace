@@ -46,6 +46,9 @@ export class ProtspaceStructureViewer extends LitElement {
 
   protected updated(changedProperties: Map<string | number | symbol, unknown>) {
     if (changedProperties.has('proteinId')) {
+      // Invalidate the in-flight load now: the deferred _cleanup runs a frame later, and until
+      // then the old load would still count as current
+      this._loadGeneration += 1;
       // Defer loading to avoid triggering updates during update cycle
       requestAnimationFrame(() => {
         if (this.proteinId) {

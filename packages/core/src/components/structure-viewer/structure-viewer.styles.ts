@@ -266,6 +266,11 @@ const structureViewerStylesCore = css`
     --segmented-border: var(--protspace-viewer-border);
     --segmented-bg: var(--protspace-viewer-bg);
     --segmented-text: var(--protspace-viewer-text-muted);
+    --segmented-hover-bg: color-mix(
+      in srgb,
+      var(--protspace-viewer-text) 8%,
+      var(--protspace-viewer-bg)
+    );
     --segmented-hover-text: var(--protspace-viewer-text);
   }
 

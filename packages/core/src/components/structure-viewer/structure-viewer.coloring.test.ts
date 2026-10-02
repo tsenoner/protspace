@@ -220,6 +220,28 @@ describe('structure viewer color control', () => {
     expect(handleError).not.toHaveBeenCalled();
   });
 
+  it('ignores a load that settles in the frame before its replacement starts', async () => {
+    const staleStructureLoad = deferred<void>();
+    mocks.loadStructureFromUrl.mockReturnValueOnce(staleStructureLoad.promise);
+    const element = await renderViewer(domains);
+    const handleLoad = vi.fn();
+    element.addEventListener('structure-load', handleLoad);
+
+    // Hold the frame that would start the replacement load (and clean up the old one)
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      return pendingFrames.length;
+    });
+    element.proteinId = 'P12345';
+    await element.updateComplete;
+    staleStructureLoad.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handleLoad.mock.calls.map(([event]) => event.detail.status)).not.toContain('loaded');
+    pendingFrames.forEach((callback) => callback(0));
+  });
+
   it('ignores a stale structure load that settles while its replacement is loading', async () => {
     const staleStructureLoad = deferred<void>();
     const replacementStructureLoad = deferred<void>();

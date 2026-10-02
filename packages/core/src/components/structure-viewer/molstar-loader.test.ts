@@ -39,15 +39,37 @@ describe('Mol* color theme adapter', () => {
   });
 
   type ThemeUpdate = { color: string; colorParams?: unknown };
+  type ColorTheme = { name: string; params?: unknown };
   type FakeRepresentation = {
-    cell: {
-      transform: { ref: string; params: { colorTheme: { name: string; params?: unknown } } };
-    };
+    cell: { transform: { ref: string; tags?: string[]; params: { colorTheme: ColorTheme } } };
+  };
+  type FocusParams = {
+    targetParams: { colorTheme: ColorTheme };
+    surroundingsParams: { colorTheme: ColorTheme };
   };
   type FakeComponent = { representations: FakeRepresentation[] };
 
-  function representation(ref: string, theme: string, params?: unknown): FakeRepresentation {
-    return { cell: { transform: { ref, params: { colorTheme: { name: theme, params } } } } };
+  function representation(
+    ref: string,
+    theme: string,
+    params?: unknown,
+    tags?: string[],
+  ): FakeRepresentation {
+    return { cell: { transform: { ref, tags, params: { colorTheme: { name: theme, params } } } } };
+  }
+
+  /** The click-to-focus behavior cell, whose params a committed behavior update rewrites. */
+  function focusBehaviorCell(theme: ColorTheme) {
+    return {
+      transform: {
+        ref: 'focus-behavior',
+        transformer: { definition: { name: 'create-structure-focus-representation' } },
+        params: {
+          targetParams: { colorTheme: { ...theme } },
+          surroundingsParams: { colorTheme: { ...theme } },
+        } as FocusParams,
+      },
+    };
   }
 
   /** Writes the requested theme into each representation, as a committed Mol* update does. */
@@ -69,12 +91,24 @@ describe('Mol* color theme adapter', () => {
     structures: { components: FakeComponent[] }[] = [
       { components: [{ representations: [representation('cartoon', 'plddt-confidence')] }] },
     ],
+    focusBehavior = focusBehaviorCell({ name: 'plddt-confidence' }),
   ) {
     const addTheme = vi.fn<(provider: unknown) => void>();
+    const behaviors = {
+      cells: new Map([[focusBehavior.transform.ref, focusBehavior]]),
+      build: () => {
+        const edits: ((params: FocusParams) => void)[] = [];
+        return {
+          to: () => ({ update: (edit: (params: FocusParams) => void) => edits.push(edit) }),
+          commit: async () => edits.forEach((edit) => edit(focusBehavior.transform.params)),
+        };
+      },
+    };
     const rawViewer = {
       loadStructureFromUrl: vi.fn(async () => undefined),
       dispose: vi.fn(),
       plugin: {
+        state: { behaviors },
         dataTransaction: vi.fn(async (edits: () => Promise<void>) => edits()),
         representation: {
           structure: { themes: { colorThemeRegistry: { add: addTheme } } },
@@ -90,7 +124,12 @@ describe('Mol* color theme adapter', () => {
     window.molstar = {
       Viewer: { create: vi.fn(async () => rawViewer) },
     } as unknown as typeof window.molstar;
-    return { addTheme, rawViewer, components: structures.flatMap((s) => s.components) };
+    return {
+      addTheme,
+      rawViewer,
+      focusBehavior,
+      components: structures.flatMap((s) => s.components),
+    };
   }
 
   it('registers TED coloring and switches loaded representations without reloading', async () => {
@@ -101,7 +140,10 @@ describe('Mol* color theme adapter', () => {
     expect(addTheme).toHaveBeenCalledOnce();
 
     await viewer.setColorTheme('ted-domains', domains);
-    expect(updateTheme).toHaveBeenLastCalledWith(components, { color: 'protspace-ted-domain' });
+    expect(updateTheme).toHaveBeenLastCalledWith(components, expect.any(Function));
+    expect(components[0]?.representations[0]?.cell.transform.params.colorTheme.name).toBe(
+      'protspace-ted-domain',
+    );
     expect(rawViewer.plugin.dataTransaction).toHaveBeenCalledOnce();
     expect(rawViewer.loadStructureFromUrl).not.toHaveBeenCalled();
 
@@ -154,6 +196,29 @@ describe('Mol* color theme adapter', () => {
     expect(chainIdCartoon.cell.transform.params.colorTheme.name).toBe('chain-id');
   });
 
+  it('keeps click-to-focus representations in the active color mode', async () => {
+    const focusTarget = representation('focus-target', 'plddt-confidence', { scale: 'af' }, [
+      'structure-focus-target-repr',
+    ]);
+    const { focusBehavior } = installRawViewer(vi.fn(applyThemeUpdate), [
+      { components: [{ representations: [representation('cartoon', 'plddt-confidence')] }] },
+      { components: [{ representations: [focusTarget] }] },
+    ]);
+    const viewer = await createMolstarViewer(document.createElement('div'));
+    const { targetParams, surroundingsParams } = focusBehavior.transform.params;
+
+    // Focus representations created later use the behavior's params, so those must switch too
+    await viewer.setColorTheme('ted-domains', domains);
+    expect(targetParams.colorTheme.name).toBe('protspace-ted-domain');
+    expect(surroundingsParams.colorTheme.name).toBe('protspace-ted-domain');
+    expect(focusTarget.cell.transform.params.colorTheme.name).toBe('protspace-ted-domain');
+
+    await viewer.setColorTheme('plddt', domains);
+    expect(targetParams.colorTheme.name).toBe('plddt-confidence');
+    expect(surroundingsParams.colorTheme.name).toBe('plddt-confidence');
+    expect(focusTarget.cell.transform.params.colorTheme.name).toBe('plddt-confidence');
+  });
+
   it('updates every structure in one theme update', async () => {
     const updateTheme = vi.fn(applyThemeUpdate);
     const { components } = installRawViewer(updateTheme, [
@@ -180,27 +245,31 @@ describe('Mol* color theme adapter', () => {
 
   it('applies overlapping theme requests in order', async () => {
     let finishTedUpdate!: () => void;
+    const appliedThemes: string[] = [];
     const updateTheme = vi.fn(
-      (components: FakeComponent[], params: ThemeUpdate | (() => ThemeUpdate)) =>
-        new Promise<void>((resolve) => {
-          void applyThemeUpdate(components, params);
-          if (typeof params === 'function') resolve();
-          else finishTedUpdate = resolve;
-        }),
+      async (
+        components: FakeComponent[],
+        params: (c: FakeComponent, r: FakeRepresentation) => ThemeUpdate,
+      ) => {
+        await applyThemeUpdate(components, params);
+        const theme = components[0]?.representations[0]?.cell.transform.params.colorTheme.name;
+        appliedThemes.push(theme ?? '');
+        if (theme === 'protspace-ted-domain') {
+          await new Promise<void>((resolve) => (finishTedUpdate = resolve));
+        }
+      },
     );
     installRawViewer(updateTheme);
     const viewer = await createMolstarViewer(document.createElement('div'));
 
     const tedChange = viewer.setColorTheme('ted-domains', domains);
     const plddtChange = viewer.setColorTheme('plddt');
-    await Promise.resolve();
+    await vi.waitFor(() => expect(updateTheme).toHaveBeenCalledOnce());
     await Promise.resolve();
     expect(updateTheme).toHaveBeenCalledOnce();
 
     finishTedUpdate();
     await Promise.all([tedChange, plddtChange]);
-    expect(updateTheme).toHaveBeenCalledTimes(2);
-    expect(updateTheme.mock.calls[0]?.[1]).toEqual({ color: 'protspace-ted-domain' });
-    expect(updateTheme.mock.calls[1]?.[1]).toBeTypeOf('function');
+    expect(appliedThemes).toEqual(['protspace-ted-domain', 'plddt-confidence']);
   });
 });

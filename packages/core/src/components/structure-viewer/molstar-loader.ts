@@ -7,6 +7,12 @@ const MOLSTAR_VERSION = '3.44.0';
 const MOLSTAR_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/molstar@${MOLSTAR_VERSION}/build/viewer/molstar.js`;
 const MOLSTAR_CSS_URL = `https://cdn.jsdelivr.net/npm/molstar@${MOLSTAR_VERSION}/build/viewer/molstar.css`;
 const TED_COLOR_THEME_NAME = 'protspace-ted-domain';
+// Mol*'s click-to-focus behavior draws its own ball-and-stick representations with its own themes
+const FOCUS_BEHAVIOR_NAME = 'create-structure-focus-representation';
+const FOCUS_PARTS = [
+  { key: 'focus:target', tag: 'structure-focus-target-repr', param: 'targetParams' },
+  { key: 'focus:surroundings', tag: 'structure-focus-surr-repr', param: 'surroundingsParams' },
+] as const;
 
 export type StructureColorMode = 'plddt' | 'ted-domains';
 
@@ -50,7 +56,22 @@ interface MolstarColorTheme {
 }
 
 interface MolstarRepresentationRef {
-  cell: { transform: { ref: string; params?: { colorTheme?: MolstarColorTheme } } };
+  cell: {
+    transform: { ref: string; tags?: string[]; params?: { colorTheme?: MolstarColorTheme } };
+  };
+}
+
+interface MolstarFocusBehaviorParams {
+  targetParams: { colorTheme: MolstarColorTheme };
+  surroundingsParams: { colorTheme: MolstarColorTheme };
+}
+
+interface MolstarBehaviorCell {
+  transform: {
+    ref: string;
+    transformer: { definition: { name: string } };
+    params?: MolstarFocusBehaviorParams;
+  };
 }
 
 interface MolstarComponentRef {
@@ -67,6 +88,17 @@ interface MolstarThemeUpdate {
 }
 
 interface MolstarPlugin {
+  state: {
+    behaviors: {
+      cells: Map<string, MolstarBehaviorCell>;
+      build: () => {
+        to: (ref: string) => {
+          update: (edit: (params: MolstarFocusBehaviorParams) => void) => unknown;
+        };
+        commit: () => Promise<unknown>;
+      };
+    };
+  };
   dataTransaction: (
     edits: () => Promise<void>,
     options?: { rethrowErrors?: boolean },
@@ -262,28 +294,36 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
   );
 
   const { plugin } = viewer;
-  // Each representation's preset theme (pLDDT for AlphaFold mmCIF, chain-id for a model without
-  // confidence data), captured before the first switch away so pLDDT mode restores exactly it
+  // Preset themes (pLDDT for AlphaFold mmCIF, chain-id for a model without confidence data),
+  // captured before the first switch away so pLDDT mode restores exactly them. Keyed by
+  // representation ref, or by focus part for the focus behavior's representations.
   const presetThemes = new Map<string, MolstarColorTheme>();
-  const restorePresetTheme = (
-    _component: MolstarComponentRef,
-    { cell }: MolstarRepresentationRef,
-  ): MolstarThemeUpdate => {
-    const preset = presetThemes.get(cell.transform.ref);
-    return preset ? { color: preset.name, colorParams: preset.params } : { color: 'default' };
+  const capturePresetTheme = (key: string, theme: MolstarColorTheme | undefined) => {
+    if (theme && theme.name !== TED_COLOR_THEME_NAME && !presetThemes.has(key)) {
+      presetThemes.set(key, theme);
+    }
   };
+  const representationKey = ({ cell }: MolstarRepresentationRef) =>
+    FOCUS_PARTS.find(({ tag }) => cell.transform.tags?.includes(tag))?.key ?? cell.transform.ref;
+  const findFocusBehavior = () =>
+    [...plugin.state.behaviors.cells.values()].find(
+      (cell) => cell.transform.transformer.definition.name === FOCUS_BEHAVIOR_NAME,
+    );
 
   const applyColorTheme = async (mode: StructureColorMode, domains: TedDomain[]) => {
     const components = plugin.managers.structure.hierarchy.current.structures.flatMap(
       (structure) => structure.components,
     );
     const representations = components.flatMap((component) => component.representations);
-    for (const { cell } of representations) {
-      const theme = cell.transform.params?.colorTheme;
-      if (theme && theme.name !== TED_COLOR_THEME_NAME && !presetThemes.has(cell.transform.ref)) {
-        presetThemes.set(cell.transform.ref, theme);
-      }
+    const focusBehavior = findFocusBehavior();
+    for (const repr of representations) {
+      capturePresetTheme(representationKey(repr), repr.cell.transform.params?.colorTheme);
     }
+    for (const { key, param } of FOCUS_PARTS) {
+      capturePresetTheme(key, focusBehavior?.transform.params?.[param].colorTheme);
+    }
+    const themeFor = (key: string): MolstarColorTheme | undefined =>
+      mode === 'ted-domains' ? { name: TED_COLOR_THEME_NAME, params: {} } : presetThemes.get(key);
 
     const previousDomains = tedDomains;
     tedDomains = domains;
@@ -291,9 +331,26 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
       // One transaction for every structure, so a failed representation reverts them all
       await plugin.dataTransaction(
         async () => {
+          // Focus representations are created lazily from the behavior's params and drop out of
+          // the hierarchy while nothing is focused, so the behavior itself must follow the mode
+          if (focusBehavior) {
+            const update = plugin.state.behaviors.build();
+            update.to(focusBehavior.transform.ref).update((params) => {
+              for (const { key, param } of FOCUS_PARTS) {
+                const theme = themeFor(key);
+                if (theme) params[param].colorTheme = theme;
+              }
+            });
+            await update.commit();
+          }
           await plugin.managers.structure.component.updateRepresentationsTheme(
             components,
-            mode === 'ted-domains' ? { color: TED_COLOR_THEME_NAME } : restorePresetTheme,
+            (_component, repr) => {
+              const theme = themeFor(representationKey(repr));
+              return theme
+                ? { color: theme.name, colorParams: theme.params }
+                : { color: 'default' };
+            },
           );
         },
         { rethrowErrors: true },
