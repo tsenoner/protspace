@@ -1,9 +1,17 @@
-import type { AnnotationData, PredictedCell, VisualizationData } from '../types.js';
+import type {
+  AnnotationData,
+  CsrAnnotationData,
+  PredictedCell,
+  VisualizationData,
+} from '../types.js';
 import {
   getFirstAnnotationIndex,
-  getProteinAnnotationIndices,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access.js';
+import { gatherCsr, syntheticHit } from './csr.js';
 import { isNAValue } from './missing-values.js';
 import { clamp01 } from './numeric-binning.js';
 
@@ -195,8 +203,63 @@ function predictedIndices(
     .filter((index) => index >= 0);
 }
 
+/** Which rows a prediction actually replaces, and with which value indices. */
+function predictedReplacements(
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+  rowCount: number,
+): Map<number, readonly number[]> {
+  const replacements = new Map<number, readonly number[]>();
+  for (let i = 0; i < predictedCells.length && i < rowCount; i++) {
+    const cell = predictedCells[i];
+    if (!cell) continue;
+    const indices = predictedIndices(cell, valueToIndex);
+    if (indices.length > 0) replacements.set(i, indices);
+  }
+  return replacements;
+}
+
+/**
+ * CSR rebuild for the overlay.
+ *
+ * Rebuilt as CSR, never densified to `number[][]`: a 573K column would otherwise become one
+ * array per protein. Predicted rows replace the source row's hits wholesale; a prediction
+ * that resolves to nothing leaves the row alone, as the Int32Array and sparse-multi branches
+ * do (CSR has no way to store the `-1` the dense branch falls back to).
+ *
+ * Through {@link gatherCsr}, so a preserved row keeps its hits' scores and evidence and a
+ * predicted value gets none: an EAT transfer carries no curated score or evidence of its own.
+ */
+function cloneCsrWithPredictions(
+  source: CsrAnnotationData,
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+): CsrAnnotationData {
+  const replacements = predictedReplacements(predictedCells, valueToIndex, source.length);
+
+  const offsets = new Int32Array(source.length + 1);
+  for (let i = 0; i < source.length; i++) {
+    const replacement = replacements.get(i);
+    offsets[i + 1] =
+      offsets[i] + (replacement ? replacement.length : getProteinAnnotationCount(source, i));
+  }
+
+  const hits = new Int32Array(offsets[source.length]);
+  let dst = 0;
+  for (let i = 0; i < source.length; i++) {
+    const replacement = replacements.get(i);
+    if (replacement) {
+      for (const index of replacement) hits[dst++] = syntheticHit(index);
+    } else {
+      for (let hit = source.offsets[i]; hit < source.offsets[i + 1]; hit++) hits[dst++] = hit;
+    }
+  }
+
+  return gatherCsr(source, { offsets, hits });
+}
+
 function cloneWithPredictions(
-  source: AnnotationData,
+  source: Exclude<AnnotationData, CsrAnnotationData>,
   predictedCells: readonly (PredictedCell | null)[],
   valueToIndex: ReadonlyMap<string, number>,
 ): AnnotationData {
@@ -281,7 +344,9 @@ export function materializeEatOverlay(
     ...data,
     annotation_data: {
       ...data.annotation_data,
-      [annotationKey]: cloneWithPredictions(source, predictedCells, valueToIndex),
+      [annotationKey]: isCsrAnnotationData(source)
+        ? cloneCsrWithPredictions(source, predictedCells, valueToIndex)
+        : cloneWithPredictions(source, predictedCells, valueToIndex),
     },
   };
 }
@@ -295,12 +360,10 @@ export function isCuratedAnnotationMissing(
   const annotation = data.annotations[annotationKey];
   const rows = data.annotation_data[annotationKey];
   if (!annotation || !rows) return true;
-  const indices = getProteinAnnotationIndices(rows, proteinIdx);
-  return (
-    indices.length === 0 ||
-    indices.every((index) => {
-      const value = annotation.values[index];
-      return value == null || isNAValue(value);
-    })
-  );
+  const count = getProteinAnnotationCount(rows, proteinIdx);
+  for (let k = 0; k < count; k++) {
+    const value = annotation.values[getProteinAnnotationIndexAt(rows, proteinIdx, k)];
+    if (value != null && !isNAValue(value)) return false;
+  }
+  return true;
 }

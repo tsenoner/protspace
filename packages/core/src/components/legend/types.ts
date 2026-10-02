@@ -48,7 +48,7 @@ export interface ScatterplotData {
     }
   >;
   annotation_data: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  numeric_annotation_data?: Record<string, Float64Array>;
   annotation_predicted?: AnnotationPredictedData;
   projections?: Array<{ name: string }>;
 }

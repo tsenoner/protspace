@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createParquetBundle, generateBundleFilename } from './bundle-writer';
-import { countBundleDelimiters } from './delimiter-utils';
-import { BUNDLE_DELIMITER } from './constants';
+import { countBundleDelimiters, findBundleDelimiterPositions } from './delimiter-utils';
+import { BUNDLE_DELIMITER, BUNDLE_DELIMITER_BYTES } from './constants';
 import type { BundleSettings, VisualizationData } from '../types';
 
 // Mock visualization data
@@ -69,81 +69,59 @@ const createMockSettings = (): BundleSettings => ({
 
 describe('bundle-writer', () => {
   describe('createParquetBundle', () => {
-    it('should create a bundle without settings (3-part format)', () => {
-      const data = createMockVisualizationData();
+    /** Byte length of every part, in slot order. */
+    const partSizes = (buffer: ArrayBuffer): number[] => {
+      const bytes = new Uint8Array(buffer);
+      const starts = [
+        0,
+        ...findBundleDelimiterPositions(bytes).map((at) => at + BUNDLE_DELIMITER_BYTES.length),
+      ];
+      const ends = [...findBundleDelimiterPositions(bytes), bytes.length];
+      return starts.map((start, index) => ends[index] - start);
+    };
 
-      const buffer = createParquetBundle(data);
+    it('always writes the six v3 slots, settings and statistics as zero bytes when absent', () => {
+      const buffer = createParquetBundle(createMockVisualizationData());
 
-      expect(buffer).toBeInstanceOf(ArrayBuffer);
-      expect(buffer.byteLength).toBeGreaterThan(0);
-
-      // Check for exactly 2 delimiters (3 parts)
-      const uint8Array = new Uint8Array(buffer);
-      const delimiterCount = countBundleDelimiters(uint8Array);
-      expect(delimiterCount).toBe(2);
+      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(5);
+      const [annotations, metadata, projections, settings, statistics, payloads] =
+        partSizes(buffer);
+      expect(settings).toBe(0);
+      expect(statistics).toBe(0);
+      for (const size of [annotations, metadata, projections, payloads]) {
+        expect(size).toBeGreaterThan(0);
+      }
     });
 
-    it('should create a bundle with settings (4-part format)', () => {
-      const data = createMockVisualizationData();
-      const settings = createMockSettings();
+    it('fills the settings slot when settings are included', () => {
+      const buffer = createParquetBundle(createMockVisualizationData(), {
+        includeSettings: true,
+        settings: createMockSettings(),
+      });
 
-      const buffer = createParquetBundle(data, {
+      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(5);
+      expect(partSizes(buffer)[3]).toBeGreaterThan(0);
+    });
+
+    it.each([
+      ['undefined', undefined],
+      ['empty', { legendSettings: {}, exportOptions: {} }],
+    ])('leaves the settings slot empty when the settings are %s', (_, settings) => {
+      const buffer = createParquetBundle(createMockVisualizationData(), {
         includeSettings: true,
         settings,
       });
 
-      expect(buffer).toBeInstanceOf(ArrayBuffer);
-      expect(buffer.byteLength).toBeGreaterThan(0);
-
-      // Check for exactly 3 delimiters (4 parts)
-      const uint8Array = new Uint8Array(buffer);
-      const delimiterCount = countBundleDelimiters(uint8Array);
-      expect(delimiterCount).toBe(3);
+      expect(partSizes(buffer)[3]).toBe(0);
     });
 
-    it('should create 3-part bundle when includeSettings is true but settings is undefined', () => {
-      const data = createMockVisualizationData();
+    it('copies a statistics part into slot five byte for byte', () => {
+      const statistics = new TextEncoder().encode('PAR1-statistics').buffer as ArrayBuffer;
+      const buffer = createParquetBundle({ ...createMockVisualizationData(), statistics });
 
-      const buffer = createParquetBundle(data, {
-        includeSettings: true,
-        settings: undefined,
-      });
-
-      const uint8Array = new Uint8Array(buffer);
-      const delimiterCount = countBundleDelimiters(uint8Array);
-      expect(delimiterCount).toBe(2);
-    });
-
-    it('should create 3-part bundle when includeSettings is true but settings is empty', () => {
-      const data = createMockVisualizationData();
-
-      const buffer = createParquetBundle(data, {
-        includeSettings: true,
-        settings: { legendSettings: {}, exportOptions: {} },
-      });
-
-      const uint8Array = new Uint8Array(buffer);
-      const delimiterCount = countBundleDelimiters(uint8Array);
-      expect(delimiterCount).toBe(2);
-    });
-
-    it('should handle data with multiple projections', () => {
-      const data = createMockVisualizationData();
-
-      const buffer = createParquetBundle(data);
-
-      expect(buffer).toBeInstanceOf(ArrayBuffer);
-      expect(buffer.byteLength).toBeGreaterThan(0);
-    });
-
-    it('should handle data with null annotation values', () => {
-      const data = createMockVisualizationData();
-      // Family annotation has null value at index 2
-
-      const buffer = createParquetBundle(data);
-
-      expect(buffer).toBeInstanceOf(ArrayBuffer);
-      expect(buffer.byteLength).toBeGreaterThan(0);
+      const sizes = partSizes(buffer);
+      expect(sizes[3]).toBe(0);
+      expect(sizes[4]).toBe(statistics.byteLength);
     });
 
     it('refuses to write a part whose contents contain the bundle delimiter', () => {
@@ -158,6 +136,15 @@ describe('bundle-writer', () => {
       expect(() => createParquetBundle(data)).toThrow(/contains the bundle delimiter/);
     });
 
+    it('refuses a multi-valued column whose count column another annotation already uses', () => {
+      const data = createMockVisualizationData();
+      data.annotations.organism__count = { ...data.annotations.organism };
+      data.annotation_data.organism__count = data.annotation_data.organism;
+      data.annotation_data.organism = [[0, 1], [1], [0]];
+
+      expect(() => createParquetBundle(data)).toThrow(/"organism__count", which already exists/);
+    });
+
     it('writes a settings part when EAT settings are the only persisted state', () => {
       const buffer = createParquetBundle(createMockVisualizationData(), {
         includeSettings: true,
@@ -168,7 +155,7 @@ describe('bundle-writer', () => {
           eatConfidenceThreshold: 0.75,
         },
       });
-      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(3);
+      expect(partSizes(buffer)[3]).toBeGreaterThan(0);
     });
 
     it('writes a settings part when the shape size is the only persisted state', () => {
@@ -176,7 +163,7 @@ describe('bundle-writer', () => {
         includeSettings: true,
         settings: { legendSettings: {}, exportOptions: {}, shapeSize: 12 },
       });
-      expect(countBundleDelimiters(new Uint8Array(buffer))).toBe(3);
+      expect(partSizes(buffer)[3]).toBeGreaterThan(0);
     });
   });
 

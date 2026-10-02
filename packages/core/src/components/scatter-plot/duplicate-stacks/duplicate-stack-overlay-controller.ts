@@ -9,7 +9,7 @@
  *
  * Pure/decoupled: this module does NOT import `scatter-plot.ts`. The host wires
  * its overlay group, badges canvas, transform, config, scales, plot data,
- * quadtree, enablement/selection flags, color getter, and the click/hover hooks
+ * point index, enablement/selection flags, color getter, and the click/hover hooks
  * through the {@link DuplicateStackOverlayDeps} accessor bundle. Event dispatch
  * stays on the host via `onPointActivate`/`onHover`/`onHoverEnd` (INV-05/INV-03).
  *
@@ -43,7 +43,7 @@ import {
   computeFullExtentDuplicateStacks,
   type FullExtentDuplicateStack,
 } from './duplicate-stack-full-extent';
-import type { QuadtreeIndex } from '../interaction/quadtree-index';
+import type { PointGridIndex } from '../interaction/point-grid-index';
 
 // Duplicate stack UI performance tuning (target: M1 MacBook + Chrome)
 const DUPLICATE_BADGES_VIEWPORT_PADDING = 60;
@@ -57,12 +57,12 @@ interface DuplicateStackOverlayDeps {
   getConfig: () => Required<ScatterplotConfig>; // _mergedConfig (width/height/margin)
   getScales: () => { x: (n: number) => number; y: (n: number) => number } | null;
   getPlotData: () => PlotData;
-  getQuadtree: () => QuadtreeIndex;
+  getPointGridIndex: () => PointGridIndex;
   /**
-   * Slot list the quadtree was last rebuilt with (legend/filter-visible slots,
-   * scatter-plot.ts _buildQuadtree). The full-extent capture compute iterates
-   * this against the raw PlotData arrays — NEVER via quadtree traversal (~93×
-   * slower at 570k points, research doc 04). Null until the first quadtree
+   * Slot list the point index was last rebuilt with (legend/filter-visible slots,
+   * scatter-plot.ts _buildPointGridIndex). The full-extent capture compute iterates
+   * this against the raw PlotData arrays — NEVER via point index traversal (~93×
+   * slower at 570k points, research doc 04). Null until the first point index
    * build (or after an empty-data build); capture then renders no badges.
    */
   getVisibleSlots: () => ArrayLike<number> | null;
@@ -89,7 +89,7 @@ export class DuplicateStackOverlayController {
   // (#301) — data-space only; projected through the EXPORT scales per capture.
   // Cleared independently in BOTH resetState() and resetCacheKey(): the
   // enableDuplicateStackUI toggle fires only the latter (scatter-plot.ts:699).
-  // A capture landing inside the ≤1-frame window of a RAF-deferred quadtree
+  // A capture landing inside the ≤1-frame window of a RAF-deferred point index
   // rebuild sees either a stale-but-safe slot list or none (no badges that
   // instant) — self-correcting on the next capture; same latency the live
   // overlay already has (research doc 01).
@@ -323,7 +323,7 @@ export class DuplicateStackOverlayController {
     const jobId = ++this.computeJobId;
 
     // Query only the slots currently in (or near) the viewport. This is the key perf win.
-    const candidateSlots = this.deps.getQuadtree().queryByPixels(minX, minY, maxX, maxY);
+    const candidateSlots = this.deps.getPointGridIndex().queryByPixels(minX, minY, maxX, maxY);
     const scales = this.deps.getScales();
     if (!scales) {
       this.computing = false;
@@ -441,7 +441,7 @@ export class DuplicateStackOverlayController {
     const config = this.deps.getConfig();
     const viewKey = buildViewKey(transform, config.width, config.height);
 
-    // Compute visible window in "base pixel space" (same as quadtree indexing).
+    // Compute visible window in "base pixel space" (same as point index indexing).
     const win = computeViewportWindow(transform, config, DUPLICATE_BADGES_VIEWPORT_PADDING);
 
     // Ensure we have duplicate stacks for the current viewport before trying to render.

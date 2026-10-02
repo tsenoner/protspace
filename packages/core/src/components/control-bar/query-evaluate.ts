@@ -8,7 +8,13 @@ import type {
 import { isFilterGroup, ANY_VALUE } from './query-types';
 import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
 import { toInternalValue } from '../legend/config';
-import { getFirstAnnotationIndex, getProteinAnnotationIndices, isNAValue } from '@protspace/utils';
+import {
+  getFirstAnnotationIndex,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isNAValue,
+  readNumericValue,
+} from '@protspace/utils';
 
 /**
  * Resolve the FIRST string annotation value for a protein at the given index.
@@ -61,12 +67,13 @@ export function resolveAnnotationInternalValues(
 
   if (!idxData || !valuesArr) return [normalizeValue(null)];
 
-  const indices = getProteinAnnotationIndices(idxData, proteinIndex);
-  if (indices.length === 0) return [normalizeValue(null)];
+  const count = getProteinAnnotationCount(idxData, proteinIndex);
+  if (count === 0) return [normalizeValue(null)];
 
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const idx of indices) {
+  for (let k = 0; k < count; k++) {
+    const idx = getProteinAnnotationIndexAt(idxData, proteinIndex, k);
     const raw = idx >= 0 && idx < valuesArr.length ? (valuesArr[idx] ?? null) : null;
     const normalized = normalizeValue(raw);
     if (!seen.has(normalized)) {
@@ -153,7 +160,7 @@ function proteinsWithAnyValue(
     const numericValues = data.numeric_annotation_data?.[annotation];
     if (numericValues) {
       for (let i = 0; i < numProteins; i++) {
-        if ((numericValues[i] ?? null) !== null) result.add(i);
+        if (readNumericValue(numericValues, i) !== null) result.add(i);
       }
       continue;
     }
@@ -179,7 +186,8 @@ function proteinsWithAnyValue(
 
     for (let i = 0; i < numProteins; i++) {
       if (result.has(i)) continue;
-      for (const idx of getProteinAnnotationIndices(idxData, i)) {
+      for (let k = 0, count = getProteinAnnotationCount(idxData, i); k < count; k++) {
+        const idx = getProteinAnnotationIndexAt(idxData, i, k);
         // Out-of-range indices normalize to null, i.e. NOT a real value.
         if (idx >= 0 && idx < valuesArr.length && isRealValue[idx]) {
           result.add(i);
@@ -211,7 +219,7 @@ function evaluateNumericCondition(
 
   const matches = new Set<number>();
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(values[i] ?? null, condition)) {
+    if (matchesNumericValue(readNumericValue(values, i), condition)) {
       matches.add(i);
     }
   }

@@ -28,7 +28,7 @@ protein_existence        - Protein existence level
 reviewed                 - 'Swiss-Prot' if reviewed, 'TrEMBL' if unreviewed
 uniparc_id               - UniParc identifier
 cc_subcellular_location  - Subcellular location values (list)
-protein_families         - Protein family description
+protein_families         - Protein families (";"-joined, one per section)
 ec                       - EC numbers (list)
 go                       - All Gene Ontology terms (list of dicts)
 go_bp                    - GO Biological Process terms (list)
@@ -47,6 +47,7 @@ ft_signal                - Signal peptide
 xref_pdb                 - PDB cross-references (list)
 """
 
+import re
 from typing import Any
 
 import pandas as pd
@@ -129,6 +130,51 @@ AVAILABLE_PROPERTIES = [
     "ft_signal",
     "xref_pdb",
 ]
+
+# SIMILARITY texts of multi-domain entries name the section first:
+# "In the N-terminal section; belongs to the X family" (also "C-terminal",
+# "central", "2nd", "3rd", ...).
+_SECTION_QUALIFIER = re.compile(r"^in the [^;]*? section;\s*", re.IGNORECASE)
+_FAMILY_PREFIX = re.compile(r"^belongs to the\s+", re.IGNORECASE)
+
+
+def _first_sentence(text: str) -> str:
+    """Return ``text`` up to the first sentence end.
+
+    A sentence ends at a ``.`` followed by whitespace or the end of the text,
+    never at one inside parentheses, so ``(TC 3.A.3)``, ``2.4.1.x`` and
+    ``E.coli`` stay whole. If the parentheses never close, the first sentence
+    end counts regardless of depth, so an unbalanced ``(`` cannot swallow the
+    rest of the classification.
+    """
+    depth = 0
+    first_end = None
+    for index, character in enumerate(text):
+        if character == "(":
+            depth += 1
+        elif character == ")" and depth > 0:
+            depth -= 1
+        elif character == "." and text[index + 1 : index + 2].strip() == "":
+            if depth == 0:
+                return text[:index]
+            if first_end is None:
+                first_end = index
+    if depth > 0 and first_end is not None:
+        return text[:first_end]
+    return text
+
+
+def _family_name(text: str) -> str:
+    """Extract the family name from one UniProt SIMILARITY text.
+
+    ``In the 3rd section; belongs to the metallo-dependent hydrolases
+    superfamily. DHOase family. CAD subfamily`` → ``metallo-dependent
+    hydrolases superfamily``: drop the section qualifier, then the ``Belongs to
+    the`` prefix, then keep the first level of the classification.
+    """
+    name = _SECTION_QUALIFIER.sub("", text.strip(), count=1)
+    name = _FAMILY_PREFIX.sub("", name, count=1)
+    return _first_sentence(name).strip()
 
 
 class UniProtEntry:
@@ -323,25 +369,24 @@ class UniProtEntry:
 
     @property
     def protein_families(self) -> str:
-        """Protein family description, with evidence code appended when available."""
-        comments = self.get_comments("SIMILARITY")
-        for comment in comments:
+        """Every family the SIMILARITY comments name, ``;``-joined in UniProt order.
+
+        Each family carries its best evidence code (``name|EVIDENCE``). A
+        multi-domain entry has one statement per section (``In the N-terminal
+        section; belongs to the X family``), so it yields one family per
+        section; a family named twice is kept once, with its first evidence.
+        """
+        families: list[str] = []
+        seen: set[str] = set()
+        for comment in self.get_comments("SIMILARITY"):
             for text in comment.get("texts", []):
-                value = text.get("value", "")
+                name = encode_field(_family_name(text.get("value", "")))
+                if not name or name in seen:
+                    continue
+                seen.add(name)
                 ev = self._best_evidence(text.get("evidences", []))
-                prefix = "Belongs to the "
-                if value.startswith(prefix):
-                    value = value[len(prefix) :]
-                # Stop at the first dot, if any
-                if "." in value:
-                    result = value.split(".", 1)[0]
-                else:
-                    result = value
-                result = encode_field(result)
-                if ev:
-                    result = f"{result}|{ev}"
-                return result
-        return ""
+                families.append(f"{name}|{ev}" if ev else name)
+        return ";".join(families)
 
     # --- Function ---
 

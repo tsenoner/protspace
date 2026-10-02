@@ -128,7 +128,7 @@ describe('matchesNumericValue', () => {
 describe('countNumericMatches', () => {
   const data: ProtspaceData = {
     protein_ids: ['P1', 'P2', 'P3', 'P4'],
-    numeric_annotation_data: { length: [10, 20, 30, null] },
+    numeric_annotation_data: { length: new Float64Array([10, 20, 30, NaN]) },
   };
   it('counts proteins matching a ready condition', () => {
     const c = numericCondition({ operator: 'gt', min: 15 });
@@ -149,7 +149,7 @@ describe('countNumericMatches', () => {
   it('counts rows past the end of a short column as missing', () => {
     const sparse: ProtspaceData = {
       protein_ids: ['P1', 'P2', 'P3', 'P4'],
-      numeric_annotation_data: { length: [10, 20] },
+      numeric_annotation_data: { length: new Float64Array([10, 20]) },
     };
     const c = numericCondition({ operator: 'gte', min: 15, presence: [NA_VALUE] });
     // P2 (20 >= 15) plus P3 and P4, which have no value at all.
@@ -157,7 +157,9 @@ describe('countNumericMatches', () => {
   });
 
   it('counts nothing without protein_ids, matching the evaluator', () => {
-    const noIds: ProtspaceData = { numeric_annotation_data: { length: [10, 20] } };
+    const noIds: ProtspaceData = {
+      numeric_annotation_data: { length: new Float64Array([10, 20]) },
+    };
     const c = numericCondition({ operator: 'gte', min: 15 });
     expect(countNumericMatches(c, noIds)).toBe(0);
     expect(evaluateQuery([c], noIds).size).toBe(0);

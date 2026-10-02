@@ -36,13 +36,13 @@ type Internals = HTMLElement & {
   _plotData: PlotData;
   _scales: unknown;
   _transform: d3.ZoomTransform;
-  _quadtreeIndex: { hasTree: () => boolean; queryByPixels: (...a: number[]) => number[] };
+  _pointGridIndex: { isBuilt: () => boolean; queryByPixels: (...a: number[]) => number[] };
   _getPointsForRendering(): PlotData;
 };
 
 /**
  * A scatter-plot with just enough state for `_getPointsForRendering` to run: a
- * non-null `_scales`, a `_plotData` of the given length, and a quadtree that
+ * non-null `_scales`, a `_plotData` of the given length, and a point index that
  * claims to exist so the pre-fix code cannot fall through to the direct path on
  * the second disjunct of its gate.
  */
@@ -67,10 +67,10 @@ function hostWithPointCount(length: number) {
     }),
   });
 
-  el._quadtreeIndex = {
-    hasTree: () => true,
+  el._pointGridIndex = {
+    isBuilt: () => true,
     queryByPixels,
-  } as unknown as Internals['_quadtreeIndex'];
+  } as unknown as Internals['_pointGridIndex'];
 
   return { el, queryByPixels };
 }
@@ -100,11 +100,11 @@ describe('_getPointsForRendering returns a referentially stable set', () => {
       expect(second).toBe(el._plotData);
       expect(second).toBe(first);
 
-      // And nothing consulted the quadtree to get there. The pre-fix gate was
-      // `length < THRESHOLD || !hasTree()`, and the fixture always reports a
-      // ready tree — so a large dataset whose quadtree was still being built took
-      // the direct path while one whose quadtree was ready took the culled one,
-      // meaning *which* points were drawn changed with quadtree readiness, frame
+      // And nothing consulted the point index to get there. The pre-fix gate was
+      // `length < THRESHOLD || !isBuilt()`, and the fixture always reports a
+      // ready index — so a large dataset whose point index was still being built took
+      // the direct path while one whose point index was ready took the culled one,
+      // meaning *which* points were drawn changed with point index readiness, frame
       // to frame, during the rAF-deferred rebuild.
       expect(queryByPixels).not.toHaveBeenCalled();
     },
