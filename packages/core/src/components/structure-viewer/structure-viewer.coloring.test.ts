@@ -103,6 +103,28 @@ describe('structure viewer color control', () => {
     expect(colorButton(element, 'ted-domains')?.disabled).toBe(false);
   });
 
+  it('keeps the color toolbar mounted but disabled while a structure loads', async () => {
+    const structureLoad = deferred<void>();
+    mocks.loadStructureFromUrl.mockReturnValueOnce(structureLoad.promise);
+    mocks.loadStructure.mockResolvedValue(structureData(domains));
+    const element = document.createElement(
+      'protspace-structure-viewer',
+    ) as ProtspaceStructureViewer;
+    element.autoSync = false;
+    element.proteinId = 'A0A0B4U9L8';
+    document.body.appendChild(element);
+
+    await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledOnce());
+    await element.updateComplete;
+    // Rendering the toolbar up front keeps the Mol* canvas from resizing when loading ends
+    expect(element.shadowRoot?.querySelector('.color-toolbar')).not.toBeNull();
+    expect(colorButton(element, 'plddt')?.disabled).toBe(true);
+    expect(colorButton(element, 'ted-domains')?.disabled).toBe(true);
+
+    structureLoad.resolve();
+    await vi.waitFor(() => expect(colorButton(element, 'ted-domains')?.disabled).toBe(false));
+  });
+
   it('disables TED coloring when no assignments are available', async () => {
     const element = await renderViewer([]);
     const tedButton = colorButton(element, 'ted-domains');
@@ -219,12 +241,10 @@ describe('structure viewer color control', () => {
 
     expect(handleError).not.toHaveBeenCalled();
     expect(handleLoad.mock.calls.map(([event]) => event.detail.status)).not.toContain('loaded');
-    expect(element.shadowRoot?.querySelector('.color-toolbar')).toBeNull();
+    expect(colorButton(element, 'plddt')?.disabled).toBe(true);
 
     replacementStructureLoad.resolve();
-    await vi.waitFor(() =>
-      expect(element.shadowRoot?.querySelector('.color-toolbar')).not.toBeNull(),
-    );
+    await vi.waitFor(() => expect(colorButton(element, 'plddt')?.disabled).toBe(false));
   });
 
   it('does not reset a replacement viewer theme when a stale structure load finishes', async () => {

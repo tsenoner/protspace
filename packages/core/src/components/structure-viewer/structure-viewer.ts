@@ -322,6 +322,17 @@ export class ProtspaceStructureViewer extends LitElement {
     return !!this._structureData?.tedDomains.length;
   }
 
+  private get _canChangeColorMode(): boolean {
+    return !this._isLoading && !!this._viewer;
+  }
+
+  private get _tedButtonTitle(): string {
+    if (!this._canChangeColorMode) return 'Available once the structure has loaded';
+    return this._hasTedDomains
+      ? 'Color residues by TED domain'
+      : 'TED domain annotations are unavailable for this protein';
+  }
+
   private async _handleColorModeChange(mode: StructureColorMode) {
     const viewer = this._viewer;
     if (!viewer || this._colorMode === mode) return;
@@ -412,7 +423,7 @@ export class ProtspaceStructureViewer extends LitElement {
         <div class="viewer-content"></div>
       </div>
 
-      ${this._structureData && !this._isLoading && !this._error
+      ${!this._error
         ? html`
             <div class="color-toolbar">
               <span class="color-toolbar-label">Color by</span>
@@ -422,6 +433,7 @@ export class ProtspaceStructureViewer extends LitElement {
                   class="color-mode-button"
                   data-color-mode="plddt"
                   aria-pressed=${this._colorMode === 'plddt'}
+                  .disabled=${!this._canChangeColorMode}
                   @click=${() => this._handleColorModeChange('plddt')}
                 >
                   pLDDT
@@ -431,10 +443,8 @@ export class ProtspaceStructureViewer extends LitElement {
                   class="color-mode-button"
                   data-color-mode="ted-domains"
                   aria-pressed=${this._colorMode === 'ted-domains'}
-                  .disabled=${!this._hasTedDomains}
-                  title=${this._hasTedDomains
-                    ? 'Color residues by TED domain'
-                    : 'TED domain annotations are unavailable for this protein'}
+                  .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
+                  title=${this._tedButtonTitle}
                   @click=${() => this._handleColorModeChange('ted-domains')}
                 >
                   TED domains
