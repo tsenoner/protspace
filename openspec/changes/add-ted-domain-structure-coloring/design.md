@@ -27,7 +27,7 @@ The change crosses the shared data service, the Mol\* adapter, and the Lit struc
 
 `StructureService.loadStructure` will start a request to the AlphaFold DB `/api/domains/{accession}` endpoint while it loads the existing prediction and structure file. It will parse valid domain numbers and inclusive residue intervals into typed data attached to `StructureData`. The optional request has a five-second client timeout backed by an `AbortSignal`; timeout, request, shape, or segment failures produce an empty domain list while structure failures retain their current error behavior.
 
-This keeps the component on one data-loading path and avoids a second UI-owned network lifecycle. Racing the sidecar request against the bound ensures even a non-settling transport cannot gate the primary result; aborting also releases a conforming fetch implementation. Making TED a required or unbounded request was rejected because annotation availability must not regress structure viewing.
+This keeps the component on one data-loading path and avoids a second UI-owned network lifecycle. The timeout aborts the request's `AbortSignal`, which settles a stalled fetch and its body read; the same signal is aborted when the structure itself fails, so no orphaned sidecar request outlives its load. Making TED a required or unbounded request was rejected because annotation availability must not regress structure viewing.
 
 ### Encapsulate Mol\* theme details in the existing adapter
 
@@ -49,7 +49,7 @@ After a structure loads, the viewer will render a two-option “Color by” segm
 
 The control remains visible when TED is unavailable so users can distinguish unavailable annotation from a missing feature.
 
-Theme changes are queued per viewer so the most recently requested mode is applied last even when a previous Mol\* update is still in progress. Each request also captures the current viewer and a monotonic request identifier; cleanup invalidates both the pending request and queue so a completion from a replaced viewer cannot update the newly loaded structure's control state.
+The Mol\* adapter serializes theme updates per viewer, so the most recently requested mode is applied last even when a previous update is still in progress, and each queued update binds its own domain list. The control reflects the requested mode immediately and rolls back only if that request fails while it is still current. Each structure load carries a generation that cleanup advances, so a load or theme completion from a replaced viewer cannot update the newly loaded structure's state.
 
 ## Risks / Trade-offs
 

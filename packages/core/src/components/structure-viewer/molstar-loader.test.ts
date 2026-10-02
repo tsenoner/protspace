@@ -38,9 +38,8 @@ describe('Mol* color theme adapter', () => {
     vi.restoreAllMocks();
   });
 
-  it('registers TED coloring and switches loaded representations without reloading', async () => {
+  function installRawViewer(updateTheme: (...args: unknown[]) => Promise<unknown>) {
     const addTheme = vi.fn<(provider: unknown) => void>();
-    const updateTheme = vi.fn(async () => undefined);
     const components = [{ id: 'polymer' }];
     const rawViewer = {
       loadStructureFromUrl: vi.fn(async () => undefined),
@@ -60,7 +59,12 @@ describe('Mol* color theme adapter', () => {
     window.molstar = {
       Viewer: { create: vi.fn(async () => rawViewer) },
     } as unknown as typeof window.molstar;
+    return { addTheme, components, rawViewer };
+  }
 
+  it('registers TED coloring and switches loaded representations without reloading', async () => {
+    const updateTheme = vi.fn(async () => undefined);
+    const { addTheme, components, rawViewer } = installRawViewer(updateTheme);
     const viewer = await createMolstarViewer(document.createElement('div'));
 
     expect(addTheme).toHaveBeenCalledOnce();
@@ -98,5 +102,30 @@ describe('Mol* color theme adapter', () => {
 
     await viewer.setColorTheme('plddt');
     expect(updateTheme).toHaveBeenLastCalledWith(components, { color: 'plddt-confidence' });
+  });
+
+  it('applies overlapping theme requests in order', async () => {
+    let finishTedUpdate!: () => void;
+    const updateTheme = vi.fn(
+      (_components: unknown, { color }: { color: string }) =>
+        new Promise<void>((resolve) => {
+          if (color === 'plddt-confidence') resolve();
+          else finishTedUpdate = resolve;
+        }),
+    );
+    installRawViewer(updateTheme as (...args: unknown[]) => Promise<unknown>);
+    const viewer = await createMolstarViewer(document.createElement('div'));
+
+    const tedChange = viewer.setColorTheme('ted-domains', domains);
+    const plddtChange = viewer.setColorTheme('plddt');
+    await Promise.resolve();
+    expect(updateTheme).toHaveBeenCalledOnce();
+
+    finishTedUpdate();
+    await Promise.all([tedChange, plddtChange]);
+    expect(updateTheme.mock.calls.map(([, params]) => params.color)).toEqual([
+      'protspace-ted-domain',
+      'plddt-confidence',
+    ]);
   });
 });

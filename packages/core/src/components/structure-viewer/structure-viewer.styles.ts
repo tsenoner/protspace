@@ -194,16 +194,20 @@ const structureViewerStylesCore = css`
     border-radius: 0 0 6px 6px;
   }
 
-  .color-toolbar {
+  .color-toolbar,
+  .tips {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.35rem 0.5rem;
     background: var(--disabled-bg);
     border-top: 1px solid var(--protspace-viewer-border);
     color: var(--protspace-viewer-text-muted);
     font-size: 0.75rem;
+  }
+
+  .color-toolbar {
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
   }
 
   .color-toolbar-label {
@@ -214,7 +218,7 @@ const structureViewerStylesCore = css`
     display: inline-flex;
     overflow: hidden;
     border: 1px solid var(--protspace-viewer-border);
-    border-radius: 0.3rem;
+    border-radius: var(--radius);
   }
 
   .color-mode-button {
@@ -233,7 +237,7 @@ const structureViewerStylesCore = css`
 
   .color-mode-button[aria-pressed='true'] {
     background: var(--primary);
-    color: white;
+    color: var(--text-light);
   }
 
   .color-mode-button:focus-visible {
@@ -249,16 +253,9 @@ const structureViewerStylesCore = css`
   }
 
   .tips {
-    display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     padding: 0.2rem 0.5rem;
-    background: var(--disabled-bg);
     column-gap: 5px;
-    border-top: 1px solid var(--protspace-viewer-border);
-    font-size: 0.75rem;
-    color: var(--protspace-viewer-text-muted);
     border-radius: 0 0 6px 6px;
   }
 

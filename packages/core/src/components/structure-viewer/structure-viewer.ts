@@ -38,9 +38,7 @@ export class ProtspaceStructureViewer extends LitElement {
   @state() private _viewer: MolstarViewer | null = null;
   @state() private _structureData: StructureData | null = null;
   @state() private _colorMode: StructureColorMode = 'plddt';
-  private _requestedColorMode: StructureColorMode = 'plddt';
-  private _colorModeRequestId = 0;
-  private _colorModeChangeQueue: Promise<void> = Promise.resolve();
+  private _loadGeneration = 0;
   private _scatterplotElement: Element | null = null;
 
   // Refs
@@ -156,34 +154,48 @@ export class ProtspaceStructureViewer extends LitElement {
       return;
     }
 
+    // Clean up any existing viewer; this also invalidates any load still in flight
+    this._cleanup();
+    const loadGeneration = this._loadGeneration;
+    const isStale = () => loadGeneration !== this._loadGeneration;
+
     this._isLoading = true;
     this._error = null;
-    this._structureData = null;
-    this._colorMode = 'plddt';
 
     // Dispatch loading event
     this._dispatchStructureLoadEvent('loading');
 
     try {
-      // Clean up any existing viewer
-      this._cleanup();
-
       // Use service to load structure data
-      this._structureData = await StructureService.loadStructure(this.proteinId);
+      const structureData = await StructureService.loadStructure(this.proteinId);
+      if (isStale()) {
+        this._revokeBlobUrl(structureData);
+        return;
+      }
+      this._structureData = structureData;
 
       // Create Mol* viewer
       await this.updateComplete;
+      if (isStale()) return;
       if (!this._viewerContainer) {
         throw new Error('Viewer container not available');
       }
-      this._viewer = await createMolstarViewer(this._viewerContainer);
+      const viewer = await createMolstarViewer(this._viewerContainer);
+      if (isStale()) {
+        this._disposeViewer(viewer);
+        return;
+      }
+      this._viewer = viewer;
 
       // Load structure into viewer based on source
-      await this._displayStructure(this._structureData);
+      await this._displayStructure(structureData);
+      if (isStale()) return;
 
       this._isLoading = false;
       this._dispatchStructureLoadEvent('loaded');
     } catch (error) {
+      // A load replaced or closed mid-flight must not surface an error for the current state
+      if (isStale()) return;
       const originalError = error instanceof Error ? error : undefined;
       const formattedId = this.proteinId?.split('.')[0] ?? this.proteinId ?? '';
       const genericMessage = `No 3D structure was found for ${formattedId}.`;
@@ -236,16 +248,12 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   private _cleanup() {
-    this._requestedColorMode = 'plddt';
-    this._colorModeRequestId += 1;
-    this._colorModeChangeQueue = Promise.resolve();
+    this._loadGeneration += 1;
+    this._isLoading = false;
+    this._colorMode = 'plddt';
 
     if (this._viewer) {
-      try {
-        this._viewer.dispose();
-      } catch (error) {
-        console.warn('[StructureViewer] Error disposing viewer:', error);
-      }
+      this._disposeViewer(this._viewer);
       this._viewer = null;
     }
 
@@ -254,15 +262,26 @@ export class ProtspaceStructureViewer extends LitElement {
     }
 
     // Clean up blob URL to prevent memory leaks
-    if (this._structureData?.url && this._structureData.url.startsWith('blob:')) {
+    this._revokeBlobUrl(this._structureData);
+    this._structureData = null;
+  }
+
+  private _disposeViewer(viewer: MolstarViewer) {
+    try {
+      viewer.dispose();
+    } catch (error) {
+      console.warn('[StructureViewer] Error disposing viewer:', error);
+    }
+  }
+
+  private _revokeBlobUrl(structureData: StructureData | null) {
+    if (structureData?.url && structureData.url.startsWith('blob:')) {
       try {
-        URL.revokeObjectURL(this._structureData.url);
+        URL.revokeObjectURL(structureData.url);
       } catch (error) {
         console.warn('[StructureViewer] Error revoking blob URL:', error);
       }
     }
-
-    this._structureData = null;
   }
 
   private _dispatchStructureLoadEvent(status: 'loading' | 'loaded') {
@@ -299,39 +318,25 @@ export class ProtspaceStructureViewer extends LitElement {
     this.close(); // Use internal close method
   }
 
+  private get _hasTedDomains(): boolean {
+    return !!this._structureData?.tedDomains.length;
+  }
+
   private async _handleColorModeChange(mode: StructureColorMode) {
     const viewer = this._viewer;
-    if (!viewer || this._requestedColorMode === mode) return;
-    if (mode === 'ted-domains' && !this._structureData?.tedDomains.length) return;
+    if (!viewer || this._colorMode === mode) return;
+    if (mode === 'ted-domains' && !this._hasTedDomains) return;
 
-    const tedDomains = this._structureData?.tedDomains ?? [];
-    this._requestedColorMode = mode;
-    const requestId = ++this._colorModeRequestId;
-
-    const applyColorMode = async () => {
-      if (this._viewer !== viewer || requestId !== this._colorModeRequestId) return;
-
-      try {
-        if (mode === 'ted-domains') {
-          await viewer.setColorTheme(mode, tedDomains);
-        } else {
-          await viewer.setColorTheme(mode);
-        }
-
-        if (this._viewer === viewer && requestId === this._colorModeRequestId) {
-          this._colorMode = mode;
-        }
-      } catch (error) {
-        if (this._viewer === viewer && requestId === this._colorModeRequestId) {
-          this._requestedColorMode = this._colorMode;
-        }
-        console.warn('[StructureViewer] Failed to change structure color mode:', error);
-      }
-    };
-
-    const colorModeChange = this._colorModeChangeQueue.then(applyColorMode, applyColorMode);
-    this._colorModeChangeQueue = colorModeChange;
-    await colorModeChange;
+    // The control reflects the request immediately; the adapter applies requests in order
+    const previousMode = this._colorMode;
+    this._colorMode = mode;
+    try {
+      await viewer.setColorTheme(mode, this._structureData?.tedDomains);
+    } catch (error) {
+      // Only roll back if neither a newer request nor a new structure has taken over
+      if (this._viewer === viewer && this._colorMode === mode) this._colorMode = previousMode;
+      console.warn('[StructureViewer] Failed to change structure color mode:', error);
+    }
   }
 
   render() {
@@ -434,10 +439,10 @@ export class ProtspaceStructureViewer extends LitElement {
                   class="color-mode-button"
                   data-color-mode="ted-domains"
                   aria-pressed=${this._colorMode === 'ted-domains'}
-                  .disabled=${this._structureData.tedDomains.length === 0}
-                  title=${this._structureData.tedDomains.length === 0
-                    ? 'TED domain annotations are unavailable for this protein'
-                    : 'Color residues by TED domain'}
+                  .disabled=${!this._hasTedDomains}
+                  title=${this._hasTedDomains
+                    ? 'Color residues by TED domain'
+                    : 'TED domain annotations are unavailable for this protein'}
                   @click=${() => this._handleColorModeChange('ted-domains')}
                 >
                   TED domains

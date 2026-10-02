@@ -20,6 +20,7 @@ vi.mock('./molstar-loader', () => ({
 
 import './structure-viewer';
 import type { ProtspaceStructureViewer } from './structure-viewer';
+import type { StructureColorMode } from './molstar-loader';
 
 const domains: TedDomain[] = [
   { domainNumber: 1, segments: [{ start: 10, end: 50 }] },
@@ -44,6 +45,19 @@ function deferred<T>() {
     resolve = promiseResolve;
   });
   return { promise, resolve };
+}
+
+function colorButton(element: ProtspaceStructureViewer, mode: StructureColorMode) {
+  return element.shadowRoot?.querySelector<HTMLButtonElement>(`[data-color-mode="${mode}"]`);
+}
+
+function expectActiveColorMode(element: ProtspaceStructureViewer, mode: StructureColorMode) {
+  const inactiveMode: StructureColorMode = mode === 'plddt' ? 'ted-domains' : 'plddt';
+  expect(colorButton(element, mode)?.getAttribute('aria-pressed')).toBe('true');
+  expect(colorButton(element, inactiveMode)?.getAttribute('aria-pressed')).toBe('false');
+  expect(element.shadowRoot?.querySelector('.color-description')?.textContent).toContain(
+    mode === 'plddt' ? 'pLDDT confidence' : 'TED domains',
+  );
 }
 
 async function renderViewer(tedDomains: TedDomain[]) {
@@ -82,26 +96,14 @@ describe('structure viewer color control', () => {
 
   it('defaults to pLDDT and enables TED coloring when domains exist', async () => {
     const element = await renderViewer(domains);
-    const plddtButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="plddt"]',
-    );
-    const tedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
 
-    expect(plddtButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(tedButton?.getAttribute('aria-pressed')).toBe('false');
-    expect(tedButton?.disabled).toBe(false);
-    expect(element.shadowRoot?.querySelector('.color-description')?.textContent).toContain(
-      'pLDDT confidence',
-    );
+    expectActiveColorMode(element, 'plddt');
+    expect(colorButton(element, 'ted-domains')?.disabled).toBe(false);
   });
 
   it('disables TED coloring when no assignments are available', async () => {
     const element = await renderViewer([]);
-    const tedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
+    const tedButton = colorButton(element, 'ted-domains');
 
     expect(tedButton?.disabled).toBe(true);
     expect(tedButton?.title).toContain('unavailable');
@@ -109,31 +111,18 @@ describe('structure viewer color control', () => {
 
   it('switches the loaded representation to TED and back to pLDDT', async () => {
     const element = await renderViewer(domains);
-    const plddtButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="plddt"]',
-    );
-    const tedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
 
-    tedButton?.click();
+    colorButton(element, 'ted-domains')?.click();
     await vi.waitFor(() =>
       expect(mocks.setColorTheme).toHaveBeenCalledWith('ted-domains', domains),
     );
     await element.updateComplete;
-    expect(tedButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(element.shadowRoot?.querySelector('.color-description')?.textContent).toContain(
-      'TED domains',
-    );
+    expectActiveColorMode(element, 'ted-domains');
 
-    plddtButton?.click();
-    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt'));
+    colorButton(element, 'plddt')?.click();
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt', domains));
     await element.updateComplete;
-    expect(plddtButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(tedButton?.getAttribute('aria-pressed')).toBe('false');
-    expect(element.shadowRoot?.querySelector('.color-description')?.textContent).toContain(
-      'pLDDT confidence',
-    );
+    expectActiveColorMode(element, 'plddt');
   });
 
   it('honors a rapid return to pLDDT while TED coloring is still applying', async () => {
@@ -142,27 +131,28 @@ describe('structure viewer color control', () => {
     mocks.setColorTheme.mockImplementation((mode) =>
       mode === 'ted-domains' ? tedChange.promise : Promise.resolve(),
     );
-    const plddtButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="plddt"]',
-    );
-    const tedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
 
-    tedButton?.click();
+    colorButton(element, 'ted-domains')?.click();
     await vi.waitFor(() =>
       expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
     );
-    plddtButton?.click();
+    colorButton(element, 'plddt')?.click();
     tedChange.resolve();
 
-    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt'));
+    await vi.waitFor(() => expect(mocks.setColorTheme).toHaveBeenLastCalledWith('plddt', domains));
     await element.updateComplete;
-    expect(plddtButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(tedButton?.getAttribute('aria-pressed')).toBe('false');
-    expect(element.shadowRoot?.querySelector('.color-description')?.textContent).toContain(
-      'pLDDT confidence',
-    );
+    expectActiveColorMode(element, 'plddt');
+  });
+
+  it('restores the previous mode when a theme change fails', async () => {
+    const element = await renderViewer(domains);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.setColorTheme.mockRejectedValueOnce(new Error('theme failed'));
+
+    colorButton(element, 'ted-domains')?.click();
+    await vi.waitFor(() => expect(console.warn).toHaveBeenCalledOnce());
+    await element.updateComplete;
+    expectActiveColorMode(element, 'plddt');
   });
 
   it('ignores a completed color change from a replaced viewer', async () => {
@@ -171,11 +161,8 @@ describe('structure viewer color control', () => {
     mocks.setColorTheme.mockImplementation((mode) =>
       mode === 'ted-domains' ? tedChange.promise : Promise.resolve(),
     );
-    const tedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
 
-    tedButton?.click();
+    colorButton(element, 'ted-domains')?.click();
     await vi.waitFor(() =>
       expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
     );
@@ -190,15 +177,9 @@ describe('structure viewer color control', () => {
     await Promise.resolve();
     await element.updateComplete;
 
-    const replacementPlddtButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="plddt"]',
-    );
-    const replacementTedButton = element.shadowRoot?.querySelector<HTMLButtonElement>(
-      '[data-color-mode="ted-domains"]',
-    );
-    expect(replacementPlddtButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(replacementTedButton?.getAttribute('aria-pressed')).toBe('false');
-    expect(replacementTedButton?.disabled).toBe(true);
+    expect(colorButton(element, 'plddt')?.getAttribute('aria-pressed')).toBe('true');
+    expect(colorButton(element, 'ted-domains')?.getAttribute('aria-pressed')).toBe('false');
+    expect(colorButton(element, 'ted-domains')?.disabled).toBe(true);
   });
 
   it('does not report an error when a structure finishes after the viewer closes', async () => {
@@ -215,6 +196,35 @@ describe('structure viewer color control', () => {
     expect(handleError).not.toHaveBeenCalled();
   });
 
+  it('ignores a stale structure load that settles while its replacement is loading', async () => {
+    const staleStructureLoad = deferred<void>();
+    const replacementStructureLoad = deferred<void>();
+    mocks.loadStructureFromUrl
+      .mockReturnValueOnce(staleStructureLoad.promise)
+      .mockReturnValueOnce(replacementStructureLoad.promise);
+    const element = await renderViewer(domains);
+    const handleError = vi.fn();
+    const handleLoad = vi.fn();
+    element.addEventListener('structure-error', handleError);
+    element.addEventListener('structure-load', handleLoad);
+
+    element.proteinId = 'P12345';
+    await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledTimes(2));
+
+    staleStructureLoad.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await element.updateComplete;
+
+    expect(handleError).not.toHaveBeenCalled();
+    expect(handleLoad.mock.calls.map(([event]) => event.detail.status)).not.toContain('loaded');
+    expect(element.shadowRoot?.querySelector('.color-toolbar')).toBeNull();
+
+    replacementStructureLoad.resolve();
+    await vi.waitFor(() =>
+      expect(element.shadowRoot?.querySelector('.color-toolbar')).not.toBeNull(),
+    );
+  });
+
   it('does not reset a replacement viewer theme when a stale structure load finishes', async () => {
     const staleStructureLoad = deferred<void>();
     mocks.loadStructureFromUrl.mockReturnValueOnce(staleStructureLoad.promise);
@@ -222,15 +232,9 @@ describe('structure viewer color control', () => {
 
     element.proteinId = 'P12345';
     await vi.waitFor(() => expect(mocks.loadStructureFromUrl).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() =>
-      expect(
-        element.shadowRoot?.querySelector<HTMLButtonElement>('[data-color-mode="ted-domains"]'),
-      ).not.toBeNull(),
-    );
+    await vi.waitFor(() => expect(colorButton(element, 'ted-domains')).not.toBeNull());
 
-    element.shadowRoot
-      ?.querySelector<HTMLButtonElement>('[data-color-mode="ted-domains"]')
-      ?.click();
+    colorButton(element, 'ted-domains')?.click();
     await vi.waitFor(() =>
       expect(mocks.setColorTheme).toHaveBeenLastCalledWith('ted-domains', domains),
     );

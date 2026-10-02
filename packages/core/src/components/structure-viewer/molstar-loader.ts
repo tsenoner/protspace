@@ -213,7 +213,7 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
   // Install fetch interceptor to suppress validation server errors
   installValidationInterceptor();
 
-  const viewer = (await window.molstar?.Viewer.create(container, {
+  const viewer = await window.molstar?.Viewer.create(container, {
     layoutIsExpanded: false,
     layoutShowControls: false,
     layoutShowRemoteState: false,
@@ -223,7 +223,7 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
     viewportShowExpand: false,
     viewportShowSelectionMode: false,
     viewportShowAnimation: false,
-  })) as unknown as RawMolstarViewer | undefined;
+  });
 
   if (!viewer) {
     throw new Error('Failed to initialize Mol* viewer');
@@ -234,19 +234,26 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
     createTedColorThemeProvider(() => tedDomains),
   );
 
+  const applyColorTheme = async (mode: StructureColorMode, domains: TedDomain[]) => {
+    tedDomains = domains;
+    const color = mode === 'ted-domains' ? TED_COLOR_THEME_NAME : 'plddt-confidence';
+    for (const structure of viewer.plugin.managers.structure.hierarchy.current.structures) {
+      await viewer.plugin.managers.structure.component.updateRepresentationsTheme(
+        structure.components,
+        { color },
+      );
+    }
+  };
+
+  // Theme updates are serialized so the most recently requested mode is applied last
+  let colorThemeQueue: Promise<void> = Promise.resolve();
+
   return {
     loadStructureFromUrl: (...args) => viewer.loadStructureFromUrl(...args),
-    setColorTheme: async (mode, domains = []) => {
-      tedDomains = domains;
-      const color = mode === 'ted-domains' ? TED_COLOR_THEME_NAME : 'plddt-confidence';
-      const structures = viewer.plugin.managers.structure.hierarchy.current.structures;
-
-      for (const structure of structures) {
-        await viewer.plugin.managers.structure.component.updateRepresentationsTheme(
-          structure.components,
-          { color },
-        );
-      }
+    setColorTheme: (mode, domains = []) => {
+      const apply = () => applyColorTheme(mode, domains);
+      colorThemeQueue = colorThemeQueue.then(apply, apply);
+      return colorThemeQueue;
     },
     dispose: () => viewer.dispose(),
   };
