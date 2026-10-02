@@ -36,7 +36,8 @@ export class StructureService {
    */
   public static async loadStructure(proteinId: string): Promise<StructureData> {
     const formattedId = this.formatProteinId(proteinId);
-    const tedDomainsPromise = this.loadTedDomains(formattedId);
+    const tedAbortController = new AbortController();
+    const tedDomainsPromise = this.loadTedDomains(formattedId, tedAbortController);
 
     // Fetch prediction data from AlphaFold API
     const apiUrl = `${this.ALPHAFOLD_API_URL}/${formattedId}`;
@@ -105,6 +106,8 @@ export class StructureService {
         },
       };
     } catch (error) {
+      // The optional TED sidecar request is useless once the structure itself failed
+      tedAbortController.abort();
       // Only log unexpected errors (not 404s, which are expected for proteins without structures)
       if (error instanceof Error && !error.message.includes('404')) {
         console.warn(
@@ -116,61 +119,44 @@ export class StructureService {
     }
   }
 
-  private static async loadTedDomains(proteinId: string): Promise<TedDomain[]> {
-    const abortController = new AbortController();
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<TedDomain[]>((resolve) => {
-      timeoutId = setTimeout(() => {
-        abortController.abort();
-        resolve([]);
-      }, this.TED_DOMAINS_TIMEOUT_MS);
-    });
-
-    const requestPromise = this.requestTedDomains(proteinId, abortController.signal);
-    try {
-      return await Promise.race([requestPromise, timeoutPromise]);
-    } finally {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-    }
-  }
-
-  private static async requestTedDomains(
+  private static async loadTedDomains(
     proteinId: string,
-    signal: AbortSignal,
+    abortController: AbortController,
   ): Promise<TedDomain[]> {
+    const timeoutId = setTimeout(() => abortController.abort(), this.TED_DOMAINS_TIMEOUT_MS);
     try {
-      const response = await fetch(`${this.TED_DOMAINS_API_URL}/${proteinId}`, { signal });
+      const response = await fetch(`${this.TED_DOMAINS_API_URL}/${proteinId}`, {
+        signal: abortController.signal,
+      });
       if (!response.ok) return [];
 
-      const payload: unknown = await response.json();
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
-      const annotations = (payload as { annotations?: unknown }).annotations;
+      // Later checks reject every malformed shape, so no separate object guards are needed
+      const payload = (await response.json()) as { annotations?: unknown } | null;
+      const annotations = payload?.annotations;
       if (!Array.isArray(annotations)) return [];
 
       return annotations
-        .map((entry) => this.parseTedDomain(entry))
+        .map((entry: TedDomainApiEntry | null) => this.parseTedDomain(entry))
         .filter((domain): domain is TedDomain => domain !== null)
         .sort((left, right) => left.domainNumber - right.domainNumber);
     } catch {
       return [];
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
-  private static parseTedDomain(value: unknown): TedDomain | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-
-    const entry = value as TedDomainApiEntry;
-    const domainNumber = Number(entry.ted_domain_no);
-    if (!Number.isInteger(domainNumber) || domainNumber < 1 || !Array.isArray(entry.segments)) {
+  private static parseTedDomain(entry: TedDomainApiEntry | null): TedDomain | null {
+    const domainNumber = Number(entry?.ted_domain_no);
+    if (!Number.isInteger(domainNumber) || domainNumber < 1 || !Array.isArray(entry?.segments)) {
       return null;
     }
 
     const segments = entry.segments
-      .filter(
-        (segment): segment is TedDomainApiSegment =>
-          !!segment && typeof segment === 'object' && !Array.isArray(segment),
-      )
-      .map((segment) => ({ start: Number(segment.af_start), end: Number(segment.af_end) }))
+      .map((segment: TedDomainApiSegment | null) => ({
+        start: Number(segment?.af_start),
+        end: Number(segment?.af_end),
+      }))
       .filter(({ start, end }) => start > 0 && start <= end);
 
     return segments.length > 0 ? { domainNumber, segments } : null;

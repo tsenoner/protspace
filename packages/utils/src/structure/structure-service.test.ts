@@ -6,6 +6,19 @@ const prediction = {
   modelVersion: 'v6',
 };
 
+/** Stubs AlphaFold with an available structure; only the TED domains response varies. */
+function stubFetch(domainsResponse: (init?: RequestInit) => Response | Promise<Response>) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/api/prediction/')) return Response.json([prediction]);
+    if (url.includes('/api/domains/')) return domainsResponse(init);
+    if (url === prediction.cifUrl) return new Response('data_AFDB_model');
+    return new Response(null, { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
 describe('StructureService TED domains', () => {
   beforeEach(() => {
     vi.stubGlobal('URL', {
@@ -21,38 +34,27 @@ describe('StructureService TED domains', () => {
   });
 
   it('loads valid TED domains and preserves discontinuous residue segments', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/prediction/')) {
-        return Response.json([prediction]);
-      }
-      if (url.includes('/api/domains/')) {
-        return Response.json({
-          total: 2,
-          annotations: [
-            {
-              ted_domain_no: 1,
-              cath_label: '-',
-              segments: [
-                { af_start: 33, af_end: 42, segment_id: 1 },
-                { af_start: 54, af_end: 76, segment_id: 2 },
-                { af_start: 107, af_end: 160, segment_id: 3 },
-              ],
-            },
-            {
-              ted_domain_no: 2,
-              cath_label: '3.40.390.10',
-              segments: [{ af_start: 194, af_end: 396, segment_id: 1 }],
-            },
-          ],
-        });
-      }
-      if (url === prediction.cifUrl) {
-        return new Response('data_AFDB_model');
-      }
-      return new Response(null, { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = stubFetch(() =>
+      Response.json({
+        total: 2,
+        annotations: [
+          {
+            ted_domain_no: 1,
+            cath_label: '-',
+            segments: [
+              { af_start: 33, af_end: 42, segment_id: 1 },
+              { af_start: 54, af_end: 76, segment_id: 2 },
+              { af_start: 107, af_end: 160, segment_id: 3 },
+            ],
+          },
+          {
+            ted_domain_no: 2,
+            cath_label: '3.40.390.10',
+            segments: [{ af_start: 194, af_end: 396, segment_id: 1 }],
+          },
+        ],
+      }),
+    );
 
     const result = await StructureService.loadStructure('A0A0B4U9L8.1');
 
@@ -90,16 +92,7 @@ describe('StructureService TED domains', () => {
       }),
     ],
   ])('keeps the structure available with no domains for %s', async (_label, domainResponse) => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/prediction/')) return Response.json([prediction]);
-        if (url.includes('/api/domains/')) return domainResponse;
-        if (url === prediction.cifUrl) return new Response('data_AFDB_model');
-        return new Response(null, { status: 404 });
-      }),
-    );
+    stubFetch(() => domainResponse);
 
     await expect(StructureService.loadStructure('A0A0B4U9L8')).resolves.toMatchObject({
       url: 'blob:structure',
@@ -107,24 +100,35 @@ describe('StructureService TED domains', () => {
     });
   });
 
+  it('aborts the TED request when the structure itself is unavailable', async () => {
+    let tedSignal: AbortSignal | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/api/domains/')) {
+          tedSignal = init?.signal instanceof AbortSignal ? init.signal : null;
+          return new Promise<Response>(() => {});
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
+    );
+
+    await expect(StructureService.loadStructure('A0A0B4U9L8')).rejects.toThrow(
+      'AlphaFold structure not available',
+    );
+    expect(tedSignal?.aborted).toBe(true);
+  });
+
   it('keeps the structure available when the TED request never settles', async () => {
     vi.useFakeTimers();
     let tedSignal: AbortSignal | null = null;
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/api/prediction/')) {
-        return Promise.resolve(Response.json([prediction]));
-      }
-      if (url.includes('/api/domains/')) {
-        tedSignal = init?.signal instanceof AbortSignal ? init.signal : null;
-        return new Promise<Response>(() => {});
-      }
-      if (url === prediction.cifUrl) {
-        return Promise.resolve(new Response('data_AFDB_model'));
-      }
-      return Promise.resolve(new Response(null, { status: 404 }));
+    stubFetch((init) => {
+      tedSignal = init?.signal instanceof AbortSignal ? init.signal : null;
+      // Like real fetch: settles only when aborted
+      return new Promise<Response>((_resolve, reject) => {
+        tedSignal?.addEventListener('abort', () => reject(tedSignal?.reason));
+      });
     });
-    vi.stubGlobal('fetch', fetchMock);
 
     let result: Awaited<ReturnType<typeof StructureService.loadStructure>> | undefined;
     void StructureService.loadStructure('A0A0B4U9L8').then((value) => {
