@@ -23,7 +23,11 @@
 [build]
 uniprot_release = "2026_03"       # annotations are refreshed at this release; the build stops if UniProt serves another
 release_tag = "showcase-2026_03"  # GitHub release hosting every example but the demo (D8)
-file_pattern = "{id}_{release}.parquetbundle"
+# Every file is written as parquetbundle v3. The v2 files published under
+# {id}_{release}.parquetbundle stay as they are (a release file name never carries
+# other bytes), so the v3 files take new names in the same release.
+file_pattern = "{id}_{release}_v3.parquetbundle"
+checksums_file = "SHA256SUMS_v3"  # the release's SHA256SUMS lists the v2 files; stage-release adds this one
 out_root = "{home}/protspace-showcase/2026_03"
 catalog = "{repo}/apps/web/src/explore/example-datasets.ts"
 github_repo = "tsenoner/protspace"

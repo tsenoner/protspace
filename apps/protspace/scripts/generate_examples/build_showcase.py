@@ -10,8 +10,13 @@ itself. Recipes live in ``showcase.toml``; the README next to this file has usag
 examples per dataset.
 
 Every protspace step runs as a subprocess of the CLI checkout given by
-``--cli-root`` (``uv run --frozen --project <cli-root> protspace …``), so this script
-does not depend on which branch it is run from. Inputs are read-only; everything is
+``--cli-root`` (``uv run --frozen --project <cli-root> protspace …``), so the data
+does not depend on which branch this script is run from. The bundle *container* is
+the exception: this script reads and writes it with this repository's own protspace
+package (``protspace.data.io.bundle``, the one implementation of the format), so it
+reads a file of any container version (a legacy v1/v2 paper source, or the
+intermediates of a CLI from before format v3) and always writes the final bundle as
+v3, whatever version the CLI checkout writes. Inputs are read-only; everything is
 written under the output root (default ``~/protspace-showcase/2026_03``), which may
 not lie inside the repository or an input directory.
 
@@ -59,6 +64,27 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protspace.data.annotations.encoding import (
+    BUNDLE_FORMAT_VERSION,
+    decode_field,
+    encode_field,
+    encode_legacy_cell,
+    read_format_version,
+    stamp_format_version,
+)
+from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
+from protspace.data.io.bundle import (
+    read_settings_from_bytes,
+    read_tables,
+    replace_annotations_in_bundle,
+    replace_settings_in_bundle,
+)
+from protspace.data.io.bundle_v3 import (
+    CONTAINER_VERSION,
+    read_container_version,
+    read_part,
+)
+
 logger = logging.getLogger("build_showcase")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -68,16 +94,17 @@ DEFAULT_CONFIG = SCRIPT_DIR / "showcase.toml"
 # writes it; stage-release stages a new one through that writer.
 EXAMPLE_MANIFEST = REPO_ROOT / "apps/web/src/explore/example-manifest.ts"
 GITHUB_REPO = "tsenoner/protspace"
+#: ``[build] file_pattern`` when showcase.toml sets none. The ``_v3`` suffix keeps a
+#: v3 file from taking the name of a published v2 asset: a release file name never
+#: carries different bytes.
+DEFAULT_FILE_PATTERN = "{id}_{release}_v3.parquetbundle"
 
-DELIMITER = b"---PARQUET_DELIMITER---"
 ID_COLUMN = "protein_id"
 INTERNAL_COLUMNS = ("sequence", "organism_id")
 LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
 CLUSTER_PREFIX = "cluster_"
 PRED_MARKER = "__pred_"
-FORMAT_VERSION_KEY = b"protspace_format_version"
-FORMAT_VERSION = b"2"
 KINDS = ("paper-refresh", "demo-refresh", "embed-build")
 
 #: What the web app reads as missing (W10): MISSING_VALUE_TOKENS in
@@ -147,62 +174,23 @@ class BuildError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Bundle format v2 value encoding (mirrors protspace.data.annotations.encoding;
-# test_build_showcase.py pins the two against each other)
+# Annotation cell grammar (protspace.data.annotations.encoding)
+#
+# Two versions meet in this script. The *container* version of a bundle (3, or
+# none for a legacy v1/v2 file) is part 1's ``protspace_container_version``; the
+# *cell grammar* of an annotations table (1 = legacy raw text, 2 = percent-encoded)
+# is its ``protspace_format_version`` stamp. Every table the build handles is
+# v2-shaped: a v3 file's annotations come back from protspace's reader decoded into
+# grammar-2 cells, so the gates and reports below parse strings in every case.
 # ---------------------------------------------------------------------------
-
-_RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}
-_ENCODE_TABLE = str.maketrans({c: f"%{ord(c):02X}" for c in _RESERVED})
-_DECODE_RE = re.compile(r"%([0-9A-Fa-f]{2})")
-
-
-def encode_field(text: str) -> str:
-    """Percent-encode the reserved set inside one free-text token."""
-    return text.translate(_ENCODE_TABLE)
-
-
-def decode_field(text: str) -> str:
-    """Inverse of :func:`encode_field`; a no-op on text without ``%``."""
-    if "%" not in text:
-        return text
-    return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
-
-
-def _split_legacy_hits(value: str) -> list[str]:
-    parts: list[str] = []
-    depth = 0
-    start = 0
-    for index, character in enumerate(value):
-        if character == "(":
-            depth += 1
-        elif character == ")" and depth > 0:
-            depth -= 1
-        elif character == ";" and depth == 0:
-            parts.append(value[start:index])
-            start = index + 1
-    parts.append(value[start:])
-    return value.split(";") if depth != 0 else parts
-
-
-def encode_legacy_cell(value: str) -> str:
-    """Re-emit one v1 categorical cell in the v2 grammar (same parsed hits)."""
-    encoded_hits: list[str] = []
-    for hit in _split_legacy_hits(value):
-        label, separator, suffix = hit.partition("|")
-        encoded = encode_field(label)
-        if separator:
-            encoded = f"{encoded}|{encode_field(suffix)}"
-        encoded_hits.append(encoded)
-    return ";".join(encoded_hits)
 
 
 def format_version(table: pa.Table) -> int:
-    """The annotations table's wire-format version (unstamped = legacy v1)."""
-    metadata = table.schema.metadata or {}
-    try:
-        return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
-    except (TypeError, ValueError):
-        return 1
+    """The annotations table's cell-grammar version (unstamped = legacy v1).
+
+    Not the container version: see :attr:`Bundle.container`.
+    """
+    return read_format_version(table)
 
 
 def migrate_v1_columns(
@@ -292,15 +280,25 @@ def is_missing(cell: Any) -> bool:
 
 # ---------------------------------------------------------------------------
 # Bundle I/O
+#
+# The container is protspace's (``protspace.data.io.bundle``): its reader checks
+# the part layout and decodes a v3 core, its writers encode one, so this script
+# has no bundle codec of its own. What it reads it reads in the v2 shape the gates
+# parse; what it writes is always a v3 container.
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class Bundle:
-    """The parts of a ``.parquetbundle``.
+    """A ``.parquetbundle`` as the build reads it.
 
-    ``raw_parts`` keeps the original bytes, so a part this script does not change
-    (projections, statistics) is rewritten byte-for-byte.
+    ``annotations``, ``metadata`` and ``data`` are the v2-shaped tables
+    (string annotation cells stamped with their cell grammar, long-format
+    projections) whatever the container: protspace's reader decodes a v3 core
+    into them and reads a legacy (v1/v2) one as stored. ``container`` is part 1's
+    ``protspace_container_version`` (3), or ``None`` for a legacy file.
+    ``raw_parts`` are the file's parts as split, so :func:`split_bundle` can
+    write a legacy file's parts byte for byte.
     """
 
     annotations: pa.Table
@@ -308,70 +306,66 @@ class Bundle:
     data: pa.Table
     settings: dict | None = None
     statistics: pa.Table | None = None
+    container: int | None = None
     raw_parts: list[bytes] = field(default_factory=list)
 
 
-def split_parts(blob: bytes) -> list[bytes]:
-    parts = blob.split(DELIMITER)
-    if not 3 <= len(parts) <= 5:
-        raise BuildError(f"expected 3 to 5 bundle parts, found {len(parts)}")
-    return parts
+@contextlib.contextmanager
+def protspace_io_quiet():
+    """Mute protspace's bundle I/O log lines (``protspace.data.io.bundle``) for a call.
 
-
-def _read_table(part: bytes) -> pa.Table:
-    return pq.read_table(io.BytesIO(part))
-
-
-def _settings_from_part(part: bytes) -> dict:
-    table = _read_table(part)
-    return json.loads(table.column("settings_json")[0].as_py())
+    The build reads legacy files on purpose (the paper's pinned source bundles,
+    the intermediates of a CLI from before format v3), so protspace's deprecation
+    warning would print on every read and suggest converting a pinned input; its
+    writers' INFO lines name staging files. The build logs what it read and wrote
+    itself, and the v3 codec's own warnings (``protspace.data.io.bundle_v3``)
+    still print.
+    """
+    io_logger = logging.getLogger("protspace.data.io.bundle")
+    level = io_logger.level
+    io_logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        io_logger.setLevel(level)
 
 
 def read_bundle(path: Path) -> Bundle:
-    parts = split_parts(Path(path).read_bytes())
-    settings = _settings_from_part(parts[3]) if len(parts) >= 4 and parts[3] else None
-    statistics = _read_table(parts[4]) if len(parts) == 5 and parts[4] else None
+    """Read a bundle of any container version with protspace's reader.
+
+    ``read_tables`` checks the container (six parts if and only if part 1
+    declares container version 3; three to five for a legacy file) and decodes a
+    v3 core. The settings and statistics slots are the fourth and fifth parts in
+    every container version, empty when absent.
+    """
+    blob = Path(path).read_bytes()
+    try:
+        with protspace_io_quiet():
+            annotations, metadata, data = read_tables(blob)
+    except ValueError as error:
+        raise BuildError(f"{path} is not a readable parquetbundle: {error}") from None
+    parts = blob.split(DELIMITER)
+    settings = parts[3] if len(parts) > 3 and parts[3] else None
+    statistics = parts[4] if len(parts) > 4 and parts[4] else None
     return Bundle(
-        annotations=_read_table(parts[0]),
-        metadata=_read_table(parts[1]),
-        data=_read_table(parts[2]),
-        settings=settings,
-        statistics=statistics,
+        annotations=annotations,
+        metadata=metadata,
+        data=data,
+        settings=read_settings_from_bytes(settings) if settings else None,
+        statistics=read_part(statistics) if statistics else None,
+        container=read_container_version(pq.read_schema(io.BytesIO(parts[0]))),
         raw_parts=parts,
     )
 
 
 def parquet_bytes(table: pa.Table) -> bytes:
+    """One plain parquet file (the work tables the CLI reads, a split part)."""
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
     blob = buffer.getvalue()
     if DELIMITER in blob:
         raise BuildError("a serialized part contains the bundle delimiter")
     return blob
-
-
-def settings_bytes(settings: dict) -> bytes:
-    return parquet_bytes(pa.table({"settings_json": [json.dumps(settings)]}))
-
-
-def join_parts(
-    annotations: bytes,
-    metadata: bytes,
-    data: bytes,
-    settings: bytes | None = None,
-    statistics: bytes | None = None,
-) -> bytes:
-    """Assemble part bytes with protspace's layout rules.
-
-    A statistics part without settings keeps a zero-byte settings slot, so the
-    statistics stay the fifth part.
-    """
-    parts = [annotations, metadata, data]
-    if settings is not None or statistics is not None:
-        parts.append(settings or b"")
-    if statistics is not None:
-        parts.append(statistics)
-    return DELIMITER.join(parts)
 
 
 def atomic_write(path: Path, blob: bytes) -> None:
@@ -384,48 +378,65 @@ def atomic_write(path: Path, blob: bytes) -> None:
 def rebuild_bundle(
     bundle_path: Path, table: pa.Table, settings: dict | None, out_path: Path
 ) -> None:
-    """Write ``bundle_path`` with new annotations and settings.
+    """Write ``bundle_path`` again as a v3 container, with new annotations and settings.
 
-    The projection parts and the statistics part keep their bytes.
+    protspace's writers do it: ``replace_annotations_in_bundle`` encodes the
+    annotations (a v3 input keeps its projection parts as stored and each column
+    the kind it had; a legacy input, from a CLI before format v3, is encoded
+    whole, as ``protspace convert`` encodes one), then
+    ``replace_settings_in_bundle`` sets the settings part. The statistics part
+    keeps its bytes. ``settings=None`` keeps the input's settings. ``table`` must
+    carry the v2 cell-grammar stamp (the encoder refuses to guess a grammar).
     """
-    parts = split_parts(bundle_path.read_bytes())
-    statistics = parts[4] if len(parts) == 5 and parts[4] else None
-    blob = join_parts(
-        parquet_bytes(table),
-        parts[1],
-        parts[2],
-        settings_bytes(settings) if settings is not None else None,
-        statistics,
-    )
-    atomic_write(out_path, blob)
+    try:
+        with protspace_io_quiet():
+            if settings is None:
+                replace_annotations_in_bundle(bundle_path, out_path, table)
+                return
+            staged = out_path.with_name(f".{out_path.name}.annotations-{os.getpid()}")
+            try:
+                replace_annotations_in_bundle(bundle_path, staged, table)
+                replace_settings_in_bundle(staged, out_path, settings)
+            finally:
+                staged.unlink(missing_ok=True)
+    except ValueError as error:
+        raise BuildError(f"protspace cannot write {out_path.name}: {error}") from None
 
 
-SPLIT_NAMES = {
-    0: "annotations.parquet",
-    1: "projections_metadata.parquet",
-    2: "projections_data.parquet",
-    4: "statistics.parquet",
-}
+SPLIT_NAMES = (
+    "annotations.parquet",
+    "projections_metadata.parquet",
+    "projections_data.parquet",
+)
 
 
 def split_bundle(bundle_path: Path, out_dir: Path) -> dict[str, Path]:
     """Split a bundle into ``annotations/projections_metadata/projections_data/
     statistics.parquet`` and ``settings.json`` (PLAN §3 helper).
 
-    Parquet parts are written byte-for-byte, and ``out_dir`` can be passed
-    straight to ``protspace bundle -p`` / ``protspace stats -p``.
+    ``out_dir`` can be passed straight to ``protspace bundle -p`` / ``protspace
+    stats -p``, which read v2-shaped tables: a legacy bundle's parts are written
+    byte for byte, a v3 bundle's core as protspace's reader decodes it. The
+    statistics part keeps its bytes either way.
     """
+    bundle = read_bundle(bundle_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-    parts = split_parts(Path(bundle_path).read_bytes())
+    core = (bundle.annotations, bundle.metadata, bundle.data)
+    legacy = bundle.container is None
     written: dict[str, Path] = {}
-    for index, name in SPLIT_NAMES.items():
-        if index < len(parts) and parts[index]:
-            target = out_dir / name
-            atomic_write(target, parts[index])
-            written[name] = target
-    if len(parts) >= 4 and parts[3]:
+    for index, name in enumerate(SPLIT_NAMES):
+        target = out_dir / name
+        atomic_write(
+            target, bundle.raw_parts[index] if legacy else parquet_bytes(core[index])
+        )
+        written[name] = target
+    if bundle.statistics is not None:
+        target = out_dir / "statistics.parquet"
+        atomic_write(target, bundle.raw_parts[4])
+        written["statistics.parquet"] = target
+    if bundle.settings is not None:
         target = out_dir / "settings.json"
-        target.write_text(json.dumps(_settings_from_part(parts[3]), indent=1))
+        target.write_text(json.dumps(bundle.settings, indent=1))
         written["settings.json"] = target
     return written
 
@@ -440,10 +451,11 @@ def normalize_id(table: pa.Table) -> pa.Table:
 
 
 def extract_ann(bundle_path: Path) -> pa.Table:
-    """Part 0 of a ``prepare`` output: the selected columns only (never the
-    ``tmp/all_annotations`` cache), without the internal lookup columns."""
-    parts = split_parts(Path(bundle_path).read_bytes())
-    return drop_columns(normalize_id(_read_table(parts[0])), INTERNAL_COLUMNS)
+    """The annotations of a CLI ``prepare``/``transfer`` output: the selected
+    columns only (never the ``tmp/all_annotations`` cache), v2-shaped (a v3 file
+    decoded by protspace's reader), without the internal lookup columns."""
+    annotations = read_bundle(bundle_path).annotations
+    return drop_columns(normalize_id(annotations), INTERNAL_COLUMNS)
 
 
 # ---------------------------------------------------------------------------
@@ -553,11 +565,17 @@ def projection_ids(data: pa.Table) -> list[str]:
 
 
 def coordinate_map(data: pa.Table) -> dict[tuple[str, str], tuple]:
+    """``{(projection, id): (x, y, z)}`` at float32, the precision a v3 file
+    stores and the browser draws (a missing axis is ``None``)."""
+
+    def axis(name: str) -> list:
+        if name not in data.column_names:
+            return [None] * data.num_rows
+        return pc.cast(data.column(name), pa.float32()).to_pylist()
+
     names = data.column("projection_name").to_pylist()
     ids = data.column("identifier").to_pylist()
-    xs = data.column("x").to_pylist()
-    ys = data.column("y").to_pylist()
-    zs = data.column("z").to_pylist() if "z" in data.column_names else [None] * len(xs)
+    xs, ys, zs = axis("x"), axis("y"), axis("z")
     return {
         (n, str(i)): (x, y, z)
         for n, i, x, y, z in zip(names, ids, xs, ys, zs, strict=True)
@@ -594,12 +612,6 @@ def strip_pandas_metadata(table: pa.Table) -> pa.Table:
     metadata = dict(table.schema.metadata or {})
     metadata.pop(b"pandas", None)
     return table.replace_schema_metadata(metadata or None)
-
-
-def stamp_v2(table: pa.Table) -> pa.Table:
-    metadata = dict(table.schema.metadata or {})
-    metadata[FORMAT_VERSION_KEY] = FORMAT_VERSION
-    return table.replace_schema_metadata(metadata)
 
 
 def align_rows(table: pa.Table, ids: Sequence[str]) -> tuple[pa.Table, list[str]]:
@@ -1580,10 +1592,7 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
             f"present: {leaked}" if leaked else "no sequence/organism_id/length bins",
         )
     )
-    version = format_version(table)
-    gates.append(
-        Gate("format-v2", "pass" if version == 2 else "fail", f"version {version}")
-    )
+    gates.append(format_gate(bundle))
 
     # The column and any copy of it (e.g. a withheld truth). A parser defect
     # always fails: every family column is refreshed by the fixed CLI.
@@ -1686,6 +1695,29 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
         )
         gates.append(faithfulness_gate(bundle.metadata, dataset))
     return gates
+
+
+def format_gate(bundle: Bundle) -> Gate:
+    """The built file is a v3 container whose cells decode in the v2 grammar.
+
+    Every build writes v3 (:func:`rebuild_bundle`), so a legacy container here
+    is a file from before the conversion: it fails rather than shipping a format
+    whose reading is deprecated.
+    """
+    grammar = format_version(bundle.annotations)
+    if bundle.container is None:
+        return Gate(
+            "format-v3",
+            "fail",
+            f"legacy (v1/v2) container, cell grammar v{grammar}; the build writes "
+            f"v{CONTAINER_VERSION}",
+        )
+    ok = bundle.container == CONTAINER_VERSION and grammar == BUNDLE_FORMAT_VERSION
+    return Gate(
+        "format-v3",
+        "pass" if ok else "fail",
+        f"container v{bundle.container}, cell grammar v{grammar}",
+    )
 
 
 def faithfulness_gate(metadata: pa.Table, dataset: dict) -> Gate:
@@ -2804,7 +2836,7 @@ class Context:
 
     @property
     def file_name(self) -> str:
-        pattern = self.config.build.get("file_pattern", "{id}_{release}.parquetbundle")
+        pattern = self.config.build.get("file_pattern", DEFAULT_FILE_PATTERN)
         return pattern.format(id=self.ds_id, release=self.release)
 
     @property
@@ -3495,7 +3527,7 @@ def write_annotations(
         INTERNAL_COLUMNS + LEGACY_COLUMNS + tuple(ctx.dataset.get("drop_columns", []))
     )
     table = order_columns(drop_columns(table, drop), [c for c in first if c])
-    table = stamp_v2(strip_pandas_metadata(table))
+    table = stamp_format_version(strip_pandas_metadata(table))
     atomic_write(ctx.work / name, parquet_bytes(table))
     (ctx.work / "assemble_report.json").write_text(
         json.dumps(report, indent=1, default=str)
@@ -4424,7 +4456,7 @@ def transfer_steps(ctx: Context, assembled: Path) -> list[Step]:
             raise BuildError(f"protspace transfer wrote no predictions for {missing}")
         atomic_write(
             ctx.work / "annotations.parquet",
-            parquet_bytes(stamp_v2(strip_pandas_metadata(table))),
+            parquet_bytes(stamp_format_version(strip_pandas_metadata(table))),
         )
 
     return [
@@ -4516,7 +4548,10 @@ def tail_steps(ctx: Context) -> list[Step]:
 
     ``protspace style`` rebuilds the legends it touches (a manual order becomes
     alphabetical), so it only sees a settings-free bundle. Carried-over and
-    cluster legends are merged in afterwards, untouched.
+    cluster legends are merged in afterwards, untouched. ``bundle`` and ``style``
+    write whatever container the CLI checkout writes (v2 before protspace 4.16);
+    ``finalize`` writes the shipped file as v3 with this repository's protspace
+    (:func:`rebuild_bundle`).
     """
     work = ctx.work
     with_stats = ctx.dataset.get("stats", False)
@@ -4660,8 +4695,8 @@ def tail_steps(ctx: Context) -> list[Step]:
     def finalize() -> None:
         bundle_ = read_bundle(styled)
         table = bundle_.annotations
-        if format_version(table) != 2:
-            raise BuildError("the bundled annotations lost their v2 stamp")
+        if format_version(table) != BUNDLE_FORMAT_VERSION:
+            raise BuildError("the bundled annotations lost their cell-grammar v2 stamp")
         legends, notes = carried_legends(ctx, table)
         legends.update(bundle_.settings or {})  # the styled legends win
         settings = make_settings(legends, ctx.dataset.get("envelope"))
@@ -4687,6 +4722,9 @@ def tail_steps(ctx: Context) -> list[Step]:
             "recipe": ctx.recipe(),
             "release": ctx.release,
             "file_pattern": ctx.config.build.get("file_pattern"),
+            # The container rebuild_bundle writes (protspace's writer, not the
+            # CLI's): a format change re-runs this step.
+            "container": CONTAINER_VERSION,
             "zenodo_doi": ctx.config.build.get("zenodo_doi"),
             "web_cut": ctx.web_cut_active(),
             "cli": ctx.cli_identity(),
@@ -4703,7 +4741,8 @@ def tail_steps(ctx: Context) -> list[Step]:
     steps.append(
         Step(
             "finalize",
-            f"legends + provenance → {ctx.file_name}{cut_note}",
+            f"legends + provenance, v{CONTAINER_VERSION} container → "
+            f"{ctx.file_name}{cut_note}",
             finalize,
             inputs=finalize_inputs,
         )
@@ -5521,8 +5560,41 @@ def manifest_writer():
 
 
 def built_file(config: Config, out_root: Path, ds_id: str, release: str) -> Path:
-    pattern = config.build.get("file_pattern", "{id}_{release}.parquetbundle")
+    pattern = config.build.get("file_pattern", DEFAULT_FILE_PATTERN)
     return out_root / ds_id / pattern.format(id=ds_id, release=release)
+
+
+def published_name_conflicts(
+    previous: dict | None, tag: str | None, files: dict[str, Path]
+) -> list[str]:
+    """Built release files that would put new bytes under a name ``tag`` publishes.
+
+    ``previous`` is the committed manifest. A release file name never carries
+    different bytes: the published asset stays as uploaded, and a deploy, a
+    cache or a Zenodo copy would disagree with the new file. A rebuilt file
+    therefore needs a new name (``[build] file_pattern``, as the v3 files got
+    ``_v3``), and a file staged again with its published bytes is fine.
+    """
+    if not previous or not tag:
+        return []
+    published: dict[str, str] = {}
+    if previous.get("release") == tag:
+        published.update(
+            (record["file"], record["sha256"])
+            for record in previous.get("examples", {}).values()
+            if record.get("hosting") == "release"
+        )
+    published.update(
+        (entry["file"], entry["sha256"])
+        for entry in previous.get("retained", [])
+        if entry.get("release") == tag
+    )
+    return [
+        f"{ds_id}: {path.name} is already published in {tag} with other bytes; "
+        "give the new file a new name ([build] file_pattern)"
+        for ds_id, path in files.items()
+        if path.name in published and published[path.name] != sha256_file(path)
+    ]
 
 
 def stage_release(
@@ -5542,11 +5614,39 @@ def stage_release(
     warning. The manifest is written by ``write_manifest.py`` from the staged
     files, with the committed manifest as the previous one (retained files,
     Zenodo DOIs), so it is the module the web app, the docs page and
-    ``pnpm examples:fetch`` read. Returns the manifest.
+    ``pnpm examples:fetch`` read. A release file whose name the committed
+    manifest already publishes in this release with other bytes is refused, even
+    with ``force`` (:func:`published_name_conflicts`). Returns the manifest.
     """
     writer = manifest_writer()
     ids = list(ids or config.datasets)
     tag = config.build.get("release_tag")
+    previous = (
+        writer.parse_manifest(previous_manifest.read_text())
+        if previous_manifest.is_file()
+        else None
+    )
+    release_files = {
+        ds_id: built_file(config, out_root, ds_id, release)
+        for ds_id in ids
+        if config.datasets[ds_id].get("hosting") != "repo"
+    }
+    conflicts = published_name_conflicts(
+        previous,
+        tag,
+        {ds_id: path for ds_id, path in release_files.items() if path.is_file()},
+    )
+    # The committed manifest already names this release: it is published, so
+    # the new files are uploaded into it, next to the files it holds.
+    published = bool(previous) and previous.get("release") == tag
+    sums_name = config.build.get("checksums_file", "SHA256SUMS")
+    if published and release_files and sums_name == "SHA256SUMS":
+        conflicts.append(
+            f"{tag} is published and holds its SHA256SUMS; set [build] "
+            "checksums_file to a new name for the added files' checksums"
+        )
+    if conflicts:
+        raise BuildError("refusing to stage:\n  " + "\n  ".join(conflicts))
     problems = []
     for ds_id in ids:
         built = built_file(config, out_root, ds_id, release)
@@ -5580,11 +5680,6 @@ def stage_release(
     if assets and not tag:
         raise BuildError("[build] release_tag is not set")
 
-    previous = (
-        writer.parse_manifest(previous_manifest.read_text())
-        if previous_manifest.is_file()
-        else None
-    )
     try:
         manifest = writer.build_manifest(
             repo=repo,
@@ -5602,7 +5697,7 @@ def stage_release(
     manifest_out.write_text(writer.render_manifest(manifest))
 
     sums = "".join(f"{sha256_file(path)}  {path.name}\n" for _, path in assets)
-    (staging / "SHA256SUMS").write_text(sums)
+    (staging / sums_name).write_text(sums)
     notes = ["Curated example datasets for protspace.app.", ""]
     for ds_id, record in manifest["examples"].items():
         annotations = ", ".join(
@@ -5619,17 +5714,26 @@ def stage_release(
     print("\nThe repository owner publishes them with (not run by this script):\n")
     if assets:
         files = " ".join(
-            shlex.quote(str(p))
-            for p in [*(p for _, p in assets), staging / "SHA256SUMS"]
+            shlex.quote(str(p)) for p in [*(p for _, p in assets), staging / sums_name]
         )
         repo_name = config.build.get("github_repo", GITHUB_REPO)
-        print(
-            # --latest=false: a data release must not become the repository's
-            # "Latest" release, which names the newest ProtSpace version (W33).
-            f"gh release create {tag} --repo {repo_name} --latest=false "
-            f"--title {shlex.quote(f'Showcase datasets ({release})')} "
-            f"--notes-file {shlex.quote(str(staging / 'RELEASE_NOTES.md'))} {files}"
-        )
+        if published:
+            # No --clobber: a name the release already holds must fail, not
+            # take new bytes.
+            print(
+                f"# {tag} is published; add the new files to it (RELEASE_NOTES.md "
+                "describes them for its notes):\n"
+                f"gh release upload {tag} --repo {repo_name} {files}"
+            )
+        else:
+            print(
+                # --latest=false: a data release must not become the repository's
+                # "Latest" release, which names the newest ProtSpace version (W33).
+                f"gh release create {tag} --repo {repo_name} --latest=false "
+                f"--title {shlex.quote(f'Showcase datasets ({release})')} "
+                f"--notes-file {shlex.quote(str(staging / 'RELEASE_NOTES.md'))} "
+                f"{files}"
+            )
     for _, path in repo:
         print(f"cp {shlex.quote(str(path))} apps/web/public/{path.name}")
     print(
