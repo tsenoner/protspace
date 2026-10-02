@@ -62,7 +62,7 @@ export function sliceVisualizationDataByIndices(
       ? Object.fromEntries(
           Object.entries(data.numeric_annotation_data).map(([name, values]) => [
             name,
-            Float64Array.from(keptIndices, (index) => values[index]),
+            sliceFloat64(values, keptIndices),
           ]),
         )
       : undefined,
@@ -70,4 +70,15 @@ export function sliceVisualizationDataByIndices(
     annotation_scores: sliceRecord(data.annotation_scores),
     annotation_evidence: sliceRecord(data.annotation_evidence),
   };
+}
+
+/**
+ * Gather `values[keptIndices[k]]` into a fresh Float64Array. A preallocated indexed loop,
+ * not `Float64Array.from(keptIndices, mapFn)`: the iterator + mapFn path is ~35x slower at
+ * Swiss-Prot scale and this runs once per numeric column on every slice.
+ */
+function sliceFloat64(values: Float64Array, keptIndices: readonly number[]): Float64Array {
+  const out = new Float64Array(keptIndices.length);
+  for (let k = 0; k < keptIndices.length; k++) out[k] = values[keptIndices[k]];
+  return out;
 }
