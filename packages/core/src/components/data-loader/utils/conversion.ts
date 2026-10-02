@@ -750,6 +750,9 @@ function buildProjection(
  *
  * A dataset without projections has nothing to place its proteins, so it is returned
  * unchanged, as is the common case where every protein is placed (no copy).
+ *
+ * The slice clears statistics; every reader runs this before {@link carryStatistics}
+ * attaches the bundle's, so the file's dataset keeps them.
  */
 export function dropUnplacedProteins(data: VisualizationData): VisualizationData {
   const n = data.protein_ids.length;
@@ -772,13 +775,7 @@ export function dropUnplacedProteins(data: VisualizationData): VisualizationData
   for (let i = 0; i < n; i++) if (placed[i]) kept.push(i);
   if (kept.length === n) return data;
 
-  // The slice clears statistics because a user's subset is not what they were scored
-  // over. This one is the dataset the file defines, so they are carried over.
-  return {
-    ...sliceVisualizationDataByIndices(data, kept),
-    statistics: data.statistics,
-    statisticsRows: data.statisticsRows,
-  };
+  return sliceVisualizationDataByIndices(data, kept);
 }
 
 /**
@@ -845,7 +842,6 @@ export function convertParquetToVisualizationData(
   // `BundleExtractionResult` carries the version detected from the bundle's parquet
   // key-value metadata by `extractRowsFromParquetBundle` (bundle.ts).
   const formatVersion = Array.isArray(input) ? 1 : input.formatVersion;
-  const declaredNumeric = Array.isArray(input) ? {} : (input.numericColumnTypes ?? {});
 
   validateRowsBasic(rows);
 
@@ -857,6 +853,21 @@ export function convertParquetToVisualizationData(
     hasProjectionName && hasXY
       ? convertBundleFormatData(rows, columnNames, meta, formatVersion)
       : convertLegacyFormatData(rows, columnNames, formatVersion);
+  return finishConversion(converted, input);
+}
+
+/**
+ * The steps every v1/v2 conversion path ends with, in their one valid order: drop the
+ * unplaced proteins, fold the EAT companion columns, restore the declared numeric types,
+ * then attach the statistics. Raw `Rows` input declares no types and carries no
+ * statistics, so the last two steps pass it through. (The v3 reader runs its own subset:
+ * it must not restore declared types, see bundle-v3.ts.)
+ */
+function finishConversion(
+  converted: VisualizationData,
+  input: BundleExtractionResult | Rows,
+): VisualizationData {
+  const declaredNumeric = Array.isArray(input) ? {} : (input.numericColumnTypes ?? {});
   return carryStatistics(
     restoreDeclaredNumericAnnotations(
       normalizeEatCompanionColumns(dropUnplacedProteins(converted)),
@@ -899,9 +910,9 @@ export function convertParquetToVisualizationDataOptimized(
     if (dataSize < OPTIMIZED_PATH_ROW_THRESHOLD) {
       return Promise.resolve(convertParquetToVisualizationData(input, projectionsMetadata));
     }
-    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata)
-      .then(dropUnplacedProteins)
-      .then(normalizeEatCompanionColumns);
+    return convertLargeDatasetOptimizedRaw(input, projectionsMetadata).then((data) =>
+      finishConversion(data, input),
+    );
   }
 
   // New path: separated extraction shape from extractRowsFromParquetBundle
@@ -909,11 +920,7 @@ export function convertParquetToVisualizationDataOptimized(
   if (numProjectionRows < OPTIMIZED_PATH_ROW_THRESHOLD) {
     return Promise.resolve(convertParquetToVisualizationData(input));
   }
-  return convertLargeDatasetOptimized(input)
-    .then(dropUnplacedProteins)
-    .then(normalizeEatCompanionColumns)
-    .then((data) => restoreDeclaredNumericAnnotations(data, input.numericColumnTypes ?? {}))
-    .then((data) => carryStatistics(data, input));
+  return convertLargeDatasetOptimized(input).then((data) => finishConversion(data, input));
 }
 
 async function convertLargeDatasetOptimizedRaw(
