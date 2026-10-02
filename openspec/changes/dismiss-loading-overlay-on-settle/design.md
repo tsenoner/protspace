@@ -60,7 +60,9 @@ explore!" message; without the hold it delays interaction for nothing, and Playw
 With dismissal tied to settlement, `#progressive-loading` having count 0 together with the
 expected protein count on `#myPlot` is a reliable completion signal. One animation frame after
 that covers the scatterplot's point-index rebuild, which runs in a `requestAnimationFrame` after a
-data or projection update. Polling every 100 ms bounds the wait's added latency.
+data or projection update. Polling every 100 ms bounds the wait's added latency. Both stages use `waitForFunction` with
+`polling: 100`; a locator assertion such as `toHaveCount(0)` would back off to 500 ms polls after
+its first few hundred milliseconds.
 
 ## Alternatives rejected
 

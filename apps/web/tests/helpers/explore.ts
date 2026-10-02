@@ -27,6 +27,27 @@ export async function dismissTourIfPresent(page: Page): Promise<void> {
   }
 }
 
+/**
+ * Wait until the loading overlay is gone, polling every 100 ms. A locator assertion would back
+ * off to 500 ms polls after a few hundred milliseconds, adding up to half a second to every load
+ * whose post-load work runs that long. An overlay that stays up fails the wait with that reason.
+ */
+async function waitForLoadingOverlayRemoved(page: Page, timeout: number): Promise<void> {
+  try {
+    await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
+      timeout,
+      polling: 100,
+    });
+  } catch (error) {
+    throw new Error(
+      `The loading overlay (#progressive-loading) was still shown after ${timeout} ms`,
+      {
+        cause: error,
+      },
+    );
+  }
+}
+
 interface ExploreDataLoadOptions {
   /** Applies to each stage of the wait. Defaults to 30 s. */
   timeout?: number;
@@ -69,7 +90,7 @@ export async function waitForExploreDataLoad(
     { exact: proteinCount ?? null, previous: changedFrom ?? null },
     { timeout, polling: 100 },
   );
-  await expect(page.locator('#progressive-loading')).toHaveCount(0, { timeout });
+  await waitForLoadingOverlayRemoved(page, timeout);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
@@ -93,7 +114,7 @@ export async function getProteinCount(page: Page): Promise<number> {
 }
 
 export async function waitForExploreInteractionReady(page: Page, timeout = 10_000): Promise<void> {
-  await expect(page.locator('#progressive-loading')).toHaveCount(0, { timeout });
+  await waitForLoadingOverlayRemoved(page, timeout);
   await dismissTourIfPresent(page);
   await expect(page.locator('.driver-overlay')).toBeHidden({ timeout });
 }
