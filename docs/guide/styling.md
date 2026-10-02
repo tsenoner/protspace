@@ -100,15 +100,13 @@ consumed during generation, only their effects (the resulting categories with `z
 
 ::: warning A size picked in the web app overrides `shapeSize`
 The web app's legend accepts shape sizes from 1 to 64, and the web app caps a larger `shapeSize`
-from a bundle, top-level or per-annotation, at 64. A per-annotation `10` or `30` is the filler the
-writers emit, so the web app reads it as unset and uses the
-[default from the protein count](/explore/legend#default-dot-size) (10 up to 10,000 proteins,
-smaller above). A styles file therefore cannot set exactly 10 on a larger dataset; use `9` or `11`
-for about that size. A bundle exported from the web app after the
-user picked a size carries it as a top-level `shapeSize` in its settings, next to the per-annotation
-ones. On import, that top-level value overrides every annotation's `shapeSize`, and
-`protspace style` keeps it when it rewrites the settings, so editing the per-annotation `shapeSize`
-of such a bundle has no visible effect.
+from a bundle, top-level or per-annotation, at 64. As the `shapeSize` row above says, a
+per-annotation `10` reads as unset, so a styles file cannot set exactly 10 on a dataset whose
+[default](/explore/legend#default-dot-size) is smaller (above about 10,800 proteins); use `9` or
+`11` for about that size. A bundle exported from the web app after the user picked a size carries it as a
+top-level `shapeSize` in its settings, next to the per-annotation ones. On import, that top-level
+value overrides every annotation's `shapeSize`, and `protspace style` keeps it when it rewrites the
+settings, so editing the per-annotation `shapeSize` of such a bundle has no visible effect.
 :::
 
 > **Value keys are display values.** In `colors`/`shapes`/`pinnedValues`/`hiddenValues`, a _value_ is
