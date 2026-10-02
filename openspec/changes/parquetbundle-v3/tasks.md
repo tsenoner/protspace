@@ -183,7 +183,9 @@
       if `main` moves before the PR lands)
 - [x] 5.3 Convert `apps/web/public/data.parquetbundle` and the example datasets under
       `apps/web/public/data/` (the 573K Swiss-Prot bundle included) to v3 with `protspace convert`,
-      each verified to decode to the same dataset; keep the e2e fixtures and `v2-sample` legacy as
+      each verified to decode to the same dataset (`venom_eat_stats` re-converted once convert
+      dropped `organism_id` and `sequence`; a Python test pins that no served bundle carries
+      either); keep the e2e fixtures and `v2-sample` legacy as
       the legacy reader's test data; `scripts/landing-data` reads v3; `encode_legacy_cell` splits a
       hit at its last pipe
 - [ ] 5.4 Merge the PR with a merge commit, never a squash (it touches `apps/protspace/`)

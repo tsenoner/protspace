@@ -18,6 +18,7 @@ import pyarrow.compute as pc
 import pytest
 
 from protlabel import Prediction
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
 from protspace.data.annotations.encoding import (
     FORMAT_VERSION_KEY,
     stamp_format_version,
@@ -609,7 +610,7 @@ def test_flat_concatenates_a_multi_chunk_column():
 
 @pytest.mark.skipif(not REAL_BUNDLE.exists(), reason="web sample data not checked out")
 def test_real_bundle_round_trip():
-    """``venom_eat_stats`` (v3, converted from v2; 811 x 38) is a fixed point.
+    """``venom_eat_stats`` (v3, converted from v2; 811 x 36) is a fixed point.
 
     Decoding the shipped bundle and encoding the tables again gives back the same
     parts, column for column: numerics, scored hits, the EAT overlay, the
@@ -630,3 +631,27 @@ def test_real_bundle_round_trip():
     assert again_data.equals(data)
     # The encoder is deterministic: re-encoding is byte-identical, payloads too.
     assert list(parts) == [*core[:3], core[5]]
+
+
+SERVED_BUNDLES = sorted(
+    [
+        *(REAL_BUNDLE.parent.glob("*.parquetbundle")),
+        REAL_BUNDLE.parents[1] / "data.parquetbundle",
+    ]
+)
+
+
+@pytest.mark.skipif(not REAL_BUNDLE.exists(), reason="web sample data not checked out")
+@pytest.mark.parametrize("path", SERVED_BUNDLES, ids=lambda path: path.name)
+def test_served_bundle_is_what_convert_writes_today(path):
+    """Every dataset the app serves is v3 without the internal lookup columns.
+
+    They were converted with ``protspace convert``, which drops ``organism_id``
+    and ``sequence`` when it upgrades a legacy bundle. A served file converted
+    before that rule keeps both columns: the app would offer a ``sequence``
+    legend and ship every sequence, and a fresh ``convert`` of the same source
+    would write a different file.
+    """
+    # manifest_of raises on a part 1 that is not v3.
+    manifest = manifest_of(parts_of(path)[0])
+    assert not {manifest["idColumn"], *manifest["columns"]} & set(INTERNAL_ANNOTATIONS)
