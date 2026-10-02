@@ -598,6 +598,8 @@ test.describe('Persisted dataset failure handling', () => {
     });
 
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    // The failed load must not leave its full-screen loading overlay behind.
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
     expect(dialogSeen).toBe(false);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });

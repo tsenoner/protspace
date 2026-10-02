@@ -270,6 +270,9 @@ export function createDatasetController({
       }
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
+      // A failure here would otherwise leave the overlay this load showed (e.g.
+      // "Saving imported dataset...") covering the page for good.
+      overlayController.update(false);
     } finally {
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence);
@@ -278,6 +281,10 @@ export function createDatasetController({
   };
 
   const handleDataError = async (event: Event) => {
+    // `data-loading-start` showed the overlay for this load; nothing else would take
+    // it down, so a failed or cancelled load would leave it covering the page. A
+    // newer queued load shows it again through its own `data-loading-start`.
+    overlayController.update(false);
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;

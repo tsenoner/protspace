@@ -52,7 +52,11 @@ const data: VisualizationData = {
 
 const file = new File(['bundle'], 'import.parquetbundle');
 
-function buildController(kind: 'user' | 'default' = 'user') {
+function buildController(
+  kind: 'user' | 'default' | 'opfs' = 'user',
+  { runningSequence = 3 }: { runningSequence?: number } = {},
+) {
+  const overlayUpdate = vi.fn();
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
     dataLoader: {},
@@ -67,11 +71,11 @@ function buildController(kind: 'user' | 'default' = 'user') {
     loadQueue: {
       registerFileLoad: vi.fn(),
       getLoadMetaForFile: () => ({ sequence: 3, kind }),
-      getRunningLoadMeta: () => ({ sequence: 3, kind }),
+      getRunningLoadMeta: () => ({ sequence: runningSequence, kind }),
       getLatestSequence: () => 3,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
-    overlayController: { update: vi.fn() },
+    overlayController: { update: overlayUpdate },
     plotElement: {},
     setCurrentDatasetIsDemo: vi.fn(),
     setCurrentDatasetName: vi.fn(),
@@ -85,7 +89,7 @@ function buildController(kind: 'user' | 'default' = 'user') {
     },
   } as unknown as Parameters<typeof createDatasetController>[0];
 
-  return { controller: createDatasetController(options) };
+  return { controller: createDatasetController(options), overlayUpdate };
 }
 
 const loadedEvent = {
@@ -212,5 +216,67 @@ describe('dataset controller legacy bundle notice', () => {
 
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.info).not.toHaveBeenCalled();
+  });
+});
+
+describe('dataset controller loading overlay on failure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    mocks.saveLastImportedFile.mockResolvedValue(undefined);
+    mocks.loadData.mockResolvedValue(undefined);
+  });
+
+  const errorEvent = (originalError?: Error) =>
+    ({
+      detail: { message: 'broken bundle', originalError },
+    }) as unknown as Event;
+
+  const dismissed = (overlayUpdate: ReturnType<typeof vi.fn>) =>
+    overlayUpdate.mock.calls.some(([show]) => show === false);
+
+  it('dismisses the overlay when a user import fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, overlayUpdate } = buildController('user');
+    await controller.handleDataError(errorEvent(new Error('bad magic')));
+
+    expect(dismissed(overlayUpdate)).toBe(true);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    consoleError.mockRestore();
+  });
+
+  it('dismisses the overlay before anything else when a load is cancelled', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const abort = new Error('aborted');
+    abort.name = 'AbortError';
+    const { controller, overlayUpdate } = buildController('user');
+    await controller.handleDataError(errorEvent(abort));
+
+    expect(overlayUpdate).toHaveBeenCalledWith(false);
+    expect(overlayUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.resolvePendingLoadFinalization.mock.invocationCallOrder[0],
+    );
+    consoleLog.mockRestore();
+  });
+
+  it('dismisses the overlay when a persisted dataset fails to load', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller, overlayUpdate } = buildController('opfs');
+    await controller.handleDataError(errorEvent(new Error('corrupt')));
+
+    expect(dismissed(overlayUpdate)).toBe(true);
+    consoleError.mockRestore();
+  });
+
+  it('dismisses the overlay when the post-load work throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.loadData.mockRejectedValue(new Error('render failed'));
+    const { controller, overlayUpdate } = buildController('user');
+    await controller.handleDataLoaded(loadedEvent);
+
+    // The import showed "Saving imported dataset..."; it must not stay up.
+    expect(overlayUpdate).toHaveBeenLastCalledWith(false);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    consoleError.mockRestore();
   });
 });
