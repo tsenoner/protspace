@@ -107,25 +107,23 @@ def decode_field(s: str) -> str:
     return _DECODE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
 
 
-def read_format_version(table: pa.Table | pa.Schema) -> int:
+def read_format_version(table: pa.Table) -> int:
     """Return the annotations' cell-grammar version, defaulting unstamped tables to v1.
 
     Right for a table read from a legacy bundle, whose missing stamp really does
     mean v1.  Not a test of whether a table *was* stamped: the v3 encoder, which
     must not guess, uses :func:`has_format_version` for that.
     """
-    schema = table if isinstance(table, pa.Schema) else table.schema
-    metadata = schema.metadata or {}
+    metadata = table.schema.metadata or {}
     try:
         return int(metadata.get(FORMAT_VERSION_KEY, b"1"))
     except (TypeError, ValueError):
         return 1
 
 
-def has_format_version(table: pa.Table | pa.Schema) -> bool:
+def has_format_version(table: pa.Table) -> bool:
     """Whether the table carries a :data:`FORMAT_VERSION_KEY` stamp at all."""
-    schema = table if isinstance(table, pa.Schema) else table.schema
-    return FORMAT_VERSION_KEY in (schema.metadata or {})
+    return FORMAT_VERSION_KEY in (table.schema.metadata or {})
 
 
 def read_annotation_cache_version(df: pd.DataFrame) -> int:
@@ -145,7 +143,7 @@ def annotation_cache_version_attrs() -> dict[str, int]:
     return {ANNOTATION_CACHE_VERSION_ATTR: ANNOTATION_CACHE_VERSION}
 
 
-def is_annotation_cache(table: pa.Table | pa.Schema) -> bool:
+def is_annotation_cache(table: pa.Table) -> bool:
     """Whether a parquet table is the pipeline's own ``all_annotations.parquet``.
 
     Recognised by the cache-version attribute pandas stores in the footer's
@@ -153,8 +151,7 @@ def is_annotation_cache(table: pa.Table | pa.Schema) -> bool:
     before that attribute existed, so a table that carries it holds v2 cells even
     when it predates the cache's :data:`FORMAT_VERSION_KEY` stamp.
     """
-    schema = table if isinstance(table, pa.Schema) else table.schema
-    raw = (schema.metadata or {}).get(b"PANDAS_ATTRS")
+    raw = (table.schema.metadata or {}).get(b"PANDAS_ATTRS")
     if raw is None:
         return False
     try:
