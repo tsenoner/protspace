@@ -45,7 +45,6 @@ export class StructureService {
   public static async loadStructure(proteinId: string): Promise<StructureData> {
     const formattedId = getBaseAccession(proteinId);
     const tedAbortController = new AbortController();
-    const tedDomainsPromise = this.loadTedDomains(formattedId, tedAbortController);
 
     // Fetch prediction data from AlphaFold API
     const apiUrl = `${this.ALPHAFOLD_API_URL}/${formattedId}`;
@@ -59,7 +58,7 @@ export class StructureService {
 
       const predictions: AlphaFoldPrediction[] = await response.json();
 
-      if (!predictions || predictions.length === 0) {
+      if (!Array.isArray(predictions) || predictions.length === 0) {
         throw new Error(`No AlphaFold prediction found for ${formattedId}`);
       }
 
@@ -81,6 +80,10 @@ export class StructureService {
       } else {
         throw new Error(`No structure URL found for ${formattedId}`);
       }
+
+      // TED domains are chopped from AlphaFold DB models, so request them only once a model
+      // exists; the request runs alongside the (much larger) structure file download
+      const tedDomainsPromise = this.loadTedDomains(formattedId, tedAbortController);
 
       // Fetch the structure file data and create a blob URL
       // This avoids CORS issues and works better with Molstar
@@ -114,7 +117,7 @@ export class StructureService {
         },
       };
     } catch (error) {
-      // The optional TED sidecar request is useless once the structure itself failed
+      // Cancels the TED request if it already started, i.e. the structure download failed
       tedAbortController.abort();
       // Only log unexpected errors (not 404s, which are expected for proteins without structures)
       if (error instanceof Error && !error.message.includes('404')) {

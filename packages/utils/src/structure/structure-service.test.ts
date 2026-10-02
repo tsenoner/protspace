@@ -100,16 +100,30 @@ describe('StructureService TED domains', () => {
     });
   });
 
-  it('aborts the TED request when the structure itself is unavailable', async () => {
+  it('does not request TED domains when there is no AlphaFold model', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(StructureService.loadStructure('Q8WZ42')).rejects.toThrow(
+      'AlphaFold structure not available',
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/prediction/');
+  });
+
+  it('aborts the TED request when the structure file download fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     let tedSignal: AbortSignal | null = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).includes('/api/domains/')) {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/prediction/')) return Response.json([prediction]);
+        if (url.includes('/api/domains/')) {
           tedSignal = init?.signal instanceof AbortSignal ? init.signal : null;
           return new Promise<Response>(() => {});
         }
-        return Promise.resolve(new Response(null, { status: 404 }));
+        return new Response(null, { status: 500 });
       }),
     );
 
