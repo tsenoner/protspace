@@ -24,6 +24,14 @@ carries none, and later runs keep a DOI the manifest already records for a
 file whose bytes have not changed, so the CI check (``--refresh --check``)
 still passes.
 
+Every container version is read: a legacy (v1/v2) bundle's annotations and
+projections tables as stored, a v3 bundle's from the manifest protspace writes
+into its first part's footer (``protspace_v3_manifest``: the id column, the
+logical annotation columns and the projections, in the order the web app lists
+them), so a multi-valued column's physical ``<name>__count`` column never
+reaches the record. The part layout rules are protspace's
+(``protspace.data.io.bundle``); ``test_write_manifest.py`` pins the two.
+
 The script needs only pyarrow, so it runs outside the protspace environment::
 
     uv run --no-project --with pyarrow python \\
@@ -57,6 +65,10 @@ PUBLIC_DIR = REPO_ROOT / "apps/web/public"
 DEFAULT_EXAMPLES_DIR = PUBLIC_DIR / "examples"
 
 DELIMITER = b"---PARQUET_DELIMITER---"
+# Part 1's footer keys of a v3 container (protspace.data.io.bundle_v3).
+CONTAINER_VERSION_KEY = b"protspace_container_version"
+V3_MANIFEST_KEY = b"protspace_v3_manifest"
+CONTAINER_VERSION = 3
 
 # Mirrors the web reader (packages/core/src/components/data-loader/utils/conversion.ts):
 # the protein-id column is the first of these present, else the first column, and
@@ -146,20 +158,79 @@ OPEN_LINE = "export const EXAMPLE_MANIFEST: ExampleManifest = {"
 CLOSE_LINE = "};"
 
 
+def container_version(footer: dict[bytes, bytes]) -> int | None:
+    """Part 1's ``protspace_container_version`` (3), or ``None`` for a legacy file."""
+    raw = footer.get(CONTAINER_VERSION_KEY)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"container version {raw!r} is not an integer") from None
+
+
 def split_bundle(data: bytes) -> list[bytes]:
+    """The parts of a bundle: three to five for a legacy (v1/v2) container, six
+    for v3, which part 1's footer must declare (and a legacy one must not), as
+    protspace's reader requires."""
     parts = data.split(DELIMITER)
-    if not 3 <= len(parts) <= 5:
-        raise ValueError(f"expected 3 to 5 bundle parts, found {len(parts)}")
+    if not 3 <= len(parts) <= 6:
+        raise ValueError(f"expected 3 to 6 bundle parts, found {len(parts)}")
+    version = container_version(_footer(parts[0]))
+    if len(parts) == 6 and version != CONTAINER_VERSION:
+        raise ValueError(
+            f"a 6-part bundle must declare container version {CONTAINER_VERSION}, "
+            f"found {version}"
+        )
+    if len(parts) < 6 and version is not None:
+        raise ValueError(
+            f"a {len(parts)}-part bundle declares container version {version}; "
+            "a v3 container has 6 parts"
+        )
     return parts
 
 
 def has_statistics(parts: list[bytes]) -> bool:
     """Whether a split bundle carries a statistics part.
 
-    Part positions are fixed: statistics are always the fifth part, and a bundle
-    with statistics but no settings writes an empty fourth part to keep them there.
+    Part positions are fixed in every container version: statistics are always
+    the fifth part, and a bundle with statistics but no settings writes an empty
+    fourth part to keep them there (a v3 bundle always writes both slots).
     """
-    return len(parts) == 5 and len(parts[4]) > 0
+    return len(parts) >= 5 and len(parts[4]) > 0
+
+
+def _footer(part: bytes) -> dict[bytes, bytes]:
+    return dict(pq.read_schema(io.BytesIO(part)).metadata or {})
+
+
+def _v3_names(part: bytes, footer: dict[bytes, bytes]) -> tuple[list, list, int]:
+    """``(columns, projections, proteins)`` of a v3 bundle, from its part 1."""
+    raw = footer.get(V3_MANIFEST_KEY)
+    if raw is None:
+        raise ValueError(f"a v3 bundle's part 1 carries no {V3_MANIFEST_KEY.decode()}")
+    manifest = json.loads(raw)
+    id_column = manifest["idColumn"]
+    columns = [c for c in manifest["columns"] if c not in ID_COLUMNS]
+    projections = _unique_in_order(p["name"] for p in manifest["projections"])
+    ids = pq.read_table(io.BytesIO(part), columns=[id_column]).column(id_column)
+    return columns, projections, len(set(ids.to_pylist()))
+
+
+def _legacy_names(parts: list[bytes]) -> tuple[list, list, int]:
+    """``(columns, projections, proteins)`` of a legacy bundle, with the id column
+    picked as the web reader picks it."""
+    annotations = pq.read_table(io.BytesIO(parts[0]))
+    projections_metadata = pq.read_table(io.BytesIO(parts[1]))
+    names = annotations.column_names
+    id_column = next((c for c in ID_CANDIDATES if c in names), names[0])
+    columns = [c for c in names if c != id_column and c not in ID_COLUMNS]
+    projections = (
+        _unique_in_order(projections_metadata.column("projection_name").to_pylist())
+        if "projection_name" in projections_metadata.column_names
+        else []
+    )
+    return columns, projections, len(set(annotations.column(id_column).to_pylist()))
 
 
 def _decode_metadata(raw: dict[bytes, bytes] | None) -> dict[str, str]:
@@ -237,20 +308,13 @@ def read_bundle_record(path: Path, *, example_id: str, file: str, hosting: str) 
     """The manifest record for one bundle file, read from its bytes."""
     data = path.read_bytes()
     parts = split_bundle(data)
-    annotations = pq.read_table(io.BytesIO(parts[0]))
-    projections_metadata = pq.read_table(io.BytesIO(parts[1]))
+    footer = _footer(parts[0])
+    if container_version(footer) == CONTAINER_VERSION:
+        columns, projections, proteins = _v3_names(parts[0], footer)
+    else:
+        columns, projections, proteins = _legacy_names(parts)
 
-    names = annotations.column_names
-    id_column = next((c for c in ID_CANDIDATES if c in names), names[0])
-    columns = [c for c in names if c != id_column and c not in ID_COLUMNS]
-    proteins = len(set(annotations.column(id_column).to_pylist()))
-    projections = (
-        _unique_in_order(projections_metadata.column("projection_name").to_pylist())
-        if "projection_name" in projections_metadata.column_names
-        else []
-    )
-
-    meta = _decode_metadata(annotations.schema.metadata)
+    meta = _decode_metadata(footer)
     stamped_id = meta.get(META_EXAMPLE_ID)
     if stamped_id and stamped_id != example_id:
         raise ValueError(
