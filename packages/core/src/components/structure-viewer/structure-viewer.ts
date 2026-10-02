@@ -427,10 +427,14 @@ export class ProtspaceStructureViewer extends LitElement {
         ? html`
             <div class="color-toolbar">
               <span class="color-toolbar-label">Color by</span>
-              <div class="color-mode-group" role="group" aria-label="Structure color mode">
+              <div
+                class="segmented color-mode-group"
+                role="group"
+                aria-label="Structure color mode"
+              >
                 <button
                   type="button"
-                  class="color-mode-button"
+                  class="segmented-btn color-mode-button"
                   data-color-mode="plddt"
                   aria-pressed=${this._colorMode === 'plddt'}
                   .disabled=${!this._canChangeColorMode}
@@ -440,7 +444,7 @@ export class ProtspaceStructureViewer extends LitElement {
                 </button>
                 <button
                   type="button"
-                  class="color-mode-button"
+                  class="segmented-btn color-mode-button"
                   data-color-mode="ted-domains"
                   aria-pressed=${this._colorMode === 'ted-domains'}
                   .disabled=${!this._canChangeColorMode || !this._hasTedDomains}

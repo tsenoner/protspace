@@ -1,6 +1,7 @@
 import { css } from 'lit';
 import { tokens } from '../../styles/tokens';
 import { overlayMixins } from '../../styles/overlay-mixins';
+import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
@@ -260,42 +261,12 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
+  /* Bridge the viewer's theming hooks into the shared segmented control */
   .color-mode-group {
-    display: inline-flex;
-    overflow: hidden;
-    border: 1px solid var(--protspace-viewer-border);
-    border-radius: var(--radius);
-  }
-
-  .color-mode-button {
-    border: 0;
-    border-left: 1px solid var(--protspace-viewer-border);
-    padding: 0.25rem 0.55rem;
-    background: var(--protspace-viewer-bg);
-    color: var(--protspace-viewer-text-muted);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .color-mode-button:first-child {
-    border-left: 0;
-  }
-
-  .color-mode-button[aria-pressed='true'] {
-    background: var(--primary);
-    color: var(--text-light);
-  }
-
-  .color-mode-button:focus-visible {
-    position: relative;
-    z-index: 1;
-    outline: 2px solid var(--protspace-viewer-loading);
-    outline-offset: -2px;
-  }
-
-  .color-mode-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
+    --segmented-border: var(--protspace-viewer-border);
+    --segmented-bg: var(--protspace-viewer-bg);
+    --segmented-text: var(--protspace-viewer-text-muted);
+    --segmented-hover-text: var(--protspace-viewer-text);
   }
 
   .tips {
@@ -328,4 +299,9 @@ const structureViewerStylesCore = css`
   }
 `;
 
-export const structureViewerStyles = [tokens, overlayMixins, structureViewerStylesCore];
+export const structureViewerStyles = [
+  tokens,
+  overlayMixins,
+  segmentedControlMixin,
+  structureViewerStylesCore,
+];
