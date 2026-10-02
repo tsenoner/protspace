@@ -550,7 +550,7 @@ the only description of what the integer columns mean. It does not carry
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `idColumn`                | which part 1 column holds the protein IDs                                                                                                                               |
 | `columns.*.kind`          | `categorical`, `multi` or `numeric`                                                                                                                                     |
-| `columns.*.numericType`   | `int` or `float`; numeric columns only                                                                                                                                  |
+| `columns.*.numericType`   | `int` or `float`, decided over the placed proteins; numeric columns only                                                                                                |
 | `columns.*.scores`        | present and `true` when a `scores:<col>` payload exists; multi columns only                                                                                             |
 | `columns.*.evidence`      | present and `true` when an `evidence:<col>` payload exists; multi columns only                                                                                          |
 | `columns.*.sourceType`    | the column's Arrow type in Python, see below                                                                                                                            |
@@ -636,7 +636,9 @@ those alone. The writer does too: a text column missing on every placed protein 
 labels, whatever an annotation-only protein holds, and one whose placed proteins' cells are all
 numbers while an annotation-only protein holds a label that is not (`unknown` among lengths) is
 written as labels, so Python decodes that label back, and marked `placedNumeric`. The browser
-reads a marked column as numbers once it has dropped the unplaced proteins, as v2 did.
+reads a marked column as numbers once it has dropped the unplaced proteins, as v2 did. A numeric
+column's `numericType` is decided over the placed proteins too, so an annotation-only `2.5` among
+integral lengths leaves the column `int`, and Python still decodes that cell as `2.5`.
 
 Those spellings are consulted at write time in one place only, to decide whether a column is
 numeric, as the browser's numeric inference always has: a column of `NA` stays categorical
@@ -661,7 +663,7 @@ bytes. The differences are deliberate:
 | `%3b`                                    | `%3B`              | labels are re-encoded canonically, in uppercase hex                                                                             |
 | a missing cell                           | `""`               | null and blank both mean missing                                                                                                |
 | `NA`, `none`, `null` in a numeric column | `""`               | a missing-value spelling among numbers is stored as `NaN`, see [Missing values in a v3 file](#missing-values-in-a-v3-file)      |
-| `1` where another value is fractional    | `1.0`              | a float column is re-spelled by Python's float repr                                                                             |
+| `1` where a placed value is fractional   | `1.0`              | a float column is re-spelled by Python's float repr                                                                             |
 | `100.0` where every value is integral    | `100`              | the canonical v2 spelling of an integral value                                                                                  |
 
 The `2.3e-5` and `1e16` rows land squarely in the E-value range the float64 scores exist for, so

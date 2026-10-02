@@ -312,10 +312,22 @@ def _split_last_pipe(hits: pa.Array) -> tuple[pa.Array, pa.Array]:
 
 
 def _numeric_entry(
-    values: np.ndarray, source_type: str, empty_is_int: bool = False
+    values: np.ndarray,
+    source_type: str,
+    empty_is_int: bool = False,
+    placed: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], pa.Array, list[tuple[str, bytes]]]:
-    """:func:`_encode_annotation_column`'s result for float64 ``values`` (NaN = missing)."""
-    finite = values[~np.isnan(values)]
+    """:func:`_encode_annotation_column`'s result for float64 ``values`` (NaN = missing).
+
+    ``numericType`` is decided over the ``placed`` rows, as the v2 browser
+    inferred it over the proteins it showed and the v3 reader takes it as
+    written: an annotation-only ``2.5`` must not turn an int column float.
+    Without a placed value it is decided over every row.
+    """
+    present = ~np.isnan(values)
+    if placed is not None and (present & placed).any():
+        present &= placed
+    finite = values[present]
     # ``np.all([]) is True`` would call an all-missing float column int.
     integral = bool(np.all(np.mod(finite, 1) == 0)) if finite.size else empty_is_int
     entry = {
@@ -369,7 +381,9 @@ def _encode_annotation_column(
     ):
         values = pc.cast(arr, pa.float64()).to_numpy(zero_copy_only=False)
         values = np.where(np.isfinite(values), values, np.nan)
-        return _numeric_entry(values, source_type, pa.types.is_integer(arr.type))
+        return _numeric_entry(
+            values, source_type, pa.types.is_integer(arr.type), placed
+        )
 
     try:
         strings = _as_string(arr)
@@ -411,7 +425,7 @@ def _encode_annotation_column(
             if numeric_over(shown):
                 if numeric == "infer" and numeric_over(slice(None)):
                     values = np.where(missing, np.nan, values)
-                    return _numeric_entry(values, source_type)
+                    return _numeric_entry(values, source_type, placed=placed)
                 extra["placedNumeric"] = True
 
     # --- categorical: split cells into hits --------------------------------- #
@@ -1010,10 +1024,12 @@ def _decode_numeric(column: pa.ChunkedArray, entry: dict[str, Any]) -> pa.Array:
     # repr, which is Python's: pyarrow spells them differently (``1e-7`` for
     # ``1e-07``, ``1e+15`` for ``1000000000000000.0``).  The magnitude guard keeps
     # a value past int64 out of an undefined cast, and it is per value: one 1e19
-    # cell must not re-spell the whole column as floats.
+    # cell must not re-spell the whole column as floats.  So is the integral
+    # check: ``numericType`` is decided over the placed proteins only, so an
+    # annotation-only ``2.5`` can sit in an int column and must not become ``2``.
     kept = values[present]
     if entry.get("numericType") == "int":
-        small = np.abs(kept) < 2.0**63
+        small = (np.abs(kept) < 2.0**63) & (np.mod(kept, 1) == 0)
         text = pc.cast(
             pa.array(np.where(small, kept, 0.0).astype(np.int64)), pa.string()
         )

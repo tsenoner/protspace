@@ -74,6 +74,9 @@
       them (`read_tables(..., keyed=True)`), so a repeated or null id no longer crashes the v3
       write after the kNN ran, and reports a legacy input the encoder still refuses as a usage
       error, not a traceback
+- [x] 2.24 A numeric column's `numericType` is decided over the placed proteins, as its kind is,
+      so an annotation-only `2.5` among integral values leaves it `int`; the decoder spells an
+      `int` column's fractional cell as a float instead of truncating it
 
 ## 3. TypeScript track (`packages/*`, `apps/web`)
 

@@ -165,6 +165,13 @@ SHALL still store annotation-only proteins in part 1, so Python decodes them bac
 - **THEN** the browser shows `size` as a numeric column with the values and the dataset hash the
   v2 file gave, and Python still decodes `unknown` for the annotation-only protein
 
+#### Scenario: A fractional value only on an unplaced protein
+
+- **WHEN** a numeric column holds integral values for the placed proteins and `2.5` for an
+  annotation-only protein, and is written as v3
+- **THEN** the manifest declares the column `numericType` `int`, as the v2 browser inferred it
+- **AND** Python still decodes `2.5` for the annotation-only protein
+
 #### Scenario: A column numeric only on an unplaced protein
 
 - **WHEN** a v2 bundle's text column is missing on every placed protein and holds `5` for an

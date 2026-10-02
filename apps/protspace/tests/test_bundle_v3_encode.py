@@ -454,7 +454,7 @@ def test_projections_follow_the_projection_rows_as_the_v2_browser_did():
     assert projections.column("projection_name").to_pylist()[0] == "PCA"
 
 
-def _with_unplaced_q(length: list[str]):
+def _with_unplaced_q(length: list[str] | pa.Array):
     """``P1``..``P4`` placed by one projection, ``Q`` an annotation-only row."""
     annotations = stamp_format_version(
         pa.table({"protein_id": ["P1", "P2", "P3", "P4", "Q"], "length": length})
@@ -506,6 +506,28 @@ def test_a_column_numeric_everywhere_is_numeric_without_the_mark():
 
     entry = manifest_of(parts[0])["columns"]["length"]
     assert entry == {"kind": "numeric", "numericType": "int", "sourceType": "string"}
+
+
+@pytest.mark.parametrize(
+    ("length", "source_type"),
+    [
+        (["100", "200", "300", "400", "2.5"], "string"),
+        (pa.array([100.0, 200.0, 300.0, 400.0, 2.5]), "double"),
+    ],
+)
+def test_an_unplaced_fraction_does_not_make_a_numeric_column_float(length, source_type):
+    """v2 inferred int vs float over the proteins it placed, too: the browser
+    takes ``numericType`` as written, so an annotation-only ``2.5`` must not
+    switch the column's bins and tooltips to decimals.  The file keeps it."""
+    parts = _with_unplaced_q(length)
+
+    entry = manifest_of(parts[0])["columns"]["length"]
+    assert entry == {"kind": "numeric", "numericType": "int", "sourceType": source_type}
+    decoded = decode_v3(list(parts))[0].column("length").to_pylist()
+    if source_type == "string":
+        assert decoded == ["100", "200", "300", "400", "2.5"]
+    else:
+        assert decoded == [100.0, 200.0, 300.0, 400.0, 2.5]
 
 
 # --------------------------------------------------------------------------- #

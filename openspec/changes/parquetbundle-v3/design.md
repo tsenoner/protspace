@@ -175,7 +175,10 @@ of them. A column missing on every placed protein is written as labels. One nume
 placed proteins only cannot be a `DOUBLE` column without losing the unplaced label, so it is
 written as labels too, marked `placedNumeric` in the manifest, and the browser reads it as
 numbers once it has dropped the unplaced proteins: a missing cell or spelling is NaN, and the type
-is `int` when every value is integral, as v2 read the same cells. The alternative, re-inferring
+is `int` when every value is integral, as v2 read the same cells. A column written numeric takes
+its `numericType` from the placed proteins as well, which the browser reads as written, so an
+annotation-only `2.5` among integral lengths leaves it `int`; Python's decoder spells each such
+value on its own and still returns `2.5`. The alternative, re-inferring
 in the browser without the mark, cannot tell a label `1` from a v2 cell `1;` whose blank hit the
 encoder dropped, which v2 showed as a category.
 
