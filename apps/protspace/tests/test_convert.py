@@ -33,6 +33,7 @@ from protspace.data.io.bundle import (
     replace_settings_in_bundle,
     write_bundle,
 )
+from tests.cli_output import plain
 
 BUNDLE_LOGGER = "protspace.data.io.bundle"
 
@@ -244,8 +245,8 @@ def test_output_or_in_place_is_required(tmp_path):
     result = _convert(str(src))
 
     assert result.exit_code != 0
-    assert "OUTPUT" in result.output
-    assert "--in-place" in result.output
+    assert "OUTPUT" in plain(result.output)
+    assert "--in-place" in plain(result.output)
     assert src.read_bytes() == before
 
 
