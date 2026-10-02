@@ -14,8 +14,9 @@ SHALL NOT change the default. The settings dialog SHALL accept whole sizes from 
 cap a larger entry at 64, showing the capped value. A larger size from a bundle, top-level or
 per-annotation, or from browser storage SHALL be capped at 64 as well, and a capped top-level
 bundle size SHALL be stored as 64. The dialog's size field SHALL show the size in use, and its
-placeholder and hint SHALL give the dataset's default. The point size SHALL be
-`max(10, round(8 · shapeSize))`.
+placeholder and hint SHALL give the dataset's default. Saving the dialog with the size field
+emptied SHALL clear the shape size as Reset does, so the default applies, and SHALL keep the
+annotation's other settings. The point size SHALL be `max(10, round(8 · shapeSize))`.
 
 #### Scenario: Default for a small dataset
 
@@ -41,6 +42,12 @@ placeholder and hint SHALL give the dataset's default. The point size SHALL be
 
 - **WHEN** the user opens the legend settings on a 105,562-protein dataset without a picked size
 - **THEN** the size field shows 2, and its placeholder and hint give 2 as the dataset's default
+
+#### Scenario: Emptying the size field
+
+- **WHEN** the user picked shape size 10 on a 40,000-protein dataset, then empties the size field
+  and presses Save
+- **THEN** no size is stored for the dataset and the dots return to the default shape size 4
 
 #### Scenario: Oversized entry
 

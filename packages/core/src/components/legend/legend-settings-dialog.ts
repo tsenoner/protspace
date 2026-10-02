@@ -16,7 +16,8 @@ import {
  */
 export interface SettingsDialogState {
   maxVisibleValues: number;
-  shapeSize: number;
+  /** The size in the field, or null once the user empties it to return to the default. */
+  shapeSize: number | null;
   /** The dataset's default shape size, from its protein count. */
   defaultShapeSize: number;
   enableDuplicateStackUI: boolean;
@@ -37,7 +38,8 @@ export interface SettingsDialogState {
  */
 export interface SettingsDialogCallbacks {
   onMaxVisibleValuesChange: (value: number) => void;
-  onShapeSizeChange: (value: number) => void;
+  /** A typed size, or null for an emptied field: Save then applies the dataset's default. */
+  onShapeSizeChange: (value: number | null) => void;
   onEnableDuplicateStackUIChange: (checked: boolean) => void;
   onSortModeChange: (annotation: string, mode: LegendSortMode) => void;
   onPaletteChange: (paletteId: string) => void;
@@ -137,6 +139,12 @@ function renderShapeSizeInput(
 ): TemplateResult {
   const onInput = (e: Event) => {
     const input = e.target as HTMLInputElement;
+    // A number field also reads '' while it holds text it cannot parse; only an empty one is
+    // a request for the default.
+    if (input.value === '' && !input.validity?.badInput) {
+      callbacks.onShapeSizeChange(null);
+      return;
+    }
     const value = parsePositiveInt(input.value);
     if (value === null) return;
     const capped = Math.min(value, LEGEND_DEFAULTS.maxSymbolSize);
@@ -155,12 +163,12 @@ function renderShapeSizeInput(
         type="number"
         min="1"
         max=${LEGEND_DEFAULTS.maxSymbolSize}
-        .value=${String(state.shapeSize)}
+        .value=${state.shapeSize === null ? '' : String(state.shapeSize)}
         placeholder=${String(state.defaultShapeSize)}
         @input=${onInput}
       />
     `,
-    `Default for this dataset: ${state.defaultShapeSize}. Larger datasets default to smaller dots.`,
+    `Default for this dataset: ${state.defaultShapeSize}; clear the field to use it. Larger datasets default to smaller dots.`,
     '',
     'shape-size-input',
   );

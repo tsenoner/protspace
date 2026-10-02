@@ -207,7 +207,8 @@ User customizations (visibility, colors, ordering, settings) are saved to `local
 and annotation. Per-category state is not persisted for numeric annotations, whose legend entries
 are generated bin IDs. The shape size is stored per dataset instead: once picked, it applies to
 every annotation. Reset in the settings dialog clears it, and every annotation's own size, so the
-default applies again.
+default applies again; saving the dialog with the size field emptied does the same for the size
+alone.
 
 ### Example
 

@@ -193,6 +193,26 @@ describe('shape size input', () => {
     expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
     expect(input.value).toBe('64');
   });
+
+  it('reports an emptied field as no size, so Save applies the default', () => {
+    const { callbacks } = typeSize('');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(null);
+  });
+
+  it('ignores a size below 1', () => {
+    const { callbacks } = typeSize('0');
+    expect(callbacks.onShapeSizeChange).not.toHaveBeenCalled();
+  });
+
+  it('shows an emptied field as empty, with the default as placeholder', () => {
+    const { container } = renderSettingsDialogToContainer({ shapeSize: null, defaultShapeSize: 2 });
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('2');
+    expect(input.parentElement?.querySelector('.settings-note')?.textContent).toContain(
+      'clear the field to use it',
+    );
+  });
 });
 
 describe('ProtspaceLegend settings dialog numeric inference integration', () => {

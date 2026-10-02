@@ -49,3 +49,5 @@
 - [x] 5.1 Store the dataset's size under `shape-size:<hash>`; read the legacy `point-size:<hash>`
       while the new key is absent, with a legacy 10 (the old Reset's) as unset; a pick writes the
       new key and drops the legacy one, Reset drops both.
+- [x] 5.2 Saving the settings dialog with the size field emptied clears the shape size as Reset does
+      and keeps the annotation's other settings; the hint says so.

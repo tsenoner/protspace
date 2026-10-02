@@ -74,8 +74,10 @@ opens with dots small enough that one category does not cover the others:
 The count is the whole dataset, so hiding categories, filtering or isolating does not change it. The
 settings dialog shows the dataset's default under the size field. To use another size, type it and
 press Save: it is then stored for the dataset and exported with **Include legend settings**. A size
-a bundle sets for an annotation, other than 10 or 30, also overrides the default. `Reset` returns
-the dataset to its default.
+a bundle sets for an annotation, other than 10 or 30, also overrides the default. To return to the
+default, clear the size field and press Save. This drops the size you picked and every size a
+bundle set per annotation, but keeps the annotation's other settings. `Reset` does the same for the
+size, and also resets the selected annotation's colors, order and hidden values.
 
 ### Sorting
 

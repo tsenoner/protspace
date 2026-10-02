@@ -115,6 +115,13 @@ the dataset's default, and a hint under the field says what the default is and t
 datasets get smaller dots. Typing the default is not a pick: the dialog stores a size only when it
 differs from the one in use.
 
+Emptying the field and pressing Save returns the dataset to its default, which is what the
+placeholder suggests. It clears the size as Reset does, the picked size and every annotation's own,
+so the result is the default the hint names, and it leaves the annotation's palette, order and
+hidden values alone, which Reset does not. Typing the default instead would store it as a pick and
+export it. A number field reads empty also while it holds text it cannot parse, so the dialog
+treats it as emptied only when the browser reports no bad input.
+
 ### Alternatives rejected
 
 - **A count factor in the renderer.** Scaling every point size by `N` inside the scatterplot would
