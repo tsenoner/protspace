@@ -221,7 +221,7 @@ def test_read_bundle_reads_a_legacy_and_a_v3_container_alike(tmp_path):
         new.metadata.column("projection_name").to_pylist()
         == old.metadata.column("projection_name").to_pylist()
     )
-    assert bs.coordinate_map(new.projections) == bs.coordinate_map(old.projections)
+    assert bs.same_coordinates(new.projections, old.projections)
     assert bs.projection_ids(new.projections) == bs.projection_ids(old.projections)
 
 
@@ -294,19 +294,26 @@ def test_extract_ann_decodes_a_v3_output(tmp_path):
 def test_coordinates_compare_at_the_float32_a_v3_file_stores():
     long = pa.table(
         {
-            "projection_name": ["U"],
-            "identifier": ["P1"],
-            "x": pa.array([0.1], pa.float64()),
-            "y": pa.array([1 / 3], pa.float64()),
+            "projection_name": ["U", "U"],
+            "identifier": ["P2", "P1"],
+            "x": pa.array([0.1, 2.0], pa.float64()),
+            "y": pa.array([1 / 3, 4.0], pa.float64()),
         }
     )
-    wide = long.set_column(2, "x", pa.array([0.1], pa.float32())).set_column(
-        3, "y", pa.array([1 / 3], pa.float32())
+    wide = pa.table(
+        {
+            "projection_name": ["U", "U"],
+            "identifier": ["P1", "P2"],  # another row order
+            "x": pa.array([2.0, 0.1], pa.float32()),
+            "y": pa.array([4.0, 1 / 3], pa.float32()),
+            "z": pa.nulls(2, pa.float32()),
+        }
     )
-    assert bs.coordinate_map(long) == bs.coordinate_map(wide)
-    assert bs.coordinate_map(long)[("U", "P1")][2] is None  # no z axis
-    moved = long.set_column(2, "x", pa.array([0.1001], pa.float64()))
-    assert bs.coordinate_map(moved) != bs.coordinate_map(wide)
+    assert bs.same_coordinates(long, wide)
+    assert bs.coordinates(long).column("z").null_count == 2  # no z axis
+    moved = long.set_column(2, "x", pa.array([0.1001, 2.0], pa.float64()))
+    assert not bs.same_coordinates(moved, wide)
+    assert not bs.same_coordinates(long.slice(0, 1), wide)
 
 
 def test_parse_projection_spec():
@@ -335,10 +342,9 @@ def test_select_projections_renames_reorders_and_keeps_coordinates():
         "quality" not in json.loads(i) for i in meta.column("info_json").to_pylist()
     )
     assert out.column("projection_name").to_pylist()[:3] == ["ProtT5 — UMAP 2"] * 3
-    before = bs.coordinate_map(data)
-    after = bs.coordinate_map(out)
-    assert after[("ProtT5 — UMAP 2", "P2")] == before[("UMAP_2", "P2")]
-    assert len(after) == len(before)
+    renamed = {"UMAP_2": "ProtT5 — UMAP 2", "PCA_2": "ProtT5 — PCA 2"}
+    names = [renamed[n] for n in data.column("projection_name").to_pylist()]
+    assert bs.same_coordinates(out, data.set_column(0, "projection_name", [names]))
 
 
 def test_select_projections_can_drop_one_and_rejects_unknown_names():
@@ -1434,9 +1440,7 @@ def test_common_gates_pass_a_v3_bundle_as_the_build_writes_it(tmp_path):
     # The gates see what the legacy file held: the same proteins, cells and
     # coordinates (at the float32 the browser draws).
     assert bundle.annotations.to_pylist() == source.annotations.to_pylist()
-    assert bs.coordinate_map(bundle.projections) == bs.coordinate_map(
-        source.projections
-    )
+    assert bs.same_coordinates(bundle.projections, source.projections)
 
 
 def test_faithfulness_gate_needs_a_score_per_projection():

@@ -53,6 +53,7 @@ import subprocess
 import sys
 import time
 import tomllib
+import weakref
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
@@ -228,6 +229,84 @@ def first_label(cell: Any) -> str | None:
 
 def is_missing(cell: Any) -> bool:
     return not cell_labels(cell)
+
+
+@dataclass(frozen=True)
+class ColumnSummary:
+    """A column's distinct cells in order of first appearance, each with its
+    row count and its labels (:func:`cell_labels`).
+
+    The gates read a column through it: labels are parsed once per distinct
+    cell rather than once per row (a 573K-row column has a few hundred).
+    """
+
+    cells: tuple[tuple[Any, int, tuple[str, ...]], ...]
+
+    def label_counts(self) -> Counter:
+        """Legend-style counts: each label of a multi-valued cell counts once,
+        in order of first appearance."""
+        counts: Counter = Counter()
+        for _, rows, labels in self.cells:
+            for label in dict.fromkeys(labels):
+                counts[label] += rows
+        return counts
+
+    def labelled_rows(self) -> int:
+        """Rows with at least one label (not N/A)."""
+        return sum(rows for _, rows, labels in self.cells if labels)
+
+    def missing_values(self) -> list[Any]:
+        """The distinct non-null cells the web shows as N/A."""
+        return [
+            cell for cell, _, labels in self.cells if cell is not None and not labels
+        ]
+
+
+#: Summaries by ``id`` of the table they summarise, with a weak reference that
+#: tells a live table from a later one at the same address.
+_SUMMARIES: dict[int, tuple[weakref.ref, dict[str, ColumnSummary]]] = {}
+
+
+def column_summary(table: pa.Table, column: str) -> ColumnSummary:
+    """The :class:`ColumnSummary` of ``table``'s ``column``, computed once per
+    table: a verify asks for the same columns from several gates."""
+    key = id(table)
+    entry = _SUMMARIES.get(key)
+    if entry is None or entry[0]() is not table:
+
+        def forget(ref: weakref.ref, key: int = key) -> None:
+            if _SUMMARIES.get(key, (None,))[0] is ref:
+                del _SUMMARIES[key]
+
+        entry = (weakref.ref(table, forget), {})
+        _SUMMARIES[key] = entry
+    summaries = entry[1]
+    if column not in summaries:
+        values = table.column(column)
+        try:
+            counted = pc.value_counts(values)
+            pairs = zip(
+                counted.field("values").to_pylist(),
+                counted.field("counts").to_pylist(),
+                strict=True,
+            )
+        except pa.ArrowNotImplementedError:  # a type value_counts cannot hash
+            pairs = Counter(values.to_pylist()).items()
+        summaries[column] = ColumnSummary(
+            tuple((cell, rows, tuple(cell_labels(cell))) for cell, rows in pairs)
+        )
+    return summaries[column]
+
+
+def missing_mask(table: pa.Table, column: str) -> pa.ChunkedArray:
+    """Rows whose ``column`` cell is null or one the web shows as N/A."""
+    values = table.column(column)
+    mask = pc.is_null(values)
+    missing = column_summary(table, column).missing_values()
+    if missing:
+        in_missing = pc.is_in(values, value_set=pa.array(missing, type=values.type))
+        mask = pc.or_(mask, in_missing)
+    return mask
 
 
 # ---------------------------------------------------------------------------
@@ -407,22 +486,35 @@ def projection_ids(data: pa.Table) -> list[str]:
     return [str(v) for v in rows.column("identifier").to_pylist()]
 
 
-def coordinate_map(data: pa.Table) -> dict[tuple[str, str], tuple]:
-    """``{(projection, id): (x, y, z)}`` at float32, the precision a v3 file
-    stores and the browser draws (a missing axis is ``None``)."""
+def coordinates(data: pa.Table) -> pa.Table:
+    """Long-format projections as one comparable table: ``projection_name``,
+    ``identifier`` (as text), ``x``, ``y`` and ``z`` at float32 (the precision a
+    v3 file stores and the browser draws; a missing axis is null), sorted by
+    projection and identifier."""
 
-    def axis(name: str) -> list:
+    def axis(name: str) -> pa.ChunkedArray:
         if name not in data.column_names:
-            return [None] * data.num_rows
-        return pc.cast(data.column(name), pa.float32()).to_pylist()
+            return pa.chunked_array([pa.nulls(data.num_rows, pa.float32())])
+        return pc.cast(data.column(name), pa.float32())
 
-    names = data.column("projection_name").to_pylist()
-    ids = data.column("identifier").to_pylist()
-    xs, ys, zs = axis("x"), axis("y"), axis("z")
-    return {
-        (n, str(i)): (x, y, z)
-        for n, i, x, y, z in zip(names, ids, xs, ys, zs, strict=True)
-    }
+    table = pa.table(
+        {
+            "projection_name": pc.cast(data.column("projection_name"), pa.string()),
+            "identifier": pc.cast(data.column("identifier"), pa.string()),
+            "x": axis("x"),
+            "y": axis("y"),
+            "z": axis("z"),
+        }
+    )
+    return table.sort_by(
+        [("projection_name", "ascending"), ("identifier", "ascending")]
+    )
+
+
+def same_coordinates(a: pa.Table, b: pa.Table) -> bool:
+    """Whether two long-format projection tables hold the same points
+    (:func:`coordinates`), whatever their row order."""
+    return coordinates(a).equals(coordinates(b))
 
 
 # ---------------------------------------------------------------------------
@@ -816,16 +908,13 @@ class Gate:
 
 def label_counts(table: pa.Table, column: str) -> Counter:
     """Legend-style counts: each label of a multi-valued cell counts once."""
-    counts: Counter = Counter()
-    for cell in table.column(column).to_pylist():
-        counts.update(dict.fromkeys(cell_labels(cell), 1))
-    return counts
+    return column_summary(table, column).label_counts()
 
 
 def family_defects(table: pa.Table, column: str) -> dict[str, list[str]]:
     truncated, pseudo = set(), set()
-    for cell in table.column(column).to_pylist():
-        for label in cell_labels(cell):
+    for _, _, labels in column_summary(table, column).cells:
+        for label in labels:
             if FAMILY_TRUNCATION.search(label):
                 truncated.add(label)
             if SECTION_PSEUDO.search(label):
@@ -1208,8 +1297,8 @@ def gate_no_refill(table: pa.Table, params: dict) -> Gate:
 
 
 def gate_coverage(table: pa.Table, params: dict) -> Gate:
-    values = table.column(params["column"]).to_pylist()
-    covered = sum(1 for v in values if not is_missing(v)) / max(len(values), 1)
+    labelled = column_summary(table, params["column"]).labelled_rows()
+    covered = labelled / max(table.num_rows, 1)
     ok = covered >= params["min_fraction"]
     return Gate(
         f"coverage:{params['column']}",
@@ -1336,8 +1425,8 @@ def literal_none_gate(table: pa.Table, column: str) -> Gate | None:
     if column not in table.column_names:
         return None
     count = sum(
-        1
-        for cell in table.column(column).to_pylist()
+        rows
+        for cell, rows, _ in column_summary(table, column).cells
         if cell is not None
         and any(hit.strip().lower() == "none" for hit in str(cell).split(";"))
     )
@@ -1409,7 +1498,10 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
         )
 
     if "xref_pdb" in columns:
-        values = {first_label(v) for v in table.column("xref_pdb").to_pylist()}
+        values = {
+            labels[0] if labels else None
+            for _, _, labels in column_summary(table, "xref_pdb").cells
+        }
         both = {"True", "False"} <= values
         gates.append(
             Gate(
@@ -1572,12 +1664,11 @@ def obsolete_rows(table: pa.Table) -> list[str] | None:
     present = [c for c in ENTRY_COLUMNS if c in table.column_names]
     if not present:
         return None
-    columns = [table.column(c).to_pylist() for c in present]
-    return [
-        pid
-        for pid, *cells in zip(row_ids(table), *columns, strict=True)
-        if all(is_missing(cell) for cell in cells)
-    ]
+    mask = missing_mask(table, present[0])
+    for column in present[1:]:
+        mask = pc.and_(mask, missing_mask(table, column))
+    ids = normalize_id(table).column(ID_COLUMN).filter(mask)
+    return [str(v) for v in ids.to_pylist()]
 
 
 def check_default_view(
@@ -4687,16 +4778,23 @@ def file_identity(path: Path) -> dict[str, Any]:
     }
 
 
-def verify(ctx: Context) -> tuple[bool, list[Gate]]:
+def read_built(ctx: Context) -> Bundle:
+    """The built file of ``ctx``'s dataset."""
+    if not ctx.final.is_file():
+        raise BuildError(f"{ctx.final} does not exist; build it first")
+    return read_bundle(ctx.final)
+
+
+def verify(ctx: Context, bundle: Bundle | None = None) -> tuple[bool, list[Gate]]:
     """Run every gate on the built file and record the result in verify.json.
 
     The record carries the file's sha256: stage-release ships a file only while
-    its latest verification passed on exactly those bytes.
+    its latest verification passed on exactly those bytes. ``bundle`` is the
+    built file when the caller has read it already.
     """
-    if not ctx.final.is_file():
-        raise BuildError(f"{ctx.final} does not exist; build it first")
+    if bundle is None:
+        bundle = read_built(ctx)
     identity = file_identity(ctx.final)
-    bundle = read_bundle(ctx.final)
     gates = common_gates(bundle, ctx.dataset, ctx.view)
     gates += context_gates(ctx, bundle, identity)
     gates += run_story_gates(bundle, ctx.dataset.get("gates", []))
@@ -5060,7 +5158,7 @@ def sources_filled_gate(table: pa.Table, origin: dict[str, str]) -> Gate:
     for column in table.column_names:
         if column == ID_COLUMN or origin.get(column, "refreshed") != "refreshed":
             continue
-        if any(not is_missing(v) for v in table.column(column).to_pylist()):
+        if column_summary(table, column).labelled_rows():
             continue
         source = next((s for s, c in SOURCE_COLUMNS.items() if c == column), None)
         (empty_sources if source else empty_columns).append(
@@ -5083,7 +5181,7 @@ def context_gates(
     try:
         metadata, data = read_projection_source(find_projection_source(ctx))
         _, expected = select_projections(metadata, data, projection_spec(ctx))
-        same = coordinate_map(expected) == coordinate_map(bundle.projections)
+        same = same_coordinates(expected, bundle.projections)
         source = "the build's own projections" if is_embed_build(ctx) else "paper"
         gates.append(
             Gate(
@@ -5250,10 +5348,11 @@ def browser_load_gate(ctx: Context, params: dict, identity: dict[str, Any]) -> G
     )
 
 
-def report(ctx: Context) -> None:
+def report(ctx: Context, bundle: Bundle | None = None) -> None:
+    """The clustering report of the built file (``bundle``, when already read)."""
     settings = ctx.config.raw.get("report", {})
     rows = clustering_report(
-        read_bundle(ctx.final),
+        read_built(ctx) if bundle is None else bundle,
         ctx.ds_id,
         ctx.dataset.get("report", {}),
         ctx.root / "report",
@@ -5725,9 +5824,10 @@ def cmd_build(args: argparse.Namespace, config: Config) -> int:
             execute(ctx, recipe_steps(ctx))
             if args.dry_run:
                 continue
-            ok, _ = verify(ctx)
+            bundle = read_built(ctx)  # once, for the gates and the report
+            ok, _ = verify(ctx, bundle)
             if not args.skip_report:
-                report(ctx)
+                report(ctx, bundle)
             failed += [] if ok else [ds_id]
     if failed:
         print(
