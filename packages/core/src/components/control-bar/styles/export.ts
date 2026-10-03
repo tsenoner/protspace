@@ -204,7 +204,8 @@ export const exportStyles = css`
     border-bottom: var(--border-width) solid var(--border);
   }
 
-  .import-current-dataset-label {
+  .import-current-dataset-label,
+  .import-examples-label {
     font-size: var(--text-xs);
     font-weight: var(--font-medium);
     color: var(--muted);
@@ -228,5 +229,16 @@ export const exportStyles = css`
 
   .import-actions button {
     width: 100%;
+  }
+
+  .import-examples {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: var(--border-width) solid var(--border);
+  }
+
+  .import-examples-label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
   }
 `;

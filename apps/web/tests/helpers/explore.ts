@@ -59,6 +59,55 @@ export async function waitForExploreInteractionReady(page: Page, timeout = 10_00
     .catch(() => {});
 }
 
+export async function getProteinCount(page: Page): Promise<number> {
+  const count = await page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
+    return plot?.data?.protein_ids?.length ?? 0;
+  });
+  return Number(count);
+}
+
+export async function waitForProteinCount(
+  page: Page,
+  expected: number,
+  timeout = 30_000,
+): Promise<void> {
+  await page.waitForFunction(
+    (target) => {
+      const plot = document.querySelector('#myPlot') as {
+        data?: { protein_ids?: string[] };
+      } | null;
+      return plot?.data?.protein_ids?.length === target;
+    },
+    expected,
+    { timeout, polling: 500 },
+  );
+  await page
+    .locator('#progressive-loading')
+    .waitFor({ state: 'hidden', timeout })
+    .catch(() => {});
+}
+
+export async function getCurrentDatasetName(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & { currentDatasetName?: string })
+      | null;
+    return controlBar?.currentDatasetName ?? null;
+  });
+}
+
+export async function openImportMenu(page: Page): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
+  // Importing a custom dataset leaves the menu open (nothing closes it), so only
+  // click the trigger when the menu is closed — re-clicking would toggle it shut.
+  if (!(await ownDataset.isVisible().catch(() => false))) {
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+  }
+  await expect(ownDataset).toBeVisible();
+}
+
 export async function getFirstLegendItemValue(page: Page): Promise<string> {
   const value = await page.evaluate(() => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {

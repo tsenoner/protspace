@@ -14,19 +14,24 @@ import {
   getDatasetPersistenceFailureNotification,
   getLegacyBundleFormatNotification,
 } from './notifications';
-import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
+import {
+  clearLastImportedFile,
+  markLastLoadStatus,
+  saveLastImportedFile,
+} from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
+import { DEFAULT_EXAMPLE_DATASET, findExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type { PersistedLoadOutcome } from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
+import type { DatasetChangeSource, ExampleLoadOutcome } from './types';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
   controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
@@ -35,7 +40,7 @@ interface DatasetControllerOptions {
     update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
   };
   plotElement: ProtspaceScatterplot;
-  setCurrentDatasetIsDemo(isDemo: boolean): void;
+  setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
   structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
@@ -43,8 +48,23 @@ interface DatasetControllerOptions {
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
+  loadExampleDatasetAndClearPersistedFile(
+    id: string,
+    source?: DatasetChangeSource,
+  ): Promise<ExampleLoadOutcome>;
+  /** Loads a known example without touching OPFS (a `?dataset=` deep link or Back/Forward). */
+  loadExampleDataset(id: string): Promise<ExampleLoadOutcome>;
   loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
+  /**
+   * Invalidates any example fetch still in flight, without starting a new
+   * load. Called before a user file import or OPFS restore begins, so a
+   * slower, now-stale example fetch can never overwrite it once it resolves.
+   */
+  supersedePendingExampleFetch(): void;
+  subscribeToDatasetChanges(
+    callback: (exampleId: string | null, source: DatasetChangeSource) => void,
+  ): () => void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
@@ -56,14 +76,13 @@ export interface DatasetController {
 export function createDatasetController({
   controlBar,
   dataLoader,
-  defaultDatasetName,
   getIsDisposed,
   interactionController,
   legendElement,
   loadQueue,
   overlayController,
   plotElement,
-  setCurrentDatasetIsDemo,
+  setCurrentExampleId,
   setCurrentDatasetName,
   structureViewer,
   viewController,
@@ -81,12 +100,56 @@ export function createDatasetController({
 
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
-    registerFileLoad(file, kind) {
-      loadQueue.registerFileLoad(file, kind);
-    },
-    setCurrentDatasetIsDemo,
+    overlayController,
+    registerFileLoad: loadQueue.registerFileLoad,
+    awaitLoadOutcome: loadQueue.awaitLoadOutcome,
+    setCurrentExampleId,
     setCurrentDatasetName,
   });
+
+  // Reports which example (or no example) is now showing and why, so the URL
+  // sync hook can decide whether/how to write `?dataset=`. Only successful
+  // loads are reported, plus a 'recovery-required' startup (nothing showing).
+  const datasetChangeSubscribers = new Set<
+    (exampleId: string | null, source: DatasetChangeSource) => void
+  >();
+  const emitDatasetChange = (exampleId: string | null, source: DatasetChangeSource) => {
+    datasetChangeSubscribers.forEach((callback) => callback(exampleId, source));
+  };
+
+  // Name, id and the dataset-change emit for a successful example load happen
+  // in `handleDataLoaded`, keyed on the example in load meta, so a load that
+  // later fails to parse never announces success.
+  const loadExampleDatasetAndClearPersistedFile = async (
+    id: string,
+    source: DatasetChangeSource = 'menu',
+  ): Promise<ExampleLoadOutcome> =>
+    persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id, source);
+
+  const loadExampleDataset = async (id: string): Promise<ExampleLoadOutcome> => {
+    const entry = findExampleDataset(id);
+    if (!entry) {
+      return 'failed';
+    }
+    return persistedDatasetController.loadExampleDataset(entry, 'url');
+  };
+
+  const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
+    await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_DATASET.id, 'startup');
+  };
+
+  const loadPersistedOrDefaultDataset = async (): Promise<PersistedLoadOutcome> => {
+    const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset();
+    if (outcome.kind === 'recovery-required') {
+      // Nothing loads while the recovery banner is up, so nothing reaches
+      // `handleDataLoaded`: report "no example" here so a stale `?dataset=`
+      // from a failed/unknown deep link is replace-deleted from the URL.
+      emitDatasetChange(null, 'startup');
+    }
+    // 'auto-loaded' (OPFS) and 'default-loaded' (demo) report through
+    // `handleDataLoaded` on success.
+    return outcome;
+  };
 
   let currentDatasetHash: string | null = null;
   let currentUnplacedProteinCount = 0;
@@ -98,6 +161,9 @@ export function createDatasetController({
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
+    // True only once this load has fully rendered; a stale/superseded or
+    // throwing load resolves its pending finalization as a failure.
+    let success = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -126,6 +192,19 @@ export function createDatasetController({
         return;
       }
 
+      // An example load superseded by a newer menu/url/user request, before
+      // or during `loadData`, must not label itself, emit, or touch the view:
+      // the newer request owns the screen. The queue-level check above can't
+      // see this (this load is still the running one), so it is checked here
+      // and again after each await below.
+      const isSupersededExampleLoad = () =>
+        loadMeta.example != null &&
+        !persistedDatasetController.isCurrentExampleRequest(loadMeta.example.requestId);
+
+      if (isSupersededExampleLoad()) {
+        return;
+      }
+
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
           true,
@@ -139,6 +218,21 @@ export function createDatasetController({
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
+      } else if (loadMeta.example?.replacesStoredImport) {
+        // A menu choice replaces the stored import only now that the example
+        // has downloaded, decoded and is still current — never before the
+        // fetch, which deleted the import still on screen whenever the
+        // download or parse failed or the request was superseded. Running
+        // inside this load's queue slot also orders it after the save of any
+        // user import queued ahead of it, so the last choice is what sticks.
+        try {
+          await clearLastImportedFile();
+        } catch (error) {
+          console.warn('Failed to clear persisted dataset before showing example dataset:', error);
+        }
+        if (isSupersededExampleLoad()) {
+          return;
+        }
       }
 
       const datasetHash = generateDatasetHash(data);
@@ -149,6 +243,12 @@ export function createDatasetController({
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
 
       await loadData(data);
+
+      // Re-check: `loadData` can take long enough for a newer example
+      // request to land while it was running (see the check above).
+      if (isSupersededExampleLoad()) {
+        return;
+      }
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
@@ -170,12 +270,18 @@ export function createDatasetController({
           settings.eatConfidenceThreshold !== undefined ||
           settings.shapeSize !== undefined);
 
-      if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
+      // An example load carries its entry in load meta (set by
+      // persisted-dataset.ts's `loadExampleDataset`), so it's identified by
+      // that, not by `kind === 'default'` — the perf suite also issues
+      // 'default'-kind loads and must never be labelled as an example.
+      if (loadMeta.example) {
+        setCurrentDatasetName(loadMeta.example.entry.label);
+        setCurrentExampleId(loadMeta.example.entry.id);
+        emitDatasetChange(loadMeta.example.entry.id, loadMeta.example.source);
+      } else if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);
-        setCurrentDatasetIsDemo(false);
-      } else if (loadMeta.kind === 'default') {
-        setCurrentDatasetName(defaultDatasetName);
-        setCurrentDatasetIsDemo(true);
+        setCurrentExampleId(null);
+        emitDatasetChange(null, loadMeta.kind === 'user' ? 'user' : 'startup');
       }
 
       // Must be set before the restore block so that any view-change emitted by
@@ -268,11 +374,13 @@ export function createDatasetController({
       } catch (statusError) {
         console.warn('Failed to update OPFS load status to success:', statusError);
       }
+
+      success = true;
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
     } finally {
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, success);
       }
     }
   };
@@ -285,7 +393,25 @@ export function createDatasetController({
     if (customEvent.detail.originalError?.name === 'AbortError') {
       console.log('Data load cancelled by user');
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
+      }
+      return;
+    }
+
+    // A superseded example request is abandoned silently (see the
+    // openspec/specs/example-datasets "A request is superseded" scenario): its
+    // parse failure must not toast, and must not dismiss the overlay that the
+    // newer request — possibly still downloading — now owns.
+    if (
+      runningLoadMeta?.example &&
+      !persistedDatasetController.isCurrentExampleRequest(runningLoadMeta.example.requestId)
+    ) {
+      console.warn(
+        `Ignoring load error for superseded example "${runningLoadMeta.example.entry.id}":`,
+        customEvent.detail.message,
+      );
+      if (loadSequence !== null) {
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }
       return;
     }
@@ -303,7 +429,7 @@ export function createDatasetController({
 
     if (runningLoadMeta?.kind === 'opfs') {
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }
 
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
@@ -315,18 +441,32 @@ export function createDatasetController({
       return;
     }
 
+    // 'user' and 'default' (including example loads) both reach here on a load that fetched fine but
+    // failed to parse. Neither loadData (data-renderer.ts, success only) nor
+    // the fetch-catch branch in persisted-dataset.ts (network failure only)
+    // runs for this path, so nothing else dismisses the loading overlay —
+    // without this, the UI stays behind it, unusable, until reload.
+    overlayController.update(false);
     notify.error(getDataLoadFailureNotification(customEvent.detail));
 
     if (loadSequence !== null) {
-      loadQueue.resolvePendingLoadFinalization(loadSequence);
+      loadQueue.resolvePendingLoadFinalization(loadSequence, false);
     }
   };
 
   return {
-    loadDefaultDatasetAndClearPersistedFile:
-      persistedDatasetController.loadDefaultDatasetAndClearPersistedFile,
-    loadPersistedOrDefaultDataset: persistedDatasetController.loadPersistedOrDefaultDataset,
+    loadDefaultDatasetAndClearPersistedFile,
+    loadExampleDatasetAndClearPersistedFile,
+    loadExampleDataset,
+    loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
+    supersedePendingExampleFetch: persistedDatasetController.supersedePendingExampleFetch,
+    subscribeToDatasetChanges(callback) {
+      datasetChangeSubscribers.add(callback);
+      return () => {
+        datasetChangeSubscribers.delete(callback);
+      };
+    },
     handleLoadingStart() {
       console.log('Data loading started');
       overlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');

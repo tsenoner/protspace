@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
+import { EXAMPLE_DATASETS } from './example-datasets';
+import type { LoadMeta } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
   saveLastImportedFile: vi.fn(),
+  clearLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
@@ -18,16 +21,21 @@ vi.mock('./data-renderer', () => ({
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
     loadDefaultDatasetAndClearPersistedFile: vi.fn(),
+    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),
     recoverFromCorruptedPersistedDataset: vi.fn(),
+    supersedePendingExampleFetch: vi.fn(),
+    isCurrentExampleRequest: () => true,
   }),
 }));
 
 vi.mock('./opfs-dataset-store', () => ({
   markLastLoadStatus: mocks.markLastLoadStatus,
   saveLastImportedFile: mocks.saveLastImportedFile,
+  clearLastImportedFile: mocks.clearLastImportedFile,
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
@@ -52,11 +60,10 @@ const data: VisualizationData = {
 
 const file = new File(['bundle'], 'import.parquetbundle');
 
-function buildController(kind: 'user' | 'default' = 'user') {
+function buildController(loadMeta: LoadMeta = { sequence: 3, kind: 'user' }) {
   const options = {
     controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
     dataLoader: {},
-    defaultDatasetName: 'default.parquetbundle',
     getIsDisposed: () => false,
     interactionController: {},
     legendElement: {
@@ -66,14 +73,14 @@ function buildController(kind: 'user' | 'default' = 'user') {
     },
     loadQueue: {
       registerFileLoad: vi.fn(),
-      getLoadMetaForFile: () => ({ sequence: 3, kind }),
-      getRunningLoadMeta: () => ({ sequence: 3, kind }),
+      getLoadMetaForFile: () => loadMeta,
+      getRunningLoadMeta: () => loadMeta,
       getLatestSequence: () => 3,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
     overlayController: { update: vi.fn() },
     plotElement: {},
-    setCurrentDatasetIsDemo: vi.fn(),
+    setCurrentExampleId: vi.fn(),
     setCurrentDatasetName: vi.fn(),
     structureViewer: {},
     viewController: {
@@ -126,7 +133,7 @@ describe('dataset controller OPFS persistence', () => {
 
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
   });
 
   it('warns and still renders when the bytes cannot be stored', async () => {
@@ -138,7 +145,7 @@ describe('dataset controller OPFS persistence', () => {
 
     expect(mocks.warning).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledOnce();
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
     consoleError.mockRestore();
   });
 });
@@ -207,10 +214,30 @@ describe('dataset controller legacy bundle notice', () => {
   });
 
   it('stays quiet for a dataset the app serves itself, even a legacy one', async () => {
-    const { controller } = buildController('default');
+    const { controller } = buildController({ sequence: 3, kind: 'default' });
     await controller.handleDataLoaded(eventFor(1));
 
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet for an example chosen from the menu, even a legacy one', async () => {
+    // An example load is 'default' kind and carries its catalog entry; a visitor cannot
+    // convert a file the app serves, so its format is never theirs to fix.
+    const { controller } = buildController({
+      sequence: 3,
+      kind: 'default',
+      example: {
+        entry: EXAMPLE_DATASETS[1],
+        source: 'menu',
+        requestId: 1,
+        replacesStoredImport: true,
+      },
+    });
+    await controller.handleDataLoaded(eventFor(2));
+
+    expect(mocks.loadData).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
   });
 });
