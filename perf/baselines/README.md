@@ -90,6 +90,11 @@ by the next run.
 decode, staging and the readiness gate. The CDP sidecar samples out of process every ~200 ms and can
 miss a synchronous peak, so it reads lower than the in-page `performance.memory` numbers.
 
+These load numbers predate `dismiss-loading-overlay-on-settle`. The readiness gate waits for the
+loading overlay to be removed, and that removal used to come after an 800 ms hold plus a 500 ms fade
+on every dataset over 1,000 proteins. It now comes right after the post-load work. Re-record before
+comparing a newer `loadDurationMs` against them.
+
 For reference, the pre-v3 record from 2026-05-31 (v2 bundle, same class of machine, `uploadedBytes`
 did not exist yet) had load 27,232 ms and a CDP peak of 813,786,683 B.
 
