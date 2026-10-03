@@ -17,6 +17,7 @@ import {
   inputMixin,
   dropdownMixin,
   iconMixin,
+  menuBadgeMixin,
   segmentedControlMixin,
 } from '../../styles/mixins';
 import { layoutStyles } from './styles/layout';
@@ -42,6 +43,7 @@ export const controlBarStyles = [
   dropdownMixin,
   queryBuilderStyles,
   iconMixin,
+  menuBadgeMixin,
   segmentedControlMixin,
   layoutStyles,
   exportStyles,

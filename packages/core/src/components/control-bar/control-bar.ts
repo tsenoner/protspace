@@ -1243,7 +1243,9 @@ export class ProtspaceControlBar extends LitElement {
                                       >
                                         <span class="import-example-label">${example.label}</span>
                                         ${example.large
-                                          ? html`<span class="import-example-badge">Large</span>`
+                                          ? html`<span class="menu-badge import-example-badge"
+                                              >Large</span
+                                            >`
                                           : ''}
                                       </button>
                                       ${this.renderExampleInfo(example)}
