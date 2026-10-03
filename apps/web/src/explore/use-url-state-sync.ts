@@ -33,10 +33,9 @@ export function useExploreUrlStateSync(
   // 'POP' for Back/Forward (and the initial entry); 'PUSH'/'REPLACE' for
   // this hook's own writes.
   const navigationType = useNavigationType();
-  // Token of the URL-driven dataset switch still loading, or null. Settled by
-  // the promise `setRequestedDataset` returns.
-  const pendingSwitchRef = useRef<number | null>(null);
-  const switchTokenRef = useRef(0);
+  // A token unique to the URL-driven dataset switch still loading, or null.
+  // Settled by the promise `setRequestedDataset` returns.
+  const pendingSwitchRef = useRef<object | null>(null);
 
   useEffect(() => {
     setSearchParamsRef.current = setSearchParams;
@@ -82,8 +81,7 @@ export function useExploreUrlStateSync(
   );
 
   const startDatasetSwitch = useCallback((controller: ExploreController, id: string | null) => {
-    switchTokenRef.current += 1;
-    const token = switchTokenRef.current;
+    const token = {};
     pendingSwitchRef.current = token;
     void controller.setRequestedDataset(id).finally(() => {
       if (pendingSwitchRef.current !== token) {

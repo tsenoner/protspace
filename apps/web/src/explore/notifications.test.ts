@@ -246,15 +246,6 @@ describe('explore notifications', () => {
     );
   });
 
-  it('offers only "Report this" for an example failure without a retry', () => {
-    const notification = getExampleLoadFailureNotification(TEST_EXAMPLE, new Error('x'), {
-      source: 'menu',
-    });
-
-    expect(notification.action?.label).toBe('Report this');
-    expect(notification.secondaryAction).toBeUndefined();
-  });
-
   it('dedupes example failures per request kind, so each keeps its own Retry', () => {
     const entry = TEST_EXAMPLE;
     const key = (source: 'menu' | 'url') =>

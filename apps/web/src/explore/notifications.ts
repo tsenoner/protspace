@@ -139,10 +139,9 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
 }
 
 /**
- * A failed example download. With `onRetry` (every download failure; a bundle
- * that downloads but fails to parse is reported by
- * `getDataLoadFailureNotification` instead), Retry is the primary action and
- * "Report this" the secondary one.
+ * A failed example download (a bundle that downloads but fails to parse is
+ * reported by `getDataLoadFailureNotification` instead): Retry is the primary
+ * action and "Report this" the secondary one.
  *
  * The dedupe key names how the load began (`source`), because Retry repeats
  * that request: a menu choice and a Back/Forward to the same example that both
@@ -151,17 +150,15 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
 export function getExampleLoadFailureNotification(
   entry: ExampleDataset,
   error: unknown,
-  { source, onRetry }: { source: DatasetChangeSource; onRetry?: () => void },
+  { source, onRetry }: { source: DatasetChangeSource; onRetry: () => void },
 ): NotifyOptions {
-  const report = buildReportAction(`Example dataset "${entry.id}"`, error);
   return {
     title: `Couldn't load "${entry.label}".`,
     description: getErrorMessage(error),
     durationMs: 10_000,
     dedupeKey: `example-load-error:${source}:${entry.id}`,
-    ...(onRetry
-      ? { action: { label: 'Retry', onClick: onRetry }, secondaryAction: report }
-      : { action: report }),
+    action: { label: 'Retry', onClick: onRetry },
+    secondaryAction: buildReportAction(`Example dataset "${entry.id}"`, error),
   };
 }
 

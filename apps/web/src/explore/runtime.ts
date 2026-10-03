@@ -84,11 +84,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     // prepares or decodes supersedes it in turn (`handleDataLoaded`).
     // `datasetController` is declared below; this handler only runs on a
     // later load, after this synchronous setup has finished.
-    const epoch =
-      options?.source !== 'auto'
-        ? datasetController.beginUserRequest()
-        : datasetController.currentRequestEpoch();
+    let epoch = datasetController.currentRequestEpoch();
     if (options?.source !== 'auto') {
+      epoch = datasetController.beginUserRequest();
       loadQueue.registerFileLoad(file, 'user', undefined, epoch);
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
@@ -137,17 +135,21 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
       // The upload's Cancel aborts it, and so does a newer user request (a
       // Back/Forward, say), which owns the screen from then on: a superseded
-      // preparation touches neither the overlay nor the queue slot again.
+      // preparation settles its queue slot as failed and touches neither the
+      // overlay nor the queue again.
       const preparation = datasetController.beginImportPreparation(epoch);
-      const abandon = () => {
+      const abandonIfSuperseded = (): boolean => {
+        if (preparation.isCurrent()) {
+          return false;
+        }
         preparation.settle();
         const meta = loadQueue.getLoadMetaForFile(queuedFile);
         if (meta) {
           loadQueue.resolvePendingLoadFinalization(meta.sequence, false);
         }
+        return true;
       };
-      if (!preparation.isCurrent()) {
-        abandon();
+      if (abandonIfSuperseded()) {
         return;
       }
       const showProgress = (progress: number, subMessage: string) => {
@@ -198,8 +200,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         }
       };
 
+      let bundleFile: File;
       try {
-        const bundleFile = await prepareFastaBundle(queuedFile, {
+        bundleFile = await prepareFastaBundle(queuedFile, {
           baseUrl: import.meta.env.VITE_PREP_API_BASE ?? '',
           signal: preparation.signal,
           onProgress: (stage, payload) => {
@@ -228,24 +231,22 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
             }
           },
         });
-        stopCreep();
-        if (!preparation.isCurrent()) {
-          abandon();
-          return;
-        }
-        preparation.settle();
-        return next(bundleFile, queuedOptions);
       } catch (error) {
-        stopCreep();
-        if (!preparation.isCurrent()) {
-          // Aborted by the newer request, which owns the overlay: no toast.
-          abandon();
+        // Aborted by the newer request, which owns the overlay: no toast.
+        if (abandonIfSuperseded()) {
           return;
         }
         preparation.settle();
         overlayController.update(false, 0, '', '');
         throw error;
+      } finally {
+        stopCreep();
       }
+      if (abandonIfSuperseded()) {
+        return;
+      }
+      preparation.settle();
+      return next(bundleFile, queuedOptions);
     });
   };
   lifecycle.addCleanup(() => {

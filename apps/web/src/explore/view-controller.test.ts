@@ -333,16 +333,6 @@ describe('createViewController', () => {
 
       expect(result).toEqual({ annotation: 'ec', projection: 'UMAP', tooltip: [], density: 'off' });
     });
-
-    it('keeps its own copy of the defaults', () => {
-      const { viewController } = setup();
-      const tooltip = ['go'];
-      viewController.setDatasetDefaults({ ...defaults, tooltip });
-      tooltip.push('ec');
-      viewController.recordRequestedView(createEmptyExploreViewRequest());
-
-      expect(viewController.resolveLatestView()?.tooltip).toEqual(['go']);
-    });
   });
 
   it('recordCurrentView replaces a recorded request with the view on screen, without applying it', () => {

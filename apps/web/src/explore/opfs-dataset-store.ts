@@ -245,14 +245,14 @@ export async function loadLastImportedFile(): Promise<File | null> {
 }
 
 /**
- * Update the persisted load status. Single-tab assumption: this is a non-atomic
- * read-modify-write; concurrent writers from multiple tabs could race and lose a
- * counter increment. Acceptable today because the dataset-controller dispatches
- * load lifecycle events sequentially within one tab.
+ * Rewrites the stored metadata with `update`, if an import is stored and its
+ * metadata reads. Single-tab assumption: this is a non-atomic
+ * read-modify-write; concurrent writers from multiple tabs could race and lose
+ * a counter increment. Acceptable today because the dataset-controller
+ * dispatches load lifecycle events sequentially within one tab.
  */
-export async function markLastLoadStatus(
-  status: LastLoadStatus,
-  options?: { error?: string },
+async function updateMetadata(
+  update: (current: StoredDatasetMetadata) => StoredDatasetMetadata,
 ): Promise<void> {
   const directory = await getStoreDirectory(false);
   if (!directory) return;
@@ -265,31 +265,39 @@ export async function markLastLoadStatus(
   }
   if (!current) return;
 
-  // failedAttempts tracks consecutive unfinalized loads (a streak counter):
-  // - success: reset to 0
-  // - pending: increment only if the previous status was already pending
-  //   (i.e., a prior load was never finalized); a success→pending transition
-  //   means the user is retrying a healthy dataset and must not inflate the count
-  // - error: increment unconditionally (every error extends the failure streak)
-  let failedAttempts: number;
-  if (status === 'success') {
-    failedAttempts = 0;
-  } else if (status === 'pending') {
-    failedAttempts =
-      current.lastLoadStatus === 'pending' ? current.failedAttempts + 1 : current.failedAttempts;
-  } else {
-    // error
-    failedAttempts = current.failedAttempts + 1;
-  }
+  await writeMetadata(directory, update(current));
+}
 
-  const next: StoredDatasetMetadata = {
-    ...current,
-    lastLoadStatus: status,
-    lastError: status === 'error' ? options?.error : undefined,
-    failedAttempts,
-  };
+/** Update the persisted load status. */
+export async function markLastLoadStatus(
+  status: LastLoadStatus,
+  options?: { error?: string },
+): Promise<void> {
+  await updateMetadata((current) => {
+    // failedAttempts tracks consecutive unfinalized loads (a streak counter):
+    // - success: reset to 0
+    // - pending: increment only if the previous status was already pending
+    //   (i.e., a prior load was never finalized); a success→pending transition
+    //   means the user is retrying a healthy dataset and must not inflate the count
+    // - error: increment unconditionally (every error extends the failure streak)
+    let failedAttempts: number;
+    if (status === 'success') {
+      failedAttempts = 0;
+    } else if (status === 'pending') {
+      failedAttempts =
+        current.lastLoadStatus === 'pending' ? current.failedAttempts + 1 : current.failedAttempts;
+    } else {
+      // error
+      failedAttempts = current.failedAttempts + 1;
+    }
 
-  await writeMetadata(directory, next);
+    return {
+      ...current,
+      lastLoadStatus: status,
+      lastError: status === 'error' ? options?.error : undefined,
+      failedAttempts,
+    };
+  });
 }
 
 /**
@@ -302,23 +310,12 @@ export async function restoreLastLoadStatus(previous: {
   lastError?: string;
   failedAttempts: number;
 }): Promise<void> {
-  const directory = await getStoreDirectory(false);
-  if (!directory) return;
-
-  let current: StoredDatasetMetadata | null = null;
-  try {
-    current = await readMetadata();
-  } catch {
-    return;
-  }
-  if (!current) return;
-
-  await writeMetadata(directory, {
+  await updateMetadata((current) => ({
     ...current,
     lastLoadStatus: previous.status,
     lastError: previous.lastError,
     failedAttempts: previous.failedAttempts,
-  });
+  }));
 }
 
 export async function readLastLoadStatus(): Promise<{

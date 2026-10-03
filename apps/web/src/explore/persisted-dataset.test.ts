@@ -330,6 +330,23 @@ describe('example download progress', () => {
     ]);
   });
 
+  it('updates the overlay at most once per whole percent of the download', async () => {
+    // 100 chunks of 0.1 MB: each moves the shown amount, but only every fifth
+    // the whole percent of a 50 MB download.
+    const entry = { ...OTHER, sizeBytes: 50 * MB };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamedResponse(Array(100).fill(MB / 10))));
+    const { controller, dataLoader, overlayController, loadQueue } = createController();
+
+    const result = controller.loadExampleDataset(entry, 'menu');
+    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
+    loadQueue.resolveOutcome(1, true);
+    await result;
+
+    const updates = downloadUpdates(overlayController.update);
+    expect(updates).toHaveLength(21);
+    expect(updates[updates.length - 1]).toEqual([(10 / 50) * DOWNLOAD_SHARE, '10.0 / 50.0 MB']);
+  });
+
   it('stays capped when the body outgrows the recorded size', async () => {
     const entry = { ...OTHER, sizeBytes: 2 * MB };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamedResponse([MB, MB, MB])));

@@ -200,11 +200,13 @@ export function createPersistedDatasetController({
     }
     // Progress is the decoded bytes received over the entry's decoded size
     // (see `readDownload`), capped, with "12.3 / 44.9 MB" as the overlay's
-    // sub-message. Only a change of that text updates the overlay, not every
-    // chunk.
+    // sub-message. The overlay, a polite live region, updates only once both
+    // that text and the whole percent downloaded have changed: at most a
+    // hundred times per download, never per chunk.
     const downloadMessage = `Downloading ${entry.label}…`;
     const totalLabel = formatMegabytes(entry.sizeBytes);
     let shownAmount = '';
+    let shownPercent = -1;
     const showDownloadProgress = (received: number) => {
       // A chunk read as a newer request aborts this download must not put
       // back the overlay that request (or a cancel) now owns.
@@ -212,12 +214,14 @@ export function createPersistedDatasetController({
         return;
       }
       const shown = Math.min(received, entry.sizeBytes);
+      const fraction = entry.sizeBytes > 0 ? shown / entry.sizeBytes : 1;
+      const percent = Math.floor(fraction * 100);
       const amount = `${(shown / 1e6).toFixed(1)} / ${totalLabel}`;
-      if (amount === shownAmount) {
+      if (amount === shownAmount || percent === shownPercent) {
         return;
       }
       shownAmount = amount;
-      const fraction = entry.sizeBytes > 0 ? shown / entry.sizeBytes : 1;
+      shownPercent = percent;
       overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, downloadMessage, amount);
     };
     showDownloadProgress(0);

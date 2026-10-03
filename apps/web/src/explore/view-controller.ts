@@ -270,14 +270,7 @@ export function createViewController({
         : createEmptyExploreViewRequest();
     },
     setDatasetDefaults(defaults: ExploreViewDefaults | null) {
-      datasetDefaults =
-        defaults === null
-          ? {}
-          : {
-              annotation: defaults.annotation,
-              projection: defaults.projection,
-              tooltip: defaults.tooltip && [...defaults.tooltip],
-            };
+      datasetDefaults = defaults ?? {};
     },
     handleUserAnnotationChange() {
       emitCurrentUserViewChange();
