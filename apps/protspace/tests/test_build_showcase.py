@@ -151,9 +151,7 @@ def test_the_cell_grammar_is_protspaces_own():
     assert bs.CONTAINER_VERSION == bundle_v3.CONTAINER_VERSION == 3
 
 
-def test_display_values_and_cell_labels():
-    assert bs.display_values("A|IC;B%3Bc|1.0") == ["A", "B;c"]
-    assert bs.display_values(None) == ["None"]
+def test_cell_labels():
     assert bs.cell_labels(" A |x; ;__NA__") == ["A"]
     # N/A is tested on the hit with its suffix, as the web does: "None|0.9" is
     # the category "None" in the legend, and an empty label is no category.
@@ -1276,7 +1274,7 @@ def test_filter_styles_drops_absent_values_and_resizes_the_pinned_legend():
     assert "gone" not in kept and len(notes) == 4
 
 
-def test_filter_legend_and_settings_shapes():
+def test_filter_legend_keeps_present_and_na_categories():
     table = _annotations(protein_families=["A", "B|IC", ""])
     legend = {
         "sortMode": "manual",
@@ -1284,17 +1282,6 @@ def test_filter_legend_and_settings_shapes():
     }
     kept, notes = bs.filter_legend(legend, table, "protein_families")
     assert list(kept["categories"]) == ["A", "__NA__"] and len(notes) == 1
-    assert bs.make_settings({"a": {}}, None) == {"a": {}}
-    assert bs.make_settings({}, None) is None
-    envelope = bs.make_settings({"a": {}}, {"eatConfidenceThreshold": 0.5})
-    assert envelope == {
-        "legendSettings": {"a": {}},
-        "exportOptions": {},
-        "eatConfidenceThreshold": 0.5,
-    }
-    assert bs.unwrap_legends(envelope) == {"a": {}}
-    assert bs.unwrap_legends({"a": {}}) == {"a": {}}
-    assert bs.unwrap_legends(None) == {}
 
 
 # ---------------------------------------------------------------------------

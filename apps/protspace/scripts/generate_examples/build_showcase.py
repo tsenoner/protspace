@@ -91,9 +91,17 @@ from protspace.data.io.bundle import (
     replace_settings_in_bundle,
 )
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION
-from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
+from protspace.data.io.settings_converter import (
+    KELLYS_COLORS,
+    LEGEND_SETTINGS_KEY,
+    NA_PINNED_COLOR,
+    is_frontend_envelope,
+    rewrap_settings,
+    unwrap_settings,
+)
 from protspace.data.loaders.h5 import split_h5_spec
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
+from protspace.utils.add_annotation_style import resolve_style_key, style_keys
 
 logger = logging.getLogger("build_showcase")
 
@@ -176,17 +184,6 @@ def format_version(table: pa.Table) -> int:
     Not the container version: see :attr:`Bundle.container_version`.
     """
     return read_format_version(table)
-
-
-def display_values(cell: Any) -> list[str]:
-    """Display values of a cell exactly as ``protspace style`` keys them.
-
-    ``;`` splits hits, each hit loses its ``|score``/``|evidence`` suffix and is
-    percent-decoded. Nothing is stripped, so the result matches the keys a styles
-    file must use. ``None`` reads as ``"None"`` (what ``str()`` gives the CLI).
-    """
-    raw = "None" if cell is None else str(cell)
-    return [decode_field(part.split("|", 1)[0]) for part in raw.split(";")]
 
 
 def cell_labels(cell: Any) -> list[str]:
@@ -739,27 +736,17 @@ def resolve_default_view(
 # ---------------------------------------------------------------------------
 
 
-def column_display_values(table: pa.Table, column: str) -> Counter:
-    counts: Counter = Counter()
-    for cell in table.column(column).to_pylist():
-        counts.update(display_values(cell))
-    return counts
-
-
-def _present(value: str, values: set[str]) -> bool:
-    if value in values:
-        return True
-    return is_missing_label(value) and any(is_missing_label(v) for v in values)
-
-
 def filter_styles(
     styles: dict[str, dict], table: pa.Table
 ) -> tuple[dict[str, dict], list[str]]:
     """Drop style entries naming columns or values the built data lacks.
 
     ``protspace style`` fails on an unknown colour/shape value, and refreshed
-    annotations can lose a category. Pinned lists shrink the same way, and
-    ``maxVisibleValues`` follows a pinned list that has no ``__REST__``.
+    annotations can lose a category; a value counts as present when protspace's
+    own resolver finds it (:func:`resolve_style_key`: the value, the data's N/A
+    spelling, or the same number spelled another way). Pinned lists shrink the
+    same way, and ``maxVisibleValues`` follows a pinned list that has no
+    ``__REST__``.
     """
     kept: dict[str, dict] = {}
     notes: list[str] = []
@@ -767,22 +754,24 @@ def filter_styles(
         if column not in table.column_names:
             notes.append(f"style for missing column {column!r} dropped")
             continue
-        values = set(column_display_values(table, column))
+        values = style_keys(table.column(column).to_pylist())
         entry = json.loads(json.dumps(entry))
         for key in ("colors", "shapes"):
             if key in entry:
                 for value in list(entry[key]):
-                    if not _present(value, values):
+                    if resolve_style_key(value, values) is None:
                         notes.append(f"{column}: {key} for absent {value!r} dropped")
                         del entry[key][value]
         if "hiddenValues" in entry:
             entry["hiddenValues"] = [
-                v for v in entry["hiddenValues"] if _present(v, values)
+                v
+                for v in entry["hiddenValues"]
+                if resolve_style_key(v, values) is not None
             ]
         if "pinnedValues" in entry:
             pinned = []
             for value in entry["pinnedValues"]:
-                if value == "__REST__" or _present(value, values):
+                if value == "__REST__" or resolve_style_key(value, values) is not None:
                     pinned.append(value)
                 else:
                     notes.append(f"{column}: pinned {value!r} absent, dropped")
@@ -794,37 +783,21 @@ def filter_styles(
 
 
 def filter_legend(entry: dict, table: pa.Table, column: str) -> tuple[dict, list[str]]:
-    """Keep a carried-over legend's categories that still exist in the data."""
-    values = set(column_display_values(table, column))
+    """Keep a carried-over legend's categories that still exist in the data.
+
+    A category the web shows as N/A is kept whatever the data holds.
+    """
+    values = style_keys(table.column(column).to_pylist())
     entry = json.loads(json.dumps(entry))
     categories = entry.get("categories") or {}
     dropped = [
         key
         for key in categories
-        if not is_missing_label(key) and not _present(key, values)
+        if not is_missing_label(key) and resolve_style_key(key, values) is None
     ]
     for key in dropped:
         del categories[key]
     return entry, [f"{column}: legend category {k!r} absent, dropped" for k in dropped]
-
-
-def unwrap_legends(settings: dict | None) -> dict:
-    """The annotation-keyed legend map of a flat or envelope settings dict."""
-    if not settings:
-        return {}
-    inner = settings.get("legendSettings")
-    if isinstance(inner, dict) and "exportOptions" in settings:
-        return dict(inner)
-    return dict(settings)
-
-
-def make_settings(legends: dict, envelope: dict | None) -> dict | None:
-    """Flat legend map, or the frontend envelope when EAT display settings apply."""
-    if envelope:
-        settings = {"legendSettings": legends, "exportOptions": {}}
-        settings.update(envelope)
-        return settings
-    return legends or None
 
 
 # ---------------------------------------------------------------------------
@@ -1503,11 +1476,8 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
     settings = bundle.settings
     envelope = dataset.get("envelope")
     if envelope:
-        ok = (
-            isinstance(settings, dict)
-            and isinstance(settings.get("legendSettings"), dict)
-            and "exportOptions" in settings
-            and all(settings.get(k) == v for k, v in envelope.items())
+        ok = is_frontend_envelope(settings) and all(
+            settings.get(k) == v for k, v in envelope.items()
         )
         gates.append(
             Gate(
@@ -4526,7 +4496,15 @@ def tail_steps(ctx: Context) -> list[Step]:
             raise BuildError("the bundled annotations lost their cell-grammar v2 stamp")
         legends, notes = carried_legends(ctx, table)
         legends.update(bundle_.settings or {})  # the styled legends win
-        settings = make_settings(legends, ctx.dataset.get("envelope"))
+        envelope = ctx.dataset.get("envelope")
+        # The frontend's envelope when EAT display settings apply, else flat.
+        settings = (
+            rewrap_settings(
+                legends, {LEGEND_SETTINGS_KEY: {}, "exportOptions": {}, **envelope}
+            )
+            if envelope
+            else legends or None
+        )
         for note in notes:
             ctx.log(f"settings: {note}")
         table = set_provenance(table, provenance(ctx, table))
@@ -4584,9 +4562,8 @@ def carried_legends(ctx: Context, table: pa.Table) -> tuple[dict, list[str]]:
     notes: list[str] = []
     wanted = ctx.dataset.get("source_legends")
     if wanted:
-        for column, entry in unwrap_legends(
-            read_bundle(find_source(ctx)).settings
-        ).items():
+        source_settings = read_bundle(find_source(ctx)).settings or {}
+        for column, entry in unwrap_settings(source_settings).items():
             if column in wanted and column in table.column_names:
                 entry, dropped = filter_legend(entry, table, column)
                 legends[column] = entry
