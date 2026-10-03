@@ -773,13 +773,15 @@ _TOOLTIP_RE = re.compile(r"\btooltip\s*:\s*\[(?P<items>.*?)\]", re.S)
 _STRING_RE = re.compile(r"(['\"])(?P<value>.*?)\1")
 
 
-def parse_catalog_default_views(source: str) -> dict[str, dict[str, Any]]:
-    """``{id: {projection, annotation, tooltip}}`` from ``example-datasets.ts``.
+def parse_catalog_default_views(source: str) -> dict[str, list[dict[str, Any]]]:
+    """``{id: [{projection, annotation, tooltip}, …]}`` from ``example-datasets.ts``.
 
     Tolerant of formatting: each ``id:`` owns the ``defaultView: {…}`` that follows
-    it before the next ``id:``. Entries without a defaultView are left out.
+    it before the next ``id:``. Entries without a defaultView are left out. An id
+    the source lists twice (the interim catalog's ``demo``, until it is deleted)
+    has a view per listing.
     """
-    views: dict[str, dict[str, Any]] = {}
+    views: dict[str, list[dict[str, Any]]] = {}
     matches = list(_ID_RE.finditer(source))
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
@@ -799,26 +801,26 @@ def parse_catalog_default_views(source: str) -> dict[str, dict[str, Any]]:
             else []
         )
         if "projection" in entry and "annotation" in entry:
-            views[match.group("id")] = entry
+            views.setdefault(match.group("id"), []).append(entry)
     return views
 
 
-def resolve_default_view(
-    ds_id: str, dataset: dict, catalog: Path | None
-) -> tuple[dict[str, Any], str]:
-    """The catalog's defaultView when the catalog has one for ``ds_id``, else the
-    provisional one in showcase.toml."""
-    source = "showcase.toml (provisional)"
-    if catalog and catalog.is_file():
-        text = catalog.read_text()
-        views = parse_catalog_default_views(text)
-        if ds_id in views:
-            return views[ds_id], f"catalog ({catalog.name})"
-        if any(m.group("id") == ds_id for m in _ID_RE.finditer(text)):
-            source += "; WARNING: the catalog has this id but no parsable defaultView"
-    view = dict(dataset.get("default_view") or {})
-    view.setdefault("tooltip", [])
-    return view, source
+def resolve_default_view(ds_id: str, catalog: Path) -> dict[str, Any]:
+    """The web catalog's ``defaultView`` for ``ds_id``, the one source of the view
+    an example opens on: the build orders its columns by it and the gates check
+    it. An id without one, or listed with two different ones, fails."""
+    if not catalog.is_file():
+        raise BuildError(f"the web catalog {catalog} does not exist")
+    found = parse_catalog_default_views(catalog.read_text()).get(ds_id, [])
+    views = list({json.dumps(v, sort_keys=True): v for v in found}.values())
+    if not views:
+        raise BuildError(
+            f"{catalog.name} gives {ds_id!r} no defaultView with a projection and "
+            "an annotation"
+        )
+    if len(views) > 1:
+        raise BuildError(f"{catalog.name} gives {ds_id!r} different defaultViews")
+    return views[0]
 
 
 # ---------------------------------------------------------------------------
@@ -2666,7 +2668,6 @@ VERIFY_ONLY_KEYS = frozenset(
         "max_obsolete",
         "gates",
         "report",
-        "default_view",
         "pins",
     }
 )
@@ -2714,7 +2715,6 @@ class Context:
     release: str
     dry_run: bool
     view: dict
-    view_source: str
     enabled_stages: set[str] = field(default_factory=set)
     redo: set[str] = field(default_factory=set)
     #: ``--web-cut``/``--no-web-cut`` for this invocation; ``None`` keeps the
@@ -4880,7 +4880,6 @@ def verify(ctx: Context, bundle: Bundle | None = None) -> tuple[bool, list[Gate]
         "web_cut": ctx.web_cut_active(),
         "verified_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "default_view": ctx.view,
-        "default_view_source": ctx.view_source,
         "summary": text,
         "gates": [g.__dict__ for g in gates],
     }
@@ -4890,7 +4889,7 @@ def verify(ctx: Context, bundle: Bundle | None = None) -> tuple[bool, list[Gate]
     )
     for gate in gates:
         ctx.log(f"gate {gate.status.upper():7} {gate.name}: {gate.detail}")
-    ctx.log(f"verify: {text} (default view from {ctx.view_source})")
+    ctx.log(f"verify: {text}")
     return ok, gates
 
 
@@ -5768,10 +5767,9 @@ def make_context(
     args: argparse.Namespace, config: Config, ds_id: str, cli: Cli | None
 ) -> Context:
     dataset = config.datasets[ds_id]
-    catalog = (
-        config.path(config.build["catalog"]) if config.build.get("catalog") else None
-    )
-    view, source = resolve_default_view(ds_id, dataset, catalog)
+    if not config.build.get("catalog"):
+        raise BuildError("[build] catalog (the web app's example catalog) is not set")
+    view = resolve_default_view(ds_id, config.path(config.build["catalog"]))
     return Context(
         ds_id=ds_id,
         dataset=dataset,
@@ -5781,7 +5779,6 @@ def make_context(
         release=args.release,
         dry_run=getattr(args, "dry_run", False),
         view=view,
-        view_source=source,
         enabled_stages=set(getattr(args, "enable_stage", []) or []),
         redo=set(getattr(args, "redo", []) or []),
         web_cut=getattr(args, "web_cut", None),
@@ -5886,7 +5883,7 @@ def cmd_build(args: argparse.Namespace, config: Config) -> int:
         ctx.log(
             f"{'verify' if args.verify_only else 'build'} {ctx.dataset['kind']} → {ctx.final}"
         )
-        ctx.log(f"default view ({ctx.view_source}): {ctx.view}")
+        ctx.log(f"default view: {ctx.view}")
         if args.verify_only:
             ok, _ = verify(ctx)
             failed += [] if ok else [ds_id]

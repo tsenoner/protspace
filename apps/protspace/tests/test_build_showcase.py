@@ -1210,27 +1210,46 @@ export const EXAMPLE_DATASETS = [
 def test_parse_catalog_default_views():
     views = bs.parse_catalog_default_views(CATALOG)
     assert views == {
-        "demo": {
-            "projection": "ProtT5 — UMAP 2",
-            "annotation": "protein_families",
-            "tooltip": ["species", "ec"],
-        },
-        "venom-eat": {
-            "projection": "ProtT5 — PCA 2",
-            "annotation": "ec",
-            "tooltip": [],
-        },
+        "demo": [
+            {
+                "projection": "ProtT5 — UMAP 2",
+                "annotation": "protein_families",
+                "tooltip": ["species", "ec"],
+            }
+        ],
+        "venom-eat": [
+            {"projection": "ProtT5 — PCA 2", "annotation": "ec", "tooltip": []}
+        ],
     }
 
 
-def test_resolve_default_view_prefers_the_catalog(tmp_path):
+def test_the_default_view_comes_from_the_catalog_alone(tmp_path):
     catalog = tmp_path / "example-datasets.ts"
     catalog.write_text(CATALOG)
-    dataset = {"default_view": {"projection": "P", "annotation": "a", "tooltip": ["b"]}}
-    view, source = bs.resolve_default_view("venom-eat", dataset, catalog)
-    assert view["projection"] == "ProtT5 — PCA 2" and source.startswith("catalog")
-    view, source = bs.resolve_default_view("swissprot", dataset, catalog)
-    assert view == dataset["default_view"] and "provisional" in source
+    view = bs.resolve_default_view("venom-eat", catalog)
+    assert view == {"projection": "ProtT5 — PCA 2", "annotation": "ec", "tooltip": []}
+    for ds_id in ("old", "swissprot"):  # no defaultView, or not listed
+        with pytest.raises(bs.BuildError, match="no defaultView"):
+            bs.resolve_default_view(ds_id, catalog)
+    with pytest.raises(bs.BuildError, match="does not exist"):
+        bs.resolve_default_view("demo", tmp_path / "absent.ts")
+    # The interim catalog lists the demo again: the same view is fine, another not.
+    demo = "  { id: 'demo', defaultView: { projection: 'ProtT5 — UMAP 2', "
+    catalog.write_text(
+        CATALOG
+        + demo
+        + "annotation: 'protein_families', tooltip: ['species', 'ec'] } },"
+    )
+    assert bs.resolve_default_view("demo", catalog)["annotation"] == "protein_families"
+    catalog.write_text(CATALOG + demo + "annotation: 'ec' } },")
+    with pytest.raises(bs.BuildError, match="different defaultViews"):
+        bs.resolve_default_view("demo", catalog)
+
+
+def test_the_real_catalog_gives_every_showcase_example_a_view(config):
+    catalog = config.path(config.build["catalog"])
+    for ds_id in config.datasets:
+        assert bs.resolve_default_view(ds_id, catalog)["projection"], ds_id
 
 
 # ---------------------------------------------------------------------------
@@ -1722,7 +1741,7 @@ def test_the_swissprot_statistics_list_follows_the_paper(config):
 
 def test_every_recipe_is_complete(config):
     for ds_id, dataset in config.datasets.items():
-        view = dataset["default_view"]
+        view = _view(config, ds_id)
         spec_ = bs.parse_projection_spec(dataset["projections"])
         assert spec_[0][1] == "ProtT5 — UMAP 2", ds_id  # UMAP first everywhere
         assert view["projection"] in [t for _, t in spec_], ds_id
@@ -1754,7 +1773,7 @@ def test_the_eat_example_opens_at_reliability_0_on_its_truth(config):
         "eatOverlayEnabled": True,
         "eatConfidenceThreshold": 0,
     }
-    view = dataset["default_view"]
+    view = _view(config, "three-finger-toxins")
     assert view["annotation"] == "toxin_class"
     assert view["tooltip"] == ["toxin_class_withheld", "species", "eat_split"]
     assert (
@@ -1786,18 +1805,21 @@ def test_the_membership_file_matches_its_pin(config):
     assert any(dataset["membership_release"] in line for line in header)
 
 
+def _view(config, ds_id):
+    """The example's default view, from the web catalog as the build reads it."""
+    return bs.resolve_default_view(ds_id, config.path(config.build["catalog"]))
+
+
 def _context(config, ds_id, tmp_path, cli=None, **kwargs):
-    dataset = config.datasets[ds_id]
     return bs.Context(
         ds_id=ds_id,
-        dataset=dataset,
+        dataset=config.datasets[ds_id],
         config=config,
         out_root=tmp_path,
         cli=cli,
         release="2026_03",
         dry_run=kwargs.pop("dry_run", True),
-        view=dataset["default_view"],
-        view_source="test",
+        view=_view(config, ds_id),
         **kwargs,
     )
 

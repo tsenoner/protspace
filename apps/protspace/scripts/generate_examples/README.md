@@ -270,9 +270,9 @@ They never upload anything: creating releases is an owner step (tasks §8).
 
 ## Choosing the default view (G2, tasks 7.5)
 
-`showcase.toml`'s `default_view` entries are **provisional**. The web catalog
-(`apps/web/src/explore/example-datasets.ts`) owns the final pick, and once it has a
-`defaultView` for an id, the build and the gates use the catalog's.
+The web catalog (`apps/web/src/explore/example-datasets.ts`, `[build] catalog`) is the one
+source of the view each example opens on: the build orders the columns by its
+`defaultView` and the gates check it, and a dataset the catalog gives none fails.
 
 `report/report.md` scores every candidate annotation × projection:
 

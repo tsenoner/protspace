@@ -15,10 +15,10 @@
 # `--path NAME=VALUE` (or PROTSPACE_SUITE for {suite}). Every input is READ-ONLY:
 # the build writes only under the output root.
 #
-# `default_view` values are PROVISIONAL (D5). The web catalog
-# (apps/web/src/explore/example-datasets.ts) owns the final picks; once an entry
-# there has a defaultView, the build uses it and this one is ignored. Pick the
-# final view from `report/report.md` and the thumbnails (G2, tasks 7.5).
+# The view each example opens on is the web catalog's `defaultView`
+# (apps/web/src/explore/example-datasets.ts, `[build] catalog`), its one source:
+# the build orders the columns by it and the gates check it. Pick it from
+# `report/report.md` and the thumbnails (G2, tasks 7.5).
 
 [build]
 uniprot_release = "2026_03"       # annotations are refreshed at this release; the build stops if UniProt serves another
@@ -73,11 +73,6 @@ stats = false                             # two embeddings without a metadata `s
 reviewed = "Swiss-Prot"
 max_obsolete = 50
 keep_uninformative = ["reviewed", "domain", "kingdom", "root"]  # ToxProt is Swiss-Prot animals: one value each, documented columns
-
-[datasets.demo.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "protein_families"
-tooltip = ["species", "ec"]
 
 [datasets.demo.report]
 annotations = ["protein_families", "ec", "pfam", "order", "family", "predicted_subcellular_location"]
@@ -212,11 +207,6 @@ metric = "euclidean"   # the RI scale the paper uses (W26); cosine puts every qu
 query_where = ["eat_split~holdout", "eat_split~trembl"]
 reference_where = ["eat_split~reference"]
 
-[datasets.three-finger-toxins.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "toxin_class"
-tooltip = ["toxin_class_withheld", "species", "eat_split"]
-
 [datasets.three-finger-toxins.report]
 annotations = ["toxin_class", "toxin_subfamily", "eat_split", "genus", "family", "pfam"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
@@ -346,11 +336,6 @@ reviewed = "mixed"
 max_obsolete = 400   # G17: about 195 expected
 keep_uninformative = ["domain", "kingdom", "root"]  # two animal proteomes: one value each, documented columns
 
-[datasets.human-fly.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "species"
-tooltip = ["protein_families", "reviewed"]
-
 [datasets.human-fly.report]
 annotations = ["species", "protein_families", "reviewed", "protein_existence"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
@@ -449,11 +434,6 @@ styles = "styles/beta-lactamase.json"
 reviewed = "mixed"
 max_obsolete = 200   # G17: about 80 expected
 
-[datasets.beta-lactamase.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "protein_families"
-tooltip = ["ec", "species"]
-
 [datasets.beta-lactamase.report]
 annotations = ["protein_families", "ec", "domain", "kingdom"]
 projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
@@ -535,11 +515,6 @@ styles = "styles/swissprot.json"
 reviewed = "Swiss-Prot"
 max_obsolete = 100   # G17: about 45 expected
 keep_uninformative = ["reviewed"]   # all Swiss-Prot, a documented column
-
-[datasets.swissprot.default_view]
-projection = "ProtT5 — UMAP 2"
-annotation = "domain"
-tooltip = ["protein_families", "species"]
 
 [datasets.swissprot.report]
 annotations = ["domain", "kingdom", "protein_families", "pfam_clan"]
