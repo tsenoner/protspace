@@ -172,9 +172,15 @@ export function createDatasetController({
 }: DatasetControllerOptions): DatasetController {
   // An example's download fills the first part of the loading bar
   // (persisted-dataset.ts). Its decode and render phases report 0–100 of
-  // their own, mapped onto the rest, so the bar never runs backwards.
+  // their own, mapped onto the rest, so the bar never runs backwards. A load
+  // a newer request has superseded leaves the overlay alone: that request
+  // owns it, and a render step or the render's final hide would otherwise
+  // cover or dismiss its "Downloading…".
   const phaseOverlayController: Pick<LoadingOverlayController, 'update'> = {
     update(show, progress, message, subMessage, note) {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
       const afterDownload =
         show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
       overlayController.update(
@@ -615,8 +621,12 @@ export function createDatasetController({
     // failed to parse. Neither loadData (data-renderer.ts, success only) nor
     // the fetch-catch branch in persisted-dataset.ts (network failure only)
     // runs for this path, so nothing else dismisses the loading overlay —
-    // without this, the UI stays behind it, unusable, until reload.
-    overlayController.update(false);
+    // without this, the UI stays behind it, unusable, until reload. A user
+    // import a newer request has superseded still reports its failure, but
+    // the overlay is that request's (an example still downloading, say).
+    if (!isLoadSuperseded(runningLoadMeta)) {
+      overlayController.update(false);
+    }
     notify.error(getDataLoadFailureNotification(customEvent.detail));
     settleFailed();
   };

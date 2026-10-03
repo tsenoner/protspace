@@ -13,6 +13,7 @@ import type { LoadMeta } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
+  rendererOverlay: null as null | { update: (...args: unknown[]) => void },
   persistedOptions: null as null | {
     retryUrlExample?: (id: string) => void;
     onExampleLoadCancelled?: (cancel: { epoch: number; source: string }) => void;
@@ -44,7 +45,12 @@ vi.mock('./example-datasets', async (importOriginal) =>
 );
 
 vi.mock('./data-renderer', () => ({
-  createDataRenderer: () => mocks.loadData,
+  createDataRenderer: (options: {
+    overlayController: { update: (...args: unknown[]) => void };
+  }) => {
+    mocks.rendererOverlay = options.overlayController;
+    return mocks.loadData;
+  },
 }));
 
 vi.mock('./persisted-dataset', () => ({
@@ -280,6 +286,48 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     controller.handleLoadingStart();
     controller.handleLoadingProgress({ detail: { percentage: 50 } } as unknown as Event);
     expect(overlayController.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('the render of a superseded load leaves the overlay to the newer request', () => {
+    const loadMeta = exampleMeta('menu');
+    const { overlayController } = createController({ getRunningLoadMeta: () => loadMeta });
+    const renderOverlay = mocks.rendererOverlay!;
+
+    // A newer request (say a Back to another example, now downloading) owns
+    // the overlay: neither a render step nor the render's final hide reaches it.
+    mocks.persisted.isCurrentRequest.mockReturnValue(false);
+    renderOverlay.update(true, 60, 'Organizing color categories...', 'Visualizing 1 proteins');
+    renderOverlay.update(false);
+    expect(overlayController.update).not.toHaveBeenCalled();
+
+    mocks.persisted.isCurrentRequest.mockReturnValue(true);
+    renderOverlay.update(false);
+    expect(overlayController.update).toHaveBeenCalledWith(
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  it("a superseded user import's parse failure is reported but leaves the overlay to the newer request", async () => {
+    const loadMeta: LoadMeta = { sequence: 1, kind: 'user', epoch: 1 };
+    const { controller, overlayController } = createController({
+      getRunningLoadMeta: () => loadMeta,
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.persisted.isCurrentRequest.mockReturnValue(false);
+
+    await controller.handleDataError(dataErrorEvent());
+
+    expect(overlayController.update).not.toHaveBeenCalled();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1, false);
+
+    mocks.persisted.isCurrentRequest.mockReturnValue(true);
+    await controller.handleDataError(dataErrorEvent());
+    expect(overlayController.update).toHaveBeenCalledWith(false);
+    errorSpy.mockRestore();
   });
 
   it('an OPFS restore that fails to parse recovers under the epoch it began with', async () => {
