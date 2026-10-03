@@ -4903,9 +4903,9 @@ def mature_inputs_gate(
 
     - each pinned accession has a vector, embedded from exactly
       ``sequence[start-1:end]`` of its entry, and the vector's
-      ``protspace_sequence_sha256`` (which ``protspace embed`` stores) is that
-      sequence's: so a pinned ``embed.input`` must have been made from these
-      chains too;
+      digest (``SEQUENCE_DIGEST_ATTR``, which ``protspace embed`` stores) is that
+      sequence's ``sequence_digest``: so a pinned ``embed.input`` must have been
+      made from these chains too;
     - no row used as deposited is predicted to carry a signal peptide
       (``predicted_signal_peptide`` of the bundle, from the full-length
       sequence) or holds the recipe's ``signal_motif`` in its first
@@ -4920,6 +4920,9 @@ def mature_inputs_gate(
     """
     import h5py
 
+    from protspace.data.embedding.store import SEQUENCE_DIGEST_ATTR, sequence_digest
+    from protspace.data.loaders.fasta import parse_fasta_normalized
+
     work = ctx.work
     options = ctx.dataset.get("mature") or {}
     try:
@@ -4931,12 +4934,10 @@ def mature_inputs_gate(
                 row[0]: dict(zip(header, row, strict=True))
                 for row in (line.rstrip("\n").split("\t") for line in handle)
             }
-        embedded = parse_fasta_text((work / "mature.fasta").read_text())
+        embedded = parse_fasta_normalized(work / "mature.fasta")
         with h5py.File(embed_h5(ctx), "r") as handle:
             keys = set(handle.keys())
-            digests = {
-                key: handle[key].attrs.get("protspace_sequence_sha256") for key in keys
-            }
+            digests = {key: handle[key].attrs.get(SEQUENCE_DIGEST_ATTR) for key in keys}
     except (BuildError, OSError, KeyError) as error:
         return Gate("mature-inputs", "fail", f"cannot check: {error}")
     problems = []
@@ -4964,13 +4965,12 @@ def mature_inputs_gate(
         pid
         for pid in pinned
         if pid in keys
-        and _text(digests.get(pid))
-        != hashlib.sha256(embedded.get(pid, "").encode()).hexdigest()[:16]
+        and _text(digests.get(pid)) != sequence_digest(embedded.get(pid, ""))
     ]
     if other_residues:
         problems.append(
             f"{len(other_residues)} vectors not computed from the embedded chain "
-            f"(protspace_sequence_sha256; first {other_residues[:3]})"
+            f"({SEQUENCE_DIGEST_ATTR}; first {other_residues[:3]})"
         )
     as_deposited = [
         pid for pid in pinned if mature.get(pid, {}).get("derivation") == "as deposited"

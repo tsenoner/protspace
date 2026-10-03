@@ -26,6 +26,7 @@ import requests
 
 from protspace.data.annotations.encoding import has_format_version
 from protspace.data.annotations.manager import UNIPROT_RELEASE_ATTR
+from protspace.data.embedding.store import SEQUENCE_DIGEST_ATTR, sequence_digest
 from protspace.data.io.bundle import (
     convert_bundle,
     create_settings_parquet,
@@ -2885,10 +2886,8 @@ class EmbedBuildCli(bs.Cli):
                     dataset = handle.create_dataset(
                         accession, data=self._vector(accession)
                     )
-                    # What protspace embed stores (data/embedding/store.py).
-                    dataset.attrs["protspace_sequence_sha256"] = hashlib.sha256(
-                        sequence.encode()
-                    ).hexdigest()[:16]
+                    # What protspace embed stores.
+                    dataset.attrs[SEQUENCE_DIGEST_ATTR] = sequence_digest(sequence)
             return bs.CliResult()
         if args[0] == "prepare":
             h5 = Path(bs.split_h5_spec(args[args.index("-i") + 1])[0])
@@ -3161,16 +3160,12 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
     gate = bs.mature_inputs_gate(ctx, {}, table_with_flags)
     assert gate.status == "fail" and "predicted to carry a signal" in gate.detail
     with h5py.File(bs.embed_h5(ctx), "r+") as handle:
-        handle["P00002"].attrs["protspace_sequence_sha256"] = "0" * 16
+        handle["P00002"].attrs[SEQUENCE_DIGEST_ATTR] = "0" * 16
     gate = bs.mature_inputs_gate(ctx, {}, table)
     assert gate.status == "fail" and "not computed from the embedded" in gate.detail
     with h5py.File(bs.embed_h5(ctx), "r+") as handle:
-        digest = hashlib.sha256(
-            bs.parse_fasta_text((ctx.work / "mature.fasta").read_text())[
-                "P00002"
-            ].encode()
-        ).hexdigest()[:16]
-        handle["P00002"].attrs["protspace_sequence_sha256"] = digest
+        mature = bs.parse_fasta_text((ctx.work / "mature.fasta").read_text())
+        handle["P00002"].attrs[SEQUENCE_DIGEST_ATTR] = sequence_digest(mature["P00002"])
     assert bs.mature_inputs_gate(ctx, {}, table).status == "pass"
     # A query embedded with the propeptide its reference lacks (the G1 case).
     saved = {
