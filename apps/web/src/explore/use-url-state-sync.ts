@@ -64,15 +64,10 @@ export function useExploreUrlStateSync(
 
   const handleDatasetChange = useCallback(
     (exampleId: string | null, source: DatasetChangeSource) => {
-      if (source === 'url') {
-        // The URL already names this example (deep link or Back/Forward);
-        // nothing to write, just record it as the current state.
-        currentDatasetIdRef.current = exampleId;
-        displayedDatasetIdRef.current = exampleId;
-        return;
-      }
-
-      currentDatasetIdRef.current = source === 'menu' ? exampleId : null;
+      // A menu or URL load shows its example; a user import or the startup
+      // load none. A URL load's entry already names its example (deep link or
+      // Back/Forward), so `getDatasetSearchParamsUpdate` writes nothing then.
+      currentDatasetIdRef.current = source === 'menu' || source === 'url' ? exampleId : null;
       displayedDatasetIdRef.current = currentDatasetIdRef.current;
 
       const update = getDatasetSearchParamsUpdate(searchParamsRef.current, exampleId, source);

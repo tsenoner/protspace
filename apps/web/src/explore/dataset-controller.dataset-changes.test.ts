@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   persisted: {
-    loadDefaultDatasetAndClearPersistedFile: vi.fn(),
     loadExampleDatasetAndClearPersistedFile: vi.fn(),
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
@@ -127,66 +126,23 @@ function createController(
   };
 }
 
-describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () => {
+describe('startup outcomes and dataset-change emits (persisted-dataset mocked)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadData.mockResolvedValue(undefined);
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
   });
 
-  // The emit for a successful example load happens inside handleDataLoaded
-  // (see the "handleDataLoaded" describe block below), keyed on the example
-  // carried in load meta — not here. These wrappers just forward the id/source
-  // to persisted-dataset.ts and return its real outcome.
-  it('loadExampleDatasetAndClearPersistedFile forwards id and source, defaulting source to "menu"', async () => {
+  it('loadDefaultDatasetAndClearPersistedFile loads the demo in place of the stored import', async () => {
     mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('loaded');
     const { controller } = createController();
 
-    const outcome = await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id);
+    await controller.loadDefaultDatasetAndClearPersistedFile();
 
-    expect(outcome).toBe('loaded');
     expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).toHaveBeenCalledWith(
-      OTHER.id,
-      'menu',
+      DEMO,
+      'startup',
     );
-  });
-
-  it("forwards the real outcome ('failed') when the persisted controller reports failure", async () => {
-    mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('failed');
-    const { controller } = createController();
-
-    const outcome = await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id);
-
-    expect(outcome).toBe('failed');
-  });
-
-  it("forwards 'superseded' without treating it as a failure", async () => {
-    mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('superseded');
-    const { controller } = createController();
-
-    const outcome = await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id);
-
-    expect(outcome).toBe('superseded');
-  });
-
-  it('loadExampleDataset never clears OPFS and forwards with source "url" and the epoch', async () => {
-    mocks.persisted.loadExampleDataset.mockResolvedValue('loaded');
-    const { controller } = createController();
-
-    const outcome = await controller.loadExampleDataset(DEMO.id, { epoch: 4 });
-
-    expect(outcome).toBe('loaded');
-    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 4 });
-    expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
-  });
-
-  it("loadExampleDataset resolves 'failed' for an unknown id without calling the loader", async () => {
-    const { controller } = createController();
-
-    const outcome = await controller.loadExampleDataset('not-a-real-id');
-
-    expect(outcome).toBe('failed');
-    expect(mocks.persisted.loadExampleDataset).not.toHaveBeenCalled();
   });
 
   it('does not emit for "auto-loaded": the OPFS load reports through handleDataLoaded', async () => {
@@ -422,7 +378,7 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     const unsubscribe = controller.subscribeToDatasetChanges(callback);
     unsubscribe();
 
-    await controller.loadExampleDataset(DEMO.id);
+    await controller.loadExampleDataset(DEMO, 'url');
 
     expect(callback).not.toHaveBeenCalled();
   });

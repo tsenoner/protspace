@@ -1,11 +1,6 @@
 import type { DataLoader as ProtspaceDataLoader } from '@protspace/core';
 import { notify } from '../lib/notify';
-import {
-  DEFAULT_EXAMPLE_DATASET,
-  findExampleDataset,
-  formatMegabytes,
-  type ExampleDataset,
-} from './example-datasets';
+import { DEFAULT_EXAMPLE_DATASET, formatMegabytes, type ExampleDataset } from './example-datasets';
 import { fetchExampleBundle } from './example-fetch';
 import {
   StoredDatasetCorruptError,
@@ -20,7 +15,7 @@ import {
   getExampleLoadFailureNotification,
 } from './notifications';
 import type { LoadQueue } from './load-queue';
-import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
+import { EXAMPLE_DOWNLOAD_SHARE, type LoadingOverlayController } from './loading-overlay';
 import type { DatasetChangeSource, ExampleCancelResult, ExampleLoadOutcome } from './types';
 
 /**
@@ -82,10 +77,7 @@ export interface ImportPreparation {
 
 interface PersistedDatasetOptions {
   dataLoader: ProtspaceDataLoader;
-  overlayController: {
-    update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
-    setCancelHandler(handler: (() => void) | null, label?: string): void;
-  };
+  overlayController: Pick<LoadingOverlayController, 'update' | 'setCancelHandler'>;
   registerFileLoad: LoadQueue['registerFileLoad'];
   awaitLoadOutcome: LoadQueue['awaitLoadOutcome'];
   setCurrentExampleId(id: string | null): void;
@@ -260,7 +252,7 @@ export function createPersistedDatasetController({
       // Cancel button goes.
       withdrawCancel(pending);
 
-      const fileName = entry.url.split('/').pop() ?? entry.id;
+      const fileName = entry.url.slice(entry.url.lastIndexOf('/') + 1);
       const file = new File([body], fileName, {
         type: 'application/octet-stream',
       });
@@ -551,22 +543,18 @@ export function createPersistedDatasetController({
     await loadPersistedFile(file, beginUserRequest());
   };
 
-  const loadExampleDatasetAndClearPersistedFile = async (
-    id: string,
+  /**
+   * Loads an example in place of the stored import (a menu choice, or the
+   * recovery banner's "Load default"). The stored import is cleared by
+   * `handleDataLoaded` once this example has actually decoded, not up front:
+   * clearing before the fetch deleted the import still on screen whenever the
+   * download or parse failed or the request was superseded.
+   */
+  const loadExampleDatasetAndClearPersistedFile = (
+    entry: ExampleDataset,
     source: DatasetChangeSource,
-  ): Promise<ExampleLoadOutcome> => {
-    const entry = findExampleDataset(id);
-    if (!entry) {
-      console.warn(`Unknown example dataset id: ${id}`);
-      return 'failed';
-    }
-
-    // The stored import is cleared by `handleDataLoaded` once this example
-    // has actually decoded, not up front: clearing before the fetch deleted
-    // the import still on screen whenever the download or parse failed or
-    // the request was superseded.
-    return loadExampleDataset(entry, source, { replacesStoredImport: true });
-  };
+  ): Promise<ExampleLoadOutcome> =>
+    loadExampleDataset(entry, source, { replacesStoredImport: true });
 
   return {
     /** Takes a new request epoch for a user request (see `requestEpoch` above). */

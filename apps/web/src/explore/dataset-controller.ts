@@ -21,11 +21,10 @@ import {
   saveLastImportedFile,
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
-import { DEFAULT_EXAMPLE_DATASET, findExampleDataset } from './example-datasets';
-import type { ExampleDataset } from './example-datasets';
+import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
-import { progressAfterExampleDownload } from './loading-overlay';
+import { progressAfterExampleDownload, type LoadingOverlayController } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type {
   ExampleLoadCancel,
@@ -49,10 +48,7 @@ interface DatasetControllerOptions {
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
   loadQueue: LoadQueue;
-  overlayController: {
-    update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
-    setCancelHandler(handler: (() => void) | null, label?: string): void;
-  };
+  overlayController: Pick<LoadingOverlayController, 'update' | 'setCancelHandler'>;
   plotElement: ProtspaceScatterplot;
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
@@ -68,15 +64,23 @@ interface DatasetControllerOptions {
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
+  /**
+   * Loads an example in place of the stored import (a menu choice), which
+   * `handleDataLoaded` clears once the example has decoded and is current.
+   */
   loadExampleDatasetAndClearPersistedFile(
-    id: string,
-    source?: DatasetChangeSource,
+    entry: ExampleDataset,
+    source: DatasetChangeSource,
   ): Promise<ExampleLoadOutcome>;
   /**
-   * Loads a known example without touching OPFS (a `?dataset=` deep link or
-   * Back/Forward), under `epoch` when given (see `beginUserRequest`).
+   * Loads an example without touching OPFS (`'url'`: a `?dataset=` deep link
+   * or Back/Forward), under `epoch` when given (see `beginUserRequest`).
    */
-  loadExampleDataset(id: string, options?: { epoch?: number }): Promise<ExampleLoadOutcome>;
+  loadExampleDataset(
+    entry: ExampleDataset,
+    source: DatasetChangeSource,
+    options?: { epoch?: number },
+  ): Promise<ExampleLoadOutcome>;
   /** The startup load without an example; app-initiated, under `epoch` when given. */
   loadPersistedOrDefaultDataset(options?: { epoch?: number }): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
@@ -169,8 +173,8 @@ export function createDatasetController({
   // An example's download fills the first part of the loading bar
   // (persisted-dataset.ts). Its decode and render phases report 0–100 of
   // their own, mapped onto the rest, so the bar never runs backwards.
-  const phaseOverlayController: Pick<DatasetControllerOptions['overlayController'], 'update'> = {
-    update(show, progress, message, subMessage) {
+  const phaseOverlayController: Pick<LoadingOverlayController, 'update'> = {
+    update(show, progress, message, subMessage, note) {
       const afterDownload =
         show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
       overlayController.update(
@@ -178,6 +182,7 @@ export function createDatasetController({
         afterDownload ? progressAfterExampleDownload(progress) : progress,
         message,
         subMessage,
+        note,
       );
     },
   };
@@ -220,25 +225,11 @@ export function createDatasetController({
   // Name, id and the dataset-change emit for a successful example load happen
   // in `handleDataLoaded`, keyed on the example in load meta, so a load that
   // later fails to parse never announces success.
-  const loadExampleDatasetAndClearPersistedFile = async (
-    id: string,
-    source: DatasetChangeSource = 'menu',
-  ): Promise<ExampleLoadOutcome> =>
-    persistedDatasetController.loadExampleDatasetAndClearPersistedFile(id, source);
-
-  const loadExampleDataset = async (
-    id: string,
-    { epoch }: { epoch?: number } = {},
-  ): Promise<ExampleLoadOutcome> => {
-    const entry = findExampleDataset(id);
-    if (!entry) {
-      return 'failed';
-    }
-    return persistedDatasetController.loadExampleDataset(entry, 'url', { epoch });
-  };
-
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
-    await loadExampleDatasetAndClearPersistedFile(DEFAULT_EXAMPLE_DATASET.id, 'startup');
+    await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(
+      DEFAULT_EXAMPLE_DATASET,
+      'startup',
+    );
   };
 
   const loadPersistedOrDefaultDataset = async (
@@ -623,8 +614,9 @@ export function createDatasetController({
 
   return {
     loadDefaultDatasetAndClearPersistedFile,
-    loadExampleDatasetAndClearPersistedFile,
-    loadExampleDataset,
+    loadExampleDatasetAndClearPersistedFile:
+      persistedDatasetController.loadExampleDatasetAndClearPersistedFile,
+    loadExampleDataset: persistedDatasetController.loadExampleDataset,
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
     beginUserRequest: persistedDatasetController.beginUserRequest,

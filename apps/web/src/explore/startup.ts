@@ -23,8 +23,8 @@ interface StartupOptions {
   dataLoader: ProtspaceDataLoader;
   datasetController: DatasetController;
   plotElement: ProtspaceScatterplot;
-  /** The `dataset` URL param at the time startup runs, if any. */
-  requestedExampleId?: string | null;
+  /** The `dataset` URL param at the time startup runs, or null. */
+  requestedExampleId: string | null;
 }
 
 async function runPersistedOrDefaultFlow(
@@ -90,15 +90,16 @@ async function runPersistedOrDefaultFlow(
  */
 export async function loadRequestedDatasetOrFallback(
   datasetController: DatasetController,
-  requestedExampleId: string | null | undefined,
+  requestedExampleId: string | null,
   {
     epoch = datasetController.currentRequestEpoch(),
     keepCurrentOnFailure = false,
   }: { epoch?: number; keepCurrentOnFailure?: boolean } = {},
 ): Promise<DatasetRequestOutcome> {
   if (requestedExampleId) {
-    if (findExampleDataset(requestedExampleId)) {
-      const outcome = await datasetController.loadExampleDataset(requestedExampleId, { epoch });
+    const entry = findExampleDataset(requestedExampleId);
+    if (entry) {
+      const outcome = await datasetController.loadExampleDataset(entry, 'url', { epoch });
       if (outcome !== 'failed' || keepCurrentOnFailure) return outcome;
     } else {
       notify.warning(getUnknownExampleDatasetNotification(requestedExampleId));

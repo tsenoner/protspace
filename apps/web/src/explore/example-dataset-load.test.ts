@@ -171,7 +171,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
+    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
 
     expect(result).toBe('loaded');
     expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
@@ -194,7 +194,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
+    const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
 
     expect(result).toBe('failed');
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
@@ -221,7 +221,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    const result = await controller.loadExampleDataset(DEMO.id);
+    const result = await controller.loadExampleDataset(DEMO, 'url');
 
     expect(result).toBe('failed');
     expect(changes).toEqual([]);
@@ -257,9 +257,7 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(loadSucceeds);
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
-      'loaded',
-    );
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('loaded');
     expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
   });
 
@@ -275,9 +273,7 @@ describe('example load: the stored import is replaced only once the example has 
       }),
     );
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
-      'failed',
-    );
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('failed');
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
@@ -285,9 +281,7 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(parseFails);
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
-      'failed',
-    );
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('failed');
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
@@ -300,7 +294,7 @@ describe('example load: the stored import is replaced only once the example has 
     });
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
       'superseded',
     );
     expect(clearLastImportedFile).not.toHaveBeenCalled();
@@ -310,7 +304,7 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(loadSucceeds);
     stubOkFetch();
 
-    expect(await controller.loadExampleDataset(DEMO.id)).toBe('loaded');
+    expect(await controller.loadExampleDataset(DEMO, 'url')).toBe('loaded');
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 
@@ -338,7 +332,7 @@ describe('example load: the stored import is replaced only once the example has 
     const busy = dataLoader.loadFromFile(new File(['x'], 'busy.parquetbundle'), {
       source: 'auto',
     });
-    const choice = controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
+    const choice = controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
     await vi.waitFor(() => expect(loadQueue.getLatestSequence()).toBe(2));
     controller.beginUserRequest();
     releaseBusy();
@@ -356,7 +350,7 @@ describe('example load: the stored import is replaced only once the example has 
     });
     stubOkFetch();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
       'superseded',
     );
     // No toast, and the overlay the newer request owns is left alone.
@@ -398,9 +392,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
-      'loaded',
-    );
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('loaded');
     expect(cancelDuringRender).toBe('committed');
     expect(changes).toEqual([[DEMO.id, 'menu']]);
     expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
@@ -415,7 +407,7 @@ describe('a load a newer user request supersedes after it has started', () => {
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu')).toBe(
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
       'superseded',
     );
     expect(mocks.loadData).not.toHaveBeenCalled();

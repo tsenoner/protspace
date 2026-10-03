@@ -401,21 +401,6 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     vi.unstubAllGlobals();
   });
 
-  it('warns and does nothing for an unknown id', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { controller, dataLoader } = createController();
-
-    const result = await controller.loadExampleDatasetAndClearPersistedFile(
-      'not-a-real-id',
-      'menu',
-    );
-
-    expect(result).toBe('failed');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not-a-real-id'));
-    expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
-  });
-
   it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
@@ -423,7 +408,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
 
     const { controller, dataLoader, loadQueue } = createController();
 
-    const resultPromise = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const resultPromise = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     loadQueue.resolveOutcome(1, true);
 
@@ -519,7 +504,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller, dataLoader, loadQueue } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
     read.resolve(new File(['x'], 'mine.parquetbundle'));
 
@@ -547,7 +532,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller, dataLoader, loadQueue } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const click = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
     read.resolve(null);
 
@@ -567,7 +552,7 @@ describe('request precedence: a user request beats a startup load that began ear
 
     const startup = controller.loadPersistedOrDefaultDataset();
     await vi.waitFor(() => expect(readLastLoadStatus).toHaveBeenCalled());
-    void controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    void controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     status.resolve({ status: 'error', failedAttempts: 1 });
 
     expect(await startup).toEqual({ kind: 'preempted' });
@@ -583,7 +568,7 @@ describe('request precedence: a user request beats a startup load that began ear
     const { controller } = createController();
 
     const startup = controller.loadPersistedOrDefaultDataset();
-    void controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    void controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     read.reject(new StoredDatasetCorruptError('corrupt'));
 
     expect(await startup).toEqual({ kind: 'preempted' });
@@ -664,7 +649,7 @@ describe('cancelPendingExampleLoad', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { controller, overlayController, loadQueue } = createController();
 
-    const pending = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const pending = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     overlayController.update.mockClear();
 
     expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
@@ -777,7 +762,7 @@ describe('the Cancel button of an example download', () => {
       onExampleLoadCancelled,
     });
 
-    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     const cancel = cancelButtonHandler(overlayController.setCancelHandler);
     const epochBefore = controller.currentRequestEpoch();
     overlayController.update.mockClear();
@@ -911,9 +896,7 @@ describe('Retry on a failed example download', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { controller, dataLoader, loadQueue } = createController();
 
-    expect(await controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu')).toBe(
-      'failed',
-    );
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu')).toBe('failed');
     retryAction()();
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
 
@@ -953,7 +936,7 @@ describe('an example that has begun replacing the plot', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
     const { controller, dataLoader, loadQueue, overlayController } = createController();
 
-    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
+    const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
     const loadEpoch = loadQueue.registerFileLoad.mock.calls[0]![3] as number;
     // Still decoding: a Back/Forward cancels it.

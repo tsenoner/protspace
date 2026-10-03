@@ -72,7 +72,7 @@ describe('loadRequestedDatasetOrFallback', () => {
     await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
 
     // Without an explicit epoch it runs under the current one.
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 5 });
     expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
     expect(notifyMock.warning).not.toHaveBeenCalled();
   });
@@ -99,7 +99,7 @@ describe('loadRequestedDatasetOrFallback', () => {
     });
 
     expect(outcome).toBe('fallback');
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 7 });
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 7 });
     // The loader itself already notified the failure (persisted-dataset.ts); the
     // fallback path here must not warn on top of that.
     expect(notifyMock.warning).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe('loadRequestedDatasetOrFallback', () => {
 
     await loadRequestedDatasetOrFallback(datasetController as never, DEMO.id);
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 5 });
     expect(notifyMock.warning).not.toHaveBeenCalled();
     expect(datasetController.loadPersistedOrDefaultDataset).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe('loadDatasetAfterNavigation (Back/Forward after the first load)', () =>
 
     await loadDatasetAfterNavigation(datasetController as never, viewController, DEMO.id);
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 8 });
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 8 });
     expect(datasetController.beginUserRequest.mock.invocationCallOrder[0]).toBeLessThan(
       datasetController.loadExampleDataset.mock.invocationCallOrder[0],
     );
@@ -300,7 +300,7 @@ describe('startInitialExploreLoad', () => {
       requestedExampleId: DEMO.id,
     });
 
-    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO.id, { epoch: 5 });
+    expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 5 });
   });
 
   it('runs the normal flow under the epoch captured before the perf check', async () => {

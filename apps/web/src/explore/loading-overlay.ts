@@ -4,7 +4,7 @@ export interface OverlayNote {
   linkText?: string;
 }
 
-interface LoadingOverlayController {
+export interface LoadingOverlayController {
   update(
     show: boolean,
     progress?: number,
