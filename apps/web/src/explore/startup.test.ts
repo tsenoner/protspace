@@ -109,7 +109,6 @@ describe('loadRequestedDatasetOrFallback', () => {
   });
 
   it('keeps the dataset on screen when a known id fails with keepCurrentOnFailure: no fallback', async () => {
-    const { showRecoveryBanner } = await import('./recovery-banner');
     const datasetController = createDatasetController();
     datasetController.loadExampleDataset.mockResolvedValue('failed');
 
@@ -150,7 +149,6 @@ describe('loadRequestedDatasetOrFallback', () => {
   });
 
   it('shows the recovery banner when the persisted-or-default flow requires it', async () => {
-    const { showRecoveryBanner } = await import('./recovery-banner');
     const datasetController = createDatasetController();
     const file = new File(['x'], 'mine.parquetbundle');
     datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({
@@ -165,7 +163,6 @@ describe('loadRequestedDatasetOrFallback', () => {
   });
 
   it("shows no recovery banner when a user request preempted the flow ('preempted')", async () => {
-    const { showRecoveryBanner } = await import('./recovery-banner');
     const datasetController = createDatasetController();
     datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
 

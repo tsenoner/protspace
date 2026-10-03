@@ -13,6 +13,9 @@ import {
   setDatasetParam,
 } from './url-state';
 
+/** A normalization that rewrites none of the view parameters. */
+const NO_NORMALIZATION = { annotation: false, projection: false, tooltip: false, density: false };
+
 describe('explore url state', () => {
   it('parses a bare URL without requested values', () => {
     const parsed = parseExploreViewRequest(new URLSearchParams(''));
@@ -28,12 +31,7 @@ describe('explore url state', () => {
         tooltip: false,
         density: false,
       },
-      normalize: {
-        annotation: false,
-        projection: false,
-        tooltip: false,
-        density: false,
-      },
+      normalize: NO_NORMALIZATION,
     });
   });
 
@@ -55,12 +53,7 @@ describe('explore url state', () => {
         tooltip: false,
         density: false,
       },
-      normalize: {
-        annotation: true,
-        projection: true,
-        tooltip: false,
-        density: false,
-      },
+      normalize: { ...NO_NORMALIZATION, annotation: true, projection: true },
     });
   });
 
@@ -79,12 +72,7 @@ describe('explore url state', () => {
         tooltip: false,
         density: false,
       },
-      normalize: {
-        annotation: true,
-        projection: true,
-        tooltip: false,
-        density: false,
-      },
+      normalize: { ...NO_NORMALIZATION, annotation: true, projection: true },
     });
     expect(resolved).toEqual({
       effective: {
@@ -101,10 +89,9 @@ describe('explore url state', () => {
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+      ...NO_NORMALIZATION,
       annotation: true,
       projection: true,
-      tooltip: false,
-      density: false,
     });
   });
 
@@ -126,12 +113,7 @@ describe('explore url state', () => {
         density: false,
       },
     });
-    expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
-      annotation: false,
-      projection: false,
-      tooltip: false,
-      density: false,
-    });
+    expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual(NO_NORMALIZATION);
   });
 
   it('normalizes duplicate params even when the first values are valid', () => {
@@ -155,10 +137,9 @@ describe('explore url state', () => {
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+      ...NO_NORMALIZATION,
       annotation: true,
       projection: true,
-      tooltip: false,
-      density: false,
     });
   });
 
@@ -183,10 +164,8 @@ describe('explore url state', () => {
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
-      annotation: false,
+      ...NO_NORMALIZATION,
       projection: true,
-      tooltip: false,
-      density: false,
     });
   });
 
@@ -211,10 +190,9 @@ describe('explore url state', () => {
       },
     });
     expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+      ...NO_NORMALIZATION,
       annotation: true,
       projection: true,
-      tooltip: false,
-      density: false,
     });
   });
 
@@ -251,12 +229,7 @@ describe('explore url state', () => {
       },
       {
         mode: 'normalize',
-        normalize: {
-          annotation: false,
-          projection: true,
-          tooltip: false,
-          density: false,
-        },
+        normalize: { ...NO_NORMALIZATION, projection: true },
       },
     );
 
@@ -278,12 +251,7 @@ describe('explore url state', () => {
         tooltip: ['species', 'ec'],
         density: 'off',
       });
-      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
-        annotation: false,
-        projection: false,
-        tooltip: false,
-        density: false,
-      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual(NO_NORMALIZATION);
     });
 
     it('treats a parameter named with an empty value as named, not as a landing', () => {
@@ -300,12 +268,7 @@ describe('explore url state', () => {
       // The empty parameter is dropped from the URL; the curated tooltip is
       // never written into it.
       const normalize = getResolvedExploreViewNormalization(emptyTooltip, resolvedTooltip!);
-      expect(normalize).toEqual({
-        annotation: false,
-        projection: false,
-        tooltip: true,
-        density: false,
-      });
+      expect(normalize).toEqual({ ...NO_NORMALIZATION, tooltip: true });
       expect(
         buildSearchParamsWithExploreView(
           new URLSearchParams('dataset=phosphatase&tooltip='),
@@ -332,12 +295,7 @@ describe('explore url state', () => {
         tooltip: [],
         density: 'off',
       });
-      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
-        annotation: false,
-        projection: false,
-        tooltip: false,
-        density: false,
-      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual(NO_NORMALIZATION);
     });
 
     it('keeps an explicit tooltip over the default one', () => {
@@ -367,10 +325,9 @@ describe('explore url state', () => {
         density: 'off',
       });
       expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
+        ...NO_NORMALIZATION,
         annotation: true,
         projection: true,
-        tooltip: false,
-        density: false,
       });
     });
 
@@ -388,12 +345,7 @@ describe('explore url state', () => {
         tooltip: ['species'],
         density: 'off',
       });
-      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual({
-        annotation: false,
-        projection: false,
-        tooltip: false,
-        density: false,
-      });
+      expect(getResolvedExploreViewNormalization(parsed, resolved!)).toEqual(NO_NORMALIZATION);
     });
 
     it('drops the effective annotation from the default tooltip', () => {
@@ -537,12 +489,7 @@ describe('explore url state', () => {
         },
         {
           mode: 'normalize',
-          normalize: {
-            annotation: false,
-            projection: false,
-            tooltip: true,
-            density: false,
-          },
+          normalize: { ...NO_NORMALIZATION, tooltip: true },
         },
       );
 
@@ -776,36 +723,25 @@ describe('explore url state', () => {
 });
 
 describe('decideUrlChange', () => {
-  it('switches when the URL names another dataset than the app reflects', () => {
-    expect(
-      decideUrlChange({ datasetParam: 'A', currentDatasetId: 'B', switchPending: false }),
-    ).toBe('switch-dataset');
+  it.each([
+    // The URL names another dataset than the app reflects.
+    ['A', 'B', false, 'switch-dataset'],
     // Also while a switch is pending: the newer dataset wins.
-    expect(decideUrlChange({ datasetParam: 'A', currentDatasetId: 'B', switchPending: true })).toBe(
-      'switch-dataset',
-    );
+    ['A', 'B', true, 'switch-dataset'],
     // Back to an entry without `dataset=`.
-    expect(
-      decideUrlChange({ datasetParam: null, currentDatasetId: 'B', switchPending: false }),
-    ).toBe('switch-dataset');
-  });
-
-  it('only records the view for the same dataset while its switch is still loading', () => {
+    [null, 'B', false, 'switch-dataset'],
     // The second of two quick Backs lands on another entry of the dataset
     // being fetched: the pending load applies it, not the dataset on screen.
-    expect(decideUrlChange({ datasetParam: 'A', currentDatasetId: 'A', switchPending: true })).toBe(
-      'record-view',
-    );
-  });
-
-  it('applies the view to the dataset on screen when no switch is pending', () => {
-    expect(
-      decideUrlChange({ datasetParam: 'A', currentDatasetId: 'A', switchPending: false }),
-    ).toBe('apply-view');
-    expect(
-      decideUrlChange({ datasetParam: null, currentDatasetId: null, switchPending: false }),
-    ).toBe('apply-view');
-  });
+    ['A', 'A', true, 'record-view'],
+    // The view applies to the dataset on screen when no switch is pending.
+    ['A', 'A', false, 'apply-view'],
+    [null, null, false, 'apply-view'],
+  ] as const)(
+    'dataset=%s with %s on screen (switch pending: %s) is a %s',
+    (datasetParam, currentDatasetId, switchPending, expected) => {
+      expect(decideUrlChange({ datasetParam, currentDatasetId, switchPending })).toBe(expected);
+    },
+  );
 });
 
 describe('after a failed Back/Forward', () => {
@@ -818,7 +754,7 @@ describe('after a failed Back/Forward', () => {
   const userChange = {
     effective,
     source: 'user' as const,
-    normalize: { annotation: false, projection: false, tooltip: false, density: false },
+    normalize: NO_NORMALIZATION,
   };
 
   it('a user change names the displayed dataset in its new entry', () => {
@@ -858,7 +794,7 @@ describe('after a failed Back/Forward', () => {
       {
         effective,
         source: 'url',
-        normalize: { annotation: true, projection: false, tooltip: false, density: false },
+        normalize: { ...NO_NORMALIZATION, annotation: true },
       },
       { pendingUrlRequest: true, displayedDatasetId: 'B' },
     );
