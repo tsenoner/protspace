@@ -3415,56 +3415,94 @@ def fill_missing_taxonomy(
     """
     if "species" not in table.column_names:
         return table, {"filled": 0}
-    ids = row_ids(table)
-    columns = {name: table.column(name).to_pylist() for name in table.column_names}
-    missing = [i for i, cell in enumerate(columns["species"]) if is_missing(cell)]
+    import numpy as np
+
+    missing = pc.indices_nonzero(missing_mask(table, "species")).to_pylist()
     if not missing:
         return table, {"filled": 0}
+    ids = normalize_id(table).column(ID_COLUMN).take(missing).to_pylist()
+    ids = [str(pid) for pid in ids]
     paper_species: dict[str, str] = {}
     if paper is not None and "species" in paper.column_names:
-        paper_species = {
-            pid: first_label(cell)
-            for pid, cell in zip(
-                row_ids(paper), paper.column("species").to_pylist(), strict=True
-            )
-            if first_label(cell)
-        }
-    present = [c for c in TAXONOMY_ANNOTATIONS if c in columns and c != "species"]
-    lineage: dict[str, dict[str, Any]] = {}
-    for row, species in enumerate(columns["species"]):
-        label = first_label(species)
-        if label is None:
-            continue
-        counts = lineage.setdefault(label, {c: Counter() for c in present})
-        for column in present:
-            value = columns[column][row]
-            if not is_missing(value):
-                counts[column][value] += 1
-    filled, unresolved = [], []
-    for row in missing:
-        species = paper_species.get(ids[row])
-        if species is None:
-            unresolved.append(ids[row])
-            continue
-        for name, values in columns.items():
-            if (
-                name != ID_COLUMN
-                and isinstance(values[row], str)
-                and is_missing(values[row])
-            ):
-                values[row] = None
-        columns["species"][row] = species
-        for column in present:
-            counts = lineage.get(species, {}).get(column)
-            if counts:
-                columns[column][row] = counts.most_common(1)[0][0]
-        filled.append(ids[row])
-    arrays = [
-        pa.array(columns[name], type=table.schema.field(name).type)
-        for name in table.column_names
+        paper_ids = normalize_id(paper).column(ID_COLUMN)
+        rows = pc.is_in(
+            pc.cast(paper_ids, pa.string()), value_set=pa.array(ids, pa.string())
+        )
+        for pid, cell in zip(
+            paper_ids.filter(rows).to_pylist(),
+            paper.column("species").filter(rows).to_pylist(),
+            strict=True,
+        ):
+            if first_label(cell):
+                paper_species[str(pid)] = first_label(cell)
+    filled = [
+        (row, pid)
+        for row, pid in zip(missing, ids, strict=True)
+        if pid in paper_species
     ]
-    report = {"filled": len(filled), "ids": filled, "unresolved": unresolved}
-    return pa.Table.from_arrays(arrays, names=table.column_names), report
+    unresolved = [pid for pid in ids if pid not in paper_species]
+    report = {
+        "filled": len(filled),
+        "ids": [pid for _, pid in filled],
+        "unresolved": unresolved,
+    }
+    if not filled:
+        return table, report
+    lineage = {
+        species: taxonomy_lineage(table, species)
+        for species in {paper_species[pid] for _, pid in filled}
+    }
+    index = pa.array([row for row, _ in filled], pa.int64())
+    mask = np.zeros(table.num_rows, dtype=bool)
+    mask[[row for row, _ in filled]] = True
+    for name in table.column_names:
+        if name == ID_COLUMN:
+            continue
+        column = table.column(name)
+        old = column.take(index).to_pylist()
+        new = [None if isinstance(v, str) and is_missing(v) else v for v in old]
+        if name == "species":
+            new = [paper_species[pid] for _, pid in filled]
+        else:
+            new = [
+                lineage[paper_species[pid]].get(name, value)
+                for value, (_, pid) in zip(new, filled, strict=True)
+            ]
+        if new != old:
+            values = pa.array(new, type=column.type)
+            column = pc.replace_with_mask(column.combine_chunks(), mask, values)
+            table = table.set_column(table.column_names.index(name), name, column)
+    return table, report
+
+
+def taxonomy_lineage(table: pa.Table, species: str) -> dict[str, Any]:
+    """``{taxonomy column: value}`` the rows of ``species`` share: each column's
+    most common value on them (the first seen on a tie), N/A left out."""
+    cells = table.column("species")
+    same = [
+        cell
+        for cell, _, labels in column_summary(table, "species").cells
+        if labels and labels[0] == species
+    ]
+    if not same:
+        return {}
+    rows = pc.is_in(cells, value_set=pa.array(same, type=cells.type))
+    lineage: dict[str, Any] = {}
+    for column in TAXONOMY_ANNOTATIONS:
+        if column == "species" or column not in table.column_names:
+            continue
+        counted = pc.value_counts(table.column(column).filter(rows))
+        best = None
+        for value, count in zip(
+            counted.field("values").to_pylist(),
+            counted.field("counts").to_pylist(),
+            strict=True,
+        ):
+            if not is_missing(value) and (best is None or count > best[1]):
+                best = (value, count)
+        if best is not None:
+            lineage[column] = best[0]
+    return lineage
 
 
 def paper_refresh_steps(ctx: Context) -> list[Step]:
