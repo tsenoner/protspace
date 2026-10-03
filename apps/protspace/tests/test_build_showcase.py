@@ -528,7 +528,7 @@ def test_eat_accuracy_scores_queries_with_truth():
         query_value="query",
         threshold=0.5,
     )
-    # Q4 has no truth; Q1 and Q3 are exact (order-free), Q2 is wrong.
+    # Q4 has no truth; Q1 and Q3 are exact (order-free label sets), Q2 is wrong.
     assert result == {
         "n": 3,
         "accuracy": 66.7,
@@ -547,10 +547,9 @@ def test_eat_gates():
             "truth_column": "ec_withheld",
             "split_column": "eat_split",
             "query_value": "query",
-            "expected_n": 3,
-            "expected_accuracy": 66.7,
-            "expected_n_at_threshold": 2,
-            "expected_accuracy_at_threshold": 50.0,
+            "min_n": 3,
+            "min_accuracy": 66.7,
+            "min_accuracy_at_threshold": 50.0,
         },
     )
     assert ok.status == "pass"
@@ -609,7 +608,6 @@ def test_eat_accuracy_floors_for_a_split_the_build_draws():
         "truth_column": "toxin_class_withheld",
         "split_column": "eat_split",
         "query_value": "holdout",
-        "compare": "labels",
         "threshold": 0.5,
     }
     table = _eat_example()
@@ -649,8 +647,6 @@ def test_eat_transfers_on_one_split_with_a_band_or_pending():
     wide = {**band, "expected_predicted": 4, "rel_tol": 0.5}
     gate = bs.gate_eat_transfers(table, wide)
     assert gate.status == "fail" and "3 transfers, expected 4" in gate.detail
-    loose = {**wide, "predicted_rel_tol": 0.25}
-    assert bs.gate_eat_transfers(table, loose).status == "pass"
 
 
 def test_eat_fanout_and_name_agreement():
@@ -895,8 +891,7 @@ def test_the_holdout_split_depends_on_the_seed_alone():
     strata = {
         pid: ("a" if i < 10 else "b" if i < 18 else "") for i, pid in enumerate(ids)
     }
-    values = {"reference": "reference", "holdout": "holdout", "query": "trembl"}
-    split = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=7, values=values)
+    split = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=7)
     counts = Counter(split.values())
     # round(0.2 · 10) of a, round(0.2 · 8) of b; P18-P19 are reviewed, unlabelled.
     assert counts == {"reference": 16, "holdout": 4, "trembl": 10}
@@ -911,10 +906,9 @@ def test_the_holdout_split_depends_on_the_seed_alone():
         dict(reversed(strata.items())),
         fraction=0.2,
         seed=7,
-        values=values,
     )
     assert again == split
-    other = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=8, values=values)
+    other = bs.holdout_split(ids, reviewed, strata, fraction=0.2, seed=8)
     assert other != split
 
 
@@ -1463,7 +1457,7 @@ def test_common_gates_pass_a_v3_bundle_as_the_build_writes_it(tmp_path):
 
 def test_faithfulness_gate_needs_a_score_per_projection():
     metadata, _ = _projections()
-    assert bs.faithfulness_gate(metadata, {}).status == "pass"
+    assert bs.faithfulness_gate(metadata).status == "pass"
     skipped = metadata.set_column(
         2,
         "info_json",
@@ -1480,7 +1474,7 @@ def test_faithfulness_gate_needs_a_score_per_projection():
             * 2
         ),
     )
-    assert bs.faithfulness_gate(skipped, {}).status == "fail"
+    assert bs.faithfulness_gate(skipped).status == "fail"
 
 
 # ---------------------------------------------------------------------------
@@ -1767,7 +1761,6 @@ def test_the_eat_example_opens_at_reliability_0_on_its_truth(config):
         "genus",
         "pfam",
     ]
-    assert dataset.get("cluster_selection", "both") == "both"
 
 
 def test_the_membership_file_matches_its_pin(config):
@@ -3001,7 +2994,6 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
                 "truth_column": "toxin_class_withheld",
                 "split_column": "eat_split",
                 "query_value": "holdout",
-                "compare": "labels",
                 "min_n": 4,
                 "min_accuracy": 88.0,
                 "min_accuracy_at_threshold": 90.0,

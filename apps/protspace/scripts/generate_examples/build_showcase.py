@@ -628,14 +628,6 @@ def release_groups(
 # EAT accuracy against a withheld truth (logic of research/critic/c3_eat.py)
 # ---------------------------------------------------------------------------
 
-EC_RE = re.compile(r"\d+\.[\d-]+\.[\d-]+\.[\dn-]+")
-
-
-def ec_numbers(cell: Any) -> frozenset[str]:
-    if cell is None:
-        return frozenset()
-    return frozenset(EC_RE.findall(decode_field(str(cell))))
-
 
 def eat_accuracy(
     table: pa.Table,
@@ -645,14 +637,16 @@ def eat_accuracy(
     split_column: str,
     query_value: str | Sequence[str],
     threshold: float,
-    compare: str = "ec",
 ) -> dict[str, Any]:
     """Exact-match transfer accuracy on the query rows that have a truth value.
 
-    A transfer is correct when the predicted set equals the truth set (EC numbers
-    by regex, or labels). Reported overall and for reliability >= ``threshold``.
+    A transfer is correct when its set of labels equals the truth's. Reported
+    overall and for reliability >= ``threshold``.
     """
-    extract = ec_numbers if compare == "ec" else (lambda c: frozenset(cell_labels(c)))
+
+    def extract(cell: Any) -> frozenset[str]:
+        return frozenset(cell_labels(cell))
+
     mask = query_mask(table, split_column, query_value)
     truth = table.column(truth_column).to_pylist()
     predicted = table.column(f"{column}__pred_value").to_pylist()
@@ -998,9 +992,10 @@ def gate_eat_transfers(table: pa.Table, params: dict) -> Gate:
     """How many rows (of a split, optionally) received a transfer, and how many
     of those at reliability ≥ ``threshold``.
 
-    ``expected_*`` are exact unless ``rel_tol`` gives a band (a rebuild on new
-    embeddings moves the count a little). A missing ``expected_at_threshold`` is
-    pending: record the built value in showcase.toml.
+    ``expected_predicted`` is exact; ``expected_at_threshold`` too, unless
+    ``rel_tol`` gives a band (a rebuild on new embeddings moves the count a
+    little). A missing ``expected_at_threshold`` is pending: record the built
+    value in showcase.toml.
     """
     column = params["column"]
     values = table.column(f"{column}__pred_value").to_pylist()
@@ -1016,14 +1011,13 @@ def gate_eat_transfers(table: pa.Table, params: dict) -> Gate:
     threshold = params.get("threshold", 0.5)
     high = sum(1 for c in predicted if c is not None and c >= threshold)
     rel = params.get("rel_tol", 0.0)
-    predicted_rel = params.get("predicted_rel_tol", 0.0)
     problems = []
-    if "expected_predicted" in params and not within(
-        len(predicted), params["expected_predicted"], predicted_rel, 0
+    if (
+        "expected_predicted" in params
+        and len(predicted) != params["expected_predicted"]
     ):
         problems.append(
             f"{len(predicted)} transfers, expected {params['expected_predicted']}"
-            + (f" ± {predicted_rel:.0%}" if predicted_rel else "")
         )
     if "expected_at_threshold" in params and not within(
         high, params["expected_at_threshold"], rel, 0
@@ -1171,9 +1165,8 @@ def gate_holdout_split(table: pa.Table, params: dict) -> Gate:
 def gate_eat_accuracy(table: pa.Table, params: dict) -> Gate:
     """Transfer accuracy on the withheld rows, in percent.
 
-    ``expected_*`` pin a reproduced benchmark exactly (within ``tol_pp``);
-    ``min_accuracy`` / ``min_accuracy_at_threshold`` / ``min_n`` are floors for a
-    split drawn by the build, whose numbers move with the embeddings (G4).
+    ``min_accuracy`` / ``min_accuracy_at_threshold`` / ``min_n`` are floors: the
+    split is drawn by the build, and its numbers move with the embeddings (G4).
     """
     result = eat_accuracy(
         table,
@@ -1182,28 +1175,8 @@ def gate_eat_accuracy(table: pa.Table, params: dict) -> Gate:
         split_column=params["split_column"],
         query_value=params["query_value"],
         threshold=params.get("threshold", 0.5),
-        compare=params.get("compare", "ec"),
     )
-    tol = params.get("tol_pp", 0.1)
     checks = []
-    if "expected_n" in params:
-        checks.append(result["n"] == params["expected_n"])
-    if "expected_accuracy" in params:
-        checks.append(
-            result["accuracy"] is not None
-            and abs(result["accuracy"] - params["expected_accuracy"]) <= tol
-        )
-    if "expected_n_at_threshold" in params:
-        checks.append(result["n_at_threshold"] == params["expected_n_at_threshold"])
-    if "expected_accuracy_at_threshold" in params:
-        checks.append(
-            result["accuracy_at_threshold"] is not None
-            and abs(
-                result["accuracy_at_threshold"]
-                - params["expected_accuracy_at_threshold"]
-            )
-            <= tol
-        )
     if "min_n" in params:
         checks.append(result["n"] >= params["min_n"])
     if "min_accuracy" in params:
@@ -1437,7 +1410,7 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
             )
         )
 
-    if dataset.get("xref_pdb_both", True) and "xref_pdb" in columns:
+    if "xref_pdb" in columns:
         values = {first_label(v) for v in table.column("xref_pdb").to_pylist()}
         both = {"True", "False"} <= values
         gates.append(
@@ -1515,7 +1488,7 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
                 else "consistent",
             )
         )
-        gates.append(faithfulness_gate(bundle.metadata, dataset))
+        gates.append(faithfulness_gate(bundle.metadata))
     return gates
 
 
@@ -1545,7 +1518,7 @@ def format_gate(bundle: Bundle) -> Gate:
     )
 
 
-def faithfulness_gate(metadata: pa.Table, dataset: dict) -> Gate:
+def faithfulness_gate(metadata: pa.Table) -> Gate:
     """Every projection carries a computed faithfulness score (G7: PR #452)."""
     missing = []
     for name, raw in zip(
@@ -1560,10 +1533,9 @@ def faithfulness_gate(metadata: pa.Table, dataset: dict) -> Gate:
         knn = quality.get("knn_overlap") or {}
         if knn.get("value") is None:
             missing.append(f"{name} ({knn.get('skipped', 'absent')})")
-    status = "pass" if not missing else dataset.get("faithfulness_severity", "fail")
     return Gate(
         "faithfulness",
-        status,
+        "fail" if missing else "pass",
         f"no faithfulness for {missing}"
         if missing
         else "computed for every projection",
@@ -2572,8 +2544,6 @@ VERIFY_ONLY_KEYS = frozenset(
         "proteins",
         "reviewed",
         "max_obsolete",
-        "xref_pdb_both",
-        "faithfulness_severity",
         "gates",
         "report",
         "default_view",
@@ -3334,12 +3304,10 @@ def write_annotations(
     ctx: Context, table: pa.Table, report: dict, name: str = "annotations.parquet"
 ) -> None:
     first = [ctx.view.get("annotation"), *ctx.dataset.get("first_columns", [])]
-    drop = (
-        INTERNAL_ANNOTATIONS
-        + LEGACY_COLUMNS
-        + tuple(ctx.dataset.get("drop_columns", []))
+    table = order_columns(
+        drop_columns(table, INTERNAL_ANNOTATIONS + LEGACY_COLUMNS),
+        [c for c in first if c],
     )
-    table = order_columns(drop_columns(table, drop), [c for c in first if c])
     table = stamp_format_version(strip_pandas_metadata(table))
     atomic_write_bytes(ctx.work / name, parquet_bytes(table))
     (ctx.work / "assemble_report.json").write_text(
@@ -3769,6 +3737,13 @@ def derive_label(path: str | None, rules: Sequence[Sequence[str]]) -> str:
     return next((label for needle, label in rules if needle.lower() in text), "")
 
 
+#: The split column's values: the references, their held-out share and the
+#: queries (TrEMBL rows).
+HOLDOUT_VALUES = {"reference": "reference", "holdout": "holdout", "query": "trembl"}
+#: The rows the transfer labels, whose withheld columns no step may refill.
+QUERY_SPLITS = (HOLDOUT_VALUES["holdout"], HOLDOUT_VALUES["query"])
+
+
 def holdout_split(
     ids: Sequence[str],
     reviewed: dict[str, bool],
@@ -3776,7 +3751,6 @@ def holdout_split(
     *,
     fraction: float,
     seed: int,
-    values: dict[str, str],
 ) -> dict[str, str]:
     """The split column: references, their held-out share, and the queries.
 
@@ -3792,17 +3766,17 @@ def holdout_split(
     by_label: dict[str, list[str]] = {}
     for pid in sorted(ids):
         if reviewed.get(pid):
-            split[pid] = values["reference"]
+            split[pid] = HOLDOUT_VALUES["reference"]
             if strata.get(pid):
                 by_label.setdefault(strata[pid], []).append(pid)
         else:
-            split[pid] = values["query"]
+            split[pid] = HOLDOUT_VALUES["query"]
     for label in sorted(by_label):
         members = by_label[label]
         count = int(round(fraction * len(members)))
         if count:
             for pid in rng.choice(members, size=count, replace=False):
-                split[str(pid)] = values["holdout"]
+                split[str(pid)] = HOLDOUT_VALUES["holdout"]
     return split
 
 
@@ -4022,14 +3996,12 @@ def label_table(
         spec["name"]: {pid: derive_label(paths[pid], spec["rules"]) for pid in ids}
         for spec in labels["columns"]
     }
-    values = holdout_values(holdout)
     split = holdout_split(
         ids,
         reviewed,
         derived[holdout["stratify"]],
         fraction=holdout["fraction"],
         seed=holdout["seed"],
-        values=values,
     )
     columns: dict[str, list] = {}
     blanked = set(holdout.get("columns", list(derived)))
@@ -4037,7 +4009,7 @@ def label_table(
         shown = []
         for pid in ids:
             keep = reviewed[pid] and not (
-                split[pid] == values["holdout"] and name in blanked
+                split[pid] == HOLDOUT_VALUES["holdout"] and name in blanked
             )
             shown.append(by_id[pid] if keep and by_id[pid] else None)
         columns[name] = shown
@@ -4049,7 +4021,7 @@ def label_table(
         if name in blanked:
             columns[f"{name}_withheld"] = [
                 (derived[name][pid] or None)
-                if split[pid] == values["holdout"]
+                if split[pid] == HOLDOUT_VALUES["holdout"]
                 else None
                 for pid in ids
             ]
@@ -4084,7 +4056,7 @@ def label_table(
                 Counter(
                     derived[holdout["stratify"]][pid]
                     for pid in ids
-                    if split[pid] == values["holdout"]
+                    if split[pid] == HOLDOUT_VALUES["holdout"]
                 )
             ),
         },
@@ -4136,9 +4108,8 @@ def embed_build_steps(ctx: Context) -> list[Step]:
                 origin[name] = "computed"
             else:
                 origin[name] = "refreshed"
-        queries = [v for k, v in holdout_values(holdout).items() if k != "reference"]
         blanked = holdout.get("columns", [c["name"] for c in labels["columns"]])
-        assert_no_refill(table, holdout["split_column"], queries, blanked)
+        assert_no_refill(table, holdout["split_column"], QUERY_SPLITS, blanked)
         # G8 evidence, as for the demo: InterPro and Biocentral read these.
         lengths = {
             a: len(s) for a, s in parse_fasta_text(full_fasta.read_text()).items()
@@ -4195,15 +4166,6 @@ def embed_build_steps(ctx: Context) -> list[Step]:
     return steps
 
 
-def holdout_values(holdout: dict) -> dict[str, str]:
-    return {
-        "reference": "reference",
-        "holdout": "holdout",
-        "query": "trembl",
-        **holdout.get("values", {}),
-    }
-
-
 def transfer_steps(ctx: Context, assembled: Path) -> list[Step]:
     """EAT with ``protspace transfer`` (it reads a bundle), then its annotations
     become ``work/annotations.parquet`` for the statistics and the final bundle.
@@ -4243,9 +4205,10 @@ def transfer_steps(ctx: Context, assembled: Path) -> list[Step]:
     def transfer() -> None:
         ctx.need_cli().run(transfer_args, cwd=ctx.work, log=ctx.log)
         table = extract_ann(post)
-        queries = [v for k, v in holdout_values(holdout).items() if k != "reference"]
         # The transfer writes __pred_ columns only; the labels stay withheld.
-        assert_no_refill(table, holdout["split_column"], queries, options["columns"])
+        assert_no_refill(
+            table, holdout["split_column"], QUERY_SPLITS, options["columns"]
+        )
         missing = [
             c
             for c in options["columns"]
@@ -4371,7 +4334,7 @@ def tail_steps(ctx: Context) -> list[Step]:
         "-o",
         str(work / "statistics.parquet"),
         "--cluster-selection",
-        ctx.dataset.get("cluster_selection", "both"),
+        "both",
         "--stats-annotation",
         ",".join(stats_list),
         "--settings-out",
@@ -4671,7 +4634,7 @@ def eat_provenance(ctx: Context, table: pa.Table) -> dict[str, Any]:
     record: dict[str, Any] = {}
     if holdout:
         column = holdout["split_column"]
-        value = holdout_values(holdout)["holdout"]
+        value = HOLDOUT_VALUES["holdout"]
         ids = held_out_ids(table, column, value) if column in table.column_names else []
         record["holdout"] = {
             "split_column": column,
