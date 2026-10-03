@@ -108,44 +108,6 @@ export const layoutStyles = css`
     padding-right: calc(var(--spacing-lg) + var(--spacing-md));
   }
 
-  /* Selection tool toggle (rectangle / lasso) */
-  .tool-toggle {
-    display: inline-flex;
-    align-items: center;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-
-  .tool-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 6px;
-    border: none;
-    background: var(--surface);
-    color: var(--muted);
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      color 0.15s;
-  }
-
-  .tool-toggle-btn:hover {
-    background: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  .tool-toggle-btn.active {
-    background: var(--primary);
-    color: var(--text-light);
-  }
-
-  .tool-toggle-btn .icon {
-    width: 16px;
-    height: 16px;
-  }
-
   /* Settings indicator for files with custom legend settings */
   .settings-indicator {
     display: inline-flex;

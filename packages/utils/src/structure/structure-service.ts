@@ -8,6 +8,16 @@ interface AlphaFoldPrediction {
   modelVersion: string;
 }
 
+interface TedDomainApiEntry {
+  ted_domain_no?: number | string;
+  segments?: unknown;
+}
+
+interface TedDomainApiSegment {
+  af_start?: number | string;
+  af_end?: number | string;
+}
+
 /**
  * Extract the base accession from a protein ID.
  * Strips any version suffix after the first dot (e.g., "P0DQE9.2" → "P0DQE9").
@@ -21,6 +31,8 @@ export function getBaseAccession(proteinId: string): string {
  */
 export class StructureService {
   private static readonly ALPHAFOLD_API_URL = 'https://www.alphafold.ebi.ac.uk/api/prediction';
+  private static readonly TED_DOMAINS_API_URL = 'https://alphafold.ebi.ac.uk/api/domains';
+  private static readonly TED_DOMAINS_TIMEOUT_MS = 5_000;
   private static readonly THREE_D_BEACONS_SUMMARY_URL =
     'https://www.ebi.ac.uk/pdbe/pdbe-kb/3dbeacons/api/uniprot/summary';
   private static readonly alphaFoldModelPageCache: Map<string, string | null> = new Map();
@@ -28,16 +40,23 @@ export class StructureService {
   /**
    * Load protein structure from available sources
    * @param proteinId - The protein identifier
+   * @param signal - optional AbortSignal that cancels every request of this load
    * @returns Promise with structure data and metadata
    */
-  public static async loadStructure(proteinId: string): Promise<StructureData> {
+  public static async loadStructure(
+    proteinId: string,
+    signal?: AbortSignal,
+  ): Promise<StructureData> {
     const formattedId = getBaseAccession(proteinId);
+    const tedAbortController = new AbortController();
+    const abortTed = () => tedAbortController.abort();
+    signal?.addEventListener('abort', abortTed, { once: true });
 
     // Fetch prediction data from AlphaFold API
     const apiUrl = `${this.ALPHAFOLD_API_URL}/${formattedId}`;
 
     try {
-      const response = await fetch(apiUrl);
+      const response = await fetch(apiUrl, { signal });
 
       if (!response.ok) {
         throw new Error(`AlphaFold API request failed: ${response.status}`);
@@ -45,7 +64,7 @@ export class StructureService {
 
       const predictions: AlphaFoldPrediction[] = await response.json();
 
-      if (!predictions || predictions.length === 0) {
+      if (!Array.isArray(predictions) || predictions.length === 0) {
         throw new Error(`No AlphaFold prediction found for ${formattedId}`);
       }
 
@@ -68,9 +87,13 @@ export class StructureService {
         throw new Error(`No structure URL found for ${formattedId}`);
       }
 
+      // TED domains are chopped from AlphaFold DB models, so request them only once a model
+      // exists; the request runs alongside the (much larger) structure file download
+      const tedDomainsPromise = this.loadTedDomains(formattedId, tedAbortController);
+
       // Fetch the structure file data and create a blob URL
       // This avoids CORS issues and works better with Molstar
-      const structureResponse = await fetch(structureUrl);
+      const structureResponse = await fetch(structureUrl, { signal });
       if (!structureResponse.ok) {
         throw new Error(`Failed to fetch structure file: ${structureResponse.status}`);
       }
@@ -84,6 +107,7 @@ export class StructureService {
         type: isBinary ? 'application/octet-stream' : 'text/plain',
       });
       const blobUrl = URL.createObjectURL(blob);
+      const tedDomains = await tedDomainsPromise;
 
       return {
         proteinId: formattedId,
@@ -91,6 +115,7 @@ export class StructureService {
         url: blobUrl,
         format,
         isBinary,
+        tedDomains,
         metadata: {
           confidence: 'high',
           method: 'predicted',
@@ -98,15 +123,62 @@ export class StructureService {
         },
       };
     } catch (error) {
-      // Only log unexpected errors (not 404s, which are expected for proteins without structures)
-      if (error instanceof Error && !error.message.includes('404')) {
+      // Cancels the TED request if it already started, i.e. the structure download failed
+      tedAbortController.abort();
+      // Only log unexpected errors (not 404s, which are expected for proteins without structures,
+      // nor a load the caller cancelled)
+      if (error instanceof Error && !error.message.includes('404') && !signal?.aborted) {
         console.warn(
           `[StructureService] Failed to load AlphaFold structure for ${formattedId}:`,
           error.message,
         );
       }
       throw new Error(`AlphaFold structure not available for ${formattedId}`);
+    } finally {
+      signal?.removeEventListener('abort', abortTed);
     }
+  }
+
+  private static async loadTedDomains(
+    proteinId: string,
+    abortController: AbortController,
+  ): Promise<TedDomain[]> {
+    const timeoutId = setTimeout(() => abortController.abort(), this.TED_DOMAINS_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${this.TED_DOMAINS_API_URL}/${proteinId}`, {
+        signal: abortController.signal,
+      });
+      if (!response.ok) return [];
+
+      // Later checks reject every malformed shape, so no separate object guards are needed
+      const payload = (await response.json()) as { annotations?: unknown } | null;
+      const annotations = payload?.annotations;
+      if (!Array.isArray(annotations)) return [];
+
+      return annotations
+        .map((entry: TedDomainApiEntry | null) => this.parseTedDomain(entry))
+        .filter((domain): domain is TedDomain => domain !== null);
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private static parseTedDomain(entry: TedDomainApiEntry | null): TedDomain | null {
+    const domainNumber = Number(entry?.ted_domain_no);
+    if (!Number.isInteger(domainNumber) || domainNumber < 1 || !Array.isArray(entry?.segments)) {
+      return null;
+    }
+
+    const segments = entry.segments
+      .map((segment: TedDomainApiSegment | null) => ({
+        start: Number(segment?.af_start),
+        end: Number(segment?.af_end),
+      }))
+      .filter(({ start, end }) => start > 0 && start <= end);
+
+    return segments.length > 0 ? { domainNumber, segments } : null;
   }
 
   /**
@@ -181,11 +253,22 @@ export interface StructureData {
   url: string | null;
   format: 'pdb' | 'mmcif';
   isBinary: boolean;
+  tedDomains: TedDomain[];
   metadata: {
     confidence: 'high' | 'medium' | 'low' | 'experimental';
     method: 'predicted' | 'experimental';
     version: string;
   };
+}
+
+export interface TedDomainSegment {
+  start: number;
+  end: number;
+}
+
+export interface TedDomain {
+  domainNumber: number;
+  segments: TedDomainSegment[];
 }
 
 /**

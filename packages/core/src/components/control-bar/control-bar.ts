@@ -852,13 +852,13 @@ export class ProtspaceControlBar extends LitElement {
             <!-- Selection tool picker (visible only in selection mode) -->
             ${this.selectionMode
               ? html`
-                  <div class="tool-toggle" role="group" aria-label="Selection tool">
+                  <div class="segmented segmented--icon" role="group" aria-label="Selection tool">
                     <button
-                      class=${this.selectionTool === 'rectangle'
-                        ? 'tool-toggle-btn active'
-                        : 'tool-toggle-btn'}
+                      type="button"
+                      class="segmented-btn"
                       @click=${() => this.handleSelectionToolChange('rectangle')}
                       title="Rectangle selection"
+                      aria-label="Rectangle selection"
                       aria-pressed=${this.selectionTool === 'rectangle'}
                     >
                       <svg class="icon" viewBox="0 0 24 24">
@@ -875,11 +875,11 @@ export class ProtspaceControlBar extends LitElement {
                       </svg>
                     </button>
                     <button
-                      class=${this.selectionTool === 'lasso'
-                        ? 'tool-toggle-btn active'
-                        : 'tool-toggle-btn'}
+                      type="button"
+                      class="segmented-btn"
                       @click=${() => this.handleSelectionToolChange('lasso')}
                       title="Lasso selection"
+                      aria-label="Lasso selection"
                       aria-pressed=${this.selectionTool === 'lasso'}
                     >
                       <svg class="icon" viewBox="0 0 24 24">
