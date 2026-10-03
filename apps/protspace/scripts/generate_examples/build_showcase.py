@@ -2629,7 +2629,10 @@ def content_sha256(path: Path) -> str | None:
 
 #: The recipe keys each expensive local step reads: editing another key (an
 #: author fact, a style) must not re-run assemble or the hours of ``stats``,
-#: since every step after a re-run step runs again too.
+#: since every step after a re-run step runs again too. ``drop_columns`` and
+#: ``cluster_selection`` are no recipe's options any more, but stay listed: a
+#: key's digest covers every name here, so dropping them would re-run assemble,
+#: stats and every step after them for each finished 2026_03 build.
 ASSEMBLE_KEYS = (
     "kind",
     "source",
