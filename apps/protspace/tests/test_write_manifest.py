@@ -33,12 +33,16 @@ def _parquet(table: pa.Table) -> bytes:
 def _write_bundle(
     path: Path,
     *,
-    ids: list[str],
-    annotations: dict[str, list],
-    projections: list[str],
+    ids: list[str] | None = None,
+    annotations: dict[str, list] | None = None,
+    projections: list[str] | None = None,
     metadata: dict[str, str] | None = None,
     extra_parts: int = 0,
 ) -> Path:
+    """A legacy bundle; by default one protein, one `family` and one projection."""
+    ids = ids or ["P1"]
+    annotations = annotations or {"family": ["a"]}
+    projections = projections or ["UMAP_2"]
     table = pa.table({"identifier": ids, **annotations})
     if metadata:
         table = table.replace_schema_metadata(metadata)
@@ -85,26 +89,15 @@ def test_record_reads_everything_from_the_file(tmp_path):
 
 
 def test_record_notes_a_statistics_part_only_when_it_has_content(tmp_path):
-    bundle = _write_bundle(
-        tmp_path / "b.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["UMAP_2"],
-    )
-    stats = _parquet(pa.table({"annotation": ["domain"], "value": [0.5]}))
+    bundle = _write_bundle(tmp_path / "b.parquetbundle")
+    stats = _parquet(pa.table({"annotation": ["family"], "value": [0.5]}))
     # Statistics but no settings: an empty settings slot keeps them fifth.
     bundle.write_bytes(DELIMITER.join([bundle.read_bytes(), b"", stats]))
     with_stats = write_manifest.read_bundle_record(
         bundle, example_id="x", file="b", hosting="repo"
     )
 
-    empty = _write_bundle(
-        tmp_path / "c.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["UMAP_2"],
-        extra_parts=2,
-    )
+    empty = _write_bundle(tmp_path / "c.parquetbundle", extra_parts=2)
     without_stats = write_manifest.read_bundle_record(
         empty, example_id="x", file="c", hosting="repo"
     )
@@ -222,9 +215,6 @@ def test_record_takes_the_first_column_as_ids_when_none_is_named(tmp_path):
 def test_record_reads_provenance_metadata(tmp_path):
     bundle = _write_bundle(
         tmp_path / "swissprot_2026_03.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["ProtT5 — UMAP 2"],
         metadata={
             "example_id": "swissprot",
             "protspace_version": "4.14.0",
@@ -288,9 +278,6 @@ def test_the_command_never_shows_a_machine_path(command, shown):
 def test_a_stamped_scratch_path_is_redacted_in_the_record(tmp_path):
     bundle = _write_bundle(
         tmp_path / "demo.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["ProtT5 — UMAP 2"],
         metadata={
             "example_id": "demo",
             "command": "build_showcase.py build --only demo --cli-root /private/tmp/c",
@@ -313,9 +300,6 @@ def test_a_stamped_scratch_path_is_redacted_in_the_record(tmp_path):
 def test_only_the_builds_group_objects_are_read(tmp_path, stamp):
     bundle = _write_bundle(
         tmp_path / "b.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["UMAP_2"],
         metadata={"uniprot_release": stamp},
     )
     with pytest.raises(ValueError):
@@ -327,9 +311,6 @@ def test_only_the_builds_group_objects_are_read(tmp_path, stamp):
 def test_a_bundle_stamped_for_another_example_is_refused(tmp_path):
     bundle = _write_bundle(
         tmp_path / "b.parquetbundle",
-        ids=["P1"],
-        annotations={"domain": ["Bacteria"]},
-        projections=["UMAP_2"],
         metadata={"example_id": "human-fly"},
     )
     with pytest.raises(ValueError, match="human-fly"):
@@ -340,12 +321,7 @@ def test_a_bundle_stamped_for_another_example_is_refused(tmp_path):
 
 def test_render_parse_round_trip(tmp_path):
     public = tmp_path / "public"
-    demo = _write_bundle(
-        public / "data.parquetbundle",
-        ids=["P1"],
-        annotations={"family": ["a"]},
-        projections=["UMAP_2"],
-    )
+    demo = _write_bundle(public / "data.parquetbundle")
     manifest = write_manifest.build_manifest(
         repo=[("demo", demo)],
         release=[],
@@ -366,12 +342,7 @@ def test_render_parse_round_trip(tmp_path):
 
 def test_repo_files_are_named_relative_to_public(tmp_path):
     public = tmp_path / "public"
-    bundle = _write_bundle(
-        public / "data" / "5K.parquetbundle",
-        ids=["P1"],
-        annotations={"phylum": ["x"]},
-        projections=["PCA_2"],
-    )
+    bundle = _write_bundle(public / "data" / "5K.parquetbundle")
     manifest = write_manifest.build_manifest(
         repo=[("5K", bundle)],
         release=[],
@@ -383,12 +354,7 @@ def test_repo_files_are_named_relative_to_public(tmp_path):
 
 
 def test_release_files_need_a_tag(tmp_path):
-    bundle = _write_bundle(
-        tmp_path / "x.parquetbundle",
-        ids=["P1"],
-        annotations={"a": ["b"]},
-        projections=["P"],
-    )
+    bundle = _write_bundle(tmp_path / "x.parquetbundle")
     with pytest.raises(SystemExit):
         write_manifest.build_manifest(
             repo=[], release=[("x", bundle)], release_tag=None, retained=[]
@@ -452,22 +418,13 @@ def test_the_same_release_keeps_what_it_already_retains():
 def test_check_reports_a_stale_manifest(tmp_path, capsys):
     public = tmp_path / "public"
     out = tmp_path / "example-manifest.ts"
-    demo = _write_bundle(
-        public / "data.parquetbundle",
-        ids=["P1"],
-        annotations={"family": ["a"]},
-        projections=["UMAP_2"],
-    )
+    demo = _write_bundle(public / "data.parquetbundle")
     args = ["--repo", f"demo={demo}", "--public-dir", str(public), "--out", str(out)]
+    refresh = ["--refresh", "--public-dir", str(public), "--out", str(out)]
 
     assert write_manifest.main(args) == 0
     assert write_manifest.main([*args, "--check"]) == 0
-    assert (
-        write_manifest.main(
-            ["--refresh", "--public-dir", str(public), "--out", str(out), "--check"]
-        )
-        == 0
-    )
+    assert write_manifest.main([*refresh, "--check"]) == 0
 
     # The file changes under the manifest: both --check forms notice.
     _write_bundle(
@@ -477,21 +434,11 @@ def test_check_reports_a_stale_manifest(tmp_path, capsys):
         projections=["UMAP_2"],
     )
     assert write_manifest.main([*args, "--check"]) == 1
-    assert (
-        write_manifest.main(
-            ["--refresh", "--public-dir", str(public), "--out", str(out), "--check"]
-        )
-        == 1
-    )
+    assert write_manifest.main([*refresh, "--check"]) == 1
     assert "stale" in capsys.readouterr().err
 
     # --refresh rewrites it from the file.
-    assert (
-        write_manifest.main(
-            ["--refresh", "--public-dir", str(public), "--out", str(out)]
-        )
-        == 0
-    )
+    assert write_manifest.main(refresh) == 0
     manifest = write_manifest.parse_manifest(out.read_text())
     assert manifest["examples"]["demo"]["proteins"] == 2
 
@@ -531,12 +478,7 @@ def test_the_showcase_builds_group_objects_give_each_groups_release(tmp_path):
 
 
 def _release_bundle(directory: Path, name: str, family: str) -> Path:
-    return _write_bundle(
-        directory / name,
-        ids=["P1"],
-        annotations={"family": [family]},
-        projections=["UMAP_2"],
-    )
+    return _write_bundle(directory / name, annotations={"family": [family]})
 
 
 def test_a_retained_file_named_like_a_new_one_with_other_bytes_is_refused(tmp_path):
@@ -587,12 +529,7 @@ def test_a_retained_file_identical_to_a_new_one_is_dropped_and_others_kept(tmp_p
 def test_the_zenodo_doi_survives_refresh_while_the_bytes_are_unchanged(tmp_path):
     public = tmp_path / "public"
     out = tmp_path / "example-manifest.ts"
-    demo = _write_bundle(
-        public / "data.parquetbundle",
-        ids=["P1"],
-        annotations={"family": ["a"]},
-        projections=["UMAP_2"],
-    )
+    demo = _write_bundle(public / "data.parquetbundle")
     refresh = ["--refresh", "--public-dir", str(public), "--out", str(out)]
     assert (
         write_manifest.main(
