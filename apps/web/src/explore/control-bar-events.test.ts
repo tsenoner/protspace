@@ -18,7 +18,7 @@ function bind() {
   });
   const chooseExample = (id: string) =>
     controlBar.dispatchEvent(new CustomEvent('load-example-dataset', { detail: { id } }));
-  return { chooseExample, datasetController };
+  return { chooseExample, controlBar, datasetController };
 }
 
 describe("the Import menu's example choice", () => {
@@ -45,6 +45,16 @@ describe("the Import menu's example choice", () => {
     chooseExample('not-a-real-id');
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('not-a-real-id'));
+    expect(datasetController.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+  });
+
+  it('warns about an event that names no example, rather than throwing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { controlBar, datasetController } = bind();
+
+    expect(() => controlBar.dispatchEvent(new CustomEvent('load-example-dataset'))).not.toThrow();
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Unknown example dataset id'));
     expect(datasetController.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
   });
 });

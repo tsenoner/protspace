@@ -47,8 +47,9 @@ export function bindControlBarEvents({
 
   // This event name is part of the control-bar custom element contract in @protspace/core.
   addControlBarListener('load-example-dataset', (event: Event) => {
-    const { id } = (event as CustomEvent<{ id: string }>).detail;
-    const entry = findExampleDataset(id);
+    // A dispatch without a detail names no example: warn rather than throw.
+    const id = (event as CustomEvent<{ id?: string } | null>).detail?.id;
+    const entry = id === undefined ? undefined : findExampleDataset(id);
     if (!entry) {
       console.warn(`Unknown example dataset id: ${id}`);
       return;
