@@ -201,6 +201,8 @@ class TestSequenceIdentity:
             assert f["a"].attrs["protspace_sequence_sha256"] == store.sequence_digest(
                 "EDITED"
             )
+        # The on-disk name other readers (the showcase build's gates) look up.
+        assert store.SEQUENCE_DIGEST_ATTR == "protspace_sequence_sha256"
 
     def test_an_unchanged_sequence_keeps_its_vector(self, tmp_path):
         h5 = tmp_path / "c.h5"
