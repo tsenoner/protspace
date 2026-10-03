@@ -37,6 +37,7 @@ import pyarrow.parquet as pq
 import requests
 
 from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +81,8 @@ DROPPED_ANNOTATION_COLUMNS: tuple[str, ...] = (
 RESTYLED_ANNOTATIONS: tuple[str, ...] = ("pfam", "ec", "superfamily", "cath")
 
 # First nine Kelly's high-contrast colors (zOrder 0–8). zOrder 9 is __NA__.
-KELLYS_PALETTE: tuple[str, ...] = (
-    "#F3C300",
-    "#875692",
-    "#F38400",
-    "#A1CAF1",
-    "#BE0032",
-    "#C2B280",
-    "#008856",
-    "#E68FAC",
-    "#0067A5",
-)
-NA_COLOR = "#DDDDDD"
+KELLYS_PALETTE: tuple[str, ...] = tuple(KELLYS_COLORS[:9])
+NA_COLOR = NA_PINNED_COLOR
 
 
 def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
