@@ -22,6 +22,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import requests
 
 from protspace.data.annotations.encoding import has_format_version
 from protspace.data.annotations.manager import UNIPROT_RELEASE_ATTR
@@ -1615,6 +1616,34 @@ def test_small_parsers(tmp_path):
     fasta = tmp_path / "x.fasta"
     assert bs.write_fasta(fasta, {"P1": "MK"}, ["P1", "P2"]) == 1
     assert fasta.read_text() == ">P1\nMK\n"
+
+
+def _http_error(status):
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status}", response=response)
+
+
+def test_uniprot_get_falls_back_only_on_an_answer_asking_again_cannot_change(
+    monkeypatch,
+):
+    def answer(error):
+        def get(url, params=None, **kwargs):
+            raise error
+
+        monkeypatch.setattr(bs, "get_with_retry", get)
+
+    answer(_http_error(404))  # an unknown accession: the caller falls back
+    assert bs.uniprot_get("https://rest.uniprot.org/uniprotkb/X") is None
+    answer(_http_error(503))  # given up after the retries: never a silent gap
+    with pytest.raises(bs.BuildError, match="answered 503"):
+        bs.uniprot_get("https://rest.uniprot.org/uniprotkb/X")
+    answer(requests.ConnectionError("reset"))
+    with pytest.raises(bs.BuildError, match="could not be reached"):
+        bs.uniprot_get("https://rest.uniprot.org/uniprotkb/X")
+    answer(_http_error(400))
+    with pytest.raises(bs.BuildError, match="refused the accessions A1…A2"):
+        bs.fetch_uniprot_entries(["A1", "A2"])
 
 
 def test_read_capabilities(tmp_path):

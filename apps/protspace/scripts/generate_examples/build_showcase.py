@@ -56,7 +56,7 @@ import sys
 import time
 import tomllib
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -65,6 +65,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
+import requests
 
 from protspace.core.constants import BROWSER_MISSING_TOKENS
 from protspace.data.annotations.configuration import (
@@ -79,9 +80,14 @@ from protspace.data.annotations.encoding import (
     stamp_format_version,
 )
 from protspace.data.annotations.manager import UNKNOWN_RELEASE, read_release_stamp
+from protspace.data.annotations.retrievers.http_utils import (
+    RETRYABLE_STATUS,
+    get_with_retry,
+)
 from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
 )
+from protspace.data.annotations.retrievers.uniprot_retriever import RELEASE_HEADER
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
 from protspace.data.io.bundle import BundleContents as Bundle
@@ -1962,30 +1968,46 @@ def clustering_report(
 # ---------------------------------------------------------------------------
 
 
-def _http_get(
-    url: str, params: dict | None = None, *, method: str = "GET", attempts: int = 5
-):
-    import requests
+def uniprot_get(url: str, params: dict | None = None) -> requests.Response | None:
+    """GET from UniProt with protspace's retry policy (``get_with_retry``).
 
-    for attempt in range(attempts):
-        try:
-            response = requests.request(method, url, params=params, timeout=120)
-        except requests.RequestException as error:
-            if attempt == attempts - 1:
-                raise BuildError(f"{url}: {error}") from error
-            time.sleep(2**attempt)
-            continue
-        if response.status_code in (429, 500, 502, 503, 504) and attempt < attempts - 1:
-            wait = response.headers.get("Retry-After")
-            time.sleep(float(wait) if wait and wait.isdigit() else 2**attempt)
-            continue
-        return response
-    raise BuildError(f"{url}: gave up after {attempts} attempts")
+    None when UniProt answers a status asking again cannot change (a 4xx such
+    as an unknown accession), so the caller can fall back; a request given up
+    on after the retries (a 5xx, a 429, a lost connection) fails the build
+    rather than leaving a silent gap.
+    """
+    try:
+        return get_with_retry(url, params, timeout=120)
+    except requests.HTTPError as error:
+        status = error.response.status_code
+        if status not in RETRYABLE_STATUS:
+            return None
+        raise BuildError(
+            f"UniProt answered {status} for {url} after retries"
+        ) from error
+    except requests.RequestException as error:
+        raise BuildError(f"UniProt could not be reached for {url}: {error}") from error
 
 
 def current_uniprot_release() -> str | None:
-    response = _http_get(RELEASE_PROBE)
-    return response.headers.get("X-UniProt-Release")
+    response = uniprot_get(RELEASE_PROBE)
+    return response.headers.get(RELEASE_HEADER) if response is not None else None
+
+
+def uniprot_batches(
+    accessions: Sequence[str], fields: Sequence[str], *, chunk: int = 100
+) -> Iterator[tuple[list[str], requests.Response | None]]:
+    """``(batch, response)`` for every ``chunk`` accessions: UniProt TSV of
+    ``fields`` from ``/uniprotkb/accessions`` (the stream endpoint drops large
+    responses mid-way), None for a batch UniProt refused (:func:`uniprot_get`)."""
+    for start in range(0, len(accessions), chunk):
+        batch = list(accessions[start : start + chunk])
+        params = {
+            "accessions": ",".join(batch),
+            "fields": ",".join(fields),
+            "format": "tsv",
+        }
+        yield batch, uniprot_get(f"{UNIPROT_REST}/accessions", params)
 
 
 def parse_fasta_text(text: str) -> dict[str, str]:
@@ -2014,28 +2036,22 @@ def fetch_uniprot_sequences(
     """Current full-length sequences keyed by the *requested* accession.
 
     Batches use ``/uniprotkb/accessions``; an accession that comes back under
-    another primary accession (merged) is looked up alone, which follows UniProt's
-    redirect. Returns the sequences and every release the responses reported.
+    another primary accession (merged), or whose batch UniProt refused, is
+    looked up alone, which follows UniProt's redirect. Returns the sequences
+    and every release the responses reported.
     """
     found: dict[str, str] = {}
     releases: set[str] = set()
 
     def note(response) -> None:
-        release = response.headers.get("X-UniProt-Release")
+        release = response.headers.get(RELEASE_HEADER)
         if release:
             releases.add(release)
 
-    for start in range(0, len(accessions), chunk):
-        batch = list(accessions[start : start + chunk])
-        response = _http_get(
-            f"{UNIPROT_REST}/accessions",
-            {
-                "accessions": ",".join(batch),
-                "fields": "accession,sequence",
-                "format": "tsv",
-            },
-        )
-        if response.status_code != 200:
+    for batch, response in uniprot_batches(
+        accessions, ("accession", "sequence"), chunk=chunk
+    ):
+        if response is None:
             continue
         note(response)
         for line in response.text.splitlines()[1:]:
@@ -2043,8 +2059,8 @@ def fetch_uniprot_sequences(
             if len(fields) >= 2 and fields[0] in batch:
                 found[fields[0]] = fields[1]
     for accession in [a for a in accessions if a not in found]:
-        response = _http_get(f"{UNIPROT_REST}/{accession}", {"format": "fasta"})
-        if response.status_code == 200 and response.text.startswith(">"):
+        response = uniprot_get(f"{UNIPROT_REST}/{accession}", {"format": "fasta"})
+        if response is not None and response.text.startswith(">"):
             sequences = parse_fasta_text(response.text)
             if sequences:
                 note(response)
@@ -2076,29 +2092,16 @@ def fetch_uniprot_entries(
 ) -> tuple[list[dict[str, str]], set[str]]:
     """UniProt TSV rows for ``accessions``, keyed by the requested field names.
 
-    Batches use ``/uniprotkb/accessions`` (the stream endpoint drops large
-    responses mid-way). A batch that does not answer 200 after the retries
-    fails the call, so a partial membership can never pass silently. Returns
-    the rows and every release the responses reported.
+    Batched (:func:`uniprot_batches`); a batch UniProt refuses fails the call,
+    so a partial membership can never pass silently. Returns the rows and
+    every release the responses reported.
     """
     rows: list[dict[str, str]] = []
     releases: set[str] = set()
-    for start in range(0, len(accessions), chunk):
-        batch = list(accessions[start : start + chunk])
-        response = _http_get(
-            f"{UNIPROT_REST}/accessions",
-            {
-                "accessions": ",".join(batch),
-                "fields": ",".join(fields),
-                "format": "tsv",
-            },
-        )
-        if response.status_code != 200:
-            raise BuildError(
-                f"UniProt answered {response.status_code} for accessions "
-                f"{batch[0]}…{batch[-1]}"
-            )
-        release = response.headers.get("X-UniProt-Release")
+    for batch, response in uniprot_batches(accessions, fields, chunk=chunk):
+        if response is None:
+            raise BuildError(f"UniProt refused the accessions {batch[0]}…{batch[-1]}")
+        release = response.headers.get(RELEASE_HEADER)
         if release:
             releases.add(release)
         lines = response.text.splitlines()
