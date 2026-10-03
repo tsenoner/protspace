@@ -232,12 +232,8 @@ describe('dataset controller legacy bundle notice', () => {
     const { controller } = buildController({
       sequence: 3,
       kind: 'default',
-      example: {
-        entry: EXAMPLE_DATASETS[1],
-        source: 'menu',
-        requestId: 1,
-        replacesStoredImport: true,
-      },
+      epoch: 1,
+      example: { entry: EXAMPLE_DATASETS[1], source: 'menu', replacesStoredImport: true },
     });
     await controller.handleDataLoaded(eventFor(2));
 

@@ -56,14 +56,6 @@ export interface ExampleLoadContext {
   entry: ExampleDataset;
   source: DatasetChangeSource;
   /**
-   * The request epoch this load was started under (see
-   * `beginUserRequest`/`isCurrentRequest` in `persisted-dataset.ts`).
-   * `handleDataLoaded` (dataset-controller.ts) checks it against the current
-   * epoch before rendering: a newer user request may have started while this
-   * one was still decoding, and that request already owns the screen.
-   */
-  requestId: number;
-  /**
    * Whether this load replaces the user's stored import (a menu choice, or
    * the recovery banner's "Load default"). `handleDataLoaded` clears the
    * stored copy only once the example has decoded and is still the current
@@ -78,8 +70,12 @@ export interface LoadMeta {
   kind: DatasetLoadKind;
   example?: ExampleLoadContext;
   /**
-   * The request epoch an OPFS restore began under, so its parse-failure
-   * recovery loads the demo only if no user request has moved past it.
+   * The request epoch the load began under (see `beginUserRequest` in
+   * persisted-dataset.ts): an example load's, an OPFS restore's or a user
+   * import's. A newer user request supersedes the load (`isLoadSuperseded` in
+   * dataset-controller.ts), which then renders nothing, and an OPFS restore's
+   * parse-failure recovery loads the demo only if none has. Absent for a load
+   * no user request supersedes (the perf suite's).
    */
   epoch?: number;
 }

@@ -254,15 +254,12 @@ export function createDatasetController({
   };
 
   /**
-   * Whether a newer user request has superseded `meta`'s load: an example
-   * load (by the epoch in its example context), an OPFS restore or a user
-   * import (by the epoch it began under). Loads without an epoch (the perf
-   * suite's) are never superseded.
+   * Whether a newer user request has superseded `meta`'s load (an example
+   * load, an OPFS restore or a user import), by the epoch it began under.
+   * Loads without an epoch (the perf suite's) are never superseded.
    */
-  const isLoadSuperseded = (meta: LoadMeta | null | undefined): boolean => {
-    const epoch = meta?.example?.requestId ?? meta?.epoch;
-    return epoch !== undefined && !persistedDatasetController.isCurrentRequest(epoch);
-  };
+  const isLoadSuperseded = (meta: LoadMeta | null | undefined): boolean =>
+    meta?.epoch !== undefined && !persistedDatasetController.isCurrentRequest(meta.epoch);
 
   let currentDatasetHash: string | null = null;
   let currentUnplacedProteinCount = 0;
@@ -332,11 +329,11 @@ export function createDatasetController({
         await skipSupersededLoad();
         return;
       }
-      if (loadMeta.example) {
+      if (loadMeta.example && loadMeta.epoch !== undefined) {
         // From here the example replaces the stored import and the plot, so
         // it can no longer be cancelled (a Back/Forward that only changes the
         // view leaves it to finish); a newer user request still supersedes it.
-        persistedDatasetController.commitExampleLoad(loadMeta.example.requestId);
+        persistedDatasetController.commitExampleLoad(loadMeta.epoch);
       }
 
       if (loadMeta.kind === 'user' && file) {
@@ -553,12 +550,15 @@ export function createDatasetController({
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;
-
-    if (customEvent.detail.originalError?.name === 'AbortError') {
-      console.log('Data load cancelled by user');
+    const settleFailed = () => {
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence, false);
       }
+    };
+
+    if (customEvent.detail.originalError?.name === 'AbortError') {
+      console.log('Data load cancelled by user');
+      settleFailed();
       return;
     }
 
@@ -566,17 +566,12 @@ export function createDatasetController({
     // openspec/specs/example-datasets "A request is superseded" scenario): its
     // parse failure must not toast, and must not dismiss the overlay that the
     // newer request — possibly still downloading — now owns.
-    if (
-      runningLoadMeta?.example &&
-      !persistedDatasetController.isCurrentRequest(runningLoadMeta.example.requestId)
-    ) {
+    if (runningLoadMeta?.example && isLoadSuperseded(runningLoadMeta)) {
       console.warn(
         `Ignoring load error for superseded example "${runningLoadMeta.example.entry.id}":`,
         customEvent.detail.message,
       );
-      if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
-      }
+      settleFailed();
       return;
     }
 
@@ -592,9 +587,7 @@ export function createDatasetController({
     }
 
     if (runningLoadMeta?.kind === 'opfs') {
-      if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
-      }
+      settleFailed();
 
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
         await persistedDatasetController.clearCorruptedPersistedDataset('could not be loaded');
@@ -618,10 +611,7 @@ export function createDatasetController({
     // without this, the UI stays behind it, unusable, until reload.
     overlayController.update(false);
     notify.error(getDataLoadFailureNotification(customEvent.detail));
-
-    if (loadSequence !== null) {
-      loadQueue.resolvePendingLoadFinalization(loadSequence, false);
-    }
+    settleFailed();
   };
 
   return {

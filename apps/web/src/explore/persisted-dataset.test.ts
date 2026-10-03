@@ -141,12 +141,12 @@ describe('loadExampleDataset', () => {
     expect(fetchMock).toHaveBeenCalledWith('/data.parquetbundle', {
       signal: expect.any(AbortSignal),
     });
-    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
-      entry: DEMO,
-      source: 'menu',
-      requestId: expect.any(Number),
-      replacesStoredImport: false,
-    });
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      expect.any(File),
+      'default',
+      { entry: DEMO, source: 'menu', replacesStoredImport: false },
+      expect.any(Number),
+    );
     expect(dataLoader.loadFromFile).toHaveBeenCalledWith(expect.any(File), { source: 'auto' });
     expect(notifyMock.error).not.toHaveBeenCalled();
   });
@@ -258,12 +258,12 @@ describe('loadExampleDataset', () => {
 
     // Only B ever registered a load or reached the data loader.
     expect(loadQueue.registerFileLoad).toHaveBeenCalledTimes(1);
-    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
-      entry: OTHER,
-      source: 'menu',
-      requestId: expect.any(Number),
-      replacesStoredImport: false,
-    });
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      expect.any(File),
+      'default',
+      { entry: OTHER, source: 'menu', replacesStoredImport: false },
+      expect.any(Number),
+    );
     expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1);
   });
 
@@ -436,12 +436,12 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
     // (covered end to end in example-dataset-load.test.ts), never before the
     // fetch — a failed download must not delete the import still on screen.
     expect(clearLastImportedFile).not.toHaveBeenCalled();
-    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(expect.any(File), 'default', {
-      entry: OTHER,
-      source: 'menu',
-      requestId: expect.any(Number),
-      replacesStoredImport: true,
-    });
+    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+      expect.any(File),
+      'default',
+      { entry: OTHER, source: 'menu', replacesStoredImport: true },
+      expect.any(Number),
+    );
   });
 });
 
@@ -537,6 +537,7 @@ describe('request precedence: a user request beats a startup load that began ear
       expect.any(File),
       'default',
       expect.objectContaining({ entry: OTHER, source: 'menu' }),
+      expect.any(Number),
     );
     expect(markLastLoadStatus).not.toHaveBeenCalled();
     expect(readLastLoadStatus).not.toHaveBeenCalled();
@@ -925,6 +926,7 @@ describe('Retry on a failed example download', () => {
       expect.any(File),
       'default',
       expect.objectContaining({ entry: OTHER, source: 'menu', replacesStoredImport: true }),
+      expect.any(Number),
     );
   });
 
@@ -957,12 +959,11 @@ describe('an example that has begun replacing the plot', () => {
 
     const result = controller.loadExampleDatasetAndClearPersistedFile(OTHER.id, 'menu');
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
-    const requestId = (loadQueue.registerFileLoad.mock.calls[0]![2] as { requestId: number })
-      .requestId;
+    const loadEpoch = loadQueue.registerFileLoad.mock.calls[0]![3] as number;
     // Still decoding: a Back/Forward cancels it.
-    expect(controller.isCurrentRequest(requestId)).toBe(true);
+    expect(controller.isCurrentRequest(loadEpoch)).toBe(true);
 
-    controller.commitExampleLoad(requestId);
+    controller.commitExampleLoad(loadEpoch);
     const epoch = controller.currentRequestEpoch();
     overlayController.update.mockClear();
 

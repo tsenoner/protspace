@@ -287,12 +287,12 @@ export function createPersistedDatasetController({
       // apart from one that's still current, and skip rendering it. The
       // stored import, when this load replaces it, is likewise cleared there
       // (see `ExampleLoadContext.replacesStoredImport`), not here.
-      const loadMeta = registerFileLoad(file, 'default', {
-        entry,
-        source,
+      const loadMeta = registerFileLoad(
+        file,
+        'default',
+        { entry, source, replacesStoredImport },
         requestId,
-        replacesStoredImport,
-      });
+      );
       const outcome = awaitLoadOutcome(loadMeta.sequence);
       await dataLoader.loadFromFile(file, { source: 'auto' });
       const success = await outcome;
@@ -381,14 +381,14 @@ export function createPersistedDatasetController({
   };
 
   /**
-   * Marks the example load that took `requestId` as committed: it has decoded,
-   * is still current, and `handleDataLoaded` is about to replace the stored
+   * Marks the example load that took `epoch` as committed: it has decoded, is
+   * still current, and `handleDataLoaded` is about to replace the stored
    * import and the plot with it. From here `cancelPendingExampleLoad` leaves
    * it alone; a newer user request still supersedes it.
    */
-  const commitExampleLoad = (requestId: number) => {
+  const commitExampleLoad = (epoch: number) => {
     const pending = pendingExample;
-    if (pending?.epoch !== requestId) {
+    if (pending?.epoch !== epoch) {
       return;
     }
     pending.committed = true;
@@ -594,10 +594,9 @@ export function createPersistedDatasetController({
     commitExampleLoad,
     currentRequestEpoch,
     /**
-     * Whether `epoch` (an `ExampleLoadContext.requestId`, or the epoch an
-     * OPFS restore began under) is still the current request epoch.
-     * `handleDataLoaded` (dataset-controller.ts) checks this before rendering
-     * an example load, so one superseded while it was still decoding — a
+     * Whether `epoch` (a load's `LoadMeta.epoch`) is still the current request
+     * epoch. `handleDataLoaded` (dataset-controller.ts) checks this before
+     * rendering a load, so one superseded while it was still decoding — a
      * newer user request made after its fetch resolved but before this event
      * fired — never renders, emits, or touches the view.
      */

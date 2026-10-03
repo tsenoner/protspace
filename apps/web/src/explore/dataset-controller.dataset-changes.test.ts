@@ -290,7 +290,8 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: OTHER, source: 'url' as const },
     };
     const { controller } = createController({
       getRunningLoadMeta: () => loadMeta,
@@ -349,7 +350,8 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     const exampleMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: OTHER, source: 'menu' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: OTHER, source: 'menu' as const },
     };
     const example = createController({ getRunningLoadMeta: () => exampleMeta });
     example.controller.handleLoadingStart();
@@ -372,7 +374,8 @@ describe('example/OPFS/user wrapper forwarding (persisted-dataset mocked)', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: OTHER, source: 'menu' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: OTHER, source: 'menu' as const },
     };
     const { controller, overlayController } = createController({
       getRunningLoadMeta: () => loadMeta,
@@ -437,7 +440,8 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: DEMO, source: 'menu' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: DEMO, source: 'menu' as const },
     };
     const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
       getRunningLoadMeta: () => loadMeta,
@@ -466,7 +470,8 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: OTHER, source: 'url' as const },
     };
     mocks.persisted.isCurrentRequest.mockReturnValue(false);
     const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
@@ -502,7 +507,8 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loadMeta = {
       sequence: 1,
       kind: 'default' as const,
-      example: { entry: OTHER, source: 'url' as const, requestId: 1 },
+      epoch: 1,
+      example: { entry: OTHER, source: 'url' as const },
     };
     mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
@@ -583,7 +589,7 @@ describe('handleDataLoaded: curated default view', () => {
   }
 
   function exampleMeta(source: 'menu' | 'url' | 'startup', entry = OTHER) {
-    return { sequence: 1, kind: 'default' as const, example: { entry, source, requestId: 1 } };
+    return { sequence: 1, kind: 'default' as const, epoch: 1, example: { entry, source } };
   }
 
   it('a menu load sets the example defaults and resets the request before loadData', async () => {
