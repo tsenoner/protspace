@@ -27,8 +27,9 @@ export default defineConfig({
 
   // Shared settings for all projects
   use: {
-    // Base URL for the app
-    baseURL: 'http://localhost:8080',
+    // Base URL for the app. PLAYWRIGHT_BASE_URL points the captures at a dev server on
+    // another port, as it does for the E2E config.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
 
     // Capture trace on failure for debugging
     trace: 'on-first-retry',

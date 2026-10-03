@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 from protspace.data.annotations.encoding import to_display_value
@@ -123,18 +124,32 @@ def _resolve_numeric(value: str, all_values: set[str]) -> str | None:
     return None
 
 
+def resolve_style_key(value: str, values: set[str]) -> str | None:
+    """Return the key in *values* that a styles file's *value* refers to, or None.
+
+    The value itself; else, for an NA-like label, the NA spelling the data uses
+    (:func:`_resolve_na`); else the same number spelled another way
+    (:func:`_resolve_numeric`). ``protspace style`` refuses a key this returns
+    None for, so a caller can drop such keys before styling.
+    """
+    if value in values:
+        return value
+    for resolver in (_resolve_na, _resolve_numeric):
+        resolved = resolver(value, values)
+        if resolved is not None:
+            return resolved
+    return None
+
+
 def _resolve_style_value(value: str, all_values: set[str], annotation: str) -> str:
     """Return the key in *all_values* that a styles file's *value* refers to.
 
     Raises:
         ValueError: when *value* names no value of *annotation*.
     """
-    if value in all_values:
-        return value
-    for resolver in (_resolve_na, _resolve_numeric):
-        resolved = resolver(value, all_values)
-        if resolved is not None:
-            return resolved
+    resolved = resolve_style_key(value, all_values)
+    if resolved is not None:
+        return resolved
     raise ValueError(
         f"Value '{value}' does not exist for annotation '{annotation}'. "
         f"Available values: {sorted(all_values)}"
@@ -189,9 +204,20 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     plot/legend groups by — not the raw percent-encoded wire cells. NA-like
     labels carry no reserved char, so they pass through unchanged.
     """
-    decode = reader.should_decode()
+    return style_keys(
+        reader.get_all_annotation_values(annotation), decode=reader.should_decode()
+    )
+
+
+def style_keys(cells: Iterable[object], *, decode: bool = True) -> set[str]:
+    """The keys a styles file names a column's values by.
+
+    Every display value (:func:`_to_display_value`) of every cell, read as
+    ``str()``, so a null cell is ``"None"``. ``decode`` as for
+    :func:`_to_display_value`: true for a v2 (or later) table.
+    """
     values: set[str] = set()
-    for raw in reader.get_all_annotation_values(annotation):
+    for raw in cells:
         values.update(_to_display_value(str(raw), decode=decode))
     return values
 

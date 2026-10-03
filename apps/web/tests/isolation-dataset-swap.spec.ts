@@ -1,12 +1,12 @@
-import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
-  dismissTourIfPresent,
   getProteinCount,
-  waitForExploreDataLoad,
+  importUserFile,
+  openExplore,
   waitForExploreInteractionReady,
   waitForProteinCount,
 } from './helpers/explore';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 /**
  * Regression test for issue #222: the Reset chip in the control bar must clear
@@ -17,27 +17,19 @@ import {
  * actually reset.
  */
 
-const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
+const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
  *
  * Both menu actions just delegate: "Load your dataset" clicks the hidden file input
- * inside <protspace-data-loader>, and choosing an example dispatches the
- * `load-example-dataset` event upward from the control-bar. Driving those entry
- * points directly avoids click-on-shadow-DOM flakiness in headless mode while still
- * hitting exactly the same production code path (data-renderer.applyPlotState →
- * scatterplot.clearIsolationState()), which is what this regression test cares about.
+ * inside <protspace-data-loader> (`importUserFile` sets it), and choosing an example
+ * dispatches the `load-example-dataset` event upward from the control-bar. Driving
+ * those entry points directly avoids click-on-shadow-DOM flakiness in headless mode
+ * while still hitting exactly the same production code path
+ * (data-renderer.applyPlotState → scatterplot.clearIsolationState()), which is what
+ * this regression test cares about.
  */
-async function loadCustomDataset(page: Page, datasetPath: string): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  await page
-    .locator('protspace-data-loader')
-    .locator('input[type="file"]')
-    .setInputFiles(datasetPath);
-}
-
 async function loadDemoDataset(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.evaluate(() => {
@@ -99,9 +91,7 @@ function resetButton(page: Page) {
 
 test.describe('Dataset swap clears isolation state (#222)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('Reset clears when swapping demo → custom while isolated', async ({ page }) => {
@@ -111,7 +101,7 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
     await expect(resetButton(page)).toBeVisible();
     expect(await readControlBarIsolationMode(page)).toBe(true);
 
-    await loadCustomDataset(page, CUSTOM_5K_BUNDLE_PATH);
+    await importUserFile(page, CUSTOM_5K_BUNDLE_PATH);
     await page.waitForFunction(
       (originalCount) => {
         const plot = document.querySelector('#myPlot') as {
@@ -131,7 +121,7 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
   test('Reset clears when swapping custom → demo while isolated', async ({ page }) => {
     const demoCount = await getProteinCount(page);
 
-    await loadCustomDataset(page, CUSTOM_5K_BUNDLE_PATH);
+    await importUserFile(page, CUSTOM_5K_BUNDLE_PATH);
     await page.waitForFunction(
       (originalCount) => {
         const plot = document.querySelector('#myPlot') as {

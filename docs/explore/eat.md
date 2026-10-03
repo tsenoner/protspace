@@ -69,7 +69,7 @@ Provenance is also drawable. With the overlay on, clicking a point in the plot t
 - **Click a transferred protein** and one dashed line joins it to its source, the protein whose label it borrowed for the currently active annotation.
 - **Click a source protein** and dashed lines fan out to every protein that borrowed from it.
 
-![Tracing a transferred value back to its source, then fanning out from that source](./images/eat-connectors.gif)
+![Clicking a transferred toxin draws one dashed line to the reviewed toxin it borrowed its class from; clicking that source draws a line to every toxin that borrowed from it](./images/eat-connectors.gif)
 
 A protein that is both a transferred protein and a source for others takes the first case: only its own source line is drawn. If that source's legend category is hidden, the click draws nothing at all.
 
@@ -131,12 +131,11 @@ Exporting a bundle with settings included stores the **Show** state and the lowe
 
 ## Trying It
 
-A prepared example ships with the app: **Venom EAT** (`venom_eat_stats`), 811 venom proteins with two transferred columns, `ec` (384 transferred values) and `protein_families` (14), across the `ProtT5 — PCA 2` and `ProtT5 — UMAP 2` projections.
+The **Snake three-finger toxins (EAT)** example holds 1,089 three-finger toxins from snakes. UniProt curators have classified 536 of the 537 reviewed ones; the one left, the muscarinic toxin Mlalpha (P0DJB0), has no curated subfamily and shows as N/A. The 552 unreviewed ones, mostly sequenced from venom glands, have no class, and EAT transferred one to each from the nearest reviewed toxin in the ProtT5 embedding. To make the transfers checkable, a fifth of the reviewed toxins, 107, were held out: their class was withheld and transferred like the others, and `toxin_class_withheld` keeps the truth.
 
-Open the **Import** menu's **Examples** section and choose **Venom EAT**, or visit
-`/explore?dataset=venom_eat_stats` directly. See [Control Bar Features](/explore/control-bar#_9-import) for the full example list and the `?dataset=` link format.
+Open the **Import** menu's **Examples** section and choose it, or visit `/explore?dataset=three-finger-toxins` directly. [Its section of Example Datasets](/explore/example-datasets#three-finger-toxins) says how it was built.
 
-Colour by `ec` to see the effect at its strongest: nearly half the dataset is a ring, and the shape of the ringed region tells you which parts of the embedding EAT was confident enough to reach into.
+It opens coloured by `toxin_class` with every transfer shown: the 659 rings, one for each unreviewed and held-out toxin, sit in the islands of the classes they borrowed. The reliability filter starts at 0, which also keeps the [separation score](/explore/separation-scores) strips visible. Hover a held-out toxin (colour by `eat_split` to find them) and its tooltip shows the borrowed class next to `toxin_class_withheld`; they agree for 101 of the 107 held-out toxins (94 %). Drag the filter to 50 % (a reliability of 0.5) to keep the 407 transfers EAT was most confident in, 312 onto unreviewed toxins and 95 onto held-out ones, all 95 of them right. The rings between the islands go first.
 
 ## Next Steps
 

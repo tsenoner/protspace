@@ -144,7 +144,7 @@ While focus is inside an editable input (e.g. a label's text field), Delete/Back
 
 ## Overlay tools
 
-![Figure Editor with three overlays placed: a red circle highlighting a protein cluster, an arrow pointing at the cluster, and a "Cluster A" label, sidebar shows the matching Overlays section](./images/figure-editor-overlays.png)
+![Figure Editor with four overlays placed on the demo map: a black circle around the arthropod phospholipase D cluster with a "PLD" label above it, and a "Kunitz" label with an arrow pointing into the venom Kunitz-type cluster; the sidebar lists them in its Overlays section](./images/figure-editor-overlays.png)
 
 The toolbar at the bottom of the preview switches between drawing tools.
 
@@ -176,7 +176,7 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 
 ### Zoom-inset tool
 
-![Figure Editor with a zoom inset placed: dashed source rectangle marks the magnified region on the left of the plot, the magnified target rectangle sits in the lower-right with a solid border, sidebar shows Zoom Insets with Dot size and Border controls](./images/figure-editor-zoom-inset.png)
+![Figure Editor with a zoom inset placed: a dashed source rectangle marks a small cluster on the left of the plot, the magnified target rectangle sits below it in the lower-left with a solid border and connector lines, sidebar shows Zoom Insets with Dot size and Border controls](./images/figure-editor-zoom-inset.png)
 
 Creates a magnified view of a region. Two-phase workflow:
 

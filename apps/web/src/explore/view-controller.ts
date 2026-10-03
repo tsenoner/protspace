@@ -3,11 +3,13 @@ import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
+  ExploreViewDefaults,
   ExploreViewRequestState,
 } from './view-state';
 import {
   cloneExploreViewRequest,
   createEmptyExploreViewRequest,
+  createExploreViewRequestFromView,
   getResolvedExploreViewNormalization,
   resolveExploreView,
 } from './url-state';
@@ -39,6 +41,21 @@ export interface ViewController {
    * the recorded request against the new dataset once it's loaded.
    */
   recordRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Records the view on screen as the latest request, as a URL naming it
+   * would. After a failed Back/Forward the recorded request still holds the
+   * failed entry's parameters; this drops them, so a later file import or
+   * load doesn't inherit them.
+   */
+  recordCurrentView(): void;
+  /**
+   * Sets the loaded dataset's own landing view (an example's curated
+   * `defaultView`), which fills whatever the view request leaves unset (see
+   * `resolveExploreView`); `null` for a dataset without one. Both resolve
+   * paths use it, so Back to a bare entry of the same dataset, which never
+   * reloads, also lands on the curated view.
+   */
+  setDatasetDefaults(defaults: ExploreViewDefaults | null): void;
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
@@ -52,6 +69,7 @@ export function createViewController({
   controlBar,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
+  let datasetDefaults: ExploreViewDefaults = {};
   let isApplyingView = false;
   const subscribers = new Set<(change: ExploreViewChange) => void>();
 
@@ -141,9 +159,10 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
     return resolved?.effective ?? null;
   };
@@ -158,9 +177,10 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
 
     if (!resolved) {
@@ -242,6 +262,15 @@ export function createViewController({
     },
     recordRequestedView(viewRequest: ExploreViewRequestState) {
       latestViewRequest = cloneExploreViewRequest(viewRequest);
+    },
+    recordCurrentView() {
+      const effective = getCurrentEffectiveView();
+      latestViewRequest = effective
+        ? createExploreViewRequestFromView(effective)
+        : createEmptyExploreViewRequest();
+    },
+    setDatasetDefaults(defaults: ExploreViewDefaults | null) {
+      datasetDefaults = defaults ?? {};
     },
     handleUserAnnotationChange() {
       emitCurrentUserViewChange();

@@ -7,6 +7,7 @@ import type {
 import type { VisualizationData } from '@protspace/utils';
 import { DENSITY_DEFAULT, isEatConfidenceAnnotation } from '@protspace/utils';
 import type { InteractionController } from './interaction-controller';
+import type { LoadingOverlayController } from './loading-overlay';
 import type { EffectiveExploreView } from './view-state';
 
 interface DataRendererOptions {
@@ -14,9 +15,7 @@ interface DataRendererOptions {
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
-  overlayController: {
-    update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
-  };
+  overlayController: Pick<LoadingOverlayController, 'update'>;
   plotElement: ProtspaceScatterplot;
   resolveInitialView(data: VisualizationData): EffectiveExploreView | null;
   structureViewer: ProtspaceStructureViewer;

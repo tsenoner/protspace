@@ -16,6 +16,15 @@ Note the invocation: under pnpm 10 a `--` is forwarded to the script verbatim, s
 `pnpm perf -- --project=chrome` reaches Playwright as a positional filter and selects all three
 browser projects. Write `pnpm perf --project=chrome`.
 
+The `573K_swissprot_v3` runs, here and in the sections below, predate the manifest-driven harness
+and cannot be re-run as written. The v3 bundle was a local file on `perf/parquetbundle-v3`, never
+committed and not an asset of the `perf-datasets` release, and the harness now serves only what
+[`../datasets.manifest.json`](../datasets.manifest.json) lists: it answers
+`573K_swissprot_v3.parquetbundle` with 404 ("not a perf dataset") and records a failure, whatever
+sits in `perf/datasets/`. Re-running them needs a `573K_swissprot_v3` manifest record and its
+release asset first (see [`../README.md`](../README.md)). The v2 command still works after
+`pnpm perf:fetch --only 573K_swissprot`.
+
 ## Machine
 
 Apple M4, 10 logical cores, `navigator.deviceMemory` 16, macOS. Google Chrome 152.0.7977.83 headed

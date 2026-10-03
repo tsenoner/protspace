@@ -112,8 +112,11 @@ Up to 2,000,000 per projection. Points are staged once and the camera is a shade
 panning and zooming cost the same at a million points as at a hundred thousand.
 
 **Loading is the slow part.** On a modern laptop expect roughly 25 seconds at 1M proteins and 40
-seconds at 2M; Swiss-Prot (573K) loads in well under half that. Memory is the real ceiling — a 2M
-bundle peaks around 2.6 GB of browser heap — which is why the limit sits where it does.
+seconds at 2M. The [Swiss-Prot example](/explore/example-datasets#swissprot), 573K proteins in two
+projections with every annotation (87.8 MB), took about 30 seconds and peaked at about 1.2 GB of
+JavaScript heap on a fast laptop (an Apple M4 Pro), not counting the download. Memory is the real
+ceiling — a 2M bundle peaks around 2.6 GB of browser heap — which is why the limit sits where it
+does.
 
 Bundles above the limit are refused at load with a message naming it. Nothing is ever dropped
 silently.

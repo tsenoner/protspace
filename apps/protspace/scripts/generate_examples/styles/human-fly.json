@@ -1,0 +1,32 @@
+{
+  "$comment": "Fig. 2B: human yellow, fly purple, fly listed and drawn first so the smaller proteome shows through the shared core. protein_families pins the families the paper names, then the most frequent others.",
+  "species": {
+    "sortMode": "manual",
+    "maxVisibleValues": 3,
+    "pinnedValues": [
+      "Drosophila melanogaster",
+      "Homo sapiens",
+      ""
+    ],
+    "colors": {
+      "Homo sapiens": "#F3C300",
+      "Drosophila melanogaster": "#875692"
+    }
+  },
+  "protein_families": {
+    "sortMode": "manual",
+    "zOrderSort": "size-desc",
+    "maxVisibleValues": 12,
+    "pinnedValues": [
+      "protein kinase superfamily",
+      "MHC class I family",
+      "MHC class II family",
+      "beta-defensin family",
+      "intercrine beta (chemokine CC) family",
+      "PBP/GOBP family",
+      "krueppel C2H2-type zinc-finger protein family",
+      "__REST__",
+      ""
+    ]
+  }
+}

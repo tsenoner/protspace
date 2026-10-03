@@ -425,6 +425,25 @@ export const dropdownMixin = css`
 `;
 
 /**
+ * Menu Badge
+ * The small outlined caps badge beside a menu item's label: EAT and STATS in
+ * the annotation menu, "Large" beside an Import-menu example.
+ */
+export const menuBadgeMixin = css`
+  .menu-badge {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.3rem;
+    border: var(--border-width) solid var(--primary);
+    border-radius: var(--radius);
+    color: var(--primary);
+    font-size: 0.65rem;
+    font-weight: var(--font-semibold);
+    line-height: 1;
+    letter-spacing: 0.03em;
+  }
+`;
+
+/**
  * Icon Styling
  * Consistent icon sizing and appearance
  */

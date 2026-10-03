@@ -31,7 +31,7 @@ export default [
       'apps/web/src/**/*.{ts,tsx}',
       'examples/**/*.{ts,tsx}',
       'docs/**/*.{ts,tsx,mts}',
-      'scripts/**/*.ts',
+      'scripts/**/*.{ts,mts}',
       'apps/web/tests/**/*.ts',
       'perf/**/*.ts',
       'tests/**/*.ts',
@@ -85,7 +85,7 @@ export default [
     // above. Unused locals and parameters fail only in scripts/, through tsc via
     // scripts/tsconfig.json; elsewhere they are warnings.
     files: [
-      'scripts/**/*.ts',
+      'scripts/**/*.{ts,mts}',
       'apps/web/tests/**/*.ts',
       'perf/**/*.ts',
       'tests/**/*.ts',

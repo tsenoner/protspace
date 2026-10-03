@@ -670,8 +670,11 @@ describe('legacy import, v3 export', () => {
     expect(exported.data.annotations.pfam.values).toEqual(legacy.data.annotations.pfam.values);
   });
 
-  it('re-exports a shipped v3 dataset (5K proteins) to an equal dataset', async () => {
-    const shipped = await decodeParquetBundle(repoFile('apps/web/public/data/5K.parquetbundle'));
+  it('re-exports a converted v3 dataset (5,181 proteins) to an equal dataset', async () => {
+    // The 5K bundle the app once served, as `protspace convert` wrote it in #477.
+    const shipped = await decodeParquetBundle(
+      repoFile('apps/web/tests/fixtures/toxprot_5181_pca3d_v3.parquetbundle'),
+    );
     expect(shipped.formatVersion).toBe(3);
 
     const exported = await exportAndDecode(shipped.data, shipped.settings ?? undefined);
@@ -696,7 +699,7 @@ describe('legacy import, v3 export', () => {
     // `protspace transfer` writes `__pred_confidence` as float32; the reader folds the
     // companions into `annotation_predicted`, so their carried sourceType is not on any
     // annotation the writer could echo.
-    const file = repoFile('apps/web/public/data/venom_eat_stats.parquetbundle');
+    const file = repoFile('apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle');
     const written = manifestOf(file).columns;
     const companions = Object.keys(written).filter((name) => name.includes('__pred_'));
     expect(companions.length).toBeGreaterThan(0);

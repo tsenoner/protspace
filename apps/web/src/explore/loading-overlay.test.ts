@@ -1,5 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createLoadingOverlayController, type OverlayNote } from './loading-overlay';
+import {
+  EXAMPLE_DOWNLOAD_SHARE,
+  createLoadingOverlayController,
+  progressAfterExampleDownload,
+  type OverlayNote,
+} from './loading-overlay';
+
+describe('progressAfterExampleDownload', () => {
+  it("maps a decode or render phase's 0–100 onto the bar left after the download", () => {
+    expect(EXAMPLE_DOWNLOAD_SHARE).toBeGreaterThan(0);
+    expect(EXAMPLE_DOWNLOAD_SHARE).toBeLessThan(100);
+    expect(progressAfterExampleDownload(0)).toBe(EXAMPLE_DOWNLOAD_SHARE);
+    expect(progressAfterExampleDownload(50)).toBe(
+      EXAMPLE_DOWNLOAD_SHARE + (100 - EXAMPLE_DOWNLOAD_SHARE) / 2,
+    );
+    expect(progressAfterExampleDownload(100)).toBe(100);
+  });
+
+  it('clamps out-of-range progress', () => {
+    expect(progressAfterExampleDownload(150)).toBe(100);
+    expect(progressAfterExampleDownload(-5)).toBe(EXAMPLE_DOWNLOAD_SHARE);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Minimal fake DOM — avoids needing jsdom/happy-dom as a dependency.

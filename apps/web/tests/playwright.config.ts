@@ -1,5 +1,6 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { STARTUP_DATASET_URL } from './helpers/fixtures';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -60,6 +61,14 @@ export default defineConfig({
         timeout: 180_000,
         stdout: 'pipe',
         stderr: 'pipe',
+        // Pins the startup demo to a test fixture, so no scenario depends on the
+        // product's demo bundle. A dev server that was already running locally
+        // (reuseExistingServer) was started without it: stop it before a run.
+        env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
+        // Stop the server with the run. A pinned server left on :8080 would be
+        // picked up by `pnpm docs:images` (the root config starts none), whose
+        // captures would then photograph the fixture instead of the product demo.
+        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
       },
 
   use: {
@@ -146,9 +155,9 @@ export default defineConfig({
       },
       testMatch: /url-view-state\.spec\.ts/,
     },
-    // Fixture-dependent 573k-protein regression — copy
-    // protspace/data/other/sprot/sprot_50.parquetbundle to
-    // app/tests/fixtures/, then opt in via RUN_LARGE_BUNDLE_E2E=1.
+    // 573k-protein regression on the Swiss-Prot bundle of the perf-datasets
+    // release: run `pnpm perf:fetch --only 573K_swissprot` (into perf/datasets/),
+    // then opt in via RUN_LARGE_BUNDLE_E2E=1.
     ...optIn('RUN_LARGE_BUNDLE_E2E', {
       name: 'load-large-bundle',
       use: {
@@ -205,6 +214,19 @@ export default defineConfig({
       },
       testMatch: /example-datasets\.spec\.ts/,
     },
+    // The product's examples, opened from the files the product serves (not fixtures):
+    // each must land on its curated view, and the run writes the Example datasets page's
+    // thumbnails. Run `pnpm examples:fetch` first, then opt in via RUN_EXAMPLES_E2E=1.
+    // Serial, so two large bundles never load at once.
+    ...optIn('RUN_EXAMPLES_E2E', {
+      name: 'examples-live',
+      fullyParallel: false,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /examples-live\.spec\.ts/,
+    }),
     {
       name: 'multi-annotation-tooltip',
       use: {
