@@ -88,8 +88,60 @@ export async function waitForProteinCount(
     .catch(() => {});
 }
 
+/**
+ * Opens Explore at `/explore` plus `search`, waits for its dataset to load and
+ * closes the product tour; given `count`, also waits until the plot holds that
+ * many proteins.
+ */
+export async function openExplore(page: Page, search = '', count?: number): Promise<void> {
+  await page.goto(`/explore${search}`);
+  await waitForExploreDataLoad(page);
+  await dismissTourIfPresent(page);
+  if (count !== undefined) {
+    await waitForProteinCount(page, count);
+  }
+}
+
+/** The decoded value of the page URL's `key` query parameter, or null when it is absent. */
+export async function getUrlParam(page: Page, key: string): Promise<string | null> {
+  return page.evaluate((name) => new URL(window.location.href).searchParams.get(name), key);
+}
+
+/**
+ * Waits until the page URL's `key` query parameter decodes to `expected` (null:
+ * absent), robust to `+`/`%20`/em-dash encoding.
+ */
+export async function expectUrlParam(
+  page: Page,
+  key: string,
+  expected: string | null,
+): Promise<void> {
+  await expect.poll(() => getUrlParam(page, key)).toBe(expected);
+}
+
+/**
+ * Holds the next request matching `glob` until the returned function is
+ * called. The page may abort the held request meanwhile (a cancelled or
+ * superseded download), so continuing it is allowed to fail.
+ */
+export async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    glob,
+    async (route) => {
+      await gate;
+      await route.fallback().catch(() => {});
+    },
+    { times: 1 },
+  );
+  return release;
+}
+
 /** The view the control bar shows: colour-by annotation, projection and tooltip annotations. */
-export interface ControlBarView {
+interface ControlBarView {
   annotation: string | null;
   projection: string | null;
   tooltip: string[];
@@ -155,6 +207,15 @@ export async function openImportMenu(page: Page): Promise<void> {
     await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
   }
   await expect(ownDataset).toBeVisible();
+}
+
+/**
+ * Imports `filePath` through the data loader's file input, the input the
+ * Import menu's "Load your dataset" opens.
+ */
+export async function importUserFile(page: Page, filePath: string): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {

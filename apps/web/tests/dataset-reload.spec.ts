@@ -7,7 +7,9 @@ import {
   getCurrentDatasetName,
   getFirstLegendItemValue,
   getProteinCount,
+  importUserFile,
   isLegendItemHidden,
+  openExplore,
   openImportMenu,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
@@ -94,10 +96,7 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
 
 async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
   await openImportMenu(page);
-  await page
-    .locator('protspace-data-loader')
-    .locator('input[type="file"]')
-    .setInputFiles(datasetPath);
+  await importUserFile(page, datasetPath);
 }
 
 async function measureSingleImportLifecycle(
@@ -250,9 +249,7 @@ test.describe('Dataset reload resets state (#178)', () => {
   test.beforeEach(async ({ page }) => {
     // Each Playwright test receives a fresh context; shared storage state only
     // seeds the completed product-tour key, so OPFS starts empty here.
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('page reload restores default legend state and clears persisted hidden values', async ({
@@ -290,9 +287,7 @@ test.describe('Dataset reload resets state (#178)', () => {
 
 test.describe('Persisted custom datasets in OPFS (#176)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('reload restores the last imported custom dataset and its local settings', async ({
@@ -364,9 +359,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
     await page.goto('/privacy');
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     const lifecycle = await measureSingleImportLifecycle(page, async () => {
       await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
@@ -469,9 +462,7 @@ test.describe('Persisted dataset failure handling', () => {
       });
     });
 
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     const defaultCount = await getProteinCount(page);
 
@@ -507,9 +498,7 @@ test.describe('Persisted dataset failure handling', () => {
       });
     });
 
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     const defaultCount = await getProteinCount(page);
 
@@ -540,9 +529,7 @@ test.describe('Persisted dataset failure handling', () => {
       await dialog.dismiss();
     });
 
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     await page.evaluate(async () => {
       const loader = document.getElementById('myDataLoader') as unknown as {
@@ -566,9 +553,7 @@ test.describe('Persisted dataset failure handling', () => {
 
 test.describe('Unified app notifications', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('corrupted persisted datasets fall back to the demo with an in-app warning', async ({
@@ -686,9 +671,7 @@ test.describe('Bundle format notice', () => {
   const NOTICE = 'This file uses an older bundle format.';
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   async function importAndWait(page: Page, datasetPath: string): Promise<void> {
