@@ -84,17 +84,13 @@ from protspace.data.annotations.retrievers.taxonomy_retriever import (
 )
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
+from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle import (
-    read_settings_from_bytes,
-    read_tables,
+    read_bundle_contents,
     replace_annotations_in_bundle,
     replace_settings_in_bundle,
 )
-from protspace.data.io.bundle_v3 import (
-    CONTAINER_VERSION,
-    read_container_version,
-    read_part,
-)
+from protspace.data.io.bundle_v3 import CONTAINER_VERSION
 from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
 from protspace.data.loaders.h5 import split_h5_spec
 from protspace.stats.base import CLUSTER_COLUMN_PREFIX
@@ -177,7 +173,7 @@ class BuildError(RuntimeError):
 def format_version(table: pa.Table) -> int:
     """The annotations table's cell-grammar version (unstamped = legacy v1).
 
-    Not the container version: see :attr:`Bundle.container`.
+    Not the container version: see :attr:`Bundle.container_version`.
     """
     return read_format_version(table)
 
@@ -238,83 +234,30 @@ def is_missing(cell: Any) -> bool:
 #
 # The container is protspace's (``protspace.data.io.bundle``): its reader checks
 # the part layout and decodes a v3 core, its writers encode one, so this script
-# has no bundle codec of its own. What it reads it reads in the v2 shape the gates
-# parse; what it writes is always a v3 container.
+# has no bundle codec of its own. A bundle is read as protspace's ``BundleContents``
+# (``Bundle`` here): the v2-shaped tables the gates parse, the settings, the
+# statistics and the container version. What it writes is always a v3 container.
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class Bundle:
-    """A ``.parquetbundle`` as the build reads it.
-
-    ``annotations``, ``metadata`` and ``data`` are the v2-shaped tables
-    (string annotation cells stamped with their cell grammar, long-format
-    projections) whatever the container: protspace's reader decodes a v3 core
-    into them and reads a legacy (v1/v2) one as stored. ``container`` is part 1's
-    ``protspace_container_version`` (3), or ``None`` for a legacy file.
-    ``raw_parts`` are the file's parts as split, so :func:`split_bundle` can
-    write a legacy file's parts byte for byte.
-    """
-
-    annotations: pa.Table
-    metadata: pa.Table
-    data: pa.Table
-    settings: dict | None = None
-    statistics: pa.Table | None = None
-    container: int | None = None
-    raw_parts: list[bytes] = field(default_factory=list)
-
-
-@contextlib.contextmanager
-def protspace_io_quiet():
-    """Mute protspace's bundle I/O log lines (``protspace.data.io.bundle``) for a call.
-
-    The build reads legacy files on purpose (the paper's pinned source bundles,
-    the intermediates of a CLI from before format v3), so protspace's deprecation
-    warning would print on every read and suggest converting a pinned input; its
-    writers' INFO lines name staging files. The build logs what it read and wrote
-    itself, and the v3 codec's own warnings (``protspace.data.io.bundle_v3``)
-    still print.
-    """
-    io_logger = logging.getLogger("protspace.data.io.bundle")
-    level = io_logger.level
-    io_logger.setLevel(logging.ERROR)
-    try:
-        yield
-    finally:
-        io_logger.setLevel(level)
 
 
 def read_bundle(path: Path) -> Bundle:
     """Read a bundle of any container version with protspace's reader.
 
-    ``read_tables`` checks the container (six parts if and only if part 1
-    declares container version 3; three to five for a legacy file) and decodes a
-    v3 core. The settings and statistics slots are the fourth and fifth parts in
-    every container version, empty when absent.
+    It checks the container (six parts if and only if part 1 declares container
+    version 3; three to five for a legacy file) and decodes a v3 core into the
+    v2-shaped tables the gates parse. The build reads legacy files on purpose
+    (the paper's pinned source bundles, the intermediates of a CLI from before
+    format v3), so without protspace's deprecation warning, which would suggest
+    converting a pinned input.
     """
-    blob = Path(path).read_bytes()
     try:
-        with protspace_io_quiet():
-            annotations, metadata, data = read_tables(blob)
+        return read_bundle_contents(path, warn_legacy=False)
     except ValueError as error:
         raise BuildError(f"{path} is not a readable parquetbundle: {error}") from None
-    parts = blob.split(DELIMITER)
-    settings = parts[3] if len(parts) > 3 and parts[3] else None
-    statistics = parts[4] if len(parts) > 4 and parts[4] else None
-    return Bundle(
-        annotations=annotations,
-        metadata=metadata,
-        data=data,
-        settings=read_settings_from_bytes(settings) if settings else None,
-        statistics=read_part(statistics) if statistics else None,
-        container=read_container_version(pq.read_schema(io.BytesIO(parts[0]))),
-        raw_parts=parts,
-    )
 
 
 def parquet_bytes(table: pa.Table) -> bytes:
-    """One plain parquet file (the work tables the CLI reads, a split part)."""
+    """One plain parquet file (a work table the CLI reads)."""
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
     blob = buffer.getvalue()
@@ -337,56 +280,17 @@ def rebuild_bundle(
     carry the v2 cell-grammar stamp (the encoder refuses to guess a grammar).
     """
     try:
-        with protspace_io_quiet():
-            if settings is None:
-                replace_annotations_in_bundle(bundle_path, out_path, table)
-                return
-            staged = out_path.with_name(f".{out_path.name}.annotations-{os.getpid()}")
-            try:
-                replace_annotations_in_bundle(bundle_path, staged, table)
-                replace_settings_in_bundle(staged, out_path, settings)
-            finally:
-                staged.unlink(missing_ok=True)
+        if settings is None:
+            replace_annotations_in_bundle(bundle_path, out_path, table)
+            return
+        staged = out_path.with_name(f".{out_path.name}.annotations-{os.getpid()}")
+        try:
+            replace_annotations_in_bundle(bundle_path, staged, table)
+            replace_settings_in_bundle(staged, out_path, settings)
+        finally:
+            staged.unlink(missing_ok=True)
     except ValueError as error:
         raise BuildError(f"protspace cannot write {out_path.name}: {error}") from None
-
-
-SPLIT_NAMES = (
-    "annotations.parquet",
-    "projections_metadata.parquet",
-    "projections_data.parquet",
-)
-
-
-def split_bundle(bundle_path: Path, out_dir: Path) -> dict[str, Path]:
-    """Split a bundle into ``annotations/projections_metadata/projections_data/
-    statistics.parquet`` and ``settings.json`` (PLAN §3 helper).
-
-    ``out_dir`` can be passed straight to ``protspace bundle -p`` / ``protspace
-    stats -p``, which read v2-shaped tables: a legacy bundle's parts are written
-    byte for byte, a v3 bundle's core as protspace's reader decodes it. The
-    statistics part keeps its bytes either way.
-    """
-    bundle = read_bundle(bundle_path)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    core = (bundle.annotations, bundle.metadata, bundle.data)
-    legacy = bundle.container is None
-    written: dict[str, Path] = {}
-    for index, name in enumerate(SPLIT_NAMES):
-        target = out_dir / name
-        atomic_write_bytes(
-            target, bundle.raw_parts[index] if legacy else parquet_bytes(core[index])
-        )
-        written[name] = target
-    if bundle.statistics is not None:
-        target = out_dir / "statistics.parquet"
-        atomic_write_bytes(target, bundle.raw_parts[4])
-        written["statistics.parquet"] = target
-    if bundle.settings is not None:
-        target = out_dir / "settings.json"
-        target.write_text(json.dumps(bundle.settings, indent=1))
-        written["settings.json"] = target
-    return written
 
 
 def normalize_id(table: pa.Table) -> pa.Table:
@@ -484,16 +388,6 @@ def select_projections(
     return meta, pa.concat_tables(pieces)
 
 
-def select_proj(proj_dir: Path, spec: str | Sequence[str], out_dir: Path) -> None:
-    """Directory form of :func:`select_projections` (PLAN §3 helper)."""
-    metadata = pq.read_table(proj_dir / "projections_metadata.parquet")
-    data = pq.read_table(proj_dir / "projections_data.parquet")
-    meta, data = select_projections(metadata, data, parse_projection_spec(spec))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_bytes(out_dir / "projections_metadata.parquet", parquet_bytes(meta))
-    atomic_write_bytes(out_dir / "projections_data.parquet", parquet_bytes(data))
-
-
 def read_projection_source(source: Path) -> tuple[pa.Table, pa.Table]:
     """Projection metadata and data from a bundle or a projections directory."""
     if source.is_dir():
@@ -502,7 +396,7 @@ def read_projection_source(source: Path) -> tuple[pa.Table, pa.Table]:
             pq.read_table(source / "projections_data.parquet"),
         )
     bundle = read_bundle(source)
-    return bundle.metadata, bundle.data
+    return bundle.metadata, bundle.projections
 
 
 def projection_ids(data: pa.Table) -> list[str]:
@@ -1057,8 +951,8 @@ def gate_accession_label(table: pa.Table, params: dict) -> Gate:
 def _coords(bundle: Bundle, projection: str):
     import numpy as np
 
-    rows = bundle.data.filter(
-        pc.equal(bundle.data.column("projection_name"), projection)
+    rows = bundle.projections.filter(
+        pc.equal(bundle.projections.column("projection_name"), projection)
     )
     if rows.num_rows == 0:
         raise BuildError(f"projection {projection!r} not in the bundle")
@@ -1523,7 +1417,11 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
     )
     ids = row_ids(table)
     duplicates = len(ids) - len(set(ids))
-    proj_ids = set(projection_ids(bundle.data)) if bundle.data.num_rows else set()
+    proj_ids = (
+        set(projection_ids(bundle.projections))
+        if bundle.projections.num_rows
+        else set()
+    )
     gates.append(
         Gate(
             "membership",
@@ -1653,18 +1551,21 @@ def format_gate(bundle: Bundle) -> Gate:
     whose reading is deprecated.
     """
     grammar = format_version(bundle.annotations)
-    if bundle.container is None:
+    if bundle.container_version is None:
         return Gate(
             "format-v3",
             "fail",
             f"legacy (v1/v2) container, cell grammar v{grammar}; the build writes "
             f"v{CONTAINER_VERSION}",
         )
-    ok = bundle.container == CONTAINER_VERSION and grammar == BUNDLE_FORMAT_VERSION
+    ok = (
+        bundle.container_version == CONTAINER_VERSION
+        and grammar == BUNDLE_FORMAT_VERSION
+    )
     return Gate(
         "format-v3",
         "pass" if ok else "fail",
-        f"container v{bundle.container}, cell grammar v{grammar}",
+        f"container v{bundle.container_version}, cell grammar v{grammar}",
     )
 
 
@@ -5268,7 +5169,7 @@ def context_gates(
     try:
         metadata, data = read_projection_source(find_projection_source(ctx))
         _, expected = select_projections(metadata, data, projection_spec(ctx))
-        same = coordinate_map(expected) == coordinate_map(bundle.data)
+        same = coordinate_map(expected) == coordinate_map(bundle.projections)
         source = "the build's own projections" if is_embed_build(ctx) else "paper"
         gates.append(
             Gate(

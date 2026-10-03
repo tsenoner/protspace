@@ -105,6 +105,11 @@ def _legacy_blob(annotations, metadata, data, settings=None, statistics=None):
     return bs.DELIMITER.join(parts)
 
 
+def _parts(path: Path) -> list[bytes]:
+    """A bundle file's parts as stored."""
+    return path.read_bytes().split(bs.DELIMITER)
+
+
 def _write_bundle(
     path: Path,
     annotations,
@@ -166,32 +171,8 @@ def test_format_version_defaults_to_v1():
 
 
 # ---------------------------------------------------------------------------
-# Bundle helpers: split_bundle / select_proj / extract_ann
+# Bundle helpers: extract_ann
 # ---------------------------------------------------------------------------
-
-
-def test_split_bundle_writes_parts_byte_for_byte(tmp_path):
-    stats = pa.table({"space_kind": ["projection"], "space_name": ["UMAP_2"]})
-    bundle = _write_bundle(
-        tmp_path / "b.parquetbundle",
-        _annotations(ec=["a", "b", "c"]),
-        settings={"ec": {"categories": {}}},
-        statistics=stats,
-    )
-    parts = bundle.read_bytes().split(bs.DELIMITER)
-    written = bs.split_bundle(bundle, tmp_path / "out")
-    assert set(written) == {
-        "annotations.parquet",
-        "projections_metadata.parquet",
-        "projections_data.parquet",
-        "statistics.parquet",
-        "settings.json",
-    }
-    assert (tmp_path / "out" / "annotations.parquet").read_bytes() == parts[0]
-    assert (tmp_path / "out" / "statistics.parquet").read_bytes() == parts[4]
-    assert json.loads((tmp_path / "out" / "settings.json").read_text()) == {
-        "ec": {"categories": {}}
-    }
 
 
 def test_statistics_without_settings_keep_a_zero_byte_slot(tmp_path):
@@ -203,42 +184,7 @@ def test_statistics_without_settings_keep_a_zero_byte_slot(tmp_path):
     assert len(parts) == 5 and parts[3] == b""
     read = bs.read_bundle(bundle)
     assert read.settings is None and read.statistics.num_rows == 1
-    assert read.container is None  # legacy
-    assert "settings.json" not in bs.split_bundle(bundle, tmp_path / "out")
-
-
-def test_split_bundle_decodes_a_v3_core_and_keeps_the_statistics_bytes(tmp_path):
-    stats = pa.table({"space_kind": ["projection"], "space_name": ["UMAP_2"]})
-    bundle = _write_bundle(
-        tmp_path / "b.parquetbundle",
-        _annotations(ec=["a", "b", "c"]),
-        settings={"ec": {"categories": {}}},
-        statistics=stats,
-        v3=True,
-    )
-    parts = bundle.read_bytes().split(bs.DELIMITER)
-    assert len(parts) == 6
-    out = tmp_path / "out"
-    written = bs.split_bundle(bundle, out)
-    assert set(written) == {
-        "annotations.parquet",
-        "projections_metadata.parquet",
-        "projections_data.parquet",
-        "statistics.parquet",
-        "settings.json",
-    }
-    # The v2-shaped tables protspace bundle/stats read, not v3's wide part 3.
-    annotations, metadata, data = read_tables(bundle)
-    assert pq.read_table(out / "annotations.parquet").equals(annotations)
-    assert pq.read_table(out / "projections_data.parquet").column_names == [
-        "projection_name",
-        "identifier",
-        "x",
-        "y",
-        "z",
-    ]
-    assert pq.read_table(out / "projections_data.parquet").equals(data)
-    assert (out / "statistics.parquet").read_bytes() == parts[4]
+    assert read.container_version is None  # legacy
 
 
 def test_extract_ann_drops_internal_columns_and_names_the_id(tmp_path):
@@ -281,8 +227,8 @@ def test_read_bundle_reads_a_legacy_and_a_v3_container_alike(tmp_path):
     )
     old, new = bs.read_bundle(legacy), bs.read_bundle(converted)
 
-    assert old.container is None and len(old.raw_parts) == 5
-    assert new.container == 3 and len(new.raw_parts) == 6
+    assert old.container_version is None and len(_parts(legacy)) == 5
+    assert new.container_version == 3 and len(_parts(converted)) == 6
     assert bs.format_version(new.annotations) == 2
     assert new.annotations.to_pylist() == old.annotations.to_pylist()
     assert new.settings == old.settings == {"ec": {"categories": {}}}
@@ -291,8 +237,8 @@ def test_read_bundle_reads_a_legacy_and_a_v3_container_alike(tmp_path):
         new.metadata.column("projection_name").to_pylist()
         == old.metadata.column("projection_name").to_pylist()
     )
-    assert bs.coordinate_map(new.data) == bs.coordinate_map(old.data)
-    assert bs.projection_ids(new.data) == bs.projection_ids(old.data)
+    assert bs.coordinate_map(new.projections) == bs.coordinate_map(old.projections)
+    assert bs.projection_ids(new.projections) == bs.projection_ids(old.projections)
 
 
 def test_read_bundle_refuses_a_container_protspace_refuses(tmp_path):
@@ -314,7 +260,7 @@ def test_rebuilding_a_legacy_bundle_writes_what_protspace_convert_writes(tmp_pat
     bs.rebuild_bundle(legacy, source.annotations, source.settings, out)
 
     assert out.read_bytes() == converted.read_bytes()
-    assert bs.read_bundle(out).raw_parts[4] == source.raw_parts[4]
+    assert _parts(out)[4] == _parts(legacy)[4]
 
 
 def test_rebuilding_a_v3_bundle_keeps_its_projection_and_statistics_parts(tmp_path):
@@ -330,9 +276,9 @@ def test_rebuilding_a_v3_bundle_keeps_its_projection_and_statistics_parts(tmp_pa
     bs.rebuild_bundle(converted, table, {"ec": {"categories": {"a": {}}}}, out)
 
     built = bs.read_bundle(out)
-    assert built.container == 3
+    assert built.container_version == 3
     for index in (1, 2, 4):  # projection metadata, wide coordinates, statistics
-        assert built.raw_parts[index] == source.raw_parts[index]
+        assert _parts(out)[index] == _parts(converted)[index]
     assert built.settings == {"ec": {"categories": {"a": {}}}}
     assert bs.read_provenance(built.annotations)["example_id"] == "demo"
     assert built.annotations.to_pylist() == source.annotations.to_pylist()
@@ -420,17 +366,6 @@ def test_select_projections_can_drop_one_and_rejects_unknown_names():
     assert "quality" in meta.column("info_json")[0].as_py()
     with pytest.raises(bs.BuildError, match="not found"):
         bs.select_projections(metadata, data, [("TSNE_2", "T")])
-
-
-def test_select_proj_directory_form(tmp_path):
-    metadata, data = _projections()
-    pq.write_table(metadata, tmp_path / "projections_metadata.parquet")
-    pq.write_table(data, tmp_path / "projections_data.parquet")
-    bs.select_proj(tmp_path, "UMAP_2=ProtT5 — UMAP 2", tmp_path / "out")
-    names = pq.read_table(tmp_path / "out" / "projections_metadata.parquet").column(
-        "projection_name"
-    )
-    assert names.to_pylist() == ["ProtT5 — UMAP 2"]
 
 
 def test_projection_ids_reads_the_first_projection():
@@ -1524,7 +1459,7 @@ def test_common_gates_pass_a_v3_bundle_as_the_build_writes_it(tmp_path):
     bs.rebuild_bundle(legacy, source.annotations, {"ec": {}}, built)
 
     bundle = bs.read_bundle(built)
-    assert bundle.container == 3 and len(bundle.raw_parts) == 6
+    assert bundle.container_version == 3 and len(_parts(built)) == 6
     gates = _common_gates(bundle)
     assert gates["format-v3"].status == "pass"
     assert gates["format-v3"].detail == "container v3, cell grammar v2"
@@ -1532,7 +1467,9 @@ def test_common_gates_pass_a_v3_bundle_as_the_build_writes_it(tmp_path):
     # The gates see what the legacy file held: the same proteins, cells and
     # coordinates (at the float32 the browser draws).
     assert bundle.annotations.to_pylist() == source.annotations.to_pylist()
-    assert bs.coordinate_map(bundle.data) == bs.coordinate_map(source.data)
+    assert bs.coordinate_map(bundle.projections) == bs.coordinate_map(
+        source.projections
+    )
 
 
 def test_faithfulness_gate_needs_a_score_per_projection():
@@ -3133,7 +3070,7 @@ def test_the_eat_example_builds_offline_and_passes_its_gates(
 
     final = bs.read_bundle(ctx.final)
     # The shipped file is v3, whatever the CLI's bundle/style wrote.
-    assert final.container == 3 and by_name["format-v3"].status == "pass"
+    assert final.container_version == 3 and by_name["format-v3"].status == "pass"
     assert ctx.final.name == "three-finger-toxins_2026_03_v3.parquetbundle"
     table = final.annotations
     rows = {r["protein_id"]: r for r in table.to_pylist()}
