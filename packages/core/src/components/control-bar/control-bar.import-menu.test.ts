@@ -68,12 +68,7 @@ describe('control-bar import menu', () => {
   }
 
   it('opens the import flyout from the import trigger', async () => {
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const importMenu = controlBar.shadowRoot?.querySelector('.import-menu');
     expect(importMenu).not.toBeNull();
@@ -82,11 +77,7 @@ describe('control-bar import menu', () => {
   it('omits the Examples section when the host sets no catalog', async () => {
     controlBar.exampleDatasets = [];
     await controlBar.updateComplete;
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     expect(controlBar.shadowRoot?.querySelector('.import-menu')).not.toBeNull();
     expect(controlBar.shadowRoot?.querySelector('.import-examples')).toBeNull();
@@ -94,11 +85,7 @@ describe('control-bar import menu', () => {
   });
 
   it('says under the Examples heading that examples open curated and changes are not kept', async () => {
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const hint = controlBar.shadowRoot?.querySelector('.import-examples .import-examples-hint');
     expect(hint?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
@@ -107,11 +94,7 @@ describe('control-bar import menu', () => {
   });
 
   it('lists every catalog entry under the Examples heading', async () => {
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const exampleButtons = controlBar.shadowRoot?.querySelectorAll(
       '[data-driver-id="import-example-dataset"]',
@@ -238,11 +221,7 @@ describe('control-bar import menu', () => {
     const eventHandler = vi.fn();
     controlBar.addEventListener('load-example-dataset', eventHandler);
 
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const demoButton = controlBar.shadowRoot?.querySelector(
       '[data-example-id="demo"]',
@@ -260,11 +239,7 @@ describe('control-bar import menu', () => {
     controlBar.currentDatasetName = '5K.parquetbundle';
     await controlBar.updateComplete;
 
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const datasetName = controlBar.shadowRoot?.querySelector('.import-current-dataset-name');
     expect(datasetName?.textContent?.trim()).toBe('5K.parquetbundle');
@@ -276,11 +251,7 @@ describe('control-bar import menu', () => {
     controlBar.currentExampleId = 'demo';
     await controlBar.updateComplete;
 
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const demoButton = controlBar.shadowRoot?.querySelector(
       '[data-example-id="demo"]',
@@ -302,11 +273,7 @@ describe('control-bar import menu', () => {
     controlBar.currentExampleId = null;
     await controlBar.updateComplete;
 
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const exampleButtons = controlBar.shadowRoot?.querySelectorAll(
       '[data-driver-id="import-example-dataset"]',
@@ -326,11 +293,7 @@ describe('control-bar import menu', () => {
     ) as HTMLInputElement | null;
     const clickSpy = vi.spyOn(fileInput!, 'click');
 
-    const trigger = controlBar.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .dropdown-trigger',
-    ) as HTMLButtonElement | null;
-    trigger?.click();
-    await controlBar.updateComplete;
+    await openImportMenu();
 
     const ownDatasetButton = controlBar.shadowRoot?.querySelector(
       '[data-driver-id="import-own-dataset"]',
