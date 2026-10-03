@@ -1608,18 +1608,28 @@ def check_default_view(
     )
 
 
-#: Story gates that need the build's sources or facts; :func:`context_gates`
-#: evaluates them.
-CONTEXT_GATE_TYPES = frozenset(
-    {
-        "full_length_inputs",
-        "source_column_kept",
-        "pfam_duplicates",
-        "browser_load",
-        "mature_inputs",
-        "name_agreement",
-    }
-)
+#: Story gates that need the build's sources or facts, by ``type``: what
+#: :func:`context_gates` runs for them (:func:`run_story_gates` leaves them out).
+CONTEXT_GATES: dict[str, Callable[[Context, Bundle, dict, dict | None], Gate]] = {
+    "full_length_inputs": lambda ctx, bundle, params, identity: full_length_gate(
+        assemble_report(ctx), params
+    ),
+    "source_column_kept": lambda ctx, bundle, params, identity: source_column_gate(
+        ctx, bundle.annotations, params
+    ),
+    "pfam_duplicates": lambda ctx, bundle, params, identity: pfam_duplicate_gate(
+        ctx, params
+    ),
+    "mature_inputs": lambda ctx, bundle, params, identity: mature_inputs_gate(
+        ctx, params, bundle.annotations
+    ),
+    "name_agreement": lambda ctx, bundle, params, identity: name_agreement_gate(
+        ctx, bundle.annotations, params
+    ),
+    "browser_load": lambda ctx, bundle, params, identity: browser_load_gate(
+        ctx, params, identity or file_identity(ctx.final)
+    ),
+}
 
 
 def run_story_gates(bundle: Bundle, specs: Sequence[dict]) -> list[Gate]:
@@ -1632,7 +1642,7 @@ def run_story_gates(bundle: Bundle, specs: Sequence[dict]) -> list[Gate]:
                 gates.append(GATE_TYPES[kind](bundle.annotations, params))
             elif kind in BUNDLE_GATE_TYPES:
                 gates.append(BUNDLE_GATE_TYPES[kind](bundle, params))
-            elif kind not in CONTEXT_GATE_TYPES:
+            elif kind not in CONTEXT_GATES:
                 gates.append(Gate(kind, "fail", "unknown gate type"))
         except (KeyError, ValueError, pa.ArrowException) as error:
             gates.append(Gate(kind, "fail", f"{type(error).__name__}: {error}"))
@@ -3758,7 +3768,8 @@ def holdout_split(
 
 
 def read_entries(path: Path) -> dict[str, dict[str, str]]:
-    """``{accession: entry}`` from the TSV the ``entries`` step wrote."""
+    """``{accession: row}`` from a TSV keyed by ``accession``: the ``entries``
+    step's entries or the ``sequences`` step's ``mature.tsv``."""
     with path.open(newline="") as handle:
         header = handle.readline().rstrip("\n").split("\t")
         entries = {}
@@ -3768,6 +3779,25 @@ def read_entries(path: Path) -> dict[str, dict[str, str]]:
             entry = dict(zip(header, values, strict=True))
             entries[entry["accession"]] = entry
     return entries
+
+
+def full_length_evidence(fasta: Path, table: pa.Table) -> dict[str, int]:
+    """G8 evidence: how many of the FASTA's sequences have UniProt's length.
+
+    InterPro and Biocentral read that FASTA, so a FASTA length equal to the
+    table's ``length`` (UniProt's) shows they saw full-length sequences, not
+    the embedded mature chains.
+    """
+    from protspace.data.loaders.fasta import parse_fasta_normalized
+
+    lengths = {a: len(s) for a, s in parse_fasta_normalized(fasta).items()}
+    uniprot = (
+        dict(zip(row_ids(table), table.column("length").to_pylist(), strict=True))
+        if "length" in table.column_names
+        else {}
+    )
+    equal = sum(1 for a, n in lengths.items() if as_int(uniprot.get(a)) == n)
+    return {"sequences": len(lengths), "length_matches_uniprot": equal}
 
 
 def h5_vectors_sha256(path: Path) -> tuple[str, int]:
@@ -4064,12 +4094,7 @@ def embed_build_steps(ctx: Context) -> list[Step]:
         table, absent = align_rows(fetched, ids)
         entries = read_entries(entries_tsv)
         columns, summary = label_table(ids, entries, labels, holdout)
-        with mature_tsv.open() as handle:
-            header = handle.readline().rstrip("\n").split("\t")
-            mature = {
-                row[0]: dict(zip(header, row, strict=True))
-                for row in (line.rstrip("\n").split("\t") for line in handle)
-            }
+        mature = read_entries(mature_tsv)
         columns["mature_length"] = [int(mature[pid]["mature_length"]) for pid in ids]
         origin = {c: "refreshed" for c in table.column_names if c != ID_COLUMN}
         for name, values in columns.items():
@@ -4087,16 +4112,6 @@ def embed_build_steps(ctx: Context) -> list[Step]:
                 origin[name] = "refreshed"
         blanked = holdout.get("columns", [c["name"] for c in labels["columns"]])
         assert_no_refill(table, holdout["split_column"], QUERY_SPLITS, blanked)
-        # G8 evidence, as for the demo: InterPro and Biocentral read these.
-        lengths = {
-            a: len(s) for a, s in parse_fasta_text(full_fasta.read_text()).items()
-        }
-        uniprot = (
-            dict(zip(ids, table.column("length").to_pylist(), strict=True))
-            if "length" in table.column_names
-            else {}
-        )
-        equal = sum(1 for a, n in lengths.items() if as_int(uniprot.get(a)) == n)
         derivations = Counter(m["derivation"] for m in mature.values())
         # The derived labels as a file of their own (the Zenodo deposit's
         # label CSV; `protspace prepare -a labels.csv` reads the same shape).
@@ -4114,10 +4129,7 @@ def embed_build_steps(ctx: Context) -> list[Step]:
                 "rows_without_annotations": absent,
                 "origin": origin,
                 "fresh_rows_without_entry": obsolete_rows(table),
-                "full_length": {
-                    "sequences": len(lengths),
-                    "length_matches_uniprot": equal,
-                },
+                "full_length": full_length_evidence(full_fasta, table),
                 "mature": {
                     "derivations": dict(derivations),
                     "fragments": sum(1 for m in mature.values() if m["fragment"]),
@@ -4240,15 +4252,8 @@ def demo_refresh_steps(ctx: Context) -> list[Step]:
         ids = row_ids(source)
         fetched = drop_columns(normalize_id(pq.read_table(fresh)), INTERNAL_ANNOTATIONS)
         table, absent = align_rows(fetched, ids)
-        # G8 evidence: UniProt's length equals the FASTA length, so InterPro and
-        # Biocentral saw full-length sequences, not the embedded mature peptides.
-        lengths = {a: len(s) for a, s in parse_fasta_text(fasta.read_text()).items()}
-        uniprot = (
-            dict(zip(ids, table.column("length").to_pylist(), strict=True))
-            if "length" in table.column_names
-            else {}
-        )
-        equal = sum(1 for a, n in lengths.items() if as_int(uniprot.get(a)) == n)
+        # Before the source's mature-peptide length replaces UniProt's.
+        full_length = full_length_evidence(fasta, table)
         origin = {c: "refreshed" for c in table.column_names if c != ID_COLUMN}
         for column in keep:
             values = source.column(column)
@@ -4265,10 +4270,7 @@ def demo_refresh_steps(ctx: Context) -> list[Step]:
             {
                 "rows": table.num_rows,
                 "rows_without_annotations": absent,
-                "full_length": {
-                    "sequences": len(lengths),
-                    "length_matches_uniprot": equal,
-                },
+                "full_length": full_length,
                 "origin": origin,
                 "fresh_rows_without_entry": obsolete_rows(fetched),
             },
@@ -4867,12 +4869,7 @@ def mature_inputs_gate(
     try:
         pinned = membership_ids(ctx)
         entries = read_entries(work / "entries.tsv")
-        with (work / "mature.tsv").open() as handle:
-            header = handle.readline().rstrip("\n").split("\t")
-            mature = {
-                row[0]: dict(zip(header, row, strict=True))
-                for row in (line.rstrip("\n").split("\t") for line in handle)
-            }
+        mature = read_entries(work / "mature.tsv")
         embedded = parse_fasta_normalized(work / "mature.fasta")
         with h5py.File(embed_h5(ctx), "r") as handle:
             keys = set(handle.keys())
@@ -5118,50 +5115,39 @@ def context_gates(
             )
         )
     for spec in ctx.dataset.get("gates", []):
-        kind = spec["type"]
-        if kind == "full_length_inputs":
-            full = report.get("full_length", {})
-            n, equal = full.get("sequences", 0), full.get("length_matches_uniprot", 0)
-            fraction = equal / n if n else 0.0
-            gates.append(
-                Gate(
-                    "full-length-inputs",
-                    "pass" if fraction >= spec.get("min_fraction", 0.99) else "fail",
-                    f"{equal} of {n} FASTA sequences have UniProt's full length",
-                )
-            )
-        elif kind == "source_column_kept":
-            source = normalize_id(read_bundle(find_source(ctx)).annotations)
-            column = spec["column"]
-            expected = dict(
-                zip(row_ids(source), source.column(column).to_pylist(), strict=True)
-            )
-            actual = dict(
-                zip(
-                    row_ids(bundle.annotations),
-                    bundle.annotations.column(column).to_pylist(),
-                    strict=True,
-                )
-            )
-            same = expected == actual
-            gates.append(
-                Gate(
-                    f"kept:{column}",
-                    "pass" if same else "fail",
-                    "as in the source" if same else "differs",
-                )
-            )
-        elif kind == "pfam_duplicates":
-            gates.append(pfam_duplicate_gate(ctx, spec))
-        elif kind == "mature_inputs":
-            gates.append(mature_inputs_gate(ctx, spec, bundle.annotations))
-        elif kind == "name_agreement":
-            gates.append(name_agreement_gate(ctx, bundle.annotations, spec))
-        elif kind == "browser_load":
-            gates.append(
-                browser_load_gate(ctx, spec, identity or file_identity(ctx.final))
-            )
+        gate = CONTEXT_GATES.get(spec["type"])
+        if gate is not None:
+            gates.append(gate(ctx, bundle, spec, identity))
     return gates
+
+
+def full_length_gate(report: dict, params: dict) -> Gate:
+    """G8: InterPro and Biocentral read full-length sequences
+    (:func:`full_length_evidence`, recorded by ``assemble``)."""
+    full = report.get("full_length", {})
+    n, equal = full.get("sequences", 0), full.get("length_matches_uniprot", 0)
+    fraction = equal / n if n else 0.0
+    return Gate(
+        "full-length-inputs",
+        "pass" if fraction >= params.get("min_fraction", 0.99) else "fail",
+        f"{equal} of {n} FASTA sequences have UniProt's full length",
+    )
+
+
+def source_column_gate(ctx: Context, table: pa.Table, params: dict) -> Gate:
+    """A column the recipe keeps from the source bundle is shipped as it was."""
+    source = normalize_id(read_bundle(find_source(ctx)).annotations)
+    column = params["column"]
+    expected = dict(
+        zip(row_ids(source), source.column(column).to_pylist(), strict=True)
+    )
+    actual = dict(zip(row_ids(table), table.column(column).to_pylist(), strict=True))
+    same = expected == actual
+    return Gate(
+        f"kept:{column}",
+        "pass" if same else "fail",
+        "as in the source" if same else "differs",
+    )
 
 
 def pfam_duplicate_gate(ctx: Context, params: dict) -> Gate:

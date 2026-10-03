@@ -1613,6 +1613,17 @@ def test_small_parsers(tmp_path):
     assert fasta.read_text() == ">P1\nMK\n"
 
 
+def test_full_length_evidence_compares_the_fasta_with_uniprots_length(tmp_path):
+    fasta = tmp_path / "full_length.fasta"
+    bs.write_fasta(fasta, {"P1": "MKT", "P2": "MKTAA"}, ["P1", "P2"])
+    table = _annotations(length=["3", "4", "9"])  # P2 is the mature length
+    assert bs.full_length_evidence(fasta, table) == {
+        "sequences": 2,
+        "length_matches_uniprot": 1,
+    }
+    assert bs.full_length_evidence(fasta, _annotations())["length_matches_uniprot"] == 0
+
+
 def _http_error(status):
     response = requests.Response()
     response.status_code = status
@@ -1743,7 +1754,7 @@ def test_every_recipe_is_complete(config):
             assert gate["type"] in {
                 *bs.GATE_TYPES,
                 *bs.BUNDLE_GATE_TYPES,
-                *bs.CONTEXT_GATE_TYPES,
+                *bs.CONTEXT_GATES,
             }, (ds_id, gate["type"])
         report = dataset["report"]["annotations"]
         assert not [a for a in report if a.startswith(bs.CLUSTER_COLUMN_PREFIX)], ds_id
