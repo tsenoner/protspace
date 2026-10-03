@@ -230,9 +230,12 @@ def test_record_reads_provenance_metadata(tmp_path):
             "protspace_version": "4.14.0",
             "git_sha": "abc123",
             "membership_release": "2025_04",
-            # The flat {group: release} form of bundles built before the
-            # showcase build's group objects.
-            "uniprot_release": json.dumps({"uniprot": "2026_03", "ted": "2026_03"}),
+            "uniprot_release": json.dumps(
+                {
+                    "uniprot": {"release": "2026_03", "columns": ["domain"]},
+                    "ted": {"release": "2026_03", "columns": []},
+                }
+            ),
             "built_at": "2026-10-01T12:00:00Z",
             "command": "protspace annotate ...",
             "zenodo_doi": "10.5281/zenodo.1",
@@ -299,18 +302,26 @@ def test_a_stamped_scratch_path_is_redacted_in_the_record(tmp_path):
     assert record["command"] == "build_showcase.py build --only demo --cli-root $CLI"
 
 
-def test_a_single_release_string_applies_to_every_column(tmp_path):
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "2026_03",  # a bare release, not a group object
+        json.dumps({"uniprot": "2026_03"}),  # a flat {group: release} map
+        json.dumps({"refreshed": {"release": "2026_03"}, "paper": "2025_03"}),
+    ],
+)
+def test_only_the_builds_group_objects_are_read(tmp_path, stamp):
     bundle = _write_bundle(
         tmp_path / "b.parquetbundle",
         ids=["P1"],
         annotations={"domain": ["Bacteria"]},
         projections=["UMAP_2"],
-        metadata={"uniprot_release": "2026_03"},
+        metadata={"uniprot_release": stamp},
     )
-    record = write_manifest.read_bundle_record(
-        bundle, example_id="x", file="b", hosting="repo"
-    )
-    assert record["releases"]["annotations"] == {"all": "2026_03"}
+    with pytest.raises(ValueError):
+        write_manifest.read_bundle_record(
+            bundle, example_id="x", file="b", hosting="repo"
+        )
 
 
 def test_a_bundle_stamped_for_another_example_is_refused(tmp_path):
@@ -491,6 +502,7 @@ def test_the_showcase_builds_group_objects_give_each_groups_release(tmp_path):
     # computed columns. Those carry no UniProt release, so they are left out.
     groups = {
         "computed": {"columns": ["cluster_leiden"], "release": None},
+        "eat": {"columns": ["ec__pred_value"]},
         "paper": {"columns": ["family"], "release": "2025_03"},
         "refreshed": {"columns": ["ec", "pfam"], "release": "2026_03"},
         "withheld-truth": {"columns": ["ec_truth"], "release": "2026_03"},
@@ -515,31 +527,6 @@ def test_the_showcase_builds_group_objects_give_each_groups_release(tmp_path):
         "paper": "2025_03",
         "refreshed": "2026_03",
         "withheld-truth": "2026_03",
-    }
-
-
-def test_group_objects_and_plain_releases_can_be_mixed(tmp_path):
-    bundle = _write_bundle(
-        tmp_path / "b.parquetbundle",
-        ids=["P1"],
-        annotations={"ec": ["1"]},
-        projections=["UMAP_2"],
-        metadata={
-            "uniprot_release": json.dumps(
-                {
-                    "refreshed": {"columns": ["ec"], "release": "2026_03"},
-                    "paper": "2025_03",
-                    "eat": {"columns": ["ec_eat"]},
-                }
-            )
-        },
-    )
-    record = write_manifest.read_bundle_record(
-        bundle, example_id="x", file="b", hosting="repo"
-    )
-    assert record["releases"]["annotations"] == {
-        "refreshed": "2026_03",
-        "paper": "2025_03",
     }
 
 

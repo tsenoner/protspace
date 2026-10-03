@@ -97,8 +97,6 @@ META_MEMBERSHIP_RELEASE = "membership_release"
 # The showcase build (build_showcase.py `release_groups`) writes one object per
 # group, {"refreshed": {"release": "2026_03", "columns": [...]}, ...}, with a null
 # release for groups that have none (computed columns); those are left out.
-# Bundles built before it hold a flat {group: release} object or a single
-# release string, which are still read.
 META_UNIPROT_RELEASE = "uniprot_release"
 META_BUILT_AT = "built_at"
 META_COMMAND = "command"
@@ -237,26 +235,24 @@ def _decode_metadata(raw: dict[bytes, bytes] | None) -> dict[str, str]:
     return {k.decode(): v.decode() for k, v in (raw or {}).items()}
 
 
-def _group_release(value: object) -> str | None:
-    """A column group's release: its object's ``release``, or a plain string (older bundles)."""
-    if isinstance(value, dict):
-        value = value.get("release")
-    if value is None or isinstance(value, (dict, list)):
-        return None
-    return str(value)
-
-
 def _annotation_releases(value: str | None) -> dict[str, str]:
+    """``{group: release}`` from the build's ``uniprot_release`` group objects;
+    a group without a release is left out."""
     if not value:
         return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {"all": value}
-    if isinstance(parsed, dict):
-        releases = {str(k): _group_release(v) for k, v in parsed.items()}
-        return {k: v for k, v in releases.items() if v is not None}
-    return {"all": str(parsed)}
+    groups = json.loads(value)
+    if not isinstance(groups, dict) or not all(
+        isinstance(entry, dict) for entry in groups.values()
+    ):
+        raise ValueError(
+            f"{META_UNIPROT_RELEASE} is not the showcase build's "
+            f"{{group: {{release, columns}}}} object: {value!r}"
+        )
+    return {
+        str(group): str(entry["release"])
+        for group, entry in groups.items()
+        if entry.get("release") is not None
+    }
 
 
 #: Options of the build command whose value is a machine path; the docs card
