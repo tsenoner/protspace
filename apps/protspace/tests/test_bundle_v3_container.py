@@ -35,6 +35,7 @@ from protspace.data.io.bundle import (
     create_settings_parquet,
     extract_bundle_to_dir,
     read_bundle,
+    read_bundle_contents,
     read_settings_from_bundle,
     read_tables,
     replace_annotations_in_bundle,
@@ -244,6 +245,49 @@ def test_legacy_bundle_reads_back_unchanged(tmp_path):
     assert metadata.equals(read(parts[1]))
     assert data.equals(read(parts[2]))
     assert read_format_version(annotations) == 2
+
+
+def test_read_bundle_contents_reads_every_part_once(tmp_path):
+    tables = pipeline_tables()
+    statistics = pa.table({"space_kind": ["projection"], "value": [0.5]})
+    path = tmp_path / "b.parquetbundle"
+    write_bundle(
+        tables, path, settings={"pfam": {"categories": {}}}, statistics=statistics
+    )
+
+    contents = read_bundle_contents(path)
+    annotations, metadata, data = read_tables(path)
+    assert contents.annotations.equals(annotations)
+    assert contents.metadata.equals(metadata)
+    assert contents.projections.equals(data)
+    assert contents.settings == {"pfam": {"categories": {}}}
+    assert contents.statistics.equals(statistics)
+    assert contents.container_version == 3
+    assert read_bundle_contents(path.read_bytes()) == contents
+
+    bare = tmp_path / "bare.parquetbundle"
+    write_bundle(tables, bare)
+    assert read_bundle_contents(bare).settings is None
+    assert read_bundle_contents(bare).statistics is None
+
+
+def test_read_bundle_contents_reads_a_legacy_bundle_as_stored(tmp_path, caplog):
+    path = tmp_path / "legacy.parquetbundle"
+    parts = legacy_bundle(path, settings=create_settings_parquet({"cat": {}}))
+
+    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
+        contents = read_bundle_contents(path)
+    assert contents.annotations.equals(read(parts[0]))
+    assert contents.projections.equals(read(parts[2]))
+    assert contents.settings == {"cat": {}} and contents.statistics is None
+    assert contents.container_version is None
+    assert ["deprecated" in r.getMessage() for r in caplog.records] == [True]
+
+    # A caller that reads a legacy file on purpose (a pinned input) asks for quiet.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
+        read_bundle_contents(path, warn_legacy=False)
+    assert caplog.records == []
 
 
 def test_legacy_v1_bundle_is_not_migrated_by_a_read(tmp_path):
