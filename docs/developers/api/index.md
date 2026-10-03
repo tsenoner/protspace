@@ -369,7 +369,7 @@ Exported from `@protspace/core` unless noted.
 
 ### readFileOptimized
 
-Read a file into an `ArrayBuffer`, chunking large files.
+Read a file into an `ArrayBuffer` (`File.arrayBuffer()`, which reads off the main thread).
 
 ```typescript
 function readFileOptimized(file: File): Promise<ArrayBuffer>;
