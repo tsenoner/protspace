@@ -12,9 +12,13 @@
  * reports failure correctly: the boolean result, the name/id, and the emit.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import {
+  buildControllerOptions,
+  dataErrorEvent,
+  dataLoadedEvent,
+  recordDatasetChanges,
+} from './dataset-controller.fixtures';
 import { TEST_DEMO } from './example-catalog.fixtures';
-import { createEmptyExploreViewRequest } from './url-state';
 
 const notifyMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -65,21 +69,6 @@ import {
 
 const DEMO = TEST_DEMO;
 
-const data: VisualizationData = {
-  protein_ids: ['P1'],
-  projections: [
-    {
-      name: 'umap',
-      dimension: 2,
-      data: new Float32Array([0, 0]),
-    },
-  ],
-  annotations: {
-    ec: { kind: 'categorical', values: ['1.1.1.1'], colors: ['#000'], shapes: ['circle'] },
-  },
-  annotation_data: { ec: new Int32Array([0]) },
-};
-
 /**
  * Wires a real `LoadQueue` + real `createPersistedDatasetController` (via
  * `createDatasetController`) around a fake `DataLoader` whose `loadFromFile`
@@ -104,72 +93,51 @@ function createRealController(
       ),
     ),
   };
-  const viewController = {
-    subscribeToViewChanges: vi.fn(() => () => {}),
-    resolveLatestView: vi.fn(),
-    getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
-    applyLatestViewForDatasetLoad: vi.fn(),
-    setRequestedView: vi.fn(),
-    recordRequestedView: vi.fn(),
-    setDatasetDefaults: vi.fn(),
-  };
-  const setCurrentExampleId = vi.fn();
-  const setCurrentDatasetName = vi.fn();
-  const overlayController = { update: vi.fn(), setCancelHandler: vi.fn() };
-
-  controller = createDatasetController({
-    controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false } as never,
-    dataLoader: dataLoader as never,
-    getIsDisposed: () => false,
-    interactionController: {} as never,
-    legendElement: {
-      clearForNewDataset: vi.fn(),
-      setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
-    } as never,
-    loadQueue,
-    overlayController,
-    plotElement: {} as never,
-    setCurrentExampleId,
-    setCurrentDatasetName,
-    structureViewer: {} as never,
-    viewController: viewController as never,
-  });
+  const options = buildControllerOptions({ dataLoader, loadQueue });
+  controller = createDatasetController(options);
 
   return {
     controller,
     dataLoader,
     loadQueue,
-    setCurrentExampleId,
-    setCurrentDatasetName,
-    overlayController,
+    setCurrentExampleId: options.setCurrentExampleId,
+    setCurrentDatasetName: options.setCurrentDatasetName,
+    overlayController: options.overlayController,
   };
 }
 
+/** Puts a fetch in place that answers every request with a four-byte bundle. */
+const stubOkFetch = () =>
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
+
+/** Decodes the queued file into `TEST_DATA`, as the data loader's `data-loaded` reports it. */
+const loadSucceeds = async (file: File, ctrl: DatasetController) => {
+  await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, file }));
+};
+
+/** Fails to parse the queued file, as the data loader's `data-error` reports it. */
+const parseFails = async (_file: File, ctrl: DatasetController) => {
+  await ctrl.handleDataError(dataErrorEvent());
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.loadData.mockResolvedValue(undefined);
+});
+
+// In afterEach, not at the end of each test body: a failing assertion would
+// otherwise skip the unstub and leak the fetch stub into the next test.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('example load: real fetch + load-queue + handleDataLoaded/handleDataError', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-  });
-
-  // In afterEach, not at the end of each test body: a failing assertion would
-  // otherwise skip the unstub and leak the fetch stub into the next test.
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('a successful fetch and parse sets name/id and emits, keyed on the example in load meta', async () => {
-    const { controller, setCurrentExampleId, setCurrentDatasetName } = createRealController(
-      async (file, ctrl) => {
-        await ctrl.handleDataLoaded({
-          detail: { data, settings: null, source: 'auto', file },
-        } as unknown as Event);
-      },
-    );
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
+    const { controller, setCurrentExampleId, setCurrentDatasetName } =
+      createRealController(loadSucceeds);
+    stubOkFetch();
 
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
 
@@ -181,18 +149,10 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 
   it("a parse failure (data-error after a successful fetch) leaves name/id/emit untouched and resolves 'failed'", async () => {
     const { controller, setCurrentExampleId, setCurrentDatasetName, overlayController } =
-      createRealController(async (_file, ctrl) => {
-        await ctrl.handleDataError({
-          detail: {
-            message: 'Corrupt bundle',
-            originalError: new Error('Corrupt bundle'),
-          },
-        } as unknown as Event);
-      });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
+      createRealController(parseFails);
+    stubOkFetch();
 
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     const result = await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu');
 
@@ -211,15 +171,10 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
   });
 
   it("a deep-link load (?dataset=) that fails to parse also resolves 'failed' without emitting", async () => {
-    const { controller } = createRealController(async (_file, ctrl) => {
-      await ctrl.handleDataError({
-        detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
-      } as unknown as Event);
-    });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
+    const { controller } = createRealController(parseFails);
+    stubOkFetch();
 
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     const result = await controller.loadExampleDataset(DEMO, 'url');
 
@@ -229,30 +184,6 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
 });
 
 describe('example load: the stored import is replaced only once the example has decoded', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  const stubOkFetch = () =>
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
-
-  const loadSucceeds = async (file: File, ctrl: DatasetController) => {
-    await ctrl.handleDataLoaded({
-      detail: { data, settings: null, source: 'auto', file },
-    } as unknown as Event);
-  };
-
-  const parseFails = async (_file: File, ctrl: DatasetController) => {
-    await ctrl.handleDataError({
-      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
-    } as unknown as Event);
-  };
-
   it('a successful menu choice clears the stored import', async () => {
     const { controller } = createRealController(loadSucceeds);
     stubOkFetch();
@@ -265,12 +196,7 @@ describe('example load: the stored import is replaced only once the example has 
     const { controller } = createRealController(loadSucceeds);
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        headers: new Headers(),
-        status: 500,
-        statusText: 'Server Error',
-      }),
+      vi.fn().mockResolvedValue(new Response(null, { status: 500, statusText: 'Server Error' })),
     );
 
     expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('failed');
@@ -360,13 +286,7 @@ describe('example load: the stored import is replaced only once the example has 
 });
 
 describe('a load a newer user request supersedes after it has started', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-  });
-
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
     vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
   });
@@ -376,9 +296,6 @@ describe('a load a newer user request supersedes after it has started', () => {
     return calls[calls.length - 1];
   };
 
-  const loaded = (file: File) =>
-    ({ detail: { data, settings: null, source: 'auto', file } }) as unknown as Event;
-
   it('a menu example that has begun rendering is committed: a view-only Back leaves it to finish', async () => {
     let cancelDuringRender: string | undefined;
     const { controller } = createRealController(async (file, ctrl) => {
@@ -386,11 +303,10 @@ describe('a load a newer user request supersedes after it has started', () => {
         // A Back that only changes the view lands while the plot is swapping.
         cancelDuringRender = ctrl.cancelPendingExampleLoad({ source: 'menu' });
       });
-      await ctrl.handleDataLoaded(loaded(file));
+      await loadSucceeds(file, ctrl);
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    stubOkFetch();
+    const changes = recordDatasetChanges(controller);
 
     expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe('loaded');
     expect(cancelDuringRender).toBe('committed');
@@ -401,11 +317,10 @@ describe('a load a newer user request supersedes after it has started', () => {
   it('a menu example still decoding is cancelled by a Back, and nothing of it lands', async () => {
     const { controller } = createRealController(async (file, ctrl) => {
       expect(ctrl.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
-      await ctrl.handleDataLoaded(loaded(file));
+      await loadSucceeds(file, ctrl);
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    stubOkFetch();
+    const changes = recordDatasetChanges(controller);
 
     expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
       'superseded',
@@ -422,10 +337,9 @@ describe('a load a newer user request supersedes after it has started', () => {
     const { controller } = createRealController(async (file, ctrl) => {
       // A Back/Forward to an example entry lands while the restore decodes.
       ctrl.beginUserRequest();
-      await ctrl.handleDataLoaded(loaded(file));
+      await loadSucceeds(file, ctrl);
     });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'auto-loaded' });
     expect(mocks.loadData).not.toHaveBeenCalled();
@@ -445,10 +359,9 @@ describe('a load a newer user request supersedes after it has started', () => {
       mocks.loadData.mockImplementationOnce(async () => {
         ctrl.beginUserRequest();
       });
-      await ctrl.handleDataLoaded(loaded(file));
+      await loadSucceeds(file, ctrl);
     });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     await controller.loadPersistedOrDefaultDataset();
     expect(changes).toEqual([]);
@@ -458,12 +371,9 @@ describe('a load a newer user request supersedes after it has started', () => {
   it('a user import superseded while it decodes is neither saved, shown nor reported', async () => {
     const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
       ctrl.beginUserRequest();
-      await ctrl.handleDataLoaded({
-        detail: { data, settings: null, source: 'user', file },
-      } as unknown as Event);
+      await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, source: 'user', file }));
     });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     const file = new File(['x'], 'mine.parquetbundle');
     // As runtime.ts's load handler does for a user import.
@@ -477,12 +387,9 @@ describe('a load a newer user request supersedes after it has started', () => {
 
   it('a user import that stays current is saved, shown and reported', async () => {
     const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
-      await ctrl.handleDataLoaded({
-        detail: { data, settings: null, source: 'user', file },
-      } as unknown as Event);
+      await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, source: 'user', file }));
     });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     const file = new File(['x'], 'mine.parquetbundle');
     loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());

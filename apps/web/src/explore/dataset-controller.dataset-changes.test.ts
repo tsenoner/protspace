@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
+import {
+  TEST_DATA,
+  buildControllerOptions,
+  dataErrorEvent,
+  dataLoadedEvent,
+  recordDatasetChanges,
+} from './dataset-controller.fixtures';
 import { TEST_DEMO, TEST_EXAMPLE } from './example-catalog.fixtures';
 import { progressAfterExampleDownload } from './loading-overlay';
+import type { LoadMeta } from './types';
 import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
@@ -61,78 +69,51 @@ import { createDatasetController } from './dataset-controller';
 const DEMO = TEST_DEMO;
 const OTHER = TEST_EXAMPLE;
 
-const data: VisualizationData = {
-  protein_ids: ['P1'],
-  projections: [
-    {
-      name: 'umap',
-      dimension: 2,
-      data: new Float32Array([0, 0]),
-    },
-  ],
-  annotations: {
-    ec: { kind: 'categorical', values: ['1.1.1.1'], colors: ['#000'], shapes: ['circle'] },
-  },
-  annotation_data: { ec: new Int32Array([0]) },
-};
+/** A load queue whose running load, and the load of any file, is `loadMeta`. */
+const runningLoad = (loadMeta: LoadMeta) => ({
+  getRunningLoadMeta: () => loadMeta,
+  getLoadMetaForFile: () => loadMeta,
+});
+
+/** The load meta of an example load begun from `source`. */
+function exampleMeta(source: 'menu' | 'url' | 'startup', entry = OTHER): LoadMeta {
+  return { sequence: 1, kind: 'default', epoch: 1, example: { entry, source } };
+}
 
 function createController(
   loadQueueOverrides: Record<string, unknown> = {},
   extraOptions: Record<string, unknown> = {},
 ) {
-  const viewController = {
-    subscribeToViewChanges: vi.fn(() => () => {}),
-    resolveLatestView: vi.fn(),
-    getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
-    applyLatestViewForDatasetLoad: vi.fn(),
-    setRequestedView: vi.fn(),
-    recordRequestedView: vi.fn(),
-    setDatasetDefaults: vi.fn(),
-  };
-  const options = {
-    controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
-    dataLoader: {},
-    getIsDisposed: () => false,
-    interactionController: {},
-    legendElement: {
-      clearForNewDataset: vi.fn(),
-      setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
-    },
+  const options = buildControllerOptions({
     loadQueue: {
-      registerFileLoad: vi.fn(),
-      awaitLoadOutcome: vi.fn(),
-      getLoadMetaForFile: vi.fn(),
-      getRunningLoadMeta: () => ({ sequence: 1, kind: 'user' as const }),
-      getLatestSequence: () => 1,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
       ...loadQueueOverrides,
     },
-    overlayController: { update: vi.fn(), setCancelHandler: vi.fn() },
-    plotElement: {},
-    setCurrentExampleId: vi.fn(),
-    setCurrentDatasetName: vi.fn(),
-    structureViewer: {},
-    viewController,
     ...extraOptions,
-  } as unknown as Parameters<typeof createDatasetController>[0];
+  });
 
   return {
     controller: createDatasetController(options),
-    viewController,
+    viewController: options.viewController,
     overlayController: options.overlayController,
     setCurrentExampleId: options.setCurrentExampleId,
     setCurrentDatasetName: options.setCurrentDatasetName,
   };
 }
 
-describe('startup outcomes and dataset-change emits (persisted-dataset mocked)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-    mocks.markLastLoadStatus.mockResolvedValue(undefined);
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.loadData.mockResolvedValue(undefined);
+  mocks.markLastLoadStatus.mockResolvedValue(undefined);
+  // `clearAllMocks` keeps implementations, and a test may leave this returning false.
+  mocks.persisted.isCurrentRequest.mockReturnValue(true);
+});
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('startup outcomes and dataset-change emits (persisted-dataset mocked)', () => {
   it('loadDefaultDatasetAndClearPersistedFile loads the demo in place of the stored import', async () => {
     mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('loaded');
     const { controller } = createController();
@@ -145,22 +126,13 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     );
   });
 
-  it('does not emit for "auto-loaded": the OPFS load reports through handleDataLoaded', async () => {
-    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'auto-loaded' });
+  it.each([
+    ['auto-loaded', 'the OPFS load'],
+    ['default-loaded', 'that example load'],
+  ])('does not emit for "%s": %s reports through handleDataLoaded', async (kind) => {
+    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind });
     const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
-
-    await controller.loadPersistedOrDefaultDataset();
-
-    expect(changes).toEqual([]);
-  });
-
-  it('does not emit for "default-loaded": that example load reports through handleDataLoaded internally', async () => {
-    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-loaded' });
-    const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     await controller.loadPersistedOrDefaultDataset();
 
@@ -178,8 +150,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
       failedAttempts: 1,
     });
     const { controller, overlayController } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     await controller.loadPersistedOrDefaultDataset({ epoch: 3 });
 
@@ -193,8 +164,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
   it("neither emits nor touches the overlay for 'preempted': the user request that took over reports itself", async () => {
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
     const { controller, overlayController } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
     await controller.loadPersistedOrDefaultDataset();
 
@@ -203,72 +173,54 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
   });
 
   it('emits "startup" with a null id when an OPFS restore finishes loading', async () => {
-    const loadMeta = { sequence: 1, kind: 'opfs' as const };
-    const { controller } = createController({
-      getRunningLoadMeta: () => loadMeta,
-      getLoadMetaForFile: () => loadMeta,
-    });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const { controller } = createController(runningLoad({ sequence: 1, kind: 'opfs' }));
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: { data, file: new File(['x'], 'mine.parquetbundle'), source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'mine.parquetbundle') }),
+    );
 
     expect(changes).toEqual([[null, 'startup']]);
   });
 
   it('emits "user" with a null id when a user file import finishes loading', async () => {
     const { controller } = createController();
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: {
-        data,
-        file: new File(['x'], 'mine.fasta'),
-        source: 'user',
-      },
-    } as unknown as Event);
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'mine.fasta'), source: 'user' }),
+    );
 
     expect(changes).toEqual([[null, 'user']]);
   });
 
-  it('beginUserRequest and currentRequestEpoch delegate to the persisted controller', () => {
+  it.each([
+    ['beginUserRequest', [], 7],
+    ['currentRequestEpoch', [], 7],
+    ['cancelPendingExampleLoad', [{ source: 'menu' }], 'cancelled'],
+  ] as const)('%s delegates to the persisted controller', (method, args, returned) => {
+    const persisted = mocks.persisted[method] as Mock<(...args: unknown[]) => unknown>;
+    persisted.mockReturnValueOnce(returned);
     const { controller } = createController();
 
-    expect(controller.beginUserRequest()).toBe(1);
-    expect(controller.currentRequestEpoch()).toBe(0);
-    expect(mocks.persisted.beginUserRequest).toHaveBeenCalledTimes(1);
+    expect((controller[method] as (...args: unknown[]) => unknown)(...args)).toBe(returned);
+    expect(persisted).toHaveBeenCalledWith(...args);
   });
 
   it('hasDisplayedDataset turns true only once a load has rendered, and a failed load keeps it', async () => {
-    const loadMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: OTHER, source: 'url' as const },
-    };
-    const { controller } = createController({
-      getRunningLoadMeta: () => loadMeta,
-      getLoadMetaForFile: () => loadMeta,
-    });
+    const { controller } = createController(runningLoad(exampleMeta('url')));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(controller.hasDisplayedDataset()).toBe(false);
-    await controller.handleDataError({
-      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
-    } as unknown as Event);
+    await controller.handleDataError(dataErrorEvent());
     expect(controller.hasDisplayedDataset()).toBe(false);
 
-    await controller.handleDataLoaded({
-      detail: { data, file: new File(['x'], 'b.parquetbundle'), source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'b.parquetbundle') }),
+    );
     expect(controller.hasDisplayedDataset()).toBe(true);
 
-    await controller.handleDataError({
-      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
-    } as unknown as Event);
+    await controller.handleDataError(dataErrorEvent());
     expect(controller.hasDisplayedDataset()).toBe(true);
     errorSpy.mockRestore();
   });
@@ -294,22 +246,9 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     expect(onExampleLoadCancelled).toHaveBeenCalledWith({ epoch: 3, source: 'menu' });
   });
 
-  it('cancelPendingExampleLoad delegates to the persisted controller', () => {
-    mocks.persisted.cancelPendingExampleLoad.mockReturnValue('cancelled');
-    const { controller } = createController();
-
-    expect(controller.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
-    expect(mocks.persisted.cancelPendingExampleLoad).toHaveBeenCalledWith({ source: 'menu' });
-  });
-
   it("maps an example's decode progress onto the bar left after its download", () => {
-    const exampleMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: OTHER, source: 'menu' as const },
-    };
-    const example = createController({ getRunningLoadMeta: () => exampleMeta });
+    const menuLoad = exampleMeta('menu');
+    const example = createController({ getRunningLoadMeta: () => menuLoad });
     example.controller.handleLoadingStart();
     example.controller.handleLoadingProgress({ detail: { percentage: 100 } } as unknown as Event);
     expect(vi.mocked(example.overlayController.update).mock.calls.map((call) => call[1])).toEqual([
@@ -327,12 +266,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
   });
 
   it('decode progress of a superseded (e.g. cancelled) example never brings the overlay back', () => {
-    const loadMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: OTHER, source: 'menu' as const },
-    };
+    const loadMeta = exampleMeta('menu');
     const { controller, overlayController } = createController({
       getRunningLoadMeta: () => loadMeta,
     });
@@ -359,9 +293,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await controller.handleDataError({
-      detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
-    } as unknown as Event);
+    await controller.handleDataError(dataErrorEvent());
 
     expect(mocks.persisted.recoverFromCorruptedPersistedDataset).toHaveBeenCalledWith(
       'could not be loaded',
@@ -372,43 +304,32 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
   });
 
   it('unsubscribe stops further notifications', async () => {
-    mocks.persisted.loadExampleDataset.mockResolvedValue('loaded');
     const { controller } = createController();
     const callback = vi.fn();
     const unsubscribe = controller.subscribeToDatasetChanges(callback);
+    const changes = recordDatasetChanges(controller);
     unsubscribe();
 
-    await controller.loadExampleDataset(DEMO, 'url');
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'mine.parquetbundle'), source: 'user' }),
+    );
 
+    // The load did report a change, to the subscriber still listening.
+    expect(changes).toEqual([[null, 'user']]);
     expect(callback).not.toHaveBeenCalled();
   });
 });
 
 describe('handleDataLoaded: example labeling keyed on load meta, not kind', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-    mocks.markLastLoadStatus.mockResolvedValue(undefined);
-  });
-
   it('sets name/id and emits with the source carried in load meta, for an example load', async () => {
-    const file = new File(['x'], 'demo.parquetbundle');
-    const loadMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: DEMO, source: 'menu' as const },
-    };
-    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
-      getRunningLoadMeta: () => loadMeta,
-      getLoadMetaForFile: () => loadMeta,
-    });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController(
+      runningLoad(exampleMeta('menu', DEMO)),
+    );
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: { data, file, source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'demo.parquetbundle') }),
+    );
 
     expect(setCurrentDatasetName).toHaveBeenCalledWith(DEMO.label);
     expect(setCurrentExampleId).toHaveBeenCalledWith(DEMO.id);
@@ -422,25 +343,13 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
   // is briefly shown under `dataset=5K`, and can even win the race and leave
   // the wrong dataset/annotation on screen.
   it('skips render/emit entirely for an example load superseded during decode', async () => {
-    const file = new File(['x'], '40K.parquetbundle');
-    const loadMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: OTHER, source: 'url' as const },
-    };
+    const loaded = dataLoadedEvent({ file: new File(['x'], '40K.parquetbundle') });
     mocks.persisted.isCurrentRequest.mockReturnValue(false);
     const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
-      createController({
-        getRunningLoadMeta: () => loadMeta,
-        getLoadMetaForFile: () => loadMeta,
-      });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+      createController(runningLoad(exampleMeta('url')));
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: { data, file, source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(loaded);
 
     expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledWith(1);
     expect(mocks.loadData).not.toHaveBeenCalled();
@@ -459,27 +368,15 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
   // real decode, which is what let the e2e repro (rapid Back landing mid-
   // decode) through a single up-front check alone.
   it('re-checks after loadData and skips labeling/emit/view-apply if superseded while it was awaiting', async () => {
-    const file = new File(['x'], '40K.parquetbundle');
-    const loadMeta = {
-      sequence: 1,
-      kind: 'default' as const,
-      epoch: 1,
-      example: { entry: OTHER, source: 'url' as const },
-    };
+    const loaded = dataLoadedEvent({ file: new File(['x'], '40K.parquetbundle') });
     mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
       .mockReturnValueOnce(false); // check after loadData: superseded meanwhile
     const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
-      createController({
-        getRunningLoadMeta: () => loadMeta,
-        getLoadMetaForFile: () => loadMeta,
-      });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+      createController(runningLoad(exampleMeta('url')));
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: { data, file, source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(loaded);
 
     expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(2);
     // loadData DID run (the request was current when it started)...
@@ -499,18 +396,14 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
   // through persisted-dataset.ts), so `kind === 'default'` alone must never be
   // enough to label a load as an example.
   it('does not label a plain "default"-kind load (no example in meta) as an example', async () => {
-    const file = new File(['x'], '573K_swissprot.parquetbundle');
-    const loadMeta = { sequence: 1, kind: 'default' as const };
-    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController({
-      getRunningLoadMeta: () => loadMeta,
-      getLoadMetaForFile: () => loadMeta,
-    });
-    const changes: Array<[string | null, string]> = [];
-    controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
+    const { controller, setCurrentExampleId, setCurrentDatasetName } = createController(
+      runningLoad({ sequence: 1, kind: 'default' }),
+    );
+    const changes = recordDatasetChanges(controller);
 
-    await controller.handleDataLoaded({
-      detail: { data, file, source: 'auto' },
-    } as unknown as Event);
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], '573K_swissprot.parquetbundle') }),
+    );
 
     expect(setCurrentDatasetName).not.toHaveBeenCalled();
     expect(setCurrentExampleId).not.toHaveBeenCalled();
@@ -519,33 +412,13 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
 });
 
 describe('handleDataLoaded: curated default view', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadData.mockResolvedValue(undefined);
-    mocks.markLastLoadStatus.mockResolvedValue(undefined);
-    // `clearAllMocks` keeps implementations, and an earlier block leaves this
-    // returning false.
-    mocks.persisted.isCurrentRequest.mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   /** Runs one successful `handleDataLoaded` for `loadMeta` and returns the view-controller mock. */
-  async function loadWith(loadMeta: Record<string, unknown>, loadedData: VisualizationData = data) {
-    const { controller, viewController } = createController({
-      getRunningLoadMeta: () => loadMeta,
-      getLoadMetaForFile: () => loadMeta,
-    });
-    await controller.handleDataLoaded({
-      detail: { data: loadedData, file: new File(['x'], 'bundle.parquetbundle'), source: 'auto' },
-    } as unknown as Event);
+  async function loadWith(loadMeta: LoadMeta, data: VisualizationData = TEST_DATA) {
+    const { controller, viewController } = createController(runningLoad(loadMeta));
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ data, file: new File(['x'], 'bundle.parquetbundle') }),
+    );
     return viewController;
-  }
-
-  function exampleMeta(source: 'menu' | 'url' | 'startup', entry = OTHER) {
-    return { sequence: 1, kind: 'default' as const, epoch: 1, example: { entry, source } };
   }
 
   it('a menu load sets the example defaults and resets the request before loadData', async () => {
@@ -622,7 +495,7 @@ describe('handleDataLoaded: curated default view', () => {
       shapes: ['circle'],
     };
     const matchingData: VisualizationData = {
-      ...data,
+      ...TEST_DATA,
       projections: [{ name: projection, dimension: 2, data: new Float32Array([0, 0]) }],
       annotations: Object.fromEntries([annotation, ...tooltip].map((name) => [name, category])),
       annotation_data: Object.fromEntries(
