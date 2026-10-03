@@ -216,6 +216,7 @@ export function createDatasetController({
       exampleRetrySubscribers.forEach((callback) => callback(exampleId));
     },
     onExampleLoadCancelled,
+    isDisposed: getIsDisposed,
   });
 
   // Reports which example (or no example) is now showing and why, so the URL

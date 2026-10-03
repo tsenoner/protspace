@@ -79,9 +79,11 @@ function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSigna
 function createController({
   retryUrlExample,
   onExampleLoadCancelled,
+  isDisposed,
 }: {
   retryUrlExample?: (id: string) => void;
   onExampleLoadCancelled?: (cancel: { epoch: number; source: string }) => void;
+  isDisposed?: () => boolean;
 } = {}) {
   const dataLoader = { loadFromFile: vi.fn().mockResolvedValue(undefined) };
   const overlayController = { update: vi.fn(), setCancelHandler: vi.fn() };
@@ -104,6 +106,7 @@ function createController({
     setCurrentDatasetName,
     retryUrlExample,
     onExampleLoadCancelled,
+    isDisposed,
   });
 
   return {
@@ -444,6 +447,21 @@ describe('beginUserRequest', () => {
 
     expect(await resultPromise).toBe('superseded');
     expect(notifyMock.error).not.toHaveBeenCalled();
+    expect(overlayController.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('after the Explore runtime is torn down', () => {
+  it("a toast's Retry neither downloads nor puts the overlay up", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    let disposed = false;
+    const { controller, overlayController } = createController({ isDisposed: () => disposed });
+
+    disposed = true;
+
+    expect(await controller.loadExampleDataset(OTHER, 'menu')).toBe('superseded');
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(overlayController.update).not.toHaveBeenCalled();
   });
 });

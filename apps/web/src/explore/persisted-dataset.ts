@@ -93,6 +93,8 @@ interface PersistedDatasetOptions {
    * (see `offerCancel`), so the caller can decide what the screen shows next.
    */
   onExampleLoadCancelled?(cancel: ExampleLoadCancel): void;
+  /** Whether the Explore runtime has been torn down (a route change). */
+  isDisposed?(): boolean;
 }
 
 interface PendingExample {
@@ -115,6 +117,7 @@ export function createPersistedDatasetController({
   setCurrentDatasetName,
   retryUrlExample,
   onExampleLoadCancelled,
+  isDisposed = () => false,
 }: PersistedDatasetOptions) {
   // Which request owns the screen (the "Request precedence" requirement in
   // openspec/specs/example-datasets). A user request (a menu choice,
@@ -194,6 +197,12 @@ export function createPersistedDatasetController({
       epoch,
     }: { replacesStoredImport?: boolean; epoch?: number } = {},
   ): Promise<ExampleLoadOutcome> => {
+    // A toast's Retry can outlive the Explore page (toasts survive a route
+    // change): it must not download onto the torn-down runtime, nor put its
+    // overlay over another page with nothing left to dismiss it.
+    if (isDisposed()) {
+      return 'superseded';
+    }
     const requestId = epoch ?? beginUserRequest();
     if (!isCurrentRequest(requestId)) {
       return 'superseded';
