@@ -72,6 +72,17 @@ jobs:
           mkdir -p apps/web/dist/docs
           cp -r docs/.vitepress/dist/* apps/web/dist/docs/
 
+      # The bundles the manifest pins are cached under its hash (after the
+      # build, which empties dist/), so a deploy that leaves the manifest alone
+      # downloads nothing: the fetch below keeps every file whose bytes it
+      # verifies and downloads the rest. No restore-keys, so a file another
+      # manifest pinned is never restored into the published directory.
+      - name: Restore the fetched example bundles
+        uses: actions/cache@v4
+        with:
+          path: apps/web/dist/examples
+          key: example-bundles-${{ hashFiles('apps/web/src/explore/example-manifest.ts') }}
+
       # The example bundles are not in git: each release-hosted example in
       # apps/web/src/explore/example-manifest.ts, plus the previous release's
       # retained files (kept one cycle so open tabs and published links keep

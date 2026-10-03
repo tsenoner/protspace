@@ -6,13 +6,20 @@ name: Example bundles
 # downloads into a scratch directory, and the manifest writer then re-reads every
 # file to check that the committed columns, projections and protein counts are
 # the files'. `pnpm perf:fetch` does the same for the perf-datasets release.
+#
+# The fetched files are cached under the hash of the manifest that pins them and
+# of the fetch script, so a run that changes neither downloads nothing (the
+# fetch still verifies every cached file), while a new manifest or fetcher is
+# checked against the release itself.
 on:
   pull_request:
     # Err broad: a path filter that misses does not fail, it silently never runs.
     paths:
       - 'apps/web/src/explore/example-manifest.ts'
       - 'apps/protspace/scripts/generate_examples/write_manifest.py'
+      - 'apps/web/src/explore/example-served-path.ts'
       - 'perf/datasets.manifest.json'
+      - 'perf/datasets-manifest.ts'
       - 'scripts/examples/**'
       - 'package.json'
       - '.github/workflows/example-bundles.yml'
@@ -41,6 +48,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Restore the fetched example bundles
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/examples
+          key: example-bundles-check-${{ hashFiles('apps/web/src/explore/example-manifest.ts', 'scripts/examples/**') }}
 
       - name: Fetch and verify every pinned example bundle
         run: pnpm examples:fetch --out "$RUNNER_TEMP/examples" --with-retained
@@ -73,6 +86,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Restore the fetched perf datasets
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/perf-datasets
+          key: perf-datasets-check-${{ hashFiles('perf/datasets.manifest.json', 'perf/datasets-manifest.ts', 'scripts/examples/**') }}
 
       - name: Fetch and verify every perf dataset
         run: pnpm perf:fetch --out "$RUNNER_TEMP/perf-datasets"
