@@ -5828,44 +5828,22 @@ def make_context(
     )
 
 
-#: Options whose value is a machine path, and the placeholder the provenance
-#: shows instead (W12: a scratch --cli-root was printed on every docs card).
-PATH_OPTIONS = {
-    "--cli-root": "$CLI",
-    "--out-root": "$OUT",
-    "--staging": "$STAGING",
-    "--config": "$CONFIG",
-    "--out": "$OUT",
-    "--nm-dir": "$NM_DIR",
-}
-
-
 def build_command(argv: Sequence[str]) -> str:
-    """This invocation, for provenance, with machine paths replaced.
+    """This invocation, for provenance, without machine paths (W12).
 
-    Path options become placeholders (``--cli-root $CLI``), a ``--path
-    NAME=VALUE`` override (or ``--path=NAME=VALUE``) keeps only its name, and
-    any other path left is shortened to ``$REPO`` / ``~``, then by the manifest
-    writer's own redaction (scratch paths ``$TMP``, home directories ``~``).
-    The parsers refuse abbreviated options (``allow_abbrev=False``), so only
-    the spellings listed here can carry a path.
+    A ``--path NAME=VALUE`` override (or ``--path=NAME=VALUE``) keeps only its
+    name; the manifest writer's redaction does the rest: path options become
+    placeholders (``--cli-root $CLI``), scratch paths ``$TMP`` and home
+    directories ``~``. The parsers refuse abbreviated options
+    (``allow_abbrev=False``), so only the spellings that redaction knows can
+    carry a path.
     """
     args = list(argv)
     words: list[str] = ["build_showcase.py"]  # already shell-quoted
     index = 0
     while index < len(args):
-        arg = args[index]
-        option, sep, value = arg.partition("=")
-        if option in PATH_OPTIONS:
-            placeholder = PATH_OPTIONS[option]
-            if sep:
-                words.append(f"{option}={placeholder}")
-            else:
-                words.append(option)
-                if index + 1 < len(args):
-                    words.append(placeholder)
-                    index += 1
-        elif option == "--path" and (sep or index + 1 < len(args)):
+        option, sep, value = args[index].partition("=")
+        if option == "--path" and (sep or index + 1 < len(args)):
             if not sep:
                 index += 1
                 value = args[index]
@@ -5873,12 +5851,9 @@ def build_command(argv: Sequence[str]) -> str:
             override = f"{shlex.quote(name)}=${name.upper()}"
             words += [f"--path={override}"] if sep else ["--path", override]
         else:
-            words.append(shlex.quote(arg))
+            words.append(shlex.quote(args[index]))
         index += 1
-    text = " ".join(words)
-    for old, new in ((str(REPO_ROOT), "$REPO"), (str(Path.home()), "~")):
-        text = text.replace(old, new)
-    return manifest_writer().redact_command(text)
+    return manifest_writer().redact_command(" ".join(words))
 
 
 def check_output_location(path: Path, config: Config, what: str) -> None:
