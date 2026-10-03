@@ -1,6 +1,7 @@
 import { css } from 'lit';
 import { tokens } from '../../styles/tokens';
 import { overlayMixins } from '../../styles/overlay-mixins';
+import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
@@ -172,7 +173,9 @@ const structureViewerStylesCore = css`
   .viewer-container {
     position: relative;
     width: 100%;
-    height: 100%;
+    /* Take only the height the header and footer leave, so the footer never overflows */
+    flex: 1 1 0;
+    min-height: 0;
     background: var(--protspace-viewer-bg);
     border-radius: 0 0 6px 6px;
   }
@@ -234,22 +237,54 @@ const structureViewerStylesCore = css`
     font-size: 0.875rem;
   }
 
-  .viewer-content {
+  .viewer-content,
+  .molstar-mount {
     width: 100%;
     height: 100%;
     border-radius: 0 0 6px 6px;
   }
 
+  .color-toolbar,
   .tips {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding: 0.2rem 0.5rem;
     background: var(--disabled-bg);
-    column-gap: 5px;
     border-top: 1px solid var(--protspace-viewer-border);
-    font-size: 0.75rem;
     color: var(--protspace-viewer-text-muted);
+    font-size: 0.75rem;
+  }
+
+  .color-toolbar {
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  /* Without tips the toolbar is the panel's last row, so it carries the bottom corners */
+  .color-toolbar:last-child {
+    border-radius: 0 0 6px 6px;
+  }
+
+  .color-toolbar-label {
+    font-weight: 600;
+  }
+
+  /* Bridge the viewer's theming hooks into the shared segmented control */
+  .color-mode-group {
+    --segmented-border: var(--protspace-viewer-border);
+    --segmented-bg: var(--protspace-viewer-bg);
+    --segmented-text: var(--protspace-viewer-text-muted);
+    --segmented-hover-bg: color-mix(
+      in srgb,
+      var(--protspace-viewer-text) 8%,
+      var(--protspace-viewer-bg)
+    );
+    --segmented-hover-text: var(--protspace-viewer-text);
+  }
+
+  .tips {
+    flex-direction: column;
+    padding: 0.2rem 0.5rem;
     border-radius: 0 0 6px 6px;
   }
 
@@ -266,6 +301,11 @@ const structureViewerStylesCore = css`
     :host {
       width: calc(50% - 6px);
     }
+
+    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
+    .interaction-tip {
+      display: none;
+    }
   }
 
   @media (max-width: 550px) {
@@ -276,4 +316,9 @@ const structureViewerStylesCore = css`
   }
 `;
 
-export const structureViewerStyles = [tokens, overlayMixins, structureViewerStylesCore];
+export const structureViewerStyles = [
+  tokens,
+  overlayMixins,
+  segmentedControlMixin,
+  structureViewerStylesCore,
+];
