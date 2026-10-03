@@ -163,14 +163,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
         } as unknown as Event);
       },
     );
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
 
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
@@ -193,14 +186,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
           },
         } as unknown as Event);
       });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
 
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
@@ -227,14 +213,7 @@ describe('example load: real fetch + load-queue + handleDataLoaded/handleDataErr
         detail: { message: 'Corrupt bundle', originalError: new Error('Corrupt bundle') },
       } as unknown as Event);
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
 
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
@@ -257,14 +236,7 @@ describe('example load: the stored import is replaced only once the example has 
   });
 
   const stubOkFetch = () =>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
 
   const loadSucceeds = async (file: File, ctrl: DatasetController) => {
     await ctrl.handleDataLoaded({
@@ -384,14 +356,7 @@ describe('a load a newer user request supersedes after it has started', () => {
       });
       await ctrl.handleDataLoaded(loaded(file));
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 
@@ -408,14 +373,7 @@ describe('a load a newer user request supersedes after it has started', () => {
       expect(ctrl.cancelPendingExampleLoad({ source: 'menu' })).toBe('cancelled');
       await ctrl.handleDataLoaded(loaded(file));
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ArrayBuffer(4))));
     const changes: Array<[string | null, string]> = [];
     controller.subscribeToDatasetChanges((id, source) => changes.push([id, source]));
 

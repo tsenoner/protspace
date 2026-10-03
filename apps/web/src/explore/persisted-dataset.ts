@@ -24,44 +24,24 @@ import { EXAMPLE_DOWNLOAD_SHARE } from './loading-overlay';
 import type { DatasetChangeSource, ExampleCancelResult, ExampleLoadOutcome } from './types';
 
 /**
- * Reads a download's body chunk by chunk and reports the bytes received so
- * far. The stream yields decoded bytes, so callers measure them against the
- * decoded file size, never against `Content-Length`, which is the compressed
- * size when the response is gzip-encoded. The chunks become one `Blob`, with
- * no intermediate `ArrayBuffer` copy. Resolves `null`, having cancelled the
- * stream, as soon as `isCurrent` turns false.
+ * Reads a download's body into a `Blob`, reporting the bytes received so far.
+ * The stream yields decoded bytes, so callers measure them against the decoded
+ * file size, never against `Content-Length`, which is the compressed size when
+ * the response is gzip-encoded. The browser assembles the `Blob` itself, with
+ * no copy of the chunks held in JS. Aborting the fetch's signal rejects it.
  */
-async function readDownload(
-  response: Response,
-  onProgress: (received: number) => void,
-  isCurrent: () => boolean,
-): Promise<Blob | null> {
-  if (!response.body) {
-    const buffer = await response.arrayBuffer();
-    if (!isCurrent()) {
-      return null;
-    }
-    onProgress(buffer.byteLength);
-    return new Blob([buffer]);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array<ArrayBuffer>[] = [];
+function readDownload(response: Response, onProgress: (received: number) => void): Promise<Blob> {
   let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (!isCurrent()) {
-      void reader.cancel().catch(() => {});
-      return null;
-    }
-    if (done) {
-      break;
-    }
-    chunks.push(value);
-    received += value.byteLength;
-    onProgress(received);
-  }
-  return new Blob(chunks);
+  const counted = response.body?.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        received += chunk.byteLength;
+        onProgress(received);
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(counted).blob();
 }
 
 export type PersistedLoadOutcome =
@@ -126,6 +106,8 @@ interface PersistedDatasetOptions {
 interface PendingExample {
   epoch: number;
   source: DatasetChangeSource;
+  /** Aborts the download; the next user request does (`beginUserRequest`). */
+  download: AbortController;
   /** Set once the load has begun replacing the plot (`commitExampleLoad`). */
   committed: boolean;
 }
@@ -154,12 +136,11 @@ export function createPersistedDatasetController({
   // always beats an app-initiated load that began earlier, and among user
   // requests the newest wins.
   let requestEpoch = 0;
-  let pendingDownload: AbortController | null = null;
   // The preparation step of a user import still running (a FASTA upload),
   // which the next user request aborts like an example download.
   let pendingPreparation: AbortController | null = null;
-  // The example load in flight (download and decode), for
-  // `cancelPendingExampleLoad`.
+  // The example load in flight (download and decode), whose download the next
+  // user request aborts, for `cancelPendingExampleLoad`.
   let pendingExample: PendingExample | null = null;
   // The startup restore of the stored import while its load is in flight;
   // settles once that load has rendered, been skipped as superseded, or failed.
@@ -184,8 +165,7 @@ export function createPersistedDatasetController({
 
   const beginUserRequest = (): number => {
     requestEpoch += 1;
-    pendingDownload?.abort();
-    pendingDownload = null;
+    pendingExample?.download.abort();
     pendingPreparation?.abort();
     pendingPreparation = null;
     // Synchronously, so a request that puts up its own overlay button (a
@@ -234,6 +214,11 @@ export function createPersistedDatasetController({
     const totalLabel = formatMegabytes(entry.sizeBytes);
     let shownAmount = '';
     const showDownloadProgress = (received: number) => {
+      // A chunk read as a newer request aborts this download must not put
+      // back the overlay that request (or a cancel) now owns.
+      if (!isCurrentRequest(requestId)) {
+        return;
+      }
       const shown = Math.min(received, entry.sizeBytes);
       const amount = `${(shown / 1e6).toFixed(1)} / ${totalLabel}`;
       if (amount === shownAmount) {
@@ -244,9 +229,12 @@ export function createPersistedDatasetController({
       overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, downloadMessage, amount);
     };
     showDownloadProgress(0);
-    const download = new AbortController();
-    pendingDownload = download;
-    const pending: PendingExample = { epoch: requestId, source, committed: false };
+    const pending: PendingExample = {
+      epoch: requestId,
+      source,
+      download: new AbortController(),
+      committed: false,
+    };
     pendingExample = pending;
     // The startup demo, and the demo a recovery button loads, offer no
     // Cancel: they are the fallback a cancel would run.
@@ -255,7 +243,7 @@ export function createPersistedDatasetController({
     }
 
     try {
-      const response = await fetchExampleBundle(entry, download.signal);
+      const response = await fetchExampleBundle(entry, pending.download.signal);
       if (!isCurrentRequest(requestId)) {
         return 'superseded';
       }
@@ -263,10 +251,8 @@ export function createPersistedDatasetController({
         throw new Error(`File not found: ${response.status} ${response.statusText}`);
       }
 
-      const body = await readDownload(response, showDownloadProgress, () =>
-        isCurrentRequest(requestId),
-      );
-      if (!body || !isCurrentRequest(requestId)) {
+      const body = await readDownload(response, showDownloadProgress);
+      if (!isCurrentRequest(requestId)) {
         return 'superseded';
       }
 
@@ -325,9 +311,6 @@ export function createPersistedDatasetController({
       return 'failed';
     } finally {
       withdrawCancel(pending);
-      if (pendingDownload === download) {
-        pendingDownload = null;
-      }
       if (pendingExample === pending) {
         pendingExample = null;
       }

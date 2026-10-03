@@ -51,11 +51,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const okResponse = () => ({
-  ok: true,
-  headers: new Headers(),
-  arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-});
+/** A bundle download that succeeds: four bytes, streamed as a real fetch's body is. */
+const okResponse = () => new Response(new ArrayBuffer(4));
 
 /** The `AbortSignal` the `index`-th fetch was started with. */
 function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSignal {
@@ -112,12 +109,7 @@ describe('loadExampleDataset', () => {
   });
 
   it('shows the downloading overlay before fetching, then fetches and loads the bundle', async () => {
-    const arrayBuffer = new ArrayBuffer(4);
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: new Headers(),
-      arrayBuffer: () => Promise.resolve(arrayBuffer),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
 
     const { controller, dataLoader, overlayController, loadQueue } = createController();
@@ -157,11 +149,7 @@ describe('loadExampleDataset', () => {
   // awaitLoadOutcome(false) — the same signal handleDataError sends — proves
   // the result is now the load's actual outcome, not a guess.
   it("resolves 'failed' and never sets name/id when the load reaches data-error (parse failure)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: new Headers(),
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
 
     const { controller, dataLoader, setCurrentExampleId, setCurrentDatasetName, loadQueue } =
@@ -217,22 +205,14 @@ describe('loadExampleDataset', () => {
   });
 
   it('drops a superseded request: a slow fetch A resolves after a fast fetch B — only B loads', async () => {
-    let resolveA: (value: {
-      ok: boolean;
-      headers: Headers;
-      arrayBuffer: () => Promise<ArrayBuffer>;
-    }) => void = () => {};
+    let resolveA: (value: Response) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
       }
-      return Promise.resolve({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      });
+      return Promise.resolve(okResponse());
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -247,11 +227,7 @@ describe('loadExampleDataset', () => {
     loadQueue.resolveOutcome(1, true);
 
     // Now let A's fetch resolve — it must see it's been superseded.
-    resolveA({
-      ok: true,
-      headers: new Headers(),
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-    });
+    resolveA(okResponse());
 
     expect(await resultA).toBe('superseded');
     expect(await resultB).toBe('loaded');
@@ -268,22 +244,14 @@ describe('loadExampleDataset', () => {
   });
 
   it('a superseded request never notifies or touches the overlay once its fetch settles', async () => {
-    let resolveA: (value: {
-      ok: boolean;
-      headers: Headers;
-      arrayBuffer: () => Promise<ArrayBuffer>;
-    }) => void = () => {};
+    let resolveA: (value: Response) => void = () => {};
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === resolveExampleUrl(DEMO.url)) {
         return new Promise((resolve) => {
           resolveA = resolve;
         });
       }
-      return Promise.resolve({
-        ok: true,
-        headers: new Headers(),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-      });
+      return Promise.resolve(okResponse());
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -377,6 +345,38 @@ describe('example download progress', () => {
     expect(updates[updates.length - 1]).toEqual([DOWNLOAD_SHARE, '2.0 / 2.0 MB']);
   });
 
+  it('is aborted mid-stream by a newer request, and settles as superseded without another update', async () => {
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(new Uint8Array(MB));
+          init.signal?.addEventListener('abort', () =>
+            streamController.error(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        },
+      });
+      return Promise.resolve(new Response(body));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { controller, dataLoader, overlayController } = createController();
+
+    const result = controller.loadExampleDataset({ ...OTHER, sizeBytes: 2 * MB }, 'menu');
+    await vi.waitFor(() =>
+      expect(downloadUpdates(overlayController.update)).toEqual([
+        [0, '0.0 / 2.0 MB'],
+        [DOWNLOAD_SHARE / 2, '1.0 / 2.0 MB'],
+      ]),
+    );
+    overlayController.update.mockClear();
+    controller.beginUserRequest();
+
+    expect(await result).toBe('superseded');
+    expect(fetchSignal(fetchMock).aborted).toBe(true);
+    expect(dataLoader.loadFromFile).not.toHaveBeenCalled();
+    expect(overlayController.update).not.toHaveBeenCalled();
+    expect(notifyMock.error).not.toHaveBeenCalled();
+  });
+
   it('loads a File built from every streamed chunk', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamedResponse([3, 2])));
     const { controller, dataLoader, loadQueue } = createController();
@@ -417,11 +417,7 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
   });
 
   it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: new Headers(),
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
     const { clearLastImportedFile } = await import('./opfs-dataset-store');
 
