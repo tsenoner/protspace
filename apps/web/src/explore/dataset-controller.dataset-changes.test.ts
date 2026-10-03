@@ -365,9 +365,10 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
   // Narrower than the case above: the request is still current when this
   // function starts (so it proceeds into `loadData`), and only becomes
   // superseded WHILE `loadData` is awaiting — the realistic timing for a
-  // real decode, which is what let the e2e repro (rapid Back landing mid-
-  // decode) through a single up-front check alone.
-  it('re-checks after loadData and skips labeling/emit/view-apply if superseded while it was awaiting', async () => {
+  // real decode. By then its data is on screen, so it is labelled and
+  // reported as displayed; only the URL and the view request, which the
+  // newer request owns, are left alone.
+  it('labels a load superseded while loadData was awaiting as shown, but neither writes the URL nor applies the view', async () => {
     const loaded = dataLoadedEvent({ file: new File(['x'], '40K.parquetbundle') });
     mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
@@ -379,15 +380,13 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     await controller.handleDataLoaded(loaded);
 
     expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(2);
-    // loadData DID run (the request was current when it started)...
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
-    // ...but nothing after it did, since it was superseded by the time it
-    // resolved.
-    expect(setCurrentDatasetName).not.toHaveBeenCalled();
-    expect(setCurrentExampleId).not.toHaveBeenCalled();
-    expect(changes).toEqual([]);
+    expect(setCurrentDatasetName).toHaveBeenCalledWith(OTHER.label);
+    expect(setCurrentExampleId).toHaveBeenCalledWith(OTHER.id);
+    expect(controller.hasDisplayedDataset()).toBe(true);
+    expect(changes).toEqual([[OTHER.id, 'superseded']]);
     expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(1, false);
+    expect(viewController.setRequestedView).not.toHaveBeenCalled();
   });
 
   // Guards the exact regression the review flagged: the perf suite also

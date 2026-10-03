@@ -20,8 +20,13 @@ export type DatasetLoadKind = 'default' | 'opfs' | 'user';
  * a `?dataset=` URL (deep link or Back/Forward), a user file import, or the
  * default/OPFS startup load (including the fallback after an unknown or
  * failed URL id).
+ *
+ * A dataset-change report can also say `'superseded'`, which no load is
+ * requested with: a newer user request superseded the load while it was
+ * rendering, so it is on screen until that request's own load replaces it,
+ * and the URL, which that request owns, must not be written for it.
  */
-export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup';
+export type DatasetChangeSource = 'menu' | 'url' | 'user' | 'startup' | 'superseded';
 
 /**
  * The real result of an example load, distinguishing a genuine failure from

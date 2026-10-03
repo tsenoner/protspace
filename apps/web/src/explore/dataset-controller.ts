@@ -269,8 +269,9 @@ export function createDatasetController({
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
-    // True only once this load has fully rendered; a stale/superseded or
-    // throwing load resolves its pending finalization as a failure.
+    // True only once this load has rendered and finalized; a stale load, one
+    // superseded before it rendered, or a throwing one resolves its pending
+    // finalization as a failure.
     let success = false;
 
     try {
@@ -300,39 +301,43 @@ export function createDatasetController({
         return;
       }
 
-      // A load superseded by a newer user request, before or during `loadData`,
-      // must not label itself, emit, save, or touch the view: the newer
-      // request owns the screen, and its own load renders over this one or
-      // its fallback runs. That covers example loads, and also the startup
-      // restore of the stored import and a user import, whose emit would
-      // otherwise remove `dataset=` from the entry a Back/Forward went to. The
-      // queue-level check above can't see this (this load is still the
-      // running one), so it is checked here and again after each await below.
+      // A load a newer user request has superseded by now must not save,
+      // render, label itself, emit, or touch the view: the newer request owns
+      // the screen, and its own load renders over this one or its fallback
+      // runs. That covers example loads, and also the startup restore of the
+      // stored import and a user import, whose emit would otherwise remove
+      // `dataset=` from the entry a Back/Forward went to. The queue-level
+      // check above can't see this (this load is still the running one).
       const isSuperseded = () => isLoadSuperseded(loadMeta);
-      const skipSupersededLoad = async () => {
-        if (loadMeta.kind !== 'opfs') {
-          return;
-        }
-        // The stored import decoded fine; only a newer request kept it off
-        // screen. Record that, so no 'pending' status is left behind to offer
-        // recovery for it, and a later startup load restores it.
-        try {
-          await markLastLoadStatus('success');
-        } catch (statusError) {
-          console.warn('Failed to update OPFS load status to success:', statusError);
-        }
-      };
-
       if (isSuperseded()) {
-        await skipSupersededLoad();
+        if (loadMeta.kind === 'opfs') {
+          // The stored import decoded fine; only a newer request kept it off
+          // screen. Record that, so no 'pending' status is left behind to
+          // offer recovery for it, and a later startup load restores it.
+          try {
+            await markLastLoadStatus('success');
+          } catch (statusError) {
+            console.warn('Failed to update OPFS load status to success:', statusError);
+          }
+        }
         return;
       }
       if (loadMeta.example && loadMeta.epoch !== undefined) {
         // From here the example replaces the stored import and the plot, so
         // it can no longer be cancelled (a Back/Forward that only changes the
-        // view leaves it to finish); a newer user request still supersedes it.
+        // view leaves it to finish).
         persistedDatasetController.commitExampleLoad(loadMeta.epoch);
       }
+
+      // From here the load replaces the stored import (saving a user import,
+      // clearing it for a menu choice) and then the plot, so it finishes even
+      // when a newer user request supersedes it meanwhile. Stopping between
+      // the two would leave the store out of step with the screen: the import
+      // still on screen deleted, or a new one saved as 'pending' but never
+      // shown, which the next visit offers to recover. The newer request's own
+      // load is queued behind this one and replaces it; until then this load
+      // leaves the view request and the URL, which that request owns, alone
+      // (`isSuperseded()` below).
 
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
@@ -347,9 +352,6 @@ export function createDatasetController({
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
-        if (isSuperseded()) {
-          return;
-        }
       } else if (loadMeta.example?.replacesStoredImport) {
         // A menu choice replaces the stored import only now that the example
         // has downloaded, decoded and is still current — never before the
@@ -361,9 +363,6 @@ export function createDatasetController({
           await clearLastImportedFile();
         } catch (error) {
           console.warn('Failed to clear persisted dataset before showing example dataset:', error);
-        }
-        if (isSuperseded()) {
-          return;
         }
       }
 
@@ -381,26 +380,25 @@ export function createDatasetController({
       if (loadMeta.example) {
         warnOnMissingDefaultViewNames(loadMeta.example.entry, data);
       }
-      if (loadMeta.example?.source === 'menu') {
+      if (loadMeta.example?.source === 'menu' && !isSuperseded()) {
         // A menu choice opens the example on its curated view, contours Off.
         // The recorded request still holds the previous dataset's annotation,
         // projection, tooltip and contour mode, which would otherwise carry
         // over wherever the names also exist in this bundle;
         // `getDatasetSearchParamsUpdate` drops the same parameters from the
-        // pushed URL. Reset only here, for a load
-        // that decoded and is still current, so a failed or superseded menu
-        // choice leaves the request, the plot and the URL as they were.
+        // pushed URL. Reset only here, for a load that decoded and is still
+        // current, so a failed or superseded menu choice leaves the request,
+        // the plot and the URL as they were.
         viewController.recordRequestedView(createEmptyExploreViewRequest());
       }
 
       await loadData(data);
 
-      // Re-check: `loadData` can take long enough for a newer user request
-      // to land while it was running (see the check above).
-      if (isSuperseded()) {
-        await skipSupersededLoad();
-        return;
-      }
+      // `loadData` can take long enough for a newer user request to land
+      // while it runs. This dataset is on screen all the same, so it is
+      // labelled and recorded as the one displayed; only the URL and the view
+      // request, which that request owns, are left alone.
+      const superseded = isSuperseded();
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
@@ -429,11 +427,17 @@ export function createDatasetController({
       if (loadMeta.example) {
         setCurrentDatasetName(loadMeta.example.entry.label);
         setCurrentExampleId(loadMeta.example.entry.id);
-        emitDatasetChange(loadMeta.example.entry.id, loadMeta.example.source);
+        emitDatasetChange(
+          loadMeta.example.entry.id,
+          superseded ? 'superseded' : loadMeta.example.source,
+        );
       } else if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);
         setCurrentExampleId(null);
-        emitDatasetChange(null, loadMeta.kind === 'user' ? 'user' : 'startup');
+        emitDatasetChange(
+          null,
+          superseded ? 'superseded' : loadMeta.kind === 'user' ? 'user' : 'startup',
+        );
       }
 
       // Must be set before the restore block so that any view-change emitted by
@@ -443,73 +447,78 @@ export function createDatasetController({
       currentDatasetHash = datasetHash;
       currentUnplacedProteinCount = unplacedProteinCount;
 
-      const latestRequest = viewController.getLatestViewRequest();
-      // A first-ever load (no previous dataset) that happens to be a user file drop
-      // is NOT a stale-URL situation — there is no previous dataset whose tooltip
-      // param could be carried over — so honor the URL like annotation/projection do.
-      const isUserImport = loadMeta.kind === 'user' && hadPreviousDataset;
+      // The tooltip restore and the view apply resolve the latest view request,
+      // which a newer request that superseded this load has replaced with its
+      // own, and they write the URL entry that request went to.
+      if (!superseded) {
+        const latestRequest = viewController.getLatestViewRequest();
+        // A first-ever load (no previous dataset) that happens to be a user file drop
+        // is NOT a stale-URL situation — there is no previous dataset whose tooltip
+        // param could be carried over — so honor the URL like annotation/projection do.
+        const isUserImport = loadMeta.kind === 'user' && hadPreviousDataset;
 
-      // Read the persisted tooltip set once; used in both branches below.
-      const savedTooltip = readTooltipAnnotations(datasetHash);
+        // Read the persisted tooltip set once; used in both branches below.
+        const savedTooltip = readTooltipAnnotations(datasetHash);
 
-      if (isUserImport) {
-        // The URL may still carry a tooltip= param that was set for the PREVIOUSLY
-        // loaded dataset (A). That param is stale for the newly imported dataset (B)
-        // and must be ignored. We always restore B's own persisted tooltip set and,
-        // when the URL had a stale tooltip param, we force a URL rewrite so the URL
-        // reflects B's state rather than A's.
-        //
-        // Only emit a view change when there is something to do:
-        //   - saved has entries (need to restore them), OR
-        //   - URL had a stale param (need to erase it from the URL).
-        const staleUrlHadTooltip = latestRequest.present.tooltip;
-        if (savedTooltip.length > 0 || staleUrlHadTooltip) {
-          viewController.setRequestedView({
-            ...latestRequest,
-            requested: {
-              ...latestRequest.requested,
-              tooltip: savedTooltip.length > 0 ? savedTooltip : undefined,
-            },
-            present: {
-              ...latestRequest.present,
-              tooltip: savedTooltip.length > 0,
-            },
-            normalize: {
-              ...latestRequest.normalize,
-              // Setting normalize.tooltip=true forces the URL-sync handler to
-              // rewrite (or delete) the tooltip param so the URL matches B's
-              // effective tooltip instead of carrying A's stale value.
-              // This is needed for both the "saved non-empty" case (case 1, sets
-              // tooltip=<saved>) and the "saved empty" case (case 2, removes the
-              // param). When the URL had no stale param and saved is non-empty
-              // (case 3), this stays false so the URL is left silent as expected.
-              tooltip: staleUrlHadTooltip || latestRequest.normalize.tooltip,
-            },
-          });
-        }
-      } else {
-        // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
-        // is authoritative. Only restore the persisted set when the URL is silent.
-        // Examples never have one (their saved state was wiped above), so a
-        // menu choice, whose request was reset above, lands on the curated view.
-        if (!latestRequest.present.tooltip) {
-          if (savedTooltip.length > 0) {
+        if (isUserImport) {
+          // The URL may still carry a tooltip= param that was set for the PREVIOUSLY
+          // loaded dataset (A). That param is stale for the newly imported dataset (B)
+          // and must be ignored. We always restore B's own persisted tooltip set and,
+          // when the URL had a stale tooltip param, we force a URL rewrite so the URL
+          // reflects B's state rather than A's.
+          //
+          // Only emit a view change when there is something to do:
+          //   - saved has entries (need to restore them), OR
+          //   - URL had a stale param (need to erase it from the URL).
+          const staleUrlHadTooltip = latestRequest.present.tooltip;
+          if (savedTooltip.length > 0 || staleUrlHadTooltip) {
             viewController.setRequestedView({
               ...latestRequest,
               requested: {
                 ...latestRequest.requested,
-                tooltip: savedTooltip,
+                tooltip: savedTooltip.length > 0 ? savedTooltip : undefined,
               },
               present: {
                 ...latestRequest.present,
-                tooltip: true,
+                tooltip: savedTooltip.length > 0,
+              },
+              normalize: {
+                ...latestRequest.normalize,
+                // Setting normalize.tooltip=true forces the URL-sync handler to
+                // rewrite (or delete) the tooltip param so the URL matches B's
+                // effective tooltip instead of carrying A's stale value.
+                // This is needed for both the "saved non-empty" case (case 1, sets
+                // tooltip=<saved>) and the "saved empty" case (case 2, removes the
+                // param). When the URL had no stale param and saved is non-empty
+                // (case 3), this stays false so the URL is left silent as expected.
+                tooltip: staleUrlHadTooltip || latestRequest.normalize.tooltip,
               },
             });
           }
+        } else {
+          // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
+          // is authoritative. Only restore the persisted set when the URL is silent.
+          // Examples never have one (their saved state was wiped above), so a
+          // menu choice, whose request was reset above, lands on the curated view.
+          if (!latestRequest.present.tooltip) {
+            if (savedTooltip.length > 0) {
+              viewController.setRequestedView({
+                ...latestRequest,
+                requested: {
+                  ...latestRequest.requested,
+                  tooltip: savedTooltip,
+                },
+                present: {
+                  ...latestRequest.present,
+                  tooltip: true,
+                },
+              });
+            }
+          }
         }
-      }
 
-      viewController.applyLatestViewForDatasetLoad(data);
+        viewController.applyLatestViewForDatasetLoad(data);
+      }
 
       // Only for the user's own imports: a dataset the app serves itself never shows it,
       // whatever its format, since a visitor cannot convert it (they are all v3 anyway).

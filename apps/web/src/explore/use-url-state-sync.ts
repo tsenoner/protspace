@@ -66,8 +66,19 @@ export function useExploreUrlStateSync(
       // A menu or URL load shows its example; a user import or the startup
       // load none. A URL load's entry already names its example (deep link or
       // Back/Forward), so `getDatasetSearchParamsUpdate` writes nothing then.
-      currentDatasetIdRef.current = source === 'menu' || source === 'url' ? exampleId : null;
-      displayedDatasetIdRef.current = currentDatasetIdRef.current;
+      const displayed = source === 'user' || source === 'startup' ? null : exampleId;
+      displayedDatasetIdRef.current = displayed;
+      if (source === 'superseded') {
+        // A load a newer request superseded mid-render: on screen, but the URL
+        // is that request's, and so is the dataset a URL-driven switch still
+        // loading is headed to. That switch settles to the displayed dataset
+        // if it fails (`startDatasetSwitch`).
+        if (pendingSwitchRef.current === null) {
+          currentDatasetIdRef.current = displayed;
+        }
+        return;
+      }
+      currentDatasetIdRef.current = displayed;
 
       const update = getDatasetSearchParamsUpdate(searchParamsRef.current, exampleId, source);
       if (!update) {

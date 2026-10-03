@@ -522,6 +522,19 @@ describe('explore url state', () => {
     });
 
     describe('getDatasetSearchParamsUpdate', () => {
+      it("writes nothing for a load a newer request superseded: the URL is that request's", () => {
+        expect(
+          getDatasetSearchParamsUpdate(
+            new URLSearchParams('dataset=demo'),
+            'phosphatase',
+            'superseded',
+          ),
+        ).toBeNull();
+        expect(
+          getDatasetSearchParamsUpdate(new URLSearchParams('dataset=demo'), null, 'superseded'),
+        ).toBeNull();
+      });
+
       it('pushes the dataset param on a menu choice, dropping the view params', () => {
         const update = getDatasetSearchParamsUpdate(
           new URLSearchParams('annotation=ec'),

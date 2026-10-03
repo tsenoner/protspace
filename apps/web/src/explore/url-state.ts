@@ -40,14 +40,15 @@ const EXPLORE_VIEW_PARAM_KEYS = ['annotation', 'projection', 'tooltip', 'density
  * pushes `dataset=<id>` without the view parameters, `density` included; a
  * user import or a startup/fallback load deletes the parameter with a replace
  * (a no-op when it is already absent); a load that happened because of the
- * URL itself is never written back.
+ * URL itself is never written back, nor is one a newer request superseded,
+ * since the URL is that request's.
  */
 export function getDatasetSearchParamsUpdate(
   searchParams: URLSearchParams,
   exampleId: string | null,
   source: DatasetChangeSource,
 ): { next: URLSearchParams; replace: boolean } | null {
-  if (source === 'url') {
+  if (source === 'url' || source === 'superseded') {
     return null;
   }
 

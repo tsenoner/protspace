@@ -103,6 +103,7 @@ function createRealController(
     setCurrentExampleId: options.setCurrentExampleId,
     setCurrentDatasetName: options.setCurrentDatasetName,
     overlayController: options.overlayController,
+    viewController: options.viewController,
   };
 }
 
@@ -351,11 +352,11 @@ describe('a load a newer user request supersedes after it has started', () => {
     expect(lastStatusMark()).toEqual(['success']);
   });
 
-  it('the startup restore superseded while it renders emits nothing and records its success', async () => {
+  it('the startup restore superseded while it renders is shown, writes no URL, and records its success', async () => {
     const stored = new File(['x'], 'mine.parquetbundle');
     vi.mocked(loadLastImportedFile).mockResolvedValue(stored);
     vi.mocked(readLastLoadStatus).mockResolvedValue({ status: 'success', failedAttempts: 0 });
-    const { controller } = createRealController(async (file, ctrl) => {
+    const { controller, setCurrentDatasetName } = createRealController(async (file, ctrl) => {
       mocks.loadData.mockImplementationOnce(async () => {
         ctrl.beginUserRequest();
       });
@@ -364,7 +365,60 @@ describe('a load a newer user request supersedes after it has started', () => {
     const changes = recordDatasetChanges(controller);
 
     await controller.loadPersistedOrDefaultDataset();
-    expect(changes).toEqual([]);
+    // Its plot is on screen until the newer request's load replaces it, so it
+    // is named and reported as displayed, but as 'superseded': the URL belongs
+    // to the newer request, and no (null, 'startup') removes its `dataset=`.
+    expect(controller.hasDisplayedDataset()).toBe(true);
+    expect(setCurrentDatasetName).toHaveBeenLastCalledWith(stored.name);
+    expect(changes).toEqual([[null, 'superseded']]);
+    expect(lastStatusMark()).toEqual(['success']);
+  });
+
+  it('a menu example superseded while it clears the stored import still renders, so the store matches the screen', async () => {
+    const { controller, setCurrentExampleId, viewController } = createRealController(
+      async (file, ctrl) => {
+        // A Back/Forward lands while the stored import is being deleted.
+        vi.mocked(clearLastImportedFile).mockImplementationOnce(async () => {
+          ctrl.beginUserRequest();
+        });
+        await loadSucceeds(file, ctrl);
+      },
+    );
+    stubOkFetch();
+    const changes = recordDatasetChanges(controller);
+
+    expect(await controller.loadExampleDatasetAndClearPersistedFile(DEMO, 'menu')).toBe(
+      'superseded',
+    );
+    // The import it replaced is gone, so the example, not the import's old
+    // plot, is what the screen shows until the newer request replaces it.
+    expect(clearLastImportedFile).toHaveBeenCalledTimes(1);
+    expect(mocks.loadData).toHaveBeenCalledTimes(1);
+    expect(setCurrentExampleId).toHaveBeenLastCalledWith(DEMO.id);
+    expect(changes).toEqual([[DEMO.id, 'superseded']]);
+    // The view request is the newer request's: neither reset nor applied.
+    expect(viewController.recordRequestedView).not.toHaveBeenCalled();
+    expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
+  });
+
+  it('a user import superseded while it is saved still renders and records its success', async () => {
+    const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
+      vi.mocked(saveLastImportedFile).mockImplementationOnce(async () => {
+        ctrl.beginUserRequest();
+      });
+      await ctrl.handleDataLoaded(dataLoadedEvent({ settings: null, source: 'user', file }));
+    });
+    const changes = recordDatasetChanges(controller);
+
+    const file = new File(['x'], 'mine.parquetbundle');
+    loadQueue.registerFileLoad(file, 'user', undefined, controller.beginUserRequest());
+    await dataLoader.loadFromFile(file, { source: 'user' });
+
+    // Saved, it is the stored import: shown and marked loaded, never left
+    // 'pending' for the next visit to offer recovery for.
+    expect(saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.loadData).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual([[null, 'superseded']]);
     expect(lastStatusMark()).toEqual(['success']);
   });
 
