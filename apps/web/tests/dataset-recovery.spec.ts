@@ -67,6 +67,10 @@ async function clearOpfs(page: Page): Promise<void> {
 test.describe('dataset recovery banner', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
+    // Let this page's startup finish reading the store before seeding it: a startup read that
+    // lands between the seed's data and metadata writes sees a store without metadata and
+    // clears the whole directory, so the reload under test finds nothing.
+    await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await clearOpfs(page);
   });

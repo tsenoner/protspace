@@ -27,9 +27,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  e2e-tests:
-    name: E2E Tests (Playwright)
+  # Every default project except the Firefox/WebKit compatibility projects below. No apt:
+  # every Chromium system library is already on the ubuntu-24.04 image. `--with-deps chromium
+  # firefox webkit` used to pull ~180 packages (125 MB, nearly all WebKit's GStreamer/GTK4
+  # stack) from azure.archive.ubuntu.com on every run, and when that mirror stalls the fetch
+  # alone took 19 min (run 36728112695) and 31 min (run 34576016462) —
+  # actions/runner-images#14594. Playwright checks the host libraries at launch, so a library
+  # the image drops fails the first test loudly rather than hanging.
+  e2e-chromium:
+    name: E2E Tests (Chromium)
     runs-on: ubuntu-latest
+    # A normal run is 6-10 min. Without this the default is 360 min.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,21 +72,25 @@ jobs:
         id: pw
         run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
-      # Keyed on the browser build, not the lockfile: a lockfile hash would rewrite ~456MB
+      # Keyed on the browser build, not the lockfile: a lockfile hash would rewrite the cache
       # on every dependency bump. No restore-keys for the same reason — a prefix match
       # restores superseded browser dirs that then get re-saved.
       - name: Cache Playwright browsers
-        id: pw-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+          key: ${{ runner.os }}-playwright-chromium-shell-${{ steps.pw.outputs.version }}
 
-      # Unconditional on purpose. `--with-deps` always installs the apt packages (which live
-      # outside the cached directory), and skips the download of any browser whose
-      # INSTALLATION_COMPLETE marker the cache restored. One step covers hit and miss.
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      # Headless tests launch chrome-headless-shell (no `channel` is set anywhere), so the
+      # full Chromium build is dead weight. Skips any download the cache restored.
+      - name: Install Playwright Chromium
+        timeout-minutes: 5
+        run: pnpm exec playwright install --only-shell chromium
+
+      # Hosted runners of the same label differ in speed: one SHA ran its test step in 5.4 min
+      # on some nights and 8.2 min on others. Log the CPU before blaming a code change.
+      - name: Runner hardware
+        run: nproc && lscpu | grep 'Model name'
 
       # Only the packages the dev server resolves through node_modules. The tests are served
       # by `pnpm dev:app` (a Vite dev server, see webServer in playwright.config.ts), so
@@ -87,12 +100,85 @@ jobs:
 
       - name: Run Playwright tests
         run: pnpm test:e2e
+        env:
+          E2E_BROWSERS: chromium
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-chromium
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # The Firefox/WebKit projects, which run only the @cross-browser/@opfs-browser compatibility
+  # journeys. They run in the official image, which ships Firefox, WebKit and their system
+  # libraries, so this job does no apt at all. The tag must match @playwright/test in
+  # pnpm-lock.yaml exactly: bump both together; the version check below fails fast if they
+  # drift.
+  e2e-cross-browser:
+    name: E2E Tests (Firefox, WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.0-noble
+      # The runner's uid, which owns the mounted workspace and HOME (Playwright CI docs).
+      options: --user 1001
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The image ships Node 24; stay on the version the rest of CI and .nvmrc use.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      # Separate key from the host job: the store path differs inside the container.
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-container-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-container-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Playwright matches the image
+        run: |
+          installed=$(pnpm exec playwright --version | awk '{print $2}')
+          if [ "$installed" != "1.61.0" ]; then
+            echo "::error::@playwright/test is $installed but the container image is v1.61.0; bump the image tag in e2e.yml"
+            exit 1
+          fi
+
+      - name: Build workspace packages
+        run: pnpm build --filter=@protspace/core --filter=@protspace/utils
+
+      - name: Run Playwright tests
+        run: pnpm test:e2e
+        env:
+          E2E_BROWSERS: firefox,webkit
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-cross-browser
           path: |
             apps/web/playwright-report
             apps/web/test-results

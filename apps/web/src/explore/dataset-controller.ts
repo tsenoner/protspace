@@ -98,6 +98,9 @@ export function createDatasetController({
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
+    // Set once this call is known to finish the running load, which is the load that
+    // showed the overlay. A stale result must leave that load's overlay alone.
+    let ownsOverlay = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -125,6 +128,7 @@ export function createDatasetController({
         });
         return;
       }
+      ownsOverlay = true;
 
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
@@ -270,7 +274,16 @@ export function createDatasetController({
       }
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
+      // Nothing later would take the overlay down after a failure here, even one
+      // thrown before the stale check could establish ownership.
+      ownsOverlay = true;
     } finally {
+      // The load has settled — rendered, settings and view restored, status recorded,
+      // or failed along the way — so take the overlay down now, and before the next
+      // queued load may start and show its own.
+      if (ownsOverlay) {
+        overlayController.update(false);
+      }
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence);
       }
@@ -281,8 +294,18 @@ export function createDatasetController({
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;
+    const isCancelled = customEvent.detail.originalError?.name === 'AbortError';
 
-    if (customEvent.detail.originalError?.name === 'AbortError') {
+    // `data-loading-start` showed the overlay for this load; nothing else would take
+    // it down, so a failed or cancelled load would leave it covering the page. A
+    // newer queued load shows it again through its own `data-loading-start`. A failed
+    // persisted dataset is the exception: it decides below whether the app goes on to
+    // load the demo dataset, and keeps the page covered until then.
+    if (isCancelled || runningLoadMeta?.kind !== 'opfs') {
+      overlayController.update(false);
+    }
+
+    if (isCancelled) {
       console.log('Data load cancelled by user');
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence);
@@ -302,16 +325,34 @@ export function createDatasetController({
     }
 
     if (runningLoadMeta?.kind === 'opfs') {
-      if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
-      }
-
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
+        // A newer load is already queued and takes over the overlay once this one
+        // is released.
+        overlayController.update(false);
+        loadQueue.resolvePendingLoadFinalization(loadSequence);
         await persistedDatasetController.clearCorruptedPersistedDataset('could not be loaded');
         return;
       }
 
+      // Keep the page covered while the demo dataset is fetched, so nothing can be
+      // imported in the gap and then be replaced by the demo load queued behind it.
+      overlayController.update(
+        true,
+        5,
+        'Loading the demo dataset...',
+        'The stored dataset could not be loaded',
+      );
+      if (loadSequence !== null) {
+        loadQueue.resolvePendingLoadFinalization(loadSequence);
+      }
       await persistedDatasetController.recoverFromCorruptedPersistedDataset('could not be loaded');
+
+      // The demo load dismisses the overlay itself once it settles. When it never
+      // started (the fetch failed) and no other load is running, nothing else will.
+      const runningAfterRecovery = loadQueue.getRunningLoadMeta();
+      if (runningAfterRecovery === null || runningAfterRecovery.sequence === loadSequence) {
+        overlayController.update(false);
+      }
       return;
     }
 

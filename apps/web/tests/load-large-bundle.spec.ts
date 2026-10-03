@@ -65,7 +65,7 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
       .locator('input[type="file"]')
       .setInputFiles(SPROT_FIXTURE);
 
-    await waitForExploreDataLoad(page, 90_000);
+    await waitForExploreDataLoad(page, { timeout: 90_000, proteinCount: 573_649 });
 
     // Verify page did not OOM-crash (Aw, Snap = error code 5).
     expect(pageCrashed, 'Page crashed (OOM) during or after loading sprot_50').toBe(false);
@@ -222,7 +222,7 @@ test.describe('label atlas at Swiss-Prot scale on a floor-limit device', () => {
       .locator('protspace-data-loader')
       .locator('input[type="file"]')
       .setInputFiles(SPROT_FIXTURE);
-    await waitForExploreDataLoad(page, 120_000);
+    await waitForExploreDataLoad(page, { timeout: 120_000, proteinCount: 573_649 });
 
     // Nothing the device would refuse was ever issued. On the pre-fix renderer
     // this records [[2048, 2241]] and then a refused update on every restage.
