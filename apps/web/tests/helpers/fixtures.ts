@@ -46,8 +46,8 @@ export const PE1_40026_FIXTURE = fixture('pe1_40026_pca3d.parquetbundle');
 /**
  * The example role fixtures (`helpers/example-fixtures.ts`), derived from the
  * fixtures above by `derive-example-role-fixtures.py` in the fixtures folder.
- * Each holds the view names of both examples its role stands for, the interim
- * and the final one, as its docstring lists.
+ * Each holds the view names of the catalog example its role stands for, as
+ * that script's docstring lists.
  */
 export const ROLE_SMALL_FIXTURE = fixture('example_role_small_5181.parquetbundle');
 export const ROLE_OTHER_FIXTURE = fixture('example_role_other_1587.parquetbundle');

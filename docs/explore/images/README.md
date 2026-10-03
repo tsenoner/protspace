@@ -60,5 +60,4 @@ RUN_EXAMPLES_E2E=1 pnpm test:e2e --project=examples-live
 ```
 
 Set `EXAMPLES_THUMBNAIL_DIR` to write them elsewhere, for example to review a candidate curated
-view before committing it. `pnpm docs:examples:check` fails when a card's thumbnail is missing
-(`THUMBNAILS_PENDING` in `docs/scripts/example-details.ts` lists the ones not captured yet).
+view before committing it. `pnpm docs:examples:check` fails when a card's thumbnail is missing.

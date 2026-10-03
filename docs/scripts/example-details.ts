@@ -10,14 +10,8 @@
  * them knows: what the dataset is, how to read its view, and where its proteins came from.
  *
  * `pnpm docs:examples:check` (in CI and precommit) fails when an id here and the catalog disagree,
- * when `lookAt` does not name the entry's colour-by annotation, or when the page is stale.
- *
- * Until the catalog swap, the cards of the final examples the app does not serve yet take their
- * catalog fields from `FINAL_EXAMPLE_SPECS` in the catalog module.
- *
- * `‹…›` marks a value still to come (an author fact, or a number from a bundle not built yet). The
- * page renders it as is, flagged by a warning at the top, and the check refuses any once the
- * catalog swap has emptied `INTERIM_CATALOG_IDS`.
+ * when `lookAt` does not name the entry's colour-by annotation, when a card's thumbnail is missing,
+ * when the page has a `‹…›` placeholder (a value still to come), or when the page is stale.
  */
 
 export interface ExampleDetails {
@@ -164,18 +158,3 @@ export const EXAMPLE_DETAILS: Readonly<Record<string, ExampleDetails>> = {
     ],
   },
 };
-
-/**
- * The interim catalog's test and perf bundles, which had no card. The check fails when one of them
- * is no longer in the catalog, so the catalog swap (tasks 7.7, 7.10) emptied the list, and an empty
- * list is what makes the check refuse `‹…›` placeholders. The cleanup after the swap deletes it.
- */
-export const INTERIM_CATALOG_IDS: readonly string[] = [];
-
-/**
- * Cards whose thumbnail (`docs/explore/images/examples/<id>.png`) is not captured yet. The
- * `examples-live` Playwright project writes them once the final bundles are built and the curated
- * views reviewed (tasks 7.5, 7.10). The check fails when a listed thumbnail exists, and, after the
- * catalog swap, while the list names anything.
- */
-export const THUMBNAILS_PENDING: readonly string[] = [];

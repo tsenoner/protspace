@@ -7,18 +7,16 @@
 The E2E suite routes every catalog example it loads to a small fixture
 (`apps/web/tests/helpers/example-fixtures.ts`) that must hold the example's
 curated `defaultView` names, or the example opens with a drift warning and the
-scenario fails. The suite names examples by the part they play (small, other,
-slow, eat), and until the catalog swap each role stands for an interim example
-as well as a final one, so every role fixture holds both examples' view names:
+scenario fails. The suite names examples by the part they play:
 
-    role   interim id       final id             fixture
-    small  5K               human-fly            example_role_small_5181
-    other  phosphatase      beta-lactamase       example_role_other_1587
-    slow   40K              swissprot            example_role_slow_40026
-    eat    venom_eat_stats  three-finger-toxins  example_role_eat_811
+    role   example id           fixture                  derived from
+    small  human-fly            example_role_small_5181  toxprot_5181_pca3d
+    other  beta-lactamase       example_role_other_1587  phosphatase_1587
+    slow   swissprot            example_role_slow_40026  pe1_40026_pca3d
+    eat    three-finger-toxins  example_role_eat_811     venom_eat_stats_811
 
-Each is derived from a pinned fixture, keeping its proteins, its coordinates
-and the columns the scenarios name. The final projection name
+Each keeps its pinned fixture's proteins, its coordinates and the columns the
+scenarios name, and adds the example's view names. The projection name
 (`ProtT5 — UMAP 2`) is a copy of an existing layout, and the added columns are
 synthetic: the suite tests the app's example mechanics, not what the
 examples hold. The eat fixture relabels the venom fixture's transferred EC
@@ -129,7 +127,7 @@ FAMILIES = [
 
 
 def small() -> bytes:
-    """5K + species, protein_families and reviewed; PCA_2 also as `ProtT5 — UMAP 2`."""
+    """The 5,181 proteins + species, protein_families and reviewed; PCA_2 also as `ProtT5 — UMAP 2`."""
     annotations, metadata, data = (
         read_table(p) for p in read_parts("toxprot_5181_pca3d.parquetbundle")
     )
@@ -157,7 +155,7 @@ def other() -> bytes:
 
 
 def slow() -> bytes:
-    """40K + domain, protein_families and species (and still no phylum); PCA_2 also as `ProtT5 — UMAP 2`."""
+    """The 40,026 proteins + domain, protein_families and species (and still no phylum); PCA_2 also as `ProtT5 — UMAP 2`."""
     annotations, metadata, data = (
         read_table(p) for p in read_parts("pe1_40026_pca3d.parquetbundle")
     )

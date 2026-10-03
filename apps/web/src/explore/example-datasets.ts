@@ -12,17 +12,6 @@
  * `example-manifest.ts`, which `write_manifest.py` reads from the file itself,
  * and a unit test checks every `defaultView` name against that record.
  *
- * Two catalogs live here until the cleanup after the catalog swap
- * (`curated-example-datasets` tasks 7.7 and 7.9), and `FINAL_CATALOG_IS_LIVE`
- * picks the one the app serves:
- *   - the final catalog, served since the swap: the startup demo, the ProtSpace
- *     manuscript's datasets and one curated EAT showcase, from the showcase
- *     bundles of the `showcase-2026_03` release;
- *   - the interim catalog, served before the swap: the startup demo plus the
- *     test and perf bundles the app shipped under `apps/web/public/data/`. The
- *     swap removed that directory and their manifest records, so it can no
- *     longer be served; the cleanup deletes it.
- *
  * Order matters: the demo is first, then the rest ascend by protein count, to
  * match the Import menu's "Examples" section.
  */
@@ -152,140 +141,15 @@ function defineExample({ name, ...spec }: ExampleSpec, index: number): ExampleDa
 }
 
 /**
- * The catalog swap switch (`curated-example-datasets` task 7.7).
- *
- * `true` serves the final catalog. The swap set it in the commit that wrote
- * the final entries' manifest records (`stage-release`) and removed
- * `apps/web/public/data/`: an entry without a record throws at import, and the
- * interim entries' files lived in that directory, so the three landed together.
- * A later cleanup deletes the interim catalog and this switch.
- */
-export const FINAL_CATALOG_IS_LIVE: boolean = true;
-
-/** The interim catalog: the test and perf bundles the app served from `apps/web/public/data/`. */
-const INTERIM_EXAMPLE_SPECS: readonly ExampleSpec[] = [
-  {
-    id: 'demo',
-    name: 'Demo',
-    description:
-      'Mixed UniProt sample with ESM2 and ProtT5 projections, taxonomy, Pfam/CATH and EC.',
-    insight:
-      'Toxin families such as three-finger toxins and phospholipase A2 form their own clusters.',
-    defaultView: {
-      projection: 'ProtT5 — UMAP 2',
-      annotation: 'protein_families',
-      tooltip: ['species', 'ec'],
-    },
-  },
-  {
-    id: 'venom_eat_stats',
-    name: 'Venom EAT',
-    description:
-      'Venom proteins with EAT-transferred EC and protein-family predictions, GO terms and cluster labels.',
-    insight: 'Rings mark EC numbers transferred by EAT from the nearest annotated neighbour.',
-    figure: 'Fig. 4',
-    defaultView: {
-      projection: 'ProtT5 — UMAP 2',
-      annotation: 'ec',
-      tooltip: ['protein_families', 'species'],
-    },
-  },
-  {
-    id: 'phosphatase',
-    name: 'Phosphatases',
-    description:
-      'Phosphatases with rich domain annotations (Pfam, SMART, CDD, PANTHER, TED) and predicted localisation.',
-    insight: 'Phosphatase families laid out by ESM2-650M embeddings.',
-    defaultView: {
-      projection: 'ESM2-650M — UMAP 2',
-      annotation: 'protein_families',
-      tooltip: ['ec', 'species'],
-    },
-  },
-  {
-    id: '5K',
-    name: 'Swiss-Prot 5K',
-    description: 'Small Swiss-Prot subset with a 3D PCA projection and length bins.',
-    insight: 'Phyla on a 2D PCA; switch to PCA 3 for the 3D view.',
-    defaultView: { projection: 'PCA_2', annotation: 'phylum', tooltip: ['protein_existence'] },
-  },
-  {
-    id: '7K_toxprot',
-    name: 'ToxProt',
-    description: 'Animal toxins from UniProt ToxProt with taxonomy, domains and signal peptides.',
-    insight: 'Toxin families on a UMAP of ToxProt.',
-    defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
-  },
-  {
-    id: '35K_ec_brenda',
-    name: 'EC (BRENDA)',
-    description: 'Enzymes with BRENDA EC numbers.',
-    insight: 'Enzymes coloured by domain of life on one UMAP.',
-    defaultView: {
-      projection: 'UMAP_2',
-      annotation: 'domain',
-      tooltip: ['protein_families', 'species'],
-    },
-  },
-  {
-    id: 'beta_lactamase_ec',
-    name: 'β-lactamases (EC)',
-    description: 'β-lactamases selected by EC number.',
-    insight: 'β-lactamase families on a UMAP.',
-    defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
-  },
-  {
-    id: '40K',
-    name: 'Swiss-Prot 40K',
-    description: 'Swiss-Prot subset with a 3D PCA projection.',
-    insight: 'Sequence-length bins on a 2D PCA; switch to PCA 3 for the 3D view.',
-    defaultView: { projection: 'PCA_2', annotation: 'length_quantile', tooltip: ['pfam'] },
-  },
-  {
-    id: '105K_homoSapiens_drosophilaMelanogaster',
-    name: 'Human + fly',
-    description: 'Human and Drosophila melanogaster proteomes.',
-    insight: 'Human and fly proteins share one layout; most families overlap across species.',
-    figure: 'Fig. 2B',
-    defaultView: {
-      projection: 'UMAP_2',
-      annotation: 'species',
-      tooltip: ['protein_families', 'reviewed'],
-    },
-  },
-  {
-    id: '127K_beta_lactamase',
-    name: 'β-lactamases',
-    description: 'β-lactamase family, broad selection.',
-    insight: 'β-lactamase families on a UMAP.',
-    defaultView: { projection: 'UMAP_2', annotation: 'protein_families', tooltip: ['species'] },
-  },
-  {
-    id: 'beta_lactamase_pn',
-    name: 'β-lactamases (PN)',
-    description: 'Large β-lactamase set for stress-testing at 248K points.',
-    insight: 'The broadest β-lactamase selection, 248K points coloured by domain of life.',
-    // Interim stand-in for `swissprot`. Rough figures from one local dev-server
-    // load (5.8 s, 118 MB of JS heap plus the typed-array buffers).
-    large: { memory: 'a few hundred MB', loadTime: '5–10 s' },
-    defaultView: {
-      projection: 'UMAP_2',
-      annotation: 'domain',
-      tooltip: ['protein_families', 'species'],
-    },
-  },
-];
-
-/**
- * The final catalog: the startup demo, the manuscript's datasets (Fig. 2A, 2B
- * and 3) and one curated EAT showcase, `three-finger-toxins`, which is not a
+ * The catalog: the startup demo, the manuscript's datasets (Fig. 2A, 2B and 3)
+ * and one curated EAT showcase, `three-finger-toxins`, which is not a
  * manuscript dataset: the paper's own EAT sets are benchmarks and test
  * fixtures, not showcases. Every one carries a UMAP, which it opens on, and a
  * PCA. The values only a built bundle can give (the hold-out accuracy,
  * Swiss-Prot's memory and load time) are read from the `showcase-2026_03`
  * build: its `verify.json` and the D2 gate's `d2_measurement.json`.
  */
-export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
+const EXAMPLE_SPECS: readonly ExampleSpec[] = [
   {
     id: 'demo',
     name: 'Venom toxins (demo)',
@@ -359,8 +223,6 @@ export const FINAL_EXAMPLE_SPECS: readonly ExampleSpec[] = [
     },
   },
 ];
-
-const EXAMPLE_SPECS = FINAL_CATALOG_IS_LIVE ? FINAL_EXAMPLE_SPECS : INTERIM_EXAMPLE_SPECS;
 
 export const EXAMPLE_DATASETS: readonly ExampleDataset[] = EXAMPLE_SPECS.map(defineExample);
 

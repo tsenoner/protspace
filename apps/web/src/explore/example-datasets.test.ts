@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DATASETS,
   EXAMPLES_DOCS_URL,
-  FINAL_CATALOG_IS_LIVE,
-  FINAL_EXAMPLE_SPECS,
   findExampleDataset,
   formatDownload,
   formatMegabytes,
@@ -13,21 +11,11 @@ import {
 } from './example-datasets';
 import { EXAMPLE_MANIFEST } from './example-manifest';
 
-// Every repo-hosted manifest record must name a bundle that actually ships
-// under apps/web/public/. Found by glob rather than fs/path/url (which would
-// leak Node types into the browser tsconfig — see
-// packages/core/src/styles/styles-integrity.test.ts for the same pattern) so a
-// typo'd file name fails here instead of at runtime. Release-hosted files are
-// not in the repository; the deploy fetches and verifies them.
-const SHIPPED_BUNDLE_PATHS = new Set(
-  Object.keys({
-    ...import.meta.glob('../../public/data.parquetbundle'),
-    ...import.meta.glob('../../public/data/*.parquetbundle'),
-  }),
-);
-
-// Every bundle committed under apps/web/public/. `public/examples/` is left
-// out: it is gitignored and holds what `pnpm examples:fetch` downloaded.
+// Every bundle committed under apps/web/public/. Found by glob rather than
+// fs/path/url (which would leak Node types into the browser tsconfig; see
+// packages/core/src/styles/styles-integrity.test.ts for the same pattern).
+// `public/examples/` is left out: it is gitignored and holds what
+// `pnpm examples:fetch` downloaded.
 const COMMITTED_PUBLIC_BUNDLES = Object.keys(
   import.meta.glob(['../../public/**/*.parquetbundle', '!../../public/examples/**']),
 );
@@ -61,7 +49,7 @@ describe('example datasets catalog', () => {
   it.each(
     Object.entries(EXAMPLE_MANIFEST.examples).filter(([, record]) => record.hosting === 'repo'),
   )('ships the repo-hosted bundle of "%s" under public/', (_id, record) => {
-    expect(SHIPPED_BUNDLE_PATHS.has(`../../public/${record.file}`)).toBe(true);
+    expect(COMMITTED_PUBLIC_BUNDLES).toContain(`../../public/${record.file}`);
   });
 
   it.each(EXAMPLE_DATASETS)('serves "$id" from where its manifest record says', (entry) => {
@@ -98,31 +86,23 @@ describe('example datasets catalog', () => {
     expect(entry.docsUrl.startsWith(`${EXAMPLES_DOCS_URL}#`)).toBe(true);
   });
 
-  it('marks at least one entry large', () => {
-    expect(EXAMPLE_DATASETS.some((entry) => entry.large)).toBe(true);
-  });
-
-  // Task 4.10: once the final catalog is live, the startup demo is the only
-  // bundle left in the repository; every other example is release-hosted.
-  // The swap removes apps/web/public/data/ in the commit that flips the switch.
-  it.runIf(FINAL_CATALOG_IS_LIVE)('ships no bundle under public/ but the demo', () => {
+  // Task 4.10: the startup demo is the only bundle in the repository; every
+  // other example is release-hosted.
+  it('ships no bundle under public/ but the demo', () => {
     expect(COMMITTED_PUBLIC_BUNDLES).toEqual(['../../public/data.parquetbundle']);
   });
 
-  // ‹…› marks a value the rebuilt bundles fill in (design Decision 15). The docs
-  // check refuses any on the page after the swap; this keeps them out of the
-  // Import menu itself, which shows the description, insight and large note.
-  it.runIf(FINAL_CATALOG_IS_LIVE).each(EXAMPLE_DATASETS)(
-    'shows no value still to come for "$id"',
-    (entry) => {
-      const shown = [entry.description, entry.insight, entry.large?.memory, entry.large?.loadTime];
-      expect(shown.filter((text) => text?.includes('‹'))).toEqual([]);
-    },
-  );
+  // ‹…› marks a value still to come (design Decision 15). The docs check
+  // refuses any on the page; this keeps them out of the Import menu itself,
+  // which shows the description, insight and large note.
+  it.each(EXAMPLE_DATASETS)('shows no value still to come for "$id"', (entry) => {
+    const shown = [entry.description, entry.insight, entry.large?.memory, entry.large?.loadTime];
+    expect(shown.filter((text) => text?.includes('‹'))).toEqual([]);
+  });
 });
 
-describe('the final catalog', () => {
-  const ids = FINAL_EXAMPLE_SPECS.map((spec) => spec.id);
+describe('the catalog', () => {
+  const ids = EXAMPLE_DATASETS.map((entry) => entry.id);
 
   it('holds the demo, the EAT showcase and the manuscript datasets, in menu order', () => {
     expect(ids).toEqual([
@@ -135,7 +115,7 @@ describe('the final catalog', () => {
   });
 
   it('marks swissprot, and only swissprot, large', () => {
-    expect(FINAL_EXAMPLE_SPECS.filter((spec) => spec.large).map((spec) => spec.id)).toEqual([
+    expect(EXAMPLE_DATASETS.filter((entry) => entry.large).map((entry) => entry.id)).toEqual([
       'swissprot',
     ]);
   });
@@ -153,31 +133,13 @@ describe('the final catalog', () => {
     }
   });
 
-  it('has unique ids', () => {
-    expect(new Set(ids).size).toBe(ids.length);
+  // Every example carries a UMAP, which it opens on, and a PCA (design
+  // Decision 16), checked against its manifest record.
+  it.each(EXAMPLE_DATASETS)('gives "$id" a UMAP to open on and a PCA', (entry) => {
+    const { projections } = EXAMPLE_MANIFEST.examples[entry.id];
+    expect(entry.defaultView.projection).toMatch(/UMAP/);
+    expect(projections.some((name) => /PCA/.test(name))).toBe(true);
   });
-
-  it('is the catalog the app serves once the switch is flipped', () => {
-    const served = EXAMPLE_DATASETS.map((entry) => entry.id);
-    if (FINAL_CATALOG_IS_LIVE) {
-      expect(served).toEqual(ids);
-    } else {
-      expect(served).not.toEqual(ids);
-      expect(served[0]).toBe('demo');
-    }
-  });
-
-  // Every final example carries a UMAP, which it opens on, and a PCA (design
-  // Decision 16). Checked against the manifest for each final entry the app
-  // already serves: the demo now, all five once the switch is flipped.
-  it.each(EXAMPLE_DATASETS.filter((entry) => ids.includes(entry.id)))(
-    'gives "$id" a UMAP to open on and a PCA',
-    (entry) => {
-      const { projections } = EXAMPLE_MANIFEST.examples[entry.id];
-      expect(entry.defaultView.projection).toMatch(/UMAP/);
-      expect(projections.some((name) => /PCA/.test(name))).toBe(true);
-    },
-  );
 });
 
 describe('the E2E startup pin', () => {
@@ -270,16 +232,8 @@ describe('toExampleDatasetSummary', () => {
 const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 const EAT_COMPANION_PATTERN = /__pred_(value|confidence|source)$/;
 
-/** The served entries plus the final ones not served yet: every view the app opens on or will. */
-const EVERY_ENTRY = [
-  ...EXAMPLE_DATASETS,
-  ...(FINAL_CATALOG_IS_LIVE
-    ? []
-    : FINAL_EXAMPLE_SPECS.map((spec) => ({ ...spec, id: `final:${spec.id}` }))),
-];
-
 describe('example datasets curated default view', () => {
-  it.each(EVERY_ENTRY)('"$id" names a projection and an annotation', (entry) => {
+  it.each(EXAMPLE_DATASETS)('"$id" names a projection and an annotation', (entry) => {
     expect(entry.defaultView.projection.trim()).not.toBe('');
     expect(entry.defaultView.annotation.trim()).not.toBe('');
   });
@@ -295,13 +249,13 @@ describe('example datasets curated default view', () => {
     }
   });
 
-  it.each(EVERY_ENTRY)('"$id" colours by a colourable annotation', (entry) => {
+  it.each(EXAMPLE_DATASETS)('"$id" colours by a colourable annotation', (entry) => {
     const { annotation } = entry.defaultView;
     expect(TOOLTIP_ONLY_ANNOTATIONS.has(annotation)).toBe(false);
     expect(annotation).not.toMatch(EAT_COMPANION_PATTERN);
   });
 
-  it.each(EVERY_ENTRY)(
+  it.each(EXAMPLE_DATASETS)(
     '"$id" has a tooltip without duplicates or the colour-by annotation',
     (entry) => {
       const tooltip = entry.defaultView.tooltip ?? [];
