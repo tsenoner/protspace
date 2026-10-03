@@ -17,7 +17,7 @@ the eleven bundles the app used to serve from `apps/web/public/data/`, plus the
 manuscript's 113K β-lactamase bundle (`beta_lactamase_2026_stats`) and the
 832-protein phosphatase EAT bundle (`phosphatase_eat`), so the ids below and the
 manuscript's perf protocol keep working whatever the Import menu's examples
-become. `apps/protspace/scripts/generate_examples/build_showcase.py stage-perf`
+become. `apps/protspace/scripts/generate_examples/stage_perf.py`
 stages the release and rewrites the manifest; publishing it is the repository
 owner's step.
 

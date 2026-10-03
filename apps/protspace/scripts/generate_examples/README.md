@@ -40,7 +40,7 @@ vectors cannot give back, so the three large sets would need 10–25 h of embedd
 public server each. Their recipes skip that stage (`enabled = false`, with the reason);
 the docs cards say so. The former `venom-eat` and `phosphatase-eat` examples are gone
 from the menu; their frozen files stay test fixtures, `perf-datasets` assets
-(`stage-perf`) and Zenodo files for the paper.
+(`stage_perf.py`) and Zenodo files for the paper.
 
 ### `embed-build`: the EAT example
 
@@ -261,10 +261,10 @@ Other commands:
 uv run python $S verify --all                  # re-run every gate on the built bundles
 uv run python $S report --only beta-lactamase  # the clustering report and thumbnails again
 uv run python $S stage-release --staging /tmp/showcase-2026_03   # release assets, the manifest, the owner's commands
-uv run python $S stage-perf --out /tmp/perf-datasets             # perf-datasets assets, perf/datasets.manifest.json, the owner's commands
+uv run python apps/protspace/scripts/generate_examples/stage_perf.py --out /tmp/perf-datasets   # perf-datasets assets, perf/datasets.manifest.json, the owner's commands
 ```
 
-`stage-release` and `stage-perf` copy files and print the `gh release create` commands,
+`stage-release` and `stage_perf.py` copy files and print the `gh release create` commands,
 with `--latest=false` so a data release never becomes the repository's "Latest" (W33).
 They never upload anything: creating releases is an owner step (tasks §8).
 
@@ -356,7 +356,7 @@ files), `gh release upload showcase-2026_03 …` without `--clobber`, followed b
 demo and the manifest into the repository, and the check (`pnpm examples:fetch` and
 `write_manifest.py --refresh --check`).
 
-`stage-perf` stages the `perf-datasets` release: the eleven former `apps/web/public/data/`
+`stage_perf.py` stages the `perf-datasets` release: the eleven former `apps/web/public/data/`
 bundles from their pinned git blobs, the manuscript's 113K β-lactamase bundle (from
 `--nm-dir`, default the parent of `[paths] nm_data`, checked against its sha256) and the
 832-protein phosphatase EAT bundle. It rewrites `perf/datasets.manifest.json`

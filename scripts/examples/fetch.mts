@@ -9,7 +9,7 @@
  * moved into place; a file already there with the right bytes is kept.
  *
  * With `--perf`, the list is `perf/datasets.manifest.json` (the `perf-datasets`
- * release, written by `build_showcase.py stage-perf`) and the files go to the
+ * release, written by `generate_examples/stage_perf.py`) and the files go to the
  * gitignored `perf/datasets/`, where `perf/webgl-perf.spec.ts` serves them.
  *
  * Any missing asset, size mismatch or checksum mismatch exits non-zero, which
@@ -140,7 +140,7 @@ function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
   if (typeof manifest?.release !== 'string' || !Array.isArray(manifest.datasets)) {
     errors.push(
       `${relative(REPO_ROOT, PERF_MANIFEST)} is not { release, datasets: [...] }; ` +
-        'rewrite it with build_showcase.py stage-perf',
+        'rewrite it with apps/protspace/scripts/generate_examples/stage_perf.py',
     );
     return [];
   }
