@@ -61,18 +61,28 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protspace.core.constants import BROWSER_MISSING_TOKENS
+from protspace.data.annotations.configuration import (
+    INTERNAL_ANNOTATIONS,
+    SOURCE_ANNOTATIONS,
+)
 from protspace.data.annotations.encoding import (
     BUNDLE_FORMAT_VERSION,
     decode_field,
-    encode_field,
-    encode_legacy_cell,
+    migrate_legacy_annotation_table,
     read_format_version,
     stamp_format_version,
 )
+from protspace.data.annotations.manager import UNKNOWN_RELEASE, read_release_stamp
+from protspace.data.annotations.retrievers.taxonomy_retriever import (
+    TAXONOMY_ANNOTATIONS,
+)
+from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
 from protspace.data.io.bundle import (
     read_settings_from_bytes,
@@ -85,6 +95,9 @@ from protspace.data.io.bundle_v3 import (
     read_container_version,
     read_part,
 )
+from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
+from protspace.data.loaders.h5 import split_h5_spec
+from protspace.stats.base import CLUSTER_COLUMN_PREFIX
 
 logger = logging.getLogger("build_showcase")
 
@@ -101,51 +114,26 @@ GITHUB_REPO = "tsenoner/protspace"
 DEFAULT_FILE_PATTERN = "{id}_{release}_v3.parquetbundle"
 
 ID_COLUMN = "protein_id"
-INTERNAL_COLUMNS = ("sequence", "organism_id")
 LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
-CLUSTER_PREFIX = "cluster_"
 PRED_MARKER = "__pred_"
 KINDS = ("paper-refresh", "demo-refresh", "embed-build")
 
-#: What the web app reads as missing (W10): MISSING_VALUE_TOKENS in
-#: packages/utils/src/visualization/missing-values.ts, compared trimmed and
-#: case-insensitively, plus the empty string. test_build_showcase.py pins the
-#: two against each other, so a gate here counts N/A exactly as the legend does.
-WEB_MISSING_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
-WEB_MISSING_TOKENS_FILE = "packages/utils/src/visualization/missing-values.ts"
-
 
 def is_missing_label(text: str) -> bool:
-    """Whether the web app shows this display value as N/A."""
+    """Whether the web app shows this display value as N/A (W10).
+
+    The web's missing tokens (protspace's ``BROWSER_MISSING_TOKENS``), compared
+    trimmed and case-insensitively, plus the empty string: a gate here counts
+    N/A exactly as the legend does.
+    """
     stripped = text.strip()
-    return not stripped or stripped.lower() in WEB_MISSING_TOKENS
+    return not stripped or stripped.lower() in BROWSER_MISSING_TOKENS
 
 
-# Kelly's colours in the web app's order (packages/utils color-scheme.ts).
-KELLYS = (
-    "#F3C300",
-    "#875692",
-    "#F38400",
-    "#A1CAF1",
-    "#BE0032",
-    "#C2B280",
-    "#008856",
-    "#E68FAC",
-    "#0067A5",
-    "#F99379",
-    "#604E97",
-    "#F6A600",
-    "#B3446C",
-    "#DCD300",
-    "#882D17",
-    "#8DB600",
-    "#654522",
-    "#E25822",
-    "#2B3D26",
-)
+# Kelly's colours in the web app's order, without the two greys at its end.
+KELLYS = tuple(KELLYS_COLORS[:19])
 OTHER_COLOR = "#B8B8B8"
-NA_COLOR = "#DDDDDD"
 
 PROVENANCE_KEYS = (
     "example_id",
@@ -192,40 +180,6 @@ def format_version(table: pa.Table) -> int:
     Not the container version: see :attr:`Bundle.container`.
     """
     return read_format_version(table)
-
-
-def migrate_v1_columns(
-    table: pa.Table, columns: Iterable[str] | None = None
-) -> tuple[pa.Table, dict[str, int]]:
-    """Re-encode v1 string columns into the v2 grammar.
-
-    Returns the table and, per column, how many cells changed. ``__pred_source``
-    columns hold one opaque identifier per cell, so they are encoded as a single
-    field (as ``protspace transfer`` does), never split into hits.
-    """
-    wanted = set(table.column_names if columns is None else columns)
-    changed: dict[str, int] = {}
-    arrays = []
-    for name, column in zip(table.column_names, table.columns, strict=True):
-        is_string = pa.types.is_string(column.type) or pa.types.is_large_string(
-            column.type
-        )
-        if name not in wanted or name in {ID_COLUMN, "identifier"} or not is_string:
-            arrays.append(column)
-            continue
-        opaque = name.endswith("__pred_source")
-        values = column.to_pylist()
-        migrated = [
-            None
-            if value is None
-            else encode_field(value)
-            if opaque
-            else encode_legacy_cell(value)
-            for value in values
-        ]
-        changed[name] = sum(a != b for a, b in zip(values, migrated, strict=True))
-        arrays.append(pa.array(migrated, type=column.type))
-    return pa.Table.from_arrays(arrays, names=table.column_names), changed
 
 
 def display_values(cell: Any) -> list[str]:
@@ -369,13 +323,6 @@ def parquet_bytes(table: pa.Table) -> bytes:
     return blob
 
 
-def atomic_write(path: Path, blob: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    tmp.write_bytes(blob)
-    os.replace(tmp, path)
-
-
 def rebuild_bundle(
     bundle_path: Path, table: pa.Table, settings: dict | None, out_path: Path
 ) -> None:
@@ -427,13 +374,13 @@ def split_bundle(bundle_path: Path, out_dir: Path) -> dict[str, Path]:
     written: dict[str, Path] = {}
     for index, name in enumerate(SPLIT_NAMES):
         target = out_dir / name
-        atomic_write(
+        atomic_write_bytes(
             target, bundle.raw_parts[index] if legacy else parquet_bytes(core[index])
         )
         written[name] = target
     if bundle.statistics is not None:
         target = out_dir / "statistics.parquet"
-        atomic_write(target, bundle.raw_parts[4])
+        atomic_write_bytes(target, bundle.raw_parts[4])
         written["statistics.parquet"] = target
     if bundle.settings is not None:
         target = out_dir / "settings.json"
@@ -456,7 +403,7 @@ def extract_ann(bundle_path: Path) -> pa.Table:
     columns only (never the ``tmp/all_annotations`` cache), v2-shaped (a v3 file
     decoded by protspace's reader), without the internal lookup columns."""
     annotations = read_bundle(bundle_path).annotations
-    return drop_columns(normalize_id(annotations), INTERNAL_COLUMNS)
+    return drop_columns(normalize_id(annotations), INTERNAL_ANNOTATIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -543,8 +490,8 @@ def select_proj(proj_dir: Path, spec: str | Sequence[str], out_dir: Path) -> Non
     data = pq.read_table(proj_dir / "projections_data.parquet")
     meta, data = select_projections(metadata, data, parse_projection_spec(spec))
     out_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write(out_dir / "projections_metadata.parquet", parquet_bytes(meta))
-    atomic_write(out_dir / "projections_data.parquet", parquet_bytes(data))
+    atomic_write_bytes(out_dir / "projections_metadata.parquet", parquet_bytes(meta))
+    atomic_write_bytes(out_dir / "projections_data.parquet", parquet_bytes(data))
 
 
 def read_projection_source(source: Path) -> tuple[pa.Table, pa.Table]:
@@ -771,7 +718,7 @@ def release_groups(
             continue
         group = origin.get(column)
         if group is None:
-            computed = column.startswith(CLUSTER_PREFIX) or PRED_MARKER in column
+            computed = column.startswith(CLUSTER_COLUMN_PREFIX) or PRED_MARKER in column
             group = "computed" if computed else "refreshed"
         entry = groups.setdefault(
             group, {"release": releases.get(group), "columns": []}
@@ -1585,7 +1532,7 @@ def common_gates(bundle: Bundle, dataset: dict, view: dict) -> list[Gate]:
             "between annotations and projections",
         )
     )
-    leaked = [c for c in INTERNAL_COLUMNS + LEGACY_COLUMNS if c in columns]
+    leaked = [c for c in INTERNAL_ANNOTATIONS + LEGACY_COLUMNS if c in columns]
     gates.append(
         Gate(
             "no-internal-or-legacy",
@@ -1969,7 +1916,7 @@ def render_thumbnail(
     colors = {lab: KELLYS[i % len(KELLYS)] for i, lab in enumerate(order)}
     size = max(0.3, min(12.0, 30000 / max(len(xy), 1)))
     fig, ax = plt.subplots(figsize=(6, 6), dpi=120)
-    for label, color in ((None, NA_COLOR), ("Other", OTHER_COLOR)):
+    for label, color in ((None, NA_PINNED_COLOR), ("Other", OTHER_COLOR)):
         mask = np.array([lab == label for lab in view])
         if mask.any():
             ax.scatter(*xy[mask].T, s=size, c=color, linewidths=0, rasterized=True)
@@ -2041,7 +1988,9 @@ def clustering_report(
         or bundle.metadata.column("projection_name").to_pylist()
     )
     annotations = [
-        a for a in candidates.get("annotations", []) if not a.startswith(CLUSTER_PREFIX)
+        a
+        for a in candidates.get("annotations", [])
+        if not a.startswith(CLUSTER_COLUMN_PREFIX)
     ]
     if thumbnails:  # a candidate dropped from the recipe leaves no stale picture
         shutil.rmtree(out_dir / "thumbs", ignore_errors=True)
@@ -2321,9 +2270,6 @@ def read_tsv_sequences(path: Path) -> dict[str, str]:
 # sources it could not fully retrieve
 # ---------------------------------------------------------------------------
 
-#: The CLI's word for values whose release was never recorded.
-UNKNOWN_RELEASE = "unknown"
-
 
 def parse_run_log_releases(text: str) -> set[str] | None:
     """Releases on the last ``uniprot_release:`` line of ``run.log`` text.
@@ -2340,32 +2286,27 @@ def parse_run_log_releases(text: str) -> set[str] | None:
     return parts - {"none"}
 
 
-#: The pandas ``DataFrame.attrs`` key the CLI stamps on its annotation cache.
-CACHE_RELEASE_ATTR = "protspace_uniprot_release"
-
-
-def cache_release_stamp(path: Path) -> set[str] | None:
+def cache_release_stamp(path: Path) -> set[str]:
     """Releases the CLI stamped on an annotation cache parquet (schema only).
 
     The CLI keeps them in ``DataFrame.attrs``, which pandas writes to the
-    ``PANDAS_ATTRS`` key (older pandas: ``attrs`` inside the ``pandas`` key).
-    ``None`` when there is no stamp, which the CLI reads as unknown.
+    ``PANDAS_ATTRS`` key (older pandas: ``attrs`` inside the ``pandas`` key),
+    and reads them with protspace's :func:`read_release_stamp`: no stamp, or no
+    cache, is unknown.
     """
-    if not path.is_file():
-        return None
-    metadata = pq.read_schema(path).metadata or {}
     attrs: dict = {}
-    if b"PANDAS_ATTRS" in metadata:
-        attrs = json.loads(metadata[b"PANDAS_ATTRS"])
-    elif b"pandas" in metadata:
-        attrs = json.loads(metadata[b"pandas"]).get("attrs") or {}
-    stamp = attrs.get(CACHE_RELEASE_ATTR)
-    if not isinstance(stamp, str):
-        return None
-    return {part.strip() for part in stamp.split(",") if part.strip()}
+    if path.is_file():
+        metadata = pq.read_schema(path).metadata or {}
+        if b"PANDAS_ATTRS" in metadata:
+            attrs = json.loads(metadata[b"PANDAS_ATTRS"])
+        elif b"pandas" in metadata:
+            attrs = json.loads(metadata[b"pandas"]).get("attrs") or {}
+    frame = pd.DataFrame()
+    frame.attrs = attrs
+    return read_release_stamp(frame)
 
 
-ANNOTATION_SOURCES = ("uniprot", "taxonomy", "interpro", "ted", "biocentral")
+ANNOTATION_SOURCES = tuple(SOURCE_ANNOTATIONS)
 
 # The fixed CLI exits 0 when a source was only partly retrieved (a partial
 # result beats none for its users). It leaves that source out of its cache, so a
@@ -2683,13 +2624,6 @@ class Config:
         raise BuildError(f"none of these inputs exist: {[str(p) for p in paths]}")
 
 
-def split_h5_spec(spec: str) -> tuple[str, str | None]:
-    path, sep, name = spec.rpartition(":")
-    if sep and name and "/" not in name:
-        return path, name
-    return spec, None
-
-
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -2881,7 +2815,9 @@ class Context:
         facts = json.loads(facts_path.read_text()) if facts_path.is_file() else {}
         facts[key] = value
         self.work.mkdir(parents=True, exist_ok=True)
-        atomic_write(facts_path, json.dumps(facts, indent=1, sort_keys=True).encode())
+        atomic_write_bytes(
+            facts_path, json.dumps(facts, indent=1, sort_keys=True).encode()
+        )
 
     def facts(self) -> dict[str, Any]:
         facts_path = self.work / "facts.json"
@@ -3000,7 +2936,7 @@ def execute(ctx: Context, steps: Sequence[Step]) -> None:
         if not step.always:
             dirty = True
             markers.mkdir(parents=True, exist_ok=True)
-            atomic_write(
+            atomic_write_bytes(
                 marker,
                 json.dumps(
                     {
@@ -3142,14 +3078,14 @@ def require_served_release(ctx: Context, step: str) -> None:
         )
 
 
-def record_data_release(ctx: Context, step: str, releases: set[str] | None) -> None:
+def record_data_release(ctx: Context, step: str, releases: set[str]) -> None:
     """Note the UniProt release(s) a fetch step's data came from, as the CLI
     (or UniProt's response headers, for the FASTA) recorded them.
 
-    ``None`` (nothing recorded) is kept as unknown, so provenance cannot claim
-    a release no source reported.
+    What it could not tell is ``unknown`` (``UNKNOWN_RELEASE``), so provenance
+    cannot claim a release no source reported.
     """
-    value = sorted(releases) if releases is not None else [UNKNOWN_RELEASE]
+    value = sorted(releases)
     ctx.record(f"data-release:{step}", value)
     ctx.log(f"{step}: data from UniProt release {', '.join(value) or 'none'}")
 
@@ -3278,7 +3214,7 @@ def fetch_step(
     args: list[str],
     *,
     inputs: Callable[[], dict[str, Any]],
-    releases: Callable[[], set[str] | None],
+    releases: Callable[[], set[str]],
     when: Callable[[], bool] | None = None,
     before: Callable[[], None] | None = None,
 ) -> Step:
@@ -3364,7 +3300,7 @@ def prepare_steps(ctx: Context) -> list[Step]:
         def before(offset=offset) -> None:
             offset["bytes"] = run_log.stat().st_size if run_log.is_file() else 0
 
-        def releases(offset=offset) -> set[str] | None:
+        def releases(offset=offset) -> set[str]:
             text = (
                 run_log.read_bytes()[offset["bytes"] :].decode(errors="replace")
                 if run_log.is_file()
@@ -3407,11 +3343,11 @@ def annotate_args(
     return [*args, "-v"]
 
 
-def annotate_releases(cache: Path) -> Callable[[], set[str] | None]:
+def annotate_releases(cache: Path) -> Callable[[], set[str]]:
     """The release(s) ``annotate --cache-dir`` stamped on its cache.
 
     ``annotate`` writes no run.log and its output file carries no release, so
-    its cache's stamp is where the CLI records it (``None``, unknown, without
+    its cache's stamp is where the CLI records it (unknown without
     ``--cache-dir``).
     """
     return lambda: cache_release_stamp(cache / "all_annotations.parquet")
@@ -3480,8 +3416,8 @@ def projections_step(ctx: Context, *, drop_quality: bool) -> Step:
         meta, data = select_projections(metadata, data, spec, drop_quality=drop_quality)
         out = ctx.work / "proj"
         out.mkdir(parents=True, exist_ok=True)
-        atomic_write(out / "projections_metadata.parquet", parquet_bytes(meta))
-        atomic_write(out / "projections_data.parquet", parquet_bytes(data))
+        atomic_write_bytes(out / "projections_metadata.parquet", parquet_bytes(meta))
+        atomic_write_bytes(out / "projections_data.parquet", parquet_bytes(data))
 
     summary = "select " + ", ".join(f"{a}→{b}" if a != b else a for a, b in spec)
     return Step(
@@ -3525,28 +3461,16 @@ def write_annotations(
 ) -> None:
     first = [ctx.view.get("annotation"), *ctx.dataset.get("first_columns", [])]
     drop = (
-        INTERNAL_COLUMNS + LEGACY_COLUMNS + tuple(ctx.dataset.get("drop_columns", []))
+        INTERNAL_ANNOTATIONS
+        + LEGACY_COLUMNS
+        + tuple(ctx.dataset.get("drop_columns", []))
     )
     table = order_columns(drop_columns(table, drop), [c for c in first if c])
     table = stamp_format_version(strip_pandas_metadata(table))
-    atomic_write(ctx.work / name, parquet_bytes(table))
+    atomic_write_bytes(ctx.work / name, parquet_bytes(table))
     (ctx.work / "assemble_report.json").write_text(
         json.dumps(report, indent=1, default=str)
     )
-
-
-#: Taxonomy columns, most general first; one species fixes all of them.
-TAXONOMY_COLUMNS = (
-    "root",
-    "domain",
-    "kingdom",
-    "phylum",
-    "class",
-    "order",
-    "family",
-    "genus",
-    "species",
-)
 
 
 def paper_annotations(ctx: Context) -> pa.Table | None:
@@ -3587,7 +3511,7 @@ def fill_missing_taxonomy(
             )
             if first_label(cell)
         }
-    present = [c for c in TAXONOMY_COLUMNS if c in columns and c != "species"]
+    present = [c for c in TAXONOMY_ANNOTATIONS if c in columns and c != "species"]
     lineage: dict[str, dict[str, Any]] = {}
     for row, species in enumerate(columns["species"]):
         label = first_label(species)
@@ -3683,7 +3607,7 @@ def paper_refresh_steps(ctx: Context) -> list[Step]:
         if missing_parquet.is_file():
             pieces.append(
                 drop_columns(
-                    normalize_id(pq.read_table(missing_parquet)), INTERNAL_COLUMNS
+                    normalize_id(pq.read_table(missing_parquet)), INTERNAL_ANNOTATIONS
                 )
             )
         table = concat_aligned(pieces) if len(pieces) > 1 else pieces[0]
@@ -4056,7 +3980,7 @@ def entries_step(ctx: Context, out: Path) -> Step:
         out.parent.mkdir(parents=True, exist_ok=True)
         lines = ["\t".join(ENTRY_FIELDS)]
         lines += ["\t".join(by_id[pid].get(f, "") for f in ENTRY_FIELDS) for pid in ids]
-        atomic_write(out, ("\n".join(lines) + "\n").encode())
+        atomic_write_bytes(out, ("\n".join(lines) + "\n").encode())
         record_data_release(ctx, "entries", releases)
         reviewed = sum(1 for pid in ids if by_id[pid]["reviewed"] == "reviewed")
         ctx.log(f"entries: {len(ids)} ({reviewed} reviewed)")
@@ -4110,7 +4034,7 @@ def sequences_step(ctx: Context, entries_tsv: Path) -> Step:
                     )
                 )
             )
-        atomic_write(mature_tsv, ("\n".join(lines) + "\n").encode())
+        atomic_write_bytes(mature_tsv, ("\n".join(lines) + "\n").encode())
         derivations = Counter(c.derivation for c in chains)
         ctx.record("mature:derivations", dict(derivations))
         ctx.log(f"mature chains: {dict(derivations)}")
@@ -4455,7 +4379,7 @@ def transfer_steps(ctx: Context, assembled: Path) -> list[Step]:
         ]
         if missing:
             raise BuildError(f"protspace transfer wrote no predictions for {missing}")
-        atomic_write(
+        atomic_write_bytes(
             ctx.work / "annotations.parquet",
             parquet_bytes(stamp_format_version(strip_pandas_metadata(table))),
         )
@@ -4495,11 +4419,12 @@ def demo_refresh_steps(ctx: Context) -> list[Step]:
     keep = list(ctx.dataset.get("keep_source_columns", []))
 
     def assemble() -> None:
-        source = normalize_id(read_bundle(find_source(ctx)).annotations)
-        if format_version(source) < 2:
-            source, _ = migrate_v1_columns(source, keep)
+        # Migrated before normalize_id, which would drop a renamed table's stamp.
+        source = normalize_id(
+            migrate_legacy_annotation_table(read_bundle(find_source(ctx)).annotations)
+        )
         ids = row_ids(source)
-        fetched = drop_columns(normalize_id(pq.read_table(fresh)), INTERNAL_COLUMNS)
+        fetched = drop_columns(normalize_id(pq.read_table(fresh)), INTERNAL_ANNOTATIONS)
         table, absent = align_rows(fetched, ids)
         # G8 evidence: UniProt's length equals the FASTA length, so InterPro and
         # Biocentral saw full-length sequences, not the embedded mature peptides.
@@ -4967,7 +4892,7 @@ def verify(ctx: Context) -> tuple[bool, list[Gate]]:
         "summary": text,
         "gates": [g.__dict__ for g in gates],
     }
-    atomic_write(
+    atomic_write_bytes(
         ctx.root / "verify.json",
         json.dumps(record, indent=1, default=str).encode(),
     )
@@ -5478,7 +5403,7 @@ def record_load(
         "machine": machine,
         "measured_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
     }
-    atomic_write(d2_measurement_path(ctx), json.dumps(record, indent=1).encode())
+    atomic_write_bytes(d2_measurement_path(ctx), json.dumps(record, indent=1).encode())
     return record
 
 

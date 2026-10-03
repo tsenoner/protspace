@@ -24,6 +24,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from protspace.data.annotations.encoding import has_format_version
+from protspace.data.annotations.manager import UNIPROT_RELEASE_ATTR
 from protspace.data.io.bundle import (
     convert_bundle,
     create_settings_parquet,
@@ -136,31 +137,13 @@ def test_the_cell_grammar_is_protspaces_own():
     from protspace.data.annotations import encoding
     from protspace.data.io import bundle, bundle_v3
 
-    assert bs.encode_field is encoding.encode_field
     assert bs.decode_field is encoding.decode_field
-    assert bs.encode_legacy_cell is encoding.encode_legacy_cell
+    assert (
+        bs.migrate_legacy_annotation_table is encoding.migrate_legacy_annotation_table
+    )
     assert bs.stamp_format_version is encoding.stamp_format_version
     assert bs.DELIMITER == bundle.PARQUET_BUNDLE_DELIMITER
     assert bs.CONTAINER_VERSION == bundle_v3.CONTAINER_VERSION == 3
-
-
-def test_migrate_v1_columns_matches_protspace_and_counts_changes():
-    from protspace.data.annotations.encoding import migrate_legacy_annotation_table
-
-    table = pa.table(
-        {
-            "protein_id": ["P1", "P2"],
-            "ec": ["1.1.1.1 (x; y)", None],
-            "ec__pred_source": ["A|B", "Q9"],
-            "length": [10, 20],
-        }
-    )
-    migrated, changed = bs.migrate_v1_columns(table)
-    assert migrated.to_pylist() == migrate_legacy_annotation_table(table).to_pylist()
-    # A ";" inside a label's parentheses is text, not a hit separator.
-    assert changed == {"ec": 1, "ec__pred_source": 1}
-    assert migrated.column("ec").to_pylist() == ["1.1.1.1 (x%3B y)", None]
-    assert migrated.column("ec__pred_source").to_pylist() == ["A%7CB", "Q9"]
 
 
 def test_display_values_and_cell_labels():
@@ -1105,13 +1088,6 @@ def test_the_embeddings_pin_gate(config, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_missing_tokens_match_the_web_app():
-    source = (REPO_ROOT / bs.WEB_MISSING_TOKENS_FILE).read_text()
-    block = source.split("MISSING_VALUE_TOKENS: ReadonlySet<string> = new Set([", 1)[1]
-    tokens = set(re.findall(r"'([^']*)'", block.split("])", 1)[0]))
-    assert tokens == bs.WEB_MISSING_TOKENS
-
-
 @pytest.mark.parametrize(
     ("text", "missing"),
     [
@@ -1712,8 +1688,6 @@ def test_small_parsers(tmp_path):
     assert bs.parse_run_log_releases(text) == {"2026_03", "unknown"}
     assert bs.parse_run_log_releases("uniprot_release: none\n") == set()
     assert bs.parse_run_log_releases("# no release line\n") is None
-    assert bs.split_h5_spec("/a/b.h5:prot_t5") == ("/a/b.h5", "prot_t5")
-    assert bs.split_h5_spec("/a/b.h5") == ("/a/b.h5", None)
     fasta = tmp_path / "x.fasta"
     assert bs.write_fasta(fasta, {"P1": "MK"}, ["P1", "P2"]) == 1
     assert fasta.read_text() == ">P1\nMK\n"
@@ -1811,7 +1785,7 @@ def test_every_recipe_is_complete(config):
                 *bs.CONTEXT_GATE_TYPES,
             }, (ds_id, gate["type"])
         report = dataset["report"]["annotations"]
-        assert not [a for a in report if a.startswith(bs.CLUSTER_PREFIX)], ds_id
+        assert not [a for a in report if a.startswith(bs.CLUSTER_COLUMN_PREFIX)], ds_id
 
 
 def test_the_eat_example_opens_at_reliability_0_on_its_truth(config):
@@ -2271,15 +2245,16 @@ def test_a_fetch_refuses_to_start_on_another_served_release(
 
 def test_cache_release_stamp_reads_the_cli_stamp(tmp_path):
     frame = pd.DataFrame({"identifier": ["P1"], "ec": ["x"]})
-    frame.attrs[bs.CACHE_RELEASE_ATTR] = "2026_03,2026_02"
+    frame.attrs[UNIPROT_RELEASE_ATTR] = "2026_03,2026_02"
     frame.to_parquet(tmp_path / "all_annotations.parquet", index=False)
     assert bs.cache_release_stamp(tmp_path / "all_annotations.parquet") == {
         "2026_02",
         "2026_03",
     }
     pd.DataFrame({"identifier": ["P1"]}).to_parquet(tmp_path / "plain.parquet")
-    assert bs.cache_release_stamp(tmp_path / "plain.parquet") is None
-    assert bs.cache_release_stamp(tmp_path / "absent.parquet") is None
+    # No stamp, or no cache: unknown, as the CLI reads it.
+    assert bs.cache_release_stamp(tmp_path / "plain.parquet") == {"unknown"}
+    assert bs.cache_release_stamp(tmp_path / "absent.parquet") == {"unknown"}
 
 
 def _facts(ctx, facts):
