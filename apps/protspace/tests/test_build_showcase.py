@@ -1641,20 +1641,33 @@ def test_uniprot_get_falls_back_only_on_an_answer_asking_again_cannot_change(
         bs.fetch_uniprot_entries(["A1", "A2"])
 
 
-def test_read_capabilities(tmp_path):
-    source = tmp_path / "src" / "protspace"
-    (source / "cli").mkdir(parents=True)
-    (source / "stats" / "metrics").mkdir(parents=True)
-    (source / "cli" / "annotate.py").write_text("typer.Option('--cache-dir')")
-    (source / "stats" / "metrics" / "faithfulness.py").write_text(
-        "DEFAULT_HARD_CEILING = 20_000\n"
-    )
-    assert bs.read_capabilities(tmp_path) == {
-        "annotate_cache_dir": True,
-        "faithfulness_ceiling": 20000,
-    }
-    (source / "stats" / "metrics" / "faithfulness.py").write_text("# ceiling removed\n")
-    assert bs.read_capabilities(tmp_path)["faithfulness_ceiling"] is None
+@pytest.mark.parametrize(
+    ("version", "ok"),
+    [
+        ("4.16.0", True),
+        ("4.16.1.dev3+g1234567", True),
+        ("5.0.0", True),
+        ("4.15.0", False),  # no v3 container
+        ("4.9.12", False),
+        ("unknown", False),  # the checkout's protspace could not be imported
+    ],
+)
+def test_the_cli_must_be_new_enough(version, ok):
+    assert bs.cli_version_ok(version) is ok
+
+
+def test_check_inputs_refuses_an_old_cli(config, tmp_path, monkeypatch):
+    class OldCli(bs.Cli):
+        def version(self):
+            return "4.15.0"
+
+    monkeypatch.setattr(bs, "current_uniprot_release", lambda: "2026_03")
+    cli = OldCli(REPO_ROOT)
+    ctx = _context(config, "three-finger-toxins", tmp_path, cli=cli, dry_run=False)
+    with pytest.raises(bs.BuildError, match="protspace 4.15.0; the build needs 4.16"):
+        bs.check_inputs_step(ctx).action()
+    OldCli.version = lambda self: bs.MIN_CLI_VERSION
+    bs.check_inputs_step(ctx).action()
 
 
 # ---------------------------------------------------------------------------
@@ -2942,11 +2955,8 @@ class EmbedBuildCli(bs.Cli):
             return bs.CliResult()
         return super().run(args, cwd=cwd, log=log, transcript=transcript)
 
-    def capabilities(self):
-        return {"annotate_cache_dir": True, "faithfulness_ceiling": None}
-
     def version(self):
-        return "test"
+        return bs.MIN_CLI_VERSION
 
 
 @pytest.mark.slow

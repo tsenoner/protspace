@@ -2278,6 +2278,23 @@ def stream_command(
     return code, incomplete
 
 
+#: The oldest protspace CLI the build runs: it has ``annotate --cache-dir``
+#: (fix/annotation-retrieval), no faithfulness ceiling (PR #452, G7) and writes
+#: parquetbundle v3.
+MIN_CLI_VERSION = "4.16.0"
+
+
+def cli_version_ok(version: str) -> bool:
+    """Whether a CLI's ``protspace.__version__`` is at least :data:`MIN_CLI_VERSION`."""
+
+    def release(text: str) -> tuple[int, ...] | None:
+        found = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
+        return tuple(map(int, found.groups())) if found else None
+
+    found = release(version)
+    return found is not None and found >= release(MIN_CLI_VERSION)
+
+
 class Cli:
     def __init__(self, cli_root: Path, *, dry_run: bool = False):
         self.root = cli_root.expanduser().resolve()
@@ -2285,7 +2302,6 @@ class Cli:
         self.dry_run = dry_run
         self._version: str | None = None
         self._git_sha: str | None = None
-        self._capabilities: dict[str, Any] | None = None
 
     def argv(self, args: Sequence[str], extras: Sequence[str] = ()) -> list[str]:
         """``uv run`` of the checkout's protspace; ``extras`` are its optional
@@ -2356,37 +2372,6 @@ class Cli:
     def identity(self) -> dict[str, Any]:
         """What a step marker keys on: which checkout ran, at which commit."""
         return {"project": str(self.project), "git_sha": self.git_sha()}
-
-    def capabilities(self) -> dict[str, Any]:
-        """What the checkout's source says it can do (read, not run)."""
-        if self._capabilities is None:
-            self._capabilities = read_capabilities(self.project)
-        return self._capabilities
-
-
-def read_capabilities(project: Path) -> dict[str, Any]:
-    """Feature probes on a protspace source tree.
-
-    ``annotate_cache_dir`` marks the fix/annotation-retrieval CLI;
-    ``faithfulness_ceiling`` is ``None`` once PR #452 removed the constant.
-    """
-    source = project / "src" / "protspace"
-    annotate = source / "cli" / "annotate.py"
-    faithfulness = source / "stats" / "metrics" / "faithfulness.py"
-    ceiling = None
-    if faithfulness.is_file():
-        found = re.search(
-            r"^DEFAULT_HARD_CEILING\s*=\s*([0-9_]+)\s*$",
-            faithfulness.read_text(),
-            re.M,
-        )
-        if found:
-            ceiling = int(found.group(1).replace("_", ""))
-    return {
-        "annotate_cache_dir": annotate.is_file()
-        and "--cache-dir" in annotate.read_text(),
-        "faithfulness_ceiling": ceiling,
-    }
 
 
 def git_sha(path: Path) -> str | None:
@@ -2601,7 +2586,6 @@ class Context:
     #: decision recorded in facts.json (see :meth:`web_cut_active`).
     web_cut: bool | None = None
     allow_release_mismatch: bool = False
-    allow_unfixed_cli: bool = False
     thumbnails: bool = True
     command: str = ""
 
@@ -2973,26 +2957,12 @@ def check_inputs_step(ctx: Context) -> Step:
             except BuildError as error:
                 problems.append(str(error))
         if ctx.cli is not None:
-            caps = ctx.cli.capabilities()
-            ctx.log(f"CLI {ctx.cli.project}: {caps}")
-            unfixed = []
-            if not caps["annotate_cache_dir"]:
-                unfixed.append("no `annotate --cache-dir` (fix/annotation-retrieval)")
-            ceiling = caps["faithfulness_ceiling"]
-            if (
-                ctx.dataset.get("stats")
-                and ceiling
-                and ctx.dataset["proteins"] > ceiling
-            ):
-                unfixed.append(
-                    f"faithfulness ceiling {ceiling} < {ctx.dataset['proteins']} "
-                    "proteins (PR #452, G7)"
-                )
-            if unfixed and not ctx.allow_unfixed_cli:
+            version = ctx.cli.version()
+            ctx.log(f"CLI {ctx.cli.project}: protspace {version}")
+            if not ctx.dry_run and not cli_version_ok(version):
                 problems.append(
-                    "the CLI checkout lacks prerequisites: "
-                    + "; ".join(unfixed)
-                    + " (--allow-unfixed-cli to build anyway)"
+                    f"the CLI checkout is protspace {version}; the build needs "
+                    f"{MIN_CLI_VERSION} or later"
                 )
         if not ctx.dry_run:
             # Only noted here: a fetch step refuses to start while UniProt serves
@@ -3179,20 +3149,27 @@ def prepare_steps(ctx: Context) -> list[Step]:
 
 
 def annotate_args(
-    ctx: Context, fasta: Path, groups: Sequence[str], out: Path, cache: Path
+    fasta: Path, groups: Sequence[str], out: Path, cache: Path
 ) -> list[str]:
-    args = ["annotate", "-i", str(fasta), "-a", ",".join(groups), "-o", str(out)]
-    if ctx.cli is not None and ctx.cli.capabilities()["annotate_cache_dir"]:
-        args += ["--cache-dir", str(cache)]
-    return [*args, "-v"]
+    return [
+        "annotate",
+        "-i",
+        str(fasta),
+        "-a",
+        ",".join(groups),
+        "-o",
+        str(out),
+        "--cache-dir",
+        str(cache),
+        "-v",
+    ]
 
 
 def annotate_releases(cache: Path) -> Callable[[], set[str]]:
     """The release(s) ``annotate --cache-dir`` stamped on its cache.
 
     ``annotate`` writes no run.log and its output file carries no release, so
-    its cache's stamp is where the CLI records it (unknown without
-    ``--cache-dir``).
+    its cache's stamp is where the CLI records it.
     """
     return lambda: cache_release_stamp(cache / "all_annotations.parquet")
 
@@ -3424,7 +3401,7 @@ def paper_refresh_steps(ctx: Context) -> list[Step]:
             )
         )
         missing_cache = ctx.work / "missing_cache"
-        args = annotate_args(ctx, missing_fasta, groups, missing_parquet, missing_cache)
+        args = annotate_args(missing_fasta, groups, missing_parquet, missing_cache)
 
         def any_missing() -> bool:
             missing_parquet.unlink(missing_ok=True)
@@ -3500,7 +3477,7 @@ def annotate_source_steps(ctx: Context) -> tuple[list[Step], Path, Path]:
             inputs=lambda: {"source": fingerprint(find_source(ctx))},
         )
     ]
-    args = annotate_args(ctx, fasta, groups, fresh, cache)
+    args = annotate_args(fasta, groups, fresh, cache)
     steps.append(
         fetch_step(
             ctx,
@@ -4311,10 +4288,9 @@ def tail_steps(ctx: Context) -> list[Step]:
 
     ``protspace style`` rebuilds the legends it touches (a manual order becomes
     alphabetical), so it only sees a settings-free bundle. Carried-over and
-    cluster legends are merged in afterwards, untouched. ``bundle`` and ``style``
-    write whatever container the CLI checkout writes (v2 before protspace 4.16);
-    ``finalize`` writes the shipped file as v3 with this repository's protspace
-    (:func:`rebuild_bundle`).
+    cluster legends are merged in afterwards, untouched. ``finalize`` writes the
+    shipped file with this repository's protspace (:func:`rebuild_bundle`), so its
+    container does not depend on the CLI checkout.
     """
     work = ctx.work
     with_stats = ctx.dataset.get("stats", False)
@@ -5847,7 +5823,6 @@ def make_context(
         redo=set(getattr(args, "redo", []) or []),
         web_cut=getattr(args, "web_cut", None),
         allow_release_mismatch=getattr(args, "allow_release_mismatch", False),
-        allow_unfixed_cli=getattr(args, "allow_unfixed_cli", False),
         thumbnails=not getattr(args, "no_thumbnails", False),
         command=build_command(getattr(args, "argv", None) or sys.argv[1:]),
     )
@@ -6132,7 +6107,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "kept for later builds until --no-web-cut",
     )
     build.add_argument("--allow-release-mismatch", action="store_true")
-    build.add_argument("--allow-unfixed-cli", action="store_true")
     build.add_argument("--skip-report", action="store_true")
     build.add_argument("--no-thumbnails", action="store_true")
 
@@ -6221,7 +6195,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "enable_stage": [],
             "web_cut": None,
             "allow_release_mismatch": False,
-            "allow_unfixed_cli": False,
             "skip_report": True,
             "no_thumbnails": True,
         }.items():

@@ -92,9 +92,9 @@ venom-gland transcripts, carry none. The steps:
 The build steps for each dataset are:
 
 1. **check-inputs.** Checks the sha256 and size pins, the H5 files and the source bundle.
-   It stops if the CLI checkout lacks the prerequisites (`annotate --cache-dir` from
-   `fix/annotation-retrieval`, and PR #452's faithfulness ceiling for sets over 20K). It
-   notes which release UniProt serves.
+   It stops if the CLI checkout is older than protspace 4.16.0 (`annotate --cache-dir`
+   from `fix/annotation-retrieval`, no faithfulness ceiling since PR #452, and
+   parquetbundle v3). It notes which release UniProt serves.
 2. **fetch.**
    - `paper-refresh` runs staged `protspace prepare -m pca2 -a …` calls that reuse the
      per-source cache. Each stage adds sources, so a failure costs only its own stage.
@@ -128,8 +128,7 @@ The build steps for each dataset are:
    - The demo gets none.
 6. **bundle, style, finalize.**
    - `protspace bundle`, then `protspace style` with `styles/<id>.json`. Style entries for
-     values the data lacks are dropped first. These write whatever container the CLI
-     checkout writes (v2 for 4.15.0, v3 from 4.16.0).
+     values the data lacks (that `style` would refuse) are dropped first.
    - Carried-over legends and the cluster legends are merged in afterwards, because
      `style` would reorder a manual legend.
    - The EAT example gets the settings envelope, with `eatConfidenceThreshold` 0 (D6).
@@ -169,16 +168,15 @@ report): the v3 file is written next to the v2 one, which stays. Other changes t
 
 ## Prerequisites
 
-- A checkout of a **released CLI** with the fixes: protspace 4.15.0 or later (tag
-  `v4.15.0`), which includes `fix/annotation-retrieval` (PR #495) and PR #452's
-  faithfulness ceiling (released in 4.13.1). The 2026_03 v2 bundles were built on
-  `v4.15.0` and the v3 ones on `v4.16.0`; the manifest records the version and commit of
-  the CLI that built each file. Pass its root as `--cli-root`. The
-  script runs `uv run --frozen --project <cli-root> protspace …`, so the data does not
-  depend on which branch the script itself comes from. The container does: the script
-  reads and writes bundles with the protspace package of the checkout it runs from
-  (`uv run` from the repository root), which must write v3 (protspace 4.16 or later), so
-  a CLI checkout from before v3 is fine.
+- A checkout of a **released CLI**, protspace 4.16.0 or later (tag `v4.16.0`): it has
+  `fix/annotation-retrieval` (PR #495, released in 4.15.0), PR #452's faithfulness fix
+  (4.13.1) and parquetbundle v3. The 2026_03 v2 bundles were built on `v4.15.0` and the
+  v3 ones on `v4.16.0`; the manifest records the version and commit of the CLI that
+  built each file. Pass its root as `--cli-root`. The script runs
+  `uv run --frozen --project <cli-root> protspace …`, so the data does not depend on
+  which branch the script itself comes from. The shipped file's container does not
+  depend on the CLI either: the script writes it with the protspace package of the
+  checkout it runs from (`uv run` from the repository root), which must write v3.
 - The read-only inputs named in `showcase.toml`: `[paths]` (`suite`, `nm_data`, `cli_data`)
   or `--path NAME=VALUE`. They live in `protspace_publication/nm_2026/data/` and in the
   gitignored `apps/protspace/data/` of the author's checkout. The build only reads them,
