@@ -36,6 +36,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import requests
 
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+
 logger = logging.getLogger(__name__)
 
 TOXPROT_QUERY = (
@@ -67,8 +69,7 @@ DEFAULT_SOURCE_SETTINGS = (
 LEADING_ANNOTATION_COLUMNS: tuple[str, ...] = ("protein_id", "protein_families")
 # Internal lookup columns and legacy length bins never reach the bundle.
 DROPPED_ANNOTATION_COLUMNS: tuple[str, ...] = (
-    "sequence",
-    "organism_id",
+    *INTERNAL_ANNOTATIONS,
     "length_fixed",
     "length_quantile",
 )
@@ -151,7 +152,10 @@ def write_mature_fasta(
     sp_map: dict[str, int],
     fasta_out: Path,
 ) -> dict[str, int]:
-    """Write FASTA with SPs cleaved; return {accession: mature_length}."""
+    """Write FASTA with SPs cleaved; return {accession: mature_length}.
+
+    An empty ``sp_map`` cuts nothing: the full-length sequences.
+    """
     fasta_out.parent.mkdir(parents=True, exist_ok=True)
     lengths: dict[str, int] = {}
 
@@ -213,24 +217,6 @@ def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
     out_path.write_text(decompressed, encoding="utf-8")
     logger.info("Wrote %d bytes to %s", out_path.stat().st_size, out_path)
     return out_path
-
-
-def write_full_length_fasta(tsv_path: Path, fasta_out: Path) -> int:
-    """Write the full-length UniProt sequences (no SP cleavage); return the count."""
-    fasta_out.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    with tsv_path.open() as fin, fasta_out.open("w") as fout:
-        header = fin.readline().rstrip("\n").split("\t")
-        idx_entry = header.index("Entry")
-        idx_seq = header.index("Sequence")
-        for line in fin:
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) <= max(idx_entry, idx_seq):
-                continue
-            if fields[idx_entry] and fields[idx_seq]:
-                fout.write(f">{fields[idx_entry]}\n{fields[idx_seq]}\n")
-                written += 1
-    return written
 
 
 def _merge_full_length_columns(
@@ -466,7 +452,7 @@ def main() -> int:
 
     # InterPro and Biocentral on the full-length sequences (see the docstring).
     full_fasta = tmp_dir / "toxprot_full_length.fasta"
-    write_full_length_fasta(tsv_path, full_fasta)
+    write_mature_fasta(tsv_path, {}, full_fasta)  # no signal peptide cut
     full_parquet = tmp_dir / "full_length_annotations.parquet"
     annotate = [
         "protspace",

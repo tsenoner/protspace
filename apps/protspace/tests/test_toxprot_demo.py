@@ -206,7 +206,7 @@ def test_drop_and_reorder_columns_keeps_all_but_internal_and_legacy():
     ]
 
 
-def test_write_full_length_fasta_keeps_the_signal_peptide(tmp_path):
+def test_an_empty_sp_map_writes_the_full_length_sequences(tmp_path):
     tsv = _write_tsv(
         tmp_path / "in.tsv",
         [
@@ -215,7 +215,7 @@ def test_write_full_length_fasta_keeps_the_signal_peptide(tmp_path):
         ],
     )
     out = tmp_path / "full.fasta"
-    assert toxprot_demo.write_full_length_fasta(tsv, out) == 1
+    assert toxprot_demo.write_mature_fasta(tsv, {}, out) == {"P1": 9}
     assert out.read_text() == ">P1\nAAABBBCCC\n"
 
 
