@@ -19,6 +19,7 @@
 import type { ExampleDatasetSummary } from '@protspace/core';
 import { URLS } from '../../../../config/urls';
 import { EXAMPLE_MANIFEST } from './example-manifest';
+import { exampleServedPath } from './example-served-path';
 
 /**
  * The view an example opens on when its URL names no `annotation`,
@@ -130,13 +131,11 @@ function defineExample({ name, ...spec }: ExampleSpec, index: number): ExampleDa
   if (index === 0 && STARTUP_DATASET_URL_OVERRIDE) {
     return { ...common, url: STARTUP_DATASET_URL_OVERRIDE };
   }
-  if (record.hosting === 'repo') {
-    return { ...common, url: `./${record.file}` };
-  }
+  const served = exampleServedPath(record);
   return {
     ...common,
-    url: `./examples/${record.file}`,
-    devFallbackUrl: `${URLS.production.base}/examples/${record.file}`,
+    url: `./${served}`,
+    ...(record.hosting === 'release' && { devFallbackUrl: `${URLS.production.base}/${served}` }),
   };
 }
 

@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest';
+import { exampleServedPath } from '../../apps/web/src/explore/example-served-path';
 import { dismissProductTour, waitForDataLoad } from './helpers';
 
 /**
@@ -22,7 +23,11 @@ import { dismissProductTour, waitForDataLoad } from './helpers';
 const EAT_EXAMPLE_ID = 'three-finger-toxins';
 const EAT_EXAMPLE = EXAMPLE_MANIFEST.examples[EAT_EXAMPLE_ID];
 
-const EAT_EXAMPLE_BUNDLE = path.join(__dirname, '../../apps/web/public/examples', EAT_EXAMPLE.file);
+const EAT_EXAMPLE_BUNDLE = path.join(
+  __dirname,
+  '../../apps/web/public',
+  exampleServedPath(EAT_EXAMPLE),
+);
 
 /** The annotation the captures colour by: the one the example opens on. */
 export const DEMO_ANNOTATION = 'toxin_class';

@@ -14,16 +14,17 @@
  *   tsx docs/scripts/generate-examples.mts          # write the page
  *   tsx docs/scripts/generate-examples.mts --check  # fail if the page is stale or a source disagrees
  */
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as prettier from 'prettier';
 import {
   ANNOTATION_METADATA,
+  PREDICTED_PREFIX,
   type AnnotationSource,
 } from '../../packages/utils/src/visualization/annotation-metadata.ts';
 import { isAutoClusterColumnName } from '../../packages/utils/src/visualization/annotation-statistics.ts';
+import { parseEatCompanionColumn } from '../../packages/utils/src/visualization/eat-overlay.ts';
 import {
   EXAMPLE_DATASETS,
   formatDownload,
@@ -32,12 +33,13 @@ import {
   type ExampleDataset,
 } from '../../apps/web/src/explore/example-datasets.ts';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts';
+import { exampleServedPath } from '../../apps/web/src/explore/example-served-path.ts';
+import { repoFileProblem } from '../../scripts/examples/pinned.ts';
 import { EXAMPLE_DETAILS, NO_BIOCENTRAL, type ExampleDetails } from './example-details.ts';
 import { MACHINE_PATH } from './machine-path.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUTPUT = join(REPO_ROOT, 'docs/explore/example-datasets.md');
-const PUBLIC_DIR = join(REPO_ROOT, 'apps/web/public');
 const THUMBNAIL_DIR = join(REPO_ROOT, 'docs/explore/images/examples');
 /** Hand-written pages that state facts about the examples: the check refuses their ‹…› too. */
 const PAGES_WITH_EXAMPLE_FACTS = ['docs/explore/eat.md', 'docs/explore/importing-data.md'];
@@ -58,10 +60,6 @@ const SOURCE_ORDER: readonly AnnotationSource[] = [
   'Biocentral',
 ];
 
-const EAT_VALUE_SUFFIX = '__pred_value';
-/** The columns Biocentral's predictions fill (`predicted_subcellular_location`, …). */
-const BIOCENTRAL_PREFIX = 'predicted_';
-const EAT_COMPANION = /__pred_(value|confidence|source)$/;
 /**
  * UniProt fields the tooltip header reads. They come from UniProt with the annotations but are not
  * in the annotation registry, so they are counted as UniProt's here rather than as the build's own.
@@ -91,7 +89,6 @@ interface Card {
 const code = (name: string) => `\`${name}\``;
 const count = (n: number) => n.toLocaleString('en-US');
 const thumbnailPath = (id: string) => join(THUMBNAIL_DIR, `${id}.png`);
-const sha256 = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
 
 /** "a", "a and b", "a, b and c". */
 function list(items: readonly string[]): string {
@@ -156,11 +153,12 @@ function validate(): string[] {
     // A section whose bundle has no Biocentral predictions says so and why (the spec's Example
     // datasets page requirement).
     const record = EXAMPLE_MANIFEST.examples[id];
-    const predicted = record.columns.some((column) => column.startsWith(BIOCENTRAL_PREFIX));
+    // The columns Biocentral's predictions fill (`predicted_subcellular_location`, …).
+    const predicted = record.columns.some((column) => column.startsWith(PREDICTED_PREFIX));
     const noted = details.notes?.includes(NO_BIOCENTRAL) ?? false;
     if (!predicted && !noted) {
       errors.push(
-        `"${id}": its bundle has no Biocentral predictions (no ${code(`${BIOCENTRAL_PREFIX}*`)} column); add NO_BIOCENTRAL to its notes in docs/scripts/example-details.ts.`,
+        `"${id}": its bundle has no Biocentral predictions (no ${code(`${PREDICTED_PREFIX}*`)} column); add NO_BIOCENTRAL to its notes in docs/scripts/example-details.ts.`,
       );
     } else if (predicted && noted) {
       errors.push(
@@ -219,18 +217,8 @@ function validate(): string[] {
   // Repo-hosted bundles (the startup demo) are served from the repository as committed, so their
   // bytes must be the ones the manifest, and therefore this page, describes.
   for (const [id, record] of Object.entries(EXAMPLE_MANIFEST.examples)) {
-    if (record.hosting !== 'repo') continue;
-    const path = join(PUBLIC_DIR, record.file);
-    if (!existsSync(path)) {
-      errors.push(`"${id}": apps/web/public/${record.file} is missing.`);
-      continue;
-    }
-    const data = readFileSync(path);
-    if (data.byteLength !== record.bytes || sha256(data) !== record.sha256) {
-      errors.push(
-        `"${id}": apps/web/public/${record.file} differs from its manifest record; rerun write_manifest.py --refresh.`,
-      );
-    }
+    const problem = record.hosting === 'repo' ? repoFileProblem(`"${id}"`, record) : null;
+    if (problem) errors.push(`${problem}.`);
   }
 
   return errors;
@@ -260,7 +248,7 @@ function annotationReleases(record: BundleRecord): string {
  * three-finger toxins' classes and hold-out, say), and the K-means clusters `protspace stats` adds.
  */
 function annotations(record: BundleRecord): string {
-  const columns = record.columns.filter((column) => !EAT_COMPANION.test(column));
+  const columns = record.columns.filter((column) => parseEatCompanionColumn(column) === null);
   const clusters = columns.filter(isAutoClusterColumnName);
   const sourced = columns.filter(
     (column) => ANNOTATION_METADATA[column] !== undefined || UNIPROT_HEADER_COLUMNS.has(column),
@@ -291,9 +279,10 @@ function annotations(record: BundleRecord): string {
 }
 
 function extras(record: BundleRecord): string {
-  const transferred = record.columns
-    .filter((column) => column.endsWith(EAT_VALUE_SUFFIX))
-    .map((column) => code(column.slice(0, -EAT_VALUE_SUFFIX.length)));
+  const transferred = record.columns.flatMap((column) => {
+    const companion = parseEatCompanionColumn(column);
+    return companion?.kind === 'value' ? [code(companion.base)] : [];
+  });
   const parts: string[] = [];
   if (transferred.length > 0) {
     parts.push(`[transferred annotations (EAT)](/explore/eat) for ${list(transferred)}`);
@@ -314,8 +303,7 @@ function largeNote(large: NonNullable<ExampleDataset['large']>, record: BundleRe
   return `${formatDownload(record.bytes)} that needs ${large.memory} of browser memory and takes ${large.loadTime} to load.`;
 }
 
-const downloadHref = (record: BundleRecord) =>
-  record.hosting === 'repo' ? `/${record.file}` : `/examples/${record.file}`;
+const downloadHref = (record: BundleRecord) => `/${exampleServedPath(record)}`;
 
 function renderCard({ entry, details, record }: Card): string[] {
   const { id } = entry;

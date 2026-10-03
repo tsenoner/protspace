@@ -5,8 +5,10 @@
  * `apps/web/src/explore/example-manifest.ts` names every example's file with
  * its byte count and sha256. Repo-hosted files (the startup demo) are checked
  * where they are committed, under `apps/web/public/`. Release-hosted files are
- * downloaded from their GitHub release into `--out`, checked, and only then
- * moved into place; a file already there with the right bytes is kept.
+ * downloaded from their GitHub release into `--out`, in parallel, each streamed
+ * into a `.part` file while it is hashed, and moved into place only once it
+ * matches; a file already there with the right bytes is kept, so a directory
+ * restored from a CI cache downloads nothing.
  *
  * With `--perf`, the list is `perf/datasets.manifest.json` (the `perf-datasets`
  * release, written by `generate_examples/stage_perf.py`) and the files go to the
@@ -16,7 +18,7 @@
  * is what fails the deploy (`.github/workflows/deploy.yml`) before anything
  * is published. So do two pinned files that would land at the same path with
  * different bytes (a retained file named like a current one), since one would
- * overwrite the other, and every file is verified again once all are in place.
+ * overwrite the other; every file then has a path of its own.
  *
  * Usage:
  *   pnpm examples:fetch                          # into apps/web/public/examples/ (gitignored)
@@ -31,11 +33,17 @@
  *   --base-url URL     release download root (default https://github.com/tsenoner/protspace/releases/download)
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { EXAMPLE_MANIFEST } from '../../apps/web/src/explore/example-manifest.ts';
+import { EXAMPLES_DIR } from '../../apps/web/src/explore/example-served-path.ts';
+import { readPerfManifest } from '../../perf/datasets-manifest.ts';
+import { fileMismatch, mismatch, repoFileProblem, type Fingerprint } from './pinned.ts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PUBLIC_DIR = join(REPO_ROOT, 'apps/web/public');
@@ -45,40 +53,47 @@ const DEFAULT_BASE_URL = 'https://github.com/tsenoner/protspace/releases/downloa
 const ATTEMPTS = 3;
 
 /** A file the manifest pins: where it comes from and what its bytes must be. */
-interface PinnedFile {
+interface PinnedFile extends Fingerprint {
   label: string;
   release: string;
   file: string;
-  bytes: number;
-  sha256: string;
 }
 
-const sha256 = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
+/** The release has no such asset: retrying cannot help. */
+class AssetNotFoundError extends Error {}
 
-/** Why `data` is not the pinned file, or `null` when it is. */
-function mismatch(data: Uint8Array, pinned: { bytes: number; sha256: string }): string | null {
-  if (data.byteLength !== pinned.bytes) {
-    return `${data.byteLength} bytes, expected ${pinned.bytes}`;
-  }
-  const actual = sha256(data);
-  return actual === pinned.sha256 ? null : `sha256 ${actual}, expected ${pinned.sha256}`;
-}
-
-async function download(url: string): Promise<Uint8Array> {
+/**
+ * Downloads `url` into `target`, hashing the bytes as they stream past, and
+ * returns their size and sha256. Retries a failed attempt, but not a 404.
+ */
+async function downloadTo(url: string, target: string): Promise<Fingerprint> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       const response = await fetch(url);
       if (response.status === 404) {
-        throw new Error(`404 Not Found: ${url} (is the release asset published?)`);
+        throw new AssetNotFoundError(`404 Not Found: ${url} (is the release asset published?)`);
       }
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error(`${response.status} ${response.statusText}: ${url}`);
       }
-      return new Uint8Array(await response.arrayBuffer());
+      const hash = createHash('sha256');
+      let bytes = 0;
+      await pipeline(
+        Readable.fromWeb(response.body as NodeReadableStream<Uint8Array>),
+        async function* (chunks: AsyncIterable<Uint8Array>) {
+          for await (const chunk of chunks) {
+            hash.update(chunk);
+            bytes += chunk.byteLength;
+            yield chunk;
+          }
+        },
+        createWriteStream(target),
+      );
+      return { bytes, sha256: hash.digest('hex') };
     } catch (error) {
       lastError = error;
-      if (String(error).includes('404 Not Found') || attempt === ATTEMPTS) break;
+      if (error instanceof AssetNotFoundError || attempt === ATTEMPTS) break;
       await new Promise((done) => setTimeout(done, 2_000 * attempt));
     }
   }
@@ -92,56 +107,36 @@ async function fetchPinned(
   baseUrl: string,
 ): Promise<string | null> {
   const target = join(outDir, pinned.file);
-  if (existsSync(target) && mismatch(readFileSync(target), pinned) === null) {
+  if (fileMismatch(target, pinned) === null) {
     console.log(`ok       ${pinned.label}: ${relative(REPO_ROOT, target)} (already there)`);
     return null;
   }
   const url = `${baseUrl}/${pinned.release}/${pinned.file}`;
-  let data: Uint8Array;
+  const partial = `${target}.part`;
+  mkdirSync(outDir, { recursive: true });
+  let problem: string | null;
   try {
-    data = await download(url);
+    problem = mismatch(await downloadTo(url, partial), pinned);
   } catch (error) {
+    rmSync(partial, { force: true });
     return `${pinned.label}: ${error instanceof Error ? error.message : String(error)}`;
   }
-  const problem = mismatch(data, pinned);
   if (problem) {
+    rmSync(partial, { force: true });
     return `${pinned.label}: ${url} does not match its manifest record (${problem})`;
   }
-  mkdirSync(outDir, { recursive: true });
-  const partial = `${target}.part`;
-  writeFileSync(partial, data);
   renameSync(partial, target);
   console.log(`fetched  ${pinned.label}: ${relative(REPO_ROOT, target)}`);
   return null;
 }
 
-function verifyRepoFile(label: string, file: string, pinned: { bytes: number; sha256: string }) {
-  const path = join(PUBLIC_DIR, file);
-  if (!existsSync(path)) {
-    return `${label}: ${relative(REPO_ROOT, path)} is missing`;
-  }
-  const problem = mismatch(readFileSync(path), pinned);
-  if (problem) {
-    return `${label}: ${relative(REPO_ROOT, path)} does not match its manifest record (${problem}); rerun write_manifest.py`;
-  }
-  console.log(`ok       ${label}: ${relative(REPO_ROOT, path)} (in the repository)`);
-  return null;
-}
-
-/** `perf/datasets.manifest.json`: the `perf-datasets` release's files. */
-interface PerfManifest {
-  release: string;
-  datasets: { id: string; file: string; bytes: number; sha256: string; default: boolean }[];
-}
-
 /** The perf datasets to fetch: every one, or those `only` names (unknown ids are errors). */
 function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
-  const manifest = JSON.parse(readFileSync(PERF_MANIFEST, 'utf8')) as Partial<PerfManifest>;
-  if (typeof manifest?.release !== 'string' || !Array.isArray(manifest.datasets)) {
-    errors.push(
-      `${relative(REPO_ROOT, PERF_MANIFEST)} is not { release, datasets: [...] }; ` +
-        'rewrite it with apps/protspace/scripts/generate_examples/stage_perf.py',
-    );
+  let manifest;
+  try {
+    manifest = readPerfManifest(PERF_MANIFEST);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
     return [];
   }
   const wanted = only
@@ -155,7 +150,7 @@ function perfFiles(only: string | undefined, errors: string[]): PinnedFile[] {
   }
   return manifest.datasets
     .filter((dataset) => !wanted || wanted.includes(dataset.id))
-    .map((dataset) => ({ label: dataset.id, release: manifest.release as string, ...dataset }));
+    .map((dataset) => ({ label: dataset.id, release: manifest.release, ...dataset }));
 }
 
 /**
@@ -186,8 +181,12 @@ function exampleFiles(withRetained: boolean, errors: string[]): PinnedFile[] {
   const pinned: PinnedFile[] = [];
   for (const [id, record] of Object.entries(EXAMPLE_MANIFEST.examples)) {
     if (record.hosting === 'repo') {
-      const error = verifyRepoFile(id, record.file, record);
-      if (error) errors.push(error);
+      const error = repoFileProblem(id, record);
+      if (error) {
+        errors.push(error);
+      } else {
+        console.log(`ok       ${id}: apps/web/public/${record.file} (in the repository)`);
+      }
       continue;
     }
     if (!EXAMPLE_MANIFEST.release) {
@@ -218,7 +217,7 @@ async function main(): Promise<number> {
     },
   });
   const outDir = resolve(
-    values.out ?? (values.perf ? PERF_DATASETS_DIR : join(PUBLIC_DIR, 'examples')),
+    values.out ?? (values.perf ? PERF_DATASETS_DIR : join(PUBLIC_DIR, EXAMPLES_DIR)),
   );
   const baseUrl = values['base-url'].replace(/\/$/, '');
   const errors: string[] = [];
@@ -228,23 +227,8 @@ async function main(): Promise<number> {
   );
 
   if (errors.length === 0) {
-    for (const file of pinned) {
-      const error = await fetchPinned(file, outDir, baseUrl);
-      if (error) errors.push(error);
-    }
-  }
-  if (errors.length === 0) {
-    // Every file once more, now that all are in place: nothing fetched later
-    // may have replaced one fetched earlier.
-    for (const file of pinned) {
-      const target = join(outDir, file.file);
-      const problem = existsSync(target) ? mismatch(readFileSync(target), file) : 'missing';
-      if (problem) {
-        errors.push(
-          `${file.label}: ${relative(REPO_ROOT, target)} changed after it was verified (${problem})`,
-        );
-      }
-    }
+    const results = await Promise.all(pinned.map((file) => fetchPinned(file, outDir, baseUrl)));
+    errors.push(...results.filter((error): error is string => error !== null));
   }
 
   if (errors.length > 0) {

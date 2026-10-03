@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { EXAMPLE_DATASETS } from '../src/explore/example-datasets';
 import { EXAMPLE_MANIFEST } from '../src/explore/example-manifest';
+import { exampleServedPath } from '../src/explore/example-served-path';
 import {
   collectDefaultViewDriftWarnings,
   curatedViewOf,
@@ -35,10 +36,7 @@ const THUMBNAIL_DIR =
 
 /** Where `pnpm examples:fetch` puts a release-hosted file, or where a repo-hosted one is committed. */
 function localFile(id: string): string {
-  const record = EXAMPLE_MANIFEST.examples[id];
-  return record.hosting === 'repo'
-    ? path.join(PUBLIC_DIR, record.file)
-    : path.join(PUBLIC_DIR, 'examples', record.file);
+  return path.join(PUBLIC_DIR, exampleServedPath(EXAMPLE_MANIFEST.examples[id]));
 }
 
 /**

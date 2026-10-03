@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { readPerfManifest } from './datasets-manifest';
 
 const EXPECTED_SCENARIOS = [
   'annotationChange',
@@ -39,13 +40,7 @@ const DOWNLOAD_TIMEOUT_MS = SUITE_TIMEOUT_MS - 60_000;
  */
 const PAGE_RUN_BUDGET_MS = DOWNLOAD_TIMEOUT_MS - 120_000;
 
-/** `perf/datasets.manifest.json`: the `perf-datasets` release, which `pnpm perf:fetch` downloads. */
-interface PerfManifest {
-  datasets: { id: string; file: string; default: boolean }[];
-}
-const PERF_MANIFEST = JSON.parse(
-  fs.readFileSync(path.join(__dirname, 'datasets.manifest.json'), 'utf8'),
-) as PerfManifest;
+const PERF_MANIFEST = readPerfManifest(path.join(__dirname, 'datasets.manifest.json'));
 const PERF_DATASETS_DIR = path.join(__dirname, 'datasets');
 
 /**
