@@ -1776,49 +1776,76 @@ def knn_agreement(
     chance: (agreement − Σp²) / (1 − Σp²), so a view dominated by one category
     does not score high just by being uniform.
     """
+    return knn_agreements(xy, [labels], k=k, max_queries=max_queries, seed=seed)[0]
+
+
+def knn_agreements(
+    xy,
+    views: Sequence[Sequence[str | None]],
+    *,
+    k: int = 15,
+    max_queries: int = 20000,
+    seed: int = 42,
+) -> list[dict[str, Any]]:
+    """:func:`knn_agreement` of several labellings of the same points (all
+    labels, and the legend view), from one neighbour search: each view must
+    label the same points."""
     import numpy as np
     from sklearn.neighbors import NearestNeighbors
 
-    keep = [i for i, lab in enumerate(labels) if lab is not None]
+    keep = [i for i, lab in enumerate(views[0]) if lab is not None]
+    for view in views[1:]:
+        if [i for i, lab in enumerate(view) if lab is not None] != keep:
+            raise ValueError("the views label different points")
     result: dict[str, Any] = {
         "labelled": len(keep),
-        "coverage": len(keep) / max(len(labels), 1),
+        "coverage": len(keep) / max(len(views[0]), 1),
     }
     if len(keep) <= k:
-        return {**result, "agreement": None, "baseline": None, "kappa": None}
+        return [
+            {**result, "agreement": None, "baseline": None, "kappa": None}
+            for _ in views
+        ]
     points = np.asarray(xy, dtype=float)[keep]
-    values = np.array([labels[i] for i in keep], dtype=object)
     rng = np.random.default_rng(seed)
     queries = rng.choice(len(keep), size=min(max_queries, len(keep)), replace=False)
     nn = NearestNeighbors(n_neighbors=k + 1).fit(points)
     _, neighbours = nn.kneighbors(points[queries])
-    agree = []
-    for q, row in zip(queries, neighbours, strict=True):
-        others = [n for n in row if n != q][:k]
-        agree.append(np.mean(values[others] == values[q]))
-    shares = np.array(list(Counter(values.tolist()).values()), dtype=float) / len(
-        values
-    )
-    baseline = float((shares**2).sum())
-    agreement = float(np.mean(agree))
-    kappa = (agreement - baseline) / (1 - baseline) if baseline < 1 else 0.0
-    return {
-        **result,
-        "categories": len(shares),
-        "agreement": round(agreement, 4),
-        "baseline": round(baseline, 4),
-        "kappa": round(kappa, 4),
-        "queries": int(len(queries)),
-    }
+    others = [
+        [n for n in row if n != q][:k]
+        for q, row in zip(queries, neighbours, strict=True)
+    ]
+    results = []
+    for view in views:
+        values = np.array([view[i] for i in keep], dtype=object)
+        agree = [
+            np.mean(values[near] == values[q])
+            for q, near in zip(queries, others, strict=True)
+        ]
+        shares = np.array(list(Counter(values.tolist()).values()), dtype=float) / len(
+            values
+        )
+        baseline = float((shares**2).sum())
+        agreement = float(np.mean(agree))
+        kappa = (agreement - baseline) / (1 - baseline) if baseline < 1 else 0.0
+        results.append(
+            {
+                **result,
+                "categories": len(shares),
+                "agreement": round(agreement, 4),
+                "baseline": round(baseline, 4),
+                "kappa": round(kappa, 4),
+                "queries": int(len(queries)),
+            }
+        )
+    return results
 
 
-def stats_silhouettes(
-    statistics: pa.Table | None, projection: str, annotation: str
-) -> dict:
-    """Whole-annotation and per-category silhouettes the legend strips will show."""
-    if statistics is None:
+def stats_silhouettes(frame, projection: str, annotation: str) -> dict:
+    """Whole-annotation and per-category silhouettes the legend strips will
+    show, from the statistics part as a DataFrame (None: none)."""
+    if frame is None:
         return {}
-    frame = statistics.to_pandas()
     rows = frame[
         (frame.space_kind == "projection")
         & (frame.space_name == projection)
@@ -1942,6 +1969,21 @@ def clustering_report(
     ]
     if thumbnails:  # a candidate dropped from the recipe leaves no stale picture
         shutil.rmtree(out_dir / "thumbs", ignore_errors=True)
+    statistics = (
+        bundle.statistics.to_pandas() if bundle.statistics is not None else None
+    )
+    by_row: dict[str, list[str | None]] = {}
+
+    def first_labels(column: str) -> list[str | None]:
+        """Each row's first label of ``column``, worked out once per column."""
+        if column not in by_row:
+            by_row[column] = [first_label(c) for c in table.column(column).to_pylist()]
+        return by_row[column]
+
+    def in_layout(column: str, ids: Sequence[str]) -> list[str | None]:
+        labels = first_labels(column)
+        return [labels[row_of[i]] if i in row_of else None for i in ids]
+
     rows: list[dict[str, Any]] = []
     for projection in projections:
         ids, xy = _coords(bundle, projection)
@@ -1955,13 +1997,9 @@ def clustering_report(
                     }
                 )
                 continue
-            cells = table.column(annotation).to_pylist()
-            labels = [
-                first_label(cells[row_of[i]]) if i in row_of else None for i in ids
-            ]
-            full = knn_agreement(xy, labels, k=k, max_queries=max_queries)
-            shown = knn_agreement(
-                xy, legend_view(labels, top), k=k, max_queries=max_queries
+            labels = in_layout(annotation, ids)
+            full, shown = knn_agreements(
+                xy, [labels, legend_view(labels, top)], k=k, max_queries=max_queries
             )
             row = {
                 "projection": projection,
@@ -1972,20 +2010,18 @@ def clustering_report(
                 "knn_kappa": full["kappa"],
                 "legend_agreement": shown["agreement"],
                 "legend_kappa": shown["kappa"],
-                **stats_silhouettes(bundle.statistics, projection, annotation),
+                **stats_silhouettes(statistics, projection, annotation),
             }
             if thumbnails:
                 thumb = (
                     out_dir / "thumbs" / f"{slug(annotation)}__{slug(projection)}.png"
                 )
-                rings = None
                 predicted = f"{annotation}{PRED_MARKER}value"
-                if predicted in table.column_names:
-                    cells = table.column(predicted).to_pylist()
-                    rings = [
-                        first_label(cells[row_of[i]]) if i in row_of else None
-                        for i in ids
-                    ]
+                rings = (
+                    in_layout(predicted, ids)
+                    if predicted in table.column_names
+                    else None
+                )
                 render_thumbnail(
                     xy,
                     labels,
