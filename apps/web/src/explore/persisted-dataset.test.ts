@@ -51,8 +51,25 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+type Deferred<T> = ReturnType<typeof deferred<T>>;
+
 /** A bundle download that succeeds: four bytes, streamed as a real fetch's body is. */
 const okResponse = () => new Response(new ArrayBuffer(4));
+
+/** A bundle download the server answers with an error status. */
+const failedResponse = (status: 404 | 500) =>
+  new Response(null, { status, statusText: status === 404 ? 'Not Found' : 'Server Error' });
+
+/** A fetch that never answers, and rejects like a real one once its signal aborts. */
+const pendingFetch = () =>
+  vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError')),
+        );
+      }),
+  );
 
 /** The `AbortSignal` the `index`-th fetch was started with. */
 function fetchSignal(fetchMock: ReturnType<typeof vi.fn>, index = 0): AbortSignal {
@@ -99,15 +116,17 @@ function createController({
   };
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+// In afterEach, not at the end of each test body: a failing assertion would
+// otherwise skip the unstub and leak the fetch stub into the next test.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('loadExampleDataset', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('shows the downloading overlay before fetching, then fetches and loads the bundle', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
@@ -173,12 +192,7 @@ describe('loadExampleDataset', () => {
   });
 
   it("notifies, dismisses the overlay, and resolves 'failed' on an HTTP failure, without registering a load", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      headers: new Headers(),
-      status: 404,
-      statusText: 'Not Found',
-    });
+    const fetchMock = vi.fn().mockResolvedValue(failedResponse(404));
     vi.stubGlobal('fetch', fetchMock);
 
     const { controller, dataLoader, overlayController, loadQueue } = createController();
@@ -204,73 +218,48 @@ describe('loadExampleDataset', () => {
     expect(notifyMock.error).toHaveBeenCalledTimes(1);
   });
 
-  it('drops a superseded request: a slow fetch A resolves after a fast fetch B — only B loads', async () => {
-    let resolveA: (value: Response) => void = () => {};
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === resolveExampleUrl(DEMO.url)) {
-        return new Promise((resolve) => {
-          resolveA = resolve;
-        });
-      }
-      return Promise.resolve(okResponse());
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  // A (slow, demo) starts first; B (fast, another example) starts second and
+  // loads. A's fetch settles only then, and A must see it was superseded,
+  // however its fetch ends.
+  it.each([
+    ['answers with the bundle', (slowA: Deferred<Response>) => slowA.resolve(okResponse())],
+    ['fails', (slowA: Deferred<Response>) => slowA.reject(new TypeError('Failed to fetch'))],
+  ])(
+    'drops a superseded request whose slow fetch %s after a newer one loaded: only the newer loads, silently',
+    async (_label, settleA) => {
+      const slowA = deferred<Response>();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) =>
+          url === resolveExampleUrl(DEMO.url) ? slowA.promise : Promise.resolve(okResponse()),
+        ),
+      );
+      const { controller, dataLoader, overlayController, loadQueue } = createController();
 
-    const { controller, dataLoader, loadQueue } = createController();
+      const resultA = controller.loadExampleDataset(DEMO, 'menu');
+      const resultB = controller.loadExampleDataset(OTHER, 'menu');
+      await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
+      loadQueue.resolveOutcome(1, true);
+      expect(await resultB).toBe('loaded');
 
-    // A (slow, demo) starts first but its fetch won't resolve yet.
-    const resultA = controller.loadExampleDataset(DEMO, 'menu');
-    // B (fast, other example) starts second and its fetch resolves immediately.
-    const resultB = controller.loadExampleDataset(OTHER, 'menu');
+      overlayController.update.mockClear();
+      settleA(slowA);
+      expect(await resultA).toBe('superseded');
 
-    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
-    loadQueue.resolveOutcome(1, true);
-
-    // Now let A's fetch resolve — it must see it's been superseded.
-    resolveA(okResponse());
-
-    expect(await resultA).toBe('superseded');
-    expect(await resultB).toBe('loaded');
-
-    // Only B ever registered a load or reached the data loader.
-    expect(loadQueue.registerFileLoad).toHaveBeenCalledTimes(1);
-    expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
-      expect.any(File),
-      'default',
-      { entry: OTHER, source: 'menu', replacesStoredImport: false },
-      expect.any(Number),
-    );
-    expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1);
-  });
-
-  it('a superseded request never notifies or touches the overlay once its fetch settles', async () => {
-    let resolveA: (value: Response) => void = () => {};
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === resolveExampleUrl(DEMO.url)) {
-        return new Promise((resolve) => {
-          resolveA = resolve;
-        });
-      }
-      return Promise.resolve(okResponse());
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { controller, overlayController, dataLoader, loadQueue } = createController();
-
-    const resultA = controller.loadExampleDataset(DEMO, 'menu');
-    controller.loadExampleDataset(OTHER, 'menu');
-    await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1));
-    loadQueue.resolveOutcome(1, true);
-
-    overlayController.update.mockClear();
-    // A's fetch rejects after being superseded — must not surface an error toast
-    // or touch the overlay (B's overlay state must be left alone).
-    resolveA(undefined as never);
-    await expect(resultA).resolves.toBe('superseded');
-
-    expect(notifyMock.error).not.toHaveBeenCalled();
-    expect(overlayController.update).not.toHaveBeenCalled();
-  });
+      // No toast, and B's overlay state is left alone.
+      expect(notifyMock.error).not.toHaveBeenCalled();
+      expect(overlayController.update).not.toHaveBeenCalled();
+      // Only B ever registered a load or reached the data loader.
+      expect(loadQueue.registerFileLoad).toHaveBeenCalledTimes(1);
+      expect(loadQueue.registerFileLoad).toHaveBeenCalledWith(
+        expect.any(File),
+        'default',
+        { entry: OTHER, source: 'menu', replacesStoredImport: false },
+        expect.any(Number),
+      );
+      expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 /** A streamed response whose body yields `chunkSizes` bytes, chunk by chunk, each filled with its index. */
@@ -296,14 +285,6 @@ function downloadUpdates(update: ReturnType<typeof vi.fn>): Array<[number, strin
 describe('example download progress', () => {
   const MB = 1_000_000;
   const DOWNLOAD_SHARE = EXAMPLE_DOWNLOAD_SHARE;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
 
   it('rises with the decoded bytes over the decoded size, never past it, despite a gzip-sized Content-Length', async () => {
     const entry = { ...OTHER, sizeBytes: 3 * MB };
@@ -410,18 +391,9 @@ describe('example download progress', () => {
 });
 
 describe('loadExampleDatasetAndClearPersistedFile', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('loads the requested example flagged to replace the stored import, without clearing it up front', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
-    const { clearLastImportedFile } = await import('./opfs-dataset-store');
 
     const { controller, dataLoader, loadQueue } = createController();
 
@@ -444,16 +416,8 @@ describe('loadExampleDatasetAndClearPersistedFile', () => {
 });
 
 describe('beginUserRequest', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('drops a pending example fetch and aborts its download (as a user import would)', async () => {
-    const response = deferred<ReturnType<typeof okResponse>>();
+    const response = deferred<Response>();
     const fetchMock = vi.fn().mockReturnValue(response.promise);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -471,15 +435,7 @@ describe('beginUserRequest', () => {
   });
 
   it('an aborted download settles silently as superseded', async () => {
-    const fetchMock = vi.fn(
-      (_url: string, init: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () =>
-            reject(new DOMException('The operation was aborted.', 'AbortError')),
-          );
-        }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', pendingFetch());
     const { controller, overlayController } = createController();
 
     const resultPromise = controller.loadExampleDataset(DEMO, 'menu');
@@ -493,14 +449,6 @@ describe('beginUserRequest', () => {
 });
 
 describe('request precedence: a user request beats a startup load that began earlier', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('loads the demo at startup when nothing preempts it', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal('fetch', fetchMock);
@@ -629,7 +577,7 @@ describe('request precedence: a user request beats a startup load that began ear
   });
 
   it("the recovery banner's retry is a user request: it supersedes a pending example", async () => {
-    const response = deferred<ReturnType<typeof okResponse>>();
+    const response = deferred<Response>();
     const fetchMock = vi.fn().mockReturnValue(response.promise);
     vi.stubGlobal('fetch', fetchMock);
     const { controller, loadQueue } = createController();
@@ -652,16 +600,8 @@ describe('request precedence: a user request beats a startup load that began ear
 });
 
 describe('cancelPendingExampleLoad', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('cancels a pending menu load: aborts the download, hides the overlay, and never registers a load', async () => {
-    const response = deferred<ReturnType<typeof okResponse>>();
+    const response = deferred<Response>();
     const fetchMock = vi.fn().mockReturnValue(response.promise);
     vi.stubGlobal('fetch', fetchMock);
     const { controller, overlayController, loadQueue } = createController();
@@ -680,7 +620,7 @@ describe('cancelPendingExampleLoad', () => {
   });
 
   it('leaves a pending URL-driven load alone when asked to cancel only a menu load', async () => {
-    const response = deferred<ReturnType<typeof okResponse>>();
+    const response = deferred<Response>();
     const fetchMock = vi.fn().mockReturnValue(response.promise);
     vi.stubGlobal('fetch', fetchMock);
     const { controller, overlayController } = createController();
@@ -694,15 +634,7 @@ describe('cancelPendingExampleLoad', () => {
   });
 
   it('is a no-op when nothing is loading, or once the load has settled', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        headers: new Headers(),
-        status: 500,
-        statusText: 'Server Error',
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse(500)));
     const { controller, overlayController } = createController();
 
     expect(controller.cancelPendingExampleLoad()).toBe('none');
@@ -723,25 +655,6 @@ function cancelButtonHandler(setCancelHandler: ReturnType<typeof vi.fn>): (() =>
 }
 
 describe('the Cancel button of an example download', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  /** A fetch that never answers, and rejects like a real one once its signal aborts. */
-  const pendingFetch = () =>
-    vi.fn(
-      (_url: string, init: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () =>
-            reject(new DOMException('The operation was aborted.', 'AbortError')),
-          );
-        }),
-    );
-
   it('is offered while a menu or URL download runs, labelled "Cancel download"', () => {
     vi.stubGlobal('fetch', pendingFetch());
     const { controller, overlayController } = createController();
@@ -829,15 +742,7 @@ describe('the Cancel button of an example download', () => {
   });
 
   it('goes when the download fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        headers: new Headers(),
-        status: 500,
-        statusText: 'Server Error',
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse(500)));
     const { controller, overlayController } = createController();
 
     expect(await controller.loadExampleDataset(OTHER, 'menu')).toBe('failed');
@@ -877,24 +782,8 @@ describe('the Cancel button of an example download', () => {
 });
 
 describe('Retry on a failed example download', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   const failThenSucceed = () =>
-    vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        headers: new Headers(),
-        status: 500,
-        statusText: 'Server Error',
-      })
-      .mockResolvedValue(okResponse());
+    vi.fn().mockResolvedValueOnce(failedResponse(500)).mockResolvedValue(okResponse());
 
   /** The Retry action of the most recent error toast. */
   const retryAction = () => {
@@ -941,14 +830,6 @@ describe('Retry on a failed example download', () => {
 });
 
 describe('an example that has begun replacing the plot', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('can no longer be cancelled once committed, but a newer user request still supersedes it', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()));
     const { controller, dataLoader, loadQueue, overlayController } = createController();
@@ -988,14 +869,6 @@ describe('an example that has begun replacing the plot', () => {
 });
 
 describe("a user import's preparation step (a FASTA upload)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("offers the overlay's Cancel, which aborts it", () => {
     const { controller, overlayController } = createController();
 
@@ -1009,10 +882,7 @@ describe("a user import's preparation step (a FASTA upload)", () => {
   });
 
   it('is aborted by the next user request, which takes its Cancel button over', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise(() => {})),
-    );
+    vi.stubGlobal('fetch', pendingFetch());
     const { controller, overlayController } = createController();
 
     const preparation = controller.beginImportPreparation(controller.beginUserRequest());
@@ -1057,14 +927,6 @@ describe("a user import's preparation step (a FASTA upload)", () => {
 });
 
 describe('the startup restore and the requests that supersede it', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it('puts the previous status back when preempted while marking the load pending', async () => {
     const previous = { status: 'success' as const, failedAttempts: 0 };
     const marking = deferred<void>();
@@ -1113,15 +975,7 @@ describe('the startup restore and the requests that supersede it', () => {
   });
 
   it('reports a failed startup demo as default-failed', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        headers: new Headers(),
-        status: 500,
-        statusText: 'Server Error',
-      }),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse(500)));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = createController();
 
@@ -1136,15 +990,10 @@ describe('the startup restore and the requests that supersede it', () => {
 // `loadPersistedOrDefaultDataset` when there is no stored import.
 describe('startup demo when its bundle cannot be fetched', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: false, status: 404, statusText: 'Not Found' })),
+      vi.fn(async () => failedResponse(404)),
     );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 
   it('leaves the current dataset as it was and tells the user', async () => {
