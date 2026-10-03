@@ -167,6 +167,50 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     expect(overlayController.update).toHaveBeenCalledWith(false);
   });
 
+  it("names the recovery banner's file as the current dataset only when nothing is on screen", async () => {
+    const recovery = {
+      kind: 'recovery-required',
+      file: new File(['x'], 'mine.parquetbundle'),
+      failedAttempts: 1,
+    };
+    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue(recovery);
+    const { controller, setCurrentDatasetName, setCurrentExampleId } = createController(
+      runningLoad(exampleMeta('url')),
+    );
+
+    await controller.loadPersistedOrDefaultDataset();
+    expect(setCurrentDatasetName).toHaveBeenCalledWith('mine.parquetbundle');
+    expect(setCurrentExampleId).toHaveBeenCalledWith(null);
+
+    // A Back to an entry without `dataset=` while an example is shown: the
+    // plot keeps showing that example, so it keeps its name.
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'b.parquetbundle') }),
+    );
+    vi.mocked(setCurrentDatasetName).mockClear();
+    vi.mocked(setCurrentExampleId).mockClear();
+    await controller.loadPersistedOrDefaultDataset();
+    expect(setCurrentDatasetName).not.toHaveBeenCalled();
+    expect(setCurrentExampleId).not.toHaveBeenCalled();
+  });
+
+  it('removes a stale `dataset=` when the demo standing in for it fails on an empty page, and only then', async () => {
+    mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'default-failed' });
+    const { controller } = createController(runningLoad(exampleMeta('url')));
+    const changes = recordDatasetChanges(controller);
+
+    await controller.loadPersistedOrDefaultDataset();
+    expect(changes).toEqual([[null, 'startup']]);
+
+    // With a dataset on screen the failed demo keeps it, and its entry.
+    await controller.handleDataLoaded(
+      dataLoadedEvent({ file: new File(['x'], 'b.parquetbundle') }),
+    );
+    changes.length = 0;
+    await controller.loadPersistedOrDefaultDataset();
+    expect(changes).toEqual([]);
+  });
+
   it("neither emits nor touches the overlay for 'preempted': the user request that took over reports itself", async () => {
     mocks.persisted.loadPersistedOrDefaultDataset.mockResolvedValue({ kind: 'preempted' });
     const { controller, overlayController } = createController();

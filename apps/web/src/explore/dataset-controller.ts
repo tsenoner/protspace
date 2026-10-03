@@ -228,6 +228,15 @@ export function createDatasetController({
     datasetChangeSubscribers.forEach((callback) => callback(exampleId, source));
   };
 
+  // The dataset on screen, by its hash (null until the first load renders).
+  let currentDatasetHash: string | null = null;
+  let currentUnplacedProteinCount = 0;
+  viewController.subscribeToViewChanges((change) => {
+    if (currentDatasetHash !== null) {
+      writeTooltipAnnotations(currentDatasetHash, change.effective.tooltip);
+    }
+  });
+
   // Name, id and the dataset-change emit for a successful example load happen
   // in `handleDataLoaded`, keyed on the example in load meta, so a load that
   // later fails to parse never announces success.
@@ -249,6 +258,18 @@ export function createDatasetController({
       // dismiss the overlay of an example load this request superseded (a
       // Back to an entry without `dataset=`), which would otherwise stay up.
       overlayController.update(false);
+      // The banner's file names the current dataset only on an empty page:
+      // after a Back/Forward the plot still shows the dataset it showed, and
+      // keeps its name until the user picks a banner action.
+      if (currentDatasetHash === null) {
+        setCurrentDatasetName(outcome.file.name);
+        setCurrentExampleId(null);
+      }
+      emitDatasetChange(null, 'startup');
+    } else if (outcome.kind === 'default-failed' && currentDatasetHash === null) {
+      // The demo standing in for a failed or unknown deep link failed too,
+      // and nothing is on screen: drop the stale `?dataset=` as the demo's
+      // own load would have (its failure toast offers Retry).
       emitDatasetChange(null, 'startup');
     }
     // 'auto-loaded' (OPFS) and 'default-loaded' (demo) report through
@@ -264,14 +285,6 @@ export function createDatasetController({
    */
   const isLoadSuperseded = (meta: LoadMeta | null | undefined): boolean =>
     meta?.epoch !== undefined && !persistedDatasetController.isCurrentRequest(meta.epoch);
-
-  let currentDatasetHash: string | null = null;
-  let currentUnplacedProteinCount = 0;
-  viewController.subscribeToViewChanges((change) => {
-    if (currentDatasetHash !== null) {
-      writeTooltipAnnotations(currentDatasetHash, change.effective.tooltip);
-    }
-  });
 
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;

@@ -526,8 +526,8 @@ export function createPersistedDatasetController({
         `Persisted dataset has unresolved status (${status.status}). ` +
           'Showing recovery banner instead of auto-loading.',
       );
-      setCurrentDatasetName(persistedFile.name);
-      setCurrentExampleId(null);
+      // The caller names the file as the current dataset when nothing else is
+      // on screen (`loadPersistedOrDefaultDataset` in dataset-controller.ts).
       return {
         kind: 'recovery-required',
         file: persistedFile,
