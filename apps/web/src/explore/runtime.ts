@@ -73,6 +73,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
   const loadQueue = createLoadQueue({
     isDisposed: lifecycle.isDisposed,
+    // `datasetController` is declared below; the queue asks only once a load
+    // comes off it, after this synchronous setup has finished.
+    skipLoad: (meta) => datasetController.isSkippableQueuedLoad(meta),
   });
   dataLoader.loadFromFileHandler = (file, options, next) => {
     // A non-'auto' load is a user import: a user request, which supersedes

@@ -92,8 +92,11 @@ const data: VisualizationData = {
 function createRealController(
   simulateOutcome: (file: File, controller: DatasetController) => Promise<void>,
 ) {
-  const loadQueue = createLoadQueue({ isDisposed: () => false });
   let controller!: DatasetController;
+  const loadQueue = createLoadQueue({
+    isDisposed: () => false,
+    skipLoad: (meta) => controller.isSkippableQueuedLoad(meta),
+  });
   const dataLoader = {
     loadFromFile: vi.fn((file: File, options?: { source?: 'user' | 'auto' }) =>
       loadQueue.enqueueLoadFromFile(file, options, (queuedFile) =>
@@ -308,6 +311,41 @@ describe('example load: the stored import is replaced only once the example has 
     stubOkFetch();
 
     expect(await controller.loadExampleDataset(DEMO.id)).toBe('loaded');
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
+  });
+
+  it('a menu choice superseded while it waits for the queue is never decoded', async () => {
+    let releaseBusy!: () => void;
+    const busyGate = new Promise<void>((resolve) => {
+      releaseBusy = resolve;
+    });
+    const decoded: string[] = [];
+    const { controller, dataLoader, loadQueue } = createRealController(async (file, ctrl) => {
+      decoded.push(file.name);
+      if (file.name === 'busy.parquetbundle') {
+        await busyGate;
+        loadQueue.resolvePendingLoadFinalization(
+          loadQueue.getLoadMetaForFile(file)!.sequence,
+          true,
+        );
+        return;
+      }
+      await loadSucceeds(file, ctrl);
+    });
+    stubOkFetch();
+
+    // Another load holds the queue while the example downloads.
+    const busy = dataLoader.loadFromFile(new File(['x'], 'busy.parquetbundle'), {
+      source: 'auto',
+    });
+    const choice = controller.loadExampleDatasetAndClearPersistedFile(DEMO.id, 'menu');
+    await vi.waitFor(() => expect(loadQueue.getLatestSequence()).toBe(2));
+    controller.beginUserRequest();
+    releaseBusy();
+    await busy;
+
+    expect(await choice).toBe('superseded');
+    expect(decoded).toEqual(['busy.parquetbundle']);
     expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 

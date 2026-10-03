@@ -130,6 +130,29 @@ describe('createLoadQueue', () => {
     expect(loadFn).not.toHaveBeenCalled();
   });
 
+  it('settles a load it may skip as failed, without loading it, once its turn comes', async () => {
+    let superseded = false;
+    const queue = createLoadQueue({ isDisposed: () => false, skipLoad: () => superseded });
+    const first = makeFile('a.parquetbundle');
+    const second = makeFile('b.parquetbundle');
+    const loadFn = vi.fn(async () => {});
+
+    const firstDone = queue.enqueueLoadFromFile(first, undefined, loadFn);
+    const secondDone = queue.enqueueLoadFromFile(second, undefined, loadFn);
+    const secondOutcome = queue.awaitLoadOutcome(queue.getLoadMetaForFile(second)!.sequence);
+    await vi.waitFor(() => expect(loadFn).toHaveBeenCalledTimes(1));
+    // Superseded while it waits behind the first load.
+    superseded = true;
+    queue.resolvePendingLoadFinalization(queue.getLoadMetaForFile(first)!.sequence, true);
+    await firstDone;
+    await secondDone;
+
+    expect(loadFn).toHaveBeenCalledTimes(1);
+    expect(loadFn).toHaveBeenCalledWith(first, undefined);
+    expect(await secondOutcome).toBe(false);
+    expect(queue.getRunningLoadMeta()).toBeNull();
+  });
+
   it('reuses existing meta for the same file', () => {
     const queue = createLoadQueue({ isDisposed: () => false });
     const file = makeFile('a.parquetbundle');

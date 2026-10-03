@@ -116,6 +116,13 @@ export interface DatasetController {
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
   handleDataError(event: Event): Promise<void>;
+  /**
+   * Whether the load queue can skip `meta`'s load without decoding it: an
+   * example load a newer user request has superseded while it waited. A
+   * superseded OPFS restore or user import still decodes, so the restore
+   * records its stored status and the import its outcome.
+   */
+  isSkippableQueuedLoad(meta: LoadMeta): boolean;
   /** Proteins the loaded file holds that the dataset leaves out (no projection places them). */
   getUnplacedProteinCount(): number;
 }
@@ -660,6 +667,7 @@ export function createDatasetController({
     },
     handleDataLoaded,
     handleDataError,
+    isSkippableQueuedLoad: (meta) => meta.example !== undefined && isLoadSuperseded(meta),
     getUnplacedProteinCount: () => currentUnplacedProteinCount,
   };
 }
