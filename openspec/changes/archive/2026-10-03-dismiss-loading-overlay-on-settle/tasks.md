@@ -43,6 +43,8 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm precommit`, `pnpm format:check` and `pnpm test:ci` pass.
-- [ ] 5.2 `E2E_BROWSERS=chromium` and `E2E_BROWSERS=firefox,webkit` E2E runs pass locally.
-- [ ] 5.3 The PR records the perf-harness baseline shift.
+- [x] 5.1 `pnpm precommit`, `pnpm format:check` and `pnpm test:ci` pass.
+- [x] 5.2 `E2E_BROWSERS=chromium` and `E2E_BROWSERS=firefox,webkit` E2E runs pass: Chromium locally
+      with `--repeat-each=3` (363/363, no flakes) and Firefox/WebKit locally before the 100 ms
+      helper change, then both in CI on every later commit (three runs on the final commit).
+- [x] 5.3 The PR records the perf-harness baseline shift.
