@@ -1,4 +1,28 @@
-# Perf baselines
+# Local timing baselines
+
+`pnpm perf --save-baseline` writes the median timings of each segment to
+`perf/baselines/<dataset>.local.json`. `pnpm perf --baseline` reads that file back and reports each
+cell as `baseline→now ratio`.
+
+These files are gitignored, one set per machine. Timings depend on the hardware and swing about 2×
+with the power state, so a baseline from another machine, or from the same laptop on battery,
+compares nothing. Record the baseline and the run you compare it with on the same machine, plugged
+in or not in both cases, close together in time.
+
+Each file records the commit it was taken on (`recordedAt`), the CPU throttling rate (`cpu`), the
+per-segment medians and the heap after GC. Use the same `--cpu` for both runs.
+
+To compare two builds, `--compare` is more reliable than a baseline: it runs both builds
+interleaved in one session. See `../README.md`.
+
+Work counts have no local baselines: their budgets are committed in
+`apps/web/tests/perf/budgets.json` and gated by `pnpm perf:counts`.
+
+## WebGL suite baselines
+
+The records below come from the cross-browser WebGL suite, which `pnpm perf` ran when they were
+taken. That suite is now `pnpm perf:webgl`; read `pnpm perf` in the commands below as
+`pnpm perf:webgl`.
 
 Dated copies of `perf/test-results/chrome/webgl-perf-*/webgl-perf-suite-chrome*.json`. Playwright
 deletes the output directory of every selected project at the start of the next run, so a run worth
@@ -28,13 +52,13 @@ sits in `perf/datasets/`. Re-running them needs a `573K_swissprot_v3` manifest r
 release asset first (see [`../README.md`](../README.md)). The v2 command still works after
 `pnpm perf:fetch --only 573K_swissprot`.
 
-## 2026-10-05 baseline (headless, Apple M4 Pro)
+### 2026-10-05 baseline (headless, Apple M4 Pro)
 
 The current reference. Use it, not the sections after it, for any `loadDurationMs` comparison: it
 is the first record taken after `dismiss-loading-overlay-on-settle` (PR #503) removed the 800 ms
 "Ready to explore!" hold and the 500 ms overlay fade, which the load timing used to include.
 
-### Machine and commits
+#### Machine and commits
 
 Apple M4 Pro, 14 logical cores (`hardwareConcurrency` 14; `navigator.deviceMemory` reports its cap
 of 32), macOS 26.5. Google Chrome 154.0.8037.95 (`userAgentData.highEntropy.fullVersionList`),
@@ -54,7 +78,7 @@ below is the median of the three per-run values of that statistic** (so a mean i
 three per-run means, a p95 the median of three per-run p95s); `n` is per run. p95 is nearest-rank,
 as above. No run recorded a failure or a skipped dataset.
 
-### Render passes, branch
+#### Render passes, branch
 
 `durationMs` (CPU submission time) and `gpuSyncedMs` (the same window held until the GPU finishes):
 
@@ -75,7 +99,7 @@ uploaded 0 bytes per pass; `annotationChange` uploaded `0`, `25240556` or `43598
 `gpuSyncedMs` median by less than 0.05 ms (3.10 and 3.70). The M4 Pro draws a warm 573K frame in
 about 3 ms against the M4's 10 to 12 ms, so do not compare `gpuSyncedMs` across the two machines.
 
-### Load and heap, branch
+#### Load and heap, branch
 
 |                                   |      branch |
 | --------------------------------- | ----------: |
@@ -87,7 +111,7 @@ about 3 ms against the M4's 10 to 12 ms, so do not compare `gpuSyncedMs` across 
 
 Each row is its own median, so the rows can come from different runs.
 
-### Before and after the overlay change (main vs branch, headless)
+#### Before and after the overlay change (main vs branch, headless)
 
 |                       | main (`33e9cd96`)                           | branch (`aa84a65d`)                         | Δ median |
 | --------------------- | ------------------------------------------- | ------------------------------------------- | -------: |
@@ -121,7 +145,7 @@ section below did a −0.8 ms `densityZoom` shift. `dragContinuous`, the one sce
 sub-millisecond shift is measurable, has per-run GPU medians 2.9, 2.9, 2.9 on main and 3.4, 3.1, 2.5
 on the branch.
 
-### Headed vs headless (same commits)
+#### Headed vs headless (same commits)
 
 The headed runs (`headed-*`, all six before the headless ones) give, as medians of three:
 
@@ -148,12 +172,12 @@ similar 0.4 to 0.5 ms in the medians, with one overlapping run. So compare headl
 headless runs for the camera scenarios, and treat the headed sections below as a different
 measurement, besides being a different machine.
 
-## Earlier baselines (Apple M4, headed)
+### Earlier baselines (Apple M4, headed)
 
 Every section from here on was recorded on an Apple M4 with Chrome headed, before the suite went
 headless by default, and before the overlay change for its load numbers.
 
-## Machine
+### Machine
 
 Apple M4, 10 logical cores, `navigator.deviceMemory` 16, macOS. Google Chrome 152.0.7977.83 headed
 via Playwright (stable channel), viewport 1920x1080, `devicePixelRatio` 1, `MAX_TEXTURE_SIZE` 16384.
@@ -168,13 +192,13 @@ viewport of its own.
 Both runs are the same machine, the same session, minutes apart, on `perf/parquetbundle-v3` at
 `eb237b14` with no density code.
 
-## Render passes, `durationMs` (CPU submission time, nothing waits for the GPU)
+### Render passes, `durationMs` (CPU submission time, nothing waits for the GPU)
 
 573,649 points in every pass of both runs. `drawnPoints === renderedPoints === 573649` everywhere,
 so nothing was truncated. p95 is nearest-rank (the `ceil(0.95 n)`-th sorted sample), not
 interpolated.
 
-### v3 bundle (`573K_swissprot_v3`, 36.4 MB)
+#### v3 bundle (`573K_swissprot_v3`, 36.4 MB)
 
 | Scenario           |   n |   mean | median |    p95 |    max |
 | ------------------ | --: | -----: | -----: | -----: | -----: |
@@ -183,7 +207,7 @@ interpolated.
 | `dragCanvas`       | 120 |   1.08 |   1.00 |   1.70 |   6.20 |
 | `clickPoint`       |  10 | 417.18 | 414.90 | 435.30 | 435.30 |
 
-### v2 bundle (`573K_swissprot`, 44.9 MB)
+#### v2 bundle (`573K_swissprot`, 44.9 MB)
 
 | Scenario           |   n |   mean | median |    p95 |    max |
 | ------------------ | --: | -----: | -----: | -----: | -----: |
@@ -196,7 +220,7 @@ The two bundles render identically, which is the point: v3 changed the decode, n
 medians differ by less than the run-to-run spread; the p95 and max columns are dominated by the
 first iteration of each scenario.
 
-## `uploadedBytes` per pass
+### `uploadedBytes` per pass
 
 Identical in both runs:
 
@@ -210,7 +234,7 @@ Identical in both runs:
 A camera move uploads nothing, which is the #456 gate. `annotationChange` and `clickPoint` restage
 colours, so they upload by design.
 
-## Load and heap
+### Load and heap
 
 |                                   |          v3 |                         v2 |
 | --------------------------------- | ----------: | -------------------------: |
@@ -236,7 +260,7 @@ right after the post-load work. Compare a newer `loadDurationMs` against
 For reference, the pre-v3 record from 2026-05-31 (v2 bundle, same class of machine, `uploadedBytes`
 did not exist yet) had load 27,232 ms and a CDP peak of 813,786,683 B.
 
-## Post-harness delta (Task 0.6)
+### Post-harness delta (Task 0.6)
 
 `2026-09-07-573K_swissprot_v3-chrome.post-harness.json` is the same v3 command re-run after the
 Phase 0 harness landed: `gpuSyncedMs`, the `dragContinuous` and `zoomFarOut` scenarios, and the two
@@ -295,7 +319,7 @@ before-and-after number for the same harness.
 Camera scenarios (`zoomInOut`, `zoomFarOut`, `dragCanvas`, `dragContinuous`) upload 0 bytes in every
 one of their 760 passes, and `drawnPoints === renderedPoints` in every pass of every scenario.
 
-## Per-category contours (2026-09-25)
+### Per-category contours (2026-09-25)
 
 `2026-09-25-573K_swissprot_v3-chrome.contour-merged.json` is the v3 command on the merged contour
 (the commit before "feat(webgl): per-category contours", with the `contourDrag` scenario already in

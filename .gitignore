@@ -101,5 +101,6 @@ graphify-out/
 # Visual harness output (apps/web/tests/glyph-outline.spec.ts) — regenerated on demand
 apps/web/tests/__screens__/
 
-# Raw perf runs are machine-specific; the numbers live in perf/baselines/README.md
+# Per-machine timing baselines (`pnpm perf --save-baseline`) and raw `pnpm perf:webgl` runs;
+# see perf/baselines/README.md
 perf/baselines/*.json

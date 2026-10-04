@@ -1,4 +1,184 @@
-## Performance benchmarking & plotting
+# Performance checks
+
+Two Playwright modes drive the real Explore UI: annotation switch, projection switch, legend
+isolate, camera drag and wheel, resize, search, import. A third tool, the cross-browser WebGL
+suite (`pnpm perf:webgl`), measures render passes per dataset in Chrome, Firefox and Safari; see its
+section at the end.
+
+| Command            | What it measures            | Browser                   | Gated                  | Time       |
+| ------------------ | --------------------------- | ------------------------- | ---------------------- | ---------- |
+| `pnpm perf:counts` | work counts per interaction | headless Chromium         | yes, by `budgets.json` | about 20 s |
+| `pnpm perf`        | timings per interaction     | headed Chromium, real GPU | no                     | about 50 s |
+| `pnpm perf:webgl`  | render passes per dataset   | Chrome, Firefox, Safari   | no                     | minutes    |
+
+Counts do not depend on the machine, so they gate CI. Timings swing about 2× with the power state
+(battery, Low Power Mode), so they are only reported, as medians or as ratios between two builds
+measured in the same session.
+
+## How it works
+
+Load Explore with `?perfCounters=1`. Core then exposes `window.__protspacePerfCounters`
+(`packages/core/src/utils/perf-counters.ts`). Without the flag the counters are `null` and each
+call site costs one null check. They count:
+
+| Counter                                 | What                                                            |
+| --------------------------------------- | --------------------------------------------------------------- |
+| `restage`, `restagePos`, `restageStyle` | full GPU buffer re-stages (`populateBuffers`), with their parts |
+| `restageMs`                             | time spent in those re-stages                                   |
+| `render`, `drawn`                       | renderer frames, and the points drawn by the last one           |
+| `processData`, `gridRebuild`            | scatter-plot data processing, point-grid rebuilds               |
+| `legendUpdate`, `legendRebuild`         | legend item updates and rebuilds                                |
+
+An init script (`apps/web/tests/helpers/perf/probes.ts`) wraps the public
+`WebGL2RenderingContext.prototype`, so these need no app code and survive renames:
+
+- `glIs`: `gl.is{Program,Buffer,Texture,VertexArray,Framebuffer}` calls, reported per render;
+- `glSync`: `getError`, `getProgramParameter`, `getShaderParameter`, `readPixels`;
+- `uploadBytes`: bytes passed to `bufferData` and `bufferSubData`.
+
+Each segment runs settle → snapshot → act → settle → snapshot → reset → settle. Settling waits
+until the counters and uploaded bytes stay unchanged for two animation frames and 200 ms, and never
+sleeps a fixed time. It fails at 3 s (60 s in timing mode): a page that keeps working with no input
+has a render loop or leaked work. Segments that change the view reset it through the UI, and the
+plot's pixels before the segment must equal the pixels after the reset.
+
+The segments are listed once, in `apps/web/tests/helpers/perf/scenarios.ts`, and both modes use
+that list.
+
+## `pnpm perf:counts`
+
+```sh
+pnpm perf:counts                                             # starts or reuses `pnpm dev:app` on 8080
+PLAYWRIGHT_BASE_URL=http://localhost:8303 pnpm perf:counts   # against a server you started
+```
+
+It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
+(`apps/web/public/data.parquetbundle`). It is a default project of
+`apps/web/tests/playwright.config.ts`, so `pnpm test:e2e` and the e2e CI workflow run it too. It
+prints one table, value/budget per cell, with `!` on a cell over budget:
+
+```
+segment            restage  pos  style  render  glIs/r  sync  proc  legU  legR  grid  upload  pixels
+annotation-switch  6/6      2/2  6/6    7/7     10/10   0/0   0/0   2/2   2/2   1/1   2.0MB   same
+camera             0/0      0/0  0/0    28      10/10   0     0/0   0/0   0/0   0/0   0B/0B   same
+```
+
+It fails when:
+
+- a count is above its budget;
+- the pixels after a reset differ (both screenshots are attached to the report);
+- the camera segment draws fewer points than the dataset has;
+- a `load` counter reads 0, which means a probe got disconnected;
+- the page does not settle.
+
+A count below its budget passes, and the report lists it under "tighten".
+
+### Budgets
+
+`apps/web/tests/perf/budgets.json` is the only place budgets live. `null` means report only. Counts
+that follow how many frames a load or gesture spans (renders during load, import and camera moves,
+and the GL sync calls there) are `null`, and so is any count that differed between the three
+recordings.
+
+To update after a change that lowers, or knowingly raises, a count:
+
+```sh
+PERF_UPDATE_BUDGETS=1 pnpm perf:counts   # runs the segments 3 times, writes the max of each count
+git diff apps/web/tests/perf/budgets.json
+```
+
+Commit the new numbers with the change that caused them. A perf fix lowers its budgets in the same
+commit.
+
+## `pnpm perf` (timing mode)
+
+```sh
+pnpm perf                                  # build, `vite preview` on 8301, demo bundle, 5 runs
+pnpm perf --datasets 40K,7K_toxprot
+pnpm perf --datasets /abs/path/573K_swissprot_v3.parquetbundle --runs 3
+pnpm perf --scenarios annotation,camera --cpu 4
+```
+
+| Flag                | Default    | Meaning                                                                    |
+| ------------------- | ---------- | -------------------------------------------------------------------------- |
+| `--datasets a,b`    | `default`  | `default` (the demo bundle), a name in `apps/web/public/data/`, or a path  |
+| `--scenarios a,b`   | all        | `annotation`, `projection`, `legend`, `camera`, `resize`, `search`         |
+| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                    |
+| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does    |
+| `--url URL`         | own server | measure this server instead of building and serving the app                |
+| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                      |
+| `--compare URL`     |            | a second build, measured interleaved with the first                        |
+| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                 |
+| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json` |
+| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`   |
+
+Without `--url`, `perf/perf.mjs` builds the app and serves it with `vite preview --port 8301
+--strictPort`, and stops that server on exit, on failure and on Ctrl-C. It never uses or stops
+ports 8080 and 8091.
+
+Per dataset, it imports the bundle through the import control (that import is timed once), then
+repeats the segments. It prints one table per dataset and writes every sample to
+`perf/results/<stamp>-<dataset>.json` (gitignored):
+
+```
+default  runs 4 (+1 warm-up)  cpu 1x  A=:8301  heap 9MB     median
+segment            INP ms  LoAF ms  top script   busy ms  restage ms  p95 frame  pixels A=B
+annotation-switch  88      58       DIV.onclick  75       46          -          -
+camera             40      0        -            87       0           18         -
+```
+
+- **INP ms**: the longest Event Timing duration of any interaction in the segment.
+- **LoAF ms / top script**: the longest long animation frame, and the script that took most of it.
+- **busy ms**: main-thread task time (CDP `TaskDuration`).
+- **restage ms**: time inside GPU re-stages, from the counters.
+- **p95 frame**: 95th percentile gap between frames, camera segment only.
+- **heap**: JS heap after a forced GC, once the runs are done.
+
+Event Timing and Long Animation Frames exist only in Chromium, so timing mode runs only there.
+
+### Comparing two builds
+
+Serve each build on its own port, then:
+
+```sh
+pnpm perf --url http://localhost:8301 --compare http://localhost:8302
+```
+
+The runs alternate A, B, A, B in one browser session, so a change in power state hits both builds.
+Cells read `A→B ratio`, for example `412→118 .29`. `pixels A=B` compares the plot after each
+segment between the two builds. Compare two production builds (`vite build` + `vite preview`), not
+a dev server with a build.
+
+### Baselines
+
+To compare against an earlier run on the same machine:
+
+```sh
+pnpm perf --save-baseline   # on main
+pnpm perf --baseline        # on your branch: cells read baseline→now
+```
+
+See `baselines/README.md`.
+
+## Files
+
+```
+packages/core/src/utils/perf-counters.ts   the flag-gated counters
+apps/web/tests/perf-counts.spec.ts         counts gate (default e2e project)
+apps/web/tests/perf-timing.spec.ts         timing mode (opt-in project, PERF_TIMING=1)
+apps/web/tests/helpers/perf/probes.ts      init script, settle(), segment()
+apps/web/tests/helpers/perf/scenarios.ts   the segments
+apps/web/tests/helpers/perf/report.ts      budgets and tables
+apps/web/tests/perf/budgets.json           budgets
+perf/perf.mjs                              `pnpm perf`: flags to PERF_* env, server, Playwright
+perf/webgl-perf.spec.ts                    `pnpm perf:webgl`: the cross-browser WebGL suite
+perf/playwright.config.ts                  its Playwright config
+apps/web/src/perf/webgl-perf-suite.ts      its in-page runner, loaded on `?webglPerf=1`
+perf/datasets.manifest.json                the datasets `pnpm perf:fetch` downloads
+perf/plot_perf_results.py                  plots of its results
+```
+
+## `pnpm perf:webgl` (cross-browser WebGL suite)
 
 ### 1. Fetch the datasets
 
@@ -26,8 +206,8 @@ owner's step.
 From the **repo root**, run the Playwright-based WebGL performance suite:
 
 ```sh
-pnpm perf                        # 10 iterations per scenario (default)
-PERF_ITERATIONS=5 pnpm perf      # override iteration count
+pnpm perf:webgl                        # 10 iterations per scenario (default)
+PERF_ITERATIONS=5 pnpm perf:webgl      # override iteration count
 ```
 
 This launches Chrome, Firefox and Safari headless, so no window takes focus
@@ -58,14 +238,14 @@ include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
-PERF_DATASETS=573K_swissprot pnpm perf --project=chrome
+PERF_DATASETS=573K_swissprot pnpm perf:webgl --project=chrome
 
 # Multiple datasets
-PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf --project=chrome
+PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf:webgl --project=chrome
 ```
 
 Pass `--project=chrome` directly, with no `--` in front of it. pnpm 10 forwards a
-`--` to the script verbatim, so `pnpm perf -- --project=chrome` reaches Playwright
+`--` to the script verbatim, so `pnpm perf:webgl -- --project=chrome` reaches Playwright
 as a positional test filter instead of a project filter and every browser project
 runs.
 
@@ -92,7 +272,7 @@ results file naming what broke instead of an opaque Playwright timeout:
 | `webglPerfBudgetMs`        | 40 min  | Whole run. The results file is emitted when this expires, wherever the sweep has got to; datasets not reached are recorded under `skipped`. |
 | `webglPerfDatasetBudgetMs` | 6 min   | One dataset's load path and readiness gate, shared by every wait in it and capped by the run budget.                                        |
 
-`pnpm perf` derives `webglPerfBudgetMs` from the spec's own download wait, so
+`pnpm perf:webgl` derives `webglPerfBudgetMs` from the spec's own download wait, so
 the two cannot drift; the defaults above apply only to a hand-typed
 `?webglPerf=1` in a browser. Raise both, and `SUITE_TIMEOUT_MS` in
 `perf/webgl-perf.spec.ts`, if a legitimately slow sweep needs longer.
@@ -141,7 +321,7 @@ perf/test-results/
 
 The per-browser split matters: Playwright deletes the output directory of every
 _selected_ project when a run starts, so with one shared directory
-`pnpm perf -- --project=chrome` used to delete the Firefox and Safari results
+`pnpm perf:webgl -- --project=chrome` used to delete the Firefox and Safari results
 from the previous full run, and the plotter would then quietly draw
 single-browser charts. The plotter searches recursively, so it needs no change.
 

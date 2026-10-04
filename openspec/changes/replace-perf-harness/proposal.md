@@ -59,7 +59,9 @@ which vanish silently after a rename, and one large import per scenario.
 
 - `packages/core`: new internal `utils/perf-counters.ts`; one-line probes in `webgl-renderer.ts`,
   `scatter-plot.ts` and `legend.ts`; `webgl-render-perf.ts` and its host-contract test deleted.
+  `PlotInteractionHost.renderWebGL()` drops its trigger argument, which only the runner read.
 - `apps/web`: new `tests/perf-*.spec.ts`, `tests/helpers/perf/`, `tests/perf/budgets.json`;
   `src/perf/` deleted; `camera-no-restage.spec.ts` deleted.
 - Root: `perf` script repointed, `perf:counts` added; `perf/` holds only `perf.mjs` and docs;
-  `perf/results/` and `perf/baselines/*.local.json` gitignored.
+  `perf/results/` and `perf/baselines/*.local.json` gitignored. `knip.jsonc` and
+  `eslint.config.mjs` drop their `perf/**/*.ts` globs.

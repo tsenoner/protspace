@@ -24,7 +24,8 @@ data processing, point-grid rebuilds, and legend updates and rebuilds.
 `pnpm perf:counts` SHALL drive each segment through Playwright input on the rendered UI, not
 through calls into the page. Before and after each segment it SHALL wait until the counters and the
 uploaded byte total stay unchanged for at least two animation frames and 200 ms, and SHALL fail the
-segment when that does not happen within 3 s. It SHALL NOT use fixed sleeps to settle.
+segment when that does not happen within 3 s (60 s in timing mode, where one interaction on a
+large dataset can keep the page busy for seconds). It SHALL NOT use fixed sleeps to settle.
 
 #### Scenario: A render loop
 
