@@ -84,22 +84,37 @@ export async function readExploreState(page: Page): Promise<ExploreState> {
   return state;
 }
 
-function waitForPlotState(
+async function waitForPlotState(
   page: Page,
   key: 'selectedAnnotation' | 'selectedProjectionIndex',
   value: string | number,
-) {
-  return page.waitForFunction(
-    ({ key, value }) => (document.querySelector('#myPlot') as PlotHost | null)?.[key] === value,
-    { key, value },
-    { timeout: 10_000 },
-  );
+): Promise<void> {
+  try {
+    await page.waitForFunction(
+      ({ key, value }) => (document.querySelector('#myPlot') as PlotHost | null)?.[key] === value,
+      { key, value },
+      { timeout: 10_000 },
+    );
+  } catch (error) {
+    const actual = await page
+      .locator('#myPlot')
+      .evaluate((plot: PlotHost, k) => String(plot[k]), key)
+      .catch(() => 'unreadable');
+    throw new Error(`#myPlot.${key} never became ${JSON.stringify(value)} (still ${actual})`, {
+      cause: error,
+    });
+  }
 }
 
 async function selectAnnotation(page: Page, annotation: string): Promise<void> {
   const select = page.locator('protspace-control-bar protspace-annotation-select');
-  await select.locator('.dropdown-trigger').click();
-  await select.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
+  const item = select.locator(`.dropdown-item[data-annotation="${annotation}"]`);
+  // The trigger toggles, so only click it when the menu is closed.
+  if (!(await item.isVisible())) await select.locator('.dropdown-trigger').click();
+  await expect(item, `annotation menu item "${annotation}" not shown`).toBeVisible({
+    timeout: 5_000,
+  });
+  await item.click();
   await waitForPlotState(page, 'selectedAnnotation', annotation);
   // The menu stays open after a pick; close it so it cannot cover the plot.
   if (await select.locator('.dropdown-item').first().isVisible()) {
@@ -254,6 +269,13 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
         await input.press('Escape');
         await input.blur();
         await page.keyboard.press('Escape');
+        // Selecting a protein opens its structure viewer, and clearing the selection
+        // leaves it open; close it so later segments start from the same layout.
+        const viewer = page.locator('#myStructureViewer');
+        if (await viewer.isVisible()) await viewer.locator('.close-button').click();
+        await expect(viewer, 'structure viewer still open after reset').toBeHidden({
+          timeout: 5_000,
+        });
       },
       pixels: true,
     },
