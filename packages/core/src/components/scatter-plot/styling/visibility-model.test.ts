@@ -667,6 +667,76 @@ describe('computeVisibilityModel', () => {
     });
   });
 
+  // ── The selection and highlight as one mark, for the renderer to draw ──────
+  describe('marks', () => {
+    const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2, 0));
+    const ids = ['p0', 'p1', 'p2', 'p3'];
+
+    it('gives every point the marked or unmarked opacity, as baseOpacityAt does', () => {
+      const cases: Partial<VisibilityInputs>[] = [
+        { selectedProteinIds: ['p1'] },
+        { selectedProteinIds: ['p1'], highlightedProteinIds: ['p3'] },
+        { highlightedProteinIds: ['p3'] },
+        { selectedProteinIds: ['missing'], hiddenAnnotationValues: ['A'] },
+      ];
+      for (const overrides of cases) {
+        const model = computeVisibilityModel(baseInputs({ data, ...overrides }));
+        const { marks } = model;
+        expect(marks).not.toBeNull();
+        ids.forEach((id, i) =>
+          expect(model.baseOpacityAt(i, id)).toBe(
+            model.isMarked(id) ? marks!.marked : marks!.unmarked,
+          ),
+        );
+      }
+    });
+
+    it('marks the selected and highlighted ids only', () => {
+      const model = computeVisibilityModel(
+        baseInputs({ data, selectedProteinIds: ['p1'], highlightedProteinIds: ['p3'] }),
+      );
+      expect(ids.map((id) => model.isMarked(id))).toEqual([false, true, false, true]);
+    });
+
+    it('has none with nothing marked, or with focus deciding the rest', () => {
+      expect(computeVisibilityModel(baseInputs({ data })).marks).toBeNull();
+      const focused = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(focused.marks).toBeNull();
+      // A selection fades every unmarked point whatever the focus.
+      const selected = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], selectedProteinIds: ['p1'] }),
+      );
+      expect(selected.marks).toEqual({ marked: OPACITIES.selected, unmarked: OPACITIES.faded });
+    });
+
+    it('unmarked: the same hiding at base opacity, sharing the hidden mask', () => {
+      const rows = Int32Array.of(0, 1, 2, 0);
+      const live = makeData(['A', 'B', 'C'], rows);
+      const model = computeVisibilityModel(
+        baseInputs({
+          data: live,
+          hiddenAnnotationValues: ['B'],
+          selectedProteinIds: ['p0'],
+          focusedValues: ['C'],
+        }),
+      );
+      // A rebuilt mask would see this; the shared one does not.
+      rows[1] = 0;
+      const { unmarked } = model;
+      expect(unmarked.marks).toBeNull();
+      expect(ids.map((id, i) => unmarked.opacityAt(i, id))).toEqual([
+        OPACITIES.base,
+        0,
+        OPACITIES.base,
+        OPACITIES.base,
+      ]);
+      expect(model.unmarked).toBe(unmarked);
+      expect(unmarked.unmarked).toBe(unmarked);
+    });
+  });
+
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──
   // when the mask-relevant inputs (data, selectedAnnotation, hidden ref) are
   // reference-equal, so a selection-only change never redoes the pass.

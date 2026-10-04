@@ -85,6 +85,16 @@ export interface VisibilityModel {
    * that names no value). Lets a caller hide a whole category at once.
    */
   hidesValues(values: readonly string[]): boolean;
+  /** Whether the protein with `id` is selected or highlighted. */
+  isMarked(id: string): boolean;
+  /**
+   * The selection and highlight as one mark: a protein `isMarked` has base
+   * opacity `marked`, every other one `unmarked`. Null while nothing is marked,
+   * and while focus gives the unmarked proteins their opacity by category.
+   */
+  readonly marks: { readonly marked: number; readonly unmarked: number } | null;
+  /** This model with nothing selected, highlighted or focused. */
+  readonly unmarked: VisibilityModel;
 }
 
 /**
@@ -329,13 +339,12 @@ export function computeVisibilityModel(
   // With neither set populated the two lookups below cannot match, and staging
   // asks once per point.
   const anyMarked = selectedIdsSet.size > 0 || highlightedIdsSet.size > 0;
+  const isMarked = (id: string): boolean => selectedIdsSet.has(id) || highlightedIdsSet.has(id);
 
   const baseOpacityAt = (originalIndex: number, id: string): number => {
     if (anyMarked) {
-      const isSelected = selectedIdsSet.has(id);
-      const isHighlighted = highlightedIdsSet.has(id);
-      if (isSelected || isHighlighted) return opacities.selected;
-      if (hasSelection && !isSelected) return opacities.faded;
+      if (isMarked(id)) return opacities.selected;
+      if (hasSelection) return opacities.faded;
     }
     // Focus renders like a selection: focused points on top, the rest flat-faded.
     if (unfocusedMask) {
@@ -354,6 +363,13 @@ export function computeVisibilityModel(
   const opacityOf = (point: PlotDataPoint): number => opacityAt(point.originalIndex, point.id);
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
+  // A selection fades the rest whatever the focus; a highlight alone leaves it to focus.
+  const marks =
+    anyMarked && (hasSelection || !unfocusedMask)
+      ? { marked: opacities.selected, unmarked: hasSelection ? opacities.faded : opacities.base }
+      : null;
+  let unmarked: VisibilityModel | null = null;
+
   const model: VisibilityModel = {
     allHidden,
     opacityOf,
@@ -363,6 +379,18 @@ export function computeVisibilityModel(
     baseOpacityAt,
     isHiddenAt,
     hidesValues,
+    isMarked,
+    marks,
+    get unmarked() {
+      unmarked ??=
+        anyMarked || focusedValues
+          ? computeVisibilityModel(
+              { ...inputs, selectedProteinIds: [], highlightedProteinIds: [], focusedValues: null },
+              model,
+            )
+          : model;
+      return unmarked;
+    },
   };
 
   // Stash mask-relevant inputs + the mask non-enumerably so a later call can
