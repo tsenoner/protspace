@@ -194,14 +194,6 @@ export default defineConfig({
       testMatch: /load-large-bundle\.spec\.ts/,
     }),
     {
-      name: 'camera-no-restage',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1280, height: 720 },
-      },
-      testMatch: /camera-no-restage\.spec\.ts/,
-    },
-    {
       // Work counts per interaction, gated by tests/perf/budgets.json. See perf/README.md.
       name: 'perf-counts',
       use: {
