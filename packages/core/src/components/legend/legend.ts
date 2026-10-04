@@ -1734,12 +1734,16 @@ export class ProtspaceLegend extends LitElement {
         knownValues,
       );
     }
+    // Protein order while auto-sync is off, the order a per-protein `annotationValues` feed
+    // gives, so the legend comes out the same whether its host feeds it or it counts the
+    // synced storage. Tied counts keep this order, which settles their rows and colours.
     return LegendDataProcessor.countFromStorage(
       source.colData,
       source.values,
       source.proteinCount,
       filteredIndices,
       knownValues,
+      !this.autoSync,
     );
   }
 

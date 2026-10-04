@@ -191,8 +191,9 @@ export function createDataRenderer({
 
     console.log('Updating scatterplot with new data...');
     controlBar.autoSync = false;
-    // Only `syncLegendState` turns this back on. Any sooner and the legend recounts mid-load,
-    // reordering its "Other" values, which costs the plot a re-stage of its own.
+    // Only `syncLegendState` turns this back on. Until then the legend counts in protein
+    // order (its `_computeAnnotationCounts`), which picks the rows and colours of tied
+    // categories, and `updateLegend` leaves the legend to its own sync.
     legendElement.autoSync = false;
 
     applyPlotState(plotElement, newData, resolvedInitialView);
