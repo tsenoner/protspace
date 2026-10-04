@@ -69,7 +69,17 @@ function invariants(results: SegmentResult[]): string[] {
   const failures: string[] = [];
   const load = results.find((r) => r.name === 'load')!;
   // A probe a refactor disconnected reads zero, which would pass every budget.
-  for (const key of ['restage', 'render', 'processData', 'gridRebuild', 'legendUpdate'] as const) {
+  const live = [
+    'restage',
+    'restagePos',
+    'restageStyle',
+    'render',
+    'processData',
+    'gridRebuild',
+    'legendUpdate',
+    'legendRebuild',
+  ] as const;
+  for (const key of live) {
     if (load.delta[key] <= 0) failures.push(`load.${key} is 0: the counter is disconnected`);
   }
   if (load.delta.uploadBytes <= 0) failures.push('load.uploadBytes is 0: the GL probe is off');
