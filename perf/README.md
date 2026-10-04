@@ -48,9 +48,15 @@ that list.
 ## `pnpm perf:counts`
 
 ```sh
-pnpm perf:counts                                             # starts or reuses `pnpm dev:app` on 8080
+pnpm perf:counts                                             # builds, then serves this checkout on 8310
+PLAYWRIGHT_PORT=8312 pnpm perf:counts                        # the same, on another port
 PLAYWRIGHT_BASE_URL=http://localhost:8303 pnpm perf:counts   # against a server you started
 ```
+
+`pnpm perf:counts` builds this checkout's packages and starts its own Vite server on 8310 (or
+`PLAYWRIGHT_PORT`). It never reuses a server, so a dev server from another checkout cannot be
+measured by mistake; if the port is taken, the run stops. `pnpm test:e2e` instead starts or reuses
+`pnpm dev:app` on 8080, which may be another checkout's server.
 
 It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
 (`apps/web/public/data.parquetbundle`). It is a default project of

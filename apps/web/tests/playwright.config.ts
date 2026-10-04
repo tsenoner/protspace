@@ -22,7 +22,13 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
  * Some projects are excluded from the default suite and gated on an env flag — see `optIn`
  * below, and each project's own comment for what it needs.
  */
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
+// PLAYWRIGHT_PORT starts a fresh server on that port (never reused), with this checkout's
+// packages built first, so a dev server from another checkout on 8080 is never measured.
+const OWN_PORT = process.env.PLAYWRIGHT_PORT;
+if (OWN_PORT !== undefined && !/^\d+$/.test(OWN_PORT)) {
+  throw new Error(`PLAYWRIGHT_PORT must be a port number, got "${OWN_PORT}"`);
+}
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${OWN_PORT ?? 8080}`;
 const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
 const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
 
@@ -80,23 +86,35 @@ export default defineConfig({
 
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
-    : {
-        command: 'pnpm dev:app',
-        cwd: REPO_ROOT,
-        url: BASE_URL,
-        reuseExistingServer: !process.env.CI,
-        timeout: 180_000,
-        stdout: 'pipe',
-        stderr: 'pipe',
-        // Pins the startup demo to a test fixture, so no scenario depends on the
-        // product's demo bundle. A dev server that was already running locally
-        // (reuseExistingServer) was started without it: stop it before a run.
-        env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
-        // Stop the server with the run. A pinned server left on :8080 would be
-        // picked up by `pnpm docs:images` (the root config starts none), whose
-        // captures would then photograph the fixture instead of the product demo.
-        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
-      },
+    : OWN_PORT
+      ? {
+          command: `pnpm turbo run build --filter=@protspace/app^... && pnpm --filter @protspace/app exec vite --port ${OWN_PORT} --strictPort`,
+          cwd: REPO_ROOT,
+          url: BASE_URL,
+          reuseExistingServer: false,
+          timeout: 180_000,
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
+          gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
+        }
+      : {
+          command: 'pnpm dev:app',
+          cwd: REPO_ROOT,
+          url: BASE_URL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 180_000,
+          stdout: 'pipe',
+          stderr: 'pipe',
+          // Pins the startup demo to a test fixture, so no scenario depends on the
+          // product's demo bundle. A dev server that was already running locally
+          // (reuseExistingServer) was started without it: stop it before a run.
+          env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
+          // Stop the server with the run. A pinned server left on :8080 would be
+          // picked up by `pnpm docs:images` (the root config starts none), whose
+          // captures would then photograph the fixture instead of the product demo.
+          gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
+        },
 
   use: {
     baseURL: BASE_URL,
