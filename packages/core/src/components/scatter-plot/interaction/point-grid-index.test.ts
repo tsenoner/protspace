@@ -231,3 +231,29 @@ describe('PointGridIndex.rebuild with slot subset', () => {
     expect(idx.isBuilt()).toBe(false);
   });
 });
+
+describe('PointGridIndex.setVisible', () => {
+  it('answers as an index of only the visible slots, until the next rebuild', () => {
+    // Slot 1 sits on slot 0 and is hidden; slot 2 is hidden and alone.
+    const pd = makePD([10, 10, 50, 80], [10, 10, 50, 80]);
+    const idx = buildIndex(pd);
+    idx.setVisible(Uint8Array.from([1, 0, 0, 1]));
+    expect(idx.findNearest(10, 10, 5)).toBe(0);
+    expect(idx.findNearest(50, 50, 5)).toBe(-1);
+    expect(idx.queryByPixels(0, 0, 100, 100).sort()).toEqual([0, 3]);
+    expect(
+      idx
+        .queryByPolygon([
+          [0, 0],
+          [100, 0],
+          [100, 100],
+          [0, 100],
+        ])
+        .sort(),
+    ).toEqual([0, 3]);
+
+    idx.rebuild(pd, [0, 1, 2, 3]);
+    expect(idx.findNearest(10, 10, 5)).toBe(1);
+    expect(idx.findNearest(50, 50, 5)).toBe(2);
+  });
+});

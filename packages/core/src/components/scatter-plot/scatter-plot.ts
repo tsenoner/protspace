@@ -97,6 +97,12 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_mergedConfig',
 ]);
 
+/**
+ * Visible slots below 1 / this of all get a grid of their own (see `_sparseIndex`):
+ * the full grid would make a query walk mostly hidden slots.
+ */
+const SPARSE_INDEX_SHARE = 4;
+
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
 const DEFAULT_NUMERIC_BIN_COUNT = 10;
@@ -260,14 +266,23 @@ export class ProtspaceScatterplot extends LitElement {
   private _interactableCount = 0;
   private _interactableCountKey: InteractableKey | null = null;
   private _pointGridIndexRebuildRafId: number | null = null;
+  private _pointGridReindexPending = false;
+  private _visibleSlotsStale = false;
+  // The plot data the point grid indexes (every slot of it), and which of those
+  // slots are interactive. Queries see only the marked slots, so a legend
+  // toggle re-marks them instead of rebuilding the grid.
+  private _pointGridSource: PlotData | null = null;
+  private _slotVisible: Uint8Array | null = null;
+  // A grid of just the visible slots, kept while they are a small share of all,
+  // so a query walks them alone, as it did when the grid held only them.
+  private _sparseIndex: PointGridIndex | null = null;
   // One interaction used to re-stage the buffers once per state change it
   // touched: each plot.updated() and each legend mapping event rendered on the
   // spot. They now call _requestRender(), which draws once on the next frame.
   // The renderer ORs every invalidate*() into its own dirty flags, so that one
   // render stages the union of what the requests needed.
   private _renderRafId: number | null = null;
-  // Slot list the point index was last rebuilt with (legend/filter-visible
-  // slots). Retained for the duplicate-badge capture path (#301): the
+  // The slots `_slotVisible` marks, built when first asked for. Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
   // of traversing the point index (~93× slower at 570k points, research doc 04).
   private _visibleSlots: number[] | null = null;
@@ -298,8 +313,8 @@ export class ProtspaceScatterplot extends LitElement {
     getConfig: () => this._mergedConfig,
     getScales: () => this._scales,
     getPlotData: () => this._plotData,
-    getPointGridIndex: () => this._pointGridIndex,
-    getVisibleSlots: () => this._visibleSlots,
+    getPointGridIndex: () => this._visibleIndex(),
+    getVisibleSlots: () => this._getVisibleSlots(),
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
     getColor: (p) => this._getColors(p)[0] ?? '#888888',
@@ -929,7 +944,8 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('otherAnnotationValues') ||
       changedProperties.has('eatOverlayEnabled');
     if (visibilityMembershipChanged) {
-      this._schedulePointGridIndexRebuild();
+      // Positions are unchanged: the point grid only re-marks the interactive slots.
+      this._scheduleVisibleSlotsRefresh();
       // A legend hide or show changes which categories are drawn, nothing per point.
       const hiddenOnly =
         changedProperties.has('hiddenAnnotationValues') &&
@@ -1098,6 +1114,10 @@ export class ProtspaceScatterplot extends LitElement {
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
       this._plotData = EMPTY_PLOT_DATA;
       this._pointGridIndex.clear();
+      this._sparseIndex = null;
+      this._slotVisible = null;
+      this._visibleSlots = null;
+      this._pointGridSource = null;
       this._webglRenderer?.releaseDataReferences();
 
       this._plotData = DataProcessor.processVisualizationData(
@@ -1288,27 +1308,64 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelCompute();
 
     if (!this._plotData.length || !this._scales) {
+      this._slotVisible = null;
       this._visibleSlots = null;
+      this._sparseIndex = null;
+      this._pointGridSource = null;
       this._dupOverlay.resetState();
       // No render here — there is nothing to draw.
       return;
     }
     const pd = this._plotData;
+    this._pointGridIndex.setScales(this._scales);
+    // Every slot, hidden ones too: a change of what is visible then re-marks
+    // `_slotVisible` instead of rebuilding the grid.
+    const slots = new Uint32Array(pd.length);
+    for (let s = 0; s < slots.length; s++) slots[s] = s;
+    this._pointGridIndex.rebuild(pd, slots);
+    this._pointGridSource = pd;
+    this._markVisibleSlots();
+  }
+
+  /**
+   * Mark the slots hit-testing, brushing and the duplicate stacks see: the
+   * interactive ones, as the point grid used to hold. Queries skip the rest.
+   */
+  private _markVisibleSlots() {
+    const pd = this._plotData;
     const oi = pd.originalIndices;
-    const sp = this._scratchPoint;
-    const visibilityModel = this._getVisibilityModel();
-    const visibleSlots: number[] = [];
+    const ids = pd.proteinIds;
+    const model = this._getVisibilityModel();
+    const visible = new Uint8Array(pd.length);
+    let count = 0;
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = pd.xs[s];
-      sp.y = pd.ys[s];
-      sp.originalIndex = origIdx;
-      if (visibilityModel.isInteractive(sp)) visibleSlots.push(s);
+      // isInteractive: opacityOf(point) > 0.
+      if (model.opacityAt(origIdx, ids[origIdx]) > 0) {
+        visible[s] = 1;
+        count++;
+      }
     }
-    this._visibleSlots = visibleSlots;
-    this._pointGridIndex.setScales(this._scales);
-    this._pointGridIndex.rebuild(pd, visibleSlots);
+    this._slotVisible = visible;
+    this._pointGridIndex.setVisible(visible);
+    this._visibleSlots = null;
+    this._sparseIndex = null;
+    // With few slots visible, give them a grid of their own: it costs what a
+    // visible-only rebuild did, and spares every query the hidden slots.
+    if (count * SPARSE_INDEX_SHARE < pd.length && this._scales) {
+      this._sparseIndex = new PointGridIndex();
+      this._sparseIndex.setScales(this._scales);
+      this._sparseIndex.rebuild(pd, this._getVisibleSlots()!);
+    }
+    this._visibleSlotsStale = false;
+    this._resetDuplicateOverlay();
+
+    // No render: the canvas does not read the point index or the slot list. This
+    // render once refreshed the viewport-cull cache, which #456 removed, and
+    // every caller that changes what is drawn requests its own render.
+  }
+
+  private _resetDuplicateOverlay() {
     // Duplicate stacks are computed lazily for the current viewport (see the
     // controller's ensureForViewport) to keep point index rebuilds fast on large datasets.
     this._dupOverlay.resetState();
@@ -1318,20 +1375,62 @@ export class ProtspaceScatterplot extends LitElement {
     // rendered synchronously in updated() used a stale cache and nothing would
     // re-trigger them after the deferred point index rebuild.
     this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
-
-    // No render: the canvas does not read the point index or the slot list. This
-    // render once refreshed the viewport-cull cache, which #456 removed, and
-    // every caller that changes what is drawn requests its own render.
   }
 
-  private _schedulePointGridIndexRebuild() {
+  /**
+   * Rebuild the point grid on the next frame. `reindex: false` asks only for the
+   * re-mark `_scheduleVisibleSlotsRefresh` wants; a pending full rebuild absorbs it,
+   * and so does plot data the grid was not built from.
+   */
+  private _schedulePointGridIndexRebuild(reindex = true) {
+    this._pointGridReindexPending ||= reindex;
     if (this._pointGridIndexRebuildRafId !== null) {
       cancelAnimationFrame(this._pointGridIndexRebuildRafId);
     }
     this._pointGridIndexRebuildRafId = requestAnimationFrame(() => {
       this._pointGridIndexRebuildRafId = null;
-      this._buildPointGridIndex();
+      const source = this._pointGridSource;
+      const pd = this._plotData;
+      const reindexNow =
+        this._pointGridReindexPending ||
+        source?.xs !== pd.xs ||
+        source?.ys !== pd.ys ||
+        source?.originalIndices !== pd.originalIndices ||
+        source?.length !== pd.length;
+      this._pointGridReindexPending = false;
+      if (reindexNow) {
+        this._buildPointGridIndex();
+      } else if (this._visibleSlotsStale) {
+        this._dupOverlay.cancelCompute();
+        this._markVisibleSlots();
+      }
     });
+  }
+
+  /**
+   * Re-mark the interactive slots on the next frame, for a change of which
+   * points are visible only: the grid holds every slot, so it needs no rebuild.
+   */
+  private _scheduleVisibleSlotsRefresh() {
+    this._visibleSlotsStale = true;
+    this._schedulePointGridIndexRebuild(false);
+  }
+
+  /** The visible slots in ascending order, or null before the first point grid build. */
+  private _getVisibleSlots(): number[] | null {
+    const visible = this._slotVisible;
+    if (!visible) return null;
+    if (!this._visibleSlots) {
+      const slots: number[] = [];
+      for (let s = 0; s < visible.length; s++) if (visible[s]) slots.push(s);
+      this._visibleSlots = slots;
+    }
+    return this._visibleSlots;
+  }
+
+  /** The index that answers for the visible slots: theirs alone while they are few. */
+  private _visibleIndex(): PointGridIndex {
+    return this._sparseIndex ?? this._pointGridIndex;
   }
 
   /**
@@ -1349,8 +1448,8 @@ export class ProtspaceScatterplot extends LitElement {
       getSelectionTool: () => this.selectionTool,
       hasScales: () => this._scales != null,
       getTransform: () => this._transform,
-      queryByPolygon: (vertices) => this._pointGridIndex.queryByPolygon(vertices),
-      queryByPixels: (x0, y0, x1, y1) => this._pointGridIndex.queryByPixels(x0, y0, x1, y1),
+      queryByPolygon: (vertices) => this._visibleIndex().queryByPolygon(vertices),
+      queryByPixels: (x0, y0, x1, y1) => this._visibleIndex().queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
@@ -1457,7 +1556,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (!event.selection) return;
 
     const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
-    const slots = this._pointGridIndex.queryByPixels(x0, y0, x1, y1);
+    const slots = this._visibleIndex().queryByPixels(x0, y0, x1, y1);
     const selectedIds = this._slotsToInteractiveIds(slots);
     this._commitSelection(selectedIds, () => {
       /* brush-rectangle clear owned by the controller for the live path */
@@ -1959,7 +2058,7 @@ export class ProtspaceScatterplot extends LitElement {
     const dataY = (mouseY - this._transform.y) / k;
 
     const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
-    const nearestSlot = this._pointGridIndex.findNearest(dataX, dataY, hitRadius / k);
+    const nearestSlot = this._visibleIndex().findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
     const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);

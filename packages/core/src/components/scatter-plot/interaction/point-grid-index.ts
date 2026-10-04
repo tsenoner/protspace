@@ -51,6 +51,8 @@ export class PointGridIndex {
   /** `cellStart[c] .. cellStart[c + 1]` indexes `cellItems`, which holds point indices ascending. */
   private cellStart = new Int32Array(1);
   private cellItems = new Int32Array(0);
+  /** Queries skip slot `s` unless `visible[s] === 1`; null answers for every indexed slot. */
+  private visible: Uint8Array | null = null;
 
   setScales(
     scales: {
@@ -61,7 +63,17 @@ export class PointGridIndex {
     this.scales = scales;
   }
 
+  /**
+   * Answer queries for the slots `visible` marks (indexed by slot) and skip the rest, as an
+   * index rebuilt with only those slots would. Lets a caller index every slot once and change
+   * which are visible without a rebuild. `rebuild` and `clear` drop it.
+   */
+  setVisible(visible: Uint8Array | null) {
+    this.visible = visible;
+  }
+
   rebuild(pd: PlotData, slots: ArrayLike<number>) {
+    this.visible = null;
     if (!this.scales || slots.length === 0) {
       this.clear();
       return;
@@ -147,7 +159,7 @@ export class PointGridIndex {
 
   findNearest(screenX: number, screenY: number, radius: number): number {
     if (!this.built || this.n === 0) return -1;
-    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf } = this;
+    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf, visible } = this;
 
     const r2 = radius * radius;
     let best = Infinity;
@@ -182,6 +194,7 @@ export class PointGridIndex {
           const end = cellStart[c + 1];
           for (let t = cellStart[c]; t < end; t++) {
             const i = cellItems[t];
+            if (visible && visible[slotOf[i]] !== 1) continue;
             const dx = screenX - px[i];
             const dy = screenY - py[i];
             const d2 = dx * dx + dy * dy;
@@ -205,6 +218,7 @@ export class PointGridIndex {
 
   clear() {
     this.built = false;
+    this.visible = null;
     this.n = 0;
     this.px = new Float32Array(0);
     this.py = new Float32Array(0);
@@ -247,7 +261,7 @@ export class PointGridIndex {
   ): number[] {
     const results: number[] = [];
     if (!this.built || this.n === 0) return results;
-    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf } = this;
+    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf, visible } = this;
 
     // NaN bounds collapse to an empty cell range, which matches the old code returning nothing.
     const gx0 = clampIndex((minX - this.originX) / cell, gridW);
@@ -266,7 +280,9 @@ export class PointGridIndex {
           const y = py[i];
           if (x < minX || x > maxX || y < minY || y > maxY) continue;
           if (polygon && !pointInPolygon(x, y, polygon)) continue;
-          results.push(slotOf[i]);
+          const slot = slotOf[i];
+          if (visible && visible[slot] !== 1) continue;
+          results.push(slot);
         }
       }
     }
