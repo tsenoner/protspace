@@ -188,6 +188,16 @@ describe('selection staged on the CPU', () => {
     expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(3);
   });
 
+  it('while the renderer cannot draw marks for the dataset', () => {
+    const el = makeEl();
+    Object.assign(el._webglRenderer!, { canDrawMarks: false });
+    select(el, ['p1']);
+    expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(1);
+    expect(el._getPointMarks(el._plotData)).toBeNull();
+    const { live } = rendererStyles(el);
+    expect(stagedOpacities(live, el._plotData)).toEqual([0.15, 1, 0.15, 0.15, 0.15]);
+  });
+
   it('with opacities the marks cannot draw as staging does', () => {
     for (const opacities of [{ fadedOpacity: 0 }, { selectedOpacity: 0.95 }, { baseOpacity: 1 }]) {
       const el = makeEl();

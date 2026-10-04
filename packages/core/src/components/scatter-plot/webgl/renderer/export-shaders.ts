@@ -44,15 +44,13 @@ vec4 pointColor() {
   return vec4(style.rgb, a_color.a * style.a);
 }`;
 
-/** Texels per row of the per-point mark texture: 2M points fit the 2048 rows any device allows. */
-export const MARK_TEXTURE_WIDTH = 1024;
-
 /**
  * Marks drawn on the GPU (`PointMarks`): an R8 texture holding a non-zero byte
- * for each marked point, by draw index. While marks are on, a point that is not
- * hidden takes the marked or unmarked opacity, and `u_markPass` draws only the
- * unmarked points (0), only the marked ones (1) or all of them (-1). Off (the
- * export, or nothing marked), every point keeps its staged opacity.
+ * for each marked point, by draw index, in rows as wide as the renderer
+ * allocated them. While marks are on, a point that is not hidden takes the
+ * marked or unmarked opacity, and `u_markPass` draws only the unmarked points
+ * (0), only the marked ones (1) or all of them (-1). Off (the export, or
+ * nothing marked), every point keeps its staged opacity.
  */
 const MARK_GLSL = `uniform highp sampler2D u_marks;
 uniform bool u_marksOn;
@@ -61,8 +59,8 @@ uniform float u_markedOpacity;
 uniform float u_unmarkedOpacity;
 
 bool isMarked() {
-  ivec2 texel = ivec2(gl_VertexID % ${MARK_TEXTURE_WIDTH}, gl_VertexID / ${MARK_TEXTURE_WIDTH});
-  return texelFetch(u_marks, texel, 0).r > 0.0;
+  int width = textureSize(u_marks, 0).x;
+  return texelFetch(u_marks, ivec2(gl_VertexID % width, gl_VertexID / width), 0).r > 0.0;
 }`;
 
 export const POINT_VERTEX_SHADER = `#version 300 es

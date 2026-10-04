@@ -18,7 +18,9 @@ import type { GLResources } from './gl-resources';
 import type { StagedRecords } from './record-table';
 import type { SlotPalette } from './density-pass';
 import {
+  makeRenderer,
   makeRendererWithStyle,
+  markAllocations,
   plotData as fixturePlotData,
   styleGetters,
 } from './test-support/renderer-fixture';
@@ -256,7 +258,8 @@ describe('the mark texture', () => {
   it('takes only the rows a new selection changed, and no re-stage', () => {
     let marks: PointMarks | null = null;
     const style = { ...styleGetters(), getPointMarks: () => marks };
-    const { renderer, gl } = makeRendererWithStyle(style);
+    // Rows of 2048 texels, as wide as this device allows.
+    const { renderer, gl } = makeRendererWithStyle(style, { maxTextureSize: 2048 });
     const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
     const pd = fixturePlotData(5000);
     const mark = (...slots: number[]) => {
@@ -271,11 +274,42 @@ describe('the mark texture', () => {
     renderer.render(pd);
     expect(populate).toHaveBeenCalledTimes(1);
     // Every point has the same depth, so slot s draws s-th.
-    expect(mark(3000)).toEqual([[2, 1]]);
+    expect(mark(3000)).toEqual([[1, 1]]);
     expect(mark(3000)).toEqual([]);
-    expect(mark(10)).toEqual([[0, 3]]);
-    expect(mark(10, 4999)).toEqual([[4, 1]]);
+    expect(mark(10)).toEqual([[0, 2]]);
+    expect(mark(10, 4999)).toEqual([[2, 1]]);
     expect(populate).toHaveBeenCalledTimes(1);
+  });
+
+  it('is allocated in rows as wide as the device allows', () => {
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 4096 });
+    renderer.render(fixturePlotData(5000));
+    expect(markAllocations(gl)).toEqual([[4096, 2]]);
+    expect(renderer.canDrawMarks).toBe(true);
+  });
+
+  it('leaves the marks to staging, staged once, when the points outnumber its texels', () => {
+    // 64 x 64 texels hold 4096 points.
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 64 });
+    const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
+    renderer.render(fixturePlotData(5000));
+    expect(renderer.canDrawMarks).toBe(false);
+    // Empty, which frees the texels a smaller capacity held.
+    expect(markAllocations(gl)).toEqual([[64, 0]]);
+    expect(populate).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the marks to staging when the device refuses it, without failing the points', () => {
+    const style = styleGetters();
+    // A driver refusing anything wider than 1000 texels: only the mark texture is.
+    const { renderer, degraded } = makeRendererWithStyle(style, { driverTextureLimit: 1000 });
+    // Staged as the scatter plot stages: faded only while the marks cannot be drawn.
+    style.getOpacity = () => (renderer.canDrawMarks ? 0.9 : 0.15);
+    renderer.render(fixturePlotData(5000));
+    expect(degraded).toEqual([]);
+    expect(renderer.canDrawMarks).toBe(false);
+    // The frame it was refused in is staged again, as the scatter plot now stages it.
+    expect((renderer as unknown as Internals).colors[3]).toBeCloseTo(0.15);
   });
 });
 

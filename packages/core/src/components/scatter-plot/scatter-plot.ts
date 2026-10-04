@@ -2128,10 +2128,15 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Whether the renderer draws the selection and highlight as marks on the GPU
    * (`_getPointMarks`) rather than staging them: not while focus fades points by
-   * category, nor with opacities the marks cannot draw as staging does.
+   * category, nor with opacities the marks cannot draw as staging does, nor
+   * while the renderer cannot draw marks for the dataset.
    */
   private _marksOnGpu(): boolean {
-    return this._focusedValues === null && this._getStyleGetters().canMarkOnGpu();
+    return (
+      this._focusedValues === null &&
+      this._getStyleGetters().canMarkOnGpu() &&
+      (this._webglRenderer?.canDrawMarks ?? true)
+    );
   }
 
   /** The visibility model the live view stages: with nothing marked while the GPU draws the marks. */

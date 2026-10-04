@@ -113,7 +113,6 @@ import {
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
-  MARK_TEXTURE_WIDTH,
   RECORD_STYLE_WIDTH,
 } from './export-shaders';
 
@@ -244,6 +243,8 @@ export class WebGLRenderer {
   private markedRange: { first: number; end: number } | null = null;
   /** Set when staging or a restyle moved or hid points since the marks were applied. */
   private marksStale = false;
+  /** Whether the device refused the mark texture of the current capacity; see `canDrawMarks`. */
+  private markTextureRefused = false;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -426,6 +427,16 @@ export class WebGLRenderer {
    */
   get uploadedBytesTotal(): number {
     return this.uploadedBytes;
+  }
+
+  /**
+   * Whether `getPointMarks` can be drawn: the mark texture holds a texel per
+   * point of the capacity, so up to maxTextureSize² points, and the device did
+   * not refuse it. Otherwise the live view stages the marks with every other
+   * style. Known once the capacity is planned, before anything is staged.
+   */
+  get canDrawMarks(): boolean {
+    return this.capacity <= this.maxTextureSize ** 2 && !this.markTextureRefused;
   }
 
   /**
@@ -678,7 +689,7 @@ export class WebGLRenderer {
     }
 
     const dataSignature = this.computeDataSignature(pd);
-    const styleSignature = this.computeStyleSignature(pd);
+    let styleSignature = this.computeStyleSignature(pd);
 
     const needsPositionUpdate =
       this.positionsDirty ||
@@ -698,7 +709,16 @@ export class WebGLRenderer {
         !needsPositionUpdate &&
         !needsDepthOrderUpdate &&
         this.restyleRecords(pd);
-      if (!restyled) this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+      if (!restyled) {
+        const refused = this.markTextureRefused;
+        this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+        // The device refused a new mark texture, or took one after refusing: the
+        // marks were staged for the other, so stage them as the live view now does.
+        if (this.markTextureRefused !== refused) {
+          this.populateBuffers(pd, scales, false, true);
+          styleSignature = this.computeStyleSignature(pd);
+        }
+      }
       if (perfCounters) perfCounters.restageMs += performance.now() - stageStart;
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
@@ -1590,7 +1610,6 @@ export class WebGLRenderer {
       this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
       this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
-      if (allocating) this.allocateMarkTexture(gl);
 
       // One error check per capacity change, on the allocating (bufferData) path
       // only — never on bufferSubData, so never per frame. It runs BEFORE any
@@ -1617,6 +1636,7 @@ export class WebGLRenderer {
         return;
       }
 
+      if (allocating) this.allocateMarkTexture(gl);
       this.uploadLabelAtlas(gl);
     }
 
@@ -1745,23 +1765,32 @@ export class WebGLRenderer {
     return ok;
   }
 
-  /** Allocate the mark texture for the current capacity, with nothing marked. */
+  /**
+   * Allocate the mark texture for the current capacity, with nothing marked, in
+   * rows as wide as the device allows. Empty when the points do not fit (see
+   * `canDrawMarks`), which frees what a smaller capacity held. Runs after the
+   * point-buffer check, which leaves the error flag clear, so the check here
+   * answers for this allocation alone.
+   */
   private allocateMarkTexture(gl: WebGL2RenderingContext) {
-    const rows = Math.ceil(this.capacity / MARK_TEXTURE_WIDTH);
-    this.stagedMarks = new Uint8Array(rows * MARK_TEXTURE_WIDTH);
+    const width = this.maxTextureSize;
+    const rows = Math.ceil(this.capacity / width);
+    const fits = rows <= width;
+    this.stagedMarks = new Uint8Array(fits ? rows * width : 0);
     gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, this.resources.markTexture);
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
       gl.R8,
-      MARK_TEXTURE_WIDTH,
-      rows,
+      width,
+      fits ? rows : 0,
       0,
       gl.RED,
       gl.UNSIGNED_BYTE,
       null,
     );
+    this.markTextureRefused = gl.getError() !== gl.NO_ERROR;
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1805,8 +1834,10 @@ export class WebGLRenderer {
     }
     if (first >= 0) this.markedRange = { first, end };
     if (firstChanged < 0) return;
-    const fromRow = Math.floor(firstChanged / MARK_TEXTURE_WIDTH);
-    const rows = Math.floor(lastChanged / MARK_TEXTURE_WIDTH) + 1 - fromRow;
+    // The width `allocateMarkTexture` gave it.
+    const width = this.maxTextureSize;
+    const fromRow = Math.floor(firstChanged / width);
+    const rows = Math.floor(lastChanged / width) + 1 - fromRow;
     gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, this.resources.markTexture);
     gl.texSubImage2D(
@@ -1814,15 +1845,15 @@ export class WebGLRenderer {
       0,
       0,
       fromRow,
-      MARK_TEXTURE_WIDTH,
+      width,
       rows,
       gl.RED,
       gl.UNSIGNED_BYTE,
       staged,
-      fromRow * MARK_TEXTURE_WIDTH,
+      fromRow * width,
     );
     gl.activeTexture(gl.TEXTURE0);
-    this.uploadedBytes += rows * MARK_TEXTURE_WIDTH;
+    this.uploadedBytes += rows * width;
   }
 
   /**

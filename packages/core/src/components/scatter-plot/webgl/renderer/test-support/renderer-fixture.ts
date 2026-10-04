@@ -87,9 +87,18 @@ export function makeRenderer(opts: MockGLOptions = {}, colors?: string[]) {
   return makeRendererWithStyle(styleGetters(colors), opts);
 }
 
+function sizes(texImageCalls: unknown[][]): Array<[number, number]> {
+  return texImageCalls.map((c) => [c[3] as number, c[4] as number]);
+}
+
 /** Arguments of every texImage2D call, as [width, height] pairs. */
 export function texImageSizes(gl: MockGL): Array<[number, number]> {
-  return gl.texImage2D.mock.calls.map((c) => [c[3] as number, c[4] as number]);
+  return sizes(gl.texImage2D.mock.calls);
+}
+
+/** Allocations of the mark texture, the only R8 one, as [width, height] pairs. */
+export function markAllocations(gl: MockGL): Array<[number, number]> {
+  return sizes(gl.texImage2D.mock.calls.filter((c) => c[2] === gl.R8));
 }
 
 /**
@@ -103,11 +112,13 @@ const ATLAS_ALLOCATION_WIDTHS = new Set<number>([1, ...ATLAS_WIDTHS]);
 
 /**
  * Atlas allocations only. The gamma pipeline allocates its own linear
- * framebuffer texture at canvas size, which is not what these assertions are
- * about.
+ * framebuffer texture at canvas size, and the mark texture rows as wide as the
+ * device allows, which is not what these assertions are about.
  */
 export function atlasAllocations(gl: MockGL): Array<[number, number]> {
-  return texImageSizes(gl).filter(([width]) => ATLAS_ALLOCATION_WIDTHS.has(width));
+  return sizes(
+    gl.texImage2D.mock.calls.filter((c) => c[2] !== gl.R8 && ATLAS_ALLOCATION_WIDTHS.has(c[3])),
+  );
 }
 
 /** Atlas allocations that reserve real storage, i.e. not the 1x1 placeholder. */

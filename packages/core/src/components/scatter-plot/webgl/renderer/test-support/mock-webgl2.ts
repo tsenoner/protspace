@@ -86,6 +86,8 @@ function makeGL(opts: MockGLOptions, isLost: () => boolean): Record<string, unkn
     ONE_MINUS_SRC_ALPHA: 0x0303,
     FUNC_ADD: 0x8006,
     RGBA: 0x1908,
+    R8: 0x8229,
+    RED: 0x1903,
     UNSIGNED_BYTE: 0x1401,
     RGBA32F: 0x8814,
     RGBA16F: 0x881a,
