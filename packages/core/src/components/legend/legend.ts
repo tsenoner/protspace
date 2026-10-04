@@ -68,7 +68,9 @@ import { LegendRenderer } from './legend-renderer';
 import {
   valueToKey,
   calculatePointSize,
-  seedShapeSize,
+  defaultShapeSize,
+  explicitShapeSize,
+  SHAPE_SIZE_FILLER,
   getDefaultSortMode,
   getItemClasses,
   isItemSelected,
@@ -317,10 +319,25 @@ export class ProtspaceLegend extends LitElement {
   private _pendingExtractValue: string | undefined = undefined;
   private _pendingMergeValue: string | undefined = undefined;
 
+  /**
+   * Protein count of the whole dataset, taken with its hash in `updated()` from the same
+   * unfiltered data, so a filter, an isolation or hidden categories never change it. It sets
+   * the default shape size.
+   */
+  private _datasetProteinCount = 0;
+
+  /**
+   * The selected annotation's own shape size from a bundle or browser storage, or null when it
+   * holds a filler. Its persisted record keeps this, never the live size, so neither a picked
+   * size nor the computed default is ever stored or exported as the annotation's own.
+   */
+  private _annotationShapeSize: number | null = null;
+
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
     maxVisibleValues: number;
-    shapeSize: number;
+    /** null once the user empties the size field: Save then returns to the dataset's default. */
+    shapeSize: number | null;
     enableDuplicateStackUI: boolean;
     annotationSortModes: Record<string, LegendSortMode>;
     selectedPaletteId: string;
@@ -387,7 +404,7 @@ export class ProtspaceLegend extends LitElement {
       const isNumericAnnotation = this._isCurrentAnnotationNumeric();
       return {
         maxVisibleValues: this.maxVisibleValues,
-        shapeSize: this.shapeSize,
+        shapeSize: this._annotationShapeSize ?? SHAPE_SIZE_FILLER,
         sortMode: this._normalizeSortModeForEffectiveType(
           this._annotationSortModes[this.selectedAnnotation],
           isNumericAnnotation,
@@ -1013,6 +1030,7 @@ export class ProtspaceLegend extends LitElement {
             numeric_annotation_data: this.data?.numeric_annotation_data,
           };
 
+      this._datasetProteinCount = unfilteredData.protein_ids.length;
       this._persistenceController.updateDatasetHash({
         protein_ids: unfilteredData.protein_ids,
         annotations: unfilteredData.annotations,
@@ -1167,6 +1185,10 @@ export class ProtspaceLegend extends LitElement {
 
     // Clear persistence state for the new dataset
     this._persistenceController.clearForNewDataset(datasetHash, clearPersistedState);
+    // The previous dataset's count and annotation size must not size the new one before
+    // `updated()` takes its hash.
+    this._datasetProteinCount = 0;
+    this._annotationShapeSize = null;
 
     // Reset UI state
     this._showSettingsDialog = false;
@@ -2008,10 +2030,11 @@ export class ProtspaceLegend extends LitElement {
       }
 
       this.maxVisibleValues = resolvedMaxVisibleValues;
-      this.shapeSize = Math.min(
-        this._persistenceController.loadShapeSize() ?? seedShapeSize(settings.shapeSize),
-        LEGEND_DEFAULTS.maxSymbolSize,
-      );
+      // Capped here, not only when resolved: the record and the export keep this value.
+      const ownShapeSize = explicitShapeSize(settings.shapeSize);
+      this._annotationShapeSize =
+        ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+      this.shapeSize = this._resolveShapeSize();
       this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
       this._selectedPaletteId = resolvedPaletteId;
       if (isNumericAnnotation) {
@@ -2054,6 +2077,29 @@ export class ProtspaceLegend extends LitElement {
         error instanceof Error ? error : new Error(String(error)),
       );
     }
+  }
+
+  /**
+   * The dataset's stored size (picked, or a bundle's top-level size), else the annotation's own,
+   * else the default from the dataset's protein count; capped at the dialog's bound.
+   */
+  private _resolveShapeSize(): number {
+    return Math.min(
+      this._persistenceController.loadShapeSize() ??
+        this._annotationShapeSize ??
+        defaultShapeSize(this._datasetProteinCount),
+      LEGEND_DEFAULTS.maxSymbolSize,
+    );
+  }
+
+  /**
+   * Forget the dataset's picked size and every annotation's own, so the default from the
+   * protein count applies; that default is never stored.
+   */
+  private _clearShapeSize(): void {
+    this._persistenceController.clearShapeSize(Object.keys(this.data?.annotations ?? {}));
+    this._annotationShapeSize = null;
+    this.shapeSize = this._resolveShapeSize();
   }
 
   private _computeNumericSettingsSignatures(
@@ -2450,10 +2496,14 @@ export class ProtspaceLegend extends LitElement {
     };
 
     this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
-    if (this._dialogSettings.shapeSize !== this.shapeSize) {
-      this._persistenceController.saveShapeSize(this._dialogSettings.shapeSize);
+    const dialogShapeSize = this._dialogSettings.shapeSize;
+    if (dialogShapeSize === null) {
+      // An emptied size field returns the dataset to its default, as Reset does for the size.
+      this._clearShapeSize();
+    } else if (dialogShapeSize !== this.shapeSize) {
+      this._persistenceController.saveShapeSize(dialogShapeSize);
+      this.shapeSize = dialogShapeSize;
     }
-    this.shapeSize = this._dialogSettings.shapeSize;
     this._annotationSortModes = nextAnnotationSortModes;
     if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
       this._keyboardDragValue = null;
@@ -2592,10 +2642,10 @@ export class ProtspaceLegend extends LitElement {
     this._persistenceController.removeSettings();
     this._persistenceController.clearPendingCategories();
 
-    // Reset all settings to defaults
+    // Reset all settings to defaults. The shape size is the dataset's, so it is cleared for every
+    // annotation rather than stored, and the default from the protein count applies again.
     this.maxVisibleValues = LEGEND_DEFAULTS.maxVisibleValues;
-    this.shapeSize = LEGEND_DEFAULTS.symbolSize;
-    this._persistenceController.saveShapeSize(LEGEND_DEFAULTS.symbolSize);
+    this._clearShapeSize();
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
     this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
@@ -2630,7 +2680,7 @@ export class ProtspaceLegend extends LitElement {
     this._showSettingsDialog = false;
 
     this._scatterplotController.updateConfig({
-      pointSize: calculatePointSize(LEGEND_DEFAULTS.symbolSize),
+      pointSize: calculatePointSize(this.shapeSize),
       enableDuplicateStackUI: false,
     });
 
@@ -3001,6 +3051,7 @@ export class ProtspaceLegend extends LitElement {
     const state: SettingsDialogState = {
       maxVisibleValues: this._dialogSettings.maxVisibleValues,
       shapeSize: this._dialogSettings.shapeSize,
+      defaultShapeSize: defaultShapeSize(this._datasetProteinCount),
       enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
       selectedAnnotation: this.selectedAnnotation,
       annotationSortModes: this._dialogSettings.annotationSortModes,

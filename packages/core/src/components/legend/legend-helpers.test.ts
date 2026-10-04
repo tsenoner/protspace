@@ -8,7 +8,8 @@ import {
   buildZOrderMapping,
   buildColorShapeMappings,
   calculatePointSize,
-  seedShapeSize,
+  defaultShapeSize,
+  explicitShapeSize,
   createDefaultSettings,
   getDefaultSortMode,
   getItemClasses,
@@ -150,11 +151,64 @@ describe('legend-helpers', () => {
     });
   });
 
-  describe('seedShapeSize', () => {
-    it('reads the legacy default 30 as the new default and keeps chosen sizes', () => {
-      expect(seedShapeSize(30)).toBe(10);
-      expect(seedShapeSize(12)).toBe(12);
-      expect(seedShapeSize(5)).toBe(5);
+  describe('defaultShapeSize', () => {
+    it('keeps 10 up to 10,000 proteins', () => {
+      expect(defaultShapeSize(1)).toBe(10);
+      expect(defaultShapeSize(5_000)).toBe(10);
+      expect(defaultShapeSize(10_000)).toBe(10);
+    });
+
+    it('shrinks with the protein count as (10,000 / N)^(2/3)', () => {
+      expect(defaultShapeSize(20_000)).toBe(6);
+      expect(defaultShapeSize(40_000)).toBe(4);
+      expect(defaultShapeSize(105_562)).toBe(2);
+      expect(defaultShapeSize(127_000)).toBe(2);
+    });
+
+    it('never goes below the smallest size the dialog accepts', () => {
+      expect(defaultShapeSize(573_649)).toBe(1);
+      expect(defaultShapeSize(10_000_000)).toBe(1);
+    });
+
+    it('gives the base default 10 for a count of 0 or below', () => {
+      expect(defaultShapeSize(0)).toBe(10);
+      expect(defaultShapeSize(-5)).toBe(10);
+    });
+
+    it('gives a whole size for a non-finite count', () => {
+      expect(defaultShapeSize(Number.NaN)).toBe(10);
+      expect(defaultShapeSize(Number.POSITIVE_INFINITY)).toBe(1);
+    });
+
+    it('returns whole sizes', () => {
+      for (const n of [12_345, 33_333, 77_777, 250_000]) {
+        expect(Number.isInteger(defaultShapeSize(n))).toBe(true);
+      }
+    });
+  });
+
+  describe('explicitShapeSize', () => {
+    it('reads the fillers 10 and 30 as unset', () => {
+      expect(explicitShapeSize(10)).toBeNull();
+      expect(explicitShapeSize(30)).toBeNull();
+    });
+
+    it('reads the size createDefaultSettings writes as unset', () => {
+      expect(explicitShapeSize(createDefaultSettings('a').shapeSize)).toBeNull();
+    });
+
+    it('keeps any other positive size', () => {
+      expect(explicitShapeSize(5)).toBe(5);
+      expect(explicitShapeSize(12)).toBe(12);
+      expect(explicitShapeSize(200)).toBe(200);
+    });
+
+    it('reads a missing, non-numeric, non-positive or non-finite size as unset', () => {
+      expect(explicitShapeSize(undefined)).toBeNull();
+      expect(explicitShapeSize('12')).toBeNull();
+      expect(explicitShapeSize(0)).toBeNull();
+      expect(explicitShapeSize(-3)).toBeNull();
+      expect(explicitShapeSize(Number.NaN)).toBeNull();
     });
   });
 
