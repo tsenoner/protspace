@@ -41,6 +41,8 @@ type Internals = HTMLElement & {
   _sparseIndex: PointGridIndex | null;
   _getVisiblePointCount(): number;
   _getVisibilityModel(): { opacityAt(origIdx: number, id: string): number };
+  config: Record<string, unknown>;
+  updated(changed: Map<string, unknown>): void;
 };
 
 function rng(seed: number) {
@@ -224,6 +226,34 @@ describe('point grid over every slot, masked to the visible ones', () => {
       expect(new Set(hits)).toEqual(expected);
       expect(hits).toHaveLength(expected.size);
     }
+  });
+
+  it('re-marks the interactive slots when a selection fades the rest to 0', () => {
+    const sp = prime();
+    const select = (ids: string[]) => {
+      sp.selectedProteinIds = ids;
+      sp.updated(new Map([['selectedProteinIds', undefined]]));
+      flushFrames();
+    };
+    // Faded points stay interactive by default: nothing to re-mark.
+    const setVisible = vi.spyOn(sp._pointGridIndex, 'setVisible');
+    select(['p3']);
+    expect(setVisible).not.toHaveBeenCalled();
+    select([]);
+
+    sp.config = { fadedOpacity: 0 };
+    sp.updated(new Map([['config', undefined]]));
+    flushFrames();
+    const all = Array.from({ length: sp._plotData.length }, (_, s) => s);
+    select(['p3', 'p10']);
+    expect(sp._getVisibleSlots()).toEqual([3, 10]);
+    // A legend change while selected, then the selection cleared.
+    sp.hiddenAnnotationValues = [familyOf(sp, 0) === 'A' ? 'B' : 'A'];
+    sp.updated(new Map([['hiddenAnnotationValues', undefined]]));
+    flushFrames();
+    select([]);
+    const hidden = sp.hiddenAnnotationValues[0];
+    expect(sp._getVisibleSlots()).toEqual(all.filter((s) => familyOf(sp, s) !== hidden));
   });
 
   it('queries a grid of just the visible slots while they are few', () => {

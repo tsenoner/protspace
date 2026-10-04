@@ -1120,6 +1120,13 @@ export class ProtspaceScatterplot extends LitElement {
       if (changedProperties.has('_focusedValues') || !this._marksOnGpu()) {
         this._webglRenderer?.invalidateStyleCache();
       }
+      // With an opacity tier at 0, the change also moves which points are interactive.
+      if (
+        this._slotVisible &&
+        !sameInteractableKey(this._interactableSlotsKey, this._interactableKey())
+      ) {
+        this._scheduleVisibleSlotsRefresh();
+      }
       this._requestRender();
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
