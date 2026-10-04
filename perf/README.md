@@ -181,6 +181,8 @@ The runs alternate A, B, A, B in one browser session, so a change in power state
 Cells read `A→B ratio`, for example `412→118 .29`. `pixels A=B` compares the plot after each
 segment between the two builds; on `DIFF`, both images go to `perf/results/<stamp>-pixels/`.
 Compare two production builds (`vite build` + `vite preview`), not a dev server with a build.
+A build from before the counters, such as `main` before this tooling, still gets its timings, but
+its `restage ms` cells read `-` with no ratio, for example `-→4`.
 
 ### Baselines
 
