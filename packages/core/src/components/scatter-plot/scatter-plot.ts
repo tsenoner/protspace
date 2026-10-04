@@ -44,6 +44,7 @@ import {
   computeSizeScaleFactor,
   pointRadiusCss,
 } from './webgl';
+import type { PointMarks } from './webgl/types';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
 import { sameMaterialization } from './styling/same-materialization';
@@ -283,6 +284,22 @@ export class ProtspaceScatterplot extends LitElement {
   private _webglRenderer: WebGLRenderer | null = null;
   private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
+  // The getters over the model with nothing marked (`_getStageGetters`), with
+  // the getters and model they were built from.
+  private _unmarkedGetters: {
+    from: ReturnType<typeof createStyleGetters>;
+    model: VisibilityModel;
+    getters: ReturnType<typeof createStyleGetters>;
+  } | null = null;
+  // The last marks `_getPointMarks` built, with the plot slots and the
+  // selection and highlight they were built for.
+  private _pointMarks: {
+    proteinIds: readonly string[];
+    originalIndices: Int32Array | null;
+    selected: string[];
+    highlighted: string[];
+    marks: PointMarks;
+  } | null = null;
   // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
   // which is nulled out on color/shape mapping changes). The key comparison in
   // _getVisibilityModel covers every visibility-relevant input exhaustively:
@@ -646,22 +663,25 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _createWebglRenderer() {
     if (!this._canvas) return;
+    const styles = {
+      getColors: (p: PlotDataPoint) => this._getColors(p),
+      getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
+      getShape: (p: PlotDataPoint) => this._getPointShape(p),
+      isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
+      isMultilabel: () => this._getStyleGetters().isMultilabel(),
+    };
     this._webglRenderer = new WebGLRenderer(
       this._canvas,
       () => this._scales,
       () => this._transform,
       () => this._mergedConfig,
+      // The live view stages nothing marked while it draws the marks on the GPU.
       {
-        getColors: (p: PlotDataPoint) => this._getColors(p),
-        getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => this._getDepth(p),
-        getShape: (p: PlotDataPoint) => this._getPointShape(p),
-        isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
-        isMultilabel: () => this._getStyleGetters().isMultilabel(),
-        // The getters above resolve the visibility model per point; a pass
-        // resolves it once, for every point it stages.
-        createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
+        ...styles,
+        getOpacity: (p: PlotDataPoint) => this._getStageModel().opacityOf(p),
+        getDepth: (p: PlotDataPoint) => this._getStageGetters().getDepth(p),
+        createStylePass: () => this._getStageGetters().createStylePass(this._getStageModel()),
+        getPointMarks: (pd: PlotData) => this._getPointMarks(pd),
       },
       this._handleWebglContextLost,
       () => this._background.get(),
@@ -673,6 +693,15 @@ export class ProtspaceScatterplot extends LitElement {
             composed: true,
           }),
         ),
+      // An export stages the selection with every other style.
+      {
+        ...styles,
+        getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
+        getDepth: (p: PlotDataPoint) => this._getDepth(p),
+        // The getters above resolve the visibility model per point; a pass
+        // resolves it once, for every point it stages.
+        createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
+      },
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
@@ -1086,7 +1115,11 @@ export class ProtspaceScatterplot extends LitElement {
     ) {
       this._updateSelectionOverlays();
       this._syncWebglSelectionActive();
-      this._webglRenderer?.invalidateStyleCache();
+      // Marks the renderer draws on the GPU re-stage nothing. Focus is staged,
+      // and moves the selection between the GPU and staging.
+      if (changedProperties.has('_focusedValues') || !this._marksOnGpu()) {
+        this._webglRenderer?.invalidateStyleCache();
+      }
       this._requestRender();
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
@@ -2046,7 +2079,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /** Build style getters for the current data and visual state. */
-  private _buildStyleGetters(): ReturnType<typeof createStyleGetters> {
+  private _buildStyleGetters(
+    model: VisibilityModel = this._getVisibilityModel(),
+  ): ReturnType<typeof createStyleGetters> {
     const styleData =
       this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
       this._getMaterializedData() ??
@@ -2073,7 +2108,7 @@ export class ProtspaceScatterplot extends LitElement {
         },
         eatOverlayEnabled: this.eatOverlayEnabled,
       },
-      this._getVisibilityModel(),
+      model,
     );
   }
 
@@ -2082,6 +2117,72 @@ export class ProtspaceScatterplot extends LitElement {
       this._styleGettersCache = this._buildStyleGetters();
     }
     return this._styleGettersCache;
+  }
+
+  /**
+   * Whether the renderer draws the selection and highlight as marks on the GPU
+   * (`_getPointMarks`) rather than staging them: not while focus fades points by
+   * category, nor with opacities the marks cannot draw as staging does.
+   */
+  private _marksOnGpu(): boolean {
+    return this._focusedValues === null && this._getStyleGetters().canMarkOnGpu();
+  }
+
+  /** The visibility model the live view stages: with nothing marked while the GPU draws the marks. */
+  private _getStageModel(): VisibilityModel {
+    const model = this._getVisibilityModel();
+    return this._marksOnGpu() ? model.unmarked : model;
+  }
+
+  /** The style getters the live view stages, over {@link _getStageModel}. */
+  private _getStageGetters(): ReturnType<typeof createStyleGetters> {
+    const getters = this._getStyleGetters();
+    if (!this._marksOnGpu()) return getters;
+    const model = this._getVisibilityModel().unmarked;
+    const cached = this._unmarkedGetters;
+    if (cached?.from === getters && cached.model === model) return cached.getters;
+    this._unmarkedGetters = { from: getters, model, getters: this._buildStyleGetters(model) };
+    return this._unmarkedGetters.getters;
+  }
+
+  /**
+   * The selection and highlight as marks over the points of `pd`, for the
+   * renderer to draw on the GPU; null while they are staged instead, or while
+   * nothing is marked. Built once per change of either, in one pass of id lookups.
+   */
+  private _getPointMarks(pd: PlotData): PointMarks | null {
+    if (!this._marksOnGpu()) return null;
+    const model = this._getVisibilityModel();
+    const opacities = model.marks;
+    if (!opacities) return null;
+    const cached = this._pointMarks;
+    if (
+      cached &&
+      cached.proteinIds === pd.proteinIds &&
+      cached.originalIndices === pd.originalIndices &&
+      cached.marks.slots.length === pd.length &&
+      cached.selected === this.selectedProteinIds &&
+      cached.highlighted === this.highlightedProteinIds &&
+      cached.marks.marked === opacities.marked &&
+      cached.marks.unmarked === opacities.unmarked
+    ) {
+      return cached.marks;
+    }
+    const ids = pd.proteinIds;
+    const oi = pd.originalIndices;
+    const slots = new Uint8Array(pd.length);
+    for (let s = 0; s < pd.length; s++) {
+      if (model.isMarked(ids[oi ? oi[s] : s])) slots[s] = 1;
+    }
+    const marks = { slots, ...opacities };
+    this._pointMarks = {
+      proteinIds: ids,
+      originalIndices: oi,
+      selected: this.selectedProteinIds,
+      highlighted: this.highlightedProteinIds,
+      marks,
+    };
+    return marks;
   }
 
   private _getLocalPointerPosition(event: MouseEvent): {

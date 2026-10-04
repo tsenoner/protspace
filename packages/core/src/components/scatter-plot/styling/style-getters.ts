@@ -10,6 +10,7 @@ import {
   toInternalValue,
 } from '@protspace/utils';
 import type { PointStylePass } from '../webgl/types';
+import { composePaintDepth, SELECTED_OPACITY_THRESHOLD } from '../webgl/renderer/point-staging';
 import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityModel } from './visibility-model';
 import { CategoryStyles, createCategoryStylePass } from './style-pass';
@@ -230,6 +231,16 @@ export function createStyleGetters(
       : 0;
   const Z_EPS = 1e-3; // must be small enough to not override opacity-based depth differences
 
+  /** The z-order offset of a legend rank, or of a value the legend does not rank. */
+  const zOffsetOfRank = (order: number | undefined): number => {
+    if (typeof order === 'number' && Number.isFinite(order) && zMax > 0) {
+      const orderNorm = Math.min(1, Math.max(0, order / zMax));
+      return orderNorm * Z_EPS;
+    }
+    // Unknown values go to the back within an opacity tier.
+    return zMax > 0 ? Z_EPS : 0;
+  };
+
   /** The legend z-order offset getDepth adds for a point with these values. */
   const zOffsetOf = (count: number, anyOther: boolean, first: string | undefined): number => {
     if (!zMap) return 0;
@@ -243,13 +254,7 @@ export function createStyleGetters(
       key = '__NA__';
     }
 
-    const order = zMap[key];
-    if (typeof order === 'number' && Number.isFinite(order) && zMax > 0) {
-      const orderNorm = Math.min(1, Math.max(0, order / zMax));
-      return orderNorm * Z_EPS;
-    }
-    // Unknown values go to the back within an opacity tier.
-    return zMax > 0 ? Z_EPS : 0;
+    return zOffsetOfRank(zMap[key]);
   };
 
   /** getDepth from a base opacity and the z-order offset of the point's values. */
@@ -310,6 +315,38 @@ export function createStyleGetters(
     return createCategoryStylePass(categoryStyles, opacityModel);
   };
 
+  /**
+   * Whether a renderer can draw the selection and highlight as marks over points
+   * staged with nothing marked (`PointMarks`) and give the frame staging them
+   * gives. Staging puts a point at the selected opacity in the selected paint
+   * tier and every other one below it, so the selected opacity has to reach that
+   * tier and the other two must not, nor be 0, which changes what draws at all.
+   * Inside a tier the order is the z-order offset's at one opacity, so at each of
+   * the three the float32 depth the sort reads has to keep every offset apart:
+   * two categories tied at one opacity interleave by slot, and at another not.
+   */
+  const canMarkOnGpu = (): boolean => {
+    const { base, selected, faded } = styleConfig.opacities;
+    const belowTier = (opacity: number) => opacity > 0 && opacity < SELECTED_OPACITY_THRESHOLD;
+    if (selected < SELECTED_OPACITY_THRESHOLD || !belowTier(base) || !belowTier(faded)) {
+      return false;
+    }
+    // Every offset zOffsetOf can give.
+    const offsets = zMap
+      ? [zOffsetOfRank(undefined), ...Object.values(zMap).map(zOffsetOfRank)]
+      : [0];
+    const ascending = [...new Set(offsets)].sort((a, b) => a - b);
+    return [base, selected, faded].every((opacity) =>
+      [false, true].every((predicted) => {
+        const depths = ascending.map((z) =>
+          Math.fround(composePaintDepth(depthOf(opacity, z), opacity, predicted)),
+        );
+        return depths.every((depth, i) => i === 0 || depth > depths[i - 1]);
+      }),
+    );
+  };
+  let marksOnGpu: boolean | null = null;
+
   return {
     getPointSize,
     getPointShape,
@@ -319,5 +356,6 @@ export function createStyleGetters(
     isPredicted,
     isMultilabel: () => multilabel,
     createStylePass,
+    canMarkOnGpu: () => (marksOnGpu ??= canMarkOnGpu()),
   };
 }
