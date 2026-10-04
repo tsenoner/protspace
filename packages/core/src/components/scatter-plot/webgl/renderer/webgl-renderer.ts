@@ -121,9 +121,13 @@ const MIN_CAPACITY = 1024;
  */
 const CAPACITY_GRANULARITY = 256;
 
-/** The context attributes are fixed by the first `getContext` call, so every caller passes these. */
+/**
+ * The context attributes are fixed by the first `getContext` call, so every caller passes these.
+ * No MSAA: points go to a single-sample float FBO with shader-side edge AA, and the canvas only
+ * receives the full-screen gamma quad.
+ */
 const CONTEXT_OPTIONS: WebGLContextAttributes = {
-  antialias: true,
+  antialias: false,
   preserveDrawingBuffer: true,
   premultipliedAlpha: false,
   alpha: true,
