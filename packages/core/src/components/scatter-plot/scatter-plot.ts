@@ -705,6 +705,8 @@ export class ProtspaceScatterplot extends LitElement {
     );
     this._updateStyleSignature();
     this._webglRenderer.setStyleSignature(this._styleSig);
+    // A renderer rebuilt after a context loss starts with no selection either.
+    this._syncWebglSelectionActive();
     // Compile the shaders while data loads rather than inside the first render.
     this._webglRenderer.prewarm();
   }
@@ -1189,13 +1191,10 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction = new PlotInteractionController(this._interactionHost());
     this._interaction.initialize();
     this._updateSizeAndRender();
-    if (this._canvas) {
-      // _updateSizeAndRender already lazily constructs the renderer when _canvas
-      // exists; guard here so firstUpdated no longer orphans that instance (F-35).
-      if (!this._webglRenderer) {
-        this._createWebglRenderer();
-      }
-      this._syncWebglSelectionActive();
+    // _updateSizeAndRender already lazily constructs the renderer when _canvas
+    // exists; guard here so firstUpdated no longer orphans that instance (F-35).
+    if (this._canvas && !this._webglRenderer) {
+      this._createWebglRenderer();
     }
     this._connectorOverlay.render();
   }

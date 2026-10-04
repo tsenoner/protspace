@@ -218,18 +218,35 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
   });
 });
 
-describe('scatter-plot WebGL context-loss recovery (detached guard)', () => {
+describe('scatter-plot WebGL context-loss recovery', () => {
+  type RecoveryInternals = HTMLElement & {
+    updateComplete: Promise<boolean>;
+    selectedProteinIds: string[];
+    _webglRenderer: { selectionActive: boolean } | null;
+    _updateSizeAndRender(): void;
+    _handleWebglContextLost(): void;
+  };
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
+  it('rebuilds the renderer with the selection, so an export draws it as before the loss', async () => {
+    const sp = document.createElement('protspace-scatterplot') as RecoveryInternals;
+    document.body.appendChild(sp);
+    sp.selectedProteinIds = ['p1'];
+    await sp.updateComplete;
+    const lost = sp._webglRenderer;
+    sp._handleWebglContextLost();
+    await sp.updateComplete;
+    await Promise.resolve();
+    expect(sp._webglRenderer).not.toBe(lost);
+    expect(sp._webglRenderer?.selectionActive).toBe(true);
+    sp.remove();
+  });
+
   it('F-10: recovery microtask does not rebuild renderer after disconnect', async () => {
-    type RecoveryInternals = HTMLElement & {
-      updateComplete: Promise<boolean>;
-      _updateSizeAndRender(): void;
-      _handleWebglContextLost(): void;
-    };
     const sp = document.createElement('protspace-scatterplot') as RecoveryInternals;
     // Connect so Lit's update lifecycle (and updateComplete) actually runs,
     // then disconnect synchronously after firing the loss event but BEFORE the

@@ -36,6 +36,7 @@ vi.mock('./webgl', async (importOriginal) => ({
       constructed.push(args);
     }
     setStyleSignature() {}
+    setSelectionActive() {}
     prewarm() {}
   },
 }));
