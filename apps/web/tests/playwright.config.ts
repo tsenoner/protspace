@@ -202,6 +202,15 @@ export default defineConfig({
       testMatch: /camera-no-restage\.spec\.ts/,
     },
     {
+      // Work counts per interaction, gated by tests/perf/budgets.json. See perf/README.md.
+      name: 'perf-counts',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /perf-counts\.spec\.ts/,
+    },
+    {
       name: 'density-layer',
       use: {
         ...devices['Desktop Chrome'],
