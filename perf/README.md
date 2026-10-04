@@ -101,7 +101,8 @@ commit.
 ```sh
 pnpm perf                                  # build, `vite preview` on 8301, demo bundle, 5 runs
 pnpm perf --datasets 40K,7K_toxprot
-pnpm perf --datasets /abs/path/573K_swissprot_v3.parquetbundle --runs 3
+pnpm perf --datasets 573K_swissprot --runs 3
+pnpm perf --datasets /abs/path/other.parquetbundle
 pnpm perf --scenarios annotation,camera --cpu 4
 ```
 
@@ -142,18 +143,43 @@ camera             40      0        -            87       0           18        
 
 Event Timing and Long Animation Frames exist only in Chromium, so timing mode runs only there.
 
+### 573K example
+
+`pnpm perf --url http://localhost:8422 --datasets 573K_swissprot` takes about 3 minutes, most of
+it in the 4 + 1 runs of each segment. On an M-series MacBook on power (2026-10-04):
+
+```
+573K_swissprot  runs 4 (+1 warm-up)  cpu 1x  A=:8422  heap 45MB     median
+segment            INP ms  LoAF ms  top script                            busy ms  restage ms  p95 frame
+import             56      3917     FrameRequestCallback                  6911     6380        -
+annotation-switch  2224    2170     DIV.onclick                           2188     2110        -
+projection-switch  3104    3046     DIV.onclick                           3065     3009        -
+legend-isolate     3288    3230     BUTTON.ondblclick                     3244     3159        -
+camera             56      0        -                                     83       0           18
+resize             0       1115     ResizeObserverCallback                2237     2159        -
+search-select      1152    505      INPUT#protein-search-input.onkeydown  1110     1093        -
+```
+
+At this size the re-stage (`restage ms`) is nearly all of each interaction.
+
 ### Comparing two builds
 
-Serve each build on its own port, then:
+Serve each build on its own port, then pass one as `--url` and the other as `--compare`. For
+example, `main` from a second worktree against this branch:
 
 ```sh
-pnpm perf --url http://localhost:8301 --compare http://localhost:8302
+git worktree add ../protspace-main origin/main && (cd ../protspace-main && pnpm install)
+(cd ../protspace-main && pnpm turbo run build --filter=@protspace/app \
+  && pnpm --filter @protspace/app exec vite preview --port 8302 --strictPort) &
+pnpm turbo run build --filter=@protspace/app \
+  && (pnpm --filter @protspace/app exec vite preview --port 8301 --strictPort &)
+pnpm perf --url http://localhost:8302 --compare http://localhost:8301 --datasets default,40K
 ```
 
 The runs alternate A, B, A, B in one browser session, so a change in power state hits both builds.
 Cells read `A→B ratio`, for example `412→118 .29`. `pixels A=B` compares the plot after each
-segment between the two builds. Compare two production builds (`vite build` + `vite preview`), not
-a dev server with a build.
+segment between the two builds; on `DIFF`, both images go to `perf/results/<stamp>-pixels/`.
+Compare two production builds (`vite build` + `vite preview`), not a dev server with a build.
 
 ### Baselines
 
