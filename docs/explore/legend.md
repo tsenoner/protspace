@@ -55,12 +55,29 @@ Click the cog icon in the top-right corner of the legend for advanced options.
 
 ### Shared Settings
 
-| Setting                     | What it does                                                                                                                                                                                                                                                                                      |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins.                                                                                                                                                       |
-| **Shape size / Point size** | Adjusts marker size in the scatterplot (default 10, range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
-| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                 |
-| **Color palette**           | Picks the active palette for the selected annotation.                                                                                                                                                                                                                                             |
+| Setting                     | What it does                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Max legend items**        | Categorical annotations: maximum number of visible values before grouping into `Other`. Numeric annotations: target maximum number of bins.                                                                                                                                                                                                                                       |
+| **Shape size / Point size** | Adjusts marker size in the scatterplot (range 1 to 64; a larger size from a bundle or an earlier session is capped at 64). The default follows the dataset's protein count, see [Default dot size](#default-dot-size). The size you pick holds for every annotation of the dataset. Numeric annotations use the label `Point size` because numeric legends always render circles. |
+| **Show duplicate counts**   | Shows duplicate count badges and spreads overlapping points when you expand them.                                                                                                                                                                                                                                                                                                 |
+| **Color palette**           | Picks the active palette for the selected annotation.                                                                                                                                                                                                                                                                                                                             |
+
+### Default dot size
+
+Until you pick a size, the dot size follows how many proteins the dataset has, so a large dataset
+opens with dots small enough that one category does not cover the others:
+
+| Proteins in the dataset | Up to 10,000 | 20,000 | 40,000 | 100,000 | 570,000 |
+| ----------------------- | ------------ | ------ | ------ | ------- | ------- |
+| Default shape size      | 10           | 6      | 4      | 2       | 1       |
+
+The count is the whole dataset, so hiding categories, filtering or isolating does not change it. The
+settings dialog shows the dataset's default under the size field. To use another size, type it and
+press Save: it is then stored for the dataset and exported with **Include legend settings**. A size
+a bundle sets for an annotation, other than 10 or 30, also overrides the default. To return to the
+default, clear the size field and press Save. This drops the size you picked and every size a
+bundle set per annotation, but keeps the annotation's other settings. `Reset` does the same for the
+size, and also resets the selected annotation's colors, order and hidden values.
 
 ### Sorting
 
@@ -205,7 +222,8 @@ Legend settings are saved per dataset and per annotation in the browser.
 - The shape size is the exception: it is saved once per dataset, applies to every annotation, and
   travels in exported bundles with **Include legend settings**
 - Use `Reset` in the settings dialog to clear saved preferences for the selected annotation; it also
-  sets the dataset's shape size back to 10
+  clears the dataset's shape size and every annotation's own size, including sizes a bundle set
+  per annotation, so the [default](#default-dot-size) applies to every annotation again
 
 ## Styling From The Python CLI
 

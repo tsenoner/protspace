@@ -29,7 +29,9 @@ The scatterplot is the main visualization area where proteins appear as points. 
 
 Dots grow as you zoom in, so single proteins stay easy to see and to hover: a dot's radius is ×1.4
 at 4× zoom, ×2 at 16×, and never more than ×4. Zooming out never shrinks them below their unzoomed
-size, which you set with the shape size in the [legend](/explore/legend#shared-settings). Dots are
+size, which you set with the shape size in the [legend](/explore/legend#shared-settings). Until you
+pick one, it [follows the dataset's protein count](/explore/legend#default-dot-size): 10 up to
+10,000 proteins, smaller for larger datasets. Dots are
 also a little larger on a big plot and a little smaller on a small one (×0.8 to ×1.5 against a
 1000 × 700 px plot), and the same size on every pixel density. Hovering picks a dot anywhere within
 its drawn radius, or within 4 px of its centre when it is smaller than that.

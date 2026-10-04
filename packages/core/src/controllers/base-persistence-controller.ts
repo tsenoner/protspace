@@ -6,6 +6,18 @@ import {
   setStorageItem,
 } from '@protspace/utils';
 
+/** What a dataset's hash is computed from: its protein ids, or the dataset itself. */
+export type DatasetHashData =
+  | string[]
+  | {
+      protein_ids: string[];
+      annotations?: Record<
+        string,
+        { kind?: 'categorical' | 'numeric'; values?: (string | null)[] }
+      >;
+      numeric_annotation_data?: Record<string, Float64Array>;
+    };
+
 /**
  * Base class for persistence controllers that manage per-dataset/annotation
  * settings in localStorage with optional file-based overrides from parquetbundle files.
@@ -40,18 +52,7 @@ export abstract class BasePersistenceController<
     return this._fileSettings !== null;
   }
 
-  updateDatasetHash(
-    data:
-      | string[]
-      | {
-          protein_ids: string[];
-          annotations?: Record<
-            string,
-            { kind?: 'categorical' | 'numeric'; values?: (string | null)[] }
-          >;
-          numeric_annotation_data?: Record<string, Float64Array>;
-        },
-  ): boolean {
+  updateDatasetHash(data: DatasetHashData): boolean {
     const newHash = generateDatasetHash(data);
     if (newHash !== this._datasetHash) {
       this._datasetHash = newHash;
