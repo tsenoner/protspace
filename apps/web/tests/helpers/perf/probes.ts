@@ -40,7 +40,8 @@ export interface TimingSample {
   loafScript: string;
   /** Main-thread task time in the window, from CDP `TaskDuration`, ms. */
   busy: number;
-  restageMs: number;
+  /** null on a build without the counters. */
+  restageMs: number | null;
   /** 95th percentile gap between animation frames, ms; only for segments that arm it. */
   p95Frame: number | null;
 }
@@ -155,28 +156,35 @@ export async function installProbes(page: Page): Promise<void> {
   });
 }
 
-/** Read the counters and GL probes. Throws when the page was loaded without the flag. */
-export async function readSnapshot(page: Page): Promise<Snapshot> {
-  return page.evaluate(() => {
+/**
+ * Read the counters and GL probes. Throws when the page was loaded without the flag,
+ * unless `optional` (timing mode also measures builds from before the counters); each
+ * counter then reads NaN.
+ */
+export async function readSnapshot(page: Page, optional = false): Promise<Snapshot> {
+  return page.evaluate((optional) => {
     const c = window.__protspacePerfCounters;
     const p = window.__perfProbe;
-    if (!c || !p) throw new Error('perf counters missing: load the page with ?perfCounters=1');
+    if ((!c && !optional) || !p) {
+      throw new Error('perf counters missing: load the page with ?perfCounters=1');
+    }
+    const count = (key: string) => c?.[key] ?? NaN;
     return {
-      restage: c.restage,
-      restagePos: c.restagePos,
-      restageStyle: c.restageStyle,
-      restageMs: c.restageMs,
-      render: c.render,
-      drawn: c.drawn,
-      processData: c.processData,
-      gridRebuild: c.gridRebuild,
-      legendUpdate: c.legendUpdate,
-      legendRebuild: c.legendRebuild,
+      restage: count('restage'),
+      restagePos: count('restagePos'),
+      restageStyle: count('restageStyle'),
+      restageMs: count('restageMs'),
+      render: count('render'),
+      drawn: count('drawn'),
+      processData: count('processData'),
+      gridRebuild: count('gridRebuild'),
+      legendUpdate: count('legendUpdate'),
+      legendRebuild: count('legendRebuild'),
       glIs: p.glIs,
       glSync: p.glSync,
       uploadBytes: p.uploadBytes,
     };
-  });
+  }, optional);
 }
 
 function diff(before: Snapshot, after: Snapshot): Snapshot {
@@ -207,6 +215,8 @@ export async function settle(page: Page, options: SettleOptions = {}): Promise<v
     ({ quietMs, capMs }) =>
       new Promise<{ ok: boolean; changed: string[] }>((resolve) => {
         const read = (): Record<string, number> => {
+          // A build from before the counters settles on the GL probes alone: it still
+          // checks its GL handles with `gl.is*` on every render.
           const c = window.__protspacePerfCounters ?? {};
           const p = window.__perfProbe;
           return { ...c, glIs: p?.glIs ?? 0, glSync: p?.glSync ?? 0, up: p?.uploadBytes ?? 0 };
@@ -325,7 +335,7 @@ export interface SegmentSpec {
 export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentResult> {
   await settle(page);
   const pixelsBefore = spec.pixels ? await plotPixels(page) : null;
-  const before = await readSnapshot(page);
+  const before = await readSnapshot(page, !!spec.timing);
 
   let windowStart = 0;
   let busyBefore = 0;
@@ -364,7 +374,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     };
   }
 
-  const after = await readSnapshot(page);
+  const after = await readSnapshot(page, !!spec.timing);
   const delta = diff(before, after);
   let actPixels: Buffer | undefined;
   if (spec.capture) {
@@ -373,7 +383,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     await settle(page);
     actPixels = await plotPixels(page);
   }
-  if (timing) timing.restageMs = delta.restageMs;
+  if (timing) timing.restageMs = Number.isNaN(delta.restageMs) ? null : delta.restageMs;
 
   if (spec.reset) {
     await spec.reset();

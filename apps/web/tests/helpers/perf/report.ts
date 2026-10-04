@@ -202,10 +202,10 @@ export function timingMedians(samples: TimingSample[]): TimingMedians {
   };
 }
 
-/** `412→118 .29` when there is a reference, else `412`. */
+/** `412→118 .29` when there is a reference, else `412`. No ratio when a side has no value. */
 function timingCell(a: number | null, b: number | null | undefined): string {
-  if (a === null) return '-';
   const round = (v: number) => String(Math.round(v));
+  if (a === null) return b === null || b === undefined ? '-' : `-→${round(b)}`;
   if (b === undefined) return round(a);
   if (b === null) return `${round(a)}→-`;
   const ratio = a > 0 ? (b / a).toFixed(2).replace(/^0/, '') : '-';
