@@ -34,6 +34,11 @@ export function resolvePointLocations(
       labelAtlasCapacity: gl.getUniformLocation(program, 'u_labelAtlasCapacity'),
       recordStyle: gl.getUniformLocation(program, 'u_recordStyle'),
       recordStyleOn: gl.getUniformLocation(program, 'u_recordStyleOn'),
+      marks: gl.getUniformLocation(program, 'u_marks'),
+      marksOn: gl.getUniformLocation(program, 'u_marksOn'),
+      markPass: gl.getUniformLocation(program, 'u_markPass'),
+      markedOpacity: gl.getUniformLocation(program, 'u_markedOpacity'),
+      unmarkedOpacity: gl.getUniformLocation(program, 'u_unmarkedOpacity'),
     },
   };
 }

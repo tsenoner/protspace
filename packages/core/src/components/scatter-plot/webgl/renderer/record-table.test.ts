@@ -8,6 +8,7 @@ import { stageArrays } from './test-support/legacy-staging';
 import {
   canRestyle,
   collectStagedRecords,
+  markedFirstDrawn,
   shownSlotCount,
   writeRecordTexels,
   type StagedRecords,
@@ -280,6 +281,24 @@ describe('per-record style table', () => {
           2.2,
         ),
       );
+    }
+  });
+
+  it('ranks marked slots after the rest, as the per-point palette does', () => {
+    for (const values of [8, 40]) {
+      const many = makeData(4000, values, values);
+      const manyPd = makePlotData(many);
+      const config = { ...baseConfig, hiddenAnnotationValues: ['c1'] };
+      const table = stage(manyPd, passOf(many, config), true);
+      const count = manyPd.length;
+      // The first third of the draw order, so the first point of most colours moves.
+      const marked = Uint8Array.from({ length: count }, (_, k) => (k < count / 3 ? 1 : 0));
+      const { recordIds, colors } = table.target;
+      const firstDrawn = markedFirstDrawn(table.staged!, recordIds!, colors, marked, count);
+      const palette = buildRecordSlotPalette(table.staged!, 2.2, firstDrawn);
+      const view = drawn(table.target, table.staged!, count);
+      expect(palette).toEqual(buildSlotPalette(view.colors, count, 2.2, marked));
+      expect(palette).not.toEqual(buildRecordSlotPalette(table.staged!, 2.2));
     }
   });
 });

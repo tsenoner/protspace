@@ -28,6 +28,24 @@ export interface WebGLStyleGetters {
    * write the same buffers, only slower.
    */
   createStylePass?: () => PointStylePass;
+  /**
+   * The marks the live view draws over the points of `pd`, or null when none
+   * are. With marks, the getters above style every point as if none were
+   * marked, so changing the marks re-stages nothing.
+   */
+  getPointMarks?: (pd: PlotData) => PointMarks | null;
+}
+
+/**
+ * A selection or highlight, drawn on the GPU: a point that is not hidden takes
+ * `marked` or `unmarked` as its opacity, and the marked points draw on top of the
+ * rest, as staging orders and draws a selection.
+ */
+export interface PointMarks {
+  /** 1 for each marked slot of the plot data, 0 for the rest. */
+  readonly slots: Uint8Array;
+  readonly marked: number;
+  readonly unmarked: number;
 }
 
 /** Record id of a slot whose style is not in the records table. */
@@ -138,6 +156,11 @@ export interface PointUniformLocations {
   labelAtlasCapacity: WebGLUniformLocation | null;
   recordStyle: WebGLUniformLocation | null;
   recordStyleOn: WebGLUniformLocation | null;
+  marks: WebGLUniformLocation | null;
+  marksOn: WebGLUniformLocation | null;
+  markPass: WebGLUniformLocation | null;
+  markedOpacity: WebGLUniformLocation | null;
+  unmarkedOpacity: WebGLUniformLocation | null;
 }
 
 // ============================================================================

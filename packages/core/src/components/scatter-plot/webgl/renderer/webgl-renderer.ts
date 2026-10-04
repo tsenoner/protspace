@@ -16,6 +16,7 @@ import {
   type ScatterplotConfig,
 } from '@protspace/utils';
 import {
+  type PointMarks,
   type PointStylePass,
   type WebGLStyleGetters,
   type ScalePair,
@@ -52,6 +53,7 @@ import {
 import {
   canRestyle,
   collectStagedRecords,
+  markedFirstDrawn,
   recordTableRows,
   shownSlotCount,
   writeRecordTexels,
@@ -64,7 +66,9 @@ import {
   bindAndClearTarget,
   setPointBlendState,
   drawPoints,
+  drawMarkedPoints,
   bindPointDrawState,
+  MARK_TEXTURE_UNIT,
   RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
@@ -109,6 +113,7 @@ import {
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
+  MARK_TEXTURE_WIDTH,
   RECORD_STYLE_WIDTH,
 } from './export-shaders';
 
@@ -207,9 +212,10 @@ export class WebGLRenderer {
   private densityDisabled = false;
   private contourPalette: SlotPalette | null = null;
   /**
-   * Bumped by every `populateBuffers` and `restyleRecords`, the only writers of
-   * the position buffer and of the colours points draw with, and the only places
-   * `contourPalette` is invalidated, so it keys the density fields built from them.
+   * Bumped by every `populateBuffers`, `restyleRecords` and `applyMarks`, the
+   * only writers of the position buffer and of the colours and order points draw
+   * with, and the only places `contourPalette` is invalidated, so it keys the
+   * density fields built from them.
    */
   private bufferGeneration = 0;
   /**
@@ -227,6 +233,17 @@ export class WebGLRenderer {
    * re-sort decision is staging's to make.
    */
   private stagedOrderStale = false;
+  /**
+   * The marks the GPU draws over the staged points (see `PointMarks`), or null.
+   * The mark texture holds a byte per staged point, by draw index, and
+   * `stagedMarks` is its copy, so a new selection uploads only the rows it changed.
+   */
+  private marks: PointMarks | null = null;
+  private stagedMarks = new Uint8Array(0);
+  /** Draw indices `[first, end)` around every drawn marked point; null with none drawn. */
+  private markedRange: { first: number; end: number } | null = null;
+  /** Set when staging or a restyle moved or hid points since the marks were applied. */
+  private marksStale = false;
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -305,6 +322,12 @@ export class WebGLRenderer {
   // config, style getters, transform, gamma, and selection state.
   private readonly exportRenderer = new ExportRenderer();
 
+  /**
+   * @param style What the live view stages. With marks (`getPointMarks`) it styles
+   *   every point as if none were marked.
+   * @param exportStyle What an export stages, marks included: `style` unless the
+   *   live view marks points on the GPU.
+   */
   constructor(
     private canvas: HTMLCanvasElement,
     private getScales: () => ScalePair | null,
@@ -314,6 +337,7 @@ export class WebGLRenderer {
     private onContextLost?: () => void,
     private getKnockoutColor: () => readonly [number, number, number] = () => [1, 1, 1],
     private onDegraded?: (detail: RendererDegradedDetail) => void,
+    private exportStyle: WebGLStyleGetters = style,
   ) {
     this.lossController = new ContextLossController(this.canvas, () => {
       this.resetRendererState();
@@ -683,6 +707,9 @@ export class WebGLRenderer {
       this.categoryStylesDirty = false;
       // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
     }
+    // After staging, which lays out the draw order the marks are written in.
+    const marks = this.style.getPointMarks?.(pd) ?? null;
+    if (marks !== this.marks || this.marksStale) this.applyMarks(marks);
     // Asked after staging, which may have laid the positions out afresh.
     this.positionRescale = this.rescaleStagedTo(scales) ?? IDENTITY_RESCALE;
 
@@ -784,9 +811,18 @@ export class WebGLRenderer {
     if (alpha <= 0) return null;
 
     // Points drawn through the record table have their staged alpha unhidden.
+    // Drawn marked points come after every other point, as staging puts a selection.
+    const marked = this.markedRange ? this.stagedMarks : null;
+    const count = this.currentPointCount;
     this.contourPalette ??= this.stagedRecords
-      ? buildRecordSlotPalette(this.stagedRecords, this.gamma)
-      : buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+      ? buildRecordSlotPalette(
+          this.stagedRecords,
+          this.gamma,
+          marked
+            ? markedFirstDrawn(this.stagedRecords, this.recordIds, this.colors, marked, count)
+            : undefined,
+        )
+      : buildSlotPalette(this.colors, count, this.gamma, marked);
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
@@ -860,8 +896,9 @@ export class WebGLRenderer {
    * Creates a temporary WebGL context, renders at requested size, returns 2D canvas.
    *
    * Thin delegate over {@link ExportRenderer.renderToCanvas}: the facade supplies
-   * the last-rendered data, the live config + style getters, and the live render
-   * state (selection, transform, gamma) so the export equals the on-screen render
+   * the last-rendered data, the live config + export style getters (which stage
+   * the marks the live view draws on the GPU), and the live render state
+   * (selection, transform, gamma) so the export equals the on-screen render
    * (incl. the F-15 two-pass selection blend).
    *
    * @param width Target width in CSS pixels (will be multiplied by DPR)
@@ -882,20 +919,25 @@ export class WebGLRenderer {
     resetView: boolean = false,
     knockoutColor: readonly [number, number, number] = this.getKnockoutColor(),
   ): HTMLCanvasElement {
-    return this.exportRenderer.renderToCanvas(this.lastRenderedData, this.getConfig(), this.style, {
-      width,
-      height,
-      dpr,
-      dataDomain,
-      pointSizeReference,
-      selectionActive: this.selectionActive,
-      transform: resetView ? d3.zoomIdentity : this.getTransform(),
-      gamma: this.gamma,
-      knockoutColor,
-      // See `exportLabelStride` for what the export inherits and why.
-      labelStride: this.exportLabelStride(),
-      deviceMaxTextureSize: this.maxTextureSize,
-    });
+    return this.exportRenderer.renderToCanvas(
+      this.lastRenderedData,
+      this.getConfig(),
+      this.exportStyle,
+      {
+        width,
+        height,
+        dpr,
+        dataDomain,
+        pointSizeReference,
+        selectionActive: this.selectionActive,
+        transform: resetView ? d3.zoomIdentity : this.getTransform(),
+        gamma: this.gamma,
+        knockoutColor,
+        // See `exportLabelStride` for what the export inherits and why.
+        labelStride: this.exportLabelStride(),
+        deviceMaxTextureSize: this.maxTextureSize,
+      },
+    );
   }
 
   /**
@@ -1108,6 +1150,8 @@ export class WebGLRenderer {
     this.positionRescale = IDENTITY_RESCALE;
     this.stagedRecords = null;
     this.recordStyleRows = 0;
+    this.marks = null;
+    this.markedRange = null;
   }
 
   /**
@@ -1237,6 +1281,7 @@ export class WebGLRenderer {
     }
 
     const gl = this.gl;
+    const marks = this.marks;
 
     bindPointDrawState(
       gl,
@@ -1257,21 +1302,37 @@ export class WebGLRenderer {
         // unreachable and every marker fall through to its dominant colour.
         labelAtlas: this.atlas?.plan ?? null,
         recordStyle: this.stagedRecords ? this.resources.recordStyleTexture : null,
+        marks: marks && {
+          texture: this.resources.markTexture,
+          marked: marks.marked,
+          unmarked: marks.unmarked,
+        },
       },
     );
 
-    drawPoints(
-      gl,
-      this.currentPointCount,
-      this.selectionActive,
-      this.selectedStartIndex,
-      afterBasePass && {
-        run: afterBasePass,
-        program: this.resources.pointProgram,
-        vao: this.resources.pointVao,
-        labelTexture: this.resources.labelColorTexture,
-      },
-    );
+    const between = afterBasePass && {
+      run: afterBasePass,
+      program: this.resources.pointProgram,
+      vao: this.resources.pointVao,
+      labelTexture: this.resources.labelColorTexture,
+    };
+    if (marks) {
+      drawMarkedPoints(
+        gl,
+        this.pointUniformLocations.markPass,
+        this.currentPointCount,
+        this.markedRange,
+        between,
+      );
+    } else {
+      drawPoints(
+        gl,
+        this.currentPointCount,
+        this.selectionActive,
+        this.selectedStartIndex,
+        between,
+      );
+    }
 
     gl.bindVertexArray(null);
   }
@@ -1326,6 +1387,7 @@ export class WebGLRenderer {
     if (!this.gl) return;
     const gl = this.gl;
     this.bufferGeneration++;
+    this.marksStale = true;
     if (perfCounters) {
       perfCounters.restage++;
       if (updatePositions) perfCounters.restagePos++;
@@ -1528,6 +1590,7 @@ export class WebGLRenderer {
       this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
       this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
       this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
+      if (allocating) this.allocateMarkTexture(gl);
 
       // One error check per capacity change, on the allocating (bufferData) path
       // only — never on bufferSubData, so never per frame. It runs BEFORE any
@@ -1632,6 +1695,7 @@ export class WebGLRenderer {
     this.visibleCount = shownSlotCount(staged);
     this.contourPalette = null;
     this.bufferGeneration++;
+    this.marksStale = true;
     return true;
   }
 
@@ -1679,6 +1743,86 @@ export class WebGLRenderer {
     if (ok) this.uploadedBytes += staged.texels.byteLength;
     gl.activeTexture(gl.TEXTURE0);
     return ok;
+  }
+
+  /** Allocate the mark texture for the current capacity, with nothing marked. */
+  private allocateMarkTexture(gl: WebGL2RenderingContext) {
+    const rows = Math.ceil(this.capacity / MARK_TEXTURE_WIDTH);
+    this.stagedMarks = new Uint8Array(rows * MARK_TEXTURE_WIDTH);
+    gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.resources.markTexture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R8,
+      MARK_TEXTURE_WIDTH,
+      rows,
+      0,
+      gl.RED,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  /**
+   * Write `marks` over the staged points in draw order, upload the rows of the
+   * mark texture that changed, and find the draw range of the drawn marked points.
+   */
+  private applyMarks(marks: PointMarks | null) {
+    this.marks = marks;
+    this.marksStale = false;
+    this.markedRange = null;
+    // The contour palette ranks colours by draw position, which marks change.
+    this.contourPalette = null;
+    this.bufferGeneration++;
+    const gl = this.gl;
+    if (!marks || !gl) return;
+    const staged = this.stagedMarks;
+    const { slots } = marks;
+    const hidden = this.stagedRecords?.hidden;
+    let firstChanged = -1;
+    let lastChanged = -1;
+    let first = -1;
+    let end = -1;
+    const count = Math.min(this.currentPointCount, staged.length);
+    for (let k = 0; k < count; k++) {
+      const mark = slots[this.sortOrder[k]] ? 1 : 0;
+      if (mark !== staged[k]) {
+        staged[k] = mark;
+        if (firstChanged < 0) firstChanged = k;
+        lastChanged = k;
+      }
+      // Drawn: staged unhidden, and not hidden through the table.
+      if (mark && this.colors[k * 4 + 3] > 0 && !hidden?.[this.recordIds[k]]) {
+        if (first < 0) first = k;
+        end = k + 1;
+      }
+    }
+    if (first >= 0) this.markedRange = { first, end };
+    if (firstChanged < 0) return;
+    const fromRow = Math.floor(firstChanged / MARK_TEXTURE_WIDTH);
+    const rows = Math.floor(lastChanged / MARK_TEXTURE_WIDTH) + 1 - fromRow;
+    gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.resources.markTexture);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      0,
+      fromRow,
+      MARK_TEXTURE_WIDTH,
+      rows,
+      gl.RED,
+      gl.UNSIGNED_BYTE,
+      staged,
+      fromRow * MARK_TEXTURE_WIDTH,
+    );
+    gl.activeTexture(gl.TEXTURE0);
+    this.uploadedBytes += rows * MARK_TEXTURE_WIDTH;
   }
 
   /**

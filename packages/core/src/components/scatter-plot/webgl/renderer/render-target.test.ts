@@ -3,8 +3,10 @@ import {
   bindAndClearTarget,
   setPointBlendState,
   drawPoints,
+  drawMarkedPoints,
   bindPointDrawState,
   LABEL_ATLAS_TEXTURE_UNIT,
+  MARK_TEXTURE_UNIT,
   RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
 import { DENSITY_FIELD_UNITS } from './density-shaders';
@@ -38,6 +40,7 @@ function mockGL() {
     blendFunc: (...a: number[]) => calls.push(`blendFunc:${a.join(',')}`),
     depthMask: (b: boolean) => calls.push(`depthMask:${b}`),
     drawArrays: (...a: number[]) => calls.push(`drawArrays:${a.join(',')}`),
+    uniform1i: (loc: { n: string }, v: number) => calls.push(`${loc.n}:${v}`),
   } as unknown as WebGL2RenderingContext;
   return { gl, calls };
 }
@@ -132,6 +135,47 @@ describe('drawPoints', () => {
   });
 });
 
+describe('drawMarkedPoints', () => {
+  const markPass = { n: 'markPass' } as unknown as WebGLUniformLocation;
+  const hook = (calls: string[]) => ({
+    run: () => calls.push('hook'),
+    program: {} as WebGLProgram,
+    vao: {} as WebGLVertexArrayObject,
+    labelTexture: {} as WebGLTexture,
+  });
+
+  it('draws the unmarked points blend off, then the marked range blend on', () => {
+    const { gl, calls } = mockGL();
+    drawMarkedPoints(gl, markPass, 100, { first: 40, end: 52 }, hook(calls));
+    expect(calls).toEqual([
+      'markPass:0',
+      'disable:1',
+      'drawArrays:0,0,100',
+      'hook',
+      'useProgram:prog',
+      'bindVAO:vao',
+      `activeTexture:${0x84c1}`,
+      'bindTex:tex',
+      'markPass:1',
+      'enable:1',
+      'blendFunc:1,771',
+      'drawArrays:0,40,12',
+    ]);
+  });
+
+  it('draws every point in one blended pass without a drawn marked point', () => {
+    const { gl, calls } = mockGL();
+    drawMarkedPoints(gl, markPass, 100, null, hook(calls));
+    expect(calls).toEqual([
+      'markPass:-1',
+      'enable:1',
+      'blendFunc:1,771',
+      'drawArrays:0,0,100',
+      'hook',
+    ]);
+  });
+});
+
 describe('bindPointDrawState label-atlas uniforms', () => {
   function uniformMockGL() {
     const pushed: Record<string, unknown> = {};
@@ -175,6 +219,11 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       labelAtlasCapacity: { n: 'labelAtlasCapacity' },
       recordStyle: { n: 'recordStyle' },
       recordStyleOn: { n: 'recordStyleOn' },
+      marks: { n: 'marks' },
+      marksOn: { n: 'marksOn' },
+      markPass: { n: 'markPass' },
+      markedOpacity: { n: 'markedOpacity' },
+      unmarkedOpacity: { n: 'unmarkedOpacity' },
     } as unknown as PointUniformLocations;
     return { gl, uniforms, pushed };
   }
@@ -236,6 +285,27 @@ describe('bindPointDrawState label-atlas uniforms', () => {
   it('keeps the record-style unit clear of the label atlas and the density fields', () => {
     expect(RECORD_STYLE_TEXTURE_UNIT).not.toBe(LABEL_ATLAS_TEXTURE_UNIT);
     expect(DENSITY_FIELD_UNITS).not.toContain(RECORD_STYLE_TEXTURE_UNIT);
+  });
+
+  it('points the mark sampler at its own unit, with the opacities clamped as staged', () => {
+    const { gl, uniforms, pushed } = uniformMockGL();
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+    });
+    expect(pushed.marks).toBe(MARK_TEXTURE_UNIT);
+    expect(pushed.marksOn).toBe(0);
+    bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
+      ...baseParams,
+      labelAtlas: null,
+      marks: { texture: {} as WebGLTexture, marked: 1.5, unmarked: 0.15 },
+    });
+    expect(pushed).toMatchObject({ marksOn: 1, markedOpacity: 1, unmarkedOpacity: 0.15 });
+  });
+
+  it('keeps the mark unit clear of every other unit', () => {
+    const others = [LABEL_ATLAS_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT, ...DENSITY_FIELD_UNITS];
+    expect(others).not.toContain(MARK_TEXTURE_UNIT);
   });
 });
 

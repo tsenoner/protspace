@@ -56,8 +56,14 @@ describe('resolvePointLocations', () => {
         'transform',
         'recordStyle',
         'recordStyleOn',
+        'marks',
+        'marksOn',
+        'markPass',
+        'markedOpacity',
+        'unmarkedOpacity',
       ].sort(),
     );
+    expect((uniforms.markPass as unknown as { name: string }).name).toBe('u_markPass');
     expect((uniforms.recordStyle as unknown as { name: string }).name).toBe('u_recordStyle');
     expect((uniforms.resolution as unknown as { name: string }).name).toBe('u_resolution');
     expect((uniforms.maxLabels as unknown as { name: string }).name).toBe('u_maxLabels');

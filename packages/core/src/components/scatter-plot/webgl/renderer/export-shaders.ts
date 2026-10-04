@@ -44,6 +44,27 @@ vec4 pointColor() {
   return vec4(style.rgb, a_color.a * style.a);
 }`;
 
+/** Texels per row of the per-point mark texture: 2M points fit the 2048 rows any device allows. */
+export const MARK_TEXTURE_WIDTH = 1024;
+
+/**
+ * Marks drawn on the GPU (`PointMarks`): an R8 texture holding a non-zero byte
+ * for each marked point, by draw index. While marks are on, a point that is not
+ * hidden takes the marked or unmarked opacity, and `u_markPass` draws only the
+ * unmarked points (0), only the marked ones (1) or all of them (-1). Off (the
+ * export, or nothing marked), every point keeps its staged opacity.
+ */
+const MARK_GLSL = `uniform highp sampler2D u_marks;
+uniform bool u_marksOn;
+uniform int u_markPass;
+uniform float u_markedOpacity;
+uniform float u_unmarkedOpacity;
+
+bool isMarked() {
+  ivec2 texel = ivec2(gl_VertexID % ${MARK_TEXTURE_WIDTH}, gl_VertexID / ${MARK_TEXTURE_WIDTH});
+  return texelFetch(u_marks, texel, 0).r > 0.0;
+}`;
+
 export const POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
@@ -61,6 +82,7 @@ uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;
 ${RECORD_STYLE_GLSL}
+${MARK_GLSL}
 
 out vec4 v_color;
 out float v_labelCount;
@@ -72,6 +94,16 @@ void main() {
 ${CAMERA_TO_CLIP_GLSL}
 
   vec4 color = pointColor();
+  if (u_marksOn) {
+    bool marked = isMarked();
+    if (u_markPass >= 0 && marked != (u_markPass == 1)) {
+      // The other pass draws this point.
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      gl_PointSize = 1.0;
+      return;
+    }
+    if (color.a > 0.0) color.a = marked ? u_markedOpacity : u_unmarkedOpacity;
+  }
   float pointSize = a_pointSize;
   float labelCount = a_labelCount;
   float shape = a_shape;

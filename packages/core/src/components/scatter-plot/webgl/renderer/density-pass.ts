@@ -108,7 +108,17 @@ function colorKey(colors: Float32Array, o: number): number {
   );
 }
 
-export function buildSlotPalette(colors: Float32Array, count: number, gamma: number): SlotPalette {
+/**
+ * The density slots of the `count` staged points, ordered by the first point of
+ * each colour to draw. With `marked` (by draw index), marked points draw after
+ * every other point, as staging orders a selection.
+ */
+export function buildSlotPalette(
+  colors: Float32Array,
+  count: number,
+  gamma: number,
+  marked: Uint8Array | null = null,
+): SlotPalette {
   const entries: SlotEntries = new Map();
   let prevKey = -1;
   let prev: { n: number; first: number } | undefined;
@@ -116,30 +126,37 @@ export function buildSlotPalette(colors: Float32Array, count: number, gamma: num
     const o = i * 4;
     if (!(colors[o + 3] > 0)) continue;
     const key = colorKey(colors, o);
+    const rank = marked?.[i] ? count + i : i;
     if (key !== prevKey) {
       prev = entries.get(key);
-      if (!prev) entries.set(key, (prev = { n: 0, first: i }));
+      if (!prev) entries.set(key, (prev = { n: 0, first: rank }));
       prevKey = key;
     }
     prev!.n++;
+    if (rank < prev!.first) prev!.first = rank;
   }
   return paletteFromEntries(entries, gamma);
 }
 
 /**
  * {@link buildSlotPalette} of points drawn through the per-record style table:
- * the same counts and first draw indices, gathered per record.
+ * the same counts and first draw indices, gathered per record. `firstDrawn`
+ * replaces the table's own when marked points draw after the rest.
  */
-export function buildRecordSlotPalette(staged: StagedRecords, gamma: number): SlotPalette {
+export function buildRecordSlotPalette(
+  staged: StagedRecords,
+  gamma: number,
+  firstDrawn: ArrayLike<number> = staged.firstDrawn,
+): SlotPalette {
   const entries: SlotEntries = new Map();
   for (let r = 0; r < staged.codes.count; r++) {
     if (staged.hidden[r] || staged.drawn[r] === 0) continue;
     const key = colorKey(staged.texels, r * 8);
     const entry = entries.get(key);
-    if (!entry) entries.set(key, { n: staged.drawn[r], first: staged.firstDrawn[r] });
+    if (!entry) entries.set(key, { n: staged.drawn[r], first: firstDrawn[r] });
     else {
       entry.n += staged.drawn[r];
-      entry.first = Math.min(entry.first, staged.firstDrawn[r]);
+      entry.first = Math.min(entry.first, firstDrawn[r]);
     }
   }
   return paletteFromEntries(entries, gamma);

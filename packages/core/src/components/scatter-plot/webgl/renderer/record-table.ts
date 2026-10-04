@@ -122,6 +122,28 @@ export function writeRecordTexels(
   staged.hidden = hidden.slice(0, staged.codes.count);
 }
 
+/**
+ * `firstDrawn` when the marked slots (`marked`, by draw index) draw after every
+ * other slot: a rank in that order rather than a draw index, which orders the
+ * records the same way.
+ */
+export function markedFirstDrawn(
+  staged: StagedRecords,
+  recordIds: Float32Array,
+  colors: Float32Array,
+  marked: Uint8Array,
+  count: number,
+): Int32Array {
+  const first = new Int32Array(staged.codes.count).fill(-1);
+  for (let k = 0; k < count; k++) {
+    if (!(colors[k * 4 + 3] > 0)) continue;
+    const r = recordIds[k];
+    const rank = marked[k] ? count + k : k;
+    if (first[r] < 0 || rank < first[r]) first[r] = rank;
+  }
+  return first;
+}
+
 /** Staged slots drawn under the table's hiding: opacity above 0. */
 export function shownSlotCount(staged: StagedRecords): number {
   let n = 0;

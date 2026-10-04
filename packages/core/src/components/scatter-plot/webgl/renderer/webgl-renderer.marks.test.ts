@@ -1,0 +1,320 @@
+// @vitest-environment jsdom
+/**
+ * A selection or highlight drawn as GPU marks over points staged with nothing
+ * marked draws what staging the selection draws, without re-staging.
+ *
+ * "Draws the same" is checked one level below pixels: every vertex that reaches
+ * the rasteriser, in draw order, with the attributes the vertex shader hands it
+ * and the blend state it is drawn under. The shader's mark and record-table
+ * logic is replayed on the staged arrays; equal lists rasterise to equal frames.
+ */
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { PlotData, VisualizationData } from '@protspace/utils';
+import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
+import { computeVisibilityModel } from '../../styling/visibility-model';
+import type { PointMarks, WebGLStyleGetters } from '../types';
+import type { WebGLRenderer } from './webgl-renderer';
+import type { GLResources } from './gl-resources';
+import type { StagedRecords } from './record-table';
+import type { SlotPalette } from './density-pass';
+import {
+  makeRendererWithStyle,
+  plotData as fixturePlotData,
+  styleGetters,
+} from './test-support/renderer-fixture';
+
+vi.mock('../color-utils', () => ({
+  resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
+}));
+
+afterEach(() => vi.restoreAllMocks());
+
+const N = 600;
+const VALUES = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'];
+
+function makeData(multi = false): VisualizationData {
+  const codes = Array.from({ length: N }, (_, i) => (i * 7) % VALUES.length);
+  return {
+    protein_ids: Array.from({ length: N }, (_, i) => `P${i}`),
+    projections: [{ name: 'p', data: new Float32Array(N * 2), dimension: 2 }],
+    annotations: {
+      fam: {
+        values: VALUES,
+        colors: VALUES.map((_, i) => `#${(0x203040 + i * 0x150b07).toString(16)}`),
+        shapes: VALUES.map((_, i) => (i % 2 ? 'square' : 'circle')),
+      },
+    },
+    annotation_data: {
+      fam: multi
+        ? codes.map((c, i) => (i % 4 ? [c] : [c, (c + 2) % VALUES.length]))
+        : Int32Array.from(codes),
+    },
+    annotation_predicted: {
+      fam: codes.map((c, i) => (i % 5 === 0 ? { value: VALUES[c], confidence: 0.5 } : null)),
+    } as never,
+  };
+}
+
+/** Points on a coarse grid, so many of them overlap. */
+function plotData(data: VisualizationData, keep?: (i: number) => boolean): PlotData {
+  const kept = Array.from({ length: N }, (_, i) => i).filter((i) => !keep || keep(i));
+  return {
+    length: kept.length,
+    xs: Float32Array.from(kept, (i) => (i * 13) % 17),
+    ys: Float32Array.from(kept, (i) => (i * 29) % 11),
+    zs: null,
+    originalIndices: keep ? Int32Array.from(kept) : null,
+    proteinIds: data.protein_ids,
+  };
+}
+
+const config: StyleConfig = {
+  selectedProteinIds: [],
+  highlightedProteinIds: [],
+  selectedAnnotation: 'fam',
+  hiddenAnnotationValues: [],
+  otherAnnotationValues: [],
+  zOrderMapping: { c0: 3, c1: 0, c2: 4, c3: 1, Other: 2 },
+  sizes: { base: 30 },
+  opacities: { base: 0.9, selected: 1, faded: 0.15 },
+  eatOverlayEnabled: true,
+};
+
+type Internals = {
+  resources: GLResources;
+  colors: Float32Array;
+  dataPositions: Float32Array;
+  sizes: Float32Array;
+  shapes: Float32Array;
+  labelCounts: Float32Array;
+  predicted: Float32Array;
+  recordIds: Float32Array;
+  stagedMarks: Uint8Array;
+  stagedRecords: StagedRecords | null;
+  atlas: { plan: { stride: number }; texels: Uint8Array } | null;
+  contourPalette: SlotPalette | null;
+  populateBuffers: (...a: unknown[]) => void;
+};
+
+/**
+ * Every vertex a draw of the point program rasterises, in order. Other draws
+ * (density, gamma) are listed by mode and count, which places the composite.
+ */
+function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): string[] {
+  const r = renderer as unknown as Internals;
+  const list: string[] = [];
+  const uniforms: Record<string, number> = {};
+  let program: unknown = null;
+  let blend = false;
+  const set = (loc: { name?: string } | null, v: number) => {
+    if (loc?.name) uniforms[loc.name] = v;
+  };
+  Object.assign(gl, {
+    getUniformLocation: (_p: unknown, name: string) => ({ name }),
+    uniform1i: set,
+    uniform1f: set,
+    useProgram: (p: unknown) => (program = p),
+    enable: (cap: number) => cap === gl.BLEND && (blend = true),
+    disable: (cap: number) => cap === gl.BLEND && (blend = false),
+    drawArrays: (mode: number, first: number, count: number) => {
+      if (program !== r.resources.pointProgram) {
+        list.push(`draw ${mode} ${count}`);
+        return;
+      }
+      for (let k = first; k < first + count; k++) {
+        let rgb = Array.from(r.colors.subarray(k * 4, k * 4 + 3));
+        let alpha = r.colors[k * 4 + 3];
+        let form = [r.sizes[k], r.shapes[k], r.labelCounts[k]];
+        const record = r.recordIds[k];
+        if (uniforms.u_recordStyleOn && record >= 0) {
+          const t = r.stagedRecords!.texels.subarray(record * 8, record * 8 + 8);
+          rgb = Array.from(t.subarray(0, 3));
+          alpha *= t[3];
+          form = Array.from(t.subarray(4, 7));
+        }
+        if (uniforms.u_marksOn) {
+          const marked = r.stagedMarks[k] > 0;
+          const pass = uniforms.u_markPass;
+          if (pass >= 0 && marked !== (pass === 1)) continue;
+          const opacity = marked ? uniforms.u_markedOpacity : uniforms.u_unmarkedOpacity;
+          if (alpha > 0) alpha = Math.fround(opacity);
+        }
+        if (alpha < 0.001) continue;
+        const stride = r.atlas?.plan.stride ?? 0;
+        const pie =
+          form[2] > 1.5 && r.atlas
+            ? r.atlas.texels.subarray(k * stride * 4, (k + 1) * stride * 4)
+            : [];
+        const at = `${r.dataPositions[k * 2]},${r.dataPositions[k * 2 + 1]}`;
+        list.push(
+          `${blend ? 'blend' : 'over'} ${at} ${rgb} ${alpha} ${form} ${r.predicted[k]} ${Array.from(pie)}`,
+        );
+      }
+    },
+  });
+  return list;
+}
+
+/**
+ * A renderer over `pd`, with contours on. `view` applies a change and draws it,
+ * signalled as the scatter plot does: with `marks`, a selection is drawn as
+ * marks over unmarked staging and a legend hide restyles; otherwise every change
+ * re-stages with the selection.
+ */
+function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
+  let state: Partial<StyleConfig> = {};
+  let getters = createStyleGetters(data, config);
+  let pointMarks: PointMarks | null = null;
+  const style: WebGLStyleGetters = {
+    getColors: (p) => getters.getColors(p),
+    getPointSize: (p) => getters.getPointSize(p),
+    getOpacity: (p) => getters.getOpacity(p),
+    getDepth: (p) => getters.getDepth(p),
+    getShape: (p) => getters.getPointShape(p),
+    isPredicted: (p) => getters.isPredicted(p),
+    isMultilabel: () => getters.isMultilabel(),
+    createStylePass: () => getters.createStylePass(),
+    getPointMarks: () => pointMarks,
+  };
+  const { renderer, gl } = makeRendererWithStyle(
+    style,
+    {},
+    {
+      getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+    },
+  );
+  const draws = recordDraws(renderer, gl as unknown as Record<string, unknown>);
+  const internals = renderer as unknown as Internals;
+  const populate = vi.spyOn(internals, 'populateBuffers');
+  const view = (next: Partial<StyleConfig>) => {
+    const merged = { ...config, ...state, ...next };
+    state = { ...state, ...next };
+    const model = computeVisibilityModel({
+      data,
+      selectedAnnotation: merged.selectedAnnotation,
+      hiddenAnnotationValues: merged.hiddenAnnotationValues,
+      selectedProteinIds: merged.selectedProteinIds,
+      highlightedProteinIds: merged.highlightedProteinIds,
+      opacities: merged.opacities,
+    });
+    renderer.setSelectionActive(
+      merged.selectedProteinIds.length > 0 || merged.highlightedProteinIds.length > 0,
+    );
+    if (marks) {
+      getters = createStyleGetters(data, merged, model.unmarked);
+      const ids = pd.proteinIds;
+      const oi = pd.originalIndices;
+      pointMarks = model.marks && {
+        slots: Uint8Array.from({ length: pd.length }, (_, s) =>
+          model.isMarked(ids[oi ? oi[s] : s]) ? 1 : 0,
+        ),
+        ...model.marks,
+      };
+      if ('hiddenAnnotationValues' in next) renderer.invalidateCategoryStyles();
+    } else {
+      getters = createStyleGetters(data, merged, model);
+      renderer.invalidateStyleCache();
+    }
+    draws.length = 0;
+    renderer.render(pd);
+    return { draws: [...draws], palette: internals.contourPalette, state: { ...state } };
+  };
+  return { renderer, view, populate };
+}
+
+/** The draws of `state` by staging it, on a fresh renderer. */
+function staged(data: VisualizationData, pd: PlotData, state: Partial<StyleConfig>) {
+  return setup(data, pd, false).view(state);
+}
+
+const SELECTION = ['P3', 'P10', 'P11', 'P64', 'P65', 'P250', 'P251', 'P500'];
+// Every point of c4, which draws first unselected: selecting it reorders the contour colours.
+const CATEGORY = Array.from({ length: N }, (_, i) => i)
+  .filter((i) => (i * 7) % VALUES.length === 4)
+  .map((i) => `P${i}`);
+
+const STATES: [string, Partial<StyleConfig>][] = [
+  ['one selected point', { selectedProteinIds: ['P10'] }],
+  ['a selection across categories', { selectedProteinIds: SELECTION }],
+  ['a whole category selected', { selectedProteinIds: CATEGORY }],
+  ['a highlight only', { highlightedProteinIds: ['P4', 'P12'] }],
+  ['a selection and a highlight', { selectedProteinIds: SELECTION, highlightedProteinIds: ['P4'] }],
+  [
+    'a selection with hidden categories',
+    { selectedProteinIds: SELECTION, hiddenAnnotationValues: ['c3', 'c5'] },
+  ],
+  [
+    'a selection that is all hidden',
+    { selectedProteinIds: ['P0', 'P6'], hiddenAnnotationValues: ['c0'] },
+  ],
+  ['a selection of unknown ids', { selectedProteinIds: ['nope'] }],
+  [
+    'a selection with "Other"',
+    { selectedProteinIds: SELECTION, otherAnnotationValues: ['c4', 'c5'] },
+  ],
+  ['a selection without z-order', { selectedProteinIds: SELECTION, zOrderMapping: null }],
+  ['nothing selected', { selectedProteinIds: [] }],
+];
+
+describe('the mark texture', () => {
+  it('takes only the rows a new selection changed, and no re-stage', () => {
+    let marks: PointMarks | null = null;
+    const style = { ...styleGetters(), getPointMarks: () => marks };
+    const { renderer, gl } = makeRendererWithStyle(style);
+    const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
+    const pd = fixturePlotData(5000);
+    const mark = (...slots: number[]) => {
+      const marked = new Uint8Array(pd.length);
+      for (const s of slots) marked[s] = 1;
+      marks = { slots: marked, marked: 1, unmarked: 0.2 };
+      gl.texSubImage2D.mockClear();
+      renderer.render(pd);
+      // Rows of the texture the call uploaded: [first row, row count].
+      return gl.texSubImage2D.mock.calls.map((c) => [c[3], c[5]]);
+    };
+    renderer.render(pd);
+    expect(populate).toHaveBeenCalledTimes(1);
+    // Every point has the same depth, so slot s draws s-th.
+    expect(mark(3000)).toEqual([[2, 1]]);
+    expect(mark(3000)).toEqual([]);
+    expect(mark(10)).toEqual([[0, 3]]);
+    expect(mark(10, 4999)).toEqual([[4, 1]]);
+    expect(populate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('selection drawn as GPU marks', () => {
+  for (const multi of [false, true]) {
+    for (const culled of [false, true]) {
+      const data = makeData(multi);
+      const pd = plotData(data, culled ? (i) => i % 3 !== 1 : undefined);
+      const label = `${multi ? 'multi-label' : 'single-label'}${culled ? ', culled' : ''}`;
+
+      it.each(STATES)(`draws %s as staging does (${label})`, (_, next) => {
+        const marked = setup(data, pd, true).view(next);
+        const expected = staged(data, pd, next);
+        expect(marked.draws.length).toBeGreaterThan(0);
+        expect(marked.draws).toEqual(expected.draws);
+        expect(marked.palette).toEqual(expected.palette);
+      });
+
+      it(`follows a session of selection changes without staging again (${label})`, () => {
+        const { view, populate } = setup(data, pd, true);
+        view({});
+        populate.mockClear();
+        // "Other" and the z-order re-stage in the scatter plot too.
+        const session = STATES.filter(
+          ([, s]) => !('otherAnnotationValues' in s) && !('zOrderMapping' in s),
+        );
+        for (const [, next] of session) {
+          const { draws, palette, state } = view(next);
+          const expected = staged(data, pd, state);
+          expect(draws).toEqual(expected.draws);
+          expect(palette).toEqual(expected.palette);
+        }
+        // Legend hides restyle through the table; a multi-label annotation has none.
+        expect(populate).toHaveBeenCalledTimes(multi ? 2 : 0);
+      });
+    }
+  }
+});

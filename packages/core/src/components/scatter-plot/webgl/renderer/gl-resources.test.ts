@@ -40,13 +40,13 @@ function makeDensity(): DensityResources {
 }
 
 describe('GLResources', () => {
-  it('createAll allocates all vertex buffers plus the quad, label and record textures', () => {
+  it('createAll allocates all vertex buffers plus the quad, label, record and mark textures', () => {
     const gl = makeGl();
     const res = new GLResources();
     res.createAll(gl);
     expect(gl.createBuffer).toHaveBeenCalledTimes(9); // 7 attrib + record id + quad
     expect(gl.createVertexArray).toHaveBeenCalledTimes(0); // VAO built in createPointVAO, not here
-    expect(gl.createTexture).toHaveBeenCalledTimes(2); // label colours + record styles
+    expect(gl.createTexture).toHaveBeenCalledTimes(3); // label colours + record styles + marks
     expect(res.dataPositionBuffer).not.toBeNull();
     expect(res.sizeBuffer).not.toBeNull();
     expect(res.colorBuffer).not.toBeNull();
@@ -58,6 +58,7 @@ describe('GLResources', () => {
     expect(res.recordBuffer).not.toBeNull();
     expect(res.labelColorTexture).not.toBeNull();
     expect(res.recordStyleTexture).not.toBeNull();
+    expect(res.markTexture).not.toBeNull();
   });
 
   it('deleteAll frees every owned handle and tolerates nulls', () => {
@@ -69,7 +70,7 @@ describe('GLResources', () => {
     res.pointVao = { k: 'vao' } as unknown as WebGLVertexArrayObject;
     res.deleteAll(gl);
     expect(gl.deleteBuffer).toHaveBeenCalledTimes(9);
-    expect(gl.deleteTexture).toHaveBeenCalledTimes(2);
+    expect(gl.deleteTexture).toHaveBeenCalledTimes(3);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteProgram).toHaveBeenCalledTimes(2);
   });
@@ -81,7 +82,7 @@ describe('GLResources', () => {
     res.linearFramebuffer = makeFramebuffer();
     res.deleteAll(gl);
     expect(gl.deleteFramebuffer).toHaveBeenCalledTimes(1);
-    expect(gl.deleteTexture).toHaveBeenCalledTimes(3); // label + record textures, framebuffer's
+    expect(gl.deleteTexture).toHaveBeenCalledTimes(4); // label, record, mark, framebuffer's
     expect(gl.deleteRenderbuffer).toHaveBeenCalledTimes(1);
     expect(res.linearFramebuffer).toBeNull();
   });
@@ -122,6 +123,7 @@ describe('GLResources', () => {
     expect(res.recordBuffer).toBeNull();
     expect(res.labelColorTexture).toBeNull();
     expect(res.recordStyleTexture).toBeNull();
+    expect(res.markTexture).toBeNull();
     expect(res.linearFramebuffer).toBeNull();
     expect(res.density).toBeNull();
     expect(gl.deleteBuffer).not.toHaveBeenCalled();

@@ -199,6 +199,17 @@ describe('buildSlotPalette', () => {
     ]);
   });
 
+  it('orders marked points after every other point', () => {
+    const staged = stagedReds([
+      [1, 2],
+      [2, 1],
+      [3, 2],
+    ]);
+    const marked = Uint8Array.of(1, 0, 1, 1, 0);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2, marked))).toEqual([1, 3, 2]);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2))).toEqual([1, 2, 3]);
+  });
+
   it('has no slot when nothing is visible', () => {
     expect(buildSlotPalette(new Float32Array([1, 0, 0, 0, 0, 1, 0, 0]), 2, 2.2).count).toBe(0);
     expect(buildSlotPalette(new Float32Array([1, 0, 0, 1]), 0, 2.2).count).toBe(0);

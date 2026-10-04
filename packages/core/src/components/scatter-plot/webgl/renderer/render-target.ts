@@ -14,6 +14,8 @@ import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 export const LABEL_ATLAS_TEXTURE_UNIT = 1;
 /** The per-record style table's unit, clear of the atlas and the density fields (0, 2-4). */
 export const RECORD_STYLE_TEXTURE_UNIT = 7;
+/** The per-point mark texture's unit, clear of the atlas, the density fields and the table. */
+export const MARK_TEXTURE_UNIT = 6;
 
 /**
  * Binds the given framebuffer (or the default framebuffer when `null`), sets the
@@ -97,6 +99,12 @@ interface PointDrawStateParams extends CameraParams {
    * that kept none): every point then draws with its own staged style.
    */
   recordStyle?: WebGLTexture | null;
+  /**
+   * The mark texture and the opacities of marked and unmarked points, or null
+   * (the export, or nothing marked): every point then keeps its staged opacity.
+   * Drawn by {@link drawMarkedPoints}.
+   */
+  marks?: { texture: WebGLTexture | null; marked: number; unmarked: number } | null;
 }
 
 /**
@@ -147,11 +155,39 @@ export function bindPointDrawState(
   gl.uniform1i(uniforms.recordStyle, RECORD_STYLE_TEXTURE_UNIT);
   gl.uniform1i(uniforms.recordStyleOn, recordStyle ? 1 : 0);
 
+  // Clamped as staging clamps an opacity, so a marked point draws the alpha staging would give it.
+  const marks = params.marks ?? null;
+  gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, marks?.texture ?? null);
+  gl.uniform1i(uniforms.marks, MARK_TEXTURE_UNIT);
+  gl.uniform1i(uniforms.marksOn, marks ? 1 : 0);
+  if (marks) {
+    gl.uniform1f(uniforms.markedOpacity, Math.min(1, Math.max(0, marks.marked)));
+    gl.uniform1f(uniforms.unmarkedOpacity, Math.min(1, Math.max(0, marks.unmarked)));
+  }
+
   gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
   gl.bindTexture(gl.TEXTURE_2D, labelTexture);
   gl.uniform1i(uniforms.labelColors, LABEL_ATLAS_TEXTURE_UNIT);
 
   gl.bindVertexArray(vao);
+}
+
+/** A draw (the density composite) that goes between the base and the selected points. */
+interface AfterBasePass {
+  run: () => void;
+  program: WebGLProgram;
+  vao: WebGLVertexArrayObject | null;
+  labelTexture: WebGLTexture | null;
+}
+
+/** Run the pass between the base and selected draws, then bind the point draw back. */
+function runBetweenPasses(gl: WebGL2RenderingContext, afterBasePass: AfterBasePass): void {
+  afterBasePass.run();
+  gl.useProgram(afterBasePass.program);
+  gl.bindVertexArray(afterBasePass.vao);
+  gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, afterBasePass.labelTexture);
 }
 
 /**
@@ -167,23 +203,12 @@ export function drawPoints(
   pointCount: number,
   selectionActive: boolean,
   selectedStartIndex: number,
-  afterBasePass?: {
-    run: () => void;
-    program: WebGLProgram;
-    vao: WebGLVertexArrayObject | null;
-    labelTexture: WebGLTexture | null;
-  },
+  afterBasePass?: AfterBasePass,
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {
     gl.disable(gl.BLEND);
     if (selectedStartIndex > 0) gl.drawArrays(gl.POINTS, 0, selectedStartIndex);
-    if (afterBasePass) {
-      afterBasePass.run();
-      gl.useProgram(afterBasePass.program);
-      gl.bindVertexArray(afterBasePass.vao);
-      gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
-      gl.bindTexture(gl.TEXTURE_2D, afterBasePass.labelTexture);
-    }
+    if (afterBasePass) runBetweenPasses(gl, afterBasePass);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, selectedStartIndex, pointCount - selectedStartIndex);
@@ -192,5 +217,34 @@ export function drawPoints(
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, 0, pointCount);
     afterBasePass?.run();
+  }
+}
+
+/**
+ * {@link drawPoints} for points whose marks the vertex shader applies (see
+ * `bindPointDrawState`'s `marks`). With a marked point drawn, `marked` holds the
+ * draw indices `[first, end)` around every one: the unmarked points draw first
+ * with blend OFF, then the marked ones with blend ON, as staging orders a
+ * selection after the rest. Without one, every point draws in one blended pass.
+ */
+export function drawMarkedPoints(
+  gl: WebGL2RenderingContext,
+  markPass: WebGLUniformLocation | null,
+  pointCount: number,
+  marked: { first: number; end: number } | null,
+  afterBasePass?: AfterBasePass,
+): void {
+  if (marked) {
+    gl.uniform1i(markPass, 0);
+    gl.disable(gl.BLEND);
+    gl.drawArrays(gl.POINTS, 0, pointCount);
+    if (afterBasePass) runBetweenPasses(gl, afterBasePass);
+    gl.uniform1i(markPass, 1);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.POINTS, marked.first, marked.end - marked.first);
+  } else {
+    gl.uniform1i(markPass, -1);
+    drawPoints(gl, pointCount, false, pointCount, afterBasePass);
   }
 }
