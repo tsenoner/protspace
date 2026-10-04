@@ -24,7 +24,7 @@ import type {
 } from '../legend-mapping-events';
 
 /**
- * Same members in the same order.
+ * Same members, in any order. `next` holds each value once, as both lists the legend builds do.
  *
  * `hiddenAnnotationValues` and `otherAnnotationValues` are `@property({ type: Array })` on the
  * scatterplot, so Lit's default `hasChanged` compares them by reference: assigning a freshly
@@ -33,9 +33,15 @@ import type {
  * `hiddenAnnotationValues` as "the user changed what is visible" and drops the EAT provenance
  * connectors, and `_visibilityModelKey` compares the same array by reference, so the whole
  * visibility model is rebuilt. Both must fire on a real edit and neither on a no-op resync.
+ *
+ * Order is left out because nothing reads it: the style getters, the visibility model and
+ * export all turn these arrays into sets. A legend recount can list the same "Other" values in
+ * another order, and a change to `otherAnnotationValues` re-stages every point.
  */
-function sameOrder(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
+function sameMembers(current: readonly string[], next: readonly string[]): boolean {
+  if (current.length !== next.length) return false;
+  const members = new Set(current);
+  return next.every((value) => members.has(value));
 }
 
 /** Maximum number of retries when looking for scatterplot element */
@@ -142,14 +148,14 @@ export class ScatterplotSyncController implements ReactiveController {
         this.callbacks.getHiddenValues(),
         this.callbacks.getOtherItems(),
       );
-      if (!sameOrder(this._scatterplotElement.hiddenAnnotationValues ?? [], expandedHidden)) {
+      if (!sameMembers(this._scatterplotElement.hiddenAnnotationValues ?? [], expandedHidden)) {
         this._scatterplotElement.hiddenAnnotationValues = [...expandedHidden];
       }
     }
 
     if (supportsOtherValues(this._scatterplotElement)) {
       const otherValues = this.callbacks.getOtherConcreteValues();
-      if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+      if (!sameMembers(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
         this._scatterplotElement.otherAnnotationValues = otherValues;
       }
     }
@@ -162,7 +168,7 @@ export class ScatterplotSyncController implements ReactiveController {
     if (!this._scatterplotElement || !supportsOtherValues(this._scatterplotElement)) return;
 
     const otherValues = this.callbacks.getOtherConcreteValues();
-    if (!sameOrder(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
+    if (!sameMembers(this._scatterplotElement.otherAnnotationValues ?? [], otherValues)) {
       this._scatterplotElement.otherAnnotationValues = otherValues;
     }
   }

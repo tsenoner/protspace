@@ -360,16 +360,31 @@ describe('ScatterplotSyncController', () => {
       expect(mockScatterplot.hiddenAnnotationValues).toEqual(['hidden1', 'hidden2']);
     });
 
-    it('treats a reordering as a change', () => {
+    // The plot reads both lists only as sets, so a recount that reorders them changes nothing.
+    it('treats a reordering as no change', () => {
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'b']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['x', 'y']);
       controller.syncHiddenValues();
-      const first = mockScatterplot.hiddenAnnotationValues;
+      const hidden = mockScatterplot.hiddenAnnotationValues;
+      const other = mockScatterplot.otherAnnotationValues;
 
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['b', 'a']);
+      mockCallbacks.getOtherConcreteValues = vi.fn().mockReturnValue(['y', 'x']);
+      controller.syncHiddenValues();
+      controller.syncOtherValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).toBe(hidden);
+      expect(mockScatterplot.otherAnnotationValues).toBe(other);
+    });
+
+    it('still replaces the array when a member is swapped for another', () => {
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'b']);
       controller.syncHiddenValues();
 
-      expect(mockScatterplot.hiddenAnnotationValues).not.toBe(first);
-      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['b', 'a']);
+      mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['a', 'c']);
+      controller.syncHiddenValues();
+
+      expect(mockScatterplot.hiddenAnnotationValues).toEqual(['a', 'c']);
     });
   });
 
