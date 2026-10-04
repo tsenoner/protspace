@@ -307,11 +307,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotElement,
   });
 
-  lifecycle.scheduleTimeout(() => {
-    legendElement.autoSync = true;
-    legendElement.autoHide = true;
-  }, 100);
-
   addTrackedEventListener(
     lifecycle,
     controlBar,

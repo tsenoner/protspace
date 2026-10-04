@@ -191,6 +191,8 @@ export function createDataRenderer({
 
     console.log('Updating scatterplot with new data...');
     controlBar.autoSync = false;
+    // Only `syncLegendState` turns this back on. Any sooner and the legend recounts mid-load,
+    // reordering its "Other" values, which costs the plot a re-stage of its own.
     legendElement.autoSync = false;
 
     applyPlotState(plotElement, newData, resolvedInitialView);
