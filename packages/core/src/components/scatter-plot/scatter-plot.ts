@@ -2148,7 +2148,7 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * The selection and highlight as marks over the points of `pd`, for the
    * renderer to draw on the GPU; null while they are staged instead, or while
-   * nothing is marked. Built once per change of either, in one pass of id lookups.
+   * nothing is marked. Built once per change of either.
    */
   private _getPointMarks(pd: PlotData): PointMarks | null {
     if (!this._marksOnGpu()) return null;
@@ -2168,16 +2168,11 @@ export class ProtspaceScatterplot extends LitElement {
     ) {
       return cached.marks;
     }
-    const ids = pd.proteinIds;
-    const oi = pd.originalIndices;
-    const slots = new Uint8Array(pd.length);
-    for (let s = 0; s < pd.length; s++) {
-      if (model.isMarked(ids[oi ? oi[s] : s])) slots[s] = 1;
-    }
+    const slots = model.markedSlots(pd.proteinIds, pd.originalIndices, pd.length);
     const marks = { slots, ...opacities };
     this._pointMarks = {
-      proteinIds: ids,
-      originalIndices: oi,
+      proteinIds: pd.proteinIds,
+      originalIndices: pd.originalIndices,
       selected: this.selectedProteinIds,
       highlighted: this.highlightedProteinIds,
       marks,

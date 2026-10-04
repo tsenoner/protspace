@@ -683,19 +683,22 @@ describe('computeVisibilityModel', () => {
         const model = computeVisibilityModel(baseInputs({ data, ...overrides }));
         const { marks } = model;
         expect(marks).not.toBeNull();
+        const marked = model.markedSlots(ids, null, ids.length);
         ids.forEach((id, i) =>
-          expect(model.baseOpacityAt(i, id)).toBe(
-            model.isMarked(id) ? marks!.marked : marks!.unmarked,
-          ),
+          expect(model.baseOpacityAt(i, id)).toBe(marked[i] ? marks!.marked : marks!.unmarked),
         );
       }
     });
 
-    it('marks the selected and highlighted ids only', () => {
+    it('marks the slots of the selected and highlighted ids only', () => {
       const model = computeVisibilityModel(
         baseInputs({ data, selectedProteinIds: ['p1'], highlightedProteinIds: ['p3'] }),
       );
-      expect(ids.map((id) => model.isMarked(id))).toEqual([false, true, false, true]);
+      expect(Array.from(model.markedSlots(ids, null, 4))).toEqual([0, 1, 0, 1]);
+      // Slots of a culled view name their proteins through originalIndices.
+      expect(Array.from(model.markedSlots(ids, Int32Array.of(3, 2, 1), 3))).toEqual([1, 0, 1]);
+      const none = computeVisibilityModel(baseInputs({ data }));
+      expect(Array.from(none.markedSlots(ids, null, 4))).toEqual([0, 0, 0, 0]);
     });
 
     it('has none with nothing marked, or with focus deciding the rest', () => {

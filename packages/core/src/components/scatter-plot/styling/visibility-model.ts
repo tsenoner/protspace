@@ -85,10 +85,17 @@ export interface VisibilityModel {
    * that names no value). Lets a caller hide a whole category at once.
    */
   hidesValues(values: readonly string[]): boolean;
-  /** Whether the protein with `id` is selected or highlighted. */
-  isMarked(id: string): boolean;
   /**
-   * The selection and highlight as one mark: a protein `isMarked` has base
+   * For each of the first `count` slots of plot data with these `proteinIds` and
+   * `originalIndices`, 1 when its protein is selected or highlighted, else 0.
+   */
+  markedSlots(
+    proteinIds: readonly string[],
+    originalIndices: Int32Array | null,
+    count: number,
+  ): Uint8Array;
+  /**
+   * The selection and highlight as one mark: a protein in `markedSlots` has base
    * opacity `marked`, every other one `unmarked`. Null while nothing is marked,
    * and while focus gives the unmarked proteins their opacity by category.
    */
@@ -363,6 +370,22 @@ export function computeVisibilityModel(
   const opacityOf = (point: PlotDataPoint): number => opacityAt(point.originalIndex, point.id);
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
+  // A pass per populated set, so a selection alone costs one lookup per slot.
+  const markedSlots = (
+    proteinIds: readonly string[],
+    originalIndices: Int32Array | null,
+    count: number,
+  ): Uint8Array => {
+    const slots = new Uint8Array(count);
+    for (const ids of [selectedIdsSet, highlightedIdsSet]) {
+      if (ids.size === 0) continue;
+      for (let s = 0; s < count; s++) {
+        if (ids.has(proteinIds[originalIndices ? originalIndices[s] : s])) slots[s] = 1;
+      }
+    }
+    return slots;
+  };
+
   // A selection fades the rest whatever the focus; a highlight alone leaves it to focus.
   const marks =
     anyMarked && (hasSelection || !unfocusedMask)
@@ -379,7 +402,7 @@ export function computeVisibilityModel(
     baseOpacityAt,
     isHiddenAt,
     hidesValues,
-    isMarked,
+    markedSlots,
     marks,
     get unmarked() {
       unmarked ??=

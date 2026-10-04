@@ -202,12 +202,8 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
     );
     if (marks) {
       getters = createStyleGetters(data, merged, model.unmarked);
-      const ids = pd.proteinIds;
-      const oi = pd.originalIndices;
       pointMarks = model.marks && {
-        slots: Uint8Array.from({ length: pd.length }, (_, s) =>
-          model.isMarked(ids[oi ? oi[s] : s]) ? 1 : 0,
-        ),
+        slots: model.markedSlots(pd.proteinIds, pd.originalIndices, pd.length),
         ...model.marks,
       };
       if ('hiddenAnnotationValues' in next) renderer.invalidateCategoryStyles();
