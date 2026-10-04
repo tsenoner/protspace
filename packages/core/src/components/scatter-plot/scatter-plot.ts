@@ -171,6 +171,12 @@ type InteractableKey = {
   eatOverlayEnabled: boolean;
 };
 
+/** The interactive slots of the plot data, see `_interactableSlots`. */
+interface InteractableSlots {
+  readonly visible: Uint8Array;
+  readonly count: number;
+}
+
 function sameInteractableKey(a: InteractableKey | null, b: InteractableKey): boolean {
   return (
     !!a &&
@@ -298,9 +304,10 @@ export class ProtspaceScatterplot extends LitElement {
   // reuse the cache since interactivity is independent of x/y coordinates.
   private _interactableProteinIdsCache: ReadonlySet<string> | null = null;
   private _visiblePointCountKey: InteractableKey | null = null;
-  // The interactable count alone, for the point-count label (see `_getVisiblePointCount`).
-  private _interactableCount = 0;
-  private _interactableCountKey: InteractableKey | null = null;
+  // Which slots are interactable, and how many: the point-count label and the
+  // point grid's marks share this one pass (see `_interactableSlots`).
+  private _interactableSlotsCache: InteractableSlots | null = null;
+  private _interactableSlotsKey: InteractableKey | null = null;
   private _pointGridIndexRebuildRafId: number | null = null;
   private _pointGridReindexPending = false;
   private _visibleSlotsStale = false;
@@ -1456,19 +1463,7 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _markVisibleSlots() {
     const pd = this._plotData;
-    const oi = pd.originalIndices;
-    const ids = pd.proteinIds;
-    const model = this._getVisibilityModel();
-    const visible = new Uint8Array(pd.length);
-    let count = 0;
-    for (let s = 0; s < pd.length; s++) {
-      const origIdx = oi ? oi[s] : s;
-      // isInteractive: opacityOf(point) > 0.
-      if (model.opacityAt(origIdx, ids[origIdx]) > 0) {
-        visible[s] = 1;
-        count++;
-      }
-    }
+    const { visible, count } = this._interactableSlots();
     this._slotVisible = visible;
     this._pointGridIndex.setVisible(visible);
     this._visibleSlots = null;
@@ -2013,20 +2008,36 @@ export class ProtspaceScatterplot extends LitElement {
     ) {
       return this._interactableProteinIdsCache.size;
     }
-    if (sameInteractableKey(this._interactableCountKey, key)) return this._interactableCount;
+    return this._interactableSlots(key).count;
+  }
+
+  /**
+   * The interactive slots of `_plotData`, marked 1 in `visible`, and their count.
+   * Memoized on the same key as `_getInteractableProteinIds`: whichever of the
+   * point-count label and `_markVisibleSlots` runs first pays for the pass.
+   * `visible` is shared with the point grid, so it is never written after.
+   */
+  private _interactableSlots(key = this._interactableKey()): InteractableSlots {
+    if (this._interactableSlotsCache && sameInteractableKey(this._interactableSlotsKey, key)) {
+      return this._interactableSlotsCache;
+    }
     const pd = this._plotData;
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
     const ids = pd.proteinIds;
+    const visible = new Uint8Array(pd.length);
     let count = 0;
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
       // isInteractive: opacityOf(point) > 0.
-      if (model.opacityAt(origIdx, ids[origIdx]) > 0) count++;
+      if (model.opacityAt(origIdx, ids[origIdx]) > 0) {
+        visible[s] = 1;
+        count++;
+      }
     }
-    this._interactableCount = count;
-    this._interactableCountKey = key;
-    return count;
+    this._interactableSlotsCache = { visible, count };
+    this._interactableSlotsKey = key;
+    return this._interactableSlotsCache;
   }
 
   private _getDepth(point: PlotDataPoint): number {

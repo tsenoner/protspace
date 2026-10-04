@@ -39,6 +39,8 @@ type Internals = HTMLElement & {
   };
   _dupOverlay: { deps: { getPointGridIndex(): Pick<PointGridIndex, 'queryByPixels'> } };
   _sparseIndex: PointGridIndex | null;
+  _getVisiblePointCount(): number;
+  _getVisibilityModel(): { opacityAt(origIdx: number, id: string): number };
 };
 
 function rng(seed: number) {
@@ -134,6 +136,27 @@ describe('point grid over every slot, masked to the visible ones', () => {
         (s) => familyOf(sp, s) !== 'B',
       ).length,
     );
+  });
+
+  it('marks the slots and counts them in one pass, whichever runs first', () => {
+    const sp = prime();
+    const n = sp._plotData.length;
+    const all = Array.from({ length: n }, (_, s) => s);
+    for (const [hidden, countFirst] of [
+      [['B'], true],
+      [['A'], false],
+    ] as const) {
+      sp.hiddenAnnotationValues = [...hidden];
+      const opacityAt = vi.spyOn(sp._getVisibilityModel(), 'opacityAt');
+      const count = countFirst ? sp._getVisiblePointCount() : -1;
+      sp._scheduleVisibleSlotsRefresh();
+      flushFrames();
+      const slots = sp._getVisibleSlots()!;
+      expect(slots).toEqual(all.filter((s) => familyOf(sp, s) !== hidden[0]));
+      expect(sp._getVisiblePointCount()).toBe(slots.length);
+      if (countFirst) expect(count).toBe(slots.length);
+      expect(opacityAt).toHaveBeenCalledTimes(n);
+    }
   });
 
   it('rebuilds when a full rebuild is pending or the plot data changed', () => {
