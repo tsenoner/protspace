@@ -226,12 +226,14 @@ for (const dataset of DATASETS) {
       if (b) {
         const pa = a.pixels[name];
         const pb = b.pixels[name];
-        return {
-          segment: name,
-          a: aMedians[name],
-          b: bMedians![name],
-          pixelsAB: pa && pb ? pa.equals(pb) : null,
-        };
+        const same = pa && pb ? pa.equals(pb) : null;
+        if (same === false) {
+          const dir = path.join(RESULTS_DIR, `${STAMP}-pixels`);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, `${dataset.name}-${name}-A.png`), pa!);
+          fs.writeFileSync(path.join(dir, `${dataset.name}-${name}-B.png`), pb!);
+        }
+        return { segment: name, a: aMedians[name], b: bMedians![name], pixelsAB: same };
       }
       if (baseline?.segments[name]) {
         return { segment: name, a: baseline.segments[name], b: aMedians[name] };

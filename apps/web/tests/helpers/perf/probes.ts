@@ -366,7 +366,13 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
 
   const after = await readSnapshot(page);
   const delta = diff(before, after);
-  const actPixels = spec.capture ? await plotPixels(page) : undefined;
+  let actPixels: Buffer | undefined;
+  if (spec.capture) {
+    // A gesture can end with the pointer over a protein; its tooltip is not part of the plot.
+    await page.mouse.move(0, 0);
+    await settle(page);
+    actPixels = await plotPixels(page);
+  }
   if (timing) timing.restageMs = delta.restageMs;
 
   if (spec.reset) {
