@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
+import { perfCounters } from '../../utils/perf-counters';
 import {
   COLOR_SCHEMES,
   DEFAULT_NUMERIC_PALETTE_ID,
@@ -1788,6 +1789,7 @@ export class ProtspaceLegend extends LitElement {
    * Use when forcing a full rebuild outside the updated() lifecycle.
    */
   private _rebuildLegendItems(): void {
+    if (perfCounters) perfCounters.legendRebuild++;
     this._updateLegendItems();
 
     if (!this._isNumericAnnotation() && this._persistenceController.hasPendingCategories()) {
@@ -1877,6 +1879,7 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _updateLegendItems(): void {
+    if (perfCounters) perfCounters.legendUpdate++;
     // Aligned with PersistenceController's isNumericAnnotation callback so the
     // processor and the persistence layer agree on numeric-ness in transient states.
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();

@@ -101,6 +101,7 @@ import {
 } from '../../scatter-plot.events';
 import { ContextLossController } from './context-loss-controller';
 import { ExportRenderer } from './export-renderer';
+import { perfCounters } from '../../../../utils/perf-counters';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -610,6 +611,7 @@ export class WebGLRenderer {
   }
 
   render(pd: PlotData) {
+    if (perfCounters) perfCounters.render++;
     // Store PlotData for potential off-screen export rendering
     this.lastRenderedData = pd;
 
@@ -657,6 +659,7 @@ export class WebGLRenderer {
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
     if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
+      const stageStart = perfCounters ? performance.now() : 0;
       // A category restyle explains the sampled points' new opacity and colour,
       // so the style signature may change without anything per point changing.
       const restyled =
@@ -666,6 +669,7 @@ export class WebGLRenderer {
         !needsDepthOrderUpdate &&
         this.restyleRecords(pd);
       if (!restyled) this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+      if (perfCounters) perfCounters.restageMs += performance.now() - stageStart;
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
@@ -678,6 +682,7 @@ export class WebGLRenderer {
 
     // Render with gamma-correct pipeline
     this.renderWithGammaCorrection(transform);
+    if (perfCounters) perfCounters.drawn = this.drawnPointCount;
   }
 
   /** Map from the staged positions to `scales`' pixels; null when there is none. */
@@ -1315,6 +1320,11 @@ export class WebGLRenderer {
     if (!this.gl) return;
     const gl = this.gl;
     this.bufferGeneration++;
+    if (perfCounters) {
+      perfCounters.restage++;
+      if (updatePositions) perfCounters.restagePos++;
+      if (updateStyles) perfCounters.restageStyle++;
+    }
 
     const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
 

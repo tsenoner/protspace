@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { property, state, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
+import { perfCounters } from '../../utils/perf-counters';
 import * as d3 from 'd3';
 import type {
   VisualizationData,
@@ -1081,6 +1082,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _processData() {
+    if (perfCounters) perfCounters.processData++;
     // Build _plotData from the FULL materialized data and apply the query filter
     // as an id-membership filter (see processVisualizationData) rather than from a
     // pre-sliced display array. This keeps each point's originalIndex a GLOBAL
@@ -1323,6 +1325,7 @@ export class ProtspaceScatterplot extends LitElement {
     const slots = new Uint32Array(pd.length);
     for (let s = 0; s < slots.length; s++) slots[s] = s;
     this._pointGridIndex.rebuild(pd, slots);
+    if (perfCounters) perfCounters.gridRebuild++;
     this._pointGridSource = pd;
     this._markVisibleSlots();
   }
