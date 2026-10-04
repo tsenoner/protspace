@@ -78,7 +78,9 @@ envelope when it restyles a bundle that has one. The web app wraps that map as `
 an envelope, next to `exportOptions` and the optional `publishState` (Figure Editor state),
 `eatOverlayEnabled`, `eatConfidenceThreshold` and `shapeSize`. `shapeSize` is the dataset-wide shape
 size, written only once the user picked one or loaded one from a bundle; on load it overrides every
-annotation's own `shapeSize`. The web app caps either value at 64. Both readers accept both shapes.
+annotation's own `shapeSize`. A per-annotation `10` or `30` reads as unset, and the web app then
+sizes dots by the dataset's protein count. The web app caps either value at 64. Both readers accept
+both shapes.
 
 ## Tables
 
