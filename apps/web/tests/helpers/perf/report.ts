@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { SegmentResult } from './probes';
+import type { SegmentResult, TimingSample } from './probes';
 
 /** The per-segment numbers a budget can cap. `glIsPerRender` is derived. */
 const BUDGET_KEYS = [
@@ -170,4 +170,75 @@ export function formatCountsTable(results: SegmentResult[], budgets: BudgetsFile
     ];
   });
   return table([header, ...rows]);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+type TimingKey = 'inp' | 'loaf' | 'busy' | 'restageMs' | 'p95Frame';
+export type TimingMedians = Record<TimingKey, number | null> & { loafScript: string };
+
+export function timingMedians(samples: TimingSample[]): TimingMedians {
+  const pick = (key: TimingKey) => {
+    const values = samples.map((s) => s[key]).filter((v): v is number => v !== null);
+    return values.length ? median(values) : null;
+  };
+  const longest = samples.reduce<TimingSample | null>(
+    (best, s) => (!best || s.loaf > best.loaf ? s : best),
+    null,
+  );
+  return {
+    inp: pick('inp'),
+    loaf: pick('loaf'),
+    busy: pick('busy'),
+    restageMs: pick('restageMs'),
+    p95Frame: pick('p95Frame'),
+    loafScript: longest?.loafScript ?? '',
+  };
+}
+
+/** `412→118 .29` when there is a reference, else `412`. */
+function timingCell(a: number | null, b: number | null | undefined): string {
+  if (a === null) return '-';
+  const round = (v: number) => String(Math.round(v));
+  if (b === undefined) return round(a);
+  if (b === null) return `${round(a)}→-`;
+  const ratio = a > 0 ? (b / a).toFixed(2).replace(/^0/, '') : '-';
+  return `${round(a)}→${round(b)} ${ratio}`;
+}
+
+export interface TimingRow {
+  segment: string;
+  a: TimingMedians;
+  /** Second build in --compare, or the stored baseline (then `a` is the reference). */
+  b?: TimingMedians;
+  pixelsAB?: boolean | null;
+}
+
+export function formatTimingTable(title: string, rows: TimingRow[]): string {
+  const header = [
+    'segment',
+    'INP ms',
+    'LoAF ms',
+    'top script',
+    'busy ms',
+    'restage ms',
+    'p95 frame',
+    'pixels A=B',
+  ];
+  const body = rows.map((row) => [
+    row.segment,
+    timingCell(row.a.inp, row.b?.inp),
+    timingCell(row.a.loaf, row.b?.loaf),
+    (row.b?.loafScript || row.a.loafScript || '-').slice(0, 40),
+    timingCell(row.a.busy, row.b?.busy),
+    timingCell(row.a.restageMs, row.b?.restageMs),
+    timingCell(row.a.p95Frame, row.b?.p95Frame),
+    row.pixelsAB === undefined || row.pixelsAB === null ? '-' : row.pixelsAB ? 'same' : 'DIFF',
+  ]);
+  return `${title}\n${table([header, ...body])}`;
 }

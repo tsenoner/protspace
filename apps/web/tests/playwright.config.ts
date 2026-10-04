@@ -202,6 +202,25 @@ export default defineConfig({
       },
       testMatch: /perf-counts\.spec\.ts/,
     },
+    // Timings on the real GPU, headed. Started by `pnpm perf` (perf/perf.mjs); see perf/README.md.
+    ...optIn('PERF_TIMING', {
+      name: 'perf-timing',
+      use: {
+        ...devices['Desktop Chrome'],
+        headless: false,
+        viewport: { width: 1280, height: 720 },
+        deviceScaleFactor: 1,
+        launchOptions: {
+          // Keep rAF and timers at full rate while the window is covered or unfocused.
+          args: [
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-background-timer-throttling',
+          ],
+        },
+      },
+      testMatch: /perf-timing\.spec\.ts/,
+    }),
     {
       name: 'density-layer',
       use: {

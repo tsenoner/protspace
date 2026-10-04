@@ -32,7 +32,7 @@ export interface Snapshot extends Record<CountKey, number> {
   drawn: number;
 }
 
-interface TimingSample {
+export interface TimingSample {
   /** Longest Event Timing duration of any interaction in the window (INP-like), ms. */
   inp: number;
   /** Longest long-animation-frame in the window, ms, and its longest script. */
@@ -55,6 +55,8 @@ export interface SegmentResult {
   pixelsSame: boolean | null;
   /** Both screenshots when they differ, for the report to attach. */
   pixelDiff?: { before: Buffer; after: Buffer };
+  /** The plot once `act` settled, when the spec asked to capture it. */
+  actPixels?: Buffer;
   timing?: TimingSample;
 }
 
@@ -189,12 +191,18 @@ interface SettleOptions {
 }
 
 /**
+ * Defaults for every `settle()`. Timing mode raises the cap: on a large dataset one
+ * interaction can keep the main thread busy for seconds.
+ */
+export const settleDefaults: Required<SettleOptions> = { quietMs: 200, capMs: 3_000 };
+
+/**
  * Wait in the page until the counters and uploaded bytes stay unchanged for at least
  * two animation frames and `quietMs`. Throws at `capMs`: a page that keeps doing work
  * with no input is a render loop or leaked work, never something to wait out.
  */
 export async function settle(page: Page, options: SettleOptions = {}): Promise<void> {
-  const { quietMs = 200, capMs = 3_000 } = options;
+  const { quietMs, capMs } = { ...settleDefaults, ...options };
   const result = await page.evaluate(
     ({ quietMs, capMs }) =>
       new Promise<{ ok: boolean; changed: string[] }>((resolve) => {
@@ -305,6 +313,8 @@ export interface SegmentSpec {
   reset?: () => Promise<void>;
   /** Compare plot pixels before the segment with pixels after its reset. */
   pixels?: boolean;
+  /** Keep a screenshot of the plot once `act` settled (timing mode compares builds). */
+  capture?: boolean;
   timing?: TimingContext;
 }
 
@@ -356,6 +366,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
 
   const after = await readSnapshot(page);
   const delta = diff(before, after);
+  const actPixels = spec.capture ? await plotPixels(page) : undefined;
   if (timing) timing.restageMs = delta.restageMs;
 
   if (spec.reset) {
@@ -372,6 +383,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     proteinCount: await proteinCount(page),
     pixelsSame,
     ...(pixelsSame === false ? { pixelDiff: { before: pixelsBefore!, after: pixelsAfter! } } : {}),
+    ...(actPixels ? { actPixels } : {}),
     timing,
   };
 }

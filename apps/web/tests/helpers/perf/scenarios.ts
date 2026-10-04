@@ -135,7 +135,7 @@ async function plotCenter(page: Page): Promise<{ x: number; y: number }> {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-async function importBundle(page: Page, file: string): Promise<void> {
+export async function importBundle(page: Page, file: string): Promise<void> {
   const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
   if (!(await ownDataset.isVisible().catch(() => false))) {
     await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
@@ -165,6 +165,16 @@ type SegmentName =
   | 'resize'
   | 'search-select'
   | 'import';
+
+/** Segments that leave the page as they found it, so timing mode can repeat them. */
+export const REPEATABLE: SegmentName[] = [
+  'annotation-switch',
+  'projection-switch',
+  'legend-isolate',
+  'camera',
+  'resize',
+  'search-select',
+];
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
