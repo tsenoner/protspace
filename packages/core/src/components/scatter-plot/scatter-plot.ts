@@ -84,6 +84,25 @@ const HIT_RADIUS_MIN_PX = 4;
 // can finish a few ULPs above identity even though the view is visually reset.
 const ZOOM_IDENTITY_EPSILON = 1e-6;
 
+// Config keys staged into the WebGL style buffers (size, alpha).
+const CONFIG_STYLE_KEYS: readonly (keyof ScatterplotConfig)[] = [
+  'pointSize',
+  'baseOpacity',
+  'selectedOpacity',
+  'fadedOpacity',
+];
+// Config keys the point index depends on: scales (width, height, margin),
+// interactivity (`opacityOf > 0`), and the duplicate-stack refresh it triggers.
+const CONFIG_INDEX_KEYS: readonly (keyof ScatterplotConfig)[] = [
+  'width',
+  'height',
+  'margin',
+  'baseOpacity',
+  'selectedOpacity',
+  'fadedOpacity',
+  'enableDuplicateStackUI',
+];
+
 // Reactive keys whose changes need no catch-all WebGL redraw in updated(): they
 // affect only the template or are rendered by the selection block. Zoom
 // transforms already redraw through the interaction controller's RAF. Both
@@ -931,10 +950,19 @@ export class ProtspaceScatterplot extends LitElement {
         this._dupOverlay.cancelCompute();
         this._dupOverlay.resetCacheKey();
       }
-      this._updateStyleSignature();
-      this._webglRenderer?.invalidateStyleCache();
-      this._webglRenderer?.setStyleSignature(this._styleSig);
-      this._schedulePointGridIndexRebuild();
+      // Render-only keys (contours) need no restage: any `config` change already
+      // gets a render from `_reconcileSelectionOverlays`.
+      const next = this._mergedConfig;
+      const changed = (k: keyof ScatterplotConfig) =>
+        JSON.stringify(prev[k]) !== JSON.stringify(next[k]);
+      if (CONFIG_STYLE_KEYS.some(changed)) {
+        this._updateStyleSignature();
+        this._webglRenderer?.invalidateStyleCache();
+        this._webglRenderer?.setStyleSignature(this._styleSig);
+      }
+      if (CONFIG_INDEX_KEYS.some(changed)) {
+        this._schedulePointGridIndexRebuild();
+      }
     }
   }
 
