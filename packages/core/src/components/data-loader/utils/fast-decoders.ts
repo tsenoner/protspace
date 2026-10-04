@@ -1,9 +1,9 @@
 /**
- * A drop-in replacement for hyparquet's snappy decoder on the v3 read path, giving the
- * same output as hyparquet's own for every valid page.
+ * Drop-in replacements for two of hyparquet's per-value decoders on the v3 read path,
+ * each giving the same output as hyparquet's own for every valid input.
  */
 
-import type { Compressors } from 'hyparquet';
+import type { Compressors, ParquetParsers } from 'hyparquet';
 import { snappyUncompressor } from 'hysnappy';
 
 /**
@@ -40,3 +40,27 @@ function snappyUncompress(input: Uint8Array, outputLength: number): Uint8Array {
 
 /** hyparquet `compressors` option for the v3 parts, all of which are snappy. */
 export const V3_COMPRESSORS: Compressors = { SNAPPY: snappyUncompress };
+
+// Configured like hyparquet's own decoder (a leading BOM is dropped), so a non-ASCII
+// value decodes exactly as it did before.
+const UTF8 = new TextDecoder();
+
+/** Longest value spread into one `String.fromCharCode` call, well inside argument limits. */
+const MAX_CHAR_CODE_ARGS = 1024;
+
+/**
+ * hyparquet's `stringFromBytes` with an ASCII fast path. A `TextDecoder` call per value
+ * dominates a string column of short ids (~5x slower in Chrome on 573K of them), while
+ * for ASCII bytes the char codes are the bytes themselves.
+ */
+function stringFromBytes(bytes: Uint8Array | undefined): string | undefined {
+  if (!bytes) return bytes;
+  if (bytes.length > MAX_CHAR_CODE_ARGS) return UTF8.decode(bytes);
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] > 0x7f) return UTF8.decode(bytes);
+  }
+  return String.fromCharCode.apply(null, bytes as unknown as number[]);
+}
+
+/** hyparquet `parsers` option for the v3 parts. */
+export const V3_PARSERS: Partial<ParquetParsers> = { stringFromBytes };

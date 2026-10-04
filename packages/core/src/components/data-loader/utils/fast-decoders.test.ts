@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { snappyUncompress as hyparquetSnappy } from 'hyparquet';
 import { snappyCompress } from 'hysnappy';
-import { V3_COMPRESSORS } from './fast-decoders';
+import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 
 const uncompress = V3_COMPRESSORS.SNAPPY!;
+const stringFromBytes = V3_PARSERS.stringFromBytes!;
 
 /** What hyparquet's own JS decoder makes of the page, or the error it throws. */
 function reference(input: Uint8Array, outputLength: number): Uint8Array | Error {
@@ -102,5 +103,38 @@ describe('V3_COMPRESSORS.SNAPPY', () => {
       true,
     );
     expect(uncompress(snappyCompress(small), small.length)).toEqual(small);
+  });
+});
+
+describe('V3_PARSERS.stringFromBytes', () => {
+  // hyparquet's default parser, which the fast path must match value for value.
+  const hyparquetString = (bytes: Uint8Array) => bytes && new TextDecoder().decode(bytes);
+  const bytesOf = (...values: number[]) => Uint8Array.from(values);
+
+  it.each([
+    ['an empty value', new Uint8Array(0)],
+    ['an ASCII id', new TextEncoder().encode('A0A023GPI8')],
+    ['ASCII control and edge bytes', bytesOf(0, 9, 10, 0x7f)],
+    ['two-byte UTF-8', new TextEncoder().encode('Résumé')],
+    ['CJK and emoji', new TextEncoder().encode('蛋白质 🧬')],
+    ['a leading BOM, which hyparquet drops', new TextEncoder().encode('\uFEFFlabel')],
+    ['invalid UTF-8', bytesOf(0x61, 0xff, 0x62, 0xc3)],
+    ['non-ASCII as the last byte', bytesOf(0x61, 0x62, 0xe9)],
+    ['a long ASCII value', new TextEncoder().encode('x'.repeat(5000))],
+    ['a long non-ASCII value', new TextEncoder().encode('é'.repeat(3000))],
+    ['a subarray view', new TextEncoder().encode('__P12345__').subarray(2, 8)],
+  ])('decodes %s exactly as hyparquet does', (_label, bytes) => {
+    expect(stringFromBytes(bytes)).toBe(hyparquetString(bytes));
+  });
+
+  it('passes a missing value through', () => {
+    expect(stringFromBytes(undefined as unknown as Uint8Array)).toBeUndefined();
+  });
+
+  it('matches hyparquet on every single byte value', () => {
+    for (let byte = 0; byte < 256; byte++) {
+      const bytes = bytesOf(0x41, byte, 0x42);
+      expect(stringFromBytes(bytes)).toBe(hyparquetString(bytes));
+    }
   });
 });

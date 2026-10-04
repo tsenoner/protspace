@@ -57,7 +57,7 @@ import {
 } from '@protspace/utils';
 import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
 import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
-import { V3_COMPRESSORS } from './fast-decoders';
+import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 import {
   appendSyntheticNACategoryToCodes,
   buildProjectionsMetadataMap,
@@ -287,6 +287,7 @@ async function readColumnChunks(
     metadata,
     columns,
     compressors: V3_COMPRESSORS,
+    parsers: V3_PARSERS,
     onChunk: (chunk) => {
       if (failure !== null) return;
       try {
