@@ -173,14 +173,26 @@ async function main() {
         if (code !== 0) throw new Error(`build failed (${code})`);
       }
       url = `http://localhost:${PREVIEW_PORT}`;
+      // Something already answering on the port would be measured instead of this build.
+      const taken = await fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
+        () => true,
+        () => false,
+      );
+      if (taken) throw new Error(`port ${PREVIEW_PORT} is in use; stop it or pass --url`);
       const preview = spawn(
         path.join(APP, 'node_modules/.bin/vite'),
         ['preview', '--port', String(PREVIEW_PORT), '--strictPort'],
         { cwd: APP, stdio: ['ignore', 'ignore', 'inherit'] },
       );
       children.add(preview);
-      preview.on('exit', () => children.delete(preview));
-      await waitForServer(url, 30_000);
+      const exited = new Promise((_, reject) =>
+        preview.on('exit', (code, signal) => {
+          children.delete(preview);
+          reject(new Error(`vite preview exited early (${signal ?? code})`));
+        }),
+      );
+      exited.catch(() => {}); // only matters while racing below
+      await Promise.race([waitForServer(url, 30_000), exited]);
     }
 
     const env = {
