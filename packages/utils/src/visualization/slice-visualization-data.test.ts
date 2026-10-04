@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { sliceVisualizationDataByIndices } from './slice-visualization-data';
+import {
+  sliceVisualizationDataByIndices,
+  viewVisualizationDataByIndices,
+} from './slice-visualization-data';
 import { getProteinAnnotationIndices, isCsrAnnotationData } from './annotation-data-access';
 import { getProteinEvidence, getProteinScores } from './plot-data-accessors';
 import type { Annotation, VisualizationData } from '../types';
@@ -141,5 +144,31 @@ describe('sliceVisualizationDataByIndices over CSR storage (bundle format v3)', 
     expect(getProteinScores(src, 2, 'fam')).toEqual([null, [1.5, 2.5]]);
     expect(getProteinEvidence(src, 2, 'fam')).toEqual([null, 'IEA']);
     expect(getProteinEvidence(src, 3, 'fam')).toEqual(['IPI']);
+  });
+});
+
+describe('viewVisualizationDataByIndices', () => {
+  it('equals the eager slice', () => {
+    const src = baseViz();
+    expect(viewVisualizationDataByIndices(src, [3, 1])).toEqual(
+      sliceVisualizationDataByIndices(src, [3, 1]),
+    );
+  });
+
+  it('slices a column on its first read and keeps it', () => {
+    const src = baseViz();
+    const view = viewVisualizationDataByIndices(src, [1, 3]);
+    // Reading the column again hands back the same slice, not a fresh one.
+    expect(view.annotation_data.fam).toBe(view.annotation_data.fam);
+    expect(view.numeric_annotation_data!.plddt).toBe(view.numeric_annotation_data!.plddt);
+    expect(Object.keys(view.annotation_scores!)).toEqual(['fam']);
+  });
+
+  it('takes an assigned column over the slice', () => {
+    const view = viewVisualizationDataByIndices(baseViz(), [1, 3]);
+    const replacement = new Float64Array([1, 2]);
+    view.numeric_annotation_data!.plddt = replacement;
+    expect(view.numeric_annotation_data!.plddt).toBe(replacement);
+    expect({ ...view.numeric_annotation_data }).toEqual({ plddt: replacement });
   });
 });

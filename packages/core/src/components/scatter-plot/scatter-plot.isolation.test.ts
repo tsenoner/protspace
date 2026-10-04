@@ -184,6 +184,91 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     expect(r.numeric_annotation_data?.num).toEqual(new Float64Array([101, 103]));
     expect(Array.from(r.projections[0].data)).toEqual([10, 11, 30, 33]);
   });
+
+  it('hands back the same view until the isolation or the filter changes', () => {
+    const el = document.createElement('protspace-scatterplot') as SlicingInternals;
+    el.data = buildData();
+    el._isolationMode = true;
+    el._isolationHistory = [['p1', 'p3', 'p4']];
+
+    const first = el.getCurrentData();
+    expect(el.getCurrentData()).toBe(first);
+
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0', 'p3', 'p4'];
+    const filtered = el.getCurrentData();
+    expect(filtered).not.toBe(first);
+    expect(filtered?.protein_ids).toEqual(['p3', 'p4']);
+
+    el._isolationHistory.push(['p4']);
+    expect(el.getCurrentData()?.protein_ids).toEqual(['p4']);
+  });
+});
+
+describe('scatter-plot isolateSelection (layers)', () => {
+  type LayerInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedProteinIds: string[];
+    filtersActive: boolean;
+    filteredProteinIds: string[];
+    _isolationHistory: string[][];
+    _plotData: PlotData;
+    _processData(): void;
+    _buildPointGridIndex(): void;
+    isolateSelection(): void;
+    getCurrentData(): VisualizationData | null;
+  };
+
+  function makeEl(): LayerInternals {
+    const ids = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'];
+    const el = document.createElement('protspace-scatterplot') as LayerInternals;
+    el.data = {
+      protein_ids: ids,
+      projections: [{ name: 'proj', dimension: 2, data: new Float32Array(12) }],
+      annotations: {
+        cat: { kind: 'categorical', values: ['A'], colors: ['#000000'], shapes: ['circle'] },
+      },
+      annotation_data: { cat: new Int32Array(6) },
+    };
+    el._plotData = {
+      length: 6,
+      xs: new Float32Array(6),
+      ys: new Float32Array(6),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ids,
+    };
+    vi.spyOn(el, '_processData').mockImplementation(() => {});
+    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() => {});
+    return el;
+  }
+
+  it('keeps only selected ids in the current view, in selection order', () => {
+    const el = makeEl();
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0', 'p1', 'p2', 'p3', 'p4'];
+    el.selectedProteinIds = ['p4', 'unknown', 'p1', 'p5', 'p2'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([['p4', 'p1', 'p2']]);
+
+    // Nested: p2 and p4 are in the isolation, p0 is not.
+    el.selectedProteinIds = ['p0', 'p4', 'p2'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([
+      ['p4', 'p1', 'p2'],
+      ['p4', 'p2'],
+    ]);
+    expect(el.getCurrentData()?.protein_ids).toEqual(['p2', 'p4']);
+  });
+
+  it('adds no layer when no selected id is in the current view', () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p1'];
+    el.isolateSelection();
+    el.selectedProteinIds = ['p0', 'unknown'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([['p1']]);
+  });
 });
 
 describe('scatter-plot isolation render-refresh sequence', () => {

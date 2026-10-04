@@ -15,7 +15,7 @@ import {
   DataProcessor,
   buildTooltipView,
   materializeVisualizationData,
-  sliceVisualizationDataByIndices,
+  viewVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
   materializePlotDataPoint,
@@ -238,6 +238,22 @@ export class ProtspaceScatterplot extends LitElement {
   private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
+  // The proteins in every isolation layer, as ascending indices into `proteinIds`. Kept so
+  // nothing rescans the dataset against the layers: `history`/`layers` identify the
+  // isolation state they were taken from (layers are only ever pushed or replaced).
+  private _isolatedIndicesCache: {
+    history: string[][];
+    layers: number;
+    proteinIds: readonly string[];
+    indices: number[];
+  } | null = null;
+  // getCurrentData()'s isolated view, reused until its inputs change.
+  private _isolatedViewCache: {
+    materialized: VisualizationData;
+    indices: number[];
+    filteredProteinIds: string[] | null;
+    view: VisualizationData;
+  } | null = null;
   private _zOrderMapping: Record<string, number> | null = null;
   private _colorMapping: Record<string, string> | null = null;
   private _shapeMapping: Record<string, string> | null = null;
@@ -1271,7 +1287,7 @@ export class ProtspaceScatterplot extends LitElement {
       }
     });
 
-    const result = sliceVisualizationDataByIndices(materializedData, keptIndices);
+    const result = viewVisualizationDataByIndices(materializedData, keptIndices);
     this._filteredDisplayCache = result;
     this._filteredDisplayCacheDeps = {
       materialized: materializedData,
@@ -2475,14 +2491,24 @@ export class ProtspaceScatterplot extends LitElement {
     // Keep the selected ids that are in the current view: in the dataset, through the
     // query filter and in every isolation layer. Not the plotted set: that also lacks
     // the proteins the selected projection does not place, and isolating them away
-    // would lose them in every other projection too.
-    const inDataset = new Set(this._plotData.proteinIds);
+    // would lose them in every other projection too. One pass over the current view,
+    // which also yields the next isolated indices.
+    const proteinIds = this._plotData.proteinIds;
+    const selected = new Set(this.selectedProteinIds);
     const visible = this._getVisibleProteinIdsSet();
-    const inIsolation = this._isolationMembership();
-    const validSelectedIds = this.selectedProteinIds.filter(
-      (id) =>
-        inDataset.has(id) && (!visible || visible.has(id)) && (!inIsolation || inIsolation(id)),
-    );
+    const isolated = this._isolatedIndices(proteinIds);
+    const keptIndices: number[] = [];
+    const keptIds = new Set<string>();
+    const keep = (index: number) => {
+      const id = proteinIds[index];
+      if (selected.has(id) && (!visible || visible.has(id))) {
+        keptIndices.push(index);
+        keptIds.add(id);
+      }
+    };
+    if (isolated) for (const index of isolated) keep(index);
+    else for (let index = 0; index < proteinIds.length; index++) keep(index);
+    const validSelectedIds = this.selectedProteinIds.filter((id) => keptIds.has(id));
 
     if (validSelectedIds.length === 0) {
       return;
@@ -2491,6 +2517,12 @@ export class ProtspaceScatterplot extends LitElement {
     // Add valid selection to isolation history
     this._isolationHistory.push(validSelectedIds);
     this._isolationMode = true;
+    this._isolatedIndicesCache = {
+      history: this._isolationHistory,
+      layers: this._isolationHistory.length,
+      proteinIds,
+      indices: keptIndices,
+    };
     this.selectedProteinIds = [];
 
     this._reprocessAndRefresh();
@@ -2625,6 +2657,8 @@ export class ProtspaceScatterplot extends LitElement {
     const wasIsolated = this._isolationMode;
     this._isolationHistory = [];
     this._isolationMode = false;
+    this._isolatedIndicesCache = null;
+    this._isolatedViewCache = null;
     if (wasIsolated && !options?.silent) {
       this.dispatchEvent(
         new CustomEvent('data-isolation-reset', {
@@ -2689,36 +2723,67 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Membership in every isolation layer, or `null` outside isolation. Isolation is a set of
-   * proteins, not what is drawn: the plotted set also lacks every protein the selected
-   * projection does not place, which stays part of the isolated subset.
+   * The proteins in every isolation layer, as ascending indices into `proteinIds`, or `null`
+   * outside isolation. Isolation is a set of proteins, not what is drawn: the plotted set
+   * also lacks every protein the selected projection does not place, which stays part of
+   * the isolated subset.
    */
-  private _isolationMembership(): ((proteinId: string) => boolean) | null {
-    if (!this._isolationMode || this._isolationHistory.length === 0) return null;
-    const layers = this._isolationHistory.map((layer) => new Set(layer));
-    return (proteinId) => layers.every((layer) => layer.has(proteinId));
+  private _isolatedIndices(proteinIds: readonly string[]): number[] | null {
+    const history = this._isolationHistory;
+    if (!this._isolationMode || history.length === 0) return null;
+    const cached = this._isolatedIndicesCache;
+    if (
+      cached &&
+      cached.history === history &&
+      cached.layers === history.length &&
+      cached.proteinIds === proteinIds
+    ) {
+      return cached.indices;
+    }
+    const layers = history.map((layer) => new Set(layer));
+    const indices: number[] = [];
+    for (let index = 0; index < proteinIds.length; index++) {
+      const id = proteinIds[index];
+      if (layers.every((layer) => layer.has(id))) indices.push(index);
+    }
+    this._isolatedIndicesCache = { history, layers: history.length, proteinIds, indices };
+    return indices;
   }
 
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null {
-    const currentDisplayData = this._getCurrentDisplayData(options);
-    if (!currentDisplayData) return null;
+    const materialized = this._getMaterializedData();
+    if (!materialized) return null;
 
-    // In isolation mode the current data is the isolated subset (through the query
-    // filter, which currentDisplayData already applied). It is taken from the isolation
-    // layers, not from _plotData: a protein the selected projection does not place is
-    // culled from the plot but stays in the dataset, so the .parquetbundle export and the
-    // legend counts keep it, and an isolated subset of which no point is placed is still
-    // that subset, not the whole dataset.
-    const inIsolation = this._isolationMembership();
-    if (inIsolation) {
-      const keptIndices: number[] = [];
-      currentDisplayData.protein_ids.forEach((proteinId, index) => {
-        if (inIsolation(proteinId)) keptIndices.push(index);
-      });
-      return sliceVisualizationDataByIndices(currentDisplayData, keptIndices);
+    // In isolation mode the current data is the isolated subset, through the query
+    // filter. It is taken from the isolation layers, not from _plotData: a protein the
+    // selected projection does not place is culled from the plot but stays in the
+    // dataset, so the .parquetbundle export and the legend counts keep it, and an
+    // isolated subset of which no point is placed is still that subset, not the whole
+    // dataset.
+    const isolated = this._isolatedIndices(materialized.protein_ids);
+    if (!isolated) return this._getCurrentDisplayData(options);
+
+    const filteredProteinIds =
+      options?.includeFilteredProteinIds === false || !this.filtersActive
+        ? null
+        : this.filteredProteinIds;
+    const cached = this._isolatedViewCache;
+    if (
+      cached &&
+      cached.materialized === materialized &&
+      cached.indices === isolated &&
+      cached.filteredProteinIds === filteredProteinIds
+    ) {
+      return cached.view;
     }
-
-    return currentDisplayData;
+    let keptIndices = isolated;
+    if (filteredProteinIds) {
+      const visible = new Set(filteredProteinIds);
+      keptIndices = isolated.filter((index) => visible.has(materialized.protein_ids[index]));
+    }
+    const view = viewVisualizationDataByIndices(materialized, keptIndices);
+    this._isolatedViewCache = { materialized, indices: isolated, filteredProteinIds, view };
+    return view;
   }
 
   getMaterializedData(): VisualizationData | null {
