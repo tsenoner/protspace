@@ -32,6 +32,8 @@ import {
 } from '../shader-utils';
 import {
   IDENTITY_RESCALE,
+  linearAxis,
+  mapLinear,
   rescaleBetween,
   snapshotScales,
   type Rescale,
@@ -1464,6 +1466,8 @@ export class WebGLRenderer {
         const srcOi = src.originalIndices;
         const srcXs = src.xs;
         const srcYs = src.ys;
+        const xAxis = linearAxis(scales.x);
+        const yAxis = linearAxis(scales.y);
         for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
           const slot = order[i];
           const origIdx = srcOi ? srcOi[slot] : slot;
@@ -1480,8 +1484,8 @@ export class WebGLRenderer {
           }
 
           if (updatePositions) {
-            this.dataPositions[idx * 2] = scales.x(srcXs[slot]);
-            this.dataPositions[idx * 2 + 1] = scales.y(srcYs[slot]);
+            this.dataPositions[idx * 2] = mapLinear(xAxis, srcXs[slot]);
+            this.dataPositions[idx * 2 + 1] = mapLinear(yAxis, srcYs[slot]);
           }
 
           idx++;

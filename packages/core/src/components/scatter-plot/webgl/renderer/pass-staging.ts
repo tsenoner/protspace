@@ -18,6 +18,7 @@ import {
   type SlotStyleScratch,
   type WebGLStyleGetters,
 } from '../types';
+import { linearAxis, mapLinear } from '../../rescale';
 import { buildPaintOrder, composePaintDepth } from './point-staging';
 import {
   packPointStyle,
@@ -195,6 +196,8 @@ export function stageInPaintOrder(
   scratch.packed = packed;
   const { opacity, depth, record, predicted } = scratch;
   const { xs, ys } = pd;
+  const xAxis = linearAxis(scales.x);
+  const yAxis = linearAxis(scales.y);
 
   const plan = buildPaintOrder(
     order,
@@ -205,8 +208,8 @@ export function stageInPaintOrder(
       const slotOpacity = opacity[slot];
       onStaged?.(slot, slotOpacity);
       // Positions are pre-scaled; depth is indexed by slot, NOT by k.
-      target.dataPositions[k * 2] = scales.x(xs[slot]);
-      target.dataPositions[k * 2 + 1] = scales.y(ys[slot]);
+      target.dataPositions[k * 2] = mapLinear(xAxis, xs[slot]);
+      target.dataPositions[k * 2 + 1] = mapLinear(yAxis, ys[slot]);
       target.depths[k] = depth[slot];
       const r = record[slot];
       const alpha = slotAlpha(target, k, scratch, slot, r);

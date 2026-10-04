@@ -59,3 +59,34 @@ export function rescaleBetween(from: ScaleSnapshot, to: ScalePair): Rescale | nu
   const identity = x.scale === 1 && x.offset === 0 && y.scale === 1 && y.offset === 0;
   return identity ? IDENTITY_RESCALE : { x, y };
 }
+
+/**
+ * A linear scale's domain and range, ordered as d3 orders them (a descending
+ * domain flips both), for {@link mapLinear}. `flat` is what d3 uses as the
+ * interpolation parameter when the domain is a single point.
+ */
+interface LinearAxis {
+  readonly d0: number;
+  readonly span: number;
+  readonly r0: number;
+  readonly r1: number;
+  readonly flat: number;
+}
+
+export function linearAxis(scale: ScalePair['x']): LinearAxis {
+  let [d0, d1] = scale.domain();
+  let [r0, r1] = scale.range();
+  if (d1 < d0) [d0, d1, r0, r1] = [d1, d0, r1, r0];
+  const span = d1 - d0;
+  return { d0, span, r0, r1, flat: Number.isNaN(span) ? NaN : 0.5 };
+}
+
+/**
+ * `scale(x)` for the unclamped scale `axis` was read from, without the call
+ * through d3: the same operations in the same order, so the result is the
+ * same double. A NaN input maps to NaN, which is what d3's undefined stages as.
+ */
+export function mapLinear(axis: LinearAxis, x: number): number {
+  const t = axis.span ? (x - axis.d0) / axis.span : x === x ? axis.flat : NaN;
+  return axis.r0 * (1 - t) + axis.r1 * t;
+}

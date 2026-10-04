@@ -82,6 +82,24 @@ describe('staging without a style pass from the host', () => {
     }
   });
 
+  it('stages the positions the d3 scales give, to the bit', () => {
+    const n = 4000;
+    const pd = plotData(n);
+    pd.xs = Float32Array.from({ length: n }, (_, i) => Math.sin(i * 12.9898) * 137.3);
+    pd.ys = Float32Array.from({ length: n }, (_, i) => Math.cos(i * 78.233) * 0.0371);
+    const odd: ScalePair = {
+      x: d3.scaleLinear().domain([-144.165, 144.165]).range([40, 1873.5]),
+      y: d3.scaleLinear().domain([0.03896, -0.03896]).range([12.25, 977]),
+    };
+    const style = perPointGetters();
+    const expected = stageArrays(n, 4, true);
+    legacyStage(style, pd, odd, n, false, expected);
+    const staged = stageArrays(n, 4, true);
+    const pass = beginStylePass(style);
+    stageInPaintOrder(staged, pass, createPassScratch(n), new Uint32Array(n), pd, odd, n, false);
+    expect(staged.dataPositions).toEqual(expected.dataPositions);
+  });
+
   it('restages styles through the per-point getters exactly as before', () => {
     const n = 2500;
     const pd = plotData(n);
