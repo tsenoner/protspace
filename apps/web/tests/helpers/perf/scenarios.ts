@@ -12,6 +12,12 @@ import { installProbes, readSnapshot, settle, type SegmentSpec } from './probes'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_BUNDLE = path.resolve(HERE, '../../../public/data.parquetbundle');
+/**
+ * A bundle without legend settings. Imported after the demo bundle it keeps `protein_families`,
+ * which has an "Other" bucket, and the legend's sync at the end of the load lists that bucket in
+ * another order than its first count did. A reordering alone must not re-stage the plot.
+ */
+const NO_SETTINGS_BUNDLE = path.resolve(HERE, '../../../public/data/phosphatase.parquetbundle');
 
 /** The annotation the switch segment goes to, when the dataset has it. */
 const PREFERRED_SWITCH_ANNOTATION = 'phylum';
@@ -179,7 +185,8 @@ type SegmentName =
   | 'camera'
   | 'resize'
   | 'search-select'
-  | 'import';
+  | 'import'
+  | 'import-no-settings';
 
 /** Segments that leave the page as they found it, so timing mode can repeat them. */
 export const REPEATABLE: SegmentName[] = [
@@ -193,7 +200,7 @@ export const REPEATABLE: SegmentName[] = [
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–9 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–10 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -282,6 +289,10 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     {
       name: 'import',
       act: () => importBundle(page, importFile),
+    },
+    {
+      name: 'import-no-settings',
+      act: () => importBundle(page, NO_SETTINGS_BUNDLE),
     },
   );
   return segments;

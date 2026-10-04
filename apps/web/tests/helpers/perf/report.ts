@@ -58,6 +58,7 @@ const FRAME_BOUND_KEYS: BudgetKey[] = ['render', 'glSync', 'gridRebuild', 'glIsP
 const FRAME_BOUND: Record<string, BudgetKey[]> = {
   load: FRAME_BOUND_KEYS,
   import: FRAME_BOUND_KEYS,
+  'import-no-settings': FRAME_BOUND_KEYS,
   camera: ['render', 'glSync'],
 };
 

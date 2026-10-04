@@ -59,7 +59,8 @@ measured by mistake; if the port is taken, the run stops. `pnpm test:e2e` instea
 `pnpm dev:app` on 8080, which may be another checkout's server.
 
 It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
-(`apps/web/public/data.parquetbundle`). It is a default project of
+(`apps/web/public/data.parquetbundle`), then imports `apps/web/public/data/phosphatase.parquetbundle`,
+which has no legend settings (`import-no-settings`). It is a default project of
 `apps/web/tests/playwright.config.ts`, so `pnpm test:e2e` and the e2e CI workflow run it too. It
 prints one table, value/budget per cell, with `!` on a cell over budget:
 
