@@ -7,8 +7,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
 import type { WebGLStyleGetters } from '../types';
+import * as d3 from 'd3';
+import { WebGLRenderer } from './webgl-renderer';
 import { makeRendererWithStyle } from './test-support/renderer-fixture';
-import type { MockGLOptions } from './test-support/mock-webgl2';
+import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
 
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -182,5 +184,60 @@ describe('legend changes through the per-record style table', () => {
     expect(populate).toHaveBeenCalledTimes(1);
     expect(renderer.isPointRendered('P0')).toBe(false);
     expect(renderer.isPointRendered('P1')).toBe(true);
+  });
+
+  it('restyles over the resize map, which keeps placing the points', () => {
+    const data = makeData(9);
+    const state = { width: 800 };
+    let getters = createStyleGetters(data, config);
+    const style: WebGLStyleGetters = {
+      getColors: (p) => getters.getColors(p),
+      getPointSize: (p) => getters.getPointSize(p),
+      getOpacity: (p) => getters.getOpacity(p),
+      getDepth: (p) => getters.getDepth(p),
+      getShape: (p) => getters.getPointShape(p),
+      isPredicted: (p) => getters.isPredicted(p),
+      isMultilabel: () => getters.isMultilabel(),
+      createStylePass: () => getters.createStylePass(),
+    };
+    const { canvas, gl } = createMockCanvas();
+    const renderer = new WebGLRenderer(
+      canvas,
+      () => ({
+        x: d3
+          .scaleLinear()
+          .domain([0, 101])
+          .range([40, state.width - 40]),
+        y: d3.scaleLinear().domain([0, 103]).range([560, 40]),
+      }),
+      () => d3.zoomIdentity,
+      () => ({ width: state.width, height: 600 }),
+      style,
+    );
+    const uniform4f = (gl as unknown as { uniform4f: ReturnType<typeof vi.fn> }).uniform4f;
+    const populate = vi.spyOn(
+      renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
+      'populateBuffers',
+    );
+    const pd = plotData(data);
+    const transformAfter = (step: () => void) => {
+      uniform4f.mockClear();
+      step();
+      renderer.render(pd);
+      return uniform4f.mock.calls.map((c) => c.slice(1));
+    };
+    transformAfter(() => {});
+    populate.mockClear();
+    const resized = transformAfter(() => (state.width = 1300));
+    expect(resized[0]).not.toEqual([0, 0, 1, 1]);
+    const restyled = transformAfter(() => {
+      getters = createStyleGetters(data, { ...config, hiddenAnnotationValues: ['c2'] });
+      renderer.invalidateCategoryStyles();
+    });
+    expect(populate).not.toHaveBeenCalled();
+    expect(restyled).toEqual(resized);
+    expect(renderer.visiblePointCount).toBe(
+      Array.from({ length: N }, (_, i) => (i * 7) % 9).filter((c) => c !== 2).length,
+    );
   });
 });
