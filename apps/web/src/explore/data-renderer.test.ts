@@ -166,7 +166,7 @@ describe('loadData overlay handling', () => {
       return view;
     });
 
-    // Five frames and the 30 ms legend sync, nowhere near the old 800 ms hold.
+    // Four frames and the 30 ms legend sync, nowhere near the old 800 ms hold.
     await vi.advanceTimersByTimeAsync(300);
     expect(done).toBe(true);
     expect(await pending).not.toBeNull();

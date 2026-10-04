@@ -218,17 +218,10 @@ export function createDataRenderer({
     );
 
     await yieldToBrowser();
+    // The legend sync pushes the colour and z-order mappings into the plot, so
+    // the plot is final here and needs no further frame before the caller
+    // dismisses the overlay.
     await syncLegendState(legendElement, interactionController, isLargeDataset);
-
-    updateOverlayForStep(
-      overlayController,
-      isLargeDataset,
-      95,
-      'Finalizing view...',
-      `Visualizing ${dataSize.toLocaleString()} proteins`,
-    );
-
-    await yieldToBrowser();
 
     if (structureViewer.style.display !== 'none') {
       structureViewer.style.display = 'none';
