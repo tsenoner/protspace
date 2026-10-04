@@ -11,6 +11,7 @@
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
+import { DataProcessor } from '@protspace/utils';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -489,5 +490,96 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     el.resetIsolation();
 
     expect(resetZoom).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('scatter-plot full view kept across a cull', () => {
+  type FullViewInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedAnnotation: string;
+    selectedProjectionIndex: number;
+    selectedProteinIds: string[];
+    filtersActive: boolean;
+    filteredProteinIds: string[];
+    _plotData: PlotData;
+    _pointGridIndex: unknown;
+    _processData(): void;
+    _buildPointGridIndex(): void;
+    isolateSelection(): void;
+    resetIsolation(): void;
+    resetZoom(): void;
+  };
+
+  function makeEl(): FullViewInternals {
+    const el = document.createElement('protspace-scatterplot') as FullViewInternals;
+    el.data = {
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [
+        { name: 'a', dimension: 2, data: new Float32Array([0, 0, 1, 1, 2, 2, 3, 3]) },
+        { name: 'b', dimension: 2, data: new Float32Array([3, 3, 2, 2, 1, 1, 0, 0]) },
+      ],
+      annotations: {
+        cat: { kind: 'categorical', values: ['A'], colors: ['#000000'], shapes: ['circle'] },
+      },
+      annotation_data: { cat: new Int32Array(4) },
+    };
+    el.selectedAnnotation = 'cat';
+    el.selectedProjectionIndex = 0;
+    vi.spyOn(el, 'resetZoom').mockImplementation(() => {});
+    el._processData();
+    el._buildPointGridIndex();
+    return el;
+  }
+
+  function isolate(el: FullViewInternals, ids: string[]) {
+    el.selectedProteinIds = ids;
+    el.isolateSelection();
+  }
+
+  it('swaps the full plot data and point grid back on reset, through nested isolation', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    const grid = el._pointGridIndex;
+    const rebuild = vi.spyOn(DataProcessor, 'processVisualizationData');
+
+    isolate(el, ['p1', 'p2', 'p3']);
+    isolate(el, ['p2']);
+    expect(el._plotData.length).toBe(1);
+    expect(el._pointGridIndex).not.toBe(grid);
+    rebuild.mockClear();
+    const reindex = vi.spyOn(grid as { rebuild(): void }, 'rebuild');
+
+    el.resetIsolation();
+    expect(el._plotData).toBe(full);
+    expect(el._pointGridIndex).toBe(grid);
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(reindex).not.toHaveBeenCalled();
+    rebuild.mockRestore();
+  });
+
+  it('swaps the full view back when a query filter clears', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0'];
+    el._processData();
+    expect(el._plotData.length).toBe(1);
+
+    el.filtersActive = false;
+    el.filteredProteinIds = [];
+    el._processData();
+    expect(el._plotData).toBe(full);
+  });
+
+  it('rebuilds when the projection changed during the isolation', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    isolate(el, ['p1', 'p2']);
+    el.selectedProjectionIndex = 1;
+    el._processData();
+
+    el.resetIsolation();
+    expect(el._plotData).not.toBe(full);
+    expect(Array.from(el._plotData.xs)).toEqual([3, 2, 1, 0]);
   });
 });

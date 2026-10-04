@@ -308,6 +308,21 @@ export class ProtspaceScatterplot extends LitElement {
   // slots are interactive. Queries see only the marked slots, so a legend
   // toggle re-marks them instead of rebuilding the grid.
   private _pointGridSource: PlotData | null = null;
+  // The un-culled plot data and the point grid built over it, set aside while a query
+  // filter or isolation culls the plot. Leaving the cull swaps them back instead of
+  // rebuilding both (see `_processData`). `projection`, `proteinIds` and `plane` are what
+  // the plot data was built from, `scales` the size and margins the grid was built at.
+  private _fullView: {
+    plotData: PlotData;
+    grid: PointGridIndex;
+    projection: VisualizationData['projections'][number];
+    proteinIds: readonly string[];
+    plane: 'xy' | 'xz' | 'yz';
+    scales: string;
+  } | null = null;
+  // Set when `_fullView` was swapped back: the next point grid build only re-marks the
+  // visible slots, provided the scales still match the ones it was built at.
+  private _restoredGridScales: string | null = null;
   private _slotVisible: Uint8Array | null = null;
   // A grid of just the visible slots, kept while they are a small share of all,
   // so a query walks them alone, as it did when the grid held only them.
@@ -390,6 +405,12 @@ export class ProtspaceScatterplot extends LitElement {
 
   // Track data reference to detect projection-only changes (same data object, different projection index).
   private _lastDataRef: VisualizationData | null = null;
+  // What the current _plotData was built from (see `_fullView`).
+  private _plotDataSource: {
+    projection: VisualizationData['projections'][number];
+    proteinIds: readonly string[];
+    plane: 'xy' | 'xz' | 'yz';
+  } | null = null;
   // Whether the current _plotData was built with a cull (filter or isolation).
   // The coordinate-only fast path must not run over a culled build: it can never
   // restore removed points, so clearing a filter would leave the canvas showing
@@ -463,6 +484,12 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     return this._cachedScales;
+  }
+
+  /** The inputs the scales take besides the plot data, which the point grid is built at. */
+  private _scalesKey(): string {
+    const { width, height, margin } = this._mergedConfig;
+    return `${width}|${height}|${margin.top}|${margin.right}|${margin.bottom}|${margin.left}`;
   }
 
   private _invalidateScalesCache() {
@@ -909,6 +936,7 @@ export class ProtspaceScatterplot extends LitElement {
       // forces the recompute that would happen anyway.
       this._filteredDisplayCache = null;
       this._filteredDisplayCacheDeps = null;
+      this._fullView = null;
       if (this.filtersActive) {
         this.filteredProteinIds = [];
         this.filtersActive = false;
@@ -1154,7 +1182,28 @@ export class ProtspaceScatterplot extends LitElement {
     // Fast path: update coordinates in-place from the new projection data. No new
     // object allocation — just overwrite x/y on the existing PlotData. It bails out when
     // the new projection is missing a point, which only a rebuild can cull.
+    const projection = dataToUse.projections[this.selectedProjectionIndex];
+    this._restoredGridScales = null;
     if (!onlyProjectionChanged || !this._updatePlotDataCoordinates(dataToUse)) {
+      const culling = this._isolationMode || visibleProteinIds !== null;
+      // Entering a cull from the full view: set the full view aside with its grid.
+      if (
+        culling &&
+        !this._plotDataWasCulled &&
+        this._plotData.length > 0 &&
+        this._plotDataSource &&
+        this._pointGridSource === this._plotData &&
+        !this._pointGridReindexPending
+      ) {
+        this._fullView = {
+          plotData: this._plotData,
+          grid: this._pointGridIndex,
+          ...this._plotDataSource,
+          scales: this._scalesKey(),
+        };
+        this._pointGridIndex = new PointGridIndex();
+      }
+
       // Release old data references before allocating the new dataset.
       // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
@@ -1166,17 +1215,37 @@ export class ProtspaceScatterplot extends LitElement {
       this._pointGridSource = null;
       this._webglRenderer?.releaseDataReferences();
 
-      this._plotData = DataProcessor.processVisualizationData(
-        dataToUse,
-        this.selectedProjectionIndex,
-        this._isolationMode,
-        this._isolationHistory,
-        this.projectionPlane,
-        visibleProteinIds,
-      );
+      const kept = culling ? null : this._fullView;
+      if (!culling) this._fullView = null;
+      if (
+        kept &&
+        kept.projection === projection &&
+        kept.proteinIds === dataToUse.protein_ids &&
+        kept.plane === this.projectionPlane
+      ) {
+        // Leaving the cull for the view it was entered from: what a rebuild would produce.
+        this._plotData = kept.plotData;
+        this._pointGridIndex = kept.grid;
+        this._pointGridSource = kept.plotData;
+        this._restoredGridScales = kept.scales;
+      } else {
+        this._plotData = DataProcessor.processVisualizationData(
+          dataToUse,
+          this.selectedProjectionIndex,
+          this._isolationMode,
+          this._isolationHistory,
+          this.projectionPlane,
+          visibleProteinIds,
+        );
+      }
       // Any cull — filter, isolation or a missing coordinate — leaves an index map.
       this._plotDataWasCulled = this._plotData.originalIndices !== null;
     }
+    this._plotDataSource = {
+      projection,
+      proteinIds: dataToUse.protein_ids,
+      plane: this.projectionPlane,
+    };
 
     this._lastDataRef = dataToUse;
 
@@ -1364,6 +1433,13 @@ export class ProtspaceScatterplot extends LitElement {
     }
     const pd = this._plotData;
     this._pointGridIndex.setScales(this._scales);
+    const restoredScales = this._restoredGridScales;
+    this._restoredGridScales = null;
+    if (restoredScales === this._scalesKey() && this._pointGridSource === pd) {
+      // The full view's grid, swapped back by `_processData`: only what is visible moved.
+      this._markVisibleSlots();
+      return;
+    }
     // Every slot, hidden ones too: a change of what is visible then re-marks
     // `_slotVisible` instead of rebuilding the grid.
     const slots = new Uint32Array(pd.length);
