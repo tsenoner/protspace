@@ -44,7 +44,7 @@ vi.mock('./webgl', async (importOriginal) => ({
 import './scatter-plot';
 
 type Internals = HTMLElement & {
-  data: VisualizationData;
+  data: VisualizationData | null;
   selectedAnnotation: string;
   selectedProteinIds: string[];
   highlightedProteinIds: string[];
@@ -56,6 +56,9 @@ type Internals = HTMLElement & {
   _processData(): void;
   _createWebglRenderer(): void;
   _getPointMarks(pd: PlotData): PointMarks | null;
+  _getStageGetters(): unknown;
+  _pointMarks: unknown;
+  _unmarkedGetters: unknown;
 };
 
 const IDS = ['p0', 'p1', 'p2', 'p3', 'p4'];
@@ -90,7 +93,19 @@ function makeEl(): Internals {
     clear: vi.fn(),
     render: vi.fn(),
     setTrackRenderedPointIds: vi.fn(),
+    releaseDataReferences: vi.fn(),
   };
+  return el;
+}
+
+/** `el` with the marks of a selection built, and the getters staged under them. */
+function makeMarkedEl(): Internals {
+  const el = makeEl();
+  select(el, ['p1']);
+  el._getPointMarks(el._plotData);
+  el._getStageGetters();
+  expect(el._pointMarks).not.toBeNull();
+  expect(el._unmarkedGetters).not.toBeNull();
   return el;
 }
 
@@ -167,6 +182,26 @@ describe('selection drawn as GPU marks', () => {
     expect(stagedOpacities(exported, el._plotData)).toEqual([0.15, 1, 0.15, 0.15, 0.15]);
     expect(live.getPointMarks!(el._plotData)!.slots).toEqual(Uint8Array.of(0, 1, 0, 0, 0));
     expect(exported.getPointMarks).toBeUndefined();
+  });
+
+  it('lets go of the marks and their getters with the dataset', () => {
+    for (const next of [makeData(), null]) {
+      const el = makeMarkedEl();
+      el.data = next;
+      el._processData();
+      expect(el._pointMarks).toBeNull();
+      expect(el._unmarkedGetters).toBeNull();
+    }
+  });
+
+  it('lets go of them once nothing is marked, or the marks are staged', () => {
+    const el = makeMarkedEl();
+    select(el, []);
+    expect(el._getPointMarks(el._plotData)).toBeNull();
+    expect(el._pointMarks).toBeNull();
+    el._focusedValues = ['A'];
+    el._getStageGetters();
+    expect(el._unmarkedGetters).toBeNull();
   });
 });
 

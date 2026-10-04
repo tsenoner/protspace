@@ -1208,7 +1208,10 @@ export class ProtspaceScatterplot extends LitElement {
     // require — a slice-local index would mis-resolve colours/values under any
     // non-prefix filter. Isolation already worked this way; filtering now matches.
     const dataToUse = this._getMaterializedData();
-    if (!dataToUse) return;
+    if (!dataToUse) {
+      this._clearMarkCaches();
+      return;
+    }
 
     const visibleProteinIds = this._getVisibleProteinIdsSet();
 
@@ -1260,6 +1263,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._visibleSlots = null;
       this._pointGridSource = null;
       this._webglRenderer?.releaseDataReferences();
+      this._clearMarkCaches();
 
       const kept = culling ? null : this._fullView;
       if (!culling) this._fullView = null;
@@ -2145,10 +2149,19 @@ export class ProtspaceScatterplot extends LitElement {
     return this._marksOnGpu() ? model.unmarked : model;
   }
 
+  /** Drop the unmarked getters and the last marks, which hold the data they were built over. */
+  private _clearMarkCaches() {
+    this._unmarkedGetters = null;
+    this._pointMarks = null;
+  }
+
   /** The style getters the live view stages, over {@link _getStageModel}. */
   private _getStageGetters(): ReturnType<typeof createStyleGetters> {
     const getters = this._getStyleGetters();
-    if (!this._marksOnGpu()) return getters;
+    if (!this._marksOnGpu()) {
+      this._unmarkedGetters = null;
+      return getters;
+    }
     const model = this._getVisibilityModel().unmarked;
     const cached = this._unmarkedGetters;
     if (cached?.from === getters && cached.model === model) return cached.getters;
@@ -2162,10 +2175,12 @@ export class ProtspaceScatterplot extends LitElement {
    * nothing is marked. Built once per change of either.
    */
   private _getPointMarks(pd: PlotData): PointMarks | null {
-    if (!this._marksOnGpu()) return null;
-    const model = this._getVisibilityModel();
-    const opacities = model.marks;
-    if (!opacities) return null;
+    const model = this._marksOnGpu() ? this._getVisibilityModel() : null;
+    const opacities = model?.marks;
+    if (!model || !opacities) {
+      this._pointMarks = null;
+      return null;
+    }
     const cached = this._pointMarks;
     if (
       cached &&
