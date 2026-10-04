@@ -57,6 +57,7 @@ import {
 } from '@protspace/utils';
 import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
 import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
+import { V3_COMPRESSORS } from './fast-decoders';
 import {
   appendSyntheticNACategoryToCodes,
   buildProjectionsMetadataMap,
@@ -285,6 +286,7 @@ async function readColumnChunks(
     file,
     metadata,
     columns,
+    compressors: V3_COMPRESSORS,
     onChunk: (chunk) => {
       if (failure !== null) return;
       try {
@@ -602,7 +604,7 @@ async function readPayloads(part: ArrayBuffer): Promise<Map<string, Uint8Array>>
   assertValidParquetMagic(part);
   // utf8: false keeps the `data` column as raw bytes. The `name` column carries a
   // STRING logical type, which hyparquet decodes regardless of this flag.
-  const rows = await parquetReadObjects({ file: part, utf8: false });
+  const rows = await parquetReadObjects({ file: part, utf8: false, compressors: V3_COMPRESSORS });
   const payloads = new Map<string, Uint8Array>();
   for (const row of rows) {
     const name = typeof row.name === 'string' ? row.name : DECODER.decode(row.name as Uint8Array);
