@@ -22,6 +22,7 @@ import {
 } from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';
 import { liveStyle } from './test-support/style-fixture';
+import { replayVertex } from './test-support/vertex-replay';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -114,25 +115,21 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
         list.push(`draw ${mode} ${count}`);
         return;
       }
+      const shader = {
+        recordStyle: uniforms.u_recordStyleOn ? r.stagedRecords!.texels : null,
+        marks: uniforms.u_marksOn
+          ? {
+              marked: r.stagedMarks,
+              pass: uniforms.u_markPass,
+              markedOpacity: uniforms.u_markedOpacity,
+              unmarkedOpacity: uniforms.u_unmarkedOpacity,
+            }
+          : null,
+      };
       for (let k = first; k < first + count; k++) {
-        let rgb = Array.from(r.colors.subarray(k * 4, k * 4 + 3));
-        let alpha = r.colors[k * 4 + 3];
-        let form = [r.sizes[k], r.shapes[k], r.labelCounts[k]];
-        const record = r.recordIds[k];
-        if (uniforms.u_recordStyleOn && record >= 0) {
-          const t = r.stagedRecords!.texels.subarray(record * 8, record * 8 + 8);
-          rgb = Array.from(t.subarray(0, 3));
-          alpha *= t[3];
-          form = Array.from(t.subarray(4, 7));
-        }
-        if (uniforms.u_marksOn) {
-          const marked = r.stagedMarks[k] > 0;
-          const pass = uniforms.u_markPass;
-          if (pass >= 0 && marked !== (pass === 1)) continue;
-          const opacity = marked ? uniforms.u_markedOpacity : uniforms.u_unmarkedOpacity;
-          if (alpha > 0) alpha = Math.fround(opacity);
-        }
-        if (alpha < 0.001) continue;
+        const vertex = replayVertex(r, k, shader);
+        if (!vertex || vertex.alpha < 0.001) continue;
+        const { rgb, alpha, form } = vertex;
         const stride = r.atlas?.plan.stride ?? 0;
         const pie =
           form[2] > 1.5 && r.atlas

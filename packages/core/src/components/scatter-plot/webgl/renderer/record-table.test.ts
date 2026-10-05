@@ -5,6 +5,7 @@ import { createStyleGetters, type StyleConfig } from '../../styling/style-getter
 import type { PointStylePass, ScalePair } from '../types';
 import { createPassScratch, packRecords, stageInPaintOrder } from './pass-staging';
 import { stageArrays } from './test-support/legacy-staging';
+import { replayVertex } from './test-support/vertex-replay';
 import {
   canRestyle,
   collectStagedRecords,
@@ -129,17 +130,12 @@ function drawn(target: ReturnType<typeof stageArrays>, staged: StagedRecords, co
   const sizes = new Float32Array(count);
   const shapes = new Float32Array(count);
   const labelCounts = new Float32Array(count);
-  const t = staged.texels;
+  const shader = { recordStyle: staged.texels, marks: null };
   for (let k = 0; k < count; k++) {
-    const r = target.recordIds![k];
-    if (r < 0) throw new Error('every slot of a category pass has a record');
-    colors.set(
-      [t[r * 8], t[r * 8 + 1], t[r * 8 + 2], target.colors[k * 4 + 3] * t[r * 8 + 3]],
-      k * 4,
-    );
-    sizes[k] = t[r * 8 + 4];
-    shapes[k] = t[r * 8 + 5];
-    labelCounts[k] = t[r * 8 + 6];
+    if (target.recordIds![k] < 0) throw new Error('every slot of a category pass has a record');
+    const { rgb, alpha, form } = replayVertex(target, k, shader)!;
+    colors.set([...rgb, alpha], k * 4);
+    [sizes[k], shapes[k], labelCounts[k]] = form;
   }
   return { colors, sizes, shapes, labelCounts };
 }
