@@ -318,9 +318,12 @@ function createLogEdges(summary: NumericSummary, binCount: number): number[] {
   const maxLog = Math.log10(summary.max);
   const step = (maxLog - minLog) / binCount;
 
-  return Array.from({ length: binCount + 1 }, (_, index) =>
+  const edges = Array.from({ length: binCount + 1 }, (_, index) =>
     index === binCount ? summary.max : 10 ** (minLog + step * index),
   );
+  // 10 ** log10(min) can round above min, which would leave min outside every bin.
+  edges[0] = Math.min(edges[0], summary.min);
+  return edges;
 }
 
 function dedupeEdges(edges: number[]): number[] {

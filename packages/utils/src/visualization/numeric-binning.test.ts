@@ -809,15 +809,75 @@ describe('numeric-binning logarithmic fallback', () => {
   });
 });
 
+describe('numeric-binning logarithmic minimum', () => {
+  const logarithmic = (binCount: number) => ({
+    binCount,
+    strategy: 'logarithmic' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  it('keeps a minimum whose log round trip rounds up in the first bin', () => {
+    // 10 ** Math.log10(5) is 5.000000000000001.
+    const result = materializeNumericAnnotation([5, 6, 50, 500, 5000], logarithmic(3));
+
+    expect(Array.from(result.annotationData)).toEqual([0, 0, 1, 2, 2]);
+    expect(result.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '5 - 6',
+      '50',
+      '500 - 5000',
+    ]);
+    expect(result.annotation.numericMetadata?.bins[0].lowerBound).toBe(5);
+  });
+
+  it('puts every value in a bin that contains it, for integer minimums 1 to 10000', () => {
+    const misplaced: string[] = [];
+    for (let min = 1; min <= 10000; min++) {
+      const column = [min, min + 1, 3 * min, 10 * min, 100 * min];
+      const { annotation, annotationData } = materializeNumericAnnotation(column, logarithmic(4));
+      const bins = annotation.numericMetadata?.bins ?? [];
+      if (annotationData[0] !== 0) misplaced.push(`minimum ${min} in bin ${annotationData[0]}`);
+      column.forEach((value, row) => {
+        const bin = bins[annotationData[row]];
+        const isLast = annotationData[row] === bins.length - 1;
+        const inBin =
+          value >= bin.lowerBound && (isLast ? value <= bin.upperBound : value < bin.upperBound);
+        if (!inBin) misplaced.push(`${value} in ${bin.id}`);
+      });
+    }
+
+    expect(misplaced).toEqual([]);
+  });
+
+  it('keeps the bins of a minimum whose log round trip is exact or rounds down', () => {
+    const roundsDown = materializeNumericAnnotation([8, 9, 80, 800, 8000], logarithmic(3));
+    const exact = materializeNumericAnnotation([10, 11, 100, 1000, 10000], logarithmic(3));
+
+    expect(roundsDown.annotation.values).toEqual([
+      'num:logarithmic:7.9999999999999991:79.999999999999986',
+      'num:logarithmic:79.999999999999986:800.00000000000034',
+      'num:logarithmic:800.00000000000034:8000',
+    ]);
+    expect(Array.from(roundsDown.annotationData)).toEqual([0, 0, 1, 1, 2]);
+    expect(exact.annotation.values).toEqual([
+      'num:logarithmic:10:100',
+      'num:logarithmic:100:1000',
+      'num:logarithmic:1000:10000',
+    ]);
+    expect(Array.from(exact.annotationData)).toEqual([0, 0, 1, 2, 2]);
+  });
+});
+
 describe('numeric-binning recorded outputs', () => {
-  // Output digests at cb6ed698, which sorted the quantile values with a comparator.
+  // Output digests at cb6ed698, which sorted the quantile values with a comparator. Columns 9, 18
+  // and 42 were re-recorded when log binning stopped putting a rounded-up minimum in the top bin.
   const RECORDED_DIGESTS = `
     7d994405 f4d0f7a1 60f0ab0f c1d05405 a18d277a c62b92f7 a3e7d8a0 815a629c
-    5ffc9ce3 c6529dfd 2c7add10 2337d8ec c2d84e66 32a45255 7ff4940f 1b1788e7
-    67da46af 9fb64343 fc9ef595 198b7756 a4f1159d 95f0560d 54526afa f829cfa3
+    5ffc9ce3 4e1a862d 2c7add10 2337d8ec c2d84e66 32a45255 7ff4940f 1b1788e7
+    67da46af 9fb64343 f1c7e612 198b7756 a4f1159d 95f0560d 54526afa f829cfa3
     7460a423 031481ad 9babfcc2 b296c5dd da82f686 7c8a5971 bc45896f e1309f28
     e173268f 922cbf63 5546a985 5432690f 019ada84 893b1d83 4be905af 0d8d6b87
-    0ecf64ab ba3842fa 03007ca8 14d5cc6f 1b0b2500 bc117bb5 30d6ae48 4d368683
+    0ecf64ab ba3842fa accd052d 14d5cc6f 1b0b2500 bc117bb5 30d6ae48 4d368683
   `
     .trim()
     .split(/\s+/);
