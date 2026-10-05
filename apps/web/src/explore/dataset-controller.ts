@@ -281,8 +281,14 @@ export function createDatasetController({
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;
+    const { originalError } = customEvent.detail;
 
-    if (customEvent.detail.originalError?.name === 'AbortError') {
+    if (
+      typeof originalError === 'object' &&
+      originalError !== null &&
+      'name' in originalError &&
+      originalError.name === 'AbortError'
+    ) {
       console.log('Data load cancelled by user');
       if (loadSequence !== null) {
         loadQueue.resolvePendingLoadFinalization(loadSequence);

@@ -30,7 +30,9 @@
       ],
     },
     "packages/core": {
-      "entry": ["src/index.ts", "src/components/publish/index.ts"],
+      // Both entries (src/index.ts, src/components/publish/index.ts) are discovered from
+      // package.json `exports`, whose dist/ paths map back to src/ through tsconfig `rootDir`;
+      // listing them again trips config-hint errors.
       "project": ["src/**/*.ts"],
     },
     "packages/utils": {

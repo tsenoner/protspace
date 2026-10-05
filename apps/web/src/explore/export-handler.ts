@@ -65,7 +65,9 @@ export function createExportHandler({
   // ── Publish editor handler ─────────────────────────
 
   function getCurrentProjection(): { projection: string; dimensionality: number } | null {
-    const sp = plotElement as Record<string, unknown>;
+    // Duck-typed: ProtspaceScatterplot declares no `selectedProjection` (the control bar
+    // does), so this read finds nothing and the modal gets `null`.
+    const sp = plotElement as unknown as Record<string, unknown>;
     if (typeof sp.selectedProjection !== 'string' || !sp.selectedProjection) return null;
     const name = sp.selectedProjection;
     const dimensionality = name.toLowerCase().includes('3d') ? 3 : 2;
@@ -96,8 +98,10 @@ export function createExportHandler({
         modal.legendElement = legendElement as unknown as HTMLElement;
         modal.currentProjection = getCurrentProjection();
 
-        // Restore saved publish state: bundle > localStorage > defaults
-        const plotEl = plotElement as Record<string, unknown>;
+        // Restore saved publish state: bundle > localStorage > defaults. Duck-typed like
+        // getCurrentProjection: nothing sets `bundleSettings` on the scatterplot, so this
+        // falls through to localStorage.
+        const plotEl = plotElement as unknown as Record<string, unknown>;
         const bundleSettings =
           'bundleSettings' in plotEl &&
           typeof plotEl.bundleSettings === 'object' &&

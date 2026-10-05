@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   resolvePendingLoadFinalization: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -36,7 +37,7 @@ vi.mock('./tooltip-annotations-store', () => ({
 }));
 
 vi.mock('../lib/notify', () => ({
-  notify: { warning: mocks.warning, info: mocks.info, error: vi.fn() },
+  notify: { warning: mocks.warning, info: mocks.info, error: mocks.error },
 }));
 
 import { createDatasetController } from './dataset-controller';
@@ -212,5 +213,41 @@ describe('dataset controller legacy bundle notice', () => {
 
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.info).not.toHaveBeenCalled();
+  });
+});
+
+describe('dataset controller load errors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.markLastLoadStatus.mockResolvedValue(undefined);
+  });
+
+  const errorEvent = (originalError: unknown) =>
+    ({ detail: { message: 'load failed', originalError } }) as unknown as Event;
+
+  it('treats an aborted load as a cancellation, not a failure', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { controller } = buildController();
+    await controller.handleDataError(errorEvent(new DOMException('Aborted', 'AbortError')));
+
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+    consoleLog.mockRestore();
+  });
+
+  it.each([
+    ['an Error', new Error('boom')],
+    ['a non-object', 'boom'],
+    ['no original error', undefined],
+  ])('reports a failure carrying %s', async (_label, originalError) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = buildController();
+    await controller.handleDataError(errorEvent(originalError));
+
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('error', { error: 'load failed' });
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    consoleError.mockRestore();
   });
 });
