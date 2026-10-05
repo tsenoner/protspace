@@ -147,13 +147,15 @@ ProtSpace still works normally without OPFS. Your dataset loads for the current 
 
 ## When a Previous Load Crashed
 
-If a previous session failed to finish loading a dataset (browser crash, tab closed mid-load, or a corrupt file), ProtSpace shows a recovery banner above the scatterplot when you return. The banner names the file that didn't finish and offers three actions:
+If a previous session failed to finish loading a dataset (the browser crashed or the tab was closed mid-load), ProtSpace shows a recovery banner above the scatterplot when you return. The banner names the file that didn't finish and offers three actions:
 
 - **Try again**, re-attempts the load from the stored copy. Useful if the previous failure was transient (network hiccup, momentary browser stall).
 - **Load default**, replaces the stored file with the startup demo, a small set of [venom toxins](/explore/example-datasets#demo). Use this if you don't need to recover the specific file.
 - **Clear stored data**, deletes the stored file without loading anything. Choose this if the file is corrupt or you'd rather import a fresh copy yourself.
 
 After three failed retries the banner shifts tone, recommending you clear or load the demo rather than continue retrying.
+
+A file that fails to import is never stored, so it leaves the dataset you imported before in place: that one is restored on your next visit as usual, with no banner. A stored copy that can no longer be read is cleared, and the startup demo loads in its place with a notice.
 
 ::: info Why a banner instead of just retrying?
 Auto-retry would loop forever on a genuinely broken file. The banner makes the failure visible and lets you choose the recovery path that fits the situation.
