@@ -259,9 +259,16 @@ export async function settle(page: Page, capMs = 3_000): Promise<void> {
   }
 }
 
-/** Screenshot of the plot, for before/after-reset comparisons. */
+/**
+ * Screenshot of the plot, for before/after comparisons, less a 2 px frame: the plot sits at
+ * a fractional y, so its 1 px border is anti-aliased across two rows and can differ by a
+ * grey level between runs.
+ */
 async function plotPixels(page: Page): Promise<Buffer> {
-  return page.locator('#myPlot').screenshot({ animations: 'disabled', caret: 'hide' });
+  const box = await page.locator('#myPlot').boundingBox();
+  if (!box) throw new Error('#myPlot is not visible');
+  const clip = { x: box.x + 2, y: box.y + 2, width: box.width - 4, height: box.height - 4 };
+  return page.screenshot({ clip, animations: 'disabled', caret: 'hide' });
 }
 
 async function proteinCount(page: Page): Promise<number> {
