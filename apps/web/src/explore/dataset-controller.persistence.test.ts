@@ -161,6 +161,8 @@ describe('dataset controller load failures and the stored import', () => {
     // The preparation runs inside the load's queue slot (`runtime.ts`), so its
     // error ends that slot before the data loader reports it: as in
     // `DataLoader.loadFromFile`, the error event follows the rejected load.
+    // With nothing queued behind it, no load is running by then; a load queued
+    // behind it would already have taken the slot.
     let runningLoadAtError: LoadMeta | null | undefined;
     await loadQueue
       .enqueueLoadFromFile(fasta, undefined, () => Promise.reject(prepError))
