@@ -89,9 +89,12 @@ A count below its budget passes, and the report lists it under "tighten".
 ### Budgets
 
 `apps/web/tests/perf/budgets.json` is the only place budgets live. `null` means report only. Counts
-that follow how many frames a load or gesture spans (renders during load, import and camera moves,
-and the GL sync calls there) are `null`, and so is any count that differed between the three
-recordings.
+that follow how many frames a segment spans are `null`: renders, GL sync calls, grid rebuilds and
+`gl.is*` calls per render during load and import, renders and GL sync calls during camera moves,
+and the renders of the projection glide, one per frame. `scenarios.ts` lists them per segment. Any
+count that differed between the three recordings is `null` too, and so is any count the previous
+file set to `null`, so a hand-set `null` survives a re-record. Bytes are budgeted only at 0: any
+other byte count is a property of the dataset.
 
 To update after a change that lowers, or knowingly raises, a count:
 

@@ -42,7 +42,8 @@ const SEGMENTS = {
   load: { frameBound: LOAD_FRAME_BOUND, bumpsAllCounters: true },
   idle: {},
   'annotation-switch': { repeatable: true },
-  'projection-switch': { repeatable: true, glides: true },
+  // A glide draws one render per frame.
+  'projection-switch': { repeatable: true, frameBound: ['render'], glides: true },
   'projection-switch-instant': { repeatable: true, glideTwin: true },
   'legend-isolate': { repeatable: true },
   camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
