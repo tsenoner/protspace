@@ -1034,24 +1034,23 @@ export class ProtspaceLegend extends LitElement {
       const sourceDataMatchesCurrentLegend =
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
+      // Predictions included, as the app and the decode worker hash it.
       const unfilteredData = sourceDataMatchesCurrentLegend
         ? {
             protein_ids: sourceData.protein_ids,
             annotations: sourceData.annotations,
             numeric_annotation_data: sourceData.numeric_annotation_data,
+            annotation_predicted: sourceData.annotation_predicted,
           }
         : {
             protein_ids: this.proteinIds,
             annotations: this.data?.annotations,
             numeric_annotation_data: this.data?.numeric_annotation_data,
+            annotation_predicted: this.data?.annotation_predicted,
           };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
-      this._persistenceController.updateDatasetHash({
-        protein_ids: unfilteredData.protein_ids,
-        annotations: unfilteredData.annotations,
-        numeric_annotation_data: unfilteredData.numeric_annotation_data,
-      });
+      this._persistenceController.updateDatasetHash(unfilteredData);
     }
 
     // Handle data or annotation changes
