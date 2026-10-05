@@ -157,7 +157,7 @@ describe('resetZoom transition interrupted on disconnect', () => {
   it('disconnectedCallback tears down the interaction controller (interrupts the 750ms transition)', () => {
     const sp = makeHost();
     const teardown = vi.fn();
-    // Stand in for the B8 PlotInteractionController. Its real teardown() calls
+    // Stand in for the PlotInteractionController. Its real teardown() calls
     // _svgSelection.interrupt(), which aborts the resetZoom .transition(750).
     sp._interaction = {
       teardown,

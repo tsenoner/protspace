@@ -109,7 +109,7 @@ export class DuplicateStackOverlayController {
       getExpandedKey: () => this.expandedKey,
     });
     // Spiderfy interaction can lose native 'click' due to d3.zoom gesture handling in some browsers.
-    // The layer owns the press/release map and reconstructs taps; dispatch stays on the host (INV-05).
+    // The layer owns the press/release map and reconstructs taps; dispatch stays on the host.
     this.spiderfy = new SpiderfyLayer({
       getColor: (p) => this.deps.getColor(p),
       onActivate: (e, p) => this.deps.onPointActivate(e, p),

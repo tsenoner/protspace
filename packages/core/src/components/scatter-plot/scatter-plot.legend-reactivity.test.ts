@@ -215,7 +215,7 @@ describe('legend mapping handlers — malformed detail key-validation', () => {
 describe('numeric-recompute scheduling — no redundant requestUpdate', () => {
   it('schedules exactly ONE Lit update on start — the @state mirror, not a duplicate explicit call', () => {
     const el = makeEl();
-    // POST-B6: busy state is the _numericRecomputeRunning @state mirror, driven
+    // Busy state is the _numericRecomputeRunning @state mirror, driven
     // by the runner's setRunning host callback. Writing that @state field already
     // routes through the element's requestUpdate() (Lit's reactive setter) and
     // schedules the update. The runner's SEPARATE explicit host.requestUpdate()
