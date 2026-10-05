@@ -1839,12 +1839,19 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _handleBrushSelection(event: Event) {
-    const customEvent = event as CustomEvent<{ proteinIds: string[]; isMultiple: boolean }>;
+    const customEvent = event as CustomEvent<{
+      proteinIds: string[];
+      isMultiple: boolean;
+      idsUnique?: boolean;
+    }>;
     const ids = Array.isArray(customEvent.detail?.proteinIds) ? customEvent.detail.proteinIds : [];
+    const distinct = customEvent.detail?.idsUnique === true;
 
     // When selectionMode is active, merge with existing; otherwise replace
     this._commitSelection(
-      this.selectionMode ? mergeProteinSelections(this.selectedIdsChips, ids) : ids.slice(),
+      this.selectionMode
+        ? mergeProteinSelections(this.selectedIdsChips, ids, distinct)
+        : ids.slice(),
     );
   }
 
