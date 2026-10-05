@@ -224,3 +224,54 @@ describe('sortIndicesByDepthDescending with a radix scratch buffer', () => {
     expect(Array.from(order)).toEqual(comparatorOrder(depths, 5000));
   });
 });
+
+// ── parity over random inputs ──────────────────────────────────
+
+describe('sortIndicesByDepthDescending parity over random inputs', () => {
+  /** The plain comparator on a typed identity, so a NaN orders exactly as the fallback does. */
+  function comparatorOrder(depths: Float32Array, count: number): number[] {
+    const ids = new Uint32Array(count);
+    for (let i = 0; i < count; i++) ids[i] = i;
+    ids.sort((a, b) => depths[b] - depths[a] || a - b);
+    return Array.from(ids);
+  }
+
+  /** The sort as staging calls it, with a scratch as long as the count. */
+  function sortedOrder(depths: Float32Array, count: number): number[] {
+    const order = new Uint32Array(count);
+    sortIndicesByDepthDescending(order, depths, count, new Uint32Array(count));
+    return Array.from(order);
+  }
+
+  // Both sides of 2048, where the counting sort hands over to the radix sort.
+  const sizes = [2, 3, 7, 100, 2047, 2048, 5000];
+  const specials = [0, -0, Infinity, -Infinity, 1e-45, -1e-45, 3.4e38, -3.4e38];
+  const shapes: Record<string, (next: () => number, n: number) => Float32Array> = {
+    // A few distinct values, like painter tiers times legend slots: long equal runs.
+    'heavily tied': (next, n) => {
+      const palette = [next(), next(), next(), next()].map((r) => r * 2 - 1);
+      return Float32Array.from({ length: n }, () => palette[Math.floor(next() * 4)]);
+    },
+    continuous: (next, n) => Float32Array.from({ length: n }, () => (next() - 0.5) * 2000),
+    special: (next, n) =>
+      Float32Array.from({ length: n }, () => {
+        const r = next();
+        return r < 0.5 ? specials[Math.floor(r * 2 * specials.length)] : (r - 0.75) * 1000;
+      }),
+  };
+
+  const cases = Object.keys(shapes).flatMap((shape) =>
+    [false, true].map(
+      (withNaN) => [withNaN ? `${shape}, one NaN` : shape, shape, withNaN] as const,
+    ),
+  );
+
+  it.each(cases)('%s', (_name, shape, withNaN) => {
+    const next = seededRandom(2048);
+    for (const n of sizes) {
+      const depths = shapes[shape](next, n);
+      if (withNaN) depths[Math.floor(next() * n)] = NaN;
+      expect(sortedOrder(depths, n), `n = ${n}`).toEqual(comparatorOrder(depths, n));
+    }
+  });
+});
