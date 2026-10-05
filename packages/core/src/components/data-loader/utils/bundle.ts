@@ -7,11 +7,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import type { Rows, GenericRow } from './types';
-import {
-  assertWithinLegacyRowLimit,
-  validateProjectionRows,
-  validateRowsBasic,
-} from './validation';
+import { assertWithinLegacyRowLimit, validateProjectionRows } from './validation';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
 import { readV3Bundle } from './bundle-v3';
 import {
@@ -329,7 +325,6 @@ export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<Dec
   }
 
   const extraction = await extractRowsFromParts(parts, part1Metadata);
-  validateRowsBasic(extraction.projections);
   const data = await convertParquetToVisualizationDataOptimized(extraction);
   return {
     data,

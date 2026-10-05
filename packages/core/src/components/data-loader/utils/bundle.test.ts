@@ -270,32 +270,57 @@ describe('BundleSettings type', () => {
   });
 });
 
-describe('legacy row cap', () => {
-  it('refuses a v1/v2 bundle above it, pointing at protspace convert', async () => {
+type ColumnData = { name: string; data: unknown[] | Float32Array }[];
+
+/** A v1 bundle with one annotated protein and one projection, whose rows are `projectionRows`. */
+function legacyBundle(projectionRows: ColumnData): ArrayBuffer {
+  const write = (columnData: ColumnData) => parquetWriteBuffer({ columnData: columnData as never });
+  return concatenateBuffers(
+    [
+      write([
+        { name: 'identifier', data: ['P0'] },
+        { name: 'family', data: ['a'] },
+      ]),
+      write([
+        { name: 'projection_name', data: ['pca2'] },
+        { name: 'dimensions', data: [2] },
+        { name: 'info_json', data: ['{}'] },
+      ]),
+      write(projectionRows),
+    ],
+    BUNDLE_DELIMITER_BYTES,
+  );
+}
+
+describe('legacy bundle validation', () => {
+  it('checks the decoded projection rows', async () => {
+    // 10,000 rows take the conversion's large-data path, which does not check rows itself,
+    // so only the reader's own check refuses this one.
+    const rows = 10_000;
+    const ids = Array.from({ length: rows }, (_, i) => `P${i}`);
+    ids[0] = 'P0\u0001';
+    const coordinates = new Float32Array(rows);
+    const bundle = legacyBundle([
+      { name: 'projection_name', data: new Array<string>(rows).fill('pca2') },
+      { name: 'identifier', data: ids },
+      { name: 'x', data: coordinates },
+      { name: 'y', data: coordinates },
+    ]);
+
+    await expect(decodeParquetBundle(bundle)).rejects.toThrow(
+      "Control characters detected in column 'identifier'",
+    );
+  });
+
+  it('refuses a v1/v2 bundle above the row cap, pointing at protspace convert', async () => {
     const rows = DEFAULT_VALIDATION_LIMITS.maxRows + 1;
     const coordinates = Float32Array.from({ length: rows }, (_, i) => i);
-    const write = (columnData: { name: string; data: unknown[] | Float32Array }[]) =>
-      parquetWriteBuffer({ columnData: columnData as never });
-    const bundle = concatenateBuffers(
-      [
-        write([
-          { name: 'identifier', data: ['P0'] },
-          { name: 'family', data: ['a'] },
-        ]),
-        write([
-          { name: 'projection_name', data: ['pca2'] },
-          { name: 'dimensions', data: [2] },
-          { name: 'info_json', data: ['{}'] },
-        ]),
-        write([
-          { name: 'projection_name', data: new Array<string>(rows).fill('pca2') },
-          { name: 'identifier', data: Array.from({ length: rows }, (_, i) => `P${i}`) },
-          { name: 'x', data: coordinates },
-          { name: 'y', data: coordinates },
-        ]),
-      ],
-      BUNDLE_DELIMITER_BYTES,
-    );
+    const bundle = legacyBundle([
+      { name: 'projection_name', data: new Array<string>(rows).fill('pca2') },
+      { name: 'identifier', data: Array.from({ length: rows }, (_, i) => `P${i}`) },
+      { name: 'x', data: coordinates },
+      { name: 'y', data: coordinates },
+    ]);
 
     const error = await decodeParquetBundle(bundle).then(
       () => null,
