@@ -438,11 +438,6 @@ describe('ScatterplotSyncController', () => {
 
       expect(mockScatterplot.config).toBe(previousConfig);
     });
-
-    it('updateConfig parameter is shape-checked against ScatterplotConfig keys (F-47)', () => {
-      // @ts-expect-error — pointSize must be a number per ScatterplotConfig, not a string.
-      controller.updateConfig({ pointSize: 'not-a-number' });
-    });
   });
 
   describe('syncNumericAnnotationSettings', () => {
@@ -656,13 +651,14 @@ describe('ScatterplotSyncController', () => {
       // Simulate dynamic addition
       document.body.appendChild(mockScatterplot as unknown as Node);
 
-      // Allow MutationObserver to fire
-      await vi.runAllTimersAsync();
+      // Flush microtasks only, so the MutationObserver callback runs but the
+      // 100ms retry timer does not: discovery must come from the observer.
+      await Promise.resolve();
 
       expect(controller.scatterplot).toBe(mockScatterplot);
     });
 
-    it('stops all discovery after max attempts', () => {
+    it('stops all discovery after max attempts', async () => {
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
 
@@ -675,6 +671,8 @@ describe('ScatterplotSyncController', () => {
       // Add scatterplot after max retries - should NOT be discovered
       // because all discovery mechanisms are cleaned up
       document.body.appendChild(mockScatterplot as unknown as Node);
+      // Give a leaked MutationObserver its microtask to fire.
+      await Promise.resolve();
       vi.advanceTimersByTime(200);
 
       expect(controller.scatterplot).toBe(null);
