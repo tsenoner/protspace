@@ -52,6 +52,8 @@ export class PlotInteractionController {
   private _lassoVertices: Array<[number, number]> = [];
   private _lassoPath: SVGPathElement | null = null;
   private _isLassoing = false;
+  // Selection mode turned on before the host had scales: its tool is not set up yet.
+  private _selectionAwaitsScales = false;
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
@@ -68,6 +70,9 @@ export class PlotInteractionController {
   }
   get isBrushing() {
     return this._isBrushing;
+  }
+  get selectionAwaitsScales() {
+    return this._selectionAwaitsScales;
   }
 
   /**
@@ -218,7 +223,10 @@ export class PlotInteractionController {
   }
 
   updateSelectionMode(): void {
-    if (!this._svgSelection || !this._brushGroup || !this.host.hasScales()) return;
+    if (!this._svgSelection || !this._brushGroup) return;
+    const hasScales = this.host.hasScales();
+    this._selectionAwaitsScales = !hasScales && this.host.getSelectionMode();
+    if (!hasScales) return;
 
     // Clean up both selection tools
     this._brushGroup.selectAll('*').remove();

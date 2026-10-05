@@ -1055,7 +1055,9 @@ export class ProtspaceScatterplot extends LitElement {
   private _reconcileSelectionMode(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('selectionMode') ||
-      (changedProperties.has('selectionTool') && this.selectionMode)
+      (changedProperties.has('selectionTool') && this.selectionMode) ||
+      // Turned on before the data: its tool is set up in the first update with scales.
+      this._interaction?.selectionAwaitsScales
     ) {
       this._interaction?.updateSelectionMode();
     }

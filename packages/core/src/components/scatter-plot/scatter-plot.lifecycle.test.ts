@@ -93,6 +93,12 @@ function makeHost() {
   return createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
 }
 
+/** jsdom's MouseEvent refuses the test window as its view, which d3's brush listens on. */
+const mouse = (type: string, x: number, y: number) =>
+  Object.defineProperty(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }), 'view', {
+    value: window,
+  });
+
 afterEach(() => {
   webglConstructions.length = 0;
   vi.unstubAllGlobals();
@@ -251,12 +257,6 @@ describe('reconnect after disconnect', () => {
     return sp;
   }
 
-  /** jsdom's MouseEvent refuses the test window as its view, which d3's brush listens on. */
-  const mouse = (type: string, x: number, y: number) =>
-    Object.defineProperty(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }), 'view', {
-      value: window,
-    });
-
   it('selects with the brush again', async () => {
     const frames = fakeFrames();
     const sp = await reconnectedPlot(frames, { selectionMode: true });
@@ -357,6 +357,27 @@ describe('reconnect after disconnect', () => {
     expect(sp._transform).toEqual(d3.zoomIdentity);
     // d3's own copy, which the next wheel or drag starts from.
     expect(d3.zoomTransform(sp._svg!)).toEqual(d3.zoomIdentity);
+    sp.remove();
+  });
+});
+
+describe('selection mode turned on before the data', () => {
+  it('selects with the brush once the data arrives', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ selectionMode: true, selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    sp.data = makeFamilyData();
+    await sp.updateComplete;
+    frames.run();
+
+    // A drag over the whole plot, as d3's brush hears it.
+    sp._svg!.querySelector('.brush-container .overlay')?.dispatchEvent(mouse('mousedown', 1, 1));
+    window.dispatchEvent(mouse('mousemove', 799, 599));
+    window.dispatchEvent(mouse('mouseup', 799, 599));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
     sp.remove();
   });
 });
