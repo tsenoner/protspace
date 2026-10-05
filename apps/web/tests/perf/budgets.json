@@ -77,7 +77,7 @@
       "legendUpdate": 0,
       "legendRebuild": 0,
       "glSync": 0,
-      "bufferBytes": null,
+      "bufferBytes": 0,
       "glIsPerRender": 0
     },
     "camera": {
@@ -103,7 +103,7 @@
       "legendUpdate": 0,
       "legendRebuild": 0,
       "glSync": 0,
-      "bufferBytes": null,
+      "bufferBytes": 0,
       "glIsPerRender": 0
     },
     "search-select": {
@@ -116,7 +116,7 @@
       "legendUpdate": 0,
       "legendRebuild": 0,
       "glSync": 0,
-      "bufferBytes": null,
+      "bufferBytes": 0,
       "glIsPerRender": 0
     },
     "import": {
