@@ -85,6 +85,11 @@ async function setup(data: VisualizationData): Promise<ProtspaceLegend> {
 }
 
 describe('legend score strip synchronisation', () => {
+  beforeEach(() => {
+    // The dot-click test persists a hidden category under makeData()'s hash.
+    localStorage.clear();
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
   });

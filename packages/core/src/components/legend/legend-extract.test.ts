@@ -1,12 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { VisualizationData } from '@protspace/utils';
 import type { LegendItem, OtherItem } from './types';
 import { LEGEND_VALUES, NA_VALUE, LEGEND_EVENTS } from './config';
 
 // Import the component to register the custom element
 import './legend';
+import type { ProtspaceLegend } from './legend';
+import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
@@ -40,28 +43,6 @@ describe('legend extract methods', () => {
     el = createLegend();
   });
 
-  describe('_closeOtherDialog', () => {
-    it('sets _showOtherDialog to false', () => {
-      el._showOtherDialog = true;
-      (el as AnyLegend)._closeOtherDialog();
-      expect(el._showOtherDialog).toBe(false);
-    });
-
-    it('resets _mouseDownOutsideOther to false', () => {
-      el._mouseDownOutsideOther = true;
-      (el as AnyLegend)._closeOtherDialog();
-      expect(el._mouseDownOutsideOther).toBe(false);
-    });
-
-    it('handles already-closed state', () => {
-      el._showOtherDialog = false;
-      el._mouseDownOutsideOther = false;
-      (el as AnyLegend)._closeOtherDialog();
-      expect(el._showOtherDialog).toBe(false);
-      expect(el._mouseDownOutsideOther).toBe(false);
-    });
-  });
-
   describe('_handleExtractFromOther', () => {
     beforeEach(() => {
       el._showOtherDialog = true;
@@ -77,12 +58,6 @@ describe('legend extract methods', () => {
     it('increments maxVisibleValues by 1', () => {
       (el as AnyLegend)._handleExtractFromOther('cat1');
       expect(el.maxVisibleValues).toBe(6);
-    });
-
-    it('closes the other dialog', () => {
-      (el as AnyLegend)._handleExtractFromOther('cat1');
-      expect(el._showOtherDialog).toBe(false);
-      expect(el._mouseDownOutsideOther).toBe(false);
     });
 
     it('dispatches extract event with the value', () => {
@@ -143,12 +118,6 @@ describe('legend extract methods', () => {
       expect(el.maxVisibleValues).toBe(5);
     });
 
-    it('closes the other dialog', () => {
-      (el as AnyLegend)._handleExtractAllFromOther();
-      expect(el._showOtherDialog).toBe(false);
-      expect(el._mouseDownOutsideOther).toBe(false);
-    });
-
     it('dispatches extract event for each other item', () => {
       const events: CustomEvent[] = [];
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
@@ -163,8 +132,9 @@ describe('legend extract methods', () => {
     });
 
     it('dispatches events before setting maxVisibleValues', () => {
-      // Events must fire while _otherItems still has items.
-      // If maxVisibleValues were set first, a reactive update could clear _otherItems.
+      // Pins the current order: extract listeners see the cap from before the extract.
+      // It does not protect _otherItems: Lit re-renders asynchronously, so setting
+      // maxVisibleValues first could not clear them before the loop ran either.
       const eventValues: string[] = [];
       let maxVisibleAtEventTime: number | undefined;
 
@@ -241,5 +211,82 @@ describe('legend extract methods', () => {
       // 1 non-Other + 0 other items
       expect(el.maxVisibleValues).toBe(1);
     });
+  });
+});
+
+// Four categories by count: a (4), b (3), c (2), d (1).
+function makeExtractData(): VisualizationData {
+  return {
+    protein_ids: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'],
+    projections: [{ name: 'UMAP 2', dimension: 2, data: new Float32Array(20) }],
+    annotations: {
+      family: {
+        kind: 'categorical',
+        values: ['a', 'b', 'c', 'd'],
+        colors: ['#ff0000', '#00ff00', '#0000ff', '#ffff00'],
+        shapes: ['circle', 'circle', 'circle', 'circle'],
+      },
+    },
+    annotation_data: {
+      family: new Int32Array([0, 0, 0, 0, 1, 1, 1, 2, 2, 3]),
+    },
+  };
+}
+
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+async function settle(legend: ProtspaceLegend): Promise<void> {
+  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+}
+
+describe('extracting from Other in a mounted legend', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders the extracted item as a row, not the largest Other item', async () => {
+    const { legend } = await mountLegendWithScatterplot(makeExtractData(), 'family');
+    legend.maxVisibleValues = 2;
+    await settle(legend);
+
+    const root = legend.shadowRoot!;
+    const rowValues = () =>
+      Array.from(root.querySelectorAll<HTMLElement>('.legend-item')).map(
+        (row) => row.dataset.value,
+      );
+    expect(rowValues()).toEqual(['a', 'b', LEGEND_VALUES.OTHER]);
+
+    root.querySelector<HTMLButtonElement>('.view-button')!.click();
+    await settle(legend);
+    const otherRow = Array.from(root.querySelectorAll('.other-item')).find(
+      (row) => row.querySelector('.other-item-name')?.textContent === 'd',
+    )!;
+    otherRow.querySelector<HTMLButtonElement>('.extract-button')!.click();
+    await settle(legend);
+
+    // The cap grows by one and the extract decides who fills it: d, not the larger c.
+    expect(rowValues()).toEqual(['a', 'b', 'd', LEGEND_VALUES.OTHER]);
+    // The Other dialog closed.
+    expect(root.querySelector('.other-item')).toBeNull();
+  });
+
+  it('renders every Other item as a row after Extract All and closes the dialog', async () => {
+    const { legend } = await mountLegendWithScatterplot(makeExtractData(), 'family');
+    legend.maxVisibleValues = 2;
+    await settle(legend);
+
+    const root = legend.shadowRoot!;
+    root.querySelector<HTMLButtonElement>('.view-button')!.click();
+    await settle(legend);
+    expect(root.querySelectorAll('.other-item')).toHaveLength(2);
+    root.querySelector<HTMLButtonElement>('.extract-all-button')!.click();
+    await settle(legend);
+
+    const rowValues = Array.from(root.querySelectorAll<HTMLElement>('.legend-item')).map(
+      (row) => row.dataset.value,
+    );
+    expect(rowValues).toEqual(['a', 'b', 'c', 'd']);
+    // The dialog itself closed: with Other emptied, no .other-item rows would render even if
+    // it stayed open.
+    expect(root.querySelector('#legend-other-dialog')).toBeNull();
   });
 });

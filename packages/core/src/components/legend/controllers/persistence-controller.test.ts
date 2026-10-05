@@ -50,7 +50,9 @@ describe('PersistenceController', () => {
   let mockCallbacks: PersistenceCallbacks;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset, not clear: clearAllMocks keeps mockReturnValue from earlier tests, so a
+    // leaked hasStorageItem -> true silently runs the legacy shape-size migration.
+    vi.resetAllMocks();
 
     mockHost = {
       addController: vi.fn(),
@@ -345,10 +347,6 @@ describe('PersistenceController', () => {
   // browsing or blocked site data) is pinned in `storage-service.test.ts`, where it lives —
   // this controller must not reach past `hasStorageItem` and re-implement it.
   describe('hasPersistedSettings', () => {
-    beforeEach(() => {
-      vi.mocked(hasStorageItem).mockReset();
-    });
-
     it('returns false without a storage key, without consulting storage at all', () => {
       expect(controller.hasPersistedSettings()).toBe(false);
       expect(hasStorageItem).not.toHaveBeenCalled();

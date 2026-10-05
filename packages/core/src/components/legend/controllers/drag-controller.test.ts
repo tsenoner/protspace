@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ReactiveControllerHost } from 'lit';
+import type Sortable from 'sortablejs';
 import { DragController, type DragCallbacks } from './drag-controller';
 import type { LegendItem } from '../types';
 
@@ -34,6 +35,7 @@ describe('DragController', () => {
       onReorder: vi.fn(),
       onMergeToOther: vi.fn(),
       onSortModeChange: vi.fn(),
+      onDropComplete: vi.fn(),
     };
 
     mockContainer = document.createElement('div');
@@ -48,6 +50,13 @@ describe('DragController', () => {
     });
 
     controller = new DragController(mockHost, mockCallbacks);
+  });
+
+  afterEach(() => {
+    // restoreDom() schedules a requestAnimationFrame; destroy first so no callback
+    // touches a Sortable instance after teardown.
+    controller.destroy();
+    vi.restoreAllMocks();
   });
 
   describe('initialization', () => {
@@ -103,16 +112,145 @@ describe('DragController', () => {
     it('should return false before initialization', () => {
       expect(controller.isInitialized()).toBe(false);
     });
+  });
 
-    it('should return true after initialization', () => {
+  describe('drag handlers', () => {
+    // The handlers are private; Sortable is the only caller, so reach them through
+    // the options the controller handed to it.
+    const options = () => controller.getInstance()!.options;
+    const row = (value: string) =>
+      mockContainer.querySelector<HTMLElement>(`[data-value="${value}"]`)!;
+    const rowOrder = () =>
+      Array.from(mockContainer.children).map((el) => el.getAttribute('data-value'));
+    const stateCallbacks = () => [
+      mockCallbacks.setLegendItems,
+      mockCallbacks.onReorder,
+      mockCallbacks.onMergeToOther,
+      mockCallbacks.onSortModeChange,
+      mockCallbacks.onDropComplete,
+    ];
+
+    /** Run a drag the way Sortable does: start, move the row in the DOM, end. */
+    function drag(value: string, oldIndex: number | undefined, newIndex: number | undefined) {
+      const item = row(value);
+      options().onStart!({ from: mockContainer, item } as Sortable.SortableEvent);
+      if (oldIndex !== undefined && newIndex !== undefined) {
+        const others = Array.from(mockContainer.children).filter((el) => el !== item);
+        mockContainer.insertBefore(item, others[newIndex] ?? null);
+      }
+      options().onEnd!({ from: mockContainer, item, oldIndex, newIndex } as Sortable.SortableEvent);
+    }
+
+    beforeEach(() => {
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+      row('Other').classList.add('legend-item-other');
       controller.initialize(mockContainer);
-      expect(controller.isInitialized()).toBe(true);
     });
 
-    it('should return false after destroy', () => {
-      controller.initialize(mockContainer);
-      controller.destroy();
-      expect(controller.isInitialized()).toBe(false);
+    it('reorders: switches to manual sort and reassigns z-orders in the new order', () => {
+      drag('cat1', 0, 1);
+
+      expect(mockCallbacks.onSortModeChange).toHaveBeenCalledWith('manual');
+      const items = vi.mocked(mockCallbacks.setLegendItems).mock.calls[0][0];
+      expect(items.map((i) => [i.value, i.zOrder])).toEqual([
+        ['cat2', 0],
+        ['cat1', 1],
+        ['cat3', 2],
+        ['Other', 3],
+      ]);
+      expect(mockCallbacks.onReorder).toHaveBeenCalledOnce();
+      expect(mockCallbacks.onDropComplete).toHaveBeenCalledWith('cat1');
+      expect(mockCallbacks.onMergeToOther).not.toHaveBeenCalled();
+      // The DOM goes back to its pre-drag order so Lit re-renders it from state.
+      expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
+      expect(mockHost.requestUpdate).toHaveBeenCalled();
+    });
+
+    it('highlights Other and refuses the move while hovering it', () => {
+      const result = options().onMove!(
+        { related: row('Other') } as Sortable.MoveEvent,
+        new MouseEvent('mousemove'),
+      );
+
+      expect(result).toBe(false);
+      expect(row('Other').classList.contains('legend-item-merge-target')).toBe(true);
+
+      options().onMove!(
+        { related: row('cat2') } as Sortable.MoveEvent,
+        new MouseEvent('mousemove'),
+      );
+      expect(row('Other').classList.contains('legend-item-merge-target')).toBe(false);
+    });
+
+    it('merges into Other when dropped while Other is highlighted', () => {
+      options().onMove!(
+        { related: row('Other') } as Sortable.MoveEvent,
+        new MouseEvent('mousemove'),
+      );
+      // Sortable reports no index change: onMove returned false.
+      drag('cat2', 1, 1);
+
+      expect(mockCallbacks.onMergeToOther).toHaveBeenCalledWith('cat2');
+      expect(row('Other').classList.contains('legend-item-merge-target')).toBe(false);
+      expect(mockCallbacks.setLegendItems).not.toHaveBeenCalled();
+      expect(mockCallbacks.onReorder).not.toHaveBeenCalled();
+    });
+
+    it("merges into Other when the drop lands on Other's index", () => {
+      drag('cat1', 0, 3);
+
+      expect(mockCallbacks.onMergeToOther).toHaveBeenCalledWith('cat1');
+      expect(mockCallbacks.setLegendItems).not.toHaveBeenCalled();
+      expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
+    });
+
+    it('refuses a drop past Other', () => {
+      // With Other last, a drop on its index is the merge above; the guard only
+      // sees an index past the end of the item list.
+      drag('cat1', 0, 4);
+
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
+      expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
+    });
+
+    it.each([
+      ['the same index', 'cat2', 1, 1],
+      ['an undefined index', 'cat2', 1, undefined],
+      // Sortable's indices disagree with the z-order, but the item is already in place.
+      ['an unchanged order', 'cat1', 1, 0],
+    ])('does nothing for %s', (_label, value, oldIndex, newIndex) => {
+      drag(value, oldIndex, newIndex);
+
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
+      expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
+    });
+
+    it('does nothing for a row without data-value', () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      row('cat2').removeAttribute('data-value');
+
+      options().onEnd!({
+        from: mockContainer,
+        item: mockContainer.children[1],
+        oldIndex: 1,
+        newIndex: 0,
+      } as Sortable.SortableEvent);
+
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a row the legend does not know', () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      row('cat2').setAttribute('data-value', 'stale');
+
+      options().onEnd!({
+        from: mockContainer,
+        item: mockContainer.children[1],
+        oldIndex: 1,
+        newIndex: 0,
+      } as Sortable.SortableEvent);
+
+      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
     });
   });
 });
