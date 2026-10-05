@@ -45,6 +45,8 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
   const constructions: FakeWebGLRenderer[] = [];
   class FakeWebGLRenderer {
     destroyed = false;
+    renders = 0;
+    resizes = 0;
     constructor(..._args: unknown[]) {
       constructions.push(this);
     }
@@ -54,10 +56,15 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
     invalidateStyleCache() {}
     invalidateCategoryStyles() {}
     invalidateDepthOrder() {}
-    render() {}
+    render() {
+      this.renders++;
+    }
     clear() {}
-    resize() {}
+    resize() {
+      this.resizes++;
+    }
     releaseDataReferences() {}
+    cancelMorph() {}
     destroy() {
       this.destroyed = true;
     }
@@ -181,5 +188,35 @@ describe('F-21: _renderWebGL is a no-op when the renderer is null', () => {
     sp._webglRenderer = null;
 
     expect(() => sp._renderWebGL('plot')).not.toThrow();
+  });
+});
+
+describe('reconnect after disconnect', () => {
+  it('draws with a fresh renderer and never resizes or draws the destroyed one', async () => {
+    const frames = fakeFrames();
+    const sp = makeHost();
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const dead = sp._webglRenderer as unknown as InstanceType<typeof FakeWebGLRenderer>;
+
+    sp.remove();
+    expect(dead.destroyed).toBe(true);
+    const { renders, resizes } = dead;
+
+    document.body.appendChild(sp);
+    // What the ResizeObserver runs once the plot is back in the page.
+    sp._updateSizeAndRender();
+
+    expect(dead.resizes).toBe(resizes);
+    expect(dead.renders).toBe(renders);
+    const fresh = sp._webglRenderer as unknown as InstanceType<typeof FakeWebGLRenderer>;
+    expect(fresh).not.toBe(dead);
+    expect(fresh.destroyed).toBe(false);
+    expect(fresh.resizes).toBe(1);
+    expect(fresh.renders).toBe(1);
+
+    await sp.updateComplete;
+    sp.remove();
   });
 });

@@ -746,7 +746,10 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.clearBadges();
     this._connectorOverlay.clear();
     this._cancelProjectionMorph();
+    // A reconnect builds a fresh renderer (`_updateSizeAndRender`): this one has
+    // freed its GL resources and no longer hears a context loss.
     this._webglRenderer?.destroy();
+    this._webglRenderer = null;
     // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
     // down the d3 brush + lasso.
     this._interaction?.teardown();
