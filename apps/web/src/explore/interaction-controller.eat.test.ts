@@ -52,7 +52,7 @@ function setup(data = makeData()) {
   };
   const controller = createInteractionController({
     plotElement: plotElement as never,
-    legendElement: { autoSync: true } as never,
+    legendElement: { autoSync: true, forceSync: vi.fn() } as never,
     structureViewer: { loadProtein: vi.fn() } as never,
   });
   return { controller, currentView, plotElement };

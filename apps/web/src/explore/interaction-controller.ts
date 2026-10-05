@@ -65,7 +65,7 @@ export function createInteractionController({
   const updateLegend = () => {
     // Auto-sync is off only while a dataset loads (`data-renderer.ts`). The legend's own
     // sync controller follows the plot meanwhile, so there is nothing to push.
-    if (!legendElement.autoSync || !('forceSync' in legendElement)) {
+    if (!legendElement.autoSync) {
       return;
     }
 
