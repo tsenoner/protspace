@@ -283,9 +283,8 @@ async function dropBundleOnScatterplot(
 // Discover the default demo's annotations/projections once per worker. Names can
 // contain spaces/em-dashes and change with demo swaps, so tests derive
 // non-default targets at runtime instead of hardcoding them.
-test.beforeAll(async ({ browser }) => {
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
-  const context = await browser.newContext({ baseURL });
+test.beforeAll(async ({ browser }, workerInfo) => {
+  const context = await browser.newContext({ baseURL: workerInfo.project.use.baseURL });
   const page = await context.newPage();
   try {
     await page.addInitScript(() => {
@@ -329,7 +328,7 @@ test.describe('URL-backed explore view state', () => {
 
     const currentView = await getCurrentView(page);
 
-    await expect(page).toHaveURL('http://localhost:8080/explore');
+    await expect(page).toHaveURL('/explore');
     expect(currentView.annotation).toBeTruthy();
     expect(currentView.projection).toBeTruthy();
     expect(currentView.annotations).toContain(currentView.annotation);
@@ -485,7 +484,7 @@ test.describe('URL-backed explore view state', () => {
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
     await page.goBack();
-    await expect(page).toHaveURL('http://localhost:8080/explore?seed=baseline');
+    await expect(page).toHaveURL('/explore?seed=baseline');
   });
 
   test(
