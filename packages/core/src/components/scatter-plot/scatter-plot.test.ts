@@ -155,6 +155,24 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     expect(events[0].detail.isMultiple).toBe(true);
   });
 
+  it('flags the lassoed ids unique only while no protein id repeats', () => {
+    const unique = makeSelectionScatter(null);
+    const repeated = makeSelectionScatter(null);
+    repeated.data.protein_ids[2] = 'p0';
+    const events: CustomEvent[] = [];
+    for (const sp of [unique, repeated]) {
+      sp._pointGridIndex.queryByPolygon = () => [0, 1, 2];
+      sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
+    }
+
+    stubSyncRaf();
+    runLassoSelection(unique);
+    runLassoSelection(repeated);
+
+    expect(events.map((e) => e.detail.idsUnique)).toEqual([true, false]);
+    expect(events[1].detail.proteinIds).toEqual(['p0', 'p1', 'p0']);
+  });
+
   it('brush selection excludes non-interactive (hidden) points, in slot order', () => {
     const sp = makeSelectionScatter(null);
     sp.hiddenAnnotationValues = ['B'];

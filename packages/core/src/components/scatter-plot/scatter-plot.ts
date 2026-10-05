@@ -1804,6 +1804,8 @@ export class ProtspaceScatterplot extends LitElement {
       // dispatch byte-identically (INV-03/INV-05).
       this._commitSelectionRafId = requestAnimationFrame(() => {
         this._commitSelectionRafId = null;
+        // The ids come from distinct slots, so none repeats if no protein id does.
+        const idsUnique = this._getVisibilityModel().idsUnique();
         this.selectedProteinIds = [...selectedIds];
 
         this.dispatchEvent(
@@ -1811,6 +1813,7 @@ export class ProtspaceScatterplot extends LitElement {
             detail: {
               proteinIds: selectedIds,
               isMultiple: true,
+              idsUnique,
             },
             bubbles: true,
             composed: true,

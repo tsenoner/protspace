@@ -97,6 +97,11 @@ export interface VisibilityModel {
    */
   hidesValues(values: readonly string[]): boolean;
   /**
+   * Whether every protein id occurs once, read off the protein id index (built
+   * now if not yet; the first mark builds it anyway). False without data.
+   */
+  idsUnique(): boolean;
+  /**
    * For each of the first `count` slots of plot data with these `proteinIds` and
    * `originalIndices`, 1 when its protein is selected or highlighted, else 0.
    */
@@ -509,6 +514,7 @@ export function computeVisibilityModel(
     baseOpacityAt,
     isHiddenAt,
     hidesValues,
+    idsUnique: () => idIndex !== null && idTable(idIndex) !== null,
     markedSlots,
     marks,
     get unmarked() {

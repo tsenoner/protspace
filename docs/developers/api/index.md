@@ -124,7 +124,7 @@ All scatterplot events bubble.
 | ------------------------ | ------------------------------------------------ | ----------------------------------- |
 | `protein-click`          | `{ proteinId, point, view, modifierKeys }`       | A point was clicked                 |
 | `protein-hover`          | `{ proteinId, point, view }`                     | The pointer entered a point         |
-| `brush-selection`        | `{ proteinIds, isMultiple }`                     | Rectangle/lasso selection committed |
+| `brush-selection`        | `{ proteinIds, isMultiple, idsUnique }`          | Rectangle/lasso selection committed |
 | `data-change`            | `{ data }`                                       | The displayed dataset changed       |
 | `data-isolation`         | `{ isolationHistory, isolationMode, dataSize }`  | Isolation applied                   |
 | `data-isolation-reset`   | `{ isolationHistory, isolationMode, dataSize? }` | Isolation cleared                   |
