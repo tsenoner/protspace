@@ -4,13 +4,17 @@ import {
   DuplicateBadgesCanvasRenderer,
   BADGE_RADIUS,
   BADGE_OFFSET,
+  BADGE_EXPANDED_FILL,
+  BADGE_DEFAULT_FILL,
 } from './duplicate-badges-canvas-renderer';
 import type { RenderDuplicateStack } from './duplicate-stack-types';
 
 /**
  * Fake canvas recording both method calls and property sets (the sibling
  * fakeCanvas in duplicate-badges-canvas-renderer.test.ts records calls only;
- * renderExport assertions also need font / lineWidth values).
+ * renderExport assertions also need font / lineWidth values). `fill()` is
+ * recorded with the fillStyle current at the call, since `props.fillStyle`
+ * only keeps the last value (the label's `#ffffff`).
  */
 function fakeCanvas(width: number, height: number) {
   const calls: Array<[string, unknown[]]> = [];
@@ -19,7 +23,7 @@ function fakeCanvas(width: number, height: number) {
     get: (_t, p) =>
       typeof p === 'string' &&
       ['setTransform', 'clearRect', 'beginPath', 'arc', 'fill', 'stroke', 'fillText'].includes(p)
-        ? (...a: unknown[]) => calls.push([p, a])
+        ? (...a: unknown[]) => calls.push([p, p === 'fill' ? [props.fillStyle] : a])
         : undefined,
     set: (_t, p, v) => {
       if (typeof p === 'string') props[p] = v;
@@ -84,6 +88,10 @@ describe('DuplicateBadgesCanvasRenderer.renderExport (#302)', () => {
     const { canvas, calls } = fakeCanvas(800, 600);
     renderExport(canvas, [stk('a', 10, 10, 3), stk('b', 20, 20, 5)], 1, 'b');
     expect(calls.filter(([m]) => m === 'arc')).toHaveLength(2);
+    expect(calls.filter(([m]) => m === 'fill').map(([, a]) => a[0])).toEqual([
+      BADGE_DEFAULT_FILL,
+      BADGE_EXPANDED_FILL,
+    ]);
     expect(calls.filter(([m]) => m === 'fillText').map(([, a]) => a[0])).toEqual(['3', '5']);
   });
 
