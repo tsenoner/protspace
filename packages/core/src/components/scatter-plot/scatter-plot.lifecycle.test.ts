@@ -320,4 +320,23 @@ describe('reconnect after disconnect', () => {
     expect(sp._tooltipData).toBeNull();
     sp.remove();
   });
+
+  it('runs the numeric recompute the disconnect dropped', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const changes: Event[] = [];
+    sp.addEventListener('data-change', (e) => changes.push(e));
+
+    // A numeric settings change, then a disconnect before its frame.
+    sp._scheduleNumericAnnotationRefresh();
+    sp.remove();
+    document.body.appendChild(sp);
+    frames.run();
+
+    expect(changes).toHaveLength(1);
+    sp.remove();
+  });
 });

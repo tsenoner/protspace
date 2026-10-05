@@ -688,6 +688,7 @@ export class ProtspaceScatterplot extends LitElement {
     // A reconnect: firstUpdated runs once, so set up again what disconnectedCallback tore down.
     if (this.hasUpdated) {
       this._interaction?.updateSelectionMode();
+      this._numericRecompute.resume();
       if (this.data && this._getVisibilityModel().idsUniqueIfIndexed() === null) {
         this._scheduleIdIndex();
       }

@@ -42,6 +42,8 @@ export class NumericRecomputeRunner {
   private _jobId = 0;
   private _rafId: number | null = null;
   private _annotation: string | null = null;
+  /** Whether the last cancel() dropped a scheduled job, which resume() schedules again. */
+  private _dropped = false;
 
   constructor(private readonly _host: NumericRecomputeHost) {}
 
@@ -75,6 +77,7 @@ export class NumericRecomputeRunner {
   }
 
   cancel(): void {
+    this._dropped = this._rafId !== null;
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId);
       this._rafId = null;
@@ -82,5 +85,10 @@ export class NumericRecomputeRunner {
     this._jobId++; // invalidate any in-flight job
     this._annotation = null;
     this._host.setRunning(false);
+  }
+
+  resume(): void {
+    if (this._dropped) this.schedule();
+    this._dropped = false;
   }
 }
