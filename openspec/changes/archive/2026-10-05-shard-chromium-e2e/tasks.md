@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 The two shards' `--list` outputs are disjoint, and together they equal the unsharded `E2E_BROWSERS=chromium` list.
-- [ ] 2.2 Both shards pass in CI, with wall times recorded in the PR.
+- [x] 2.2 Both shards pass in CI, with wall times recorded in the PR: runs 37334779820 (workflow 322 s; shards 278 s and 316 s) and 37334798171 (277 s; shards 272 s and 204 s).
