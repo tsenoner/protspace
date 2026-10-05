@@ -74,14 +74,7 @@ import {
   type SlotPalette,
 } from './density-pass';
 import { densityFrameAlpha } from './density-crossfade';
-import {
-  MAX_FRAME_STEP_MS,
-  drawnPositions,
-  frameTime,
-  morphWeight,
-  repaintOrder,
-  samePaintOrder,
-} from './position-morph';
+import { PositionGlide } from './position-glide';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
@@ -302,12 +295,8 @@ export class WebGLRenderer {
   private selectionActive = false;
   private selectedStartIndex = 0;
 
-  // Projection glide (see position-morph.ts). `morph.from` holds the positions
-  // the points glide from, staged like `dataPositions`, and only while they move.
-  private morphRequested = false;
-  private morph: { from: Float32Array; elapsed: number; last: number } | null = null;
-  /** Weight of `morph.from` in the frame being drawn; 0 outside a glide. */
-  private morphWeightNow = 0;
+  // Projection glide (see position-glide.ts).
+  private readonly glide = new PositionGlide();
 
   // Caching
   private lastDataSignature: string | null = null;
@@ -446,18 +435,17 @@ export class WebGLRenderer {
    * no positions or the point count changes.
    */
   morphNextPositionChange() {
-    this.morphRequested = true;
+    this.glide.request();
   }
 
   /** Drop a glide request, and end a glide, so the next frame draws the staged positions. */
   cancelMorph() {
-    this.morphRequested = false;
-    if (this.morph) this.endMorph();
+    if (this.glide.cancel()) this.glideEnded();
   }
 
   /** True while the points glide; the host keeps rendering frames until it is false. */
   get isMorphing(): boolean {
-    return this.morph !== null;
+    return this.glide.active;
   }
 
   /**
@@ -659,9 +647,7 @@ export class WebGLRenderer {
 
   render(pd: PlotData) {
     if (perfCounters) perfCounters.render++;
-    // A glide request applies to this render only.
-    const morphRequested = this.morphRequested;
-    this.morphRequested = false;
+    const morphRequested = this.glide.takeRequest();
     // Store PlotData for potential off-screen export rendering
     this.lastRenderedData = pd;
 
@@ -741,13 +727,13 @@ export class WebGLRenderer {
     if (marks !== this.marks || this.marksStale) this.applyMarks(marks);
     // Asked after staging, which may have laid the positions out afresh.
     this.positionRescale = this.rescaleStagedTo(scales) ?? IDENTITY_RESCALE;
-    this.advanceMorph();
+    if (this.glide.advance()) this.glideEnded();
 
     // Render with gamma-correct pipeline
     this.renderWithGammaCorrection(transform);
     if (perfCounters) {
       perfCounters.drawn = this.drawnPointCount;
-      if (this.morphWeightNow > 0) perfCounters.morphFrame++;
+      if (this.glide.weight > 0) perfCounters.morphFrame++;
     }
   }
 
@@ -879,7 +865,7 @@ export class WebGLRenderer {
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
         rescale: this.positionRescale,
-        morph: this.morphWeightNow,
+        morph: this.glide.weight,
       },
       alpha,
       palette: this.contourPalette,
@@ -1192,8 +1178,7 @@ export class WebGLRenderer {
     this.stagedScales = null;
     this.positionRescale = IDENTITY_RESCALE;
     // Its buffer went with the context, and the restore draws the staged positions.
-    this.morph = null;
-    this.morphWeightNow = 0;
+    this.glide.end();
     this.stagedRecords = null;
     this.recordStyleRows = 0;
     this.marks = null;
@@ -1346,7 +1331,7 @@ export class WebGLRenderer {
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
         rescale: this.positionRescale,
-        morph: this.morphWeightNow,
+        morph: this.glide.weight,
         pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
@@ -1526,20 +1511,15 @@ export class WebGLRenderer {
       // new one starts where the points are drawn, and one in flight keeps its
       // start and its clock. Read from the staged copies, never from `pd`, whose
       // coordinates a projection switch may already have overwritten.
-      const before =
-        (morphRequested || this.morph) &&
-        this.buffersInitialized &&
-        count === this.currentPointCount
-          ? {
-              drawn: drawnPositions(
-                this.stageArrays.dataPositions,
-                this.morph?.from ?? null,
-                morphRequested ? this.morphWeightNow : 1,
-                this.positionRescale,
-                count,
-              ),
-              order: this.sortOrder.slice(0, count),
-            }
+      const glideStart =
+        this.buffersInitialized && count === this.currentPointCount
+          ? this.glide.capture(
+              morphRequested,
+              this.stageArrays.dataPositions,
+              this.positionRescale,
+              this.sortOrder,
+              count,
+            )
           : null;
       // Hidden points (opacity=0) are staged too, so sort order is preserved across
       // visibility toggles, enabling the fast color-only update path instead of a
@@ -1559,15 +1539,7 @@ export class WebGLRenderer {
         (_slot, opacity) => this.countStagedSlot(opacity),
       );
 
-      if (before || this.morph) {
-        if (before && !samePaintOrder(before.order, this.sortOrder, count)) {
-          repaintOrder(before.drawn, before.order, this.sortOrder, count);
-        }
-        const clock =
-          !morphRequested && this.morph ? this.morph : { elapsed: 0, last: frameTime() };
-        this.morph = before && { from: before.drawn, elapsed: clock.elapsed, last: clock.last };
-        morphChanged = true;
-      }
+      morphChanged = this.glide.afterResort(glideStart, morphRequested, this.sortOrder, count);
 
       idx = count;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
@@ -1679,9 +1651,10 @@ export class WebGLRenderer {
     if (!this.pointAttribLocations) return;
     const location = this.pointAttribLocations.prevPosition;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.prevPositionBuffer);
-    if (this.morph) {
-      this.uploadedBytes += this.morph.from.byteLength;
-      gl.bufferData(gl.ARRAY_BUFFER, this.morph.from, gl.STATIC_DRAW);
+    const from = this.glide.from;
+    if (from) {
+      this.uploadedBytes += from.byteLength;
+      gl.bufferData(gl.ARRAY_BUFFER, from, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(location);
     } else {
       gl.disableVertexAttribArray(location);
@@ -1689,21 +1662,8 @@ export class WebGLRenderer {
     }
   }
 
-  /** Set this frame's glide weight, and end the glide once it reaches 0. */
-  private advanceMorph() {
-    const morph = this.morph;
-    if (morph) {
-      const now = frameTime();
-      morph.elapsed += Math.min(now - morph.last, MAX_FRAME_STEP_MS);
-      morph.last = now;
-    }
-    this.morphWeightNow = morph ? morphWeight(morph.elapsed) : 0;
-    if (morph && this.morphWeightNow === 0) this.endMorph();
-  }
-
-  private endMorph() {
-    this.morph = null;
-    this.morphWeightNow = 0;
+  /** Switch the glide's attribute off once the glide ended. */
+  private glideEnded() {
     const gl = this.gl;
     if (!gl) return;
     gl.bindVertexArray(this.resources.pointVao);
