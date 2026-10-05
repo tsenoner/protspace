@@ -155,24 +155,12 @@ type VisibilityModelMemoKey = {
   focusedValues: string[] | null;
 };
 
-/** Inputs of the interactable-protein memo, compared field by field like the one above. */
-type InteractableKey = {
-  originalIndices: Int32Array | null;
-  plotLength: number;
-  data: VisualizationData | null;
-  selectedAnnotation: string;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[] | null;
-  highlightedProteinIds: string[] | null;
-  focusedValues: string[] | null;
-  baseOpacity: number;
-  selectedOpacity: number;
-  fadedOpacity: number;
-  eatOverlayEnabled: boolean;
-};
-
 /** The interactive slots of the plot data, see `_interactableSlots`. */
 interface InteractableSlots {
+  /** What they were marked for: the plot data's slots and the model's `interactivityKey`. */
+  readonly originalIndices: Int32Array | null;
+  readonly length: number;
+  readonly interactivityKey: object;
   readonly visible: Uint8Array;
   readonly count: number;
   /** The protein ids of the slots `visible` marks, in slot order; gathered on the first call. */
@@ -190,24 +178,6 @@ function whenIdle(task: () => void): () => void {
   }
   const handle = setTimeout(task, 500);
   return () => clearTimeout(handle);
-}
-
-function sameInteractableKey(a: InteractableKey | null, b: InteractableKey): boolean {
-  return (
-    !!a &&
-    a.originalIndices === b.originalIndices &&
-    a.plotLength === b.plotLength &&
-    a.data === b.data &&
-    a.selectedAnnotation === b.selectedAnnotation &&
-    a.hiddenAnnotationValues === b.hiddenAnnotationValues &&
-    a.selectedProteinIds === b.selectedProteinIds &&
-    a.highlightedProteinIds === b.highlightedProteinIds &&
-    a.focusedValues === b.focusedValues &&
-    a.baseOpacity === b.baseOpacity &&
-    a.selectedOpacity === b.selectedOpacity &&
-    a.fadedOpacity === b.fadedOpacity &&
-    a.eatOverlayEnabled === b.eatOverlayEnabled
-  );
 }
 
 /** Whether two index maps (null: every point, in order) put the same point in each slot. */
@@ -338,16 +308,14 @@ export class ProtspaceScatterplot extends LitElement {
   private _visibilityModelKey: VisibilityModelMemoKey | null = null;
   // Which slots are INTERACTIVE (opacityOf > 0), how many, and their ids: the
   // point-count label, provenance and the point grid's marks share this one
-  // pass (see `_interactableSlots`). Keyed on the visibility inputs that affect
-  // interactivity: the hidden-mask inputs (data, selectedAnnotation,
-  // hiddenAnnotationValues) AND selection/highlight + the three opacities,
-  // because a configured fadedOpacity of 0 makes non-selected points
-  // non-interactive, so a selection change CAN change the count. Plot-data is
-  // keyed by (originalIndices ref + length), NOT the container ref: a projection
-  // switch clones _plotData (new container, same originalIndices) and must
-  // reuse the cache since interactivity is independent of x/y coordinates.
+  // pass (see `_interactableSlots`). Keyed on the visibility model's
+  // `interactivityKey`, which a selection changes only while some opacity tier
+  // is 0 (a configured fadedOpacity of 0 makes non-selected points
+  // non-interactive). Plot-data is keyed by (originalIndices ref + length), NOT
+  // the container ref: a projection switch clones _plotData (new container, same
+  // originalIndices) and must reuse the cache since interactivity is independent
+  // of x/y coordinates.
   private _interactableSlotsCache: InteractableSlots | null = null;
-  private _interactableSlotsKey: InteractableKey | null = null;
   private _pointGridIndexRebuildRafId: number | null = null;
   private _pointGridReindexPending = false;
   private _visibleSlotsStale = false;
@@ -1162,10 +1130,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateStyleCache();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
-      if (
-        this._slotVisible &&
-        !sameInteractableKey(this._interactableSlotsKey, this._interactableKey())
-      ) {
+      if (this._slotVisible && !this._currentInteractableSlots()) {
         this._scheduleVisibleSlotsRefresh();
       }
       this._requestRender();
@@ -2026,29 +1991,20 @@ export class ProtspaceScatterplot extends LitElement {
     return this._interactableSlots().ids();
   }
 
-  /** What the interactable slots depend on; see `_getInteractableProteinIds`. */
-  private _interactableKey(): InteractableKey {
+  /**
+   * `_interactableSlotsCache` if it marks the slots of `_plotData` under the
+   * current visibility. Under the default all-positive tiers, connector-owned
+   * highlights keep it.
+   */
+  private _currentInteractableSlots(): InteractableSlots | null {
+    const slots = this._interactableSlotsCache;
     const pd = this._plotData;
-    const baseOpacity = this._mergedConfig.baseOpacity;
-    const selectedOpacity = this._mergedConfig.selectedOpacity;
-    const fadedOpacity = this._mergedConfig.fadedOpacity;
-    // Selection/highlight can change membership whenever any opacity tier is non-interactive.
-    // Under the default all-positive tiers, connector-owned highlights reuse this cache.
-    const allOpacityTiersInteractive = baseOpacity > 0 && selectedOpacity > 0 && fadedOpacity > 0;
-    return {
-      originalIndices: pd.originalIndices,
-      plotLength: pd.length,
-      data: this._getMaterializedData(),
-      selectedAnnotation: this.selectedAnnotation,
-      hiddenAnnotationValues: this.hiddenAnnotationValues,
-      selectedProteinIds: allOpacityTiersInteractive ? null : this.selectedProteinIds,
-      highlightedProteinIds: allOpacityTiersInteractive ? null : this.highlightedProteinIds,
-      focusedValues: allOpacityTiersInteractive ? null : this._focusedValues,
-      baseOpacity,
-      selectedOpacity,
-      fadedOpacity,
-      eatOverlayEnabled: this.eatOverlayEnabled,
-    };
+    return slots &&
+      slots.originalIndices === pd.originalIndices &&
+      slots.length === pd.length &&
+      slots.interactivityKey === this._getVisibilityModel().interactivityKey
+      ? slots
+      : null;
   }
 
   /**
@@ -2068,10 +2024,9 @@ export class ProtspaceScatterplot extends LitElement {
    * runs first pays for the pass. `visible` is shared with the point grid, so it
    * is never written after.
    */
-  private _interactableSlots(key = this._interactableKey()): InteractableSlots {
-    if (this._interactableSlotsCache && sameInteractableKey(this._interactableSlotsKey, key)) {
-      return this._interactableSlotsCache;
-    }
+  private _interactableSlots(): InteractableSlots {
+    const current = this._currentInteractableSlots();
+    if (current) return current;
     const pd = this._plotData;
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
@@ -2088,6 +2043,9 @@ export class ProtspaceScatterplot extends LitElement {
     }
     let ids: Set<string> | null = null;
     this._interactableSlotsCache = {
+      originalIndices: oi,
+      length: pd.length,
+      interactivityKey: model.interactivityKey,
       visible,
       count,
       ids() {
@@ -2099,7 +2057,6 @@ export class ProtspaceScatterplot extends LitElement {
         return ids;
       },
     };
-    this._interactableSlotsKey = key;
     return this._interactableSlotsCache;
   }
 

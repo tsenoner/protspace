@@ -980,3 +980,44 @@ describe('computeVisibilityModel', () => {
     });
   });
 });
+
+describe('interactivityKey', () => {
+  const data = makeData(['A', 'B'], Int32Array.of(0, 1, 0));
+  // The host hands the model the same hidden array until it changes.
+  const hiddenAnnotationValues: string[] = [];
+
+  it('holds across selection and opacity changes while every tier is above 0', () => {
+    const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues }));
+    const selected = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues, selectedProteinIds: ['p0'] }),
+      first,
+    );
+    const dimmer = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues, opacities: { ...OPACITIES, faded: 0.05 } }),
+      selected,
+    );
+    expect(selected.interactivityKey).toBe(first.interactivityKey);
+    expect(dimmer.interactivityKey).toBe(first.interactivityKey);
+  });
+
+  it('changes with the hidden values', () => {
+    const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues }));
+    const hidden = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues: ['A'] }),
+      first,
+    );
+    expect(hidden.interactivityKey).not.toBe(first.interactivityKey);
+  });
+
+  it('is the model itself while a tier is 0', () => {
+    const inputs = baseInputs({
+      data,
+      hiddenAnnotationValues,
+      opacities: { ...OPACITIES, faded: 0 },
+    });
+    const first = computeVisibilityModel(inputs);
+    const selected = computeVisibilityModel({ ...inputs, selectedProteinIds: ['p0'] }, first);
+    expect(first.interactivityKey).toBe(first);
+    expect(selected.interactivityKey).toBe(selected);
+  });
+});

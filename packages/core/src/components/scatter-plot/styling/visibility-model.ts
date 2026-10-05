@@ -119,6 +119,13 @@ export interface VisibilityModel {
   /** This model with nothing selected, highlighted or focused. */
   readonly unmarked: VisibilityModel;
   /**
+   * Changes whenever which points are interactive can: with every opacity tier
+   * above 0 only hiding decides it, and this is the hidden mask's stash, the same
+   * object while (data, selectedAnnotation, hiddenAnnotationValues) are. With a
+   * tier at 0 it is this model.
+   */
+  readonly interactivityKey: object;
+  /**
    * Build the protein id index now instead of on the first mark (an O(N) pass,
    * once per dataset), e.g. while idle after a load. Models computed from this
    * one over the same ids keep it.
@@ -505,6 +512,22 @@ export function computeVisibilityModel(
       : null;
   let unmarked: VisibilityModel | null = null;
 
+  // Mask-relevant inputs + the mask, which a later call reuses on a
+  // selection/highlight/opacity-only change; `previous`'s own while they hold.
+  const maskCache: MaskCache =
+    canReuse && prevCache.idIndex === idIndex
+      ? prevCache
+      : {
+          data,
+          selectedAnnotation,
+          hiddenAnnotationValues,
+          allHidden,
+          hiddenMode,
+          hiddenMask,
+          idIndex,
+        };
+  const tiersInteractive = opacities.base > 0 && opacities.selected > 0 && opacities.faded > 0;
+
   const model: VisibilityModel = {
     allHidden,
     opacityOf,
@@ -530,20 +553,14 @@ export function computeVisibilityModel(
     indexIds() {
       if (idIndex) idTable(idIndex);
     },
+    get interactivityKey() {
+      return tiersInteractive ? maskCache : model;
+    },
   };
 
-  // Stash mask-relevant inputs + the mask non-enumerably so a later call can
-  // reuse the O(N) pass on selection/highlight/opacity-only changes.
+  // Stashed non-enumerably so a later call can reuse the O(N) pass.
   Object.defineProperty(model, MASK_CACHE, {
-    value: {
-      data,
-      selectedAnnotation,
-      hiddenAnnotationValues,
-      allHidden,
-      hiddenMode,
-      hiddenMask,
-      idIndex,
-    } satisfies MaskCache,
+    value: maskCache,
     enumerable: false,
     writable: false,
     configurable: false,
