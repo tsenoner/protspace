@@ -9,20 +9,27 @@ type: software
 authors:
   - family-names: Senoner
     given-names: Tobias
+    orcid: "https://orcid.org/0000-0002-7900-5896"
   - family-names: Vahidi
     given-names: Peyman
+    orcid: "https://orcid.org/0009-0005-4222-4250"
   - family-names: Olenyi
     given-names: Tobias
+    orcid: "https://orcid.org/0000-0002-6315-0458"
   - family-names: Senoner
     given-names: Florin
+    orcid: "https://orcid.org/0009-0006-3132-8588"
   - family-names: Sisman
     given-names: Gökhan
+    orcid: "https://orcid.org/0000-0001-8831-8686"
   - family-names: Kahl
     given-names: Elias
   - family-names: Rost
     given-names: Burkhard
+    orcid: "https://orcid.org/0000-0003-0179-8424"
   - family-names: Koludarov
     given-names: Ivan
+    orcid: "https://orcid.org/0000-0002-9073-4758"
 url: "https://protspace.app"
 repository-code: "https://github.com/tsenoner/protspace"
 license: MIT
@@ -32,20 +39,27 @@ preferred-citation:
   authors:
     - family-names: Senoner
       given-names: Tobias
+      orcid: "https://orcid.org/0000-0002-7900-5896"
     - family-names: Vahidi
       given-names: Peyman
+      orcid: "https://orcid.org/0009-0005-4222-4250"
     - family-names: Olenyi
       given-names: Tobias
+      orcid: "https://orcid.org/0000-0002-6315-0458"
     - family-names: Senoner
       given-names: Florin
+      orcid: "https://orcid.org/0009-0006-3132-8588"
     - family-names: Sisman
       given-names: Gökhan
+      orcid: "https://orcid.org/0000-0001-8831-8686"
     - family-names: Kahl
       given-names: Elias
     - family-names: Rost
       given-names: Burkhard
+      orcid: "https://orcid.org/0000-0003-0179-8424"
     - family-names: Koludarov
       given-names: Ivan
+      orcid: "https://orcid.org/0000-0002-9073-4758"
   journal: "bioRxiv"
   year: 2026
   month: 5
@@ -60,8 +74,10 @@ references:
     authors:
       - family-names: Senoner
         given-names: Tobias
+        orcid: "https://orcid.org/0000-0002-7900-5896"
       - family-names: Olenyi
         given-names: Tobias
+        orcid: "https://orcid.org/0000-0002-6315-0458"
       - family-names: Heinzinger
         given-names: Michael
       - family-names: Spannagl
@@ -70,8 +86,10 @@ references:
         given-names: George
       - family-names: Rost
         given-names: Burkhard
+        orcid: "https://orcid.org/0000-0003-0179-8424"
       - family-names: Koludarov
         given-names: Ivan
+        orcid: "https://orcid.org/0000-0002-9073-4758"
     journal: "Journal of Molecular Biology"
     year: 2025
     month: 8
