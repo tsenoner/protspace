@@ -55,7 +55,7 @@ import {
   v3PhysicalColumn,
   type VisualizationData,
 } from '@protspace/utils';
-import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
+import { assertValidParquetMagic } from './validation';
 import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
 import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 import {
@@ -989,18 +989,12 @@ export async function readV3Bundle(
   }
 
   const manifest = readManifest(metadata);
-  // Everything below preallocates on this footer field before a single row is read, so
-  // it is bounded here. The v3 path never reaches `validateRowsBasic`, which is what
-  // caps the legacy path.
+  // Everything below preallocates on this footer field before a single row is read.
+  // There is no point cap: `assertFooterRows` bounds what each part may preallocate by
+  // the part's own size, so here the field only has to be a row count.
   const numRows = Number(metadata.num_rows);
-  if (
-    !Number.isSafeInteger(numRows) ||
-    numRows < 0 ||
-    numRows > DEFAULT_VALIDATION_LIMITS.maxRows
-  ) {
-    throw new Error(
-      `v3 bundle declares ${String(metadata.num_rows)} rows, outside 0..${DEFAULT_VALIDATION_LIMITS.maxRows}`,
-    );
+  if (!Number.isSafeInteger(numRows) || numRows < 0) {
+    throw new Error(`v3 bundle declares ${String(metadata.num_rows)} rows, not a row count`);
   }
 
   const columns = await readAnnotationColumns(part1, metadata, manifest, numRows);

@@ -15,6 +15,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { DEFAULT_VALIDATION_LIMITS } from './validation';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
@@ -648,11 +649,44 @@ describe('parquetbundle format v3', () => {
     });
   });
 
+  it('reads more proteins than a v1/v2 bundle may hold', async () => {
+    const proteins = DEFAULT_VALIDATION_LIMITS.maxRows + 1;
+    const coordinates = Float32Array.from({ length: proteins }, (_, i) => i);
+    const large = bundle([
+      part([{ name: 'protein_id', data: Array.from({ length: proteins }, (_, i) => `P${i}`) }], {
+        protspace_container_version: '3',
+        protspace_v3_manifest: JSON.stringify({
+          idColumn: 'protein_id',
+          columns: {},
+          projections: [{ name: 'pca2', dimension: 2 }],
+        }),
+      }),
+      part([
+        { name: 'projection_name', data: ['pca2'] },
+        { name: 'dimensions', data: new Int32Array([2]) },
+        { name: 'info_json', data: ['{}'] },
+      ]),
+      part([
+        { name: 'pca2__x', data: coordinates },
+        { name: 'pca2__y', data: coordinates },
+      ]),
+      EMPTY,
+      EMPTY,
+      payloadPart({}),
+    ]);
+
+    const { data, unplacedProteinCount } = await decodeParquetBundle(large);
+
+    expect(data.protein_ids).toHaveLength(proteins);
+    expect(data.protein_ids.at(-1)).toBe(`P${proteins - 1}`);
+    expect(data.projections[0].data).toHaveLength(2 * proteins);
+    expect(unplacedProteinCount).toBe(0);
+  }, 60_000);
+
   // `parquetWriteBuffer` always stamps a truthful `num_rows`, so the lying footer is
   // built by handing `readV3Bundle` a doctored `FileMetaData` — the same object
   // `decodeParquetBundle` reads out of part 1.
   it.each([
-    ['above the row cap', 2_000_001n],
     ['negative', -1n],
     ['past the safe-integer range', 9_007_199_254_740_993n],
     ['absent', undefined],
@@ -661,7 +695,7 @@ describe('parquetbundle format v3', () => {
     const metadata = parquetMetadata(parts[0]);
 
     await expect(readV3Bundle(parts, { ...metadata, num_rows: rows as bigint })).rejects.toThrow(
-      /rows, outside 0\.\.2000000/,
+      /rows, not a row count/,
     );
   });
 
@@ -829,6 +863,14 @@ describe('parquetbundle format v3', () => {
       await expect(
         decodeParquetBundle(v3Bundle({ 0: declaring(wide, 2_000_000, true) })),
       ).rejects.toThrow(/part 1 declares 2000000 rows, 1616000000 bytes to preallocate/);
+    });
+
+    it('refuses a footer claiming 2^40 rows by the bytes they would preallocate', async () => {
+      // A safe integer, so only the part's byte budget stands between it and the
+      // allocation: an id slot and 4 or 8 bytes per column, 36 bytes a row.
+      await expect(
+        decodeParquetBundle(v3Bundle({ 0: declaring(annotationsPart(), 2 ** 40, true) })),
+      ).rejects.toThrow(/part 1 declares 1099511627776 rows, 39582418599936 bytes to preallocate/);
     });
   });
 
