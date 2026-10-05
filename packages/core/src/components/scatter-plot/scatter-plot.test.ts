@@ -81,6 +81,7 @@ type SelectionInternals = HTMLElement & {
   _handleBrushEnd(event: { selection: [[number, number], [number, number]] | null }): void;
   _slotSelection: { ids: readonly string[]; mask: Uint8Array } | null;
   _getVisibilityModel(): VisibilityModel;
+  _scheduleIdIndex(): void;
 };
 
 /**
@@ -244,6 +245,26 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
 
     expect(events).toHaveLength(0);
     expect(sp.selectedProteinIds).toEqual([]);
+  });
+});
+
+describe('scatter-plot id index', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('builds the id index while idle, for the models that follow', () => {
+    const idle: Array<() => void> = [];
+    vi.stubGlobal('requestIdleCallback', (task: () => void) => idle.push(task));
+    const sp = makeSelectionScatter(null);
+    sp._scheduleIdIndex();
+    expect(idle).toHaveLength(1);
+    idle[0]();
+    // An id repeated in place afterwards is not in the index built before it.
+    sp.data.protein_ids[2] = 'p0';
+    sp.selectedProteinIds = ['p0'];
+    const marks = sp._getVisibilityModel().markedSlots(sp.data.protein_ids, null, 6);
+    expect(Array.from(marks)).toEqual([1, 0, 0, 0, 0, 0]);
   });
 });
 

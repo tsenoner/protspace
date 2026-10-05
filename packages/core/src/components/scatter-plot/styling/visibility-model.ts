@@ -113,6 +113,12 @@ export interface VisibilityModel {
   readonly marks: { readonly marked: number; readonly unmarked: number } | null;
   /** This model with nothing selected, highlighted or focused. */
   readonly unmarked: VisibilityModel;
+  /**
+   * Build the protein id index now instead of on the first mark (an O(N) pass,
+   * once per dataset), e.g. while idle after a load. Models computed from this
+   * one over the same ids keep it.
+   */
+  indexIds(): void;
 }
 
 /**
@@ -266,12 +272,12 @@ interface MaskCache {
 /**
  * Each protein's index in `proteinIds`: an open-addressing table over the ids'
  * FNV-1a hashes, at most 2/3 full, holding `index + 1` per slot (0 is empty).
- * 4 MB at 573K proteins, where a `Map` held 14 MB of heap. `table` is null when
- * an id repeats.
+ * 4 MB at 573K proteins, where a `Map` held 14 MB of heap. `table` is built on
+ * first use (`idTable`), and null when an id repeats.
  */
 interface IdIndex {
   proteinIds: readonly string[];
-  table: Int32Array | null;
+  table?: Int32Array | null;
 }
 
 function hashId(id: string): number {
@@ -280,7 +286,7 @@ function hashId(id: string): number {
   return h;
 }
 
-function buildIdIndex(proteinIds: readonly string[]): IdIndex {
+function buildIdTable(proteinIds: readonly string[]): Int32Array | null {
   let size = 1;
   while (size < proteinIds.length * 1.5) size *= 2;
   const table = new Int32Array(size);
@@ -288,12 +294,17 @@ function buildIdIndex(proteinIds: readonly string[]): IdIndex {
     const id = proteinIds[i];
     let slot = hashId(id) & (size - 1);
     for (let at = table[slot]; at !== 0; at = table[slot]) {
-      if (proteinIds[at - 1] === id) return { proteinIds, table: null };
+      if (proteinIds[at - 1] === id) return null;
       slot = (slot + 1) & (size - 1);
     }
     table[slot] = i + 1;
   }
-  return { proteinIds, table };
+  return table;
+}
+
+function idTable(index: IdIndex): Int32Array | null {
+  if (index.table === undefined) index.table = buildIdTable(index.proteinIds);
+  return index.table;
 }
 
 /** The index of `id` in the `proteinIds` that `table` was built over, or -1. */
@@ -403,18 +414,19 @@ export function computeVisibilityModel(
     unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
   }
 
-  // The id index, kept from `previous` while the ids are the same array and
-  // built the first time something is marked (an O(N) pass, once per dataset).
+  // The id index, kept from `previous` while the ids are the same array. Its
+  // table is built the first time something is marked, or ahead by `indexIds`
+  // (an O(N) pass, once per dataset).
   const proteinIds = data?.protein_ids ?? null;
   const prevIndex = prevCache?.idIndex ?? null;
-  let idIndex = prevIndex?.proteinIds === proteinIds ? prevIndex : null;
-  if (!idIndex && anyMarked && proteinIds) idIndex = buildIdIndex(proteinIds);
+  const idIndex: IdIndex | null =
+    prevIndex?.proteinIds === proteinIds ? prevIndex : proteinIds ? { proteinIds } : null;
 
   // The selected and highlighted proteins by index into `proteinIds`, so a point
   // costs a byte read rather than set lookups.
   let markedMask: Uint8Array | null = null;
-  if (anyMarked && proteinIds && idIndex?.table) {
-    const table = idIndex.table;
+  const table = anyMarked && idIndex ? idTable(idIndex) : null;
+  if (table && proteinIds) {
     // With every id once (a table), a mask of the selected ids is the selection's.
     const given = inputs.selectionMask;
     const fromSlots = given?.proteinIds === proteinIds && sameIds(given.ids, selectedProteinIds);
@@ -508,6 +520,9 @@ export function computeVisibilityModel(
             )
           : model;
       return unmarked;
+    },
+    indexIds() {
+      if (idIndex) idTable(idIndex);
     },
   };
 

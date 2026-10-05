@@ -810,6 +810,23 @@ describe('computeVisibilityModel', () => {
       expect(mask.subarray(0, 4)).toEqual(Uint8Array.of(0, 1, 1, 0));
     });
 
+    it('builds the id index on indexIds or the first mark, and keeps it for the same ids', () => {
+      // An id repeated in place afterwards shows whether the index was built before.
+      const marksAfterRepeat = (indexAhead: boolean) => {
+        const fresh = makeData(values, Int32Array.of(0, 1, 2));
+        const plain = computeVisibilityModel(baseInputs({ data: fresh }));
+        if (indexAhead) plain.indexIds();
+        fresh.protein_ids[2] = 'p0';
+        const model = computeVisibilityModel(
+          baseInputs({ data: fresh, selectedProteinIds: ['p0'] }),
+          plain,
+        );
+        return Array.from(model.markedSlots(fresh.protein_ids, null, 3));
+      };
+      expect(marksAfterRepeat(true)).toEqual([1, 0, 0]);
+      expect(marksAfterRepeat(false)).toEqual([1, 0, 1]);
+    });
+
     it('finds ids that share hash slots, and none it does not hold', () => {
       const count = 3000;
       const many = makeData(values, new Int32Array(count));

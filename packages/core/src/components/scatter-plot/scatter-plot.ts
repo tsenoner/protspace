@@ -178,6 +178,19 @@ interface InteractableSlots {
   readonly count: number;
 }
 
+/**
+ * Run `task` once the main thread is idle (at most 2 s on), or after a short
+ * delay where `requestIdleCallback` is missing (Safari). Returns its cancel.
+ */
+function whenIdle(task: () => void): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const handle = requestIdleCallback(task, { timeout: 2000 });
+    return () => cancelIdleCallback(handle);
+  }
+  const handle = setTimeout(task, 500);
+  return () => clearTimeout(handle);
+}
+
 function sameInteractableKey(a: InteractableKey | null, b: InteractableKey): boolean {
   return (
     !!a &&
@@ -377,6 +390,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _visibleSlots: number[] | null = null;
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
+  // Cancels the pending idle build of the protein id index (`_scheduleIdIndex`).
+  private _cancelIdIndex: (() => void) | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
   private _hoveredProteinId: string | null = null;
@@ -758,6 +773,8 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._commitSelectionRafId);
       this._commitSelectionRafId = null;
     }
+    this._cancelIdIndex?.();
+    this._cancelIdIndex = null;
     this._pendingHover = null;
     this._numericRecompute.cancel();
     this._dupOverlay.cancelDebounce();
@@ -1047,6 +1064,7 @@ export class ProtspaceScatterplot extends LitElement {
       else this._cancelProjectionMorph();
       if (changedProperties.has('data')) {
         this.resetZoom();
+        this._scheduleIdIndex();
       }
 
       if (changedProperties.has('data') && this.data) {
@@ -2028,6 +2046,18 @@ export class ProtspaceScatterplot extends LitElement {
       focusedValues: this._focusedValues,
     };
     return model;
+  }
+
+  /**
+   * Build the protein id index of a new dataset while the main thread is idle,
+   * so the first selection does not wait for it (~22 ms and 4 MB at 573K).
+   */
+  private _scheduleIdIndex() {
+    this._cancelIdIndex?.();
+    this._cancelIdIndex = whenIdle(() => {
+      this._cancelIdIndex = null;
+      this._getVisibilityModel().indexIds();
+    });
   }
 
   /**
