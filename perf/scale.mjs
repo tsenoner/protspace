@@ -350,8 +350,9 @@ async function runDataset(opts, url, dataset, round) {
           const t = Date.now();
           const bytes = await footprints(procs.map((p) => p.pid));
           const sum = { renderer: 0, gpu: 0 };
-          for (const p of procs) sum[p.kind] += bytes.get(p.pid) ?? 0;
-          footprintRows.push([t, sum.renderer, sum.gpu]);
+          for (const p of procs) sum[p.kind] += bytes.get(p.pid) ?? NaN;
+          // A process that exited since the last `ps` (a closed context) spoils the row.
+          if (sum.renderer > 0 && sum.gpu > 0) footprintRows.push([t, sum.renderer, sum.gpu]);
         }
       } catch {
         // a process exited mid-sample; the next tick samples again

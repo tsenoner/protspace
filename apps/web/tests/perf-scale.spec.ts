@@ -30,6 +30,8 @@ const DPR = 2;
 /** Settle caps: an import or one interaction at several million points can take seconds. */
 const LOAD_CAP_MS = 300_000;
 const ACT_CAP_MS = 120_000;
+/** perf/scale.mjs samples the memory footprint once a second: hold still for one sample. */
+const FOOTPRINT_GAP_MS = 1_200;
 const PAN_ZOOM_MS = 5_000;
 const LASSO_FRACTION = 0.15;
 const EXPORT_SIZE = { width: 2000, height: 1500 };
@@ -168,6 +170,7 @@ async function coldLoad(
 ): Promise<{ page: Page; cdp: CDPSession | null }> {
   const { page, cdp } = await openPage(browser);
   await settle(page, LOAD_CAP_MS);
+  await page.waitForTimeout(FOOTPRINT_GAP_MS);
   const heapBefore = await heapMB(cdp);
   const busyBefore = await taskDuration(cdp);
   await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
@@ -224,6 +227,7 @@ async function coldLoad(
       drawn: window.__protspacePerfCounters?.drawn ?? 0,
     };
   }, t0);
+  await page.waitForTimeout(FOOTPRINT_GAP_MS);
   const busyMs = cdp ? (await taskDuration(cdp))! - busyBefore! : null;
   const heapAfter = await heapMB(cdp);
   const degraded = await page.evaluate(() => window.__scaleDegraded ?? []);
