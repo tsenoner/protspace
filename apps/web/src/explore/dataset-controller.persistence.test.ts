@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { createEmptyExploreViewRequest } from './url-state';
 
@@ -220,6 +220,13 @@ describe('dataset controller load errors', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  // Restore even when an assertion fails, so a red row cannot silence later tests' console.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it.each([
@@ -227,15 +234,11 @@ describe('dataset controller load errors', () => {
     ['any other error as a failure', new Error('boom'), true],
     ['a missing original error as a failure', undefined, true],
   ])('treats %s', async (_label, originalError: Error | undefined, notified) => {
-    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = buildController();
     await controller.handleDataError({
       detail: { message: 'load failed', originalError },
     } as unknown as Event);
 
     expect(mocks.error).toHaveBeenCalledTimes(notified ? 1 : 0);
-    consoleLog.mockRestore();
-    consoleError.mockRestore();
   });
 });
