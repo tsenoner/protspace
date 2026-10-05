@@ -64,18 +64,6 @@ export function createExportHandler({
 }: ExportHandlerOptions) {
   // ── Publish editor handler ─────────────────────────
 
-  function getCurrentProjection(): { projection: string; dimensionality: number } | null {
-    // Duck-typed: ProtspaceScatterplot declares no `selectedProjection` (the control bar
-    // does), so this read finds nothing and the modal gets `null`.
-    const sp = plotElement as unknown as Record<string, unknown>;
-    if (typeof sp.selectedProjection !== 'string' || !sp.selectedProjection) return null;
-    const name = sp.selectedProjection;
-    const dimensionality = name.toLowerCase().includes('3d') ? 3 : 2;
-    // Extract projection method (e.g., "UMAP_2D" → "UMAP")
-    const projection = name.replace(/[_-]?[23][dD]$/i, '') || name;
-    return { projection, dimensionality };
-  }
-
   function setupPublishEditorHandler() {
     controlBar.addEventListener('open-publish-editor', async () => {
       try {
@@ -96,23 +84,8 @@ export function createExportHandler({
         >;
         modal.plotElement = plotElement as unknown as HTMLElement;
         modal.legendElement = legendElement as unknown as HTMLElement;
-        modal.currentProjection = getCurrentProjection();
-
-        // Restore saved publish state: bundle > localStorage > defaults. Duck-typed like
-        // getCurrentProjection: nothing sets `bundleSettings` on the scatterplot, so this
-        // falls through to localStorage.
-        const plotEl = plotElement as unknown as Record<string, unknown>;
-        const bundleSettings =
-          'bundleSettings' in plotEl &&
-          typeof plotEl.bundleSettings === 'object' &&
-          plotEl.bundleSettings !== null
-            ? (plotEl.bundleSettings as { publishState?: Record<string, unknown> })
-            : undefined;
-        if (bundleSettings?.publishState) {
-          modal.savedPublishState = bundleSettings.publishState;
-        } else {
-          modal.savedPublishState = loadPublishState();
-        }
+        // Restore the last saved publish state (localStorage), else the modal's defaults.
+        modal.savedPublishState = loadPublishState();
 
         // Handle export from the figure editor
         modal.addEventListener('publish-export', (async (e: CustomEvent) => {
