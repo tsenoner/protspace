@@ -42,7 +42,9 @@ interface NumericSummary {
   nonNullCount: number;
   min: number;
   max: number;
+  /** Distinct values, counted only up to `distinctCountLimit`: binning compares it with bin counts below that. */
   distinctCount: number;
+  distinctCountLimit: number;
   sortedValues?: number[];
   logSupported: boolean;
   allIntegers: boolean;
@@ -120,12 +122,20 @@ export function resolveNumericAnnotationDisplaySettings({
 
 function createSummary(
   values: NumericValues,
-  options: { includeSortedValues?: boolean } = {},
+  options: { includeSortedValues?: boolean; distinctCountLimit: number },
 ): NumericSummary {
-  const includeSortedValues = options.includeSortedValues === true;
+  const { distinctCountLimit } = options;
   const cached = numericSummaryCache.get(values);
+  // A recount keeps the sorted values: the quantile fallback of `logarithmic` reads them.
+  const includeSortedValues =
+    options.includeSortedValues === true || cached?.sortedValues !== undefined;
 
-  if (cached && (!includeSortedValues || cached.sortedValues)) {
+  if (
+    cached &&
+    (!includeSortedValues || cached.sortedValues) &&
+    (cached.distinctCount < cached.distinctCountLimit ||
+      cached.distinctCountLimit >= distinctCountLimit)
+  ) {
     return cached;
   }
 
@@ -148,7 +158,7 @@ function createSummary(
     if (value > max) max = value;
     if (value <= 0) logSupported = false;
     if (!Number.isInteger(value)) allIntegers = false;
-    distinctValues.add(value);
+    if (distinctValues.size < distinctCountLimit) distinctValues.add(value);
     finiteValues?.push(value);
   }
 
@@ -157,6 +167,7 @@ function createSummary(
     min: nonNullCount > 0 ? min : 0,
     max: nonNullCount > 0 ? max : 0,
     distinctCount: distinctValues.size,
+    distinctCountLimit,
     sortedValues: includeSortedValues
       ? finiteValues!.sort((left, right) => left - right)
       : undefined,
@@ -596,6 +607,8 @@ export function materializeNumericAnnotation(
 } {
   const summary = createSummary(values, {
     includeSortedValues: settings.strategy === 'quantile',
+    // Binning compares the distinct count only with bin counts of at most max(1, binCount).
+    distinctCountLimit: Math.max(1, settings.binCount) + 1,
   });
   const resolvedNumericType = numericType ?? (summary.allIntegers ? 'int' : 'float');
   // Reserve one slot for N/A when missing values exist, so the total

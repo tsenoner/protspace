@@ -681,3 +681,39 @@ describe('materializeVisualizationData null-selection gate', () => {
     expect(out.annotations.b.kind).toBe('numeric');
   });
 });
+
+describe('numeric-binning distinct count limit', () => {
+  const quantileSettings = (binCount: number) => ({
+    binCount,
+    strategy: 'quantile' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  it('falls back to linear bins exactly when the distinct values fit the bin count', () => {
+    const fourDistinct = materializeNumericAnnotation([1, 2, 3, 10, 10, 10], quantileSettings(3));
+    const threeDistinct = materializeNumericAnnotation([1, 2, 10, 10, 10, 10], quantileSettings(3));
+
+    expect(fourDistinct.annotation.numericMetadata?.strategy).toBe('quantile');
+    expect(threeDistinct.annotation.numericMetadata?.strategy).toBe('linear');
+  });
+
+  it('matches an uncached column after a smaller bin count capped the distinct count', () => {
+    for (const withMissing of [false, true]) {
+      for (let distinct = 1; distinct <= 14; distinct += 1) {
+        for (let binCount = 1; binCount <= 12; binCount += 1) {
+          const values: (number | null)[] = Array.from(
+            { length: 40 },
+            (_, i) => (i % distinct) * 1.5,
+          );
+          if (withMissing) values.push(null);
+          materializeNumericAnnotation(values, quantileSettings(1));
+
+          expect(materializeNumericAnnotation(values, quantileSettings(binCount))).toEqual(
+            materializeNumericAnnotation([...values], quantileSettings(binCount)),
+          );
+        }
+      }
+    }
+  });
+});
