@@ -119,7 +119,7 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
         recordStyle: uniforms.u_recordStyleOn ? r.stagedRecords!.texels : null,
         marks: uniforms.u_marksOn
           ? {
-              marked: r.stagedMarks,
+              marked: r.markTexture.staged,
               pass: uniforms.u_markPass,
               markedOpacity: uniforms.u_markedOpacity,
               unmarkedOpacity: uniforms.u_unmarkedOpacity,

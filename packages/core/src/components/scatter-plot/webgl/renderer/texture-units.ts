@@ -20,3 +20,19 @@ export const RECORD_STYLE_TEXTURE_UNIT = 7;
 export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4 }, (_, g) =>
   g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
 );
+
+/**
+ * Bind `texture` at `unit`, run `use` on it, such as an upload, and leave the
+ * scratch unit active again, as every upload does.
+ */
+export function bindTextureAt(
+  gl: WebGL2RenderingContext,
+  unit: number,
+  texture: WebGLTexture | null,
+  use?: () => void,
+): void {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  use?.();
+  gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+}

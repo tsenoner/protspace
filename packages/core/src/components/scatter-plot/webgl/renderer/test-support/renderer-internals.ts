@@ -14,7 +14,7 @@ interface RendererInternals {
   sortOrder: WebGLRenderer['sortOrder'];
   atlas: WebGLRenderer['atlas'];
   stagedRecords: WebGLRenderer['stagedRecords'];
-  stagedMarks: WebGLRenderer['stagedMarks'];
+  markTexture: WebGLRenderer['markTexture'];
   contourPalette: WebGLRenderer['contourPalette'];
   densityDisabled: WebGLRenderer['densityDisabled'];
   degradeReported: WebGLRenderer['degradeReported'];
