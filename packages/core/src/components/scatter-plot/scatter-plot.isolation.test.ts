@@ -195,11 +195,16 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _isolationHistory: string[][];
     _plotData: PlotData;
     _lastDataRef: unknown;
+    _styleSig: string | null;
+    _webglRenderer?: {
+      invalidatePositionCache(): void;
+      invalidateStyleCache(): void;
+      setStyleSignature(sig: string | null): void;
+    };
     _processData(): void;
     _buildPointGridIndex(): void;
     _updateStyleSignature(): void;
     _renderPlot(): void;
-    _reprocessAndRefresh(): void;
     isolateSelection(): void;
     resetIsolation(): void;
     resetZoom(): void;
@@ -248,8 +253,8 @@ describe('scatter-plot isolation render-refresh sequence', () => {
   // Record the order of the staged refresh steps. We spy the pure-ish private
   // steps; requestUpdate + the deferred _renderPlot are observed via
   // updateComplete resolution. The element is never appended, so Lit's lifecycle
-  // and WebGL never fire — _webglRenderer stays undefined, exercising the
-  // `if (this._webglRenderer)` false branch.
+  // and WebGL never fire — _webglRenderer stays undefined unless a test installs
+  // a fake one, so these exercise the `if (this._webglRenderer)` false branch.
   function instrument(el: RefreshInternals) {
     const calls: string[] = [];
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
@@ -310,16 +315,54 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
-  it('_reprocessAndRefresh is the single shared implementation both callers route through', () => {
-    const el = makeEl();
-    const spy = vi.spyOn(el, '_reprocessAndRefresh');
-    el.selectedProteinIds = ['p1'];
-    el.isolateSelection();
-    el._isolationMode = true;
-    el._isolationHistory = [['p1']];
-    el.resetIsolation();
-    expect(spy).toHaveBeenCalledTimes(2);
-  });
+  it.each([
+    [
+      'isolateSelection',
+      (el: RefreshInternals) => {
+        el.selectedProteinIds = ['p1', 'p3'];
+        el.isolateSelection();
+      },
+    ],
+    [
+      'resetIsolation',
+      (el: RefreshInternals) => {
+        el._isolationMode = true;
+        el._isolationHistory = [['p1', 'p3']];
+        el.resetIsolation();
+      },
+    ],
+  ])(
+    '%s invalidates the WebGL caches and pushes the fresh style signature before the deferred render',
+    async (_name, act) => {
+      const el = makeEl();
+      const { calls } = instrument(el);
+      el._webglRenderer = {
+        invalidatePositionCache: vi.fn(() => calls.push('invalidatePositionCache')),
+        invalidateStyleCache: vi.fn(() => calls.push('invalidateStyleCache')),
+        setStyleSignature: vi.fn((sig) => calls.push(`setStyleSignature:${sig}`)),
+      };
+      (
+        el._updateStyleSignature as unknown as { mockImplementation: (f: () => void) => void }
+      ).mockImplementation(() => {
+        el._styleSig = 'sig-after-refresh';
+        calls.push('updateStyleSignature');
+      });
+
+      act(el);
+
+      const refresh = [
+        'processData',
+        'buildPointGridIndex',
+        'invalidatePositionCache',
+        'invalidateStyleCache',
+        'updateStyleSignature',
+        'setStyleSignature:sig-after-refresh',
+      ];
+      expect(calls).toEqual(refresh);
+      await el.updateComplete;
+      expect(calls).toEqual([...refresh, 'renderPlot']);
+    },
+  );
 
   // #297: zooming into a region and then isolating should snap back to the full
   // view of the isolated subset, not keep the stale pre-isolation zoom transform.
