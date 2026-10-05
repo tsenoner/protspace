@@ -45,7 +45,7 @@
       "restage": 1,
       "restagePos": 1,
       "restageStyle": 1,
-      "render": 1,
+      "render": null,
       "processData": 1,
       "gridRebuild": 1,
       "legendUpdate": 1,
