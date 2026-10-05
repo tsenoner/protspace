@@ -373,8 +373,10 @@ describe('generateDatasetHash', () => {
     expect(generateDatasetHash(orderedDataset)).toBe(generateDatasetHash(reorderedDataset));
   });
 
-  it('reuses one numeric index order for 500k EAT rows without per-track object maps', () => {
-    const size = 500_000;
+  it('reuses one numeric index order for EAT rows without per-track object maps', () => {
+    // The Proxy guard is structural: a per-track `.map` trips it at any row count, so a
+    // small dataset proves the same thing as the 500k design target without the cost.
+    const size = 5_000;
     const forbidMap = <T>(values: T[], label: string): T[] =>
       new Proxy(values, {
         get(target, property, receiver) {
@@ -412,10 +414,7 @@ describe('generateDatasetHash', () => {
     });
 
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
-    // The assertion is structural (no per-track `.map`), not a timing budget: every
-    // element read goes through the Proxy, which takes 3-6 s on a CI runner that is
-    // running the other packages' suites at the same time.
-  }, 30_000);
+  });
 });
 
 /**
