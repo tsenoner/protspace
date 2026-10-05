@@ -228,8 +228,12 @@ Rows are written a chunk at a time by `perf/scale/bundle_writer.py`, a generic c
 (ids, categorical, multi-valued with optional scores and numeric columns, any number of 2-D or
 3-D projections) that a real dataset can reuse. Streaming holds about one chunk in memory; the
 end, which writes each CSR payload as one parquet value, needs about 3.5x the largest payload.
-The writer refuses what the reader would: a payload over 2 GiB, a column over 2^31 hits, or a
-part that compresses more than 32x.
+The writer refuses what the reader would: a payload over 2 GiB (about 536M hits in one
+multi-valued column, or about 268M float64 scores) or a part that compresses more than 32x. It
+warns, without refusing, when the file passes 2 GiB, the app's file-size limit
+(`MAX_FILE_SIZE_BYTES` in `validation.ts`). swissprot takes about 79.5 bytes per protein
+(5M = 397,348,241 bytes), so the largest swissprot bundle the app opens is about 27.0M rows;
+swissprot 30M is over the limit.
 
 On an M-series MacBook (2026-10-06):
 

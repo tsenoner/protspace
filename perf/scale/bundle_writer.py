@@ -18,9 +18,8 @@ a missing numeric is NaN; a protein absent from a projection has NaN coordinates
 
 Limits the reader imposes, checked here:
 
-- one payload is one parquet BYTE_ARRAY value, so it must stay under 2 GiB;
-- a column's hits (and score counts) are prefix-summed into int32 offsets, so their
-  total must stay under 2^31;
+- one payload is one parquet BYTE_ARRAY value, so it must stay under 2 GiB: about
+  536M hits per multi-valued column (int32 codes), or about 268M float64 scores;
 - the reader preallocates at most max(64 MiB, 32 x part bytes) for part 1 and part 3,
   so a part may not compress more than 32x against its decoded arrays.
 
@@ -49,6 +48,7 @@ from typing import Any, Literal, Self
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 DELIMITER = b"---PARQUET_DELIMITER---"
@@ -67,6 +67,8 @@ _PQ: dict[str, Any] = {
 INT32_MAX = 2**31 - 1
 # One BYTE_ARRAY value, its 4-byte length and page overhead must fit an int32 page size.
 MAX_PAYLOAD_BYTES = 2**31 - 2**20
+# validation.ts MAX_FILE_SIZE_BYTES: the app refuses larger files.
+APP_MAX_FILE_BYTES = 2 * 1024**3
 # bundle-v3.ts: MAX_PREALLOCATION_RATIO and MIN_PREALLOCATION_BUDGET.
 MAX_PREALLOCATION_RATIO = 32
 MIN_PREALLOCATION_BUDGET = 64 * 1024 * 1024
@@ -134,6 +136,13 @@ def _i32(values: Any, what: str) -> np.ndarray:
     return array
 
 
+def _check_delimiter(values: Any, what: str) -> None:
+    """Refuse strings holding the part delimiter, which would split the bundle."""
+    array = values if isinstance(values, pa.Array) else pa.array(values, pa.string())
+    if pc.any(pc.match_substring(array, DELIMITER.decode())).as_py():
+        raise ValueError(f"{what} hold the part delimiter {DELIMITER.decode()!r}")
+
+
 def _required(columns: dict[str, pa.Array], metadata: dict | None = None) -> pa.Table:
     schema = pa.schema(
         [pa.field(name, array.type, nullable=False) for name, array in columns.items()],
@@ -187,6 +196,9 @@ class BundleWriter:
             if not isinstance(c, Numeric)
         }
         self._max_code = {name: -1 for name in self._labels}
+        for name, labels in self._labels.items():
+            if labels is not None:
+                _check_delimiter(labels, f"{name} labels")
 
         names = [c.name for c in self.columns]
         physical = [self._physical(c) for c in self.columns]
@@ -278,6 +290,7 @@ class BundleWriter:
         """Set (or replace) a categorical or multi-valued column's dictionary before close."""
         if name not in self._labels:
             raise KeyError(f"{name!r} is not a categorical or multi-valued column")
+        _check_delimiter(list(labels), f"{name} labels")
         self._labels[name] = list(labels)
 
     def write_chunk(
@@ -298,6 +311,7 @@ class BundleWriter:
         n = len(ids)
         if ids.null_count:
             raise ValueError("ids hold a null")
+        _check_delimiter(ids, "ids")
         if set(annotations) != {c.name for c in self.columns}:
             raise ValueError(
                 f"chunk columns {sorted(annotations)} differ from the declared ones"
@@ -356,10 +370,6 @@ class BundleWriter:
             raise ValueError(f"{column.name} has a negative hit code")
         payloads = self._payloads[column.name]
         payloads["codes"].append(codes)
-        if payloads["codes"].elements > INT32_MAX:
-            raise ValueError(
-                f"{column.name} passes 2^31 hits, the reader's int32 offsets"
-            )
         self._max_code[column.name] = max(
             self._max_code[column.name], int(codes.max(initial=-1))
         )
@@ -504,9 +514,15 @@ class BundleWriter:
             raise RuntimeError(
                 f"{self.path} holds {found} delimiters, not 5: a value contains it"
             )
+        size = self.path.stat().st_size
+        if size > APP_MAX_FILE_BYTES:
+            print(
+                f"WARNING: {self.path} is {size:,} bytes, over the app's 2 GiB limit:"
+                " the app will refuse this file"
+            )
         return {
             "rows": self.rows,
-            "bytes": self.path.stat().st_size,
+            "bytes": size,
             "part1_bytes": part1_bytes,
             "part3_bytes": part3_bytes,
             "part6_bytes": part6_bytes,

@@ -247,6 +247,8 @@ def kth_neighbour_distance(
     shifted-curve kNN of Liao et al. Distances are upper bounds of the exact ones and
     close to them (see perf/README.md for the check). Non-finite rows get NaN.
     """
+    if xy.ndim != 2 or xy.shape[1] != 2:
+        raise ValueError(f"kth_neighbour_distance takes (n, 2) points, not {xy.shape}")
     out = np.full(len(xy), np.nan)
     finite = np.flatnonzero(np.isfinite(xy).all(axis=1))
     points = xy[finite].astype(np.float64)
