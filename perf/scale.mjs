@@ -311,12 +311,14 @@ async function runDataset(opts, url, dataset, round) {
     try {
       const available = await availableBytes();
       minAvailable = Math.min(minAvailable, available);
-      if (!guard && available < opts.guardGB * 2 ** 30) {
-        guard = { at: Date.now(), availableGB: available / 2 ** 30 };
-        console.error(
-          `perf:scale: ${(available / 2 ** 30).toFixed(2)} GB free; killing the browser`,
-        );
+      if (available < opts.guardGB * 2 ** 30) {
+        // Keeps killing while memory stays low, so a browser still starting cannot slip by.
+        if (!guard) {
+          guard = { at: Date.now(), availableGB: available / 2 ** 30 };
+          console.error(`perf:scale: ${guard.availableGB.toFixed(2)} GB free; killing the browser`);
+        }
         killTree(await processTable(), child.pid);
+        child.kill('SIGTERM');
       }
     } catch {
       // vm_stat failed once
@@ -543,7 +545,7 @@ async function main() {
   for (const d of datasets) {
     const m = (k) => (d.metrics[k] ? Math.round(d.metrics[k].median) : '-');
     console.log(
-      `${d.dataset.padEnd(10)} N ${String(d.n).padStart(9)}  load ${m('load.chosenToSettledMs')} ms` +
+      `${d.dataset.padEnd(10)} N ${String(d.n ?? '-').padStart(9)}  load ${m('load.chosenToSettledMs')} ms` +
         `  annotation INP ${m('annotation-switch.inp')} ms  lasso ${m('lasso.upToRenderMs')} ms` +
         `  pan p95 ${m('pan-zoom.p95Frame')} ms  ` +
         `status ${d.statuses.map((s) => s.result).join(',')}`,

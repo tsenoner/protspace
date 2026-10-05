@@ -117,6 +117,13 @@ async function heapMB(cdp: CDPSession | null): Promise<number | null> {
   return (metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0) / 2 ** 20;
 }
 
+/** Main-thread task time so far, ms (CDP `TaskDuration`). */
+async function taskDuration(cdp: CDPSession | null): Promise<number | null> {
+  if (!cdp) return null;
+  const { metrics } = await cdp.send('Performance.getMetrics');
+  return (metrics.find((m) => m.name === 'TaskDuration')?.value ?? 0) * 1000;
+}
+
 /** A fresh context and page on Explore with the demo dataset, its CDP session in Chromium. */
 async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession | null }> {
   const context = await browser.newContext({
@@ -159,6 +166,7 @@ async function coldLoad(
   const { page, cdp } = await openPage(browser);
   await settle(page, LOAD_CAP_MS);
   const heapBefore = await heapMB(cdp);
+  const busyBefore = await taskDuration(cdp);
   await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
   const t0 = await page.evaluate(() => {
     const c = window.__protspacePerfCounters!;
@@ -213,12 +221,14 @@ async function coldLoad(
       drawn: window.__protspacePerfCounters?.drawn ?? 0,
     };
   }, t0);
+  const busyMs = cdp ? (await taskDuration(cdp))! - busyBefore! : null;
   const heapAfter = await heapMB(cdp);
   const degraded = await page.evaluate(() => window.__scaleDegraded ?? []);
   result.degraded.push(...degraded);
   result.n = phases.n;
   result.loads.push({
     ...phases,
+    busyMs,
     heapBeforeMB: heapBefore,
     heapAfterMB: heapAfter,
     toasts: await page.getByText(TOAST).count(),
