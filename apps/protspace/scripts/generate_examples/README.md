@@ -194,7 +194,7 @@ report): the v3 file is written next to the v2 one, which stays. Other changes t
   measurement is tied to its bytes.
 
 Run everything with `uv run` from the repository root. Outputs go to
-`~/protspace-showcase/2026_03/<id>/`, or to `--out-root`:
+`<suite>/protspace-showcase/2026_03/<id>/` (`protspace-showcase/` sits beside the repository in the suite directory, outside git), or to `--out-root`:
 
 ```
 <id>/<id>_2026_03_v3.parquetbundle   the bundle (v3)
