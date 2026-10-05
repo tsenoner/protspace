@@ -3,29 +3,23 @@
  * off-screen export so both write the same buffers.
  *
  * The pass resolves every slot's opacity, paint depth and style record in one
- * loop. A slot with a record copies that record's packed channels; a host
- * without records has every point packed one at a time. Records are packed with
- * {@link packPointStyle}, the same function that packs a single point, so the
- * two routes cannot encode a style differently.
+ * loop. A slot with a record copies that record's packed channels; a slot the
+ * pass leaves without one is packed by the pass's `stageSlot`. Records are
+ * packed with {@link packPointStyle}, the same function that packs a single
+ * point, so the two routes cannot encode a style differently.
  */
 
-import type { PlotData, PlotDataPoint } from '@protspace/utils';
+import type { PlotData } from '@protspace/utils';
 import {
   PER_POINT_STYLE,
   type PointStylePass,
   type PointStyleRecords,
   type ScalePair,
   type SlotStyleScratch,
-  type WebGLStyleGetters,
 } from '../types';
 import { linearAxis, mapLinear } from '../../rescale';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
-import {
-  packPointStyle,
-  stagePointStyle,
-  type StagePointArrays,
-  type StagePointStyleArrays,
-} from './stage-point';
+import { buildPaintOrder } from './point-staging';
+import { packPointStyle, type StagePointArrays, type StagePointStyleArrays } from './stage-point';
 
 /** What a pass writes, plus the depth sort's second buffer. All capacity-sized. */
 interface PassScratch extends SlotStyleScratch {
@@ -43,41 +37,6 @@ export function createPassScratch(capacity: number): PassScratch {
     base: new Float64Array(capacity),
     sortScratch: new Uint32Array(capacity),
     packed: null,
-  };
-}
-
-/** The host's style pass, or one over its per-point getters. */
-export function beginStylePass(style: WebGLStyleGetters): PointStylePass {
-  return style.createStylePass?.() ?? perPointStylePass(style);
-}
-
-const NO_RECORDS: PointStyleRecords = { colors: [], shapes: [], pointSize: 0 };
-
-/** Every slot staged through the getters, as staging worked before passes. */
-function perPointStylePass(style: WebGLStyleGetters): PointStylePass {
-  const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-  const pointAt = (pd: PlotData, slot: number): PlotDataPoint => {
-    const origIdx = pd.originalIndices ? pd.originalIndices[slot] : slot;
-    sp.id = pd.proteinIds[origIdx];
-    sp.x = pd.xs[slot];
-    sp.y = pd.ys[slot];
-    sp.originalIndex = origIdx;
-    return sp;
-  };
-  return {
-    records: NO_RECORDS,
-    resolve(pd, count, out) {
-      for (let i = 0; i < count; i++) {
-        const point = pointAt(pd, i);
-        const opacity = style.getOpacity(point);
-        out.opacity[i] = opacity;
-        out.depth[i] = composePaintDepth(style.getDepth(point), opacity, style.isPredicted(point));
-        out.record[i] = PER_POINT_STYLE;
-      }
-    },
-    stageSlot(target, idx, pd, slot, opacity) {
-      stagePointStyle(target, idx, pointAt(pd, slot), opacity, style);
-    },
   };
 }
 

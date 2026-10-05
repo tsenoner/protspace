@@ -13,6 +13,7 @@ import type { RendererDegradedDetail } from '../../../scatter-plot.events';
 import { WebGLRenderer } from '../webgl-renderer';
 import { ATLAS_WIDTHS } from '../label-atlas-plan';
 import { createMockCanvas, type MockGLOptions } from './mock-webgl2';
+import { referenceStylePass } from './reference-staging';
 
 /**
  * A PlotData of `length` points backed by tiny arrays. The renderer only reads
@@ -53,6 +54,11 @@ export function styleGetters(colors: string[] = ['#f00']): WebGLStyleGetters {
     isPredicted: () => false,
     // Storage-shaped in production; here, "does this fixture render pies".
     isMultilabel: () => colors.length > 1,
+    // A method, so a suite that spreads this stub and overrides a getter stages
+    // through its override.
+    createStylePass() {
+      return referenceStylePass(this);
+    },
   };
 }
 

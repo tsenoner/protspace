@@ -56,7 +56,7 @@ import {
   allocateLabelAtlas,
   uploadPlaceholderAtlas,
 } from './label-atlas-texture';
-import { beginStylePass, createPassScratch, stageInPaintOrder } from './pass-staging';
+import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -668,7 +668,7 @@ export class ExportRenderer {
     const order = new Uint32Array(count);
     const selectedStartIndex = stageInPaintOrder(
       target,
-      beginStylePass(style),
+      style.createStylePass(),
       createPassScratch(count),
       order,
       pd,

@@ -9,6 +9,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import { ExportRenderer } from './export-renderer';
 import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
+import { referenceStylePass } from './test-support/reference-staging';
 
 /**
  * `renderToCanvas` creates its own throwaway canvas, so the stub goes on the
@@ -39,6 +40,9 @@ const style = {
   isPredicted: () => false,
   getDepth: () => 0,
   getOpacity: () => 1,
+  createStylePass() {
+    return referenceStylePass(this);
+  },
 } as never;
 const baseOptions = {
   selectionActive: false,

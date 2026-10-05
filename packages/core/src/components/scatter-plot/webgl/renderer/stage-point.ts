@@ -65,8 +65,8 @@ export type StagePointStyleArrays = Pick<
 
 /**
  * Write a point's *style* channels (color, alpha, size, shape, label texels) into
- * `target` at slot `idx`, from the per-point getters. The staging passes in
- * `pass-staging.ts` stage through it when the host has no style records.
+ * `target` at slot `idx`, from the per-point getters. The reference staging the
+ * passes are checked against styles every point through it.
  *
  * Pure helper: no GL, no WebGLRenderer import.
  */

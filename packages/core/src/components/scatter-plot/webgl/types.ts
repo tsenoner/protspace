@@ -23,11 +23,11 @@ export interface WebGLStyleGetters {
    */
   isMultilabel: () => boolean;
   /**
-   * Resolve the style inputs once for a staging pass over every point. Optional:
-   * without it the renderer stages through the per-point getters above, which
-   * write the same buffers, only slower.
+   * Resolve the style inputs once for a staging pass over every point. The live
+   * view and the export stage only through it, so it must style each point as
+   * the getters above do.
    */
-  createStylePass?: () => PointStylePass;
+  createStylePass: () => PointStylePass;
   /**
    * The marks the live view draws over the points of `pd`, or null when none
    * are. With marks, the getters above style every point as if none were

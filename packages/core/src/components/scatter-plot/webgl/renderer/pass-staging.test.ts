@@ -2,13 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData, PlotDataPoint } from '@protspace/utils';
 import type { ScalePair, WebGLStyleGetters } from '../types';
+import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
 import {
-  beginStylePass,
-  createPassScratch,
-  restageStyles,
-  stageInPaintOrder,
-} from './pass-staging';
-import { legacyRestage, legacyStage, stageArrays } from './test-support/legacy-staging';
+  referenceRestage,
+  referenceStage,
+  referenceStylePass,
+  stageArrays,
+} from './test-support/reference-staging';
 
 vi.mock('../color-utils', () => ({
   resolveColor: (color: string): [number, number, number] => {
@@ -33,7 +33,7 @@ function plotData(n: number): PlotData {
   };
 }
 
-/** Getters with no style pass, whose every output varies by point. */
+/** Getters whose every output varies by point, with a pass that has no records. */
 function perPointGetters(): WebGLStyleGetters {
   const colorSets = [['#102030'], ['#405060', '#708090'], [], ['#a0b0c0', '#d0e0f0', '#123456']];
   return {
@@ -44,20 +44,23 @@ function perPointGetters(): WebGLStyleGetters {
     getShape: (p: PlotDataPoint) => ['circle', 'diamond', 'square'][p.originalIndex % 3],
     isPredicted: (p: PlotDataPoint) => p.originalIndex % 5 === 0,
     isMultilabel: () => true,
+    createStylePass() {
+      return referenceStylePass(this);
+    },
   };
 }
 
-describe('staging without a style pass from the host', () => {
-  it('stages through the per-point getters exactly as before', () => {
+describe('staging slots without a record', () => {
+  it('stages through the per-point getters exactly as the reference does', () => {
     const style = perPointGetters();
     for (const n of [300, 3000]) {
       const pd = plotData(n);
       const expected = stageArrays(n, 4, true);
-      const legacy = legacyStage(style, pd, scales, n, true, expected);
+      const reference = referenceStage(style, pd, scales, n, true, expected);
 
       const staged = stageArrays(n, 4, true);
       const order = new Uint32Array(n);
-      const pass = beginStylePass(style);
+      const pass = style.createStylePass();
       expect(pass.records.colors).toHaveLength(0);
       const visible: number[] = [];
       const cut = stageInPaintOrder(
@@ -74,8 +77,8 @@ describe('staging without a style pass from the host', () => {
         },
       );
 
-      expect(Array.from(order)).toEqual(Array.from(legacy.order));
-      expect(cut).toBe(legacy.cut);
+      expect(Array.from(order)).toEqual(Array.from(reference.order));
+      expect(cut).toBe(reference.cut);
       expect(staged).toEqual(expected);
       expect(visible).toHaveLength(Array.from(order).filter((s) => s % 4 !== 3).length);
     }
@@ -92,21 +95,21 @@ describe('staging without a style pass from the host', () => {
     };
     const style = perPointGetters();
     const expected = stageArrays(n, 4, true);
-    legacyStage(style, pd, odd, n, false, expected);
+    referenceStage(style, pd, odd, n, false, expected);
     const staged = stageArrays(n, 4, true);
-    const pass = beginStylePass(style);
+    const pass = style.createStylePass();
     stageInPaintOrder(staged, pass, createPassScratch(n), new Uint32Array(n), pd, odd, n, false);
     expect(staged.dataPositions).toEqual(expected.dataPositions);
   });
 
-  it('restages styles through the per-point getters exactly as before', () => {
+  it('restages styles through the per-point getters exactly as the reference does', () => {
     const n = 2500;
     const pd = plotData(n);
     const style = perPointGetters();
     const staged = stageArrays(n, 4, true);
     const order = new Uint32Array(n);
     const scratch = createPassScratch(n);
-    stageInPaintOrder(staged, beginStylePass(style), scratch, order, pd, scales, n, false);
+    stageInPaintOrder(staged, style.createStylePass(), scratch, order, pd, scales, n, false);
 
     const recolored: WebGLStyleGetters = { ...style, getColors: () => ['#ffffff', '#000000'] };
     // A restage leaves positions, depths and unused texels as the stage left them.
@@ -114,8 +117,8 @@ describe('staging without a style pass from the host', () => {
     expected.dataPositions.set(staged.dataPositions);
     expected.depths.set(staged.depths);
     expected.labelColorData!.set(staged.labelColorData!);
-    legacyRestage(recolored, pd, order, n, expected);
-    restageStyles(staged, beginStylePass(recolored), scratch, order, pd, n, n);
+    referenceRestage(recolored, pd, order, n, expected);
+    restageStyles(staged, recolored.createStylePass(), scratch, order, pd, n, n);
     expect(staged).toEqual(expected);
   });
 });

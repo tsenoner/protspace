@@ -10,16 +10,15 @@ import { createStyleGetters, type StyleConfig } from './style-getters';
 import { computeVisibilityModel, type VisibilityModel } from './visibility-model';
 import type { ScalePair, WebGLStyleGetters } from '../webgl/types';
 import {
-  beginStylePass,
   createPassScratch,
   restageStyles,
   stageInPaintOrder,
 } from '../webgl/renderer/pass-staging';
 import {
-  legacyRestage,
-  legacyStage,
+  referenceRestage,
+  referenceStage,
   stageArrays,
-} from '../webgl/renderer/test-support/legacy-staging';
+} from '../webgl/renderer/test-support/reference-staging';
 import { seededRandom } from '../../../test-support/seeded-random';
 
 // jsdom has no 2D canvas, so the real resolveColor maps every colour to white
@@ -174,13 +173,13 @@ function expectSameStaging(
   { selectionActive = false, maxLabels = 8, atlas = true } = {},
 ) {
   const count = pd.length;
-  const legacy = stageArrays(count, maxLabels, atlas);
-  const expected = legacyStage(style, pd, scales, count, selectionActive, legacy);
+  const reference = stageArrays(count, maxLabels, atlas);
+  const expected = referenceStage(style, pd, scales, count, selectionActive, reference);
 
   const staged = stageArrays(count, maxLabels, atlas);
   const order = new Uint32Array(count);
-  const pass = beginStylePass(style);
-  expect(pass.records.colors.length).toBeGreaterThan(0); // the table pass, not the fallback
+  const pass = style.createStylePass();
+  expect(pass.records.colors.length).toBeGreaterThan(0); // the table pass, with records to copy
   const cut = stageInPaintOrder(
     staged,
     pass,
@@ -194,7 +193,7 @@ function expectSameStaging(
 
   expect(Array.from(order)).toEqual(Array.from(expected.order));
   expect(cut).toBe(expected.cut);
-  expect(staged).toEqual(legacy);
+  expect(staged).toEqual(reference);
   expectHidingPerRecord(style, pd);
 }
 
@@ -203,7 +202,7 @@ function expectSameStaging(
  * must be its unhidden opacity, or 0 where its record is hidden.
  */
 function expectHidingPerRecord(style: Required<WebGLStyleGetters>, pd: PlotData) {
-  const pass = beginStylePass(style);
+  const pass = style.createStylePass();
   const scratch = createPassScratch(pd.length);
   pass.resolve(pd, pd.length, scratch);
   const hidden = pass.hiddenRecords!;
@@ -332,7 +331,7 @@ describe('category style pass', () => {
     const target = stageArrays(count, 8, true);
     const order = new Uint32Array(count);
     const scratch = createPassScratch(count);
-    stageInPaintOrder(target, beginStylePass(first), scratch, order, pd, scales, count, false);
+    stageInPaintOrder(target, first.createStylePass(), scratch, order, pd, scales, count, false);
 
     // A legend hide: styles change, order and positions stay.
     const hidden = rendererStyle(
@@ -340,10 +339,10 @@ describe('category style pass', () => {
     );
     const expected = stageArrays(count, 8, true);
     expected.labelColorData!.set(target.labelColorData!);
-    legacyRestage(hidden, pd, order, count, expected);
+    referenceRestage(hidden, pd, order, count, expected);
 
     const seen: number[] = [];
-    restageStyles(target, beginStylePass(hidden), scratch, order, pd, count, count, (slot) =>
+    restageStyles(target, hidden.createStylePass(), scratch, order, pd, count, count, (slot) =>
       seen.push(slot),
     );
     expect(seen).toEqual(Array.from(order));

@@ -1,10 +1,16 @@
 /**
- * The full re-stage as `populateBuffers` wrote it before style passes: every
- * getter called per point, a comparator sort, then each point staged in sorted
- * order. Suites stage through the passes and expect these exact buffers.
+ * The reference the staging passes are checked against: every getter called per
+ * point, a comparator sort, then each point staged in sorted order. Suites stage
+ * through the passes and expect these exact buffers. Getter stubs with no pass
+ * of their own stage through {@link referenceStylePass}, the same model as a pass.
  */
 import type { PlotData, PlotDataPoint } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../../types';
+import {
+  PER_POINT_STYLE,
+  type PointStylePass,
+  type ScalePair,
+  type WebGLStyleGetters,
+} from '../../types';
 import { composePaintDepth } from '../point-staging';
 import { stagePointStyle, type StagePointArrays } from '../stage-point';
 
@@ -22,7 +28,7 @@ export function stageArrays(capacity: number, maxLabels: number, atlas: boolean)
   };
 }
 
-export function legacyStage(
+export function referenceStage(
   style: WebGLStyleGetters,
   pd: PlotData,
   scales: ScalePair,
@@ -62,8 +68,8 @@ export function legacyStage(
   return { order, cut: selectionActive && firstSelected !== -1 ? firstSelected : count };
 }
 
-/** The colour-only re-stage before style passes: style channels in the staged order. */
-export function legacyRestage(
+/** The colour-only re-stage: style channels in the staged order. */
+export function referenceRestage(
   style: WebGLStyleGetters,
   pd: PlotData,
   order: Uint32Array,
@@ -80,4 +86,32 @@ export function legacyRestage(
     sp.y = pd.ys[slot];
     stagePointStyle(target, i, sp, style.getOpacity(sp), style);
   }
+}
+
+/** A pass with no records: every slot staged through the getters, one at a time. */
+export function referenceStylePass(style: WebGLStyleGetters): PointStylePass {
+  const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
+  const pointAt = (pd: PlotData, slot: number): PlotDataPoint => {
+    const origIdx = pd.originalIndices ? pd.originalIndices[slot] : slot;
+    sp.id = pd.proteinIds[origIdx];
+    sp.x = pd.xs[slot];
+    sp.y = pd.ys[slot];
+    sp.originalIndex = origIdx;
+    return sp;
+  };
+  return {
+    records: { colors: [], shapes: [], pointSize: 0 },
+    resolve(pd, count, out) {
+      for (let i = 0; i < count; i++) {
+        const point = pointAt(pd, i);
+        const opacity = style.getOpacity(point);
+        out.opacity[i] = opacity;
+        out.depth[i] = composePaintDepth(style.getDepth(point), opacity, style.isPredicted(point));
+        out.record[i] = PER_POINT_STYLE;
+      }
+    },
+    stageSlot(target, idx, pd, slot, opacity) {
+      stagePointStyle(target, idx, pointAt(pd, slot), opacity, style);
+    },
+  };
 }

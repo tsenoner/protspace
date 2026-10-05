@@ -4,7 +4,7 @@ import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
 import type { PointStylePass, ScalePair } from '../types';
 import { createPassScratch, packRecords, stageInPaintOrder } from './pass-staging';
-import { stageArrays } from './test-support/legacy-staging';
+import { stageArrays } from './test-support/reference-staging';
 import { replayVertex } from './test-support/vertex-replay';
 import {
   canRestyle,

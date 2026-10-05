@@ -40,13 +40,7 @@ import {
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { composePaintDepth } from './point-staging';
-import {
-  beginStylePass,
-  createPassScratch,
-  packRecords,
-  restageStyles,
-  stageInPaintOrder,
-} from './pass-staging';
+import { createPassScratch, packRecords, restageStyles, stageInPaintOrder } from './pass-staging';
 import {
   canRestyle,
   collectStagedRecords,
@@ -1566,7 +1560,7 @@ export class WebGLRenderer {
       // visibility toggles, enabling the fast color-only update path instead of a
       // full rebuild + re-sort. Shared with the export path, which stages the same
       // painter order and selection cut.
-      const pass = beginStylePass(this.style);
+      const pass = this.style.createStylePass();
       const table = this.prepareRecordTable(pass);
       this.selectedStartIndex = stageInPaintOrder(
         this.stageArrays,
@@ -1603,7 +1597,7 @@ export class WebGLRenderer {
       const src = this.sortedDataRef;
       if (src) {
         idx = Math.min(this.currentPointCount, pd.length);
-        const pass = beginStylePass(this.style);
+        const pass = this.style.createStylePass();
         const table = this.prepareRecordTable(pass);
         restageStyles(
           this.stageArrays,
@@ -1791,7 +1785,7 @@ export class WebGLRenderer {
     // A style update re-sorts when it samples moved depths. Only a re-sort fixes
     // an order that is already out of date, and staging decides when to re-sort.
     if (this.stagedOrderStale || this.stagedDepthsMoved(pd)) return false;
-    const pass = beginStylePass(this.style);
+    const pass = this.style.createStylePass();
     const hidden = pass.hiddenRecords;
     if (!hidden || !canRestyle(staged, pass.records.codes, hidden)) return false;
     writeRecordTexels(staged, packRecords(pass.records, this.stageArrays), hidden);
