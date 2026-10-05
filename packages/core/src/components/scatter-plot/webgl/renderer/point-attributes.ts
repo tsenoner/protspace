@@ -1,7 +1,8 @@
 import type { PointAttribLocations } from '../types';
 
-// The record id is wired by the live renderer alone; the export never reads it.
-type PointAttribKey = Exclude<keyof PointAttribLocations, 'record'>;
+// The record id and the glide's previous positions are wired by the live
+// renderer alone; the export never reads them.
+type PointAttribKey = Exclude<keyof PointAttribLocations, 'record' | 'prevPosition'>;
 
 interface PointAttributeSpec {
   key: PointAttribKey;

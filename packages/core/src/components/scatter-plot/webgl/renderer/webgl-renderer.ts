@@ -548,6 +548,7 @@ export class WebGLRenderer {
 
       this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
         dataPosition: this.pointAttribLocations.dataPosition,
+        prevPosition: this.pointAttribLocations.prevPosition,
         color: this.pointAttribLocations.color,
         record: this.pointAttribLocations.record,
       });

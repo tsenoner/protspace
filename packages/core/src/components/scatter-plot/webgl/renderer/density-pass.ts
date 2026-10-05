@@ -237,10 +237,13 @@ function destroyColorTarget(gl: WebGL2RenderingContext, t: ColorTarget): void {
 export function createDensityResources(
   gl: WebGL2RenderingContext,
   quadBuffer: WebGLBuffer,
-  pointAttribs: { dataPosition: number; color: number; record: number },
+  pointAttribs: { dataPosition: number; prevPosition: number; color: number; record: number },
 ): DensityResources | null {
+  // Every attribute at the point program's location: the accumulation draws
+  // through the point VAO.
   const pointBindings = {
     a_dataPosition: pointAttribs.dataPosition,
+    a_prevPosition: pointAttribs.prevPosition,
     a_color: pointAttribs.color,
     a_record: pointAttribs.record,
   };
@@ -283,6 +286,7 @@ export function createDensityResources(
     resolution: loc(p, 'u_resolution'),
     transform: loc(p, 'u_transform'),
     dpr: loc(p, 'u_dpr'),
+    morph: loc(p, 'u_morph'),
   });
   return {
     contourBlurProgram,

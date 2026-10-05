@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CAMERA_TO_CLIP_GLSL,
   GAMMA_FRAGMENT_SHADER,
   POINT_FRAGMENT_SHADER,
   POINT_VERTEX_SHADER,
@@ -8,6 +9,20 @@ import {
 describe('gamma correction shader', () => {
   it('un-premultiplies before handing the frame to the compositor', () => {
     expect(GAMMA_FRAGMENT_SHADER).toContain('linear.rgb / linear.a');
+  });
+});
+
+describe('projection morph', () => {
+  it('blends towards a_prevPosition by u_morph before the camera transform', () => {
+    const [mix, transformed, ...rest] = CAMERA_TO_CLIP_GLSL.split('\n').map((l) => l.trim());
+    expect(mix).toBe('vec2 position = mix(a_dataPosition, a_prevPosition, u_morph);');
+    expect(transformed).toMatch(/^vec2 cssTransformed = position \* /);
+    expect(rest.join('\n')).not.toContain('a_dataPosition');
+  });
+
+  it('pins a_dataPosition to location 0, so a disabled a_prevPosition never takes it', () => {
+    expect(POINT_VERTEX_SHADER).toContain('layout(location = 0) in vec2 a_dataPosition;');
+    expect(POINT_VERTEX_SHADER.match(/layout\(location/g)).toHaveLength(1);
   });
 });
 

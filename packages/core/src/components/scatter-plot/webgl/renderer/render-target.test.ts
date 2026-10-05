@@ -5,6 +5,7 @@ import {
   drawPoints,
   drawMarkedPoints,
   bindPointDrawState,
+  setCameraUniforms,
   LABEL_ATLAS_TEXTURE_UNIT,
   MARK_TEXTURE_UNIT,
   RECORD_STYLE_TEXTURE_UNIT,
@@ -210,6 +211,7 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       resolution: { n: 'resolution' },
       transform: { n: 'transform' },
       dpr: { n: 'dpr' },
+      morph: { n: 'morph' },
       pointScale: { n: 'pointScale' },
       gamma: { n: 'gamma' },
       knockoutColor: { n: 'knockoutColor' },
@@ -341,5 +343,30 @@ describe('bindPointDrawState point scale', () => {
       labelAtlas: null,
     });
     expect(pushed).toMatchObject({ dpr: 2, pointScale: 2.5 });
+  });
+});
+
+describe('setCameraUniforms morph', () => {
+  function pushedMorph(morph?: number) {
+    const pushed: Record<string, number> = {};
+    const gl = {
+      uniform1f: (loc: { n: string }, v: number) => {
+        pushed[loc.n] = v;
+      },
+      uniform2f: () => {},
+      uniform4f: () => {},
+    } as unknown as WebGL2RenderingContext;
+    const loc = new Proxy({}, { get: (_t, key) => ({ n: String(key) }) }) as never;
+    const camera = { width: 800, height: 600, transform: { x: 0, y: 0, k: 1 }, dpr: 1 };
+    setCameraUniforms(gl, loc, morph === undefined ? camera : { ...camera, morph });
+    return pushed.morph;
+  }
+
+  it('pushes u_morph 0 without a weight, so a draw that passes none shows the staged positions', () => {
+    expect(pushedMorph()).toBe(0);
+  });
+
+  it('pushes the weight it is given', () => {
+    expect(pushedMorph(0.25)).toBe(0.25);
   });
 });

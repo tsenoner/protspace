@@ -4,7 +4,7 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
-import { CAMERA_TO_CLIP_GLSL, RECORD_STYLE_GLSL } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, RECORD_STYLE_GLSL } from './export-shaders';
 import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
 
 export function gaussianWeights(sigma: number, radius: number): number[] {
@@ -98,6 +98,7 @@ uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
 uniform int u_slotCount;
 uniform int u_tailSlot;
 uniform int u_group;
+${MORPH_GLSL}
 ${RECORD_STYLE_GLSL}
 
 out vec4 v_accum;

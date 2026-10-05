@@ -56,11 +56,17 @@ export interface CameraParams {
    * Omitted, the positions are taken as they are.
    */
   rescale?: Rescale;
+  /**
+   * How far the points still are from their staged positions towards the ones a
+   * projection switch drew (u_morph, see MORPH_GLSL). Omitted, it is 0: the
+   * staged positions, which is all the export ever draws.
+   */
+  morph?: number;
 }
 
 export type CameraUniformLocations = Pick<
   PointUniformLocations,
-  'resolution' | 'transform' | 'dpr'
+  'resolution' | 'transform' | 'dpr' | 'morph'
 >;
 
 export function setCameraUniforms(
@@ -76,6 +82,7 @@ export function setCameraUniforms(
   const r = cam.rescale ?? IDENTITY_RESCALE;
   gl.uniform4f(loc.transform, r.x.offset * k + x, r.y.offset * k + y, r.x.scale * k, r.y.scale * k);
   gl.uniform1f(loc.dpr, cam.dpr);
+  gl.uniform1f(loc.morph, cam.morph ?? 0);
 }
 
 /** Per-draw inputs for {@link bindPointDrawState}. */

@@ -9,9 +9,19 @@
  * truth for the shader text.
  */
 
+/**
+ * Where a projection switch drew each point, for a vertex shader with
+ * `CAMERA_TO_CLIP_GLSL`. `u_morph` runs 1 -> 0 while the points glide and is 0
+ * otherwise; outside a glide `a_prevPosition` is disabled and reads (0, 0).
+ */
+export const MORPH_GLSL = `in vec2 a_prevPosition;
+uniform float u_morph;`;
+
 // u_transform is (tx, ty, kx, ky): the zoom transform with the staged-to-current
 // rescale folded in per axis (see setCameraUniforms). Without one, kx = ky = k.
-export const CAMERA_TO_CLIP_GLSL = `  vec2 cssTransformed = a_dataPosition * u_transform.zw + u_transform.xy;
+// At u_morph 0 the mix is exactly a_dataPosition.
+export const CAMERA_TO_CLIP_GLSL = `  vec2 position = mix(a_dataPosition, a_prevPosition, u_morph);
+  vec2 cssTransformed = position * u_transform.zw + u_transform.xy;
   vec2 physicalPos = cssTransformed * u_dpr;
   vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;`;
 
@@ -63,10 +73,12 @@ bool isMarked() {
   return texelFetch(u_marks, ivec2(gl_VertexID % width, gl_VertexID / width), 0).r > 0.0;
 }`;
 
+// a_dataPosition is always enabled, so it takes location 0: a disabled attribute
+// there (a_prevPosition) makes desktop-GL backends emulate it on every draw.
 export const POINT_VERTEX_SHADER = `#version 300 es
 precision highp float;
 
-in vec2 a_dataPosition;
+layout(location = 0) in vec2 a_dataPosition;
 in float a_pointSize;
 in vec4 a_color;
 in float a_depth;
@@ -79,6 +91,7 @@ uniform vec4 u_transform;
 uniform float u_dpr;
 uniform float u_pointScale;
 uniform float u_gamma;
+${MORPH_GLSL}
 ${RECORD_STYLE_GLSL}
 ${MARK_GLSL}
 

@@ -20,11 +20,13 @@ export function resolvePointLocations(
       shape: gl.getAttribLocation(program, 'a_shape'),
       predicted: gl.getAttribLocation(program, 'a_predicted'),
       record: gl.getAttribLocation(program, 'a_record'),
+      prevPosition: gl.getAttribLocation(program, 'a_prevPosition'),
     },
     uniforms: {
       resolution: gl.getUniformLocation(program, 'u_resolution'),
       transform: gl.getUniformLocation(program, 'u_transform'),
       dpr: gl.getUniformLocation(program, 'u_dpr'),
+      morph: gl.getUniformLocation(program, 'u_morph'),
       pointScale: gl.getUniformLocation(program, 'u_pointScale'),
       gamma: gl.getUniformLocation(program, 'u_gamma'),
       knockoutColor: gl.getUniformLocation(program, 'u_knockoutColor'),

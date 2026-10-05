@@ -9,7 +9,7 @@ import {
   DENSITY_CONTOUR_BLUR_RADIUS,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
 } from './density-shaders';
-import { CAMERA_TO_CLIP_GLSL, POINT_VERTEX_SHADER } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, POINT_VERTEX_SHADER } from './export-shaders';
 
 describe('gaussianWeights', () => {
   it('is a normalised symmetric kernel', () => {
@@ -41,6 +41,15 @@ describe('DENSITY_CATEGORY_ACCUM_VERTEX_SHADER camera', () => {
   it('shares the camera snippet with the point shader', () => {
     for (const src of [POINT_VERTEX_SHADER, DENSITY_CATEGORY_ACCUM_VERTEX_SHADER]) {
       expect(src).toContain(CAMERA_TO_CLIP_GLSL);
+    }
+  });
+
+  it('declares the morph inputs before main, for the mix the camera snippet starts with', () => {
+    for (const src of [POINT_VERTEX_SHADER, DENSITY_CATEGORY_ACCUM_VERTEX_SHADER]) {
+      const main = src.indexOf('void main()');
+      expect(src.indexOf(MORPH_GLSL)).toBeGreaterThan(-1);
+      expect(src.indexOf(MORPH_GLSL)).toBeLessThan(main);
+      expect(src.indexOf(CAMERA_TO_CLIP_GLSL)).toBeGreaterThan(main);
     }
   });
 });

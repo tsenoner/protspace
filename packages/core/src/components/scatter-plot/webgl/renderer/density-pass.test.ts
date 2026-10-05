@@ -122,6 +122,7 @@ function resources(fieldCount = 4): DensityResources {
       resolution: named('resolution'),
       transform: named('transform'),
       dpr: named('dpr'),
+      morph: named('morph'),
       slotKeys: named('slotKeys'),
       slotCount: named('slotCount'),
       tailSlot: named('tailSlot'),
@@ -336,6 +337,8 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).toContain('viewport:0,0,400,300');
     expect(calls).toContain('u2f:resolution:800,600');
+    expect(calls.indexOf('u1f:morph:0')).toBeGreaterThan(-1);
+    expect(calls.indexOf('u1f:morph:0')).toBeLessThan(firstPointDraw);
 
     expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(2);
     expect(calls).toContain('u2f:direction:0.0025,0');
@@ -344,6 +347,13 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).not.toContain('getError');
     expect(calls).not.toContain('checkFramebufferStatus');
+  });
+
+  it('accumulates at the morph weight the camera carries', () => {
+    const { gl, calls } = mockGL();
+    const frame = contourFrame(paletteOf(1));
+    accumulateAndBlurDensity(gl, { ...frame, camera: { ...camera, morph: 0.5 } }, pointVao, 1000);
+    expect(calls.filter((c) => c.startsWith('u1f:morph'))).toEqual(['u1f:morph:0.5']);
   });
 
   it('runs one accumulate and blur per group of four slots', () => {
