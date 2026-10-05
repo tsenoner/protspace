@@ -298,7 +298,6 @@ export class ProtspaceScatterplot extends LitElement {
   // dispatch + the transform field stay on the host (INV-03/INV-05, F-48).
   private _interaction: PlotInteractionController | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
-  private _styleSig: string | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
   // The getters over the model with nothing marked (`_getStageGetters`), with
   // the getters and model they were built from.
@@ -727,8 +726,6 @@ export class ProtspaceScatterplot extends LitElement {
         createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
       },
     );
-    this._updateStyleSignature();
-    this._webglRenderer.setStyleSignature(this._styleSig);
     // A renderer rebuilt after a context loss starts with no selection either.
     this._syncWebglSelectionActive();
     // Compile the shaders while data loads rather than inside the first render.
@@ -904,7 +901,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._scheduleNumericAnnotationRefresh();
     }
     this._reconcileConfigMerge(changedProperties);
-    this._rebuildStyleAndSignature(changedProperties);
+    this._rebuildStyle(changedProperties);
     this._reconcileSelectionMode(changedProperties);
     this._reconcileProvenanceConnectors(changedProperties);
     this._refreshStyleGettersCache(changedProperties);
@@ -1088,7 +1085,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /** INV-14: config shallow-merge + duplicate-UI teardown + style signature + point index schedule. */
+  /** INV-14: config shallow-merge + duplicate-UI teardown + style invalidation + point index schedule. */
   private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
@@ -1107,9 +1104,7 @@ export class ProtspaceScatterplot extends LitElement {
       const changed = (k: keyof ScatterplotConfig) =>
         JSON.stringify(prev[k]) !== JSON.stringify(next[k]);
       if (CONFIG_STYLE_KEYS.some(changed)) {
-        this._updateStyleSignature();
         this._webglRenderer?.invalidateStyleCache();
-        this._webglRenderer?.setStyleSignature(this._styleSig);
       }
       if (CONFIG_INDEX_KEYS.some(changed)) {
         this._schedulePointGridIndexRebuild();
@@ -1117,7 +1112,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  private _rebuildStyleAndSignature(changedProperties: Map<string, unknown>) {
+  private _rebuildStyle(changedProperties: Map<string, unknown>) {
     const visibilityMembershipChanged =
       changedProperties.has('selectedAnnotation') ||
       changedProperties.has('hiddenAnnotationValues') ||
@@ -1134,8 +1129,6 @@ export class ProtspaceScatterplot extends LitElement {
         !changedProperties.has('eatOverlayEnabled');
       if (hiddenOnly) this._webglRenderer?.invalidateCategoryStyles();
       else this._webglRenderer?.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer?.setStyleSignature(this._styleSig);
 
       // Position/sort rebuild only when annotation or "Other" category changes
       // (affects colors, shapes, z-order). Visibility toggles only change alpha
@@ -1425,8 +1418,6 @@ export class ProtspaceScatterplot extends LitElement {
 
       this._schedulePointGridIndexRebuild();
       this._webglRenderer?.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer?.setStyleSignature(this._styleSig);
       this._requestRender();
       this._updateSelectionOverlays();
     }
@@ -2739,19 +2730,9 @@ export class ProtspaceScatterplot extends LitElement {
     }
   };
 
-  private _updateStyleSignature() {
-    const cfg = this._mergedConfig;
-    const parts = [
-      `ps:${cfg.pointSize}`,
-      `annot:${this.selectedAnnotation}`,
-      `eat:${this.eatOverlayEnabled ? 1 : 0}`,
-    ];
-    this._styleSig = parts.join('|');
-  }
-
   /**
    * Shared isolation render-refresh: reprocess derived plot data, rebuild the
-   * point index, invalidate + re-sign the WebGL renderer's caches, request a Lit
+   * point index, invalidate the WebGL renderer's caches, request a Lit
    * update, and render once the update settles. Called by isolateSelection() and
    * resetIsolation() — the only divergence (resetIsolation clears _lastDataRef to
    * force the full-rebuild path) stays at the call site, before this method runs.
@@ -2763,8 +2744,6 @@ export class ProtspaceScatterplot extends LitElement {
     if (this._webglRenderer) {
       this._webglRenderer.invalidatePositionCache();
       this._webglRenderer.invalidateStyleCache();
-      this._updateStyleSignature();
-      this._webglRenderer.setStyleSignature(this._styleSig);
     }
 
     this.requestUpdate();

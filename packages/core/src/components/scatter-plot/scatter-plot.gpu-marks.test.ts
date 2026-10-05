@@ -26,7 +26,6 @@ vi.mock('./webgl', async (importOriginal) => ({
     constructor(...args: unknown[]) {
       constructed.push(args);
     }
-    setStyleSignature() {}
     setSelectionActive() {}
     prewarm() {}
   },
@@ -65,7 +64,6 @@ function makeEl(): Plot {
   el._webglRenderer = {
     invalidateStyleCache: vi.fn(),
     setSelectionActive: vi.fn(),
-    setStyleSignature: vi.fn(),
     clear: vi.fn(),
     render: vi.fn(),
     releaseDataReferences: vi.fn(),

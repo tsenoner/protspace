@@ -13,7 +13,7 @@ import { createPlot } from './test-support/plot-fixture';
 function apply(patch: Partial<ScatterplotConfig>) {
   const sp = createPlot();
   const invalidateStyleCache = vi.fn();
-  sp._webglRenderer = { invalidateStyleCache, setStyleSignature: vi.fn() } as never;
+  sp._webglRenderer = { invalidateStyleCache } as never;
   const reindex = vi.spyOn(sp, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
   sp.config = { width: 800, height: 600 };
   sp._reconcileConfigMerge(new Map([['config', undefined]]));

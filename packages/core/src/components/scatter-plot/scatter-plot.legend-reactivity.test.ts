@@ -59,16 +59,6 @@ type WebglStub = {
   invalidateDepthOrder: ReturnType<typeof vi.fn>;
   invalidateStyleCache: ReturnType<typeof vi.fn>;
   invalidateCategoryStyles: ReturnType<typeof vi.fn>;
-  /**
-   * Not asserted on, but required: `_scheduleNumericAnnotationRefresh` queues a
-   * requestAnimationFrame whose callback reaches `setStyleSignature`. That fires
-   * after the test that scheduled it has finished, so a missing method throws
-   * from inside jsdom's frame callback — outside any test's scope, where it
-   * becomes an unhandled error that fails `vitest --run` while every assertion
-   * still passes. Whether the frame lands before teardown is a timing race, so
-   * the stub has to cover the whole path, not just the calls under test.
-   */
-  setStyleSignature: ReturnType<typeof vi.fn>;
 };
 
 /** The plot, with the stub renderer `makeEl` gives it. */
@@ -86,7 +76,6 @@ function makeEl(): Plot {
     invalidateDepthOrder: vi.fn(),
     invalidateStyleCache: vi.fn(),
     invalidateCategoryStyles: vi.fn(),
-    setStyleSignature: vi.fn(),
   };
   return el;
 }
@@ -269,7 +258,7 @@ describe('legend visibility — restyle categories, not points', () => {
 
   it('a hide or show alone restyles the categories', () => {
     const el = makeEl();
-    el._rebuildStyleAndSignature(changed('hiddenAnnotationValues'));
+    el._rebuildStyle(changed('hiddenAnnotationValues'));
     expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
     expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
   });
@@ -278,7 +267,7 @@ describe('legend visibility — restyle categories, not points', () => {
     for (const other of ['selectedAnnotation', 'otherAnnotationValues', 'eatOverlayEnabled']) {
       const el = makeEl();
       Object.assign(el._webglRenderer, { invalidatePositionCache: vi.fn() });
-      el._rebuildStyleAndSignature(changed('hiddenAnnotationValues', other));
+      el._rebuildStyle(changed('hiddenAnnotationValues', other));
       expect(el._webglRenderer.invalidateStyleCache).toHaveBeenCalledTimes(1);
       expect(el._webglRenderer.invalidateCategoryStyles).not.toHaveBeenCalled();
     }

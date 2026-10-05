@@ -281,15 +281,12 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _isolationHistory: string[][];
     _plotData: PlotData;
     _lastDataRef: unknown;
-    _styleSig: string | null;
     _webglRenderer?: {
       invalidatePositionCache(): void;
       invalidateStyleCache(): void;
-      setStyleSignature(sig: string | null): void;
     };
     _processData(): void;
     _buildPointGridIndex(): void;
-    _updateStyleSignature(): void;
     _renderPlot(): void;
     _flushRender(): void;
     isolateSelection(): void;
@@ -347,9 +344,6 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
     vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() =>
       calls.push('buildPointGridIndex'),
-    );
-    vi.spyOn(el, '_updateStyleSignature').mockImplementation(() =>
-      calls.push('updateStyleSignature'),
     );
     vi.spyOn(el, '_renderPlot').mockImplementation(() => calls.push('renderPlot'));
     // jsdom element is not connected, so updateComplete is an already-resolved promise.
@@ -422,40 +416,28 @@ describe('scatter-plot isolation render-refresh sequence', () => {
         el.resetIsolation();
       },
     ],
-  ])(
-    '%s invalidates the WebGL caches and pushes the fresh style signature before the deferred render',
-    async (_name, act) => {
-      const el = makeEl();
-      const { calls } = instrument(el);
-      el._webglRenderer = {
-        invalidatePositionCache: vi.fn(() => calls.push('invalidatePositionCache')),
-        invalidateStyleCache: vi.fn(() => calls.push('invalidateStyleCache')),
-        setStyleSignature: vi.fn((sig) => calls.push(`setStyleSignature:${sig}`)),
-      };
-      (
-        el._updateStyleSignature as unknown as { mockImplementation: (f: () => void) => void }
-      ).mockImplementation(() => {
-        el._styleSig = 'sig-after-refresh';
-        calls.push('updateStyleSignature');
-      });
+  ])('%s invalidates the WebGL caches before the deferred render', async (_name, act) => {
+    const el = makeEl();
+    const { calls } = instrument(el);
+    el._webglRenderer = {
+      invalidatePositionCache: vi.fn(() => calls.push('invalidatePositionCache')),
+      invalidateStyleCache: vi.fn(() => calls.push('invalidateStyleCache')),
+    };
 
-      act(el);
+    act(el);
 
-      const refresh = [
-        'processData',
-        'buildPointGridIndex',
-        'invalidatePositionCache',
-        'invalidateStyleCache',
-        'updateStyleSignature',
-        'setStyleSignature:sig-after-refresh',
-      ];
-      expect(calls).toEqual(refresh);
-      await el.updateComplete;
-      // The render waits for the next frame.
-      el._flushRender();
-      expect(calls).toEqual([...refresh, 'renderPlot']);
-    },
-  );
+    const refresh = [
+      'processData',
+      'buildPointGridIndex',
+      'invalidatePositionCache',
+      'invalidateStyleCache',
+    ];
+    expect(calls).toEqual(refresh);
+    await el.updateComplete;
+    // The render waits for the next frame.
+    el._flushRender();
+    expect(calls).toEqual([...refresh, 'renderPlot']);
+  });
 
   // #297: zooming into a region and then isolating should snap back to the full
   // view of the isolated subset, not keep the stale pre-isolation zoom transform.

@@ -77,7 +77,7 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
 // F-55: the unused public getGamma/setGamma accessors are removed; the gamma
 //       field and its effective-gamma resolver (getEffectiveGamma) stay.
 // F-56: the @deprecated no-op setSelectedAnnotation is removed; the live
-//       signature methods (setStyleSignature) survive.
+//       invalidation methods survive.
 describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
   let renderer: ReturnType<typeof makeRenderer>;
   beforeEach(() => {
@@ -93,10 +93,10 @@ describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
     expect(typeof surface.getEffectiveGamma).toBe('function');
   });
 
-  it('F-56: setSelectedAnnotation is gone; setStyleSignature survives', () => {
+  it('F-56: setSelectedAnnotation is gone; invalidateStyleCache survives', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.setSelectedAnnotation).toBeUndefined();
-    expect(typeof surface.setStyleSignature).toBe('function');
+    expect(typeof surface.invalidateStyleCache).toBe('function');
   });
 });
 

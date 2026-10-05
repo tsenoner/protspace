@@ -72,7 +72,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _pointGridIndex: Host['_pointGridIndex'];
   _pointMarks: Host['_pointMarks'];
   _processData: Host['_processData'];
-  _rebuildStyleAndSignature: Host['_rebuildStyleAndSignature'];
+  _rebuildStyle: Host['_rebuildStyle'];
   _reconcileConfigMerge: Host['_reconcileConfigMerge'];
   _reconcileProvenanceConnectors: Host['_reconcileProvenanceConnectors'];
   _reconcileSelectionOverlays: Host['_reconcileSelectionOverlays'];
@@ -101,7 +101,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _unmarkedGetters: Host['_unmarkedGetters'];
   _updateSelectionOverlays: Host['_updateSelectionOverlays'];
   _updateSizeAndRender: Host['_updateSizeAndRender'];
-  _updateStyleSignature: Host['_updateStyleSignature'];
   _visibleIndex: Host['_visibleIndex'];
   _visibleSlots: Host['_visibleSlots'];
   _webglRenderer: Host['_webglRenderer'];

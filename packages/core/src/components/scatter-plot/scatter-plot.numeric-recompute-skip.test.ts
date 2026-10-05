@@ -70,7 +70,7 @@ function makeData(): VisualizationData {
 
 describe('numeric recompute: re-stage only when the materialized data changed', () => {
   let sp: PlotInternals;
-  let renderer: { invalidateStyleCache: ReturnType<typeof vi.fn>; setStyleSignature: () => void };
+  let renderer: { invalidateStyleCache: ReturnType<typeof vi.fn> };
   let requestRender: ReturnType<typeof vi.fn>;
   let dataChanges: number;
 
@@ -81,7 +81,7 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
       numericAnnotationSettings: initial,
     });
     sp._processData(); // the plot as the first render left it
-    renderer = { invalidateStyleCache: vi.fn(), setStyleSignature: () => {} };
+    renderer = { invalidateStyleCache: vi.fn() };
     sp._webglRenderer = renderer as never;
     requestRender = vi.fn();
     sp._requestRender = requestRender;

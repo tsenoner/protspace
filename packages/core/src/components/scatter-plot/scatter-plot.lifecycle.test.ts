@@ -48,7 +48,6 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
     constructor(..._args: unknown[]) {
       constructions.push(this);
     }
-    setStyleSignature() {}
     prewarm() {}
     setSelectionActive() {}
     invalidatePositionCache() {}

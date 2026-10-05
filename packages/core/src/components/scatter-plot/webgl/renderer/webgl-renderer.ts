@@ -325,7 +325,6 @@ export class WebGLRenderer {
 
   // Config
   private dpr = window.devicePixelRatio || 1;
-  private styleSignature: string | null = null;
   private gammaPipelineAvailable = true;
   private warnedGammaFallback = false;
   /** The float extension this context lacks, which is why the gamma pipeline never ran. */
@@ -371,13 +370,6 @@ export class WebGLRenderer {
   // ============================================================================
   // Public API
   // ============================================================================
-
-  setStyleSignature(signature: string | null) {
-    if (this.styleSignature !== signature) {
-      this.styleSignature = signature;
-      this.stylesDirty = true;
-    }
-  }
 
   setSelectionActive(active: boolean) {
     this.selectionActive = active;
@@ -1422,7 +1414,7 @@ export class WebGLRenderer {
     const indices = [0, Math.floor(len / 4), Math.floor(len / 2), len - 1];
     const sp = this.scratchPoint;
     const oi = pd.originalIndices;
-    const parts = indices
+    return indices
       .filter((i) => i < len)
       .map((i) => {
         const origIdx = oi ? oi[i] : i;
@@ -1434,9 +1426,8 @@ export class WebGLRenderer {
         return `${sp.id}:${this.style.getOpacity(sp).toFixed(2)}:${this.style
           .getDepth(sp)
           .toFixed(4)}:${this.style.getColors(sp)[0]}`;
-      });
-
-    return `${this.styleSignature}|${parts.join('|')}`;
+      })
+      .join('|');
   }
 
   private populateBuffers(
