@@ -154,7 +154,6 @@ export function createDataRenderer({
       return null;
     }
 
-    console.log('Loading new data:', newData);
     const startTime = performance.now();
     const dataSize = newData.protein_ids.length;
     const isLargeDataset = dataSize > 1000;
