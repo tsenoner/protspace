@@ -59,9 +59,9 @@ describe('WebGLRenderer label atlas', () => {
     expect(degraded[0].context?.stride).toBe(4);
   });
 
-  it('bounds capacity so geometric growth cannot overshoot the point cap', () => {
-    // Two loads either side of the cap: unbounded, the second would plan
-    // 1.5 x 900,096 = 1,350,144 and need 5274 rows on a 4096 device.
+  it('keeps the atlas within the device as capacity grows across loads', () => {
+    // The second load plans 1.5 x 900,096 = 1,350,144, whose atlas needs 5274
+    // rows at its narrowest width, past what a 4096 device allows.
     const { renderer, gl } = makeRenderer({ maxTextureSize: 4096 }, ['#f00', '#0f0']);
     renderer.render(plotData(900_000));
     renderer.render(plotData(950_000));
