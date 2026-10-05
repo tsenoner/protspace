@@ -249,9 +249,27 @@ function formatRangeLabel(min: number, max: number, formatter: (value: number) =
   return min === max ? formatter(min) : `${formatter(min)} - ${formatter(max)}`;
 }
 
+/**
+ * Sorts finite values ascending, in the order of the stable `(left, right) => left - right` sort.
+ * A Float64Array sort is native and gives that order too, but it puts -0 before +0 where the
+ * comparator keeps their input order, so values holding a -0 keep the comparator.
+ */
+function sortFiniteValues(values: number[]): void {
+  const sorted = new Float64Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    if (Object.is(values[i], -0)) {
+      values.sort((left, right) => left - right);
+      return;
+    }
+    sorted[i] = values[i];
+  }
+  sorted.sort();
+  for (let i = 0; i < values.length; i++) values[i] = sorted[i];
+}
+
 function getSortedValues(summary: NumericSummary): number[] {
   if (summary.finiteValues && !summary.finiteValuesSorted) {
-    summary.finiteValues.sort((left, right) => left - right);
+    sortFiniteValues(summary.finiteValues);
     summary.finiteValuesSorted = true;
   }
   return summary.finiteValues ?? [];
