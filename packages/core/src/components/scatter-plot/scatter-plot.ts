@@ -175,6 +175,8 @@ type InteractableKey = {
 interface InteractableSlots {
   readonly visible: Uint8Array;
   readonly count: number;
+  /** The protein ids of the slots `visible` marks, in slot order; gathered on the first call. */
+  ids(): ReadonlySet<string>;
 }
 
 /**
@@ -334,19 +336,16 @@ export class ProtspaceScatterplot extends LitElement {
   // visibility model.
   private _visibilityModelCache: VisibilityModel | null = null;
   private _visibilityModelKey: VisibilityModelMemoKey | null = null;
-  // Memoized INTERACTIVE plot ids (opacityOf > 0), shared by the bottom-left
-  // count and provenance interaction. Keyed on the visibility inputs that affect interactivity: the
-  // hidden-mask inputs (data, selectedAnnotation, hiddenAnnotationValues)
-  // AND selection/highlight + the three opacities, because a configured
-  // fadedOpacity of 0 makes non-selected points non-interactive, so a
-  // selection change CAN change the count. Plot-data is keyed by
-  // (originalIndices ref + length), NOT the container ref: a projection
+  // Which slots are INTERACTIVE (opacityOf > 0), how many, and their ids: the
+  // point-count label, provenance and the point grid's marks share this one
+  // pass (see `_interactableSlots`). Keyed on the visibility inputs that affect
+  // interactivity: the hidden-mask inputs (data, selectedAnnotation,
+  // hiddenAnnotationValues) AND selection/highlight + the three opacities,
+  // because a configured fadedOpacity of 0 makes non-selected points
+  // non-interactive, so a selection change CAN change the count. Plot-data is
+  // keyed by (originalIndices ref + length), NOT the container ref: a projection
   // switch clones _plotData (new container, same originalIndices) and must
   // reuse the cache since interactivity is independent of x/y coordinates.
-  private _interactableProteinIdsCache: ReadonlySet<string> | null = null;
-  private _visiblePointCountKey: InteractableKey | null = null;
-  // Which slots are interactable, and how many: the point-count label and the
-  // point grid's marks share this one pass (see `_interactableSlots`).
   private _interactableSlotsCache: InteractableSlots | null = null;
   private _interactableSlotsKey: InteractableKey | null = null;
   private _pointGridIndexRebuildRafId: number | null = null;
@@ -2024,33 +2023,10 @@ export class ProtspaceScatterplot extends LitElement {
    * reuses the cache — interactivity is independent of x/y coordinates.
    */
   private _getInteractableProteinIds(): ReadonlySet<string> {
-    const key = this._interactableKey();
-    if (
-      this._interactableProteinIdsCache !== null &&
-      sameInteractableKey(this._visiblePointCountKey, key)
-    ) {
-      return this._interactableProteinIdsCache;
-    }
-
-    const pd = this._plotData;
-    const model = this._getVisibilityModel();
-    const oi = pd.originalIndices;
-    const sp = this._scratchPoint;
-    const proteinIds = new Set<string>();
-    for (let s = 0; s < pd.length; s++) {
-      const origIdx = oi ? oi[s] : s;
-      sp.id = pd.proteinIds[origIdx];
-      sp.originalIndex = origIdx;
-      // x/y intentionally NOT set: isInteractive → opacityOf → isHidden /
-      // baseOpacityOf read only id + originalIndex, never coordinates.
-      if (model.isInteractive(sp)) proteinIds.add(sp.id);
-    }
-    this._interactableProteinIdsCache = proteinIds;
-    this._visiblePointCountKey = key;
-    return proteinIds;
+    return this._interactableSlots().ids();
   }
 
-  /** What the interactable set depends on; see `_getInteractableProteinIds`. */
+  /** What the interactable slots depend on; see `_getInteractableProteinIds`. */
   private _interactableKey(): InteractableKey {
     const pd = this._plotData;
     const baseOpacity = this._mergedConfig.baseOpacity;
@@ -2082,22 +2058,15 @@ export class ProtspaceScatterplot extends LitElement {
    * set took ~25 ms.
    */
   private _getVisiblePointCount(): number {
-    const key = this._interactableKey();
-    if (
-      (this._interactableProteinIdsCache !== null &&
-        sameInteractableKey(this._visiblePointCountKey, key)) ||
-      !this._getVisibilityModel().idsUnique()
-    ) {
-      return this._getInteractableProteinIds().size;
-    }
-    return this._interactableSlots(key).count;
+    const slots = this._interactableSlots();
+    return this._getVisibilityModel().idsUnique() ? slots.count : slots.ids().size;
   }
 
   /**
-   * The interactive slots of `_plotData`, marked 1 in `visible`, and their count.
-   * Memoized on the same key as `_getInteractableProteinIds`: whichever of the
-   * point-count label and `_markVisibleSlots` runs first pays for the pass.
-   * `visible` is shared with the point grid, so it is never written after.
+   * The interactive slots of `_plotData`, marked 1 in `visible`, their count,
+   * and their ids. Whichever of the point-count label and `_markVisibleSlots`
+   * runs first pays for the pass. `visible` is shared with the point grid, so it
+   * is never written after.
    */
   private _interactableSlots(key = this._interactableKey()): InteractableSlots {
     if (this._interactableSlotsCache && sameInteractableKey(this._interactableSlotsKey, key)) {
@@ -2106,18 +2075,30 @@ export class ProtspaceScatterplot extends LitElement {
     const pd = this._plotData;
     const model = this._getVisibilityModel();
     const oi = pd.originalIndices;
-    const ids = pd.proteinIds;
+    const proteinIds = pd.proteinIds;
     const visible = new Uint8Array(pd.length);
     let count = 0;
     for (let s = 0; s < pd.length; s++) {
       const origIdx = oi ? oi[s] : s;
       // isInteractive: opacityOf(point) > 0.
-      if (model.opacityAt(origIdx, ids[origIdx]) > 0) {
+      if (model.opacityAt(origIdx, proteinIds[origIdx]) > 0) {
         visible[s] = 1;
         count++;
       }
     }
-    this._interactableSlotsCache = { visible, count };
+    let ids: Set<string> | null = null;
+    this._interactableSlotsCache = {
+      visible,
+      count,
+      ids() {
+        if (ids) return ids;
+        ids = new Set();
+        for (let s = 0; s < visible.length; s++) {
+          if (visible[s] === 1) ids.add(proteinIds[oi ? oi[s] : s]);
+        }
+        return ids;
+      },
+    };
     this._interactableSlotsKey = key;
     return this._interactableSlotsCache;
   }

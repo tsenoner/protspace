@@ -56,7 +56,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _handleZOrderChange: Host['_handleZOrderChange'];
   _hoveredProteinId: Host['_hoveredProteinId'];
   _hoverRaf: Host['_hoverRaf'];
-  _interactableProteinIdsCache: Host['_interactableProteinIdsCache'];
+  _interactableSlots: Host['_interactableSlots'];
   _interaction: Host['_interaction'];
   _interactionHost: Host['_interactionHost'];
   _invalidateScalesCache: Host['_invalidateScalesCache'];

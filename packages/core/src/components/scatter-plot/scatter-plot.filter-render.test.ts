@@ -277,14 +277,23 @@ describe('scatter-plot visible point count', () => {
     for (const [hidden, selected] of states) {
       sp.hiddenAnnotationValues = hidden;
       sp.selectedProteinIds = selected;
+      const ids = vi.spyOn(sp._interactableSlots(), 'ids');
       const count = sp._getVisiblePointCount();
-      expect(
-        (sp as unknown as { _interactableProteinIdsCache: unknown })._interactableProteinIdsCache,
-      ).toBeNull();
+      expect(ids).not.toHaveBeenCalled();
       expect(count).toBe(sp.getInteractableProteinIds().size);
-      (sp as unknown as { _interactableProteinIdsCache: unknown })._interactableProteinIdsCache =
-        null;
     }
+  });
+
+  it('keeps the interactable id set across a projection switch', () => {
+    const data = makeFamilyData();
+    data.projections.push({ ...data.projections[0], name: 'pca' });
+    const sp = createPlot({ data, selectedAnnotation: 'fam' });
+    sp._processData();
+    const ids = sp.getInteractableProteinIds();
+    sp.selectedProjectionIndex = 1;
+    sp._processData();
+    expect(sp._plotDataBuild?.projection).toBe(data.projections[1]);
+    expect(sp.getInteractableProteinIds()).toBe(ids);
   });
 
   it('counts a repeated protein id once, whether or not the id set is built', () => {
