@@ -393,13 +393,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _shiftDown = false;
   /** Shift+hover: the hovered point's category values; every other point fades. */
   @state() private _focusedValues: string[] | null = null;
-  private _cachedScales: ScalePair | null = null;
-  private _scalesCacheDeps: {
-    plotDataLength: number;
-    width: number;
-    height: number;
-    margin: { top: number; right: number; bottom: number; left: number };
-  } | null = null;
+  // The scales and what they were built at: the plot data's length and `_scalesKey()`.
+  private _scalesCache: { scales: ScalePair; plotDataLength: number; key: string } | null = null;
 
   // Duplicate-stack / spiderfy / badge overlay subsystem (state + schedulers +
   // chunked compute + badge canvas + spiderfy SVG layer). Event dispatch stays
@@ -506,37 +501,16 @@ export class ProtspaceScatterplot extends LitElement {
 
   // Computed properties with caching
   private get _scales(): ScalePair | null {
-    const config = this._mergedConfig;
-
-    // Check if cache is valid
-    const needsRecompute =
-      !this._cachedScales ||
-      !this._scalesCacheDeps ||
-      this._scalesCacheDeps.plotDataLength !== this._plotData.length ||
-      this._scalesCacheDeps.width !== config.width ||
-      this._scalesCacheDeps.height !== config.height ||
-      this._scalesCacheDeps.margin.top !== config.margin.top ||
-      this._scalesCacheDeps.margin.right !== config.margin.right ||
-      this._scalesCacheDeps.margin.bottom !== config.margin.bottom ||
-      this._scalesCacheDeps.margin.left !== config.margin.left;
-
-    if (needsRecompute) {
-      const computedScales = DataProcessor.createScales(
-        this._plotData,
-        config.width,
-        config.height,
-        config.margin,
-      );
-      this._cachedScales = computedScales;
-      this._scalesCacheDeps = {
-        plotDataLength: this._plotData.length,
-        width: config.width,
-        height: config.height,
-        margin: { ...config.margin },
-      };
+    const key = this._scalesKey();
+    const plotDataLength = this._plotData.length;
+    const cached = this._scalesCache;
+    if (cached && cached.plotDataLength === plotDataLength && cached.key === key) {
+      return cached.scales;
     }
-
-    return this._cachedScales;
+    const { width, height, margin } = this._mergedConfig;
+    const scales = DataProcessor.createScales(this._plotData, width, height, margin);
+    this._scalesCache = scales && { scales, plotDataLength, key };
+    return scales;
   }
 
   /** The inputs the scales take besides the plot data, which the point grid is built at. */
@@ -546,8 +520,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _invalidateScalesCache() {
-    this._cachedScales = null;
-    this._scalesCacheDeps = null;
+    this._scalesCache = null;
   }
 
   private _getMaterializedData(): VisualizationData | null {

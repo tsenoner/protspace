@@ -37,15 +37,13 @@ function makePickScatter(): PlotInternals {
   sp._webglRenderer = { pointScale: () => 1 } as never;
   sp._mergedConfig.pointSize = 225;
   // Inject identity scales so scales.x(0)===0 / scales.y(0)===0 (the fixture's
-  // documented "dataX===mouseX" assumption). _scales is a cached getter keyed on
-  // _scalesCacheDeps; priming both backing fields with matching deps makes the
-  // getter skip recompute and return this identity pair verbatim.
-  sp._cachedScales = { x: (v: number) => v, y: (v: number) => v };
-  sp._scalesCacheDeps = {
+  // documented "dataX===mouseX" assumption). _scales is a cached getter; priming
+  // its cache with the current length and key makes the getter skip recompute and
+  // return this identity pair verbatim.
+  sp._scalesCache = {
+    scales: { x: (v: number) => v, y: (v: number) => v },
     plotDataLength: sp._plotData.length,
-    width: 800,
-    height: 600,
-    margin: { top: 40, right: 40, bottom: 40, left: 40 },
+    key: sp._scalesKey(),
   };
   return sp;
 }

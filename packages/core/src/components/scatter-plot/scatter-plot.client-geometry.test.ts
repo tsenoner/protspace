@@ -34,14 +34,12 @@ function makeScatter(originalIndices: Int32Array | null = null): PlotInternals {
         originalIndices: null,
         proteinIds,
       } as PlotData);
-  // Scales double the data coordinate; primed with matching deps so the cached
-  // getter returns them verbatim (same technique as scatter-plot.pick.test.ts).
-  sp._cachedScales = { x: (v) => v * 2, y: (v) => v * 2 };
-  sp._scalesCacheDeps = {
+  // Scales double the data coordinate; primed with the current length and key so the
+  // cached getter returns them verbatim (same technique as scatter-plot.pick.test.ts).
+  sp._scalesCache = {
+    scales: { x: (v) => v * 2, y: (v) => v * 2 },
     plotDataLength: sp._plotData.length,
-    width: 800,
-    height: 600,
-    margin: { top: 40, right: 40, bottom: 40, left: 40 },
+    key: sp._scalesKey(),
   };
   sp._transform = d3.zoomIdentity.translate(5, 7).scale(3);
   sp.getBoundingClientRect = () => ({ left: 100, top: 200 }) as DOMRect;

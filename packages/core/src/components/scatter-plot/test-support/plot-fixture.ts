@@ -27,7 +27,6 @@ type Host = ProtspaceScatterplot;
 export type PlotInternals = Pick<Host, keyof Host> & {
   _buildPointGridIndex: Host['_buildPointGridIndex'];
   _buildStyleGetters: Host['_buildStyleGetters'];
-  _cachedScales: Host['_cachedScales'];
   _canvas: Host['_canvas'];
   _colorMapping: Host['_colorMapping'];
   _commitSelection: Host['_commitSelection'];
@@ -83,7 +82,8 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _requestRender: Host['_requestRender'];
   _runNumericRecomputeBody: Host['_runNumericRecomputeBody'];
   readonly _scales: Host['_scales'];
-  _scalesCacheDeps: Host['_scalesCacheDeps'];
+  _scalesCache: Host['_scalesCache'];
+  _scalesKey: Host['_scalesKey'];
   _scheduleIdIndex: Host['_scheduleIdIndex'];
   _scheduleNumericAnnotationRefresh: Host['_scheduleNumericAnnotationRefresh'];
   _schedulePointGridIndexRebuild: Host['_schedulePointGridIndexRebuild'];

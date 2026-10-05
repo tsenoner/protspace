@@ -36,12 +36,10 @@ function makeScatter(): PlotInternals {
   } as unknown as PlotData;
   sp._transform = d3.zoomIdentity;
   // Prime the cached-scales getter so `_scales` is non-null (mousemove bails otherwise).
-  sp._cachedScales = { x: (v: number) => v, y: (v: number) => v };
-  sp._scalesCacheDeps = {
+  sp._scalesCache = {
+    scales: { x: (v: number) => v, y: (v: number) => v },
     plotDataLength: sp._plotData.length,
-    width: 800,
-    height: 600,
-    margin: { top: 40, right: 40, bottom: 40, left: 40 },
+    key: sp._scalesKey(),
   };
   // The hit-test is covered elsewhere; always resolve the cursor to p0 (value 'A').
   const p0: PlotDataPoint = { id: 'p0', x: 0, y: 0, originalIndex: 0 };
