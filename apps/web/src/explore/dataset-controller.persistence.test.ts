@@ -6,6 +6,7 @@ import {
 } from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
+import { createLoadQueue } from './load-queue';
 import type { LoadMeta } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -130,24 +131,13 @@ describe('dataset controller load failures and the stored import', () => {
   // A user import is written to OPFS only once it has decoded (`handleDataLoaded`
   // saves it before the render), so one that fails before that never replaced the
   // stored import: what OPFS holds is still the previous import, which loaded fine.
-  it.each([
-    ['a bundle that fails to parse', dataErrorEvent('Invalid parquet bundle')],
-    [
-      'a FASTA whose preparation the backend rejects',
-      {
-        detail: {
-          message: 'The embedding service is currently unavailable.',
-          originalError: new FastaPrepError('The embedding service is currently unavailable.', {
-            code: 'BIOCENTRAL_UNAVAILABLE',
-          }),
-        },
-      } as unknown as Event,
-    ],
-  ])('%s leaves the stored import as it was', async (_label, errorEvent) => {
+  it('a user import that fails to decode leaves the stored import as it was', async () => {
+    // This is also how a FASTA import ends whose prepared bundle fails to decode:
+    // the error comes while its load is still running, like a bundle's.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
 
-    await controller.handleDataError(errorEvent);
+    await controller.handleDataError(dataErrorEvent('Invalid parquet bundle'));
 
     // Flagging the stored import would make the next visit offer recovery for a
     // dataset that loads fine, instead of restoring it.
@@ -157,6 +147,38 @@ describe('dataset controller load failures and the stored import', () => {
     expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
+    consoleError.mockRestore();
+  });
+
+  it('a FASTA import whose preparation fails leaves the stored import as it was', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const loadQueue = createLoadQueue({ isDisposed: () => false });
+    const controller = createDatasetController(buildControllerOptions({ loadQueue }));
+    const fasta = new File(['>P1\nMKV\n'], 'query.fasta');
+    loadQueue.registerFileLoad(fasta, 'user', undefined, 1);
+    const prepError = new FastaPrepError('The embedding service is currently unavailable.', {
+      code: 'BIOCENTRAL_UNAVAILABLE',
+    });
+
+    // The preparation runs inside the load's queue slot (`runtime.ts`), so its
+    // error ends that slot before the data loader reports it: as in
+    // `DataLoader.loadFromFile`, the error event follows the rejected load.
+    let runningLoadAtError: LoadMeta | null | undefined;
+    await loadQueue
+      .enqueueLoadFromFile(fasta, undefined, () => Promise.reject(prepError))
+      .catch(async (error: Error) => {
+        runningLoadAtError = loadQueue.getRunningLoadMeta();
+        await controller.handleDataError({
+          detail: { message: error.message, originalError: error },
+        } as unknown as Event);
+      });
+
+    expect(runningLoadAtError).toBeNull();
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.saveLastImportedFile).not.toHaveBeenCalled();
+    expect(mocks.clearLastImportedFile).not.toHaveBeenCalled();
+    expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledOnce();
     consoleError.mockRestore();
   });
 
