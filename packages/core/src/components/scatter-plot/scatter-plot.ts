@@ -684,6 +684,11 @@ export class ProtspaceScatterplot extends LitElement {
     window.addEventListener('keydown', this._handleShiftKey);
     window.addEventListener('keyup', this._handleShiftKey);
     window.addEventListener('blur', this._handleWindowBlur);
+
+    // A reconnect: firstUpdated runs once, so set up again what disconnectedCallback tore down.
+    if (this.hasUpdated) {
+      this._interaction?.updateSelectionMode();
+    }
   }
 
   disconnectedCallback() {

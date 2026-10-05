@@ -77,7 +77,12 @@ vi.mock('./webgl', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer };
 });
 
-import { createPlot, fakeFrames, makeFamilyData } from './test-support/plot-fixture';
+import {
+  createPlot,
+  fakeFrames,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 function makeHost() {
   return createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
@@ -217,6 +222,67 @@ describe('reconnect after disconnect', () => {
     expect(fresh.renders).toBe(1);
 
     await sp.updateComplete;
+    sp.remove();
+  });
+
+  /** A plot appended, removed and appended again, with its point grid built. */
+  async function reconnectedPlot(
+    frames: ReturnType<typeof fakeFrames>,
+    inputs: Partial<PlotInternals> = {},
+  ) {
+    const sp = createPlot({
+      data: makeFamilyData({ score: true }),
+      selectedAnnotation: 'fam',
+      ...inputs,
+    });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    sp.remove();
+    document.body.appendChild(sp);
+    // What the ResizeObserver runs once the plot is back in the page.
+    sp._updateSizeAndRender();
+    frames.run();
+    return sp;
+  }
+
+  /** jsdom's MouseEvent refuses the test window as its view, which d3's brush listens on. */
+  const mouse = (type: string, x: number, y: number) =>
+    Object.defineProperty(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }), 'view', {
+      value: window,
+    });
+
+  it('selects with the brush again', async () => {
+    const frames = fakeFrames();
+    const sp = await reconnectedPlot(frames, { selectionMode: true });
+
+    // A drag over the whole plot, as d3's brush hears it.
+    sp._svg!.querySelector('.brush-container .overlay')!.dispatchEvent(mouse('mousedown', 1, 1));
+    window.dispatchEvent(mouse('mousemove', 799, 599));
+    window.dispatchEvent(mouse('mouseup', 799, 599));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    sp.remove();
+  });
+
+  it('selects with the lasso again', async () => {
+    const frames = fakeFrames();
+    const sp = await reconnectedPlot(frames, { selectionMode: true, selectionTool: 'lasso' });
+
+    const svg = sp._svg!;
+    svg.dispatchEvent(mouse('pointerdown', 0, 0));
+    for (const [x, y] of [
+      [800, 0],
+      [800, 600],
+      [0, 600],
+    ]) {
+      svg.dispatchEvent(mouse('pointermove', x, y));
+    }
+    svg.dispatchEvent(mouse('pointerup', 0, 600));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
     sp.remove();
   });
 });
