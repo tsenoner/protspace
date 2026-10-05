@@ -13,15 +13,14 @@ const PARQUET_MAGIC = new Uint8Array([0x50, 0x41, 0x52, 0x31]);
 const LEGACY_MAX_ROWS = 2_000_000;
 
 /**
- * Safety limits to avoid abusive inputs. Exported so callers and tests read the
- * same numbers the defaults below are built from.
+ * Safety limits to avoid abusive inputs.
  *
  * `maxRows`: projections_data is long-format — one row per (protein x
  * projection) — so capping ROWS bounds proteins-per-projection for any
  * projection count >= 1, with no distinct-protein scan, which matters because
  * this runs before grouping.
  */
-export const DEFAULT_VALIDATION_LIMITS = {
+const DEFAULT_VALIDATION_LIMITS = {
   maxFileSizeBytes: 2 * 1024 * 1024 * 1024, // 2 GB
   maxRows: LEGACY_MAX_ROWS,
   maxColumns: 200,

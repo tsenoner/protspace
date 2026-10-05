@@ -15,7 +15,6 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
-import { DEFAULT_VALIDATION_LIMITS } from './validation';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
@@ -650,7 +649,7 @@ describe('parquetbundle format v3', () => {
   });
 
   it('reads more proteins than a v1/v2 bundle may hold', async () => {
-    const proteins = DEFAULT_VALIDATION_LIMITS.maxRows + 1;
+    const proteins = 101;
     const coordinates = Float32Array.from({ length: proteins }, (_, i) => i);
     const large = bundle([
       part([{ name: 'protein_id', data: Array.from({ length: proteins }, (_, i) => `P${i}`) }], {
@@ -675,13 +674,14 @@ describe('parquetbundle format v3', () => {
       payloadPart({}),
     ]);
 
-    const { data, unplacedProteinCount } = await decodeParquetBundle(large);
+    // A v1/v2 bundle this size is refused under this cap (see bundle.test.ts).
+    const { data, unplacedProteinCount } = await decodeParquetBundle(large, proteins - 1);
 
     expect(data.protein_ids).toHaveLength(proteins);
     expect(data.protein_ids.at(-1)).toBe(`P${proteins - 1}`);
     expect(data.projections[0].data).toHaveLength(2 * proteins);
     expect(unplacedProteinCount).toBe(0);
-  }, 60_000);
+  });
 
   // `parquetWriteBuffer` always stamps a truthful `num_rows`, so the lying footer is
   // built by handing `readV3Bundle` a doctored `FileMetaData` — the same object

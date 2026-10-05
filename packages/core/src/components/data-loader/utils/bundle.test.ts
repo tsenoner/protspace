@@ -9,7 +9,6 @@ import {
   type BundleSettings,
 } from '@protspace/utils';
 import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
-import { DEFAULT_VALIDATION_LIMITS } from './validation';
 
 // Helper to create a mock parquet-like buffer with PAR1 magic bytes
 function createMockParquetBuffer(content: string = 'test'): ArrayBuffer {
@@ -313,7 +312,7 @@ describe('legacy bundle validation', () => {
   });
 
   it('refuses a v1/v2 bundle above the row cap, pointing at protspace convert', async () => {
-    const rows = DEFAULT_VALIDATION_LIMITS.maxRows + 1;
+    const rows = 101;
     const coordinates = Float32Array.from({ length: rows }, (_, i) => i);
     const bundle = legacyBundle([
       { name: 'projection_name', data: new Array<string>(rows).fill('pca2') },
@@ -322,12 +321,12 @@ describe('legacy bundle validation', () => {
       { name: 'y', data: coordinates },
     ]);
 
-    const error = await decodeParquetBundle(bundle).then(
+    const error = await decodeParquetBundle(bundle, rows - 1).then(
       () => null,
       (reason: Error) => reason,
     );
 
-    expect(error?.message).toContain(`${rows.toLocaleString()} rows (proteins x projections)`);
+    expect(error?.message).toContain('101 rows (proteins x projections) exceeds the limit of 100');
     expect(error?.message).toMatch(/Run "protspace convert" on the file/);
-  }, 60_000);
+  });
 });

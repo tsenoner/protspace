@@ -180,6 +180,7 @@ export async function extractRowsFromParquetBundle(
 async function extractRowsFromParts(
   parts: BundleParts,
   part1Metadata: FileMetaData | null,
+  maxLegacyRows?: number,
 ): Promise<BundleExtractionResult> {
   let part1: ArrayBuffer | null = parts[0];
   let part2: ArrayBuffer | null = parts[1];
@@ -203,7 +204,7 @@ async function extractRowsFromParts(
   // footer first: a bundle over it is refused before any of it is decoded.
   // `validateProjectionRows` checks the decoded rows again.
   const part3Metadata = parquetMetadata(part3);
-  assertWithinLegacyRowLimit(Number(part3Metadata.num_rows));
+  assertWithinLegacyRowLimit(Number(part3Metadata.num_rows), maxLegacyRows);
   const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
   const numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = part1Metadata
     ? readNumericColumnTypes(part1Metadata)
@@ -308,8 +309,14 @@ export interface DecodedParquetBundle {
  * A part 1 carrying `protspace_container_version` takes the columnar reader in
  * `bundle-v3.ts`; one without it takes the legacy row-object path unchanged. The part count
  * has to agree: six parts without the container key is neither layout.
+ *
+ * `maxLegacyRows` lowers the v1/v2 row cap checked on part 3's footer, so tests reach it
+ * without encoding millions of rows. v3 has no row cap.
  */
-export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle> {
+export async function decodeParquetBundle(
+  arrayBuffer: ArrayBuffer,
+  maxLegacyRows?: number,
+): Promise<DecodedParquetBundle> {
   const parts = splitBundleParts(arrayBuffer);
   const part1Metadata = readPart1Metadata(parts[0]);
   const containerVersion = readContainerVersion(part1Metadata);
@@ -324,7 +331,7 @@ export async function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<Dec
     );
   }
 
-  const extraction = await extractRowsFromParts(parts, part1Metadata);
+  const extraction = await extractRowsFromParts(parts, part1Metadata, maxLegacyRows);
   const data = await convertParquetToVisualizationDataOptimized(extraction);
   return {
     data,
