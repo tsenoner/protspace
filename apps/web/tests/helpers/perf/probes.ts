@@ -6,7 +6,8 @@ import type { CDPSession, Page } from '@playwright/test';
  * - core's flag-gated counters (`packages/core/src/utils/perf-counters.ts`), read off
  *   `window.__protspacePerfCounters` when the page URL has `?perfCounters=1`;
  * - wrappers on the public `WebGL2RenderingContext.prototype`, installed by an init
- *   script, which count `gl.is*` calls, synchronous GL reads and uploaded bytes.
+ *   script, which count `gl.is*` calls, synchronous GL reads and the bytes uploaded to
+ *   buffers (texture uploads are not counted).
  *
  * The same init script records Event Timing, long animation frames and (while armed)
  * frame gaps, which only timing mode reports.
@@ -23,7 +24,7 @@ const COUNT_KEYS = [
   'legendRebuild',
   'glIs',
   'glSync',
-  'uploadBytes',
+  'bufferBytes',
   'morphFrame',
 ] as const;
 type CountKey = (typeof COUNT_KEYS)[number];
@@ -67,7 +68,7 @@ export interface SegmentResult {
 interface ProbeState {
   glIs: number;
   glSync: number;
-  uploadBytes: number;
+  bufferBytes: number;
   events: Array<{ start: number; duration: number }>;
   loafs: Array<{ start: number; duration: number; script: string }>;
   frames: number[] | null;
@@ -86,7 +87,7 @@ export async function installProbes(page: Page): Promise<void> {
     const probe: ProbeState = {
       glIs: 0,
       glSync: 0,
-      uploadBytes: 0,
+      bufferBytes: 0,
       events: [],
       loafs: [],
       frames: null,
@@ -117,8 +118,8 @@ export async function installProbes(page: Page): Promise<void> {
         }
         return 0;
       };
-      wrap('bufferData', (args) => (probe.uploadBytes += byteLength(args[1])));
-      wrap('bufferSubData', (args) => (probe.uploadBytes += byteLength(args[2])));
+      wrap('bufferData', (args) => (probe.bufferBytes += byteLength(args[1])));
+      wrap('bufferSubData', (args) => (probe.bufferBytes += byteLength(args[2])));
     }
 
     try {
@@ -185,7 +186,7 @@ export async function readSnapshot(page: Page, optional = false): Promise<Snapsh
       legendRebuild: count('legendRebuild'),
       glIs: p.glIs,
       glSync: p.glSync,
-      uploadBytes: p.uploadBytes,
+      bufferBytes: p.bufferBytes,
       morphFrame: count('morphFrame'),
     };
   }, optional);
@@ -209,7 +210,7 @@ interface SettleOptions {
 export const settleDefaults: Required<SettleOptions> = { quietMs: 200, capMs: 3_000 };
 
 /**
- * Wait in the page until the counters and uploaded bytes stay unchanged for at least
+ * Wait in the page until the counters and buffer bytes stay unchanged for at least
  * two animation frames and `quietMs`. Throws at `capMs`: a page that keeps doing work
  * with no input is a render loop or leaked work, never something to wait out.
  */
@@ -223,7 +224,12 @@ export async function settle(page: Page, options: SettleOptions = {}): Promise<v
           // checks its GL handles with `gl.is*` on every render.
           const c = window.__protspacePerfCounters ?? {};
           const p = window.__perfProbe;
-          return { ...c, glIs: p?.glIs ?? 0, glSync: p?.glSync ?? 0, up: p?.uploadBytes ?? 0 };
+          return {
+            ...c,
+            glIs: p?.glIs ?? 0,
+            glSync: p?.glSync ?? 0,
+            bufferBytes: p?.bufferBytes ?? 0,
+          };
         };
         const start = performance.now();
         let last = read();

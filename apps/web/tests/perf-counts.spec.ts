@@ -76,8 +76,8 @@ function invariants(results: SegmentResult[]): string[] {
       failures.push(`${load.name}.${key} is 0: the counter is disconnected`);
     }
   }
-  if (load.delta.uploadBytes <= 0) {
-    failures.push(`${load.name}.uploadBytes is 0: the GL probe is off`);
+  if (load.delta.bufferBytes <= 0) {
+    failures.push(`${load.name}.bufferBytes is 0: the GL probe is off`);
   }
   for (const result of results) {
     if (result.pixelsSame === false) failures.push(`${result.name}: pixels differ after reset`);

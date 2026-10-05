@@ -13,7 +13,7 @@ const BUDGET_KEYS = [
   'legendUpdate',
   'legendRebuild',
   'glSync',
-  'uploadBytes',
+  'bufferBytes',
   'glIsPerRender',
 ] as const;
 export type BudgetKey = (typeof BUDGET_KEYS)[number];
@@ -42,7 +42,7 @@ function measure(result: SegmentResult): Measured {
     legendUpdate: d.legendUpdate,
     legendRebuild: d.legendRebuild,
     glSync: d.glSync,
-    uploadBytes: d.uploadBytes,
+    bufferBytes: d.bufferBytes,
     glIsPerRender: d.render > 0 ? Math.round((d.glIs / d.render) * 10) / 10 : 0,
   };
 }
@@ -81,7 +81,7 @@ export function recordBudgets(
       const max = Math.max(...recorded);
       const varied = recorded.some((v) => v !== recorded[0]);
       if (old[key] === null || varied || frameBound.includes(key)) budget[key] = null;
-      else if (key === 'uploadBytes') budget[key] = max === 0 ? 0 : null;
+      else if (key === 'bufferBytes') budget[key] = max === 0 ? 0 : null;
       else if (key === 'glIsPerRender') budget[key] = Math.ceil(max);
       else budget[key] = max;
     }
@@ -150,13 +150,13 @@ export function formatCountsTable(results: SegmentResult[], budgets: BudgetsFile
     const cell = (key: BudgetKey, text = String(measured[key])) => {
       const limit = budget[key];
       if (limit === null || limit === undefined) return text;
-      return `${text}/${key === 'uploadBytes' ? formatBytes(limit) : limit}${measured[key] > limit ? '!' : ''}`;
+      return `${text}/${key === 'bufferBytes' ? formatBytes(limit) : limit}${measured[key] > limit ? '!' : ''}`;
     };
     const pixels = result.pixelsSame === null ? '-' : result.pixelsSame ? 'same' : 'DIFF!';
     return [
       result.name,
       ...COUNT_COLUMNS.map(([, key]) => cell(key)),
-      cell('uploadBytes', formatBytes(measured.uploadBytes)),
+      cell('bufferBytes', formatBytes(measured.bufferBytes)),
       pixels,
     ];
   });

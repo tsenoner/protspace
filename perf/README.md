@@ -34,10 +34,10 @@ An init script (`apps/web/tests/helpers/perf/probes.ts`) wraps the public
 
 - `glIs`: `gl.is{Program,Buffer,Texture,VertexArray,Framebuffer}` calls, reported per render;
 - `glSync`: `getError`, `getProgramParameter`, `getShaderParameter`, `readPixels`;
-- `uploadBytes`: bytes passed to `bufferData` and `bufferSubData`.
+- `bufferBytes`: bytes passed to `bufferData` and `bufferSubData`; texture uploads are not counted.
 
 Each segment runs settle → snapshot → act → settle → snapshot → reset → settle. Settling waits
-until the counters and uploaded bytes stay unchanged for two animation frames and 200 ms, and never
+until the counters and buffer bytes stay unchanged for two animation frames and 200 ms, and never
 sleeps a fixed time. It fails at 3 s (60 s in timing mode): a page that keeps working with no input
 has a render loop or leaked work. Segments that change the view reset it through the UI, and the
 plot's pixels before the segment must equal the pixels after the reset.
