@@ -5,29 +5,9 @@ import type { ProtspaceLegend } from './legend';
 import type { OtherItem } from './types';
 import { getVisualEncoding } from './visual-encoding';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import { createLocalStorageMock } from './test-support/local-storage-mock';
 
-// In-memory `localStorage` for the persistence controller; see legend.score-sync.test.ts.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+vi.stubGlobal('localStorage', createLocalStorageMock());
 
 // Twelve families of two proteins each, two more than get a row. Storage lists them A to L
 // and the proteins meet them L to A, so the order of the tie picks the rows.

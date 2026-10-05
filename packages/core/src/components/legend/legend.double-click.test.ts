@@ -7,29 +7,10 @@ import {
   mountLegendWithScatterplot,
   type MockScatterplot,
 } from './test-support/legend-scatterplot-harness';
+import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 // Hidden values persist per dataset: an in-memory store keeps one test's clicks out of the next.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+vi.stubGlobal('localStorage', createLocalStorageMock());
 
 function makeData(values = ['A', 'B', 'C']): VisualizationData {
   // The first value is the most common: A x3, B x2, then one protein of each further value.
