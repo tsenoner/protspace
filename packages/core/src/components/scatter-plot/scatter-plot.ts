@@ -852,6 +852,9 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _reconcileFilterOnDataSwap(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('data')) {
+      // Here, not in willUpdate: the render before this counts the points over
+      // the old plot data, which builds interactive slots over its ids.
+      this._style.releaseDataset();
       // The filtered-display memo is keyed by reference on the previous
       // materialized object. _getMaterializedData returns a fresh object after a
       // data swap, so the reference check already misses — but drop the cache

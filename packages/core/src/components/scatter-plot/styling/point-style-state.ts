@@ -149,6 +149,10 @@ export class PointStyleState {
     const highlightedProteinIds = host.highlightedProteinIds();
     const eatOverlayEnabled = host.eatOverlayEnabled();
     const focusedValues = host.focusedValues();
+    // A lasso over another dataset's ids, until a swap releases it, marks
+    // nothing here, and the model would keep it alive.
+    const slotSelection =
+      this._slotSelection?.proteinIds === data?.protein_ids ? this._slotSelection : null;
 
     const key = this._visibilityModelKey;
     if (
@@ -177,7 +181,7 @@ export class PointStyleState {
         highlightedProteinIds,
         opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
         focusedValues,
-        selectionMask: this._slotSelection,
+        selectionMask: slotSelection,
       },
       this._visibilityModel ?? undefined,
     );
@@ -214,6 +218,24 @@ export class PointStyleState {
   cancelIdIndex() {
     this._cancelIdIndex?.();
     this._cancelIdIndex = null;
+  }
+
+  /**
+   * Drop what was built over the previous dataset, so a swap does not keep it
+   * alive while the new plot data is allocated: the getters, the marks, the
+   * lasso, the interactive slots and a model over other data (its id index is
+   * 4 MB at 573K), and cancel the pending build of that index. A model over the
+   * current data stays: the swap's render already built it for the point count.
+   */
+  releaseDataset() {
+    this.cancelIdIndex();
+    if (this._visibilityModelKey?.data !== this.host.data()) {
+      this._visibilityModel = null;
+      this._visibilityModelKey = null;
+    }
+    this._styleGetters = null;
+    this._interactable = null;
+    this.clearMarks();
   }
 
   /**

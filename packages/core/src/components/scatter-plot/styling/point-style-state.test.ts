@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import type { PlotData, VisualizationData } from '@protspace/utils';
 import { DEFAULT_CONFIG } from '../config';
 import { PointStyleState } from './point-style-state';
 
@@ -141,5 +141,48 @@ describe('style getters lifecycle', () => {
     expect(state.marksOnGpu()).toBe(false);
     expect(state.stageGetters()).toBe(state.getters());
     expect(state.stageModel()).toBe(state.model());
+  });
+});
+
+describe('releaseDataset()', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('drops the getters, the slots and the previous model, and cancels the id index build', () => {
+    const idle = new Map<number, IdleRequestCallback>();
+    let handles = 0;
+    vi.stubGlobal('requestIdleCallback', (task: IdleRequestCallback) => {
+      idle.set(++handles, task);
+      return handles;
+    });
+    vi.stubGlobal('cancelIdleCallback', (handle: number) => idle.delete(handle));
+    const { inputs, state } = makeState();
+    const ids = inputs.data!.protein_ids;
+    const pd = {
+      length: ids.length,
+      originalIndices: null,
+      proteinIds: ids,
+    } as unknown as PlotData;
+    const getters = state.getters();
+    state.interactable(pd);
+    const previous = state.model();
+    expect(previous.idsUnique()).toBe(true);
+    state.scheduleIdIndex();
+
+    // A new dataset over the same ids array, whose model would reuse the old id index.
+    inputs.data = { ...inputs.data! };
+    state.releaseDataset();
+    expect(idle.size).toBe(0);
+    const model = state.model();
+    expect(model).not.toBe(previous);
+    expect(model.idsUniqueIfIndexed()).toBeNull();
+    expect(state.getters()).not.toBe(getters);
+    expect(state.currentInteractable(pd)).toBeNull();
+  });
+
+  it('keeps a model already over the current data', () => {
+    const { state } = makeState();
+    const model = state.model();
+    state.releaseDataset();
+    expect(state.model()).toBe(model);
   });
 });

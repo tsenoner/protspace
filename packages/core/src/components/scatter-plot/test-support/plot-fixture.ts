@@ -22,9 +22,13 @@ type Host = ProtspaceScatterplot;
 
 /** The plot's style state, with the private members the suites reach into made public. */
 type StyleInternals = Pick<PointStyleState, keyof PointStyleState> & {
+  _cancelIdIndex: PointStyleState['_cancelIdIndex'];
+  _interactable: PointStyleState['_interactable'];
   _pointMarks: PointStyleState['_pointMarks'];
   _slotSelection: PointStyleState['_slotSelection'];
+  _styleGetters: PointStyleState['_styleGetters'];
   _unmarkedGetters: PointStyleState['_unmarkedGetters'];
+  _visibilityModelKey: PointStyleState['_visibilityModelKey'];
 };
 
 /**

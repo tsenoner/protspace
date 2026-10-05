@@ -17,7 +17,12 @@
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import { plotDataId, materializePlotDataPoint, clonePlotData } from '@protspace/utils';
+import {
+  plotDataId,
+  materializePlotDataPoint,
+  clonePlotData,
+  DataProcessor,
+} from '@protspace/utils';
 import { LegendDataProcessor } from '../legend/legend-data-processor';
 
 import {
@@ -451,6 +456,48 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
 
     // All dataset-2 proteins must appear — stale filter must not blank the plot.
     expect(plotIds(sp._plotData).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+  });
+});
+
+describe('scatter-plot dataset swap releases the style state', () => {
+  it('holds nothing of the old dataset when the new plot data is allocated', () => {
+    const sp = makeScatter();
+    sp._processData();
+    const oldData = sp._getMaterializedData();
+    // What a session builds over a dataset: a lasso, the id index, marks, getters.
+    sp.selectedProteinIds = sp._style.selectSlots(sp._plotData, [1, 2]);
+    expect(sp._style.model().idsUnique()).toBe(true);
+    sp._style.stageGetters();
+    sp._style.pointMarks(sp._plotData);
+    sp._style.scheduleIdIndex();
+
+    const previous = sp.data;
+    sp.data = makeFamilyData({ idPrefix: 'q' });
+    sp.selectedProteinIds = [];
+    // The swap's render counts the points over the old plot data first.
+    sp._getVisiblePointCount();
+
+    const process = DataProcessor.processVisualizationData;
+    let held: unknown[] = [];
+    const spy = vi
+      .spyOn(DataProcessor, 'processVisualizationData')
+      .mockImplementation((...args: Parameters<typeof process>) => {
+        const style = sp._style;
+        held = [
+          style._styleGetters,
+          style._unmarkedGetters,
+          style._pointMarks,
+          style._slotSelection,
+          style._interactable,
+          style._cancelIdIndex,
+          style._visibilityModelKey?.data === oldData,
+        ];
+        return process.apply(DataProcessor, args);
+      });
+    sp.updated(new Map([['data', previous]]));
+    spy.mockRestore();
+
+    expect(held).toEqual([null, null, null, null, null, null, false]);
   });
 });
 
