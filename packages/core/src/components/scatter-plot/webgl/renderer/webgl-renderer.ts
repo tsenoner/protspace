@@ -1205,9 +1205,10 @@ export class WebGLRenderer {
    * overlaps whatever the page does before its first draw (loading data) instead of stalling it.
    * The first `render()` reads the results (`clear()` does not need them). Optional, idempotent,
    * and silent when WebGL2 is unavailable: `ensureGL` reports that when a draw is attempted.
+   * A lost context latches the renderer, so it starts nothing after that.
    */
   prewarm(): void {
-    if (this.gl || this.pendingPrograms) return;
+    if (this.lossController.isLost || this.gl || this.pendingPrograms) return;
     const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
     if (!gl) return;
     this.pendingPrograms = this.beginPrograms(gl);

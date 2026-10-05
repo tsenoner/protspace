@@ -45,6 +45,17 @@ describe('WebGLRenderer shader prewarm', () => {
     expect(count(calls, 'getProgramParameter')).toBe(0);
   });
 
+  it('starts nothing once the context is lost', () => {
+    const { renderer, canvas, gl } = makeRenderer();
+    const { calls, getExtension } = record(gl);
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+
+    renderer.prewarm();
+
+    expect(calls).toEqual([]);
+    expect(getExtension).not.toHaveBeenCalled();
+  });
+
   it('turns the prewarmed programs into the first draw without compiling again', () => {
     const { renderer, gl } = makeRenderer();
     const { calls } = record(gl);
