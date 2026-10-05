@@ -717,3 +717,24 @@ describe('numeric-binning distinct count limit', () => {
     }
   });
 });
+
+describe('numeric-binning sorted values', () => {
+  it('sorts the kept values when a later call first needs quantile edges', () => {
+    const values = [9, 1, 7, 3, 5, 3, 8, 2, 6, 4, 0, 7];
+    const quantile = (binCount: number) => ({
+      binCount,
+      strategy: 'quantile' as const,
+      paletteId: 'batlow',
+      reverseGradient: false,
+    });
+    // Ten distinct values in 12 bins fall back to linear edges, which never read the values.
+    materializeNumericAnnotation(values, quantile(12));
+
+    expect(materializeNumericAnnotation(values, quantile(4))).toEqual(
+      materializeNumericAnnotation([...values], quantile(4)),
+    );
+    expect(
+      materializeNumericAnnotation(values, quantile(4)).annotation.numericMetadata?.strategy,
+    ).toBe('quantile');
+  });
+});
