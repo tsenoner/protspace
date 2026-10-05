@@ -1,38 +1,34 @@
 // @vitest-environment jsdom
 /**
- * F-27 characterization LOCK — `_getVisibilityModel` 8-field memo key.
+ * F-27 characterization LOCK — `_getVisibilityModel` memo key.
  *
- * `_getVisibilityModel` (scatter-plot.ts L2073-2124) caches one VisibilityModel
- * instance keyed by reference/value identity on 8 inputs:
+ * `_getVisibilityModel` caches one VisibilityModel instance keyed by
+ * reference/value identity on the 10 fields of `VisibilityModelMemoKey`:
  *   data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
- *   highlightedProteinIds, baseOpacity, selectedOpacity, fadedOpacity.
- * (read L2088-2095, store L2113-2122).
+ *   highlightedProteinIds, baseOpacity, selectedOpacity, fadedOpacity,
+ *   eatOverlayEnabled, focusedValues.
  *
- * Leave every key field unchanged -> cache HIT (same model instance).
- * Flip ANY one field to a new reference/value -> cache MISS (fresh model).
- * This catches a missing or extra key field introduced by any B6/B8/B10 refactor.
+ * Leave every key field unchanged -> cache HIT (same model instance; the memo
+ * is a perf contract, so identity is the only observable there).
+ * Flip ANY one field -> cache MISS, and the fresh model's `opacityOf` reflects
+ * the flip, so a rebuild over stale inputs fails as well as a missing key.
+ *
+ * Note that `data` is the materialized display data, which is rebuilt when
+ * `eatOverlayEnabled` flips, so that flip also misses through `data`.
  *
  * The element is created via createElement WITHOUT being appended (mirrors the
  * neighbor locks scatter-plot.materialize-cache.test.ts / filter-render): Lit's
  * connectedCallback + reactive update cycle never run, so we drive the component
  * by setting public reactive props directly and calling the internal methods.
  *
- * NAME ADJUSTMENTS vs the plan sketch (assertions unchanged):
- *  - Real VisualizationData uses `annotations` + `annotation_data` (index arrays),
- *    NOT `features`/`feature_data`; projections carry `dimension`, not
- *    `metadata.dimensions`. Fixture mirrors makeFamilyData in the
- *    scatter-plot.materialize-cache.test.ts neighbor, with a 2nd `other`
- *    annotation so the selectedAnnotation flip is legal.
- *  - selectedAnnotation flip targets the real 2nd annotation `'other'` (not 'fam2').
- *  - The 3 opacity fields are read from `this._mergedConfig` (L2080-2082). On an
- *    unattached element Lit's `updated()` lifecycle — where `config` is merged
- *    into `_mergedConfig` (L610-612) — never runs, so a synchronous `config`
- *    write would NOT change `_mergedConfig` and the flip would not be observable.
- *    We therefore flip `_mergedConfig` directly: it IS the genuine memo-key
- *    source the getter reads, so the assertion (MISS on change) is unchanged.
+ * The 3 opacity fields are read from `this._mergedConfig`. On an unattached
+ * element Lit's `updated()` lifecycle — where `config` is merged into
+ * `_mergedConfig` — never runs, so a synchronous `config` write would NOT change
+ * `_mergedConfig`. We therefore set `_mergedConfig` directly: it IS the genuine
+ * memo-key source the getter reads.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -45,54 +41,66 @@ beforeAll(() => {
 });
 import './scatter-plot';
 
+type Opacities = { baseOpacity: number; selectedOpacity: number; fadedOpacity: number };
+
 type Internals = HTMLElement & {
   data: VisualizationData;
   selectedAnnotation: string;
   hiddenAnnotationValues: string[];
   selectedProteinIds: string[];
   highlightedProteinIds: string[];
-  _mergedConfig: { baseOpacity: number; selectedOpacity: number; fadedOpacity: number };
+  eatOverlayEnabled: boolean;
+  _focusedValues: string[] | null;
+  _mergedConfig: Opacities;
   _processData(): void;
-  _getVisibilityModel(): object;
+  _getVisibilityModel(): { opacityOf(p: PlotDataPoint): number };
 };
 
-const RED = '#ff0000';
-const GREEN = '#00ff00';
+const BASE = 0.8;
+const SELECTED = 1;
+const FADED = 0.2;
 
 /**
- * Categorical fixture: p0–p2 family "A", p3–p5 family "B", plus a second
- * categorical annotation `other` so the selectedAnnotation flip is legal.
- * Shape mirrors makeFamilyData in scatter-plot.materialize-cache.test.ts.
+ * Categorical fixture: p0–p2 family "A", p3–p5 family "B", plus:
+ *  - a second annotation `other` (X/Y) that does not use "A", so switching to
+ *    it while "A" is hidden un-hides p0;
+ *  - an EAT prediction of "A" for p3, applied only while the overlay is on.
  */
-function famData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
+function famData(fam = [0, 0, 0, 1, 1, 1]): VisualizationData {
+  const n = fam.length;
+  const coords = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
     coords[i * 2] = i;
     coords[i * 2 + 1] = i;
-  });
+  }
   return {
-    protein_ids: families.map((_, i) => `p${i}`),
+    protein_ids: fam.map((_, i) => `p${i}`),
     projections: [{ name: 'umap', data: coords, dimension: 2 }],
     annotations: {
       fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
+        kind: 'categorical',
+        values: ['A', 'B'],
+        colors: ['#ff0000', '#00ff00'],
+        shapes: ['circle', 'circle'],
       },
       other: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
+        kind: 'categorical',
+        values: ['X', 'Y'],
+        colors: ['#0000ff', '#ffff00'],
+        shapes: ['circle', 'circle'],
       },
     },
     annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-      other: families.map((v) => [families.indexOf(v)]),
+      fam: Int32Array.from(fam),
+      other: Int32Array.from([1, 1, 1, 0, 0, 0]),
+    },
+    annotation_predicted: {
+      fam: [null, null, null, { value: 'A' }, null, null],
     },
   } as unknown as VisualizationData;
 }
+
+const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: i, y: i, originalIndex: i });
 
 describe('_getVisibilityModel memo key (F-27 characterization lock)', () => {
   function primed(): Internals {
@@ -102,67 +110,122 @@ describe('_getVisibilityModel memo key (F-27 characterization lock)', () => {
     sp.hiddenAnnotationValues = [];
     sp.selectedProteinIds = [];
     sp.highlightedProteinIds = [];
+    sp._mergedConfig = {
+      ...sp._mergedConfig,
+      baseOpacity: BASE,
+      selectedOpacity: SELECTED,
+      fadedOpacity: FADED,
+    };
     sp._processData();
     return sp;
   }
+
+  const setOpacity = (sp: Internals, patch: Partial<Opacities>) => {
+    sp._mergedConfig = { ...sp._mergedConfig, ...patch };
+  };
 
   it('no input change → cache HIT (same model instance)', () => {
     const sp = primed();
     expect(sp._getVisibilityModel()).toBe(sp._getVisibilityModel());
   });
 
-  // Each key field, when flipped to a NEW reference/value, must produce a cache MISS.
-  const flips: Array<[string, (sp: Internals) => void]> = [
+  // Each key field, when flipped, must produce a cache MISS whose opacityOf(probe)
+  // moves from `before` to `after`. `setup` (applied before the first read)
+  // makes the flip observable where the default state would hide it.
+  type Flip = {
+    setup?: (sp: Internals) => void;
+    flip: (sp: Internals) => void;
+    probe: number;
+    before: number;
+    after: number;
+  };
+  const flips: Array<[string, Flip]> = [
     [
       'hiddenAnnotationValues',
-      (sp) => {
-        sp.hiddenAnnotationValues = ['A'];
-      },
+      { flip: (sp) => (sp.hiddenAnnotationValues = ['A']), probe: 0, before: BASE, after: 0 },
     ],
     [
       'selectedProteinIds',
-      (sp) => {
-        sp.selectedProteinIds = ['p0'];
-      },
+      { flip: (sp) => (sp.selectedProteinIds = ['p0']), probe: 3, before: BASE, after: FADED },
     ],
     [
       'highlightedProteinIds',
-      (sp) => {
-        sp.highlightedProteinIds = ['p1'];
+      {
+        flip: (sp) => (sp.highlightedProteinIds = ['p1']),
+        probe: 1,
+        before: BASE,
+        after: SELECTED,
       },
     ],
     [
       'selectedAnnotation',
-      (sp) => {
-        sp.selectedAnnotation = 'other';
+      {
+        setup: (sp) => (sp.hiddenAnnotationValues = ['A']),
+        flip: (sp) => (sp.selectedAnnotation = 'other'),
+        probe: 0,
+        before: 0,
+        after: BASE,
       },
     ],
     [
       'baseOpacity',
-      (sp) => {
-        sp._mergedConfig = { ...sp._mergedConfig, baseOpacity: 0.5 };
-      },
+      { flip: (sp) => setOpacity(sp, { baseOpacity: 0.5 }), probe: 0, before: BASE, after: 0.5 },
     ],
     [
       'selectedOpacity',
-      (sp) => {
-        sp._mergedConfig = { ...sp._mergedConfig, selectedOpacity: 0.9 };
+      {
+        setup: (sp) => (sp.selectedProteinIds = ['p0']),
+        flip: (sp) => setOpacity(sp, { selectedOpacity: 0.7 }),
+        probe: 0,
+        before: SELECTED,
+        after: 0.7,
       },
     ],
     [
       'fadedOpacity',
-      (sp) => {
-        sp._mergedConfig = { ...sp._mergedConfig, fadedOpacity: 0.1 };
+      {
+        setup: (sp) => (sp.selectedProteinIds = ['p0']),
+        flip: (sp) => setOpacity(sp, { fadedOpacity: 0.1 }),
+        probe: 3,
+        before: FADED,
+        after: 0.1,
       },
+    ],
+    [
+      'data',
+      {
+        setup: (sp) => (sp.hiddenAnnotationValues = ['A']),
+        flip: (sp) => (sp.data = famData([1, 0, 0, 1, 1, 1])), // p0 is now "B"
+        probe: 0,
+        before: 0,
+        after: BASE,
+      },
+    ],
+    [
+      'eatOverlayEnabled',
+      {
+        // p3's predicted "A" is hidden while the overlay applies it.
+        setup: (sp) => (sp.hiddenAnnotationValues = ['A']),
+        flip: (sp) => (sp.eatOverlayEnabled = false),
+        probe: 3,
+        before: 0,
+        after: BASE,
+      },
+    ],
+    [
+      'focusedValues',
+      { flip: (sp) => (sp._focusedValues = ['A']), probe: 4, before: BASE, after: FADED },
     ],
   ];
 
-  for (const [field, flip] of flips) {
-    it(`flipping ${field} → cache MISS (fresh model)`, () => {
-      const sp = primed();
-      const before = sp._getVisibilityModel();
-      flip(sp);
-      expect(sp._getVisibilityModel()).not.toBe(before);
-    });
-  }
+  it.each(flips)('flipping %s → cache MISS with the new opacity', (_field, c) => {
+    const sp = primed();
+    c.setup?.(sp);
+    const before = sp._getVisibilityModel();
+    expect(before.opacityOf(point(c.probe))).toBe(c.before);
+    c.flip(sp);
+    const after = sp._getVisibilityModel();
+    expect(after).not.toBe(before);
+    expect(after.opacityOf(point(c.probe))).toBe(c.after);
+  });
 });

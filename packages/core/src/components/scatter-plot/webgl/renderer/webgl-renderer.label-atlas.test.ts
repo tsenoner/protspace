@@ -106,18 +106,39 @@ describe('WebGLRenderer label atlas', () => {
     expect(degraded.map((d) => d.context?.reason)).toContain('label-atlas-out-of-memory');
   });
 
+  /** Name every uniform location so uniform1i calls can be told apart. */
+  function capacityUniforms(gl: ReturnType<typeof makeRenderer>['gl']) {
+    vi.spyOn(gl, 'getUniformLocation').mockImplementation(((_p: unknown, name: unknown) => ({
+      name,
+    })) as never);
+    return () =>
+      gl.uniform1i.mock.calls
+        .filter((c) => (c[0] as { name?: string } | null)?.name === 'u_labelAtlasCapacity')
+        .map((c) => c[1]);
+  }
+
   it('tells the shader not to sample when no atlas is allocated', () => {
     const { renderer, gl } = makeRenderer(
       // Below the spec floor, so no layout fits at all.
       { maxTextureSize: 1024 },
       ['#f00', '#0f0'],
     );
+    const capacities = capacityUniforms(gl);
     renderer.render(plotData(600_000));
 
-    // The last uniform1i for the capacity slot must be 0: with a null location the
-    // mock records every uniform1i, so assert no non-zero capacity was ever pushed
-    // alongside a real atlas.
+    // Only the 1x1 placeholder is bound, and every capacity pushed to the shader
+    // is 0, so the pie branch never samples it.
     expect(texImageSizes(gl)).toContainEqual([1, 1]);
+    expect(capacities().length).toBeGreaterThan(0);
+    expect(capacities().every((c) => c === 0)).toBe(true);
+  });
+
+  it('pushes the allocated capacity to the shader when an atlas fits', () => {
+    // Control for the test above: the same probe sees a non-zero capacity.
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192 }, ['#f00', '#0f0']);
+    const capacities = capacityUniforms(gl);
+    renderer.render(plotData(1000));
+    expect(capacities().at(-1)).toBeGreaterThanOrEqual(1000);
   });
 
   it('reports a failed point-buffer allocation and retries rather than compounding it', () => {

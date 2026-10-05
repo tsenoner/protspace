@@ -6,20 +6,18 @@
  * Guards the contracts the F-06 controller-extraction move must preserve:
  *  1. the shared helper groups exact-coord coincidents and drops solos, keying
  *     by the same per-projection coord key production groups by (F-36 contract);
- *  2. the feature is gated off by default (enableDuplicateStackUI === false) and
- *     the overlay update is a no-op (does not throw) on an element with no
- *     overlay group attached;
- *  3. cancelCompute bumps the compute job id so any in-flight chunked compute
- *     aborts early (stale-result race guard).
+ *  2. the feature is gated off by default (enableDuplicateStackUI === false).
+ *     What the gate does once an overlay group exists (layers removed, no
+ *     badges, no spiderfy) is tested on the controller directly in
+ *     duplicate-stack-overlay-controller.enable-gate.test.ts.
+ *
+ * The cancelled-compute race guard is tested end to end (start, cancel,
+ * drain, restart) in scatter-plot.duplicate-stack-compute.test.ts.
  *
  * The element is created via document.createElement and NOT appended, so Lit's
  * connectedCallback / WebGL init never runs (same pattern as
- * scatter-plot.materialize-cache.test.ts L18-21).
- *
- * F-06 moved the subsystem into DuplicateStackOverlayController; these probes
- * now reach through `el._dupOverlay` while asserting the SAME observable
- * contracts (job-id monotonicity, no-op-when-disabled). Lock 1 is name-stable
- * and never changes.
+ * scatter-plot.materialize-cache.test.ts). Lock 1 is name-stable and never
+ * changes.
  */
 import { vi, describe, it, expect } from 'vitest';
 
@@ -39,16 +37,8 @@ import {
   getDuplicateStackKey,
 } from './duplicate-stacks/duplicate-stack-helpers';
 
-interface DuplicateOverlayController {
-  // TS-private at compile time, reachable at runtime — the job-id race guard.
-  computeJobId: number;
-  updateSelectionOverlays: (opts?: { duplicateImmediate?: boolean }) => void;
-  cancelCompute: () => void;
-}
-
 interface DuplicateOverlayInternals extends HTMLElement {
-  _mergedConfig?: { enableDuplicateStackUI?: boolean };
-  _dupOverlay: DuplicateOverlayController;
+  _mergedConfig: { enableDuplicateStackUI: boolean };
 }
 
 function makeElement(): DuplicateOverlayInternals {
@@ -77,19 +67,9 @@ describe('duplicate-overlay characterization', () => {
     expect(r.byKey.has(getDuplicateStackKey({ x: 9, y: 9 }))).toBe(false);
   });
 
-  // Lock 2: the feature is gated off by default -> no badge canvas writes, no SVG layer.
-  it('does nothing when enableDuplicateStackUI is false (default)', () => {
+  // Lock 2: the feature is gated off by default.
+  it('enableDuplicateStackUI defaults to false', () => {
     const el = makeElement();
-    expect(el._mergedConfig?.enableDuplicateStackUI ?? false).toBe(false);
-    // The overlay update is a no-op with no overlay group attached; must not throw.
-    expect(() => el._dupOverlay.updateSelectionOverlays()).not.toThrow();
-  });
-
-  // Lock 3: cancelCompute bumps the job id so an in-flight chunk aborts (race guard).
-  it('cancelling compute bumps the job id (stale-result guard)', () => {
-    const el = makeElement();
-    const before = el._dupOverlay.computeJobId;
-    el._dupOverlay.cancelCompute();
-    expect(el._dupOverlay.computeJobId).toBeGreaterThan(before);
+    expect(el._mergedConfig.enableDuplicateStackUI).toBe(false);
   });
 });

@@ -11,15 +11,24 @@ import {
 } from './duplicate-badges-canvas-renderer';
 import type { RenderDuplicateStack } from './duplicate-stack-types';
 
+/**
+ * Fake canvas recording method calls. `fill()` is recorded with the fillStyle
+ * current at the call, so a test can tell which colour each badge arc used
+ * (the label's later `#ffffff` fillStyle would otherwise overwrite it).
+ */
 function fakeCanvas() {
   const calls: Array<[string, unknown[]]> = [];
+  let fillStyle: unknown;
   const ctx = new Proxy({} as Record<string, unknown>, {
     get: (_t, p) =>
       typeof p === 'string' &&
       ['setTransform', 'clearRect', 'beginPath', 'arc', 'fill', 'stroke', 'fillText'].includes(p)
-        ? (...a: unknown[]) => calls.push([p, a])
+        ? (...a: unknown[]) => calls.push([p, p === 'fill' ? [fillStyle] : a])
         : undefined,
-    set: () => true,
+    set: (_t, p, v) => {
+      if (p === 'fillStyle') fillStyle = v;
+      return true;
+    },
   });
   const canvas = {
     width: 1600,
@@ -72,7 +81,35 @@ describe('DuplicateBadgesCanvasRenderer', () => {
     });
     r.render([stk('a', 10, 10, 3), stk('b', 20, 20, 5)]);
     expect(calls.filter(([m]) => m === 'arc')).toHaveLength(2);
+    expect(calls.filter(([m]) => m === 'fill').map(([, a]) => a[0])).toEqual([
+      BADGE_DEFAULT_FILL,
+      BADGE_EXPANDED_FILL,
+    ]);
     expect(calls.filter(([m]) => m === 'fillText').map(([, a]) => a[0])).toEqual(['3', '5']);
+  });
+
+  it('render() maps px/py through the live zoom transform and scales to device pixels once', () => {
+    const { canvas, calls } = fakeCanvas();
+    const prevDpr = window.devicePixelRatio;
+    window.devicePixelRatio = 2;
+    try {
+      const t = { x: 30, y: -20, k: 2 };
+      const r = new DuplicateBadgesCanvasRenderer({
+        getCanvas: () => canvas,
+        getTransform: () => t,
+        getSize: () => ({ width: 800, height: 600 }),
+        getExpandedKey: () => null,
+      });
+      r.render([stk('a', 10, 40, 3)]);
+      const x = t.x + t.k * 10 + BADGE_OFFSET.x; // 30 + 20 + 10 = 60
+      const y = t.y + t.k * 40 + BADGE_OFFSET.y; // -20 + 80 - 10 = 50
+      expect(calls[0]).toEqual(['setTransform', [2, 0, 0, 2, 0, 0]]);
+      expect(calls[1]).toEqual(['clearRect', [0, 0, 800, 600]]);
+      expect(calls.find(([m]) => m === 'arc')![1]).toEqual([x, y, BADGE_RADIUS, 0, Math.PI * 2]);
+      expect(calls.find(([m]) => m === 'fillText')![1]).toEqual(['3', x, y]);
+    } finally {
+      window.devicePixelRatio = prevDpr;
+    }
   });
 });
 
