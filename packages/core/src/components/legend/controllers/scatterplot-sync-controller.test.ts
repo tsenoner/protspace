@@ -36,6 +36,7 @@ describe('ScatterplotSyncController', () => {
         { value: 'cat2', zOrder: 1, color: '#0f0', shape: 'square' },
       ]),
       getOtherConcreteValues: vi.fn().mockReturnValue([]),
+      getAutoHide: vi.fn().mockReturnValue(true),
     };
 
     mockScatterplot = createMockScatterplot();
@@ -55,21 +56,12 @@ describe('ScatterplotSyncController', () => {
   });
 
   describe('hostConnected', () => {
-    it('attempts to discover scatterplot when autoSync is true', () => {
+    it('discovers the scatterplot', () => {
       document.body.appendChild(mockScatterplot as unknown as Node);
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       controller.hostConnected();
 
       expect(controller.scatterplot).toBe(mockScatterplot);
-    });
-
-    it('does not discover scatterplot when autoSync is false', () => {
-      document.body.appendChild(mockScatterplot as unknown as Node);
-      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
-      controller.autoSync = false;
-      controller.hostConnected();
-
-      expect(controller.scatterplot).toBe(null);
     });
 
     it('retries discovery when scatterplot not immediately available', () => {
@@ -317,7 +309,7 @@ describe('ScatterplotSyncController', () => {
     });
 
     it('does nothing when autoHide is false', () => {
-      controller.autoHide = false;
+      mockCallbacks.getAutoHide = vi.fn().mockReturnValue(false);
       mockCallbacks.getHiddenValues = vi.fn().mockReturnValue(['hidden1']);
 
       controller.syncHiddenValues();

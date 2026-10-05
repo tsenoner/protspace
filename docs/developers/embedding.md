@@ -82,7 +82,8 @@ array properties are parsed from JSON strings in markup, so set those from JavaS
 ## Auto-Sync Feature
 
 Components with the `auto-sync` attribute find the scatterplot named by `scatterplot-selector` and
-push their changes into it directly, so you do not have to wire the events yourself:
+push their changes into it directly, so you do not have to wire the events yourself. `autoSync` is
+on by default, so the attribute only spells it out:
 
 ```html
 <protspace-scatterplot id="plot"></protspace-scatterplot>
@@ -91,6 +92,11 @@ push their changes into it directly, so you do not have to wire the events yours
 <protspace-control-bar auto-sync scatterplot-selector="#plot"></protspace-control-bar>
 <protspace-structure-viewer auto-sync scatterplot-selector="#plot"></protspace-structure-viewer>
 ```
+
+The legend follows the scatterplot whatever `autoSync` says. Setting `legend.autoSync = false` hands
+the legend to its host, as the ProtSpace app does while it loads a dataset: the legend then counts
+categories in protein order, the order a per-protein `annotationValues` feed has, and leaves the EAT
+overlay switch for the host to apply to the plot.
 
 ## Configuring the plot
 

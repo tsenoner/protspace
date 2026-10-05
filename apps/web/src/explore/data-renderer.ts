@@ -122,7 +122,6 @@ async function syncLegendState(
     setTimeout(
       () => {
         legendElement.autoSync = true;
-        legendElement.autoHide = true;
         interactionController.updateLegend();
         resolve();
       },

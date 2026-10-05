@@ -63,6 +63,7 @@ export interface ScatterplotSyncCallbacks {
   getOtherItems: () => OtherItem[];
   getLegendItems: () => LegendItem[];
   getOtherConcreteValues: () => string[];
+  getAutoHide: () => boolean;
   getNumericAnnotationSettings?: () => NumericAnnotationDisplaySettingsMap;
   getAnnotationSortModes?: () => Record<string, LegendSortMode>;
   getNumericManualOrderIds?: () => Record<string, string[]>;
@@ -86,8 +87,6 @@ export class ScatterplotSyncController implements ReactiveController {
   private _mutationObserver: MutationObserver | null = null;
 
   scatterplotSelector: string = 'protspace-scatterplot';
-  autoSync: boolean = true;
-  autoHide: boolean = true;
 
   constructor(host: ReactiveControllerHost & Element, callbacks: ScatterplotSyncCallbacks) {
     this.host = host;
@@ -100,9 +99,7 @@ export class ScatterplotSyncController implements ReactiveController {
   }
 
   hostConnected(): void {
-    if (this.autoSync) {
-      this._setupAutoSync();
-    }
+    this._setupAutoSync();
   }
 
   hostDisconnected(): void {
@@ -141,7 +138,7 @@ export class ScatterplotSyncController implements ReactiveController {
    * Sync hidden values to scatterplot
    */
   syncHiddenValues(): void {
-    if (!this.autoHide || !this._scatterplotElement) return;
+    if (!this.callbacks.getAutoHide() || !this._scatterplotElement) return;
 
     if (supportsHiddenValues(this._scatterplotElement)) {
       const expandedHidden = expandHiddenValues(

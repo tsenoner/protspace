@@ -231,6 +231,12 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: String, attribute: 'scatterplot-selector' })
   scatterplotSelector: string = LEGEND_DEFAULTS.scatterplotSelector;
 
+  /**
+   * Off while the host drives the legend, as the app does during a dataset load. The legend
+   * follows the scatterplot either way: its sync controller subscribes on connect. While off,
+   * it counts in protein order, the order a host's per-protein `annotationValues` feed has, and
+   * leaves the EAT overlay switch for the host to apply to the plot.
+   */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
 
@@ -296,9 +302,8 @@ export class ProtspaceLegend extends LitElement {
    * The annotation storage the legend counts from, captured on every scatterplot
    * data change. Counting straight out of it (`countFromStorage`) replaces the
    * flat `annotationValues` array, which cost one interned string per protein
-   * and misaligned isolation filtering. `null` means "no synced storage": the
-   * `autoSync === false` embedding path, which still feeds the public
-   * `annotationValues` property instead.
+   * and misaligned isolation filtering. `null` means "no synced storage": a host
+   * that feeds the public `annotationValues` property instead.
    */
   private _countSource: {
     colData: AnnotationData;
@@ -397,6 +402,7 @@ export class ProtspaceLegend extends LitElement {
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
     getOtherConcreteValues: () => computeOtherConcreteValues(this._otherItems),
+    getAutoHide: () => this.autoHide,
     getNumericAnnotationSettings: () => this._numericSettingsByAnnotation,
     getAnnotationSortModes: () => this._annotationSortModes,
     getNumericManualOrderIds: () => this._numericManualOrderIdsByAnnotation,
@@ -833,6 +839,11 @@ export class ProtspaceLegend extends LitElement {
     );
   }
 
+  /** `autoSync` is off; its doc lists what that changes. */
+  private get _hostDriven(): boolean {
+    return !this.autoSync;
+  }
+
   /**
    * Display order for the legend list. Every mode but `silhouette-desc` has already been
    * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
@@ -910,8 +921,6 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
-    this._scatterplotController.autoSync = this.autoSync;
-    this._scatterplotController.autoHide = this.autoHide;
   }
 
   disconnectedCallback(): void {
@@ -1066,12 +1075,11 @@ export class ProtspaceLegend extends LitElement {
       this._syncNumericSettingsFromPersistence();
     }
 
-    // An externally fed annotationValues array (the autoSync === false embedding
-    // path) is the source of truth while it is being fed, so it drops any storage
-    // captured by an earlier sync. Only a non-empty assignment counts: Lit reports
-    // the declared `= []` initializer as a change on the very first update, which
-    // would otherwise discard the storage the sync just captured. Clearing is
-    // `clearAllState`'s job.
+    // An externally fed annotationValues array is the source of truth while it is
+    // being fed, so it drops any storage captured by an earlier sync. Only a
+    // non-empty assignment counts: Lit reports the declared `= []` initializer as a
+    // change on the very first update, which would otherwise discard the storage the
+    // sync just captured. Clearing is `clearAllState`'s job.
     if (changedProperties.has('annotationValues') && this.annotationValues.length > 0) {
       this._countSource = null;
     }
@@ -1314,7 +1322,7 @@ export class ProtspaceLegend extends LitElement {
   private _applyEatOverlayEnabled(enabled: boolean): void {
     this._eatOverlayEnabled = enabled;
     const scatterplot = this._scatterplotController.scatterplot;
-    if (this.autoSync && scatterplot) {
+    if (!this._hostDriven && scatterplot) {
       scatterplot.eatOverlayEnabled = enabled;
     }
     this._emitEatOverlayChange();
@@ -1734,7 +1742,7 @@ export class ProtspaceLegend extends LitElement {
         knownValues,
       );
     }
-    // Protein order while auto-sync is off, the order a per-protein `annotationValues` feed
+    // Protein order while host-driven, the order a per-protein `annotationValues` feed
     // gives, so the legend comes out the same whether its host feeds it or it counts the
     // synced storage. Tied counts keep this order, which settles their rows and colours.
     return LegendDataProcessor.countFromStorage(
@@ -1743,7 +1751,7 @@ export class ProtspaceLegend extends LitElement {
       source.proteinCount,
       filteredIndices,
       knownValues,
-      !this.autoSync,
+      this._hostDriven,
     );
   }
 
