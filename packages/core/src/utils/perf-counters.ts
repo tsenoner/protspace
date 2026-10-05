@@ -24,10 +24,9 @@ interface PerfCounters {
   legendRebuild: number;
 }
 
-function createPerfCounters(): PerfCounters | null {
-  if (typeof window === 'undefined' || typeof location === 'undefined') return null;
-  if (!new URLSearchParams(location.search).has('perfCounters')) return null;
-  const counters: PerfCounters = {
+/** A zeroed set: the one the page exposes, or the one a unit test mocks `perfCounters` with. */
+export function createPerfCounters(): PerfCounters {
+  return {
     restage: 0,
     restagePos: 0,
     restageStyle: 0,
@@ -40,9 +39,15 @@ function createPerfCounters(): PerfCounters | null {
     legendUpdate: 0,
     legendRebuild: 0,
   };
+}
+
+function exposedCounters(): PerfCounters | null {
+  if (typeof window === 'undefined' || typeof location === 'undefined') return null;
+  if (!new URLSearchParams(location.search).has('perfCounters')) return null;
+  const counters = createPerfCounters();
   (window as unknown as { __protspacePerfCounters?: PerfCounters }).__protspacePerfCounters =
     counters;
   return counters;
 }
 
-export const perfCounters: PerfCounters | null = createPerfCounters();
+export const perfCounters: PerfCounters | null = exposedCounters();

@@ -16,9 +16,9 @@ import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
 import { MORPH_MS, drawnPositions, morphWeight } from './webgl/renderer/position-morph';
 import type * as PositionMorph from './webgl/renderer/position-morph';
+import type * as PerfCounters from '../../utils/perf-counters';
 
 const clock = vi.hoisted(() => ({ now: 1000 }));
-const counters = vi.hoisted(() => ({ morphFrame: 0 }));
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -33,9 +33,15 @@ vi.mock('./webgl/renderer/position-morph', async (importOriginal) => {
   const actual = await importOriginal<typeof PositionMorph>();
   return { ...actual, frameTime: () => clock.now, drawnPositions: vi.fn(actual.drawnPositions) };
 });
-vi.mock('../../utils/perf-counters', () => ({ perfCounters: counters }));
+vi.mock('../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
+});
 
 import './scatter-plot';
+import { perfCounters } from '../../utils/perf-counters';
+
+const counters = perfCounters!;
 
 type Renderer = {
   readonly isMorphing: boolean;

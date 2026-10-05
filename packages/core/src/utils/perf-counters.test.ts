@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createPerfCounters } from './perf-counters';
 
 type Exposed = { __protspacePerfCounters?: Record<string, number> };
 
@@ -32,5 +33,12 @@ describe('perfCounters', () => {
     counters!.restage++;
     counters!.restage++;
     expect((window as unknown as Exposed).__protspacePerfCounters?.restage).toBe(2);
+  });
+});
+
+describe('createPerfCounters', () => {
+  it('returns a new zeroed set on every call', () => {
+    createPerfCounters().restage++;
+    expect(Object.values(createPerfCounters()).every((v) => v === 0)).toBe(true);
   });
 });

@@ -14,9 +14,10 @@ import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL } from './export-shaders';
 import { MORPH_MS, repaintOrder } from './position-morph';
 import type * as PositionMorph from './position-morph';
 import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
+import { perfCounters } from '../../../../utils/perf-counters';
+import type * as PerfCounters from '../../../../utils/perf-counters';
 
 const clock = vi.hoisted(() => ({ now: 1000 }));
-const counters = vi.hoisted(() => ({ render: 0, restage: 0, morphFrame: 0 }));
 
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -25,7 +26,12 @@ vi.mock('./position-morph', async (importOriginal) => {
   const actual = await importOriginal<typeof PositionMorph>();
   return { ...actual, frameTime: () => clock.now, repaintOrder: vi.fn(actual.repaintOrder) };
 });
-vi.mock('../../../../utils/perf-counters', () => ({ perfCounters: counters }));
+vi.mock('../../../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
+});
+
+const counters = perfCounters!;
 
 afterEach(() => vi.restoreAllMocks());
 
