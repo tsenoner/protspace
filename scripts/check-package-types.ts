@@ -5,15 +5,25 @@
  * under `exports`), this asserts, after a build, that
  *
  *   1. every declared declaration file exists, and
- *   2. TypeScript resolves every exported subpath to one of those files, under
- *      `moduleResolution: "bundler"` and under `"node16"` for both ESM and CJS importers.
+ *   2. TypeScript resolves every exported subpath to the file declared for it, under
+ *      `moduleResolution: "bundler"` and under `"node16"` for both ESM and CJS importers. A
+ *      subpath's file is its `types` condition; "." without one falls back to the top-level
+ *      `types`/`typings`, which TypeScript ignores once `exports` exists.
  *
- * Check 2 is the one that catches the silent failure. A missing `types` target is not an
- * error to TypeScript: it falls through to the `import` condition, resolves the `.mjs` bundle,
- * and types every import from the package as `any`. That is only reported under
- * `noImplicitAny`, which apps/web turns off — so @protspace/core emitted its declarations to
- * dist/src/ while package.json pointed at dist/, and the app type-checked against `any`
- * without a single error.
+ * A declared file that is missing or never reached is not an error to TypeScript: it falls
+ * through to the JS target (the bundle under `import`) and types every import from the
+ * package as `any`. That is only reported under `noImplicitAny`, which apps/web turns off — so
+ * @protspace/core emitted its declarations to dist/src/ while package.json pointed at dist/,
+ * and the app type-checked against `any` without a single error. Both checks catch that case.
+ * Only check 2 catches a declared file that exists but that some importer never reaches: a
+ * `types` condition nested under just one of `import`/`require`, a top-level `types` beside an
+ * `exports` map without one, or a stray declaration next to a JS target (dist/core.d.ts beside
+ * dist/core.js) that wins because `types` is listed after `import`/`require`.
+ *
+ * Neither check looks at module format. Under node16 a plain `.d.ts` in a package without
+ * `"type": "module"` is CommonJS, even when an ESM importer reaches it through `import`
+ * (arethetypeswrong: "masquerading as CJS"). That is harmless while the packages are consumed
+ * only inside this workspace, through bundler resolution; settle it before they go to npm.
  *
  * Runs at the end of `pnpm type-check`, after turbo has built the packages.
  *
@@ -98,6 +108,7 @@ function checkPackage(packageDir: string, pkg: PackageJson): string[] {
   const problems: string[] = [];
   const name = pkg.name ?? relative(REPO_ROOT, packageDir);
   const declared: [field: string, path: string][] = [];
+  const topLevel = [pkg.types, pkg.typings].filter((path): path is string => Boolean(path));
   if (pkg.types) declared.push(['types', pkg.types]);
   if (pkg.typings) declared.push(['typings', pkg.typings]);
   const subpaths = exportSubpaths(pkg.exports);
@@ -115,7 +126,12 @@ function checkPackage(packageDir: string, pkg: PackageJson): string[] {
 
   for (const [subpath, target] of subpaths) {
     if (subpath.includes('*')) continue;
-    const expected = new Set(typesTargets(target).map((path) => resolve(packageDir, path)));
+    // With `exports` present TypeScript never reads the top-level `types`, so "." must reach
+    // it some other way (a sibling of its JS target) or the package is typed as `any`.
+    const conditionTypes = typesTargets(target);
+    const declaredForSubpath =
+      conditionTypes.length > 0 ? conditionTypes : subpath === '.' ? topLevel : [];
+    const expected = new Set(declaredForSubpath.map((path) => resolve(packageDir, path)));
     if (expected.size === 0) continue;
     const specifier = subpath === '.' ? name : `${name}${subpath.slice(1)}`;
     // A file inside the package resolves its own name through `exports` (self-reference),
