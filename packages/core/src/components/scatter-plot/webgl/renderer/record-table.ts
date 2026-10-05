@@ -13,9 +13,9 @@
  */
 
 import type { PointStyleRecords } from '../types';
-import { RECORD_STYLE_WIDTH } from './export-shaders';
+import { RECORD_STYLE_WIDTH } from './point-shaders';
 import type { PackedRecords } from './pass-staging';
-import { SELECTED_OPACITY_THRESHOLD } from './point-staging';
+import { SELECTED_OPACITY_THRESHOLD } from '../../paint-depth';
 
 const SELECTED_TIER_MIN_ALPHA = SELECTED_OPACITY_THRESHOLD - 1e-6;
 

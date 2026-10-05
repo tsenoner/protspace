@@ -10,7 +10,7 @@ import {
   toInternalValue,
 } from '@protspace/utils';
 import type { PointStylePass } from '../webgl/types';
-import { composePaintDepth, SELECTED_OPACITY_THRESHOLD } from '../webgl/renderer/point-staging';
+import { composePaintDepth, SELECTED_OPACITY_THRESHOLD } from '../paint-depth';
 import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityModel } from './visibility-model';
 import { CategoryStyles, createCategoryStylePass } from './style-pass';

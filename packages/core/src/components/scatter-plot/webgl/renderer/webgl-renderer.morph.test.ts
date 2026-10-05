@@ -9,7 +9,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
 import type { PointMarks, ScalePair, WebGLStyleGetters } from '../types';
-import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL } from './point-shaders';
 import { MORPH_MS, repaintOrder } from './position-morph';
 import type * as PositionMorph from './position-morph';
 import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';

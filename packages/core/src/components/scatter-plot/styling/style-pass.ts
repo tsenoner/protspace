@@ -30,7 +30,7 @@ import {
   toInternalValue,
 } from '@protspace/utils';
 import type { PointStylePass, PointStyleRecords } from '../webgl/types';
-import { composePaintDepth } from '../webgl/renderer/point-staging';
+import { composePaintDepth } from '../paint-depth';
 import type { VisibilityModel } from './visibility-model';
 
 /** The style semantics `createStyleGetters` shares with its staging pass. */

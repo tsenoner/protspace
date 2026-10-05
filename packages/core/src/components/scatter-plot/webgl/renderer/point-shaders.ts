@@ -1,12 +1,7 @@
 /**
- * Point + gamma-correction shader sources for the off-screen export pipeline.
- *
- * These are byte-identical copies of the live shader sources that previously
- * lived as module-level constants in `webgl-renderer.ts`. They are factored out
- * here so the extracted `ExportRenderer` can build its throwaway programs
- * without depending on the live renderer module. The Wire phase re-points the
- * live renderer to consume these same constants, keeping a single source of
- * truth for the shader text.
+ * Every GLSL source the point draws compile, shared by the live renderer and the
+ * export: the point and gamma programs, and the camera, glide and record-table
+ * snippets the density shaders reuse.
  */
 
 /**

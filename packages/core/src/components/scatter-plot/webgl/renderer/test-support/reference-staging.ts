@@ -11,7 +11,7 @@ import {
   type ScalePair,
   type WebGLStyleGetters,
 } from '../../types';
-import { composePaintDepth } from '../point-staging';
+import { composePaintDepth } from '../../../paint-depth';
 import { stagePointStyle, type StagePointArrays } from '../stage-point';
 
 export function referenceStage(

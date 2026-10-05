@@ -4,7 +4,7 @@ import {
   GAMMA_FRAGMENT_SHADER,
   POINT_FRAGMENT_SHADER,
   POINT_VERTEX_SHADER,
-} from './export-shaders';
+} from './point-shaders';
 
 describe('gamma correction shader', () => {
   it('un-premultiplies before handing the frame to the compositor', () => {

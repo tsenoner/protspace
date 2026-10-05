@@ -36,10 +36,10 @@ import {
   snapshotScales,
   type Rescale,
   type ScaleSnapshot,
-} from '../../rescale';
+} from './rescale';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
-import { composePaintDepth } from './point-staging';
+import { composePaintDepth } from '../../paint-depth';
 import { createPassScratch, packRecords, restageStyles, stageInPaintOrder } from './pass-staging';
 import {
   canRestyle,
@@ -113,7 +113,7 @@ import {
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
   RECORD_STYLE_WIDTH,
-} from './export-shaders';
+} from './point-shaders';
 
 // Constants
 /**

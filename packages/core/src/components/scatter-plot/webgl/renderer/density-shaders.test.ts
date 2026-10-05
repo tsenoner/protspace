@@ -9,7 +9,7 @@ import {
   DENSITY_CONTOUR_BLUR_RADIUS,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
 } from './density-shaders';
-import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, POINT_VERTEX_SHADER } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, POINT_VERTEX_SHADER } from './point-shaders';
 
 describe('gaussianWeights', () => {
   it('is a normalised symmetric kernel', () => {

@@ -17,7 +17,7 @@ import {
   type ScalePair,
   type SlotStyleScratch,
 } from '../types';
-import { linearAxis, mapLinear } from '../../rescale';
+import { linearAxis, mapLinear } from './rescale';
 import { buildPaintOrder } from './point-staging';
 import { packPointStyle, type StagePointArrays, type StagePointStyleArrays } from './stage-point';
 

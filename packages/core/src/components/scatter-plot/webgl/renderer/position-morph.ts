@@ -6,7 +6,7 @@
  * re-sorts it. The start positions therefore cross the re-sort by slot: read
  * out in the old order, written back in the new one.
  */
-import type { Rescale } from '../../rescale';
+import type { Rescale } from './rescale';
 
 /** Length of the glide, the same as the landing page's projection switch. */
 export const MORPH_MS = 800;

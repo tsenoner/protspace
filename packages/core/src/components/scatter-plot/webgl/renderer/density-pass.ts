@@ -10,7 +10,7 @@ import {
   DENSITY_CONTOUR_LIGHTEN,
   DENSITY_CONTOUR_LINE_CSS_PX,
 } from './density-shaders';
-import { GAMMA_VERTEX_SHADER } from './export-shaders';
+import { GAMMA_VERTEX_SHADER } from './point-shaders';
 import {
   bindAndClearTarget,
   setCameraUniforms,

@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import {
   POINT_FRAGMENT_SHADER as frag,
   POINT_VERTEX_SHADER as vert,
-} from '../../../packages/core/src/components/scatter-plot/webgl/renderer/export-shaders';
+} from '../../../packages/core/src/components/scatter-plot/webgl/renderer/point-shaders';
 
 const SCREENSHOT = fileURLToPath(new URL('./__screens__/glyphs.png', import.meta.url));
 

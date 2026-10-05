@@ -8,7 +8,7 @@
  */
 
 import type { PointUniformLocations } from '../types';
-import { IDENTITY_RESCALE, type Rescale } from '../../rescale';
+import { IDENTITY_RESCALE, type Rescale } from './rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
   LABEL_ATLAS_TEXTURE_UNIT,

@@ -4,7 +4,7 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
-import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, RECORD_STYLE_GLSL } from './export-shaders';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, RECORD_STYLE_GLSL } from './point-shaders';
 
 export function gaussianWeights(sigma: number, radius: number): number[] {
   const w: number[] = [];

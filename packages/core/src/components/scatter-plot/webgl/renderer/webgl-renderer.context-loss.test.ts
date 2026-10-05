@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
-import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
+import { GAMMA_FRAGMENT_SHADER } from './point-shaders';
 import type { WebGLRenderer } from './webgl-renderer';
 import { makeRenderer, plotData } from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';

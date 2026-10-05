@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { IDENTITY_RESCALE } from '../../rescale';
+import { IDENTITY_RESCALE } from './rescale';
 import {
   MORPH_MS,
   drawnPositions,
