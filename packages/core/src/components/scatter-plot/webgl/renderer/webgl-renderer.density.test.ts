@@ -216,14 +216,18 @@ describe('density layer, on', () => {
     config.width = 1024;
     on.renderer.render(plotData(50));
 
-    expect(
-      (on.renderer as unknown as { gammaPipelineAvailable: boolean }).gammaPipelineAvailable,
-    ).toBe(false);
     expect(on.resources.density).toBeNull();
     expect(deleteProgram).toHaveBeenCalledTimes(4);
     expect(deleteVao).toHaveBeenCalledTimes(1);
     expect(reasons(on.degraded)).toEqual(['gamma-pipeline-unavailable', 'density-unavailable']);
     expect(on.degraded[1].context.detail).toBe('linear-light pipeline unavailable');
+
+    // The fallback sticks: a later resize renders direct and never tries to
+    // rebuild the linear framebuffer.
+    const createFb = vi.spyOn(on.gl, 'createFramebuffer');
+    config.width = 1200;
+    on.renderer.render(plotData(50));
+    expect(createFb).not.toHaveBeenCalled();
     on.renderer.destroy();
   });
 
@@ -488,27 +492,45 @@ describe('density layer failure is not a gamma failure', () => {
   });
 });
 
-describe('context loss', () => {
-  it('clears the density latch so the next context can try again', () => {
-    const { renderer, gl, setContextLost } = makeRendererWithStyle(
-      styleGetters(),
-      {},
-      { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
-    );
-    renderer.render(plotData(50));
-    const priv = renderer as unknown as { densityDisabled: boolean };
-    priv.densityDisabled = true;
+// A dead GL handle (`isProgram` false) rebuilds the context state through
+// resetRendererState, the same reset a context loss runs. A real loss is
+// permanent for the renderer (F-39), so the reset is only observable here.
+describe('stale-handle reset', () => {
+  it('clears the density latch so the rebuilt state can try again', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const on = setup({ width: 800, height: 600, densityLayer: 'on' });
+    // Fail only the float density target (as in the grid-allocation test above),
+    // so density latches off while the gamma pipeline keeps working.
+    let failDensityTarget = true;
+    let sawFloatTarget = false;
+    const texImage2D = on.gl.texImage2D;
+    on.gl.texImage2D = ((...args: unknown[]) => {
+      if (args[2] === 0x8814) sawFloatTarget = true;
+      return texImage2D(...(args as []));
+    }) as typeof on.gl.texImage2D;
+    on.gl.checkFramebufferStatus = (() =>
+      failDensityTarget && sawFloatTarget ? 0 : 0x8cd5) as never;
+    const calls = recordCalls(on.glRecord);
 
-    setContextLost(true);
-    vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isContextLost').mockReturnValue(true);
-    renderer.render(plotData(50));
+    on.renderer.render(plotData(50));
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
 
-    expect(priv.densityDisabled).toBe(false);
-    renderer.destroy();
+    // The device recovers, but the latch holds: a re-render that would
+    // re-accumulate the field still draws no density.
+    failDensityTarget = false;
+    on.renderer.invalidateStyleCache();
+    on.renderer.render(plotData(50));
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
+
+    vi.spyOn(on.gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
+    on.renderer.render(plotData(50));
+    expect(countOf(calls, 'blendFunc(1,1)')).toBe(1);
+    expect(on.resources.density).not.toBeNull();
+    on.renderer.destroy();
   });
 
-  it('re-arms the density-unavailable report for the next context', () => {
-    const { renderer, gl, degraded, setContextLost } = makeRendererWithStyle(
+  it('re-arms the density-unavailable report', () => {
+    const { renderer, gl, degraded } = makeRendererWithStyle(
       styleGetters(),
       { missingFloatExtensions: true },
       { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
@@ -517,19 +539,9 @@ describe('context loss', () => {
     renderer.render(plotData(50));
     expect(reasons(degraded)).toEqual(['density-unavailable']);
 
-    // A dead handle rebuilds the context state through the same reset as a loss.
     vi.spyOn(gl as unknown as WebGL2RenderingContext, 'isProgram').mockReturnValueOnce(false);
     renderer.render(plotData(50));
     expect(reasons(degraded)).toEqual(['density-unavailable', 'density-unavailable']);
-
-    setContextLost(true);
-    renderer.render(plotData(50));
-    const priv = renderer as unknown as {
-      degradeReported: Set<string>;
-      missingFloatExtension: string | null;
-    };
-    expect(priv.degradeReported.size).toBe(0);
-    expect(priv.missingFloatExtension).toBeNull();
     renderer.destroy();
   });
 });
