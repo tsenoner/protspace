@@ -15,6 +15,7 @@ import {
   type StagedRecords,
 } from './record-table';
 import { buildRecordSlotPalette, buildSlotPalette } from './density-pass';
+import { seededRandom } from '../../../../test-support/seeded-random';
 
 // jsdom has no 2D canvas to resolve colours with; parse hex by hand.
 vi.mock('../color-utils', () => ({
@@ -34,19 +35,11 @@ const scales: ScalePair = {
   y: d3.scaleLinear().domain([0, 100]).range([600, 0]),
 };
 
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 2 ** 32;
-  };
-}
-
 const hex = (i: number) => `#${((i * 2654435761) >>> 8).toString(16).padStart(6, '0').slice(-6)}`;
 
 /** `n` proteins over `v` values, with some no-value and unknown codes. */
 function makeData(n: number, v: number, seed = 1): VisualizationData {
-  const next = rng(seed);
+  const next = seededRandom(seed);
   const values = Array.from({ length: v }, (_, i) => (i === 3 ? null : `c${i}`));
   return {
     protein_ids: Array.from({ length: n }, (_, i) => `P${i}`),
@@ -65,7 +58,7 @@ function makeData(n: number, v: number, seed = 1): VisualizationData {
 
 function makePlotData(data: VisualizationData): PlotData {
   const n = data.protein_ids.length;
-  const next = rng(99);
+  const next = seededRandom(99);
   return {
     length: n,
     xs: Float32Array.from({ length: n }, () => next() * 100),
