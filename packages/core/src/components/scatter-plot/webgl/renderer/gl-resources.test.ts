@@ -44,7 +44,7 @@ describe('GLResources', () => {
     const gl = makeGl();
     const res = new GLResources();
     res.createAll(gl);
-    expect(gl.createBuffer).toHaveBeenCalledTimes(9); // 7 attrib + record id + quad
+    expect(gl.createBuffer).toHaveBeenCalledTimes(10); // 7 attrib + record id + glide start + quad
     expect(gl.createVertexArray).toHaveBeenCalledTimes(0); // VAO built in createPointVAO, not here
     expect(gl.createTexture).toHaveBeenCalledTimes(3); // label colours + record styles + marks
     expect(res.dataPositionBuffer).not.toBeNull();
@@ -56,6 +56,7 @@ describe('GLResources', () => {
     expect(res.predictedBuffer).not.toBeNull();
     expect(res.quadBuffer).not.toBeNull();
     expect(res.recordBuffer).not.toBeNull();
+    expect(res.prevPositionBuffer).not.toBeNull();
     expect(res.labelColorTexture).not.toBeNull();
     expect(res.recordStyleTexture).not.toBeNull();
     expect(res.markTexture).not.toBeNull();
@@ -69,7 +70,7 @@ describe('GLResources', () => {
     res.gammaCorrectionProgram = { k: 'gamma' } as unknown as WebGLProgram;
     res.pointVao = { k: 'vao' } as unknown as WebGLVertexArrayObject;
     res.deleteAll(gl);
-    expect(gl.deleteBuffer).toHaveBeenCalledTimes(9);
+    expect(gl.deleteBuffer).toHaveBeenCalledTimes(10);
     expect(gl.deleteTexture).toHaveBeenCalledTimes(3);
     expect(gl.deleteVertexArray).toHaveBeenCalledTimes(1);
     expect(gl.deleteProgram).toHaveBeenCalledTimes(2);
@@ -121,6 +122,7 @@ describe('GLResources', () => {
     expect(res.predictedBuffer).toBeNull();
     expect(res.quadBuffer).toBeNull();
     expect(res.recordBuffer).toBeNull();
+    expect(res.prevPositionBuffer).toBeNull();
     expect(res.labelColorTexture).toBeNull();
     expect(res.recordStyleTexture).toBeNull();
     expect(res.markTexture).toBeNull();

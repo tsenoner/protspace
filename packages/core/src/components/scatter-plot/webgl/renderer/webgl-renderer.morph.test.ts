@@ -35,8 +35,14 @@ function setup() {
   const sources: string[] = [];
   const bindings: Array<{ program: unknown; index: number; name: string }> = [];
   const draws: Array<{ program: unknown; morph: number | undefined }> = [];
+  const pointers: Array<{ index: number; buffer: unknown; vao: unknown }> = [];
+  const enabled: number[] = [];
+  const stored: unknown[] = [];
   const morph = new Map<unknown, number>();
   let program: unknown = null;
+  let arrayBuffer: unknown = null;
+  let vao: unknown = null;
+  const bufferData = gl.bufferData;
   Object.assign(gl, {
     shaderSource: (_shader: unknown, source: string) => sources.push(source),
     getAttribLocation: (_p: unknown, name: string) =>
@@ -51,16 +57,43 @@ function setup() {
       if (loc?.name === 'u_morph') morph.set(loc.program, v);
     },
     drawArrays: () => draws.push({ program, morph: morph.get(program) }),
+    bindBuffer: (target: number, buffer: unknown) => {
+      if (target === gl.ARRAY_BUFFER) arrayBuffer = buffer;
+    },
+    bindVertexArray: (v: unknown) => {
+      vao = v;
+    },
+    vertexAttribPointer: (index: number) => pointers.push({ index, buffer: arrayBuffer, vao }),
+    enableVertexAttribArray: (index: number) => enabled.push(index),
+    bufferData: (...args: Parameters<typeof bufferData>) => {
+      if (args[0] === gl.ARRAY_BUFFER) stored.push(arrayBuffer);
+      return bufferData(...args);
+    },
   });
 
   const internals = renderer as unknown as {
     resources: GLResources;
     pointAttribLocations: PointAttribLocations;
   };
-  return { renderer, internals, sources, bindings, draws };
+  return { renderer, internals, sources, bindings, draws, pointers, enabled, stored };
 }
 
 describe('projection morph inputs, outside a glide', () => {
+  it('points a_prevPosition at its buffer in the point VAO, disabled and with no storage', () => {
+    const { renderer, internals, pointers, enabled, stored } = setup();
+    renderer.render(plotData(N));
+
+    const { prevPositionBuffer, pointVao } = internals.resources;
+    const { prevPosition } = internals.pointAttribLocations;
+    expect(prevPositionBuffer).not.toBeNull();
+    expect(pointers.filter((p) => p.index === prevPosition)).toEqual([
+      { index: prevPosition, buffer: prevPositionBuffer, vao: pointVao },
+    ]);
+    expect(enabled).not.toContain(prevPosition);
+    expect(stored).not.toContain(prevPositionBuffer);
+    renderer.destroy();
+  });
+
   it('draws both mark passes and the density accumulation at u_morph 0', () => {
     const { renderer, internals, draws } = setup();
     renderer.render(plotData(N));

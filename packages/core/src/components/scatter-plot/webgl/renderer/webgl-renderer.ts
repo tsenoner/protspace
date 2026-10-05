@@ -1275,6 +1275,10 @@ export class WebGLRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.recordBuffer);
     gl.enableVertexAttribArray(this.pointAttribLocations.record);
     gl.vertexAttribPointer(this.pointAttribLocations.record, 1, gl.FLOAT, false, 0, 0);
+    // Left disabled, so the shader reads (0, 0), which u_morph 0 leaves out; a
+    // projection glide enables it while the points move.
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.prevPositionBuffer);
+    gl.vertexAttribPointer(this.pointAttribLocations.prevPosition, 2, gl.FLOAT, false, 0, 0);
 
     gl.bindVertexArray(null);
   }

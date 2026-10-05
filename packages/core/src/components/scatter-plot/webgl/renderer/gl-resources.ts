@@ -26,6 +26,8 @@ export class GLResources {
   shapeBuffer: WebGLBuffer | null = null;
   predictedBuffer: WebGLBuffer | null = null;
   recordBuffer: WebGLBuffer | null = null;
+  /** The positions a projection glide starts from; holds no storage outside one. */
+  prevPositionBuffer: WebGLBuffer | null = null;
   quadBuffer: WebGLBuffer | null = null;
 
   labelColorTexture: WebGLTexture | null = null;
@@ -45,6 +47,7 @@ export class GLResources {
       this.shapeBuffer,
       this.predictedBuffer,
       this.recordBuffer,
+      this.prevPositionBuffer,
       this.quadBuffer,
     ].filter((b): b is WebGLBuffer => b !== null);
   }
@@ -63,6 +66,7 @@ export class GLResources {
     this.shapeBuffer = gl.createBuffer();
     this.predictedBuffer = gl.createBuffer();
     this.recordBuffer = gl.createBuffer();
+    this.prevPositionBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
     this.recordStyleTexture = gl.createTexture();
@@ -114,6 +118,7 @@ export class GLResources {
     this.shapeBuffer = null;
     this.predictedBuffer = null;
     this.recordBuffer = null;
+    this.prevPositionBuffer = null;
     this.quadBuffer = null;
     this.labelColorTexture = null;
     this.recordStyleTexture = null;
