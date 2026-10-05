@@ -126,8 +126,9 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
             }
           : null,
       };
+      const slots = { ...r.stageArrays, recordIds: r.recordIds };
       for (let k = first; k < first + count; k++) {
-        const vertex = replayVertex(r, k, shader);
+        const vertex = replayVertex(slots, k, shader);
         if (!vertex || vertex.alpha < 0.001) continue;
         const { rgb, alpha, form } = vertex;
         const stride = r.atlas?.plan.stride ?? 0;
@@ -135,9 +136,9 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
           form[2] > 1.5 && r.atlas
             ? r.atlas.texels.subarray(k * stride * 4, (k + 1) * stride * 4)
             : [];
-        const at = `${r.dataPositions[k * 2]},${r.dataPositions[k * 2 + 1]}`;
+        const at = `${r.stageArrays.dataPositions[k * 2]},${r.stageArrays.dataPositions[k * 2 + 1]}`;
         list.push(
-          `${blend ? 'blend' : 'over'} ${at} ${rgb} ${alpha} ${form} ${r.predicted[k]} ${Array.from(pie)}`,
+          `${blend ? 'blend' : 'over'} ${at} ${rgb} ${alpha} ${form} ${r.stageArrays.predicted[k]} ${Array.from(pie)}`,
         );
       }
     },
@@ -287,7 +288,7 @@ describe('the mark texture', () => {
     expect(degraded).toEqual([]);
     expect(renderer.canDrawMarks).toBe(false);
     // The frame it was refused in is staged again, as the scatter plot now stages it.
-    expect(internalsOf(renderer).colors[3]).toBeCloseTo(0.15);
+    expect(internalsOf(renderer).stageArrays.colors[3]).toBeCloseTo(0.15);
   });
 });
 

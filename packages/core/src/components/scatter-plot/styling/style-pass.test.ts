@@ -14,11 +14,8 @@ import {
   restageStyles,
   stageInPaintOrder,
 } from '../webgl/renderer/pass-staging';
-import {
-  referenceRestage,
-  referenceStage,
-  stageArrays,
-} from '../webgl/renderer/test-support/reference-staging';
+import { createStageArrays } from '../webgl/renderer/stage-point';
+import { referenceRestage, referenceStage } from '../webgl/renderer/test-support/reference-staging';
 import { seededRandom } from '../../../test-support/seeded-random';
 
 // jsdom has no 2D canvas, so the real resolveColor maps every colour to white
@@ -173,10 +170,11 @@ function expectSameStaging(
   { selectionActive = false, maxLabels = 8, atlas = true } = {},
 ) {
   const count = pd.length;
-  const reference = stageArrays(count, maxLabels, atlas);
+  const texels = () => (atlas ? new Uint8Array(count * maxLabels * 4) : null);
+  const reference = createStageArrays(count, maxLabels, texels());
   const expected = referenceStage(style, pd, scales, count, selectionActive, reference);
 
-  const staged = stageArrays(count, maxLabels, atlas);
+  const staged = createStageArrays(count, maxLabels, texels());
   const order = new Uint32Array(count);
   const pass = style.createStylePass();
   expect(pass.records.colors.length).toBeGreaterThan(0); // the table pass, with records to copy
@@ -328,7 +326,7 @@ describe('category style pass', () => {
     const pd = makePlotData(data, true);
     const count = pd.length;
     const first = rendererStyle(createStyleGetters(data, legendConfig));
-    const target = stageArrays(count, 8, true);
+    const target = createStageArrays(count, 8, new Uint8Array(count * 8 * 4));
     const order = new Uint32Array(count);
     const scratch = createPassScratch(count);
     stageInPaintOrder(target, first.createStylePass(), scratch, order, pd, scales, count, false);
@@ -337,7 +335,7 @@ describe('category style pass', () => {
     const hidden = rendererStyle(
       createStyleGetters(data, { ...legendConfig, hiddenAnnotationValues: ['beta', '__NA__'] }),
     );
-    const expected = stageArrays(count, 8, true);
+    const expected = createStageArrays(count, 8, new Uint8Array(count * 8 * 4));
     expected.labelColorData!.set(target.labelColorData!);
     referenceRestage(hidden, pd, order, count, expected);
 

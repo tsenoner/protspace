@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  createStageArrays,
   packPointStyle,
   stagePointStyle,
   type StagePointArrays,
@@ -9,17 +10,7 @@ import { MAX_LABELS } from './label-atlas-plan';
 import type { PlotDataPoint } from '@protspace/utils';
 
 function arrays(capacity: number, maxLabels: number = MAX_LABELS): StagePointArrays {
-  return {
-    dataPositions: new Float32Array(capacity * 2),
-    sizes: new Float32Array(capacity),
-    colors: new Float32Array(capacity * 4),
-    depths: new Float32Array(capacity),
-    labelCounts: new Float32Array(capacity),
-    shapes: new Float32Array(capacity),
-    predicted: new Float32Array(capacity),
-    labelColorData: new Uint8Array(capacity * maxLabels * 4),
-    maxLabels,
-  };
+  return createStageArrays(capacity, maxLabels, new Uint8Array(capacity * maxLabels * 4));
 }
 
 function styleWithColors(colors: string[]): StagePointStyle {

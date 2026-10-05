@@ -84,7 +84,7 @@ import {
   samePaintOrder,
 } from './position-morph';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
-import type { StagePointArrays } from './stage-point';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import {
   planLabelAtlas,
@@ -197,19 +197,10 @@ export class WebGLRenderer {
 
   private gamma = DEFAULT_GAMMA;
 
-  // CPU arrays
-  private dataPositions = new Float32Array(0);
-  private sizes = new Float32Array(0);
-  private colors = new Float32Array(0);
-  private depths = new Float32Array(0);
-  private labelCounts = new Float32Array(0);
-  private shapes = new Float32Array(0);
-  private predicted = new Float32Array(0);
+  // CPU arrays: what the staging passes write and the buffers upload, and the
+  // record id of each staged slot (see `prepareRecordTable`).
+  private stageArrays: StagePointArrays = createStageArrays(0, MAX_LABELS, null);
   private recordIds = new Float32Array(0);
-
-  // Zero-copy view over the parallel staging arrays above, passed to the staging passes.
-  // Re-pointed in `refreshStageArrays()` whenever capacity is reallocated.
-  private stageArrays: StagePointArrays = this.buildStageArrays();
 
   // State
   private capacity = 0;
@@ -486,7 +477,7 @@ export class WebGLRenderer {
    * once by depth, then position/style buffers are written in sorted order. A
    * pure depth change (same points, same coords, new depth values) leaves the
    * sample-based depth-changed detection unable to compare like-for-like
-   * (sampled point[i] is read from the input order; this.depths[i] is from the
+   * (sampled point[i] is read from the input order; staged depths[i] is from the
    * sorted order). Without an explicit signal, the renderer can keep the stale
    * sort. This API is that signal.
    */
@@ -873,15 +864,16 @@ export class WebGLRenderer {
     // Drawn marked points come after every other point, as staging puts a selection.
     const marked = this.markedRange ? this.stagedMarks : null;
     const count = this.currentPointCount;
+    const { colors } = this.stageArrays;
     this.contourPalette ??= this.stagedRecords
       ? buildRecordSlotPalette(
           this.stagedRecords,
           this.gamma,
           marked
-            ? markedFirstDrawn(this.stagedRecords, this.recordIds, this.colors, marked, count)
+            ? markedFirstDrawn(this.stagedRecords, this.recordIds, colors, marked, count)
             : undefined,
         )
-      : buildSlotPalette(this.colors, count, this.gamma, marked);
+      : buildSlotPalette(colors, count, this.gamma, marked);
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
@@ -1523,7 +1515,7 @@ export class WebGLRenderer {
           this.style.isPredicted(sp),
         );
         // Compare with stored depth (note: depths array is in sorted order after last render)
-        if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
+        if (Math.abs(newDepth - this.stageArrays.depths[i]) > 1e-6) {
           depthsChanged = true;
           break;
         }
@@ -1547,7 +1539,7 @@ export class WebGLRenderer {
         count === this.currentPointCount
           ? {
               drawn: drawnPositions(
-                this.dataPositions,
+                this.stageArrays.dataPositions,
                 this.morph?.from ?? null,
                 morphRequested ? this.morphWeightNow : 1,
                 this.positionRescale,
@@ -1627,8 +1619,10 @@ export class WebGLRenderer {
 
     gl.bindVertexArray(this.resources.pointVao);
 
+    const { dataPositions, sizes, colors, depths, labelCounts, shapes, predicted } =
+      this.stageArrays;
     if (resort) {
-      this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, idx * 2);
       this.stagedScales = snapshotScales(scales);
       // Staged through these scales, so drawn as they are: a glide carried by the
       // second stage a render may run (see render()) reads this.
@@ -1644,13 +1638,13 @@ export class WebGLRenderer {
     if (allocating || this.stagedRecords) {
       this.updateBuffer(gl, this.resources.recordBuffer, this.recordIds, idx);
     }
-    this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
-    this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
+    this.updateBuffer(gl, this.resources.sizeBuffer, sizes, idx);
+    this.updateBuffer(gl, this.resources.colorBuffer, colors, idx * 4);
     this.contourPalette = null;
-    this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
-    this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
-    this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
-    this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
+    this.updateBuffer(gl, this.resources.depthBuffer, depths, idx);
+    this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, idx);
+    this.updateBuffer(gl, this.resources.shapeBuffer, shapes, idx);
+    this.updateBuffer(gl, this.resources.predictedBuffer, predicted, idx);
 
     // One error check per capacity change, on the allocating (bufferData) path
     // only — never on bufferSubData, so never per frame. It runs BEFORE any
@@ -1749,7 +1743,7 @@ export class WebGLRenderer {
     const staged = collectStagedRecords(
       pass.records.codes!,
       this.recordIds,
-      this.colors,
+      this.stageArrays.colors,
       count,
       hidden,
     );
@@ -1767,9 +1761,10 @@ export class WebGLRenderer {
    */
   private dropRecordTable(count: number, hidden = this.stagedRecords?.hidden ?? []) {
     this.stagedRecords = null;
+    const { colors } = this.stageArrays;
     for (let k = 0; k < count; k++) {
       const r = this.recordIds[k];
-      if (r >= 0 && hidden[r]) this.colors[k * 4 + 3] = 0;
+      if (r >= 0 && hidden[r]) colors[k * 4 + 3] = 0;
     }
   }
 
@@ -1905,7 +1900,7 @@ export class WebGLRenderer {
         lastChanged = k;
       }
       // Drawn: staged unhidden, and not hidden through the table.
-      if (mark && this.colors[k * 4 + 3] > 0 && !hidden?.[this.recordIds[k]]) {
+      if (mark && this.stageArrays.colors[k * 4 + 3] > 0 && !hidden?.[this.recordIds[k]]) {
         if (first < 0) first = k;
         end = k + 1;
       }
@@ -1940,8 +1935,9 @@ export class WebGLRenderer {
    */
   private orderOutOfDate(count: number): boolean {
     const { depth } = this.passScratch;
+    const { depths } = this.stageArrays;
     for (let k = 0; k < count; k++) {
-      if (depth[this.sortOrder[k]] !== this.depths[k]) return true;
+      if (depth[this.sortOrder[k]] !== depths[k]) return true;
     }
     return false;
   }
@@ -1965,7 +1961,7 @@ export class WebGLRenderer {
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
       const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));
-      if (Math.abs(depth - this.depths[k]) > 1e-6) return true;
+      if (Math.abs(depth - this.stageArrays.depths[k]) > 1e-6) return true;
     }
     return false;
   }
@@ -2040,26 +2036,6 @@ export class WebGLRenderer {
   }
 
   /**
-   * Build a fresh {@link StagePointArrays} view bound to the current parallel
-   * staging arrays. Call after any reallocation so staging writes into the
-   * live buffers (zero copy — the struct only holds references).
-   */
-  private buildStageArrays(): StagePointArrays {
-    return {
-      dataPositions: this.dataPositions,
-      sizes: this.sizes,
-      colors: this.colors,
-      depths: this.depths,
-      labelCounts: this.labelCounts,
-      shapes: this.shapes,
-      predicted: this.predicted,
-      labelColorData: this.atlas?.texels ?? null,
-      maxLabels: this.atlas?.plan.stride ?? MAX_LABELS,
-      recordIds: null,
-    };
-  }
-
-  /**
    * Report a capability reduction to the host, at most once per reason per
    * renderer instance. `resetRendererState` clears the latch, so a context loss
    * and rebuild can report again.
@@ -2104,7 +2080,17 @@ export class WebGLRenderer {
   private releaseLabelAtlas(): void {
     this.atlas = null;
     this.labelTextureInitialized = false;
-    this.stageArrays = this.buildStageArrays();
+    this.stageIntoAtlas();
+  }
+
+  /** Point staging at the current atlas: its texels and stride, or none. */
+  private stageIntoAtlas(): void {
+    this.stageArrays = {
+      ...this.stageArrays,
+      labelColorData: this.atlas?.texels ?? null,
+      maxLabels: this.atlas?.plan.stride ?? MAX_LABELS,
+      recordIds: null,
+    };
   }
 
   /**
@@ -2154,7 +2140,7 @@ export class WebGLRenderer {
 
     this.atlas = { plan, texels: new Uint8Array(plan.byteLength) };
     this.labelTextureInitialized = false;
-    this.stageArrays = this.buildStageArrays();
+    this.stageIntoAtlas();
     if (plan.stride < MAX_LABELS) this.reportDegraded('reduced-label-detail');
   }
 
@@ -2188,13 +2174,11 @@ export class WebGLRenderer {
 
   private resizeCapacity(nextCapacity: number) {
     this.capacity = nextCapacity;
-    this.dataPositions = new Float32Array(nextCapacity * 2);
-    this.colors = new Float32Array(nextCapacity * 4);
-    this.sizes = new Float32Array(nextCapacity);
-    this.depths = new Float32Array(nextCapacity);
-    this.labelCounts = new Float32Array(nextCapacity);
-    this.shapes = new Float32Array(nextCapacity);
-    this.predicted = new Float32Array(nextCapacity);
+    this.stageArrays = createStageArrays(
+      nextCapacity,
+      this.atlas?.plan.stride ?? MAX_LABELS,
+      this.atlas?.texels ?? null,
+    );
     this.recordIds = new Float32Array(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
     this.passScratch = createPassScratch(nextCapacity);
@@ -2202,11 +2186,6 @@ export class WebGLRenderer {
     // limit, so `syncLabelAtlas` owns it and decides on this same populate pass
     // whether the existing plan still fits — which, since capacity can now shrink
     // as well as grow, it sometimes does.
-
-    // Re-point the staging view at the freshly reallocated arrays (zero copy).
-    // Still needed even though `syncLabelAtlas` also rebuilds it — that call
-    // returns early once the atlas is disabled, and these arrays are new.
-    this.stageArrays = this.buildStageArrays();
 
     this.buffersInitialized = false;
   }

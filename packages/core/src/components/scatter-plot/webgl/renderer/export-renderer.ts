@@ -47,7 +47,7 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
-import type { StagePointArrays } from './stage-point';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
@@ -620,48 +620,21 @@ export class ExportRenderer {
     style: WebGLStyleGetters,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
-  ): {
-    dataPositions: Float32Array;
-    sizes: Float32Array;
-    colors: Float32Array;
-    depths: Float32Array;
-    labelCounts: Float32Array;
-    shapes: Float32Array;
-    predicted: Float32Array;
-    labelColorData: Uint8Array | null;
-    pointCount: number;
-    selectedStartIndex: number;
-  } {
-    const capacity = Math.max(MIN_CAPACITY, pd.length);
-    const dataPositions = new Float32Array(capacity * 2);
-    const sizes = new Float32Array(capacity);
-    const colors = new Float32Array(capacity * 4);
-    const depths = new Float32Array(capacity);
-    const labelCounts = new Float32Array(capacity);
-    const shapes = new Float32Array(capacity);
-    const predicted = new Float32Array(capacity);
-    // Sized from the plan, which already accounts for the device limit and the
-    // stride inherited from the live view. Null when no atlas is in play — the
-    // export then costs nothing for a feature it is not using.
-    const labelColorData = labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null;
+  ): StagePointArrays & { pointCount: number; selectedStartIndex: number } {
+    const target = createStageArrays(
+      Math.max(MIN_CAPACITY, pd.length),
+      labelAtlas?.stride ?? MAX_LABELS,
+      // Sized from the plan, which already accounts for the device limit and the
+      // stride inherited from the live view. Null when no atlas is in play — the
+      // export then costs nothing for a feature it is not using.
+      labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null,
+    );
 
     // Stage slots by depth through the SAME staging as the live path
     // (stageInPaintOrder): the live path is canonical, so the export includes
     // opacity-0 slots (invisible — F-15 pixels unchanged) and uses the identical
     // stable far->near sort and the same sorted-k selectedStartIndex.
     const count = pd.length;
-
-    const target: StagePointArrays = {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      maxLabels: labelAtlas?.stride ?? MAX_LABELS,
-    };
 
     // The index order and the per-slot pass scratch, sized to the staged count
     // (export has no persistent scratch, so allocate locally per call).
@@ -677,18 +650,7 @@ export class ExportRenderer {
       selectionActive,
     );
 
-    return {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      pointCount: count,
-      selectedStartIndex,
-    };
+    return { ...target, pointCount: count, selectedStartIndex };
   }
 
   /**

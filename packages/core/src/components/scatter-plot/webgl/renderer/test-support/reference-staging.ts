@@ -14,20 +14,6 @@ import {
 import { composePaintDepth } from '../point-staging';
 import { stagePointStyle, type StagePointArrays } from '../stage-point';
 
-export function stageArrays(capacity: number, maxLabels: number, atlas: boolean): StagePointArrays {
-  return {
-    dataPositions: new Float32Array(capacity * 2),
-    sizes: new Float32Array(capacity),
-    colors: new Float32Array(capacity * 4),
-    depths: new Float32Array(capacity),
-    labelCounts: new Float32Array(capacity),
-    shapes: new Float32Array(capacity),
-    predicted: new Float32Array(capacity),
-    labelColorData: atlas ? new Uint8Array(capacity * maxLabels * 4) : null,
-    maxLabels,
-  };
-}
-
 export function referenceStage(
   style: WebGLStyleGetters,
   pd: PlotData,

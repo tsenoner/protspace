@@ -8,9 +8,8 @@ import { pointRadiusCss } from './point-scale';
 const DIAMOND_SIZE_SCALE = 1.25;
 
 /**
- * The parallel target arrays a staged point is written into. The renderer holds
- * the same Float32Array/Uint8Array instances as class fields; this struct is a
- * zero-copy view re-pointed whenever capacity is reallocated.
+ * The parallel target arrays a staged point is written into. The renderer owns
+ * one set, reallocated with its capacity; an export stages into a set of its own.
  */
 export interface StagePointArrays {
   dataPositions: Float32Array;
@@ -38,6 +37,25 @@ export interface StagePointArrays {
    * with a record is staged with its opacity as if nothing were hidden.
    */
   recordIds?: Float32Array | null;
+}
+
+/** Zeroed staging arrays for `capacity` points, writing label texels into `labelColorData`. */
+export function createStageArrays(
+  capacity: number,
+  maxLabels: number,
+  labelColorData: Uint8Array | null,
+): StagePointArrays {
+  return {
+    dataPositions: new Float32Array(capacity * 2),
+    sizes: new Float32Array(capacity),
+    colors: new Float32Array(capacity * 4),
+    depths: new Float32Array(capacity),
+    labelCounts: new Float32Array(capacity),
+    shapes: new Float32Array(capacity),
+    predicted: new Float32Array(capacity),
+    labelColorData,
+    maxLabels,
+  };
 }
 
 /** The subset of style getters a single staged-point write depends on. */

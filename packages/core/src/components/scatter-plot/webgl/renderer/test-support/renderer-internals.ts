@@ -9,12 +9,7 @@ interface RendererInternals {
   resources: WebGLRenderer['resources'];
   /** Looked up by the first render, which the suites read it after. */
   pointAttribLocations: NonNullable<WebGLRenderer['pointAttribLocations']>;
-  dataPositions: WebGLRenderer['dataPositions'];
-  sizes: WebGLRenderer['sizes'];
-  colors: WebGLRenderer['colors'];
-  labelCounts: WebGLRenderer['labelCounts'];
-  shapes: WebGLRenderer['shapes'];
-  predicted: WebGLRenderer['predicted'];
+  stageArrays: WebGLRenderer['stageArrays'];
   recordIds: WebGLRenderer['recordIds'];
   sortOrder: WebGLRenderer['sortOrder'];
   atlas: WebGLRenderer['atlas'];

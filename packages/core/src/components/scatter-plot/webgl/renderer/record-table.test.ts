@@ -4,7 +4,7 @@ import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
 import type { PointStylePass, ScalePair } from '../types';
 import { createPassScratch, packRecords, stageInPaintOrder } from './pass-staging';
-import { stageArrays } from './test-support/reference-staging';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { replayVertex } from './test-support/vertex-replay';
 import {
   canRestyle,
@@ -98,7 +98,7 @@ const passOf = (data: VisualizationData, config: StyleConfig): PointStylePass =>
 /** Stage `pd` with or without a record table; with one, keep the table too. */
 function stage(pd: PlotData, pass: PointStylePass, table: boolean, selectionActive = false) {
   const count = pd.length;
-  const target = stageArrays(count, 8, false);
+  const target = createStageArrays(count, 8, null);
   if (table) target.recordIds = new Float32Array(count);
   const order = new Uint32Array(count);
   const scratch = createPassScratch(count);
@@ -118,7 +118,7 @@ function stage(pd: PlotData, pass: PointStylePass, table: boolean, selectionActi
 }
 
 /** What the vertex shader draws: each slot's own style, or its record's. */
-function drawn(target: ReturnType<typeof stageArrays>, staged: StagedRecords, count: number) {
+function drawn(target: StagePointArrays, staged: StagedRecords, count: number) {
   const colors = new Float32Array(count * 4);
   const sizes = new Float32Array(count);
   const shapes = new Float32Array(count);
