@@ -20,8 +20,10 @@ export const CAMERA_TO_CLIP_GLSL = `  vec2 position = mix(a_dataPosition, a_prev
   vec2 physicalPos = cssTransformed * u_dpr;
   vec2 clipSpace = (physicalPos / u_resolution) * 2.0 - 1.0;`;
 
-/** Texels per row of the per-record style table (record-table.ts). */
+/** Texels per row of the per-record style table (record-style-table.ts). */
 export const RECORD_STYLE_WIDTH = 1024;
+/** Floats per record in that table: two RGBA texels. */
+export const RECORD_FLOATS = 8;
 
 /**
  * The per-record style table, for a vertex shader with `a_color`: texel 2r is
@@ -38,7 +40,7 @@ bool hasRecordStyle() {
 }
 
 vec4 recordStyle(int texel) {
-  int t = int(a_record) * 2 + texel;
+  int t = int(a_record) * ${RECORD_FLOATS / 4} + texel;
   return texelFetch(u_recordStyle, ivec2(t % ${RECORD_STYLE_WIDTH}, t / ${RECORD_STYLE_WIDTH}), 0);
 }
 

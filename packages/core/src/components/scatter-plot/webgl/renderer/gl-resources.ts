@@ -31,7 +31,6 @@ export class GLResources {
   quadBuffer: WebGLBuffer | null = null;
 
   labelColorTexture: WebGLTexture | null = null;
-  recordStyleTexture: WebGLTexture | null = null;
   linearFramebuffer: FramebufferResources | null = null;
   density: DensityResources | null = null;
 
@@ -68,7 +67,6 @@ export class GLResources {
     this.prevPositionBuffer = gl.createBuffer();
     this.quadBuffer = gl.createBuffer();
     this.labelColorTexture = gl.createTexture();
-    this.recordStyleTexture = gl.createTexture();
   }
 
   /**
@@ -84,7 +82,6 @@ export class GLResources {
     if (this.pointVao) gl.deleteVertexArray(this.pointVao);
     for (const buf of this.vertexBuffers) gl.deleteBuffer(buf);
     if (this.labelColorTexture) gl.deleteTexture(this.labelColorTexture);
-    if (this.recordStyleTexture) gl.deleteTexture(this.recordStyleTexture);
     if (this.pointProgram) gl.deleteProgram(this.pointProgram);
     if (this.gammaCorrectionProgram) gl.deleteProgram(this.gammaCorrectionProgram);
     if (this.linearFramebuffer) {
@@ -118,7 +115,6 @@ export class GLResources {
     this.prevPositionBuffer = null;
     this.quadBuffer = null;
     this.labelColorTexture = null;
-    this.recordStyleTexture = null;
     this.linearFramebuffer = null;
     this.density = null;
   }

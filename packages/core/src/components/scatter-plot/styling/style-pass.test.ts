@@ -178,7 +178,7 @@ function expectSameStaging(
   const order = new Uint32Array(count);
   const pass = style.createStylePass();
   expect(pass.records.colors.length).toBeGreaterThan(0); // the table pass, with records to copy
-  const cut = stageInPaintOrder(
+  const { selectedStartIndex: cut } = stageInPaintOrder(
     staged,
     pass,
     createPassScratch(count),

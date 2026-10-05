@@ -116,7 +116,7 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
         return;
       }
       const shader = {
-        recordStyle: uniforms.u_recordStyleOn ? r.stagedRecords!.texels : null,
+        recordStyle: uniforms.u_recordStyleOn ? r.recordTable.staged!.texels : null,
         marks: uniforms.u_marksOn
           ? {
               marked: r.markTexture.staged,
@@ -126,7 +126,7 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
             }
           : null,
       };
-      const slots = { ...r.stageArrays, recordIds: r.recordIds };
+      const slots = { ...r.stageArrays, recordIds: r.recordTable.ids };
       for (let k = first; k < first + count; k++) {
         const vertex = replayVertex(slots, k, shader);
         if (!vertex || vertex.alpha < 0.001) continue;

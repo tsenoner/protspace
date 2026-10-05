@@ -3,6 +3,7 @@
  * Suites compare what it hands the rasteriser instead of pixels: equal vertices
  * rasterise to equal frames.
  */
+import { RECORD_FLOATS } from '../point-shaders';
 import type { StagePointArrays } from '../stage-point';
 
 /** The uniforms the replay honours, each off when null. */
@@ -32,7 +33,7 @@ export function replayVertex(
   let form = [slots.sizes[k], slots.shapes[k], slots.labelCounts[k]];
   const record = recordStyle ? slots.recordIds![k] : -1;
   if (recordStyle && record >= 0) {
-    const t = recordStyle.subarray(record * 8, record * 8 + 8);
+    const t = recordStyle.subarray(record * RECORD_FLOATS, (record + 1) * RECORD_FLOATS);
     rgb = Array.from(t.subarray(0, 3));
     alpha *= t[3];
     form = Array.from(t.subarray(4, 7));

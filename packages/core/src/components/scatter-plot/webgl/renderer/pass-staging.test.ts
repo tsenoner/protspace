@@ -68,7 +68,7 @@ describe('staging through a pass over the getters', () => {
       const order = new Uint32Array(n);
       const pass = style.createStylePass();
       const visible: number[] = [];
-      const cut = stageInPaintOrder(
+      const { selectedStartIndex: cut } = stageInPaintOrder(
         staged,
         pass,
         createPassScratch(n),

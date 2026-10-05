@@ -16,8 +16,6 @@ import { packPointStyle, type StagePointArrays, type StagePointStyleArrays } fro
 /** What a pass writes, plus the depth sort's second buffer. All capacity-sized. */
 interface PassScratch extends SlotStyleScratch {
   readonly sortScratch: Uint32Array;
-  /** The records of the last pass staged through this scratch, as they were packed. */
-  packed: PackedRecords | null;
 }
 
 export function createPassScratch(capacity: number): PassScratch {
@@ -28,7 +26,6 @@ export function createPassScratch(capacity: number): PassScratch {
     predicted: new Uint8Array(capacity),
     base: new Float64Array(capacity),
     sortScratch: new Uint32Array(capacity),
-    packed: null,
   };
 }
 
@@ -120,7 +117,8 @@ function stageSlotStyle(
 /**
  * Stage slots `[0, count)` of `pd` far -> near: resolve the pass, sort by paint
  * depth (see {@link buildPaintOrder}), then write each slot at its sorted index.
- * Returns the selection cut. `onStaged` sees every slot once, in draw order.
+ * Returns the selection cut and the records as packed. `onStaged` sees every
+ * slot once, in draw order.
  */
 export function stageInPaintOrder(
   target: StagePointArrays,
@@ -132,10 +130,9 @@ export function stageInPaintOrder(
   count: number,
   selectionActive: boolean,
   onStaged?: (slot: number, opacity: number) => void,
-): number {
+): { selectedStartIndex: number; packed: PackedRecords } {
   pass.resolve(pd, count, scratch);
   const packed = packRecords(pass.records, target);
-  scratch.packed = packed;
   const { opacity, depth } = scratch;
   const { xs, ys } = pd;
   const xAxis = linearAxis(scales.x);
@@ -158,14 +155,14 @@ export function stageInPaintOrder(
     },
     scratch.sortScratch,
   );
-  return plan.selectedStartIndex;
+  return { selectedStartIndex: plan.selectedStartIndex, packed };
 }
 
 /**
  * Re-write the style channels of the first `count` slots of an earlier
  * {@link stageInPaintOrder} over `src`, leaving positions and depths alone.
  * `slotCount` is the count that staging resolved, so every slot in `order` is
- * resolved again.
+ * resolved again. Returns the records as packed.
  */
 export function restageStyles(
   target: StagePointStyleArrays,
@@ -176,13 +173,13 @@ export function restageStyles(
   slotCount: number,
   count: number,
   onStaged?: (slot: number, opacity: number) => void,
-): void {
+): PackedRecords {
   pass.resolve(src, slotCount, scratch);
   const packed = packRecords(pass.records, target);
-  scratch.packed = packed;
   for (let i = 0; i < count; i++) {
     const slot = order[i];
     onStaged?.(slot, scratch.opacity[slot]);
     stageSlotStyle(target, i, scratch, packed, slot);
   }
+  return packed;
 }

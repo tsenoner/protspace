@@ -17,7 +17,6 @@ import {
 } from '@protspace/utils';
 import {
   type PointMarks,
-  type PointStylePass,
   type WebGLStyleGetters,
   type ScalePair,
   type PointAttribLocations,
@@ -40,16 +39,8 @@ import {
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
 import { composePaintDepth } from '../../paint-depth';
-import { createPassScratch, packRecords, restageStyles, stageInPaintOrder } from './pass-staging';
-import {
-  canRestyle,
-  collectStagedRecords,
-  markedFirstDrawn,
-  recordTableRows,
-  shownSlotCount,
-  writeRecordTexels,
-  type StagedRecords,
-} from './record-table';
+import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
+import { RecordStyleTable, markedFirstDrawn, shownSlotCount } from './record-style-table';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
@@ -60,7 +51,6 @@ import {
   drawMarkedPoints,
   bindPointDrawState,
 } from './render-target';
-import { RECORD_STYLE_TEXTURE_UNIT, bindTextureAt } from './texture-units';
 import { MarkTexture } from './mark-texture';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
@@ -106,7 +96,6 @@ import {
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
-  RECORD_STYLE_WIDTH,
 } from './point-shaders';
 
 // Constants
@@ -183,10 +172,8 @@ export class WebGLRenderer {
 
   private gamma = DEFAULT_GAMMA;
 
-  // CPU arrays: what the staging passes write and the buffers upload, and the
-  // record id of each staged slot (see `prepareRecordTable`).
+  // CPU arrays: what the staging passes write and the buffers upload.
   private stageArrays: StagePointArrays = createStageArrays(0, MAX_LABELS, null);
-  private recordIds = new Float32Array(0);
 
   // State
   private capacity = 0;
@@ -218,14 +205,8 @@ export class WebGLRenderer {
    * density fields built from them.
    */
   private bufferGeneration = 0;
-  /**
-   * The per-record style table the staged points draw through, or null when the
-   * last stage kept none (see record-table.ts). With it, a legend change that
-   * only restyles categories rewrites the table instead of re-staging.
-   */
-  private stagedRecords: StagedRecords | null = null;
-  /** Rows the table texture is allocated with; 0 before its first upload. */
-  private recordStyleRows = 0;
+  /** The per-record style table the staged points draw through, if the last stage kept one. */
+  private readonly recordTable = new RecordStyleTable();
   private categoryStylesDirty = false;
   /**
    * Set when a colour-only restage left slots whose paint depth moved in their
@@ -792,7 +773,7 @@ export class WebGLRenderer {
         morph,
       ].join();
       if (density.res.fieldsKey !== key) {
-        this.bindRecordStyle(gl);
+        this.recordTable.bind(gl);
         accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
         density.res.fieldsKey = key;
       }
@@ -834,13 +815,12 @@ export class WebGLRenderer {
     const marked = this.markTexture.range ? this.markTexture.staged : null;
     const count = this.currentPointCount;
     const { colors } = this.stageArrays;
-    this.contourPalette ??= this.stagedRecords
+    const { staged, ids } = this.recordTable;
+    this.contourPalette ??= staged
       ? buildRecordSlotPalette(
-          this.stagedRecords,
+          staged,
           this.gamma,
-          marked
-            ? markedFirstDrawn(this.stagedRecords, this.recordIds, colors, marked, count)
-            : undefined,
+          marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
         )
       : buildSlotPalette(colors, count, this.gamma, marked);
     if (this.contourPalette.count === 0) return null;
@@ -860,7 +840,7 @@ export class WebGLRenderer {
       },
       alpha,
       palette: this.contourPalette,
-      recordStyleOn: !!this.stagedRecords,
+      recordStyleOn: !!staged,
     };
   }
 
@@ -904,6 +884,7 @@ export class WebGLRenderer {
     const gl = this.gl;
 
     this.resources.deleteAll(gl);
+    this.recordTable.delete(gl);
     this.markTexture.delete(gl);
 
     this.gl = null;
@@ -1099,6 +1080,7 @@ export class WebGLRenderer {
     }
 
     this.resources.createAll(gl);
+    this.recordTable.create(gl);
     this.markTexture.create(gl);
     this.labelTextureInitialized = false;
 
@@ -1136,15 +1118,6 @@ export class WebGLRenderer {
     this.lossController.markLost();
   }
 
-  /** Bind the record table where the vertex shaders read it, if points draw through one. */
-  private bindRecordStyle(gl: WebGL2RenderingContext) {
-    bindTextureAt(
-      gl,
-      RECORD_STYLE_TEXTURE_UNIT,
-      this.stagedRecords ? this.resources.recordStyleTexture : null,
-    );
-  }
-
   private resetRendererState() {
     this.discardPrograms(this.pendingPrograms);
     this.pendingPrograms = null;
@@ -1174,8 +1147,7 @@ export class WebGLRenderer {
     this.positionRescale = IDENTITY_RESCALE;
     // Its buffer went with the context, and the restore draws the staged positions.
     this.glide.end();
-    this.stagedRecords = null;
-    this.recordStyleRows = 0;
+    this.recordTable.reset();
     this.marks = null;
     this.markTexture.reset();
   }
@@ -1333,7 +1305,7 @@ export class WebGLRenderer {
         // Null when no atlas is allocated, which makes the shader's pie branch
         // unreachable and every marker fall through to its dominant colour.
         labelAtlas: this.atlas?.plan ?? null,
-        recordStyle: this.stagedRecords ? this.resources.recordStyleTexture : null,
+        recordStyle: this.recordTable.texture,
         marks: marks && {
           texture: this.markTexture.texture,
           marked: marks.marked,
@@ -1521,8 +1493,13 @@ export class WebGLRenderer {
       // full rebuild + re-sort. Shared with the export path, which stages the same
       // painter order and selection cut.
       const pass = this.style.createStylePass();
-      const table = this.prepareRecordTable(pass);
-      this.selectedStartIndex = stageInPaintOrder(
+      const table = this.recordTable.prepare(
+        pass,
+        this.stageArrays,
+        this.labelAtlasActive,
+        this.maxTextureSize,
+      );
+      const staged = stageInPaintOrder(
         this.stageArrays,
         pass,
         this.passScratch,
@@ -1533,6 +1510,7 @@ export class WebGLRenderer {
         this.selectionActive,
         (_slot, opacity) => this.countStagedSlot(opacity),
       );
+      this.selectedStartIndex = staged.selectedStartIndex;
 
       morphChanged = this.glide.afterResort(glideStart, morphRequested, this.sortOrder, count);
 
@@ -1540,7 +1518,7 @@ export class WebGLRenderer {
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
       this.sortedDataRef = pd;
       this.stagedOrderStale = false;
-      this.keepRecordTable(pass, table, idx);
+      this.recordTable.keep(pass, table, staged.packed, this.stageArrays.colors, idx);
     } else {
       this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
@@ -1550,8 +1528,13 @@ export class WebGLRenderer {
       if (src) {
         idx = Math.min(this.currentPointCount, pd.length);
         const pass = this.style.createStylePass();
-        const table = this.prepareRecordTable(pass);
-        restageStyles(
+        const table = this.recordTable.prepare(
+          pass,
+          this.stageArrays,
+          this.labelAtlasActive,
+          this.maxTextureSize,
+        );
+        const packed = restageStyles(
           this.stageArrays,
           pass,
           this.passScratch,
@@ -1563,7 +1546,7 @@ export class WebGLRenderer {
           (_slot, opacity) => this.countStagedSlot(opacity),
         );
         this.stagedOrderStale = this.orderOutOfDate(idx);
-        this.keepRecordTable(pass, table, idx);
+        this.recordTable.keep(pass, table, packed, this.stageArrays.colors, idx);
       }
     }
 
@@ -1593,10 +1576,10 @@ export class WebGLRenderer {
     // Both branches rewrite every style array AND the atlas: a re-sort into the new
     // slot order, a restyle in place.
     // Before the colours: if the table cannot be uploaded, they take the hiding back.
-    if (this.stagedRecords && !this.uploadRecordTable(gl)) this.dropRecordTable(idx);
+    this.uploadedBytes += this.recordTable.upload(gl, colors, idx);
     // Only read through a table, but the attribute needs its storage regardless.
-    if (allocating || this.stagedRecords) {
-      this.updateBuffer(gl, this.resources.recordBuffer, this.recordIds, idx);
+    if (allocating || this.recordTable.staged) {
+      this.updateBuffer(gl, this.resources.recordBuffer, this.recordTable.ids, idx);
     }
     this.updateBuffer(gl, this.resources.sizeBuffer, sizes, idx);
     this.updateBuffer(gl, this.resources.colorBuffer, colors, idx * 4);
@@ -1667,122 +1650,24 @@ export class WebGLRenderer {
   }
 
   /**
-   * Whether this stage keeps a per-record table, and if so point staging at the
-   * record ids it writes. It needs a pass that hides per record and keys every
-   * record by category code: a single-valued annotation, so no pie markers.
-   */
-  private prepareRecordTable(pass: PointStylePass): boolean {
-    const codes = pass.records.codes;
-    const table =
-      !this.labelAtlasActive &&
-      !!codes &&
-      !!this.resources.recordStyleTexture &&
-      recordTableRows(codes.count) <= this.maxTextureSize &&
-      !!pass.hiddenRecords;
-    this.stageArrays.recordIds = table ? this.recordIds : null;
-    return table;
-  }
-
-  /** After staging `count` slots: keep the table they were staged for, if any. */
-  private keepRecordTable(pass: PointStylePass, table: boolean, count: number) {
-    this.stagedRecords = null;
-    if (!table) return;
-    const hidden = pass.hiddenRecords!;
-    const staged = collectStagedRecords(
-      pass.records.codes!,
-      this.recordIds,
-      this.stageArrays.colors,
-      count,
-      hidden,
-    );
-    if (!staged) {
-      this.dropRecordTable(count, hidden);
-      return;
-    }
-    writeRecordTexels(staged, this.passScratch.packed!, hidden);
-    this.stagedRecords = staged;
-  }
-
-  /**
-   * Draw the first `count` staged slots without a table: a slot of a hidden
-   * record was staged unhidden, so it takes opacity 0, as staging gives it.
-   */
-  private dropRecordTable(count: number, hidden = this.stagedRecords?.hidden ?? []) {
-    this.stagedRecords = null;
-    const { colors } = this.stageArrays;
-    for (let k = 0; k < count; k++) {
-      const r = this.recordIds[k];
-      if (r >= 0 && hidden[r]) colors[k * 4 + 3] = 0;
-    }
-  }
-
-  /**
    * Rewrite the per-record table for the current category styles, leaving every
    * staged buffer as it is. False when the staged points cannot be restyled that
-   * way (see `canRestyle`); the caller then re-stages them.
+   * way (see `RecordStyleTable.restyle`); the caller then re-stages them.
    */
   private restyleRecords(pd: PlotData): boolean {
-    const staged = this.stagedRecords;
     const gl = this.gl;
-    if (!staged || !gl || pd !== this.sortedDataRef) return false;
+    if (!this.recordTable.staged || !gl || pd !== this.sortedDataRef) return false;
     // A style update re-sorts when it samples moved depths. Only a re-sort fixes
     // an order that is already out of date, and staging decides when to re-sort.
     if (this.stagedOrderStale || this.stagedDepthsMoved(pd)) return false;
-    const pass = this.style.createStylePass();
-    const hidden = pass.hiddenRecords;
-    if (!hidden || !canRestyle(staged, pass.records.codes, hidden)) return false;
-    writeRecordTexels(staged, packRecords(pass.records, this.stageArrays), hidden);
-    if (!this.uploadRecordTable(gl)) return false;
-    this.visibleCount = shownSlotCount(staged);
+    const bytes = this.recordTable.restyle(gl, this.style.createStylePass(), this.stageArrays);
+    if (!bytes) return false;
+    this.uploadedBytes += bytes;
+    this.visibleCount = shownSlotCount(this.recordTable.staged);
     this.contourPalette = null;
     this.bufferGeneration++;
     this.markTexture.stale = true;
     return true;
-  }
-
-  /** Upload the per-record table, allocating it when its size changed. */
-  private uploadRecordTable(gl: WebGL2RenderingContext): boolean {
-    const staged = this.stagedRecords;
-    const texture = this.resources.recordStyleTexture;
-    if (!staged || !texture) return false;
-    const rows = staged.texels.length / (RECORD_STYLE_WIDTH * 4);
-    let ok = true;
-    bindTextureAt(gl, RECORD_STYLE_TEXTURE_UNIT, texture, () => {
-      if (rows === this.recordStyleRows) {
-        gl.texSubImage2D(
-          gl.TEXTURE_2D,
-          0,
-          0,
-          0,
-          RECORD_STYLE_WIDTH,
-          rows,
-          gl.RGBA,
-          gl.FLOAT,
-          staged.texels,
-        );
-      } else {
-        drainGlErrors(gl);
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA32F,
-          RECORD_STYLE_WIDTH,
-          rows,
-          0,
-          gl.RGBA,
-          gl.FLOAT,
-          staged.texels,
-        );
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        ok = gl.getError() === gl.NO_ERROR;
-        this.recordStyleRows = ok ? rows : 0;
-      }
-    });
-    if (ok) this.uploadedBytes += staged.texels.byteLength;
-    return ok;
   }
 
   /** Write `marks` over the staged points and upload them; see `MarkTexture.apply`. */
@@ -1795,8 +1680,8 @@ export class WebGLRenderer {
       order: this.sortOrder,
       count: this.currentPointCount,
       colors: this.stageArrays.colors,
-      recordIds: this.recordIds,
-      hidden: this.stagedRecords?.hidden,
+      recordIds: this.recordTable.ids,
+      hidden: this.recordTable.staged?.hidden,
     });
   }
 
@@ -2050,7 +1935,7 @@ export class WebGLRenderer {
       this.atlas?.plan.stride ?? MAX_LABELS,
       this.atlas?.texels ?? null,
     );
-    this.recordIds = new Float32Array(nextCapacity);
+    this.recordTable.resize(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
     this.passScratch = createPassScratch(nextCapacity);
     // The atlas is NOT touched here: its geometry depends on the device texture

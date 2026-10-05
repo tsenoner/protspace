@@ -10,10 +10,9 @@ interface RendererInternals {
   /** Looked up by the first render, which the suites read it after. */
   pointAttribLocations: NonNullable<WebGLRenderer['pointAttribLocations']>;
   stageArrays: WebGLRenderer['stageArrays'];
-  recordIds: WebGLRenderer['recordIds'];
   sortOrder: WebGLRenderer['sortOrder'];
   atlas: WebGLRenderer['atlas'];
-  stagedRecords: WebGLRenderer['stagedRecords'];
+  recordTable: WebGLRenderer['recordTable'];
   markTexture: WebGLRenderer['markTexture'];
   contourPalette: WebGLRenderer['contourPalette'];
   densityDisabled: WebGLRenderer['densityDisabled'];

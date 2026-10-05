@@ -632,7 +632,7 @@ export class ExportRenderer {
     // The index order and the per-slot pass scratch, sized to the staged count
     // (export has no persistent scratch, so allocate locally per call).
     const order = new Uint32Array(count);
-    const selectedStartIndex = stageInPaintOrder(
+    const { selectedStartIndex } = stageInPaintOrder(
       target,
       style.createStylePass(),
       createPassScratch(count),

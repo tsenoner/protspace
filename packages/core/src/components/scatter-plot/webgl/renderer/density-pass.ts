@@ -10,7 +10,7 @@ import {
   DENSITY_CONTOUR_LIGHTEN,
   DENSITY_CONTOUR_LINE_CSS_PX,
 } from './density-shaders';
-import { GAMMA_VERTEX_SHADER } from './point-shaders';
+import { GAMMA_VERTEX_SHADER, RECORD_FLOATS } from './point-shaders';
 import {
   bindAndClearTarget,
   setCameraUniforms,
@@ -22,7 +22,7 @@ import {
   RECORD_STYLE_TEXTURE_UNIT,
   SCRATCH_TEXTURE_UNIT,
 } from './texture-units';
-import type { StagedRecords } from './record-table';
+import type { StagedRecords } from './record-style-table';
 
 // The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
 const DENSITY_GRID_LONG_SIDE = 512;
@@ -154,7 +154,7 @@ export function buildRecordSlotPalette(
   const entries: SlotEntries = new Map();
   for (let r = 0; r < staged.codes.count; r++) {
     if (staged.hidden[r] || staged.drawn[r] === 0) continue;
-    const key = colorKey(staged.texels, r * 8);
+    const key = colorKey(staged.texels, r * RECORD_FLOATS);
     const entry = entries.get(key);
     if (!entry) entries.set(key, { n: staged.drawn[r], first: firstDrawn[r] });
     else {

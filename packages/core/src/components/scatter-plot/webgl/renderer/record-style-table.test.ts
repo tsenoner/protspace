@@ -5,6 +5,7 @@ import { createStyleGetters, type StyleConfig } from '../../styling/style-getter
 import type { PointStylePass, ScalePair } from '../types';
 import { createPassScratch, packRecords, stageInPaintOrder } from './pass-staging';
 import { createStageArrays, type StagePointArrays } from './stage-point';
+import { RECORD_FLOATS } from './point-shaders';
 import { replayVertex } from './test-support/vertex-replay';
 import {
   canRestyle,
@@ -13,7 +14,7 @@ import {
   shownSlotCount,
   writeRecordTexels,
   type StagedRecords,
-} from './record-table';
+} from './record-style-table';
 import { buildRecordSlotPalette, buildSlotPalette } from './density-pass';
 import { seededRandom } from '../../../../test-support/seeded-random';
 
@@ -101,8 +102,16 @@ function stage(pd: PlotData, pass: PointStylePass, table: boolean, selectionActi
   const target = createStageArrays(count, 8, null);
   if (table) target.recordIds = new Float32Array(count);
   const order = new Uint32Array(count);
-  const scratch = createPassScratch(count);
-  const cut = stageInPaintOrder(target, pass, scratch, order, pd, scales, count, selectionActive);
+  const { selectedStartIndex: cut, packed } = stageInPaintOrder(
+    target,
+    pass,
+    createPassScratch(count),
+    order,
+    pd,
+    scales,
+    count,
+    selectionActive,
+  );
   let staged: StagedRecords | null = null;
   if (table) {
     staged = collectStagedRecords(
@@ -112,7 +121,7 @@ function stage(pd: PlotData, pass: PointStylePass, table: boolean, selectionActi
       count,
       pass.hiddenRecords!,
     );
-    writeRecordTexels(staged!, scratch.packed!, pass.hiddenRecords!);
+    writeRecordTexels(staged!, packed, pass.hiddenRecords!);
   }
   return { target, order, cut, staged };
 }
@@ -201,7 +210,7 @@ describe('per-record style table', () => {
       const visible = Array.from({ length: n }, (_, k) => k).filter(
         (k) =>
           first.target.colors[k * 4 + 3] *
-            first.staged!.texels[first.target.recordIds![k] * 8 + 3] >
+            first.staged!.texels[first.target.recordIds![k] * RECORD_FLOATS + 3] >
           0,
       );
       expect(shownSlotCount(first.staged!)).toBe(visible.length);
