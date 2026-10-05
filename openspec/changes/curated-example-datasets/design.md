@@ -48,7 +48,7 @@ A second round of research (2026-09-30: the manuscript's use of its EAT sets, EA
 | id                    | Menu name                       |       N | Paper                                   | `defaultView` (projection / annotation / tooltip)                                  | Bundle settings                                      |
 | --------------------- | ------------------------------- | ------: | --------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `demo`                | Venom toxins (demo)             |   7,831 | JMB 2025 lineage, not in the manuscript | `ProtT5 — UMAP 2` / `protein_families` / `species`, `ec`                           | Curated `protein_families` legend (top 13 + Other)   |
-| `three-finger-toxins` | Snake three-finger toxins (EAT) |  ≈1,089 | Not in the manuscript (Decision 17)     | `ProtT5 — UMAP 2` / `toxin_class` / `toxin_class_withheld`, `species`, `eat_split` | EAT threshold **0**; a curated `toxin_class` palette |
+| `three-finger-toxins` | Snake three-finger toxins (EAT) |   1,089 | Not in the manuscript (Decision 17)     | `ProtT5 — UMAP 2` / `toxin_class` / `toxin_class_withheld`, `species`, `eat_split` | EAT threshold **0**; a curated `toxin_class` palette |
 | `human-fly`           | Human + fly proteomes           | 105,562 | Fig. 2B                                 | `ProtT5 — UMAP 2` / `species` / `protein_families`, `reviewed`                     | Fig. 2B species colours; named families pinned       |
 | `beta-lactamase`      | β-lactamases                    | 113,015 | Fig. 3                                  | `ProtT5 — UMAP 2` / `protein_families` / `ec`, `species`                           | Fig. 3 Kelly colours, class C painted on top         |
 | `swissprot` (Large)   | Swiss-Prot                      | 573,649 | Fig. 2A, abstract                       | `ProtT5 — UMAP 2` / `domain` / `protein_families`, `species`                       | Fig. 2A domain colours                               |
@@ -63,11 +63,11 @@ A second round of research (2026-09-30: the manuscript's use of its EAT sets, EA
 - **Projection names.** The paper's Swiss-Prot and human + fly bundles name the projection `UMAP_2`. The build renames it to `ProtT5 — UMAP 2`, so every example uses one naming convention.
 - **Startup default (D3).** It stays the small ToxProt demo, re-annotated. At about 2.3–2.8 MB raw it allows roughly 40–65k first visits a month under the Pages soft bandwidth limit, and it is never a 10 MB+ paper dataset.
   - The demo holds 536 proteins of the three-finger toxin family, most of them also in `three-finger-toxins`. This is accepted: the demo shows a fast, clustered first view, the EAT example shows transfer and the separation scores.
-- **Default views (D5).** The table's views are the owner's picks, made after the data build (task 7.5), all on the UMAP.
+- **Default views (D5).** The table's views are the owner's picks, made after the data build, all on the UMAP; the owner approved their thumbnails on 2026-10-05 (task 7.5).
   - Three of them have near-zero or negative whole-annotation silhouettes, which the `--stats` legend strips display next to the default: on the refreshed data Swiss-Prot `domain` about −0.25, β-lactamase `protein_families` about −0.39, human + fly `species` about +0.04.
   - Figure fidelity wins over the criterion there, and each card says why the view is informative anyway.
 - **EAT threshold (D6).** `three-finger-toxins` opens at threshold 0, so both the transferred-value rings and the separation strips are visible, and the docs say "drag reliability to 0.5". Its tooltip carries the withheld class, so a reader can check each held-out transfer in the app.
-- **Values from the build.** The final entries are written before their bundles exist (Decision 15). A value only the built file can give, such as the three-finger toxins' hold-out accuracy or Swiss-Prot's memory and load time, is a `‹…›` placeholder, which `docs:examples:check` refuses after the swap.
+- **Values from the build.** The final entries are written before their bundles exist (Decision 15). A value only the built file can give, such as the three-finger toxins' hold-out accuracy or Swiss-Prot's memory and load time, is a `‹…›` placeholder, which `docs:examples:check` refuses after the swap; the swap commit filled them from the built files.
 
 ### 2. Curated default view: resolved at view time, reset on a menu choice (D5, D7c)
 
@@ -194,7 +194,7 @@ The paper's protein set and published coordinates are kept, and every annotation
 - `root` as the first lineage element rather than the deepest unranked clade, and TMbed's "no TM segment" rather than `none`, which the app reads as missing;
 - a cache-semantics bump for those two columns, so a cache-assisted rebuild refetches them instead of reusing the wrong values.
 
-**Rebuild once, then publish (R2-D2).** All of it lands in PR #495, released as protspace 4.15.0, and every example is rebuilt on that release before the first publish. A release file name can never carry different bytes, so fixing a published file would mean new names; one rebuild also replaces provenance no public commit could reproduce (a local CLI commit, a scratch path in the build command).
+**Rebuild once, then publish (R2-D2).** All of it lands in PR #495, released as protspace 4.15.0, and every example is rebuilt on that release before the first publish (the files that ship are a second rebuild, as v3 on 4.16.0: Decision 19). A release file name can never carry different bytes, so fixing a published file would mean new names; one rebuild also replaces provenance no public commit could reproduce (a local CLI commit, a scratch path in the build command).
 
 Statistics and clusters are recomputed on the paper coordinates with **explicit** `--stats-annotation` lists, because `auto` would also score EAT companions.
 
@@ -202,6 +202,7 @@ Per-dataset recipes and gates live in the build script (tasks §6 and §7):
 
 - **`swissprot`: UMAP and the paper's PCA, all features.**
   - It ships only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap on the reference laptop, measured again on the rebuilt file with its PCA (Decision 16). Otherwise the web copy drops the GO and TED columns, and the full-feature file stays on Zenodo.
+  - It passed, so there is no web cut: 27.4 s and 1,192 MiB as v2, and 10.4 s and 158 MiB of main-thread heap as the v3 file that ships (Decision 19).
   - No Biocentral predictions (Decision 18).
 - **`human-fly`.** The 146 paper rows without a UniProt vector keep their paper position and are annotated from FASTA. PCA is kept. No Biocentral predictions.
 - **`beta-lactamase`.** Coordinates come from the paper's `beta_lactamase_2026_stats` bundle; PCA is kept. No Biocentral predictions.
@@ -268,7 +269,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 
 - **Why TypeScript.** `apps/web/tsconfig.app.json` does not set `resolveJsonModule`, and no app code imports JSON, so the manifest is `apps/web/src/explore/example-manifest.ts`. It is loadable from the app, from vitest, and from tsx docs and fetch scripts.
 - **Who writes it.** `apps/protspace/scripts/generate_examples/write_manifest.py`, using pyarrow, reads each bundle, so `columns` and `projections` are the file's real names, not a hand-typed list. Provenance comes from the key/value metadata the build writes on the annotations table (Decision 9; a file without it records `null`), and a file stamped with another `example_id` is refused.
-- **Shape of the module.** The data is a JSON object literal assigned to `export const EXAMPLE_MANIFEST: ExampleManifest`, and the file is in `.prettierignore`, so the writer can read the previous manifest back (for `--retain-previous` and `--refresh`) and `--check` can compare it byte for byte. It is typed with an annotation rather than `as const`, because a literal type such as `hosting: 'repo'` makes consumers' `=== 'release'` checks fail to compile while the interim manifest has no release-hosted entry.
+- **Shape of the module.** The data is a JSON object literal assigned to `export const EXAMPLE_MANIFEST: ExampleManifest`, and the file is in `.prettierignore`, so the writer can read the previous manifest back (for `--retain-previous` and `--refresh`) and `--check` can compare it byte for byte. It is typed with an annotation rather than `as const`, because a literal type such as `hosting: 'repo'` made consumers' `=== 'release'` checks fail to compile while the interim manifest had no release-hosted entry.
 - **Top level:** `release` (the tag, or `null` while every entry is repo-hosted) and `retained[]` (`{ release, file, bytes, sha256 }`).
 - **Per id:**
   - `file`;
@@ -309,7 +310,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 - **Catalog routing (G3).**
   - `apps/web/tests/helpers/example-fixtures.ts` maps each catalog id the suite loads to a fixture that contains that entry's `defaultView` names, and the spec routes the entry's URL to it.
   - The spec names examples by the role they play (`small`, `other`, `slow`, `eat`), so a catalog change edits the helper's table and not the scenarios; the annotation names a scenario picks belong to its role's fixture. The roles map to settled final ids: `small` → `human-fly`, `other` → `beta-lactamase`, `slow` → `swissprot`, `eat` → `three-finger-toxins`.
-  - The role fixtures (`example_role_*`) are derived from the pinned fixtures by a committed script, `apps/web/tests/fixtures/derive-example-role-fixtures.py` (uv, pyarrow pinned, `--check` for a stale file). Until the swap each role also stands for an interim example, so each fixture holds both examples' view names: the final projection name is a copy of an existing layout, and the added view columns are synthetic. The `eat` fixture relabels the venom fixture's transferred EC numbers as toxin classes, holds every eighth reference out, and stores a threshold of 0.5, so a scenario can tell the bundled threshold from the default.
+  - The role fixtures (`example_role_*`) are derived from the pinned fixtures by a committed script, `apps/web/tests/fixtures/derive-example-role-fixtures.py` (uv, pyarrow pinned, `--check` for a stale file). Until the swap each role also stood for an interim example, so each fixture holds both examples' view names: the final projection name is a copy of an existing layout, and the added view columns are synthetic. The cleanup after the swap dropped the interim ids from the roles and the script; the fixtures kept their bytes. The `eat` fixture relabels the venom fixture's transferred EC numbers as toxin classes, holds every eighth reference out, and stores a threshold of 0.5, so a scenario can tell the bundled threshold from the default.
   - A held request passes on with `route.fallback()`, so it reaches the fixture route rather than the network, and protspace.app's copies are refused, so a development build's fallback can never download a real example.
   - The spec asserts that no default-view drift warning is logged.
   - The history and race tests use explicit `annotation=`/`projection=` parameters, so any fixture serves them.
@@ -322,7 +323,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
 ### 13. Perf datasets move to a `perf-datasets` release (D8, W4/G18)
 
 - **Contents.** The release keeps **all** eleven current `apps/web/public/data/` bundles plus the manuscript's 113K β-lactamase (`beta_lactamase_2026_stats.parquetbundle`, named after its directory, because its own file name is `data.parquetbundle`) and the 832-protein `phosphatase_eat.parquetbundle`. The files keep their original names, so `PERF_DATASETS=venom_eat_stats,…,573K_swissprot` and the manuscript's perf protocol keep working.
-- **Integrity.** `perf/datasets.manifest.json` (`{ id, file, bytes, sha256, default, source }`) is the committed checksum list, written by `stage_perf.py` (next to `build_showcase.py`) from pinned git blobs and the manuscript path. It replaces `apps/web/public/data/datasets.json`: `default` marks the ten of the former default sweep, and `source` says where the bytes were staged from. The `example-bundles.yml` workflow runs `pnpm perf:fetch` on a PR that changes it.
+- **Integrity.** `perf/datasets.manifest.json` (`{ release, datasets: [{ id, file, bytes, sha256, default, source }] }`) is the committed checksum list, written by `stage_perf.py` (next to `build_showcase.py`) from pinned git blobs and the manuscript path. It replaces `apps/web/public/data/datasets.json`: `default` marks the ten of the former default sweep, and `source` says where the bytes were staged from. The `example-bundles.yml` workflow runs `pnpm perf:fetch` on a PR that changes it.
 - **Local copy.** `pnpm perf:fetch` downloads into the gitignored `perf/datasets/` and verifies the checksums.
 - **Serving.** `perf/webgl-perf.spec.ts` routes `**/data/<id>.parquetbundle` and `**/data/datasets.json` to those local files. The in-app fallback list in `webgl-perf-suite.ts` is removed, because the routed list is authoritative; a missing list is recorded under `failures` and the results file is still emitted. A missing file is recorded as that dataset's error, naming `pnpm perf:fetch` (the suite carries the 404 body into the error).
 - `load-large-bundle.spec.ts` reads `perf/datasets/573K_swissprot.parquetbundle`, so it can run again (still opt-in).
@@ -337,18 +338,19 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - a card's thumbnail is missing;
   - a repo-hosted file (the demo) disagrees with its manifest record;
   - a label's count or size disagrees with the manifest, or the prose does not name the colour-by annotation.
-- **Interim state (until the swap).** The page, the check and the anchor pin land with §5, before the final catalog exists, so `example-details.ts` carries three transitional lists that the check keeps honest:
+- **Interim state (until the swap; since removed).** The page, the check and the anchor pin land with §5, before the final catalog exists, so `example-details.ts` carries three transitional lists that the check keeps honest:
   - `INTERIM_CATALOG_IDS`: the ten test and perf entries, which get no card. The check fails when a listed id leaves the catalog, so the list empties with the swap.
   - The final examples not served yet: their cards take the insight, `defaultView` and large-download note from the catalog's `FINAL_EXAMPLE_SPECS` (Decision 15), and the check fails while one of them has no prose. (A first version kept these fields as `beforeSwap` in the prose; with the second lineup they moved into the catalog, so they are written once.)
   - `THUMBNAILS_PENDING`: cards without a thumbnail. The check fails when a listed thumbnail exists.
   - A value still to come renders as `‹…›` (a build value from a missing manifest record, or an author fact in the prose or the catalog), flagged by a warning at the top of the page. Once `INTERIM_CATALOG_IDS` is empty, the check refuses any `‹…›` (on the page, and in `eat.md` and `importing-data.md`, which quote the EAT example's numbers), any entry left in `THUMBNAILS_PENDING`, and any stated release that is not `YYYY_MM` (a note such as "inferred; confirm" stamped into a bundle is no `‹…›`). At any time it refuses a manifest build command that names a path of the build machine.
+  - After the swap a cleanup (task 7.9) deleted the three lists, the pending cards and the page's placeholder warning: the check now requires every build fact in the manifest, and refuses every `‹…›`, missing thumbnail and release that is not `YYYY_MM`.
 - **Scripts and CI.** `docs:examples` and `docs:examples:check` join `precommit`, and the `ci.yml` `build-docs` job runs both `docs:examples:check` and the existing `docs:annotations:check`, which runs in no workflow today.
 - **Page layout.**
   - Cards use `## Title {#id}`.
   - "Open in ProtSpace" and "Download" are raw `<a href>`, because markdown links to `/explore?…` or to a bundle fail `docs:build`.
   - A `::: details How this bundle was built` block holds the exact command.
   - Citation text is journal-neutral: the 2026 preprint DOI `10.64898/2026.05.04.722720` and the FAQ citation anchor. UniProt is credited under CC BY 4.0.
-- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts `{#<id>}` for every catalog id (outside `INTERIM_CATALOG_IDS`), that every `docsUrl` points at its id's section, and that no section names an id outside the catalog (other than a final example not served yet).
+- **Anchor pin.** VitePress never checks anchors, so `example-datasets-docs.test.ts` is retargeted from `control-bar.md`'s table to this page and asserts that the page's `{#<id>}` sections are exactly the catalog ids, in menu order, and that every `docsUrl` points at its id's section. (Until the swap it left out `INTERIM_CATALOG_IDS` and allowed sections for final examples not served yet.)
 - **Thumbnails.** An opt-in `examples-live` Playwright project (`RUN_EXAMPLES_E2E=1`, after `pnpm examples:fetch`) opens each `?dataset=<id>`, asserts the curated view with no URL write and no drift warning, and captures the thumbnail.
 
 ### 15. Sequencing: machinery first, catalog swap last
@@ -365,7 +367,7 @@ If a story gate fails, that dataset ships frozen (strategy F) and is labelled so
   - the five thumbnails, captured by the `examples-live` project from the flipped working tree with the staged release files copied into `apps/web/public/examples/`, and `THUMBNAILS_PENDING` emptied;
   - the regenerated page.
 
-  A unit test (`example-datasets.test.ts`) refuses a `‹` in any served entry's description, insight or large note once the switch is flipped. The demo's docs images (7.11) may follow in a later commit, and a cleanup commit deletes the interim catalog, the switch and the role fixtures' interim names.
+  A unit test (`example-datasets.test.ts`) refuses a `‹` in any served entry's description, insight or large note once the switch is flipped. The demo's docs images (7.11) may follow in a later commit, and a cleanup commit deletes the interim catalog, the switch and the role fixtures' interim names (task 7.9: `FINAL_EXAMPLE_SPECS` became the private `EXAMPLE_SPECS`).
 
 - **Commits.** Every commit keeps `pnpm test:ci`, `pnpm format:check`, `pnpm precommit` and the E2E suite green.
 
@@ -408,7 +410,7 @@ The Import menu shows annotation transfer with one example built for the purpose
 
 ### 19. The examples ship as parquetbundle v3 (owner decision, 2026-10-02)
 
-PR #477 (released in protspace 4.16.0) made v3 the only container protspace writes, in Python and on the web; v1/v2 are still read, deprecated, until 5.0.0. The five examples were built on 4.15.0 and published as v2, so they are rebuilt as v3 on 4.16.0 now, before the merge.
+PR #477 (released in protspace 4.16.0) made v3 the only container protspace writes, in Python and on the web; v1/v2 are still read, deprecated, until 5.0.0. The five examples were built on 4.15.0 and published as v2, so they were rebuilt as v3 on 4.16.0 before the merge.
 
 - **New names in the same release.** A release file name never carries other bytes, so the v2 assets of `showcase-2026_03` stay as published, and the v3 files are added to the same release as `<id>_2026_03_v3.parquetbundle` (`[build] file_pattern`), with their checksums in `SHA256SUMS_v3` (`[build] checksums_file`), since the release's `SHA256SUMS` lists the v2 files. For a release the committed manifest already names, `stage-release` prints `gh release upload` without `--clobber`, then `gh release edit` with the release's published notes and the added files appended (an upload leaves the notes as they are), and it refuses, even with `--force`, a file whose name that release already publishes with other bytes: a name the committed manifest publishes, and, since the re-pinned manifest no longer lists the v2 names, any asset the release holds with another sha256 (`gh release view`, read-only). The demo stays `apps/web/public/data.parquetbundle`, whose bytes change in the repository. The manifest is re-pinned to the v3 files. The v2 files are not listed as `retained`: no deploy has served the v2 manifest, so no open tab or published link names them.
 - **One implementation of the format.** The build has no bundle codec of its own. `build_showcase.py` reads every container with protspace's reader (`read_tables`, which decodes a v3 core into the v2-shaped tables the gates parse) and writes the shipped file with protspace's writers (`replace_annotations_in_bundle`, then `replace_settings_in_bundle`) from the repository's own package, whatever the `--cli-root` checkout writes. Over a 4.15.0 CLI's v2 output, `finalize` writes the bytes `protspace convert` writes from the v2 file; over a 4.16.0 CLI's v3 output it keeps the projection and statistics parts as the CLI wrote them. The build's vendored copy of the cell grammar goes too. `write_manifest.py` stays pyarrow-only (CI runs it with `--no-project --with pyarrow`): it reads a v3 file's columns, projections and protein count from the manifest in the file's first part, and a test pins its container keys to protspace's.
@@ -423,7 +425,7 @@ PR #477 (released in protspace 4.16.0) made v3 the only container protspace writ
   - the D2 gate and its GO/TED web-cut fallback;
   - streamed progress and Cancel;
   - the Large badge and the stated memory.
-- **A file over 100 MB on Pages is untested** (the largest served today is 44.9 MB). A staging deploy test is an owner step (§8). The fallback is R2 on `data.protspace.app` with CORS.
+- **Large files on Pages.** A file over 100 MB on Pages is untested, but no shipped file is that large any more: the v3 Swiss-Prot file is 87.8 MB, so the staging deploy test (8.5) is not needed. The largest file Pages has served is 44.9 MB (the v2 paper Swiss-Prot bundle under `/data/`), so the post-deploy check (8.6) confirms the 87.8 MB one. The fallback is R2 on `data.protspace.app` with CORS.
 - **Bandwidth.** Pages allows 100 GB/month and bundles are uncached today, so the cache rule must be live before the Swiss-Prot link is announced.
 - **Refreshed annotations could weaken a figure's story.** The story gates catch it, and the dataset then ships frozen with an honest label.
 - **Mixed releases inside a bundle** (the demo's membership is 2026_01, its annotations 2026_03). The manifest and the cards record the release per column group.
@@ -436,15 +438,15 @@ PR #477 (released in protspace 4.16.0) made v3 the only container protspace writ
 
 ## Migration Plan
 
-1. Merge order: PR #494, then this change stacked on it, merged with a **merge commit** (never squash; stacked-PR rule). The owner steps (§8) must complete **before** the merge. Otherwise the deploy's sha256 step, and the PR check on the manifest, fail by design.
+1. Merge order: PR #494, then this change stacked on it, merged with a **merge commit** (never squash; stacked-PR rule). The releases (8.1, 8.2, 8.8) must be published **before** the merge, otherwise the deploy's sha256 step and the PR check on the manifest fail by design; they are. The deploy needs neither the Zenodo deposit (8.3) nor the Cloudflare rule (8.4), but the rule must be live before the Swiss-Prot link is announced.
 2. First deploy after the merge: `/examples/*` appears and `/data/*.parquetbundle` disappears. No known link uses the old paths: none from the manuscript, and none from the docs.
 3. Rollback: revert the merge commit. The old bundles come back from history, and the release assets can stay where they are.
 
 ## Open Questions
 
-- **Author facts** to collect before the data build:
+- **Author facts** (resolved: derived from the data, and kept by the owner on 2026-10-05, task 7.5):
   - the Swiss-Prot and human + fly membership releases, inferred as 2025_04 from the data;
-  - how the 113,015 β-lactamases were selected from about 120K query hits.
+  - how the 113,015 β-lactamases were selected from about 120K query hits: every hit of `family:"beta-lactamase"` at 2026_02, unfiltered.
   - (The venom 811 query was reconstructed and matches 811/811 at 2026_02; the venom set no longer ships in the menu.)
 - Whether Cancel on an empty screen (Decision 7) is confirmed, or D7e's literal "no fallback" is wanted even there.
 - The three-finger toxin class vocabulary and its palette (the build decides from UniProt's subfamily notes; the docs name only classes every version has).
