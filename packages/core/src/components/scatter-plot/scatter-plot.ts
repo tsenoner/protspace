@@ -618,10 +618,9 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   /**
-   * Single construction point for the WebGL renderer. Both firstUpdated
-   * and the lazy _updateSizeAndRender path route through here so the renderer is
-   * built exactly once (firstUpdated previously orphaned the renderer that
-   * _updateSizeAndRender had just created). Requires _canvas to be present.
+   * Single construction point for the WebGL renderer, which _updateSizeAndRender
+   * builds when it finds none: on the first update, after a context loss and
+   * after a reconnect. Requires _canvas to be present.
    */
   private _createWebglRenderer() {
     if (!this._canvas) return;
@@ -1163,11 +1162,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction = new PlotInteractionController(this._interactionHost());
     this._interaction.initialize();
     this._updateSizeAndRender();
-    // _updateSizeAndRender already lazily constructs the renderer when _canvas
-    // exists; guard here so firstUpdated no longer orphans that instance.
-    if (this._canvas && !this._webglRenderer) {
-      this._createWebglRenderer();
-    }
     this._connectorOverlay.render();
   }
 
