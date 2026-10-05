@@ -66,43 +66,44 @@ describe('planRendererCapacity', () => {
   });
 
   describe('maxCapacity bound', () => {
-    const CAP = 1_000_000;
+    // A mark texel per point on a device whose textures stop at 1024.
+    const DEVICE = 1024 ** 2;
 
-    it('stops geometric growth overshooting the renderer cap', () => {
+    it('stops geometric growth overshooting the device bound', () => {
       // Unbounded, 900,096 -> 1.5x = 1,350,144, whose label atlas needs 5274 rows and
       // fails on a 4096 device at a point count well under a million.
       expect(planRendererCapacity(950_000, 900_096, FLOOR, ROW, UNBOUNDED)).toBe(1_350_144);
-      expect(planRendererCapacity(950_000, 900_096, FLOOR, ROW, CAP)).toBe(1_000_192);
+      expect(planRendererCapacity(950_000, 900_096, FLOOR, ROW, DEVICE)).toBe(DEVICE);
     });
 
     it('leaves an ordinary load untouched', () => {
-      expect(planRendererCapacity(573_649, 0, FLOOR, ROW, CAP)).toBe(573_696);
+      expect(planRendererCapacity(573_649, 0, FLOOR, ROW, DEVICE)).toBe(573_696);
     });
 
-    it('does not starve a load larger than the cap', () => {
+    it('does not starve a load larger than the bound', () => {
       // The bound is floored at the snapped requirement, so a caller asking for more
-      // than the cap still gets buffers big enough for what it asked for.
-      expect(planRendererCapacity(1_500_000, 0, FLOOR, ROW, CAP)).toBe(1_500_160);
+      // than the bound still gets buffers big enough for what it asked for.
+      expect(planRendererCapacity(1_500_000, 0, FLOOR, ROW, DEVICE)).toBe(1_500_160);
     });
   });
 
   describe('shrink hysteresis', () => {
-    const CAP = 2_000_000;
+    const DEVICE = 2048 ** 2;
 
     it('releases a footprint more than 4x the requirement', () => {
       // "Load 2M, then open the 5K demo". Grow-only retention held the 2M
       // footprint for the rest of the session (#456 follow-up).
-      expect(planRendererCapacity(5_000, 2_000_128, FLOOR, ROW, CAP)).toBe(5_120);
+      expect(planRendererCapacity(5_000, 2_000_128, FLOOR, ROW, DEVICE)).toBe(5_120);
     });
 
     it('retains capacity on an ordinary dataset switch', () => {
       // Within 4x the requirement, what we hold is returned unchanged, so the
       // caller reuses the buffers instead of reallocating them.
-      expect(planRendererCapacity(200_000, 400_128, FLOOR, ROW, CAP)).toBe(400_128);
+      expect(planRendererCapacity(200_000, 400_128, FLOOR, ROW, DEVICE)).toBe(400_128);
     });
 
     it('never shrinks below the floor', () => {
-      expect(planRendererCapacity(1, 2_000_128, FLOOR, ROW, CAP)).toBe(FLOOR);
+      expect(planRendererCapacity(1, 2_000_128, FLOOR, ROW, DEVICE)).toBe(FLOOR);
     });
   });
 

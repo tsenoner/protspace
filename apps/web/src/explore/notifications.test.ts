@@ -287,6 +287,13 @@ describe('getRendererDegradedNotification', () => {
     );
   });
 
+  it('says a dataset past the point limit is not drawn, rather than drawn worse', () => {
+    const n = getRendererDegradedNotification(degraded('point-limit-exceeded'));
+
+    expect(n.title).toBe('Too many points to draw.');
+    expect(n.dedupeKey).toBe('renderer-degraded:point-limit-exceeded');
+  });
+
   it('keeps the quality title for every other reduction', () => {
     const n = getRendererDegradedNotification(degraded('gamma-pipeline-unavailable'));
 

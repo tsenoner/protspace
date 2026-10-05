@@ -17,6 +17,8 @@ export type RendererDegradedReason =
   | 'label-atlas-out-of-memory'
   /** An allocating vertex-buffer upload failed; the atlas is released to retry smaller. */
   | 'point-buffer-allocation-failed'
+  /** The dataset has more points than the renderer can draw, so it draws none. */
+  | 'point-limit-exceeded'
   /** The gamma-correct pipeline is unavailable, so blending happens in sRGB. */
   | 'gamma-pipeline-unavailable'
   /** Contours were requested, but the density layer cannot run on this context. */
@@ -60,6 +62,9 @@ const MESSAGES: Record<RendererDegradedReason, (c: RendererDegradedContext) => s
   'point-buffer-allocation-failed': (c) =>
     `The graphics driver refused to allocate memory for ${c.pointCount.toLocaleString()} points. ` +
     `Multi-value markers now show a single dominant colour to free memory, and rendering will retry.`,
+  'point-limit-exceeded': (c) =>
+    'Nothing is drawn: this dataset has more points than the renderer can draw' +
+    (c.detail ? ` (${c.detail}).` : '.'),
   'gamma-pipeline-unavailable': (c) =>
     'Colour blending is running in sRGB rather than linear light, so overlapping points may look slightly darker than intended.' +
     // The cause is the only actionable part of this one — without it the message

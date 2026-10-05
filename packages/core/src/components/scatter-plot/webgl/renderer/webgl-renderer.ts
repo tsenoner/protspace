@@ -134,6 +134,13 @@ const MIN_CAPACITY = 1024;
  * from the plan would be circular.
  */
 const CAPACITY_GRANULARITY = 256;
+/**
+ * The most points the renderer draws, set by its widest vertex buffer: a_color,
+ * at 16 bytes a point, fills 1 GiB here. WebGL2 has no query for the most a
+ * buffer may hold, and Chrome refuses one just under 2 GiB (2^31 - 2^20 bytes,
+ * measured on macOS), so this keeps a 2x margin rather than sitting on the edge.
+ */
+const MAX_DRAWABLE_POINTS = 2 ** 26;
 
 /**
  * The context attributes are fixed by the first `getContext` call, so every caller passes these.
@@ -1450,6 +1457,20 @@ export class WebGLRenderer {
       if (updateStyles) perfCounters.restageStyle++;
     }
 
+    // Past the drawable limit, whatever part of the data could be drawn would
+    // pass for all of it: draw none and say why. Nothing is allocated, so nothing
+    // retries either, and the next dataset that fits stages as usual.
+    if (pd.length > MAX_DRAWABLE_POINTS) {
+      this.currentPointCount = 0;
+      this.visibleCount = 0;
+      this.sortedDataRef = null;
+      this.reportDegraded(
+        'point-limit-exceeded',
+        `${pd.length.toLocaleString()} points, at most ${MAX_DRAWABLE_POINTS.toLocaleString()}`,
+      );
+      return;
+    }
+
     const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
 
     // Grow to fit, and release a footprint that has become absurd for the data on
@@ -2183,13 +2204,18 @@ export class WebGLRenderer {
     return this.style.isMultilabel?.() ?? true;
   }
 
+  /**
+   * Plan within the device: the drawable limit, and a mark texel per point, so
+   * growth across reloads never takes the marks off the GPU while the points
+   * themselves would have fit (see `canDrawMarks`).
+   */
   private planCapacity(minCapacity: number): number {
     return planRendererCapacity(
       minCapacity,
       this.capacity,
       MIN_CAPACITY,
       CAPACITY_GRANULARITY,
-      MAX_RENDERABLE_POINTS,
+      Math.min(MAX_DRAWABLE_POINTS, this.maxTextureSize ** 2),
     );
   }
 
