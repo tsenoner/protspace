@@ -259,7 +259,7 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _mergedConfig = DEFAULT_CONFIG;
   // Plain field, NOT @state: render() never reads _transform (it drives the
   // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
-  // caused a redundant per-frame updated()/_renderPlot() pass (F-48). The
+  // caused a redundant per-frame updated()/_renderPlot() pass. The
   // getter closures passed to WebGLRenderer and the duplicate-overlay/hit-test
   // reads are pull-based and keep working unchanged.
   private _transform = d3.zoomIdentity;
@@ -298,8 +298,9 @@ export class ProtspaceScatterplot extends LitElement {
   private _pointGridIndex: PointGridIndex = new PointGridIndex();
   private resizeObserver: ResizeObserver;
   // d3 zoom/brush/lasso lifecycle, the three SVG groups, and the zoom/lasso RAF
-  // loops live in the controller (F-07). Constructed in firstUpdated. Event
-  // dispatch + the transform field stay on the host (INV-03/INV-05, F-48).
+  // loops live in the controller. Constructed in firstUpdated. Event dispatch +
+  // the transform field stay on the host, so every public event leaves the
+  // element itself.
   private _interaction: PlotInteractionController | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
   private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
@@ -326,7 +327,8 @@ export class ProtspaceScatterplot extends LitElement {
   // which is nulled out on color/shape mapping changes). The key comparison in
   // _getVisibilityModel covers every visibility-relevant input exhaustively:
   // data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
-  // highlightedProteinIds, and the three opacity numbers. There are no deps on
+  // highlightedProteinIds, the three opacity numbers, eatOverlayEnabled and the
+  // shift-focus values. There are no deps on
   // colorMapping, zOrderMapping, otherAnnotationValues, or sizes that would
   // require event-handler invalidation — those inputs do not feed into the
   // visibility model.
@@ -402,7 +404,8 @@ export class ProtspaceScatterplot extends LitElement {
 
   // Duplicate-stack / spiderfy / badge overlay subsystem (state + schedulers +
   // chunked compute + badge canvas + spiderfy SVG layer). Event dispatch stays
-  // on the host via the onPointActivate/onHover/onHoverEnd callbacks (INV-05/INV-03).
+  // on the host via the onPointActivate/onHover/onHoverEnd callbacks, so every
+  // public event leaves the element itself.
   private _dupOverlay = new DuplicateStackOverlayController({
     getOverlayGroup: () => this._interaction?.overlayGroup ?? null,
     getBadgesCanvas: () => this._badgesCanvas,
@@ -483,7 +486,7 @@ export class ProtspaceScatterplot extends LitElement {
     key: string;
     value: VisualizationData;
   } | null = null;
-  // F-40: memoize the filtered display-data rebuild. Keyed by reference on the
+  // Memoize the filtered display-data rebuild. Keyed by reference on the
   // same inputs the filtered slice depends on so repeated reads with unchanged
   // inputs reuse the prior VisualizationData instead of reallocating.
   private _filteredDisplayCache: VisualizationData | null = null;
@@ -609,7 +612,7 @@ export class ProtspaceScatterplot extends LitElement {
     return new Set(this.filteredProteinIds);
   }
 
-  /** INV-11: the exact set of reactive inputs that affect rendered geometry. */
+  /** The exact set of reactive inputs that affect rendered geometry. */
   private _geometryInputsChanged(changed: Map<string, unknown>): boolean {
     return (
       changed.has('data') ||
@@ -649,7 +652,7 @@ export class ProtspaceScatterplot extends LitElement {
   };
 
   /**
-   * F-35/F-11: single construction point for the WebGL renderer. Both firstUpdated
+   * Single construction point for the WebGL renderer. Both firstUpdated
    * and the lazy _updateSizeAndRender path route through here so the renderer is
    * built exactly once (firstUpdated previously orphaned the renderer that
    * _updateSizeAndRender had just created). Requires _canvas to be present.
@@ -745,7 +748,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._cancelProjectionMorph();
     this._webglRenderer?.destroy();
     // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
-    // down the d3 brush + lasso (F-07).
+    // down the d3 brush + lasso.
     this._interaction?.teardown();
 
     super.disconnectedCallback();
@@ -803,7 +806,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleZOrderChange = (event: Event) => {
     const { detail } = event as LegendZOrderChangeEvent;
-    if (!isLegendZOrderDetail(detail)) return; // F-19: skip rather than overwrite GPU state with undefined
+    if (!isLegendZOrderDetail(detail)) return; // skip rather than overwrite GPU state with undefined
     // The legend re-sends its mapping on every rebuild, including ones that
     // cannot change it (a projection switch, a data-change echo). An equal
     // mapping gives the same depth for every point, so there is nothing to redo.
@@ -814,8 +817,8 @@ export class ProtspaceScatterplot extends LitElement {
 
     if (this._plotData.length > 0) {
       // Z-order mapping changed but coordinates didn't — re-sort by depth without
-      // invalidating the position cache. Single render path (F-31): these fields are
-      // plain (not @state), so updated()'s catch-all never fires a second render.
+      // invalidating the position cache. These fields are plain (not @state), so no
+      // Lit update follows to render a second time.
       this._webglRenderer?.invalidateDepthOrder();
       this._webglRenderer?.invalidateStyleCache();
       this._requestRender();
@@ -824,7 +827,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _handleColorMappingChange = (event: Event) => {
     const { detail } = event as LegendColorMappingChangeEvent;
-    if (!isLegendColorMappingDetail(detail)) return; // F-19
+    if (!isLegendColorMappingDetail(detail)) return; // skip rather than restyle with undefined maps
     // Equal maps give every point the same colour and shape: nothing to redo.
     if (
       sameMapping(this._colorMapping, detail.colorMapping) &&
@@ -840,7 +843,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._styleGettersCache = null;
 
     if (this._plotData.length > 0) {
-      // INV-08: color-only changes skip the depth re-sort, and restyle whole
+      // Color-only changes skip the depth re-sort, and restyle whole
       // categories (colour and shape) without re-staging.
       if (colorOnly) {
         this._webglRenderer?.invalidateCategoryStyles();
@@ -848,7 +851,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateDepthOrder();
         this._webglRenderer?.invalidateStyleCache();
       }
-      this._requestRender(); // single render path (F-31)
+      this._requestRender();
     }
   };
 
@@ -914,7 +917,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * INV-10: when new data is loaded (or projection index changes), ensure the
+   * When new data is loaded (or projection index changes), ensure the
    * selection is valid. This prevents a blank plot when switching from a dataset
    * with many projections/annotations to one with only a single projection/annotation.
    */
@@ -959,7 +962,7 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _reconcileFilterOnDataSwap(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('data')) {
-      // F-40: the filtered-display memo is keyed by reference on the previous
+      // The filtered-display memo is keyed by reference on the previous
       // materialized object. _getMaterializedData returns a fresh object after a
       // data swap, so the reference check already misses — but drop the cache
       // explicitly here too so a stale slice from the previous dataset can never
@@ -1003,7 +1006,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.toggleAttribute('data-morphing', false);
   }
 
-  /** INV-11: reprocess geometry + emit data-change when a geometry input changes. */
+  /** Reprocess geometry + emit data-change when a geometry input changes. */
   private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
     if (this._geometryInputsChanged(changedProperties)) {
       // Only the old index map outlives the rebuild, not the old plot data.
@@ -1054,7 +1057,10 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /** INV-14: config shallow-merge + duplicate-UI teardown + style invalidation + point index schedule. */
+  /**
+   * Config shallow merge (defaults, then the last merge, then `config`), duplicate-UI
+   * teardown, style invalidation and the point index schedule.
+   */
   private _reconcileConfigMerge(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('config')) {
       const prev = this._mergedConfig;
@@ -1223,7 +1229,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction.initialize();
     this._updateSizeAndRender();
     // _updateSizeAndRender already lazily constructs the renderer when _canvas
-    // exists; guard here so firstUpdated no longer orphans that instance (F-35).
+    // exists; guard here so firstUpdated no longer orphans that instance.
     if (this._canvas && !this._webglRenderer) {
       this._createWebglRenderer();
     }
@@ -1613,10 +1619,10 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Bridge handed to the PlotInteractionController (F-07): narrow pull-getters +
+   * Bridge handed to the PlotInteractionController: narrow pull-getters +
    * callbacks so the controller never reaches into the component. Event dispatch
-   * stays on the host (INV-03/INV-05); the host owns the _transform field (F-48,
-   * written back via onTransform).
+   * stays on the host, so every public event leaves the element itself; the host
+   * owns the _transform field, written back via onTransform.
    */
   private _interactionHost(): PlotInteractionHost {
     return {
@@ -1721,7 +1727,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Host shim retained for the characterization suite (F-07): the live brush
+   * Host shim retained for the characterization suite: the live brush
    * lifecycle (incl. clearing the brush rectangle on commit) lives in
    * PlotInteractionController, but scatter-plot.test.ts drives this handler
    * directly. Body stays behavior-identical for slot→id resolution + dispatch;
@@ -1746,11 +1752,11 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _commitSelection(selectedIds: string[], clearVisual: () => void) {
     if (selectedIds.length > 0) {
-      // F-16: track the deferred-commit RAF so disconnectedCallback can cancel it.
+      // Track the deferred-commit RAF so disconnectedCallback can cancel it.
       // The post-disconnect no-op is achieved by that cancellation (a selection
       // committed then disconnected before this RAF fires never dispatches), NOT
-      // by guarding the body on isConnected — the connected selection flow must
-      // dispatch byte-identically (INV-03/INV-05).
+      // by guarding the body on isConnected, so the connected selection flow
+      // dispatches unchanged.
       this._commitSelectionRafId = requestAnimationFrame(() => {
         this._commitSelectionRafId = null;
         // The ids come from distinct slots, so none repeats if no protein id does.
@@ -1877,7 +1883,7 @@ export class ProtspaceScatterplot extends LitElement {
     const overlayGroup = this._interaction?.overlayGroup;
     if (!overlayGroup) return;
     // The selected-overlay clear stays on the host; the duplicate-stack/spiderfy/
-    // badge update is owned by the controller (F-06).
+    // badge update is owned by the controller.
     overlayGroup.selectAll('.selected-overlay').remove();
     this._dupOverlay.updateSelectionOverlays(options);
   }
@@ -1920,9 +1926,9 @@ export class ProtspaceScatterplot extends LitElement {
    *
    * Keys (all reference/strict-equality): the materialized data (the source
    * `_buildStyleGetters` uses, reference-stable until materialization is
-   * rebuilt), `selectedAnnotation`,
-   * `hiddenAnnotationValues` ref, selection/highlight refs, and the three opacity
-   * numbers from the merged config. (Opacities are extracted as three plain
+   * rebuilt), `selectedAnnotation`, `hiddenAnnotationValues` ref,
+   * selection/highlight refs, `eatOverlayEnabled`, the shift-focus values ref, and
+   * the three opacity numbers from the merged config. (Opacities are extracted as three plain
    * numbers rather than keying on `_mergedConfig` itself: `_mergedConfig` is
    * rebuilt as a new object on unrelated changes such as width/height/margin, so
    * its reference is never stable as a cache key.)
@@ -2328,7 +2334,7 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Shared screen→data hit-test for hover and click (F-28). Resolves the nearest
+   * Shared screen→data hit-test for hover and click. Resolves the nearest
    * INTERACTIVE point under the cursor, or null. Owns the transform inversion,
    * point index `findNearest`, the isInteractive guard, and the within-radius
    * distance check. Callers branch only on the result.
