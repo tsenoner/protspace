@@ -26,8 +26,11 @@ call site costs one null check. They count:
 | `restage`, `restagePos`, `restageStyle` | full GPU buffer re-stages (`populateBuffers`), with their parts |
 | `restageMs`                             | time spent in those re-stages                                   |
 | `render`, `drawn`                       | renderer frames, and the points drawn by the last one           |
+| `morphFrame`                            | renders drawn while a projection glide moves the points         |
 | `processData`, `gridRebuild`            | scatter-plot data processing, point-grid rebuilds               |
 | `legendUpdate`, `legendRebuild`         | legend item updates and rebuilds                                |
+
+`apps/web/tests/helpers/perf/probes.ts` lists these names once, in `CORE_KEYS`.
 
 An init script (`apps/web/tests/helpers/perf/probes.ts`) wraps the public
 `WebGL2RenderingContext.prototype`, so these need no app code and survive renames:
@@ -82,6 +85,7 @@ It fails when:
 - the projection switch draws no glide frame (`morphFrame`), renders during the second after it
   settled, or ends on other pixels than the instant switch; or another segment draws a glide frame;
 - a `load` counter reads 0, which means a probe got disconnected;
+- core's counters object has a key `probes.ts` does not list, or lacks one it lists;
 - the page does not settle.
 
 A count below its budget passes, and the report lists it under "tighten".

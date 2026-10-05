@@ -3,7 +3,13 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { segment, type SegmentResult } from './helpers/perf/probes';
+import {
+  CORE_COUNTERS,
+  CORE_KEYS,
+  readCounterNames,
+  segment,
+  type SegmentResult,
+} from './helpers/perf/probes';
 import {
   checkBudgets,
   formatCountsTable,
@@ -36,7 +42,13 @@ const BUDGETS_FILE = path.join(HERE, 'perf', 'budgets.json');
 const UPDATE = process.env.PERF_UPDATE_BUDGETS === '1';
 const RUNS = UPDATE ? 3 : 1;
 
-async function runOnce(browser: Browser, baseUrl: string): Promise<SegmentResult[]> {
+interface Run {
+  results: SegmentResult[];
+  /** The keys of core's counters object in the page. */
+  counterNames: string[];
+}
+
+async function runOnce(browser: Browser, baseUrl: string): Promise<Run> {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     deviceScaleFactor: 1,
@@ -46,33 +58,34 @@ async function runOnce(browser: Browser, baseUrl: string): Promise<SegmentResult
     const page = await context.newPage();
     await openExplore(page, baseUrl);
     const results = [await measureLoad(page)];
+    const counterNames = await readCounterNames(page);
     const state = await readExploreState(page);
     for (const def of buildSegments(page, state, DEFAULT_BUNDLE)) {
       results.push(await segment(page, def));
     }
-    return results;
+    return { results, counterNames };
   } finally {
     await context.close();
   }
 }
 
 /** Checks that hold whatever the budgets say. */
-function invariants(results: SegmentResult[]): string[] {
+function invariants({ results, counterNames }: Run): string[] {
   const failures: string[] = [];
+  // A counter missing from probes.ts is read by no check; one core lacks reads NaN,
+  // which passes every check.
+  const listed: readonly string[] = CORE_KEYS;
+  for (const name of counterNames.filter((n) => !listed.includes(n))) {
+    failures.push(`core counter ${name} is not in probes.ts CORE_COUNTERS`);
+  }
+  for (const name of listed.filter((n) => !counterNames.includes(n))) {
+    failures.push(`probes.ts lists ${name}, which core does not count`);
+  }
   const load = results.find((r) => segmentTraits(r.name).bumpsAllCounters)!;
-  // A probe a refactor disconnected reads zero, which would pass every budget.
-  const live = [
-    'restage',
-    'restagePos',
-    'restageStyle',
-    'render',
-    'processData',
-    'gridRebuild',
-    'legendUpdate',
-    'legendRebuild',
-  ] as const;
-  for (const key of live) {
-    if (load.delta[key] <= 0) {
+  // A probe a refactor disconnected reads zero, which would pass every budget. The load
+  // draws no glide frame; the glide checks below cover `morphFrame`.
+  for (const key of CORE_COUNTERS) {
+    if (key !== 'morphFrame' && load.delta[key] <= 0) {
       failures.push(`${load.name}.${key} is 0: the counter is disconnected`);
     }
   }
@@ -116,18 +129,20 @@ function twinPixels(results: SegmentResult[]) {
 
 test('perf counts per interaction stay within budget', async ({ browser, baseURL }, testInfo) => {
   test.setTimeout(RUNS * 120_000);
-  const runs: SegmentResult[][] = [];
+  const runs: Run[] = [];
   for (let i = 0; i < RUNS; i++) runs.push(await runOnce(browser, baseURL!));
+  const recorded = runs.map((run) => run.results);
 
   const previous = fs.existsSync(BUDGETS_FILE) ? readBudgets(BUDGETS_FILE) : null;
   let budgets: BudgetsFile | null = previous;
   if (UPDATE) {
     const head = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
-    budgets = recordBudgets(runs, previous, head);
+    budgets = recordBudgets(recorded, previous, head);
     fs.writeFileSync(BUDGETS_FILE, `${JSON.stringify(budgets, null, 2)}\n`);
   }
 
-  const results = runs[runs.length - 1];
+  const last = runs[runs.length - 1];
+  const { results } = last;
   const check = budgets ? checkBudgets(results, budgets) : { failures: [], tighten: [] };
   const report = [
     formatCountsTable(results, budgets),
@@ -136,7 +151,7 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
   console.log(`\n${report}\n`);
   await testInfo.attach('perf-counts.json', {
     body: JSON.stringify(
-      { budgets, runs },
+      { budgets, runs: recorded },
       (key, value) => (key === 'pixelDiff' || key === 'actPixels' ? undefined : value),
       2,
     ),
@@ -162,7 +177,7 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
     }
   }
 
-  expect(invariants(results), report).toEqual([]);
+  expect(invariants(last), report).toEqual([]);
   if (!UPDATE) {
     expect(budgets, `no ${BUDGETS_FILE}; record it with PERF_UPDATE_BUDGETS=1`).not.toBeNull();
     expect(check.failures, report).toEqual([]);

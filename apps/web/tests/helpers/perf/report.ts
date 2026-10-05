@@ -1,21 +1,24 @@
 import fs from 'node:fs';
-import type { SegmentResult, TimingSample } from './probes';
+import {
+  CORE_COUNTERS,
+  GL_COUNTERS,
+  type CountKey,
+  type SegmentResult,
+  type TimingSample,
+} from './probes';
 import { segmentTraits } from './scenarios';
 
-/** The per-segment numbers a budget can cap. `glIsPerRender` is derived. */
+/**
+ * The per-segment numbers a budget can cap: every count but glide frames, which the
+ * invariants check, and `gl.is*` calls, capped per render as `glIsPerRender`.
+ */
 const BUDGET_KEYS = [
-  'restage',
-  'restagePos',
-  'restageStyle',
-  'render',
-  'processData',
-  'gridRebuild',
-  'legendUpdate',
-  'legendRebuild',
-  'glSync',
-  'bufferBytes',
-  'glIsPerRender',
-] as const;
+  ...[...CORE_COUNTERS, ...GL_COUNTERS].filter(
+    (key): key is Exclude<CountKey, 'morphFrame' | 'glIs'> =>
+      key !== 'morphFrame' && key !== 'glIs',
+  ),
+  'glIsPerRender' as const,
+];
 export type BudgetKey = (typeof BUDGET_KEYS)[number];
 type Measured = Record<BudgetKey, number>;
 type SegmentBudget = Partial<Record<BudgetKey, number | null>>;
@@ -30,21 +33,11 @@ const BUDGETS_COMMENT =
   'Max allowed per segment on data.parquetbundle. null = report only. ' +
   'Update: PERF_UPDATE_BUDGETS=1 pnpm perf:counts, review the diff, commit.';
 
-function measure(result: SegmentResult): Measured {
-  const d = result.delta;
-  return {
-    restage: d.restage,
-    restagePos: d.restagePos,
-    restageStyle: d.restageStyle,
-    render: d.render,
-    processData: d.processData,
-    gridRebuild: d.gridRebuild,
-    legendUpdate: d.legendUpdate,
-    legendRebuild: d.legendRebuild,
-    glSync: d.glSync,
-    bufferBytes: d.bufferBytes,
-    glIsPerRender: d.render > 0 ? Math.round((d.glIs / d.render) * 10) / 10 : 0,
-  };
+function measure({ delta }: SegmentResult): Measured {
+  const glIsPerRender = delta.render > 0 ? Math.round((delta.glIs / delta.render) * 10) / 10 : 0;
+  return Object.fromEntries(
+    BUDGET_KEYS.map((key) => [key, key === 'glIsPerRender' ? glIsPerRender : delta[key]]),
+  ) as Measured;
 }
 
 export function readBudgets(file: string): BudgetsFile {
@@ -123,18 +116,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
-const COUNT_COLUMNS: Array<[string, BudgetKey]> = [
-  ['restage', 'restage'],
-  ['pos', 'restagePos'],
-  ['style', 'restageStyle'],
-  ['render', 'render'],
-  ['glIs/r', 'glIsPerRender'],
-  ['sync', 'glSync'],
-  ['proc', 'processData'],
-  ['legU', 'legendUpdate'],
-  ['legR', 'legendRebuild'],
-  ['grid', 'gridRebuild'],
-];
+/** Each budget key's column, in table order. */
+const COLUMNS: Record<BudgetKey, string> = {
+  restage: 'restage',
+  restagePos: 'pos',
+  restageStyle: 'style',
+  render: 'render',
+  glIsPerRender: 'glIs/r',
+  glSync: 'sync',
+  processData: 'proc',
+  legendUpdate: 'legU',
+  legendRebuild: 'legR',
+  gridRebuild: 'grid',
+  bufferBytes: 'upload',
+};
 
 function table(rows: string[][]): string {
   const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => r[i].length)));
@@ -143,22 +138,19 @@ function table(rows: string[][]): string {
 
 /** value/budget per cell, `!` on a cell over budget. */
 export function formatCountsTable(results: SegmentResult[], budgets: BudgetsFile | null): string {
-  const header = ['segment', ...COUNT_COLUMNS.map(([label]) => label), 'upload', 'pixels'];
+  const keys = Object.keys(COLUMNS) as BudgetKey[];
+  const header = ['segment', ...keys.map((key) => COLUMNS[key]), 'pixels'];
   const rows = results.map((result) => {
     const measured = measure(result);
     const budget = budgets?.segments[result.name] ?? {};
-    const cell = (key: BudgetKey, text = String(measured[key])) => {
+    const cell = (key: BudgetKey) => {
+      const format: (value: number) => string = key === 'bufferBytes' ? formatBytes : String;
       const limit = budget[key];
-      if (limit === null || limit === undefined) return text;
-      return `${text}/${key === 'bufferBytes' ? formatBytes(limit) : limit}${measured[key] > limit ? '!' : ''}`;
+      if (limit === null || limit === undefined) return format(measured[key]);
+      return `${format(measured[key])}/${format(limit)}${measured[key] > limit ? '!' : ''}`;
     };
     const pixels = result.pixelsSame === null ? '-' : result.pixelsSame ? 'same' : 'DIFF!';
-    return [
-      result.name,
-      ...COUNT_COLUMNS.map(([, key]) => cell(key)),
-      cell('bufferBytes', formatBytes(measured.bufferBytes)),
-      pixels,
-    ];
+    return [result.name, ...keys.map(cell), pixels];
   });
   return table([header, ...rows]);
 }

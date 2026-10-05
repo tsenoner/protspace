@@ -363,6 +363,6 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
 /** Counts from navigation to a settled first render; counters start at zero. */
 export async function measureLoad(page: Page): Promise<SegmentResult> {
   await settle(page);
-  const load = await readSnapshot(page);
-  return { name: 'load', delta: load, drawn: load.drawn, proteinCount: 0, pixelsSame: null };
+  const { drawn, ...delta } = await readSnapshot(page);
+  return { name: 'load', delta, drawn, proteinCount: 0, pixelsSame: null };
 }

@@ -13,7 +13,8 @@ import type { CDPSession, Page } from '@playwright/test';
  * frame gaps, which only timing mode reports.
  */
 
-const COUNT_KEYS = [
+/** core's work counters (`packages/core/src/utils/perf-counters.ts`), diffed per segment. */
+export const CORE_COUNTERS = [
   'restage',
   'restagePos',
   'restageStyle',
@@ -22,17 +23,22 @@ const COUNT_KEYS = [
   'gridRebuild',
   'legendUpdate',
   'legendRebuild',
-  'glIs',
-  'glSync',
-  'bufferBytes',
   'morphFrame',
 ] as const;
-type CountKey = (typeof COUNT_KEYS)[number];
+/** Every key of core's counters object: the counts, re-stage time, points last drawn. */
+export const CORE_KEYS = [...CORE_COUNTERS, 'restageMs', 'drawn'] as const;
+/** The counts of the GL wrappers below. */
+export const GL_COUNTERS = ['glIs', 'glSync', 'bufferBytes'] as const;
+export type CountKey = (typeof CORE_COUNTERS)[number] | (typeof GL_COUNTERS)[number];
 
-export interface Snapshot extends Record<CountKey, number> {
+interface Snapshot extends Record<CountKey, number> {
+  /** Wall time in re-stages, ms; diffed like the counts. */
   restageMs: number;
+  /** Points drawn by the last render: a value, not a count. */
   drawn: number;
 }
+
+type Delta = Omit<Snapshot, 'drawn'>;
 
 export interface TimingSample {
   /** Longest Event Timing duration of any interaction in the window (INP-like), ms. */
@@ -50,7 +56,7 @@ export interface TimingSample {
 
 export interface SegmentResult {
   name: string;
-  delta: Snapshot;
+  delta: Delta;
   /** Points drawn by the last render once the segment settled. */
   drawn: number;
   proteinCount: number;
@@ -65,10 +71,7 @@ export interface SegmentResult {
   timing?: TimingSample;
 }
 
-interface ProbeState {
-  glIs: number;
-  glSync: number;
-  bufferBytes: number;
+interface ProbeState extends Record<(typeof GL_COUNTERS)[number], number> {
   events: Array<{ start: number; duration: number }>;
   loafs: Array<{ start: number; duration: number; script: string }>;
   frames: number[] | null;
@@ -166,36 +169,33 @@ export async function installProbes(page: Page): Promise<void> {
  * counter then reads NaN.
  */
 export async function readSnapshot(page: Page, optional = false): Promise<Snapshot> {
-  return page.evaluate((optional) => {
-    const c = window.__protspacePerfCounters;
-    const p = window.__perfProbe;
-    if ((!c && !optional) || !p) {
-      throw new Error('perf counters missing: load the page with ?perfCounters=1');
-    }
-    const count = (key: string) => c?.[key] ?? NaN;
-    return {
-      restage: count('restage'),
-      restagePos: count('restagePos'),
-      restageStyle: count('restageStyle'),
-      restageMs: count('restageMs'),
-      render: count('render'),
-      drawn: count('drawn'),
-      processData: count('processData'),
-      gridRebuild: count('gridRebuild'),
-      legendUpdate: count('legendUpdate'),
-      legendRebuild: count('legendRebuild'),
-      glIs: p.glIs,
-      glSync: p.glSync,
-      bufferBytes: p.bufferBytes,
-      morphFrame: count('morphFrame'),
-    };
-  }, optional);
+  return page.evaluate(
+    ({ optional, core, gl }) => {
+      const c = window.__protspacePerfCounters;
+      const p = window.__perfProbe;
+      if ((!c && !optional) || !p) {
+        throw new Error('perf counters missing: load the page with ?perfCounters=1');
+      }
+      const snapshot: Record<string, number> = {};
+      for (const key of core) snapshot[key] = c?.[key] ?? NaN;
+      for (const key of gl) snapshot[key] = p[key];
+      return snapshot as unknown as Snapshot;
+    },
+    { optional, core: CORE_KEYS, gl: GL_COUNTERS },
+  );
 }
 
-function diff(before: Snapshot, after: Snapshot): Snapshot {
-  const out = { ...after };
-  for (const key of [...COUNT_KEYS, 'restageMs'] as const) out[key] = after[key] - before[key];
-  return out;
+/** The keys of core's counters object, which the counts spec checks against `CORE_KEYS`. */
+export async function readCounterNames(page: Page): Promise<string[]> {
+  return page.evaluate(() => Object.keys(window.__protspacePerfCounters ?? {}));
+}
+
+function diff(before: Snapshot, after: Snapshot): Delta {
+  const delta = {} as Delta;
+  for (const key of [...CORE_COUNTERS, ...GL_COUNTERS, 'restageMs'] as const) {
+    delta[key] = after[key] - before[key];
+  }
+  return delta;
 }
 
 interface SettleOptions {
@@ -217,19 +217,14 @@ export const settleDefaults: Required<SettleOptions> = { quietMs: 200, capMs: 3_
 export async function settle(page: Page, options: SettleOptions = {}): Promise<void> {
   const { quietMs, capMs } = { ...settleDefaults, ...options };
   const result = await page.evaluate(
-    ({ quietMs, capMs }) =>
+    ({ quietMs, capMs, gl }) =>
       new Promise<{ ok: boolean; changed: string[] }>((resolve) => {
         const read = (): Record<string, number> => {
           // A build from before the counters settles on the GL probes alone: it still
           // checks its GL handles with `gl.is*` on every render.
-          const c = window.__protspacePerfCounters ?? {};
-          const p = window.__perfProbe;
-          return {
-            ...c,
-            glIs: p?.glIs ?? 0,
-            glSync: p?.glSync ?? 0,
-            bufferBytes: p?.bufferBytes ?? 0,
-          };
+          const counts: Record<string, number> = { ...window.__protspacePerfCounters };
+          for (const key of gl) counts[key] = window.__perfProbe?.[key] ?? 0;
+          return counts;
         };
         const start = performance.now();
         let last = read();
@@ -265,7 +260,7 @@ export async function settle(page: Page, options: SettleOptions = {}): Promise<v
         };
         requestAnimationFrame(tick);
       }),
-    { quietMs, capMs },
+    { quietMs, capMs, gl: GL_COUNTERS },
   );
   if (!result.ok) {
     throw new Error(
