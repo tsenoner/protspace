@@ -31,8 +31,8 @@ export function replayVertex(
   let rgb = Array.from(slots.colors.subarray(k * 4, k * 4 + 3));
   let alpha = slots.colors[k * 4 + 3];
   let form = [slots.sizes[k], slots.shapes[k], slots.labelCounts[k]];
-  const record = recordStyle ? slots.recordIds![k] : -1;
-  if (recordStyle && record >= 0) {
+  if (recordStyle) {
+    const record = slots.recordIds![k];
     const t = recordStyle.subarray(record * RECORD_FLOATS, (record + 1) * RECORD_FLOATS);
     rgb = Array.from(t.subarray(0, 3));
     alpha *= t[3];

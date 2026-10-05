@@ -119,7 +119,7 @@ export interface PointAttribLocations {
   labelCount: number;
   shape: number;
   predicted: number;
-  /** Record id into the per-record style table, or -1. */
+  /** Record id into the per-record style table. */
   record: number;
   /** Where a projection switch drew the point (MORPH_GLSL). */
   prevPosition: number;

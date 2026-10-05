@@ -279,8 +279,7 @@ export class RecordStyleTable {
   private drop(colors: Float32Array, count: number, hidden = this.staged?.hidden ?? []): void {
     this.staged = null;
     for (let k = 0; k < count; k++) {
-      const r = this.ids[k];
-      if (r >= 0 && hidden[r]) colors[k * 4 + 3] = 0;
+      if (hidden[this.ids[k]]) colors[k * 4 + 3] = 0;
     }
   }
 

@@ -35,10 +35,6 @@ export const RECORD_STYLE_GLSL = `in float a_record;
 uniform highp sampler2D u_recordStyle;
 uniform bool u_recordStyleOn;
 
-bool hasRecordStyle() {
-  return u_recordStyleOn && a_record >= 0.0;
-}
-
 vec4 recordStyle(int texel) {
   int t = int(a_record) * ${RECORD_FLOATS / 4} + texel;
   return texelFetch(u_recordStyle, ivec2(t % ${RECORD_STYLE_WIDTH}, t / ${RECORD_STYLE_WIDTH}), 0);
@@ -46,7 +42,7 @@ vec4 recordStyle(int texel) {
 
 // a_color, or the record's colour at the point's own opacity, or 0 if hidden.
 vec4 pointColor() {
-  if (!hasRecordStyle()) return a_color;
+  if (!u_recordStyleOn) return a_color;
   vec4 style = recordStyle(0);
   return vec4(style.rgb, a_color.a * style.a);
 }`;
@@ -115,7 +111,7 @@ ${CAMERA_TO_CLIP_GLSL}
   float pointSize = a_pointSize;
   float labelCount = a_labelCount;
   float shape = a_shape;
-  if (hasRecordStyle()) {
+  if (u_recordStyleOn) {
     vec4 form = recordStyle(1);
     pointSize = form.x;
     shape = form.y;

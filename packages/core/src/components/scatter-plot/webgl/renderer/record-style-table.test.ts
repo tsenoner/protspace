@@ -134,7 +134,6 @@ function drawn(target: StagePointArrays, staged: StagedRecords, count: number) {
   const labelCounts = new Float32Array(count);
   const shader = { recordStyle: staged.texels, marks: null };
   for (let k = 0; k < count; k++) {
-    if (target.recordIds![k] < 0) throw new Error('every slot of a category pass has a record');
     const { rgb, alpha, form } = replayVertex(target, k, shader)!;
     colors.set([...rgb, alpha], k * 4);
     [sizes[k], shapes[k], labelCounts[k]] = form;
