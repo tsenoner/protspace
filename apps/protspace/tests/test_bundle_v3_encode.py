@@ -372,9 +372,7 @@ def test_payload_buffers_are_little_endian():
     parts = encode(make_annotations(col=["A|0.5;B|0.5", "A|0.5"]))
     payloads = payloads_of(parts[3])
     assert payloads["csr:col"] == b"\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
-    assert (
-        np.frombuffer(payloads["scores:col"], "<f4").tobytes() == payloads["scores:col"]
-    )
+    assert payloads["scores:col"] == np.array([0.5, 0.5, 0.5], "<f8").tobytes()
     for name, blob in payloads.items():
         if name.startswith("dict:") and not name.endswith(":len"):
             continue

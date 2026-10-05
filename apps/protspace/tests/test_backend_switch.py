@@ -256,7 +256,7 @@ def test_embed_cli_rejects_nonpositive_batch_size(tmp_path, monkeypatch):
         ],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2, result.output
 
 
 def test_embed_cli_rejects_unknown_backend(tmp_path):
@@ -278,7 +278,7 @@ def test_embed_cli_rejects_unknown_backend(tmp_path):
         ],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2, result.output
 
 
 def test_prepare_directory_h5_attaches_fasta_to_embedding_set(tmp_path, monkeypatch):
@@ -416,11 +416,20 @@ def test_embed_cli_wires_max_length_to_local_config(tmp_path, monkeypatch):
     assert captured["config"].max_length == 512
 
 
-def test_embed_cli_rejects_max_length_for_biocentral(tmp_path):
+def test_embed_cli_rejects_max_length_for_biocentral(tmp_path, monkeypatch):
     """The remote backend has no length cap, so silently ignoring the flag would
     let a user believe they had raised a limit that does not exist."""
     fasta = tmp_path / "s.fasta"
     fasta.write_text(">P12345\nMKVLAAG\n")
+
+    # If the guard regressed, fail fast and offline instead of calling Biocentral
+    # (whose network error would also give a non-zero exit).
+    def must_not_embed(*_args, **_kwargs):
+        raise RuntimeError("--max-length must be rejected before embedding")
+
+    monkeypatch.setattr(
+        "protspace.data.embedding.biocentral.embed_sequences", must_not_embed
+    )
 
     result = CliRunner().invoke(
         app,
@@ -439,8 +448,9 @@ def test_embed_cli_rejects_max_length_for_biocentral(tmp_path):
 
     # Only the exit code is asserted here: the message is rendered inside a Rich
     # panel, which rewraps with the terminal width, so matching on it is brittle.
-    # The message itself is pinned by the unit test below.
-    assert result.exit_code != 0
+    # The message itself is pinned by the unit test below. Exit 2 is a usage
+    # error; a runtime failure past the guard exits 1.
+    assert result.exit_code == 2, result.output
 
 
 def test_build_embed_config_rejects_max_length_for_biocentral():

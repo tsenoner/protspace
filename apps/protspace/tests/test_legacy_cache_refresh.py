@@ -132,7 +132,9 @@ def _values(frame: pd.DataFrame, column: str) -> list:
 
 def _forbid_ted(monkeypatch):
     def fetch(_retriever):
-        raise AssertionError("cached TED values are current and must be reused")
+        # pytest.fail, not AssertionError: the manager wraps every retriever call
+        # in `except Exception`, which would turn this into an incomplete source.
+        pytest.fail("cached TED values are current and must be reused")
 
     monkeypatch.setattr(TedRetriever, "fetch_annotations", fetch)
 
@@ -530,7 +532,9 @@ def _serve_biocentral(
 
 def _forbid(monkeypatch, retriever_cls, name):
     def fetch(_retriever):
-        raise AssertionError(f"{name} values are current and must be reused")
+        # pytest.fail (a BaseException), so the manager's `except Exception` around
+        # each retriever cannot swallow a forbidden fetch (see _forbid_ted).
+        pytest.fail(f"{name} values are current and must be reused")
 
     monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
 
