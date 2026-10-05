@@ -32,10 +32,15 @@ export function bindAndClearTarget(
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 }
 
-/** Premultiplied-over blend with depth test/mask disabled (painter's-algorithm draw). */
-export function setPointBlendState(gl: WebGL2RenderingContext): void {
+/** Premultiplied-over blend. */
+function enableBlend(gl: WebGL2RenderingContext): void {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+}
+
+/** Premultiplied-over blend with depth test/mask disabled (painter's-algorithm draw). */
+export function setPointBlendState(gl: WebGL2RenderingContext): void {
+  enableBlend(gl);
   gl.disable(gl.DEPTH_TEST);
   gl.depthMask(false);
 }
@@ -196,13 +201,43 @@ function runBetweenPasses(gl: WebGL2RenderingContext, afterBasePass: AfterBasePa
   gl.bindTexture(gl.TEXTURE_2D, afterBasePass.labelTexture);
 }
 
+/** Every point in one blended pass, then the pass between, with nothing after it to bind back for. */
+function drawOnePass(
+  gl: WebGL2RenderingContext,
+  pointCount: number,
+  afterBasePass?: AfterBasePass,
+): void {
+  enableBlend(gl);
+  gl.drawArrays(gl.POINTS, 0, pointCount);
+  afterBasePass?.run();
+}
+
 /**
- * Draws the staged points, choosing the two-pass (selection-active) or
- * single-pass (no selection) strategy.
- *
- * Two-pass: unselected points are drawn with blend OFF (flat fading, no density
- * accumulation) followed by selected points with blend ON (correct MSAA on
- * opaque points). Single-pass: all points with blend ON (density visible).
+ * The base draw `[0, baseEnd)` with blend OFF (flat fading, no density
+ * accumulation), the pass between, then `[first, end)` with blend ON. `setPass`
+ * runs before each of the two draws, with its index.
+ */
+function drawTwoPasses(
+  gl: WebGL2RenderingContext,
+  baseEnd: number,
+  first: number,
+  end: number,
+  afterBasePass?: AfterBasePass,
+  setPass?: (pass: 0 | 1) => void,
+): void {
+  setPass?.(0);
+  gl.disable(gl.BLEND);
+  if (baseEnd > 0) gl.drawArrays(gl.POINTS, 0, baseEnd);
+  if (afterBasePass) runBetweenPasses(gl, afterBasePass);
+  setPass?.(1);
+  enableBlend(gl);
+  gl.drawArrays(gl.POINTS, first, end - first);
+}
+
+/**
+ * Draws the staged points: with a selection cut, the unselected points blend
+ * OFF, then the selected ones blend ON; otherwise every point blend ON
+ * (density visible).
  */
 export function drawPoints(
   gl: WebGL2RenderingContext,
@@ -212,17 +247,9 @@ export function drawPoints(
   afterBasePass?: AfterBasePass,
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {
-    gl.disable(gl.BLEND);
-    if (selectedStartIndex > 0) gl.drawArrays(gl.POINTS, 0, selectedStartIndex);
-    if (afterBasePass) runBetweenPasses(gl, afterBasePass);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.POINTS, selectedStartIndex, pointCount - selectedStartIndex);
+    drawTwoPasses(gl, selectedStartIndex, selectedStartIndex, pointCount, afterBasePass);
   } else {
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.POINTS, 0, pointCount);
-    afterBasePass?.run();
+    drawOnePass(gl, pointCount, afterBasePass);
   }
 }
 
@@ -241,16 +268,11 @@ export function drawMarkedPoints(
   afterBasePass?: AfterBasePass,
 ): void {
   if (marked) {
-    gl.uniform1i(markPass, 0);
-    gl.disable(gl.BLEND);
-    gl.drawArrays(gl.POINTS, 0, pointCount);
-    if (afterBasePass) runBetweenPasses(gl, afterBasePass);
-    gl.uniform1i(markPass, 1);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.POINTS, marked.first, marked.end - marked.first);
+    drawTwoPasses(gl, pointCount, marked.first, marked.end, afterBasePass, (pass) =>
+      gl.uniform1i(markPass, pass),
+    );
   } else {
     gl.uniform1i(markPass, -1);
-    drawPoints(gl, pointCount, false, pointCount, afterBasePass);
+    drawOnePass(gl, pointCount, afterBasePass);
   }
 }
