@@ -52,6 +52,8 @@ export interface TimingSample {
   restageMs: number | null;
   /** 95th percentile gap between animation frames, ms; only for segments that set `frames`. */
   p95Frame: number | null;
+  /** Median gap between those frames, ms. */
+  p50Frame: number | null;
 }
 
 export interface SegmentResult {
@@ -358,6 +360,7 @@ async function openTimingWindow(
       ...observed,
       busy,
       p95Frame: gaps && gaps.length > 1 ? percentile(gaps.slice(1), 95) : null,
+      p50Frame: gaps && gaps.length > 1 ? percentile(gaps.slice(1), 50) : null,
     };
   };
 }
