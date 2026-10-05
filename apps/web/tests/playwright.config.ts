@@ -67,6 +67,12 @@ const forBrowsers = (
       !E2E_BROWSERS ||
       E2E_BROWSERS.includes(p.use?.browserName ?? p.use?.defaultBrowserType ?? 'chromium'),
   );
+/** `pnpm perf:scale --browser`: chrome (stable channel), chromium, firefox or webkit. */
+const SCALE_BROWSER = (process.env.PERF_SCALE_BROWSER ?? 'chrome') as
+  | 'chrome'
+  | 'chromium'
+  | 'firefox'
+  | 'webkit';
 
 export default defineConfig({
   testDir: TEST_DIR,
@@ -245,6 +251,26 @@ export default defineConfig({
         },
       },
       testMatch: /perf-timing\.spec\.ts/,
+    }),
+    // Scaling benchmark, headed on the real GPU. Started by `pnpm perf:scale` (perf/scale.mjs),
+    // which picks the browser; the spec sets its own viewport. See perf/README.md.
+    ...optIn('PERF_SCALE', {
+      name: 'perf-scale',
+      use: {
+        browserName: SCALE_BROWSER === 'chrome' ? 'chromium' : SCALE_BROWSER,
+        channel: SCALE_BROWSER === 'chrome' ? 'chrome' : undefined,
+        headless: false,
+        launchOptions: {
+          args: ['chrome', 'chromium'].includes(SCALE_BROWSER)
+            ? [
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-background-timer-throttling',
+              ]
+            : [],
+        },
+      },
+      testMatch: /perf-scale\.spec\.ts/,
     }),
     {
       name: 'density-layer',

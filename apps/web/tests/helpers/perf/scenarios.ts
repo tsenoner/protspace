@@ -169,7 +169,7 @@ export async function readExploreState(page: Page): Promise<ExploreState> {
 }
 
 /** A point on the plot with no protein under it, in page coordinates. */
-async function plotBackground(page: Page): Promise<{ x: number; y: number }> {
+export async function plotBackground(page: Page): Promise<{ x: number; y: number }> {
   const point = await page.locator('#myPlot').evaluate((element: PlotHost) => {
     const rect = element.shadowRoot!.querySelector('svg')!.getBoundingClientRect();
     for (let y = rect.height * 0.15; y < rect.height * 0.85; y += 10) {
