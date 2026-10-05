@@ -23,6 +23,7 @@ import {
   SCRATCH_TEXTURE_UNIT,
 } from './texture-units';
 import type { StagedRecords } from './record-style-table';
+import { IDENTITY_RESCALE } from './rescale';
 
 // The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
 const DENSITY_GRID_LONG_SIDE = 512;
@@ -75,7 +76,7 @@ export interface DensityResources {
   accum: ColorTarget | null;
   ping: ColorTarget | null;
   fields: ColorTarget[];
-  /** The caller's key for the inputs `fields` were last built from; null when they hold nothing. */
+  /** The {@link densityFieldsKey} `fields` were last built from; null when they hold nothing. */
   fieldsKey: string | null;
 }
 
@@ -423,6 +424,34 @@ function blur(
 
   gl.bindVertexArray(null);
   gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+/**
+ * What the fields are built from: the drawn points, by the caller's `generation`
+ * for their positions, colours and order and by their count, and the camera,
+ * its rescale and glide included. Fields built under an equal key are current.
+ */
+export function densityFieldsKey(
+  generation: number,
+  pointCount: number,
+  camera: CameraParams,
+): string {
+  const { width, height, dpr, transform: t, rescale: r = IDENTITY_RESCALE, morph = 0 } = camera;
+  return [
+    generation,
+    pointCount,
+    width,
+    height,
+    dpr,
+    t.x,
+    t.y,
+    t.k,
+    r.x.scale,
+    r.x.offset,
+    r.y.scale,
+    r.y.offset,
+    morph,
+  ].join();
 }
 
 export function accumulateAndBlurDensity(

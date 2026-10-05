@@ -63,6 +63,7 @@ import {
   resizeDensityTargets,
   accumulateAndBlurDensity,
   compositeDensity,
+  densityFieldsKey,
   buildSlotPalette,
   buildRecordSlotPalette,
   type DensityFrame,
@@ -781,29 +782,7 @@ export class WebGLRenderer {
       // The fields persist between frames, so a re-render that changes none of
       // their inputs (hover, tooltip) only composites them. A glide moves the
       // points every frame, so it re-accumulates them every frame.
-      const {
-        width,
-        height,
-        dpr,
-        transform: t,
-        rescale: r = IDENTITY_RESCALE,
-        morph = 0,
-      } = density.camera;
-      const key = [
-        this.bufferGeneration,
-        this.currentPointCount,
-        width,
-        height,
-        dpr,
-        t.x,
-        t.y,
-        t.k,
-        r.x.scale,
-        r.x.offset,
-        r.y.scale,
-        r.y.offset,
-        morph,
-      ].join();
+      const key = densityFieldsKey(this.bufferGeneration, this.currentPointCount, camera);
       if (density.res.fieldsKey !== key) {
         this.recordTable.bind(gl);
         accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);

@@ -7,6 +7,7 @@ import {
   resizeDensityTargets,
   accumulateAndBlurDensity,
   compositeDensity,
+  densityFieldsKey,
   type ColorTarget,
   type DensityFrame,
   type DensityResources,
@@ -320,6 +321,31 @@ describe('resizeDensityTargets', () => {
     expect(res.accum).toBeNull();
     expect(res.fields).toEqual([]);
     expect(spies.deleteFramebuffer).toHaveBeenCalledTimes(6);
+  });
+});
+
+describe('densityFieldsKey', () => {
+  const camera = { width: 800, height: 600, dpr: 2, transform: { x: 1, y: 2, k: 3 } };
+  const rescale = { x: { scale: 1, offset: 0 }, y: { scale: 1, offset: 0 } };
+
+  it('takes an omitted rescale and glide as the identity and 0', () => {
+    expect(densityFieldsKey(4, 10, camera)).toBe(
+      densityFieldsKey(4, 10, { ...camera, rescale, morph: 0 }),
+    );
+  });
+
+  it('changes with the points, the camera, its rescale and the glide', () => {
+    const base = densityFieldsKey(4, 10, camera);
+    const changed = [
+      densityFieldsKey(5, 10, camera),
+      densityFieldsKey(4, 11, camera),
+      densityFieldsKey(4, 10, { ...camera, width: 801 }),
+      densityFieldsKey(4, 10, { ...camera, dpr: 1 }),
+      densityFieldsKey(4, 10, { ...camera, transform: { x: 1, y: 2, k: 4 } }),
+      densityFieldsKey(4, 10, { ...camera, rescale: { ...rescale, y: { scale: 2, offset: 0 } } }),
+      densityFieldsKey(4, 10, { ...camera, morph: 0.5 }),
+    ];
+    for (const key of changed) expect(key).not.toBe(base);
   });
 });
 
