@@ -58,8 +58,8 @@ export interface ExampleDataset {
   figure?: string;
   /**
    * Slow to download and decode. The Import menu marks it "Large", and its
-   * info states the download size plus these costs, e.g. `memory: 'about
-   * 1 GB'`, `loadTime: '15–35 s'`.
+   * info states the download size plus these costs, e.g. `memory: 'at least
+   * 0.4 GB'`, `loadTime: 'about 10 s on a fast laptop'`.
    */
   large?: { memory: string; loadTime: string };
 }
@@ -208,13 +208,15 @@ const EXAMPLE_SPECS: readonly ExampleSpec[] = [
     insight:
       'Bacterial and eukaryotic proteins fill the two halves of the dense core; archaeal proteins form small patches of their own among the bacterial ones.',
     figure: 'Fig. 2A',
-    // The D2 gate on the rebuilt file with its PCA (task 7.2): 27.4 s from the
-    // file input until every point is drawn, and a peak JS heap of 1,192 MiB
-    // (1.25 GB), in one headless Chromium run on an Apple M4 Pro, download not
-    // included. The time is a fast laptop's (other runs on it took 27-32 s,
-    // depending on what else was running), and the heap leaves out ArrayBuffer and GPU memory, so the
-    // memory is a floor.
-    large: { memory: 'at least 1.2 GB', loadTime: 'about 30 s on a fast laptop' },
+    // The D2 gate on the shipped v3 file (task 7.16): 10.0-10.4 s from the file
+    // input until every point is drawn, over three headless Chromium runs on an
+    // Apple M4 Pro with a load average of about 4, download not included, so the
+    // time is a fast laptop's. The gate's peak main-thread JS heap, 158 MiB, is
+    // not the memory to state: it leaves out the Web Worker that decodes the
+    // file, ArrayBuffers and GPU memory. The main thread's heap plus its
+    // ArrayBuffers came to about 420-435 MB (about 1,057 MB for the v2 file),
+    // and as the worker and GPU memory are still left out, 0.4 GB is a floor.
+    large: { memory: 'at least 0.4 GB', loadTime: 'about 10 s on a fast laptop' },
     defaultView: {
       projection: 'ProtT5 — UMAP 2',
       annotation: 'domain',

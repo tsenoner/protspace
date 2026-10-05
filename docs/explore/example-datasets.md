@@ -195,7 +195,7 @@ The colours are `domain`: the domain of life, or the realm for viruses. Scored o
 - **Extras:** [separation scores](/explore/separation-scores).
 - **Built with:** ProtSpace 4.16.0 (git b5f324f), 2026-10-02.
 - **In the paper:** Fig. 2A and the abstract.
-- **Large:** an 87.8 MB download that needs at least 1.2 GB of browser memory and takes about 30 s on a fast laptop to load.
+- **Large:** an 87.8 MB download that needs at least 0.4 GB of browser memory and takes about 10 s on a fast laptop to load.
 
 The viral realm Fig. 2A labels Monodnaviria appears here as Floreoviria (1,293 proteins): NCBI Taxonomy has renamed it since.
 
