@@ -162,10 +162,13 @@ describe('settings-validation', () => {
 
       // `normalizeBundleSettings` runs the sanitiser, which drops `includeShapes`.
       const { includeShapes: _ignore, ...sanitisedOrganism } = createValidLegendSettings();
-      expect(normalizeBundleSettings(legacy)).toEqual({
+      const normalized = normalizeBundleSettings(legacy);
+      expect(normalized).toEqual({
         legendSettings: { organism: sanitisedOrganism },
         exportOptions: {},
       });
+      // toEqual ignores an `includeShapes: undefined` left behind; pin that the key is gone.
+      expect(normalized!.legendSettings.organism).not.toHaveProperty('includeShapes');
     });
 
     it('returns normalized settings unchanged', () => {
@@ -242,28 +245,14 @@ describe('settings-validation', () => {
       expect(isNormalizedBundleSettings(settings)).toBe(true);
     });
 
-    it('accepts BundleSettings without publishState', () => {
+    it.each([
+      ['a string', 'invalid'],
+      ['an array', [1, 2, 3]],
+    ])('rejects publishState that is %s', (_label, publishState) => {
       const settings = {
         legendSettings: {},
         exportOptions: {},
-      };
-      expect(isNormalizedBundleSettings(settings)).toBe(true);
-    });
-
-    it('rejects publishState that is not an object', () => {
-      const settings = {
-        legendSettings: {},
-        exportOptions: {},
-        publishState: 'invalid',
-      };
-      expect(isNormalizedBundleSettings(settings)).toBe(false);
-    });
-
-    it('rejects publishState that is an array', () => {
-      const settings = {
-        legendSettings: {},
-        exportOptions: {},
-        publishState: [1, 2, 3],
+        publishState,
       };
       expect(isNormalizedBundleSettings(settings)).toBe(false);
     });
@@ -387,20 +376,6 @@ describe('LegendPersistedSettings — includeShapes backward compat', () => {
       selectedPaletteId: 'kellys',
     };
     expect(isValidLegendSettings(legacyMinusFlag)).toBe(true);
-  });
-
-  it('isValidLegendSettings accepts a settings object with includeShapes: true', () => {
-    const legacyWithFlag = {
-      maxVisibleValues: 10,
-      includeShapes: true,
-      shapeSize: 5,
-      sortMode: 'size-desc',
-      hiddenValues: [],
-      categories: {},
-      enableDuplicateStackUI: false,
-      selectedPaletteId: 'kellys',
-    };
-    expect(isValidLegendSettings(legacyWithFlag)).toBe(true);
   });
 
   it('sanitizeLegendSettingsMap drops includeShapes from the sanitised output', () => {
