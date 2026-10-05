@@ -4,7 +4,7 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import { BUNDLE_DELIMITER_BYTES, concatenateBuffers } from '@protspace/utils';
-import { decodeParquetBundle } from './bundle';
+import { decodeParquetBundle } from '../utils/bundle';
 import { fastYield } from './fast-yield';
 
 // Counted, so the decode test can show it really went through many yields.

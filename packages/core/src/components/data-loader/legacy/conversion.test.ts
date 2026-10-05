@@ -13,11 +13,8 @@ import {
   parseAnnotationValue,
   splitCategoricalAnnotationValues,
 } from './conversion';
-import {
-  decodeParquetBundle,
-  extractRowsFromParquetBundle,
-  type BundleExtractionResult,
-} from './bundle';
+import { decodeParquetBundle } from '../utils/bundle';
+import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
 
 /** Export `data` and read it back, as a user re-importing their own export would. */
 const reimport = async (data: VisualizationData): Promise<VisualizationData> =>

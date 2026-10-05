@@ -14,11 +14,8 @@ import {
   type CsrAnnotationData,
   type VisualizationData,
 } from '@protspace/utils';
-import {
-  decodeParquetBundle,
-  decodeParquetBundleWithRowCap,
-  extractRowsFromParquetBundle,
-} from './bundle';
+import { decodeParquetBundle, decodeParquetBundleWithRowCap } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';

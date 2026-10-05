@@ -9,11 +9,12 @@ import {
   concatenateBuffers,
   createParquetBundle,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
-} from './conversion';
+} from '../legacy/conversion';
 
 /**
  * Statistics part (5th) of a `.parquetbundle`, produced by the backend's `--stats` flag.

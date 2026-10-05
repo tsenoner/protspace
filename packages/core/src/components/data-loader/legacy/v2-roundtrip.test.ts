@@ -10,11 +10,14 @@ import {
   isNAValue,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle } from '../utils/bundle';
+import { extractRowsFromParquetBundle } from './bundle';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
 
 async function loadGoldenBundle(): Promise<VisualizationData> {
-  const file = readFileSync(new URL('./__fixtures__/v2-sample.parquetbundle', import.meta.url));
+  const file = readFileSync(
+    new URL('../utils/__fixtures__/v2-sample.parquetbundle', import.meta.url),
+  );
   const buffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
   return convertParquetToVisualizationDataOptimized(await extractRowsFromParquetBundle(buffer));
 }
@@ -44,7 +47,7 @@ function perProteinAnnotationSets(
 /**
  * Task J1: cross-repo golden-fixture proof (tsenoner/protspace-legacy issues #56, #57, #58).
  *
- * `__fixtures__/v2-sample.parquetbundle` is a REAL bundle produced by the
+ * `utils/__fixtures__/v2-sample.parquetbundle` is a REAL bundle produced by the
  * `protspace` backend's v2 writer (`stamp_format_version` + `encode_field` +
  * `write_bundle`), not a hand-rolled mock. It carries:
  *  - P1's `cath` cell: two hits separated by the structural `;` — the first
@@ -78,7 +81,9 @@ function perProteinAnnotationSets(
  */
 describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
   it('reads the real footer format_version=2 and decodes cath/go_bp correctly', async () => {
-    const buf = readFileSync(new URL('./__fixtures__/v2-sample.parquetbundle', import.meta.url));
+    const buf = readFileSync(
+      new URL('../utils/__fixtures__/v2-sample.parquetbundle', import.meta.url),
+    );
     const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 
     // Exercises the REAL readFormatVersion footer read (bundle.ts), not a stub.

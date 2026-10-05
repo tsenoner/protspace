@@ -7,7 +7,7 @@ import {
   convertParquetToVisualizationDataOptimized,
 } from './conversion';
 import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
-import type { GenericRow, Rows } from './types';
+import type { GenericRow, Rows } from '../utils/types';
 
 async function loadFixtureVisualizationData(fixtureName: string) {
   const filePath = resolve(__dirname, '../../../../../../apps/web/tests/fixtures', fixtureName);

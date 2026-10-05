@@ -2,7 +2,7 @@ import type { Annotation, AnnotationData, VisualizationData } from '@protspace/u
 import { isNAValue, normalizeMissingValue, NA_VALUE, NA_DEFAULT_COLOR } from '@protspace/utils';
 import { validateRowsBasic } from './validation';
 import { findColumn, materializeMergedRows, type BundleExtractionResult } from './bundle';
-import type { Rows, GenericRow } from './types';
+import type { Rows, GenericRow } from '../utils/types';
 import { decodeField } from './annotation-codec';
 import { fastYield } from './fast-yield';
 import {
@@ -13,7 +13,7 @@ import {
   dropUnplacedProteins,
   generateColorsAndShapes,
   normalizeEatCompanionColumns,
-} from './dataset-build';
+} from '../utils/dataset-build';
 
 /** Column names that should be excluded when identifying annotation columns */
 const ID_COLUMNS = [

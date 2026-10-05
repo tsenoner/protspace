@@ -13,8 +13,9 @@ import {
   NA_VALUE,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
-import { convertParquetToVisualizationDataOptimized } from './conversion';
+import { decodeParquetBundle } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
+import { convertParquetToVisualizationDataOptimized } from '../legacy/conversion';
 
 /**
  * The cross-language contract for parquetbundle v3.

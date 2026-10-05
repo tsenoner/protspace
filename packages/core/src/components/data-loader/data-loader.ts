@@ -2,14 +2,12 @@ import type { PropertyValues } from 'lit';
 import { LitElement, html } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { parquetReadObjects } from 'hyparquet';
 import type { VisualizationData, BundleSettings } from '@protspace/utils';
 import { dataLoaderStyles } from './data-loader.styles';
 import { createDataErrorEventDetail, type DataErrorEventDetail } from './data-loader.events';
-import { readFileOptimized } from './utils/file-io';
-import { convertParquetToVisualizationDataOptimized } from './utils/conversion';
 import { assertValidFileExtension, assertWithinFileSizeLimit } from './utils/validation';
 import { decodeBundle } from './bundle-decoder';
+import { decodePlainParquet } from './legacy';
 
 /** Whether data was loaded by user action or automatically (e.g. page reload) */
 export type DataLoadSource = 'user' | 'auto';
@@ -145,12 +143,8 @@ export class DataLoader extends LitElement {
       const arrayBuffer = await response.arrayBuffer();
       this.completeStep();
 
-      // 3) Parse parquet
-      const table = await parquetReadObjects({ file: arrayBuffer });
-      this.completeStep();
-
-      // 4) Convert
-      const visualizationData = await convertParquetToVisualizationDataOptimized(table);
+      // 3) Parse parquet, 4) Convert
+      const visualizationData = await decodePlainParquet(arrayBuffer, () => this.completeStep());
       this.completeStep();
       this.dispatchDataLoaded({ data: visualizationData, settings: null, source });
     } catch (error) {
@@ -206,7 +200,7 @@ export class DataLoader extends LitElement {
       this.completeStep();
 
       // 2) Read the file into one ArrayBuffer
-      const arrayBuffer = await readFileOptimized(file);
+      const arrayBuffer = await file.arrayBuffer();
       this.completeStep();
 
       // 3) Decode+convert in worker (or main-thread fallback). Only a .parquetbundle
