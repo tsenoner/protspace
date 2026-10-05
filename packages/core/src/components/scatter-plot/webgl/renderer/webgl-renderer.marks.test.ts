@@ -8,7 +8,7 @@
  * and the blend state it is drawn under. The shader's mark and record-table
  * logic is replayed on the staged arrays; equal lists rasterise to equal frames.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
 import { computeVisibilityModel } from '../../styling/visibility-model';
@@ -23,11 +23,20 @@ import {
   plotData as fixturePlotData,
   styleGetters,
 } from './test-support/renderer-fixture';
+import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
+import type * as PerfCounters from '../../../../utils/perf-counters';
 
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
 }));
+vi.mock('../../../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
+});
 
+const counters = perfCounters!;
+
+beforeEach(() => Object.assign(counters, createPerfCounters()));
 afterEach(() => vi.restoreAllMocks());
 
 const N = 600;
@@ -94,7 +103,6 @@ type Internals = {
   stagedRecords: StagedRecords | null;
   atlas: { plan: { stride: number }; texels: Uint8Array } | null;
   contourPalette: SlotPalette | null;
-  populateBuffers: (...a: unknown[]) => void;
 };
 
 /**
@@ -160,7 +168,7 @@ function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): stri
  * A renderer over `pd`, with contours on. `view` applies a change and draws it,
  * signalled as the scatter plot does: with `marks`, a selection is drawn as
  * marks over unmarked staging and a legend hide restyles; otherwise every change
- * re-stages with the selection.
+ * re-stages with the selection. It returns the draws and the re-stages they took.
  */
 function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
   let state: Partial<StyleConfig> = {};
@@ -183,7 +191,6 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
   });
   const draws = recordDraws(renderer, gl as unknown as Record<string, unknown>);
   const internals = renderer as unknown as Internals;
-  const populate = vi.spyOn(internals, 'populateBuffers');
   const view = (next: Partial<StyleConfig>) => {
     const merged = { ...config, ...state, ...next };
     state = { ...state, ...next };
@@ -210,10 +217,16 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
       renderer.invalidateStyleCache();
     }
     draws.length = 0;
+    Object.assign(counters, createPerfCounters());
     renderer.render(pd);
-    return { draws: [...draws], palette: internals.contourPalette, state: { ...state } };
+    return {
+      draws: [...draws],
+      palette: internals.contourPalette,
+      state: { ...state },
+      restages: counters.restage,
+    };
   };
-  return { renderer, view, populate };
+  return { renderer, view };
 }
 
 /** The draws of `state` by staging it, on a fresh renderer. */
@@ -256,7 +269,6 @@ describe('the mark texture', () => {
     const style = { ...styleGetters(), getPointMarks: () => marks };
     // Rows of 2048 texels, as wide as this device allows.
     const { renderer, gl } = makeRenderer({ style, maxTextureSize: 2048 });
-    const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
     const pd = fixturePlotData(5000);
     const mark = (...slots: number[]) => {
       const marked = new Uint8Array(pd.length);
@@ -268,13 +280,13 @@ describe('the mark texture', () => {
       return gl.texSubImage2D.mock.calls.map((c) => [c[3], c[5]]);
     };
     renderer.render(pd);
-    expect(populate).toHaveBeenCalledTimes(1);
+    expect(counters.restage).toBe(1);
     // Every point has the same depth, so slot s draws s-th.
     expect(mark(3000)).toEqual([[1, 1]]);
     expect(mark(3000)).toEqual([]);
     expect(mark(10)).toEqual([[0, 2]]);
     expect(mark(10, 4999)).toEqual([[2, 1]]);
-    expect(populate).toHaveBeenCalledTimes(1);
+    expect(counters.restage).toBe(1);
   });
 
   it('is allocated in rows as wide as the device allows', () => {
@@ -287,12 +299,11 @@ describe('the mark texture', () => {
   it('leaves the marks to staging, staged once, when the points outnumber its texels', () => {
     // 64 x 64 texels hold 4096 points.
     const { renderer, gl } = makeRenderer({ maxTextureSize: 64 });
-    const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
     renderer.render(fixturePlotData(5000));
     expect(renderer.canDrawMarks).toBe(false);
     // Empty, which frees the texels a smaller capacity held.
     expect(markAllocations(gl)).toEqual([[64, 0]]);
-    expect(populate).toHaveBeenCalledTimes(1);
+    expect(counters.restage).toBe(1);
   });
 
   it('leaves the marks to staging when the device refuses it, without failing the points', () => {
@@ -325,21 +336,22 @@ describe('selection drawn as GPU marks', () => {
       });
 
       it(`follows a session of selection changes without staging again (${label})`, () => {
-        const { view, populate } = setup(data, pd, true);
+        const { view } = setup(data, pd, true);
         view({});
-        populate.mockClear();
+        let restaged = 0;
         // "Other" and the z-order re-stage in the scatter plot too.
         const session = STATES.filter(
           ([, s]) => !('otherAnnotationValues' in s) && !('zOrderMapping' in s),
         );
         for (const [, next] of session) {
-          const { draws, palette, state } = view(next);
+          const { draws, palette, state, restages } = view(next);
+          restaged += restages;
           const expected = staged(data, pd, state);
           expect(draws).toEqual(expected.draws);
           expect(palette).toEqual(expected.palette);
         }
         // Legend hides restyle through the table; a multi-label annotation has none.
-        expect(populate).toHaveBeenCalledTimes(multi ? 2 : 0);
+        expect(restaged).toBe(multi ? 2 : 0);
       });
     }
   }

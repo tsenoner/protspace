@@ -9,6 +9,15 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { DensityLayerMode, PlotData } from '@protspace/utils';
 import { makeRenderer } from './test-support/renderer-fixture';
+import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
+import type * as PerfCounters from '../../../../utils/perf-counters';
+
+vi.mock('../../../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
+});
+
+const counters = perfCounters!;
 
 const XS = [0, 2.5, 7, 10];
 const YS = [10, 1, 4.5, 0];
@@ -47,18 +56,15 @@ function setup(densityLayer: DensityLayerMode = 'off') {
     getConfig: () => ({ width: state.width, height: state.height, densityLayer }),
   });
   const uniform4f = gl.uniform4f;
-  const populate = vi.spyOn(
-    renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
-    'populateBuffers',
-  );
   const data = pd();
+  // Draws one frame; the counters then hold what that frame did.
   const render = () => {
     uniform4f.mockClear();
-    populate.mockClear();
+    Object.assign(counters, createPerfCounters());
     renderer.render(data);
     return uniform4f.mock.calls.map((c) => c.slice(1) as number[]);
   };
-  return { state, scales, renderer, render, populate };
+  return { state, scales, renderer, render };
 }
 
 /** Where the shader puts a point: staged CSS pixels through u_transform. */
@@ -70,7 +76,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('WebGLRenderer resize', () => {
   it('draws the staged points where the new scales put them, without re-staging', () => {
-    const { state, scales, renderer, render, populate } = setup();
+    const { state, scales, renderer, render } = setup();
     render();
     const staged = scales();
     const bytes = renderer.uploadedBytesTotal;
@@ -79,7 +85,7 @@ describe('WebGLRenderer resize', () => {
     state.height = 900;
     const [transform] = render();
 
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
     expect(renderer.uploadedBytesTotal).toBe(bytes);
     const now = scales();
     const t = state.transform;
@@ -91,48 +97,46 @@ describe('WebGLRenderer resize', () => {
   });
 
   it('pushes exactly the zoom transform at the size it staged at, before and after a resize', () => {
-    const { state, render, populate } = setup();
+    const { state, render } = setup();
     expect(render()).toEqual([[10, -5, 2, 2]]);
 
     state.width = 1000;
     render();
     state.width = 800;
     expect(render()).toEqual([[10, -5, 2, 2]]);
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
   });
 
   it('keeps the map through a style-only re-stage, which leaves the positions as staged', () => {
-    const { state, renderer, render, populate } = setup();
+    const { state, renderer, render } = setup();
     render();
     state.width = 1200;
     const [resized] = render();
 
     renderer.invalidateStyleCache();
     const [restyled] = render();
-    expect(populate).toHaveBeenCalledTimes(1);
-    expect(populate.mock.calls[0].slice(2)).toEqual([false, true, false]);
+    expect(counters).toMatchObject({ restage: 1, restagePos: 0, restageStyle: 1, morphFrame: 0 });
     expect(restyled).toEqual(resized);
   });
 
   it('re-stages the positions for a new domain, and draws them as staged', () => {
-    const { state, render, populate } = setup();
+    const { state, render } = setup();
     render();
     state.width = 1200;
     render();
 
     state.domain = [0, 20];
     expect(render()).toEqual([[10, -5, 2, 2]]);
-    expect(populate).toHaveBeenCalledTimes(1);
-    expect(populate.mock.calls[0][2]).toBe(true);
+    expect(counters).toMatchObject({ restage: 1, restagePos: 1 });
   });
 
   it('accumulates the density fields through the same map as the points', () => {
-    const { state, render, populate } = setup('on');
+    const { state, render } = setup('on');
     render();
     state.width = 1440;
     const calls = render();
 
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
     // The density accumulate, then the point draw.
     expect(calls).toHaveLength(2);
     expect(calls[0]).toEqual(calls[1]);
