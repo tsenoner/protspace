@@ -91,7 +91,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
-        return next(queuedFile, queuedOptions);
+        return datasetController.saveWhileLoading(queuedFile, () =>
+          next(queuedFile, queuedOptions),
+        );
       }
 
       // Advisory client-side pre-check: the backend remains the source of
@@ -246,7 +248,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         return;
       }
       preparation.settle();
-      return next(bundleFile, queuedOptions);
+      return datasetController.saveWhileLoading(bundleFile, () => next(bundleFile, queuedOptions));
     });
   };
   lifecycle.addCleanup(() => {
