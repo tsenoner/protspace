@@ -127,8 +127,8 @@ describe('projection glide (host)', () => {
     // Other render requests during the glide share its frames.
     const perFrame = runFrames(render, () => {
       if (!renderer.isMorphing) return;
-      el._requestRender();
-      el._requestRender();
+      el._renderLoop.request();
+      el._renderLoop.request();
     });
     expect(perFrame).toEqual(Array(GLIDE_RENDERS).fill(1));
     expect(counters.morphFrame).toBe(GLIDE_RENDERS - 1);
@@ -157,7 +157,7 @@ describe('projection glide (host)', () => {
     expect(runFrames(render)).toEqual([1]);
     el.selectedProteinIds = ['p0'];
     el.isolateSelection();
-    el._requestRender();
+    el._renderLoop.request();
     expect(runFrames(render)).toEqual([1]);
 
     expect(request).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe('projection glide (host)', () => {
     change(el, { selectedProjectionIndex: 1 });
     expect(runFrames(render)).toEqual([1]);
 
-    // _requestRender renders on the spot then; a glide would recurse through it.
+    // request() renders on the spot then; a glide would recurse through it.
     vi.stubGlobal('requestAnimationFrame', undefined);
     vi.spyOn(el, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
     vi.stubGlobal('matchMedia', undefined);

@@ -78,7 +78,7 @@ describe('render coalescing', () => {
 
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     el._handleColorMappingChange(colors(false));
-    el._requestRender();
+    el._renderLoop.request();
     expect(counters.restage).toBe(0);
 
     frames.run();
@@ -93,7 +93,7 @@ describe('render coalescing', () => {
 
     // Alone, each is a partial re-stage: positions only, then styles only.
     renderer.invalidatePositionCache();
-    el._requestRender();
+    el._renderLoop.request();
     el._handleColorMappingChange(colors(true));
 
     frames.run();
@@ -104,7 +104,7 @@ describe('render coalescing', () => {
     const { el } = makePlot();
 
     el._handleColorMappingChange(colors(false));
-    el._flushRender();
+    el._renderLoop.flush();
     expect(counters.restage).toBe(1);
 
     frames.run();
@@ -141,7 +141,7 @@ describe('render coalescing', () => {
   it('a flush with nothing requested does not render', () => {
     const { el } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');
-    el._flushRender();
+    el._renderLoop.flush();
     expect(render).not.toHaveBeenCalled();
   });
 
@@ -166,7 +166,7 @@ describe('render coalescing', () => {
     expect(stagedAtExport).toEqual([1]);
 
     renderer.invalidatePositionCache();
-    el._requestRender();
+    el._renderLoop.request();
     expect(el.getDataExtent()).not.toBeNull();
     expect(counters.restage).toBe(2);
   });

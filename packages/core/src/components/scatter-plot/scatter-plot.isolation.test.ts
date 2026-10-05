@@ -288,7 +288,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _processData(): void;
     _buildPointGridIndex(): void;
     _renderPlot(): void;
-    _flushRender(): void;
+    _renderLoop: { flush(): void };
     isolateSelection(): void;
     resetIsolation(): void;
     resetZoom(): void;
@@ -368,7 +368,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
-    el._flushRender();
+    el._renderLoop.flush();
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
@@ -396,7 +396,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
-    el._flushRender();
+    el._renderLoop.flush();
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
@@ -435,7 +435,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(refresh);
     await el.updateComplete;
     // The render waits for the next frame.
-    el._flushRender();
+    el._renderLoop.flush();
     expect(calls).toEqual([...refresh, 'renderPlot']);
   });
 

@@ -84,7 +84,7 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
     renderer = { invalidateStyleCache: vi.fn() };
     sp._webglRenderer = renderer as never;
     requestRender = vi.fn();
-    sp._requestRender = requestRender;
+    sp._renderLoop.request = requestRender;
     dataChanges = 0;
     sp.addEventListener('data-change', () => dataChanges++);
   };

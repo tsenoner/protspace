@@ -35,7 +35,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _connectorStatus: Host['_connectorStatus'];
   _createWebglRenderer: Host['_createWebglRenderer'];
   _dupOverlay: Host['_dupOverlay'];
-  _flushRender: Host['_flushRender'];
   _focusedValues: Host['_focusedValues'];
   _formatConnectorStatus: Host['_formatConnectorStatus'];
   _getCurrentDisplayData: Host['_getCurrentDisplayData'];
@@ -76,10 +75,10 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _reconcileProvenanceConnectors: Host['_reconcileProvenanceConnectors'];
   _reconcileSelectionOverlays: Host['_reconcileSelectionOverlays'];
   _refreshSelectedAnnotationValues: Host['_refreshSelectedAnnotationValues'];
+  _renderLoop: Host['_renderLoop'];
   _renderPlot: Host['_renderPlot'];
   _renderWebGL: Host['_renderWebGL'];
   _reprocessAndRefresh: Host['_reprocessAndRefresh'];
-  _requestRender: Host['_requestRender'];
   _runNumericRecomputeBody: Host['_runNumericRecomputeBody'];
   readonly _scales: Host['_scales'];
   _scalesCache: Host['_scalesCache'];
@@ -123,8 +122,7 @@ export function mountPlot(inputs: Partial<PlotInternals>): PlotInternals {
   const { canvas } = createMockCanvas();
   Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
   el._createWebglRenderer();
-  el._requestRender();
-  el._flushRender();
+  el._renderLoop.now();
   return el;
 }
 

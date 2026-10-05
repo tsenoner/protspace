@@ -118,7 +118,7 @@ describe('legend mapping handlers — single render path (F-31)', () => {
     el._handleZOrderChange(zOrderEvent({ zOrderMapping: { A: 1, B: 0 } }));
 
     expect(renderSpy).not.toHaveBeenCalled(); // requested for the next frame
-    el._flushRender();
+    el._renderLoop.flush();
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._zOrderMapping).toEqual({ A: 1, B: 0 });
     // F-31: while _zOrderMapping is @state, the write schedules the second render.
@@ -139,7 +139,7 @@ describe('legend mapping handlers — single render path (F-31)', () => {
       }),
     );
 
-    el._flushRender();
+    el._renderLoop.flush();
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._colorMapping).toEqual({ A: '#111111', B: '#222222' });
     expect(el._shapeMapping).toEqual({ A: 'circle', B: 'square' });

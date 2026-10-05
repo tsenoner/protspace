@@ -71,6 +71,7 @@ import {
   type ProvenanceConnectorRequest,
   type ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
+import { RenderLoop } from './render-loop';
 
 export type {
   ProvenanceConnectorPair,
@@ -342,15 +343,13 @@ export class ProtspaceScatterplot extends LitElement {
   // A grid of just the visible slots, kept while they are a small share of all,
   // so a query walks them alone, as it did when the grid held only them.
   private _sparseIndex: PointGridIndex | null = null;
-  // One interaction used to re-stage the buffers once per state change it
-  // touched: each plot.updated() and each legend mapping event rendered on the
-  // spot. They now call _requestRender(), which draws once on the next frame.
-  // The renderer ORs every invalidate*() into its own dirty flags, so that one
-  // render stages the union of what the requests needed.
-  private _renderRafId: number | null = null;
-  // Whether every point is still in the slot it was last drawn in, which a
-  // projection switch needs to glide (see _reprocessGeometryIfNeeded).
-  private _slotsKept = true;
+  // Coalesced full renders and the projection glide.
+  private _renderLoop = new RenderLoop({
+    render: () => this._renderPlot(),
+    renderer: () => this._webglRenderer,
+    setMorphing: (on) => this.toggleAttribute('data-morphing', on),
+    endHover: () => this._handleCanvasMouseOut(),
+  });
   // The slots `_slotVisible` marks, built when first asked for. Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
   // of traversing the point index (~93× slower at 570k points, research doc 04).
@@ -695,7 +694,7 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._pointGridIndexRebuildRafId);
       this._pointGridIndexRebuildRafId = null;
     }
-    this._cancelRequestedRender();
+    this._renderLoop.cancel();
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
       this._hoverRaf = null;
@@ -712,7 +711,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelCompute();
     this._dupOverlay.clearBadges();
     this._connectorOverlay.clear();
-    this._cancelProjectionMorph();
+    this._renderLoop.cancelGlide();
     // A reconnect builds a fresh renderer (`_updateSizeAndRender`): this one has
     // freed its GL resources and no longer hears a context loss.
     this._webglRenderer?.destroy();
@@ -791,7 +790,7 @@ export class ProtspaceScatterplot extends LitElement {
       // Lit update follows to render a second time.
       this._webglRenderer?.invalidateDepthOrder();
       this._webglRenderer?.invalidateStyleCache();
-      this._requestRender();
+      this._renderLoop.request();
     }
   };
 
@@ -821,7 +820,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateDepthOrder();
         this._webglRenderer?.invalidateStyleCache();
       }
-      this._requestRender();
+      this._renderLoop.request();
     }
   };
 
@@ -948,34 +947,6 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /**
-   * Glide the points to the positions the next render stages instead of jumping
-   * there (see WebGLRenderer.morphNextPositionChange); _renderPlot draws one
-   * frame per animation frame until they arrive. Badges, overlays and hover
-   * already follow the new positions, so they stay hidden until then.
-   */
-  private _requestProjectionMorph() {
-    // Without animation frames _requestRender renders on the spot, so the glide
-    // would recurse through every one of its frames.
-    if (
-      typeof requestAnimationFrame !== 'function' ||
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ) {
-      this._cancelProjectionMorph();
-      return;
-    }
-    if (!this._webglRenderer) return;
-    this._webglRenderer.morphNextPositionChange();
-    this._handleCanvasMouseOut();
-    this.toggleAttribute('data-morphing', true);
-  }
-
-  /** End any glide at once: the next frame draws the staged positions. */
-  private _cancelProjectionMorph() {
-    this._webglRenderer?.cancelMorph();
-    this.toggleAttribute('data-morphing', false);
-  }
-
   /** Reprocess geometry + emit data-change when a geometry input changes. */
   private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
     if (this._geometryInputsChanged(changedProperties)) {
@@ -988,14 +959,13 @@ export class ProtspaceScatterplot extends LitElement {
       // A projection or plane switch keeps every point in its slot unless the new
       // projection lacks some point's coordinates; any other geometry change may
       // move them.
-      this._slotsKept &&=
+      this._renderLoop.noteGeometry(
         !changedProperties.has('data') &&
-        !changedProperties.has('filteredProteinIds') &&
-        !changedProperties.has('filtersActive') &&
-        this._plotData.length === length &&
-        sameSlots(originalIndices, this._plotData.originalIndices);
-      if (this._slotsKept) this._requestProjectionMorph();
-      else this._cancelProjectionMorph();
+          !changedProperties.has('filteredProteinIds') &&
+          !changedProperties.has('filtersActive') &&
+          this._plotData.length === length &&
+          sameSlots(originalIndices, this._plotData.originalIndices),
+      );
       if (changedProperties.has('data')) {
         this.resetZoom();
         this._scheduleIdIndex();
@@ -1133,13 +1103,13 @@ export class ProtspaceScatterplot extends LitElement {
       if (this._slotVisible && !this._currentInteractableSlots()) {
         this._scheduleVisibleSlotsRefresh();
       }
-      this._requestRender();
+      this._renderLoop.request();
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
     const canSkipRender =
       changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
     if (!canSkipRender) {
-      this._requestRender();
+      this._renderLoop.request();
       this._updateSelectionOverlays();
     }
   }
@@ -1355,7 +1325,7 @@ export class ProtspaceScatterplot extends LitElement {
 
       this._schedulePointGridIndexRebuild();
       this._webglRenderer?.invalidateStyleCache();
-      this._requestRender();
+      this._renderLoop.request();
       this._updateSelectionOverlays();
     }
 
@@ -1655,11 +1625,8 @@ export class ProtspaceScatterplot extends LitElement {
     this._mergedConfig = { ...this._mergedConfig, width, height };
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
     this._schedulePointGridIndexRebuild();
-    // Synchronous, not _requestRender(): resize() just cleared the canvas, and a
-    // ResizeObserver callback runs after this frame's rAF callbacks, so a
-    // deferred render would paint one blank frame. One observer callback per
-    // frame keeps this at one redraw per frame.
-    this._renderNow();
+    // Synchronous: resize() just cleared the canvas (see RenderLoop).
+    this._renderLoop.now();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();
   }
@@ -1750,40 +1717,6 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  /**
-   * Ask for a full render on the next frame. Every request made before that
-   * frame shares the one render. Without requestAnimationFrame (some test DOMs)
-   * it renders immediately, as every call site did before coalescing.
-   */
-  private _requestRender() {
-    if (this._renderRafId !== null) return;
-    if (typeof requestAnimationFrame !== 'function') {
-      this._renderPlot();
-      return;
-    }
-    this._renderRafId = requestAnimationFrame(() => this._flushRender());
-  }
-
-  /**
-   * Run a requested render now, if one is waiting. Anything that reads what the
-   * renderer last drew (export, data extent) calls this first.
-   */
-  private _flushRender() {
-    if (this._renderRafId !== null) this._renderNow();
-  }
-
-  /** Render now and drop any render requested for the next frame. */
-  private _renderNow() {
-    this._cancelRequestedRender();
-    this._renderPlot();
-  }
-
-  private _cancelRequestedRender() {
-    if (this._renderRafId === null) return;
-    cancelAnimationFrame(this._renderRafId);
-    this._renderRafId = null;
-  }
-
   private _renderPlot() {
     if (!this._scales || this._plotData.length === 0) {
       this._webglRenderer?.clear();
@@ -1793,10 +1726,6 @@ export class ProtspaceScatterplot extends LitElement {
     if (this._canvas && this._webglRenderer) {
       this._renderWebGL('plot');
       this._interaction?.setupCanvasEventHandling();
-      // A glide draws a frame per animation frame, in the render that every
-      // other request for that frame shares.
-      if (this._webglRenderer.isMorphing) this._requestRender();
-      else this.toggleAttribute('data-morphing', false);
     }
   }
 
@@ -1810,7 +1739,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     const pd = this._getPointsForRendering();
     this._webglRenderer.render(pd);
-    this._slotsKept = true;
+    this._renderLoop.noteDrawn();
 
     if (perfToken) {
       const cpuEndTs = performance.now();
@@ -2651,7 +2580,7 @@ export class ProtspaceScatterplot extends LitElement {
     this.requestUpdate();
 
     this.updateComplete.then(() => {
-      this._requestRender();
+      this._renderLoop.request();
     });
   }
 
@@ -3028,7 +2957,7 @@ export class ProtspaceScatterplot extends LitElement {
       throw new Error('WebGL renderer not initialized');
     }
     // The export stages from the points the renderer last drew.
-    this._flushRender();
+    this._renderLoop.flush();
 
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw new Error('Width and height must be positive numbers');
@@ -3163,7 +3092,7 @@ export class ProtspaceScatterplot extends LitElement {
     options: { padded?: boolean } = {},
   ): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
     if (!this._webglRenderer) return null;
-    this._flushRender();
+    this._renderLoop.flush();
     const ext = this._webglRenderer.getDataExtent();
     if (!ext) return null;
     if (!options.padded) return ext;
