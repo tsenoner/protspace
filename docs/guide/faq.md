@@ -108,23 +108,25 @@ Annotations with multiple values per protein (e.g., multiple EC numbers). Displa
 
 ### How many proteins can I visualize?
 
-Up to 2,000,000 per projection. Points are staged once and the camera is a shader uniform, so
-panning and zooming cost the same at a million points as at a hundred thousand.
+Every point is drawn, up to 67,108,864 (2^26) per projection. That bound comes from the size of
+the GPU buffers, not from the file format. A dataset past it is not drawn at all, and a "Too many
+points to draw" notice says so; nothing is dropped silently. Files up to 2 GB are accepted. On
+GPUs with a small texture limit, multi-value points in a very large dataset may be drawn with
+fewer colour slices, and a notice says so.
 
-**Loading is the slow part.** On a modern laptop expect roughly 25 seconds at 1M proteins and 40
-seconds at 2M. The [Swiss-Prot example](/explore/example-datasets#swissprot), 573K proteins in two
-projections with every annotation (87.8 MB), loads in about 10 seconds on a fast laptop (an Apple
-M4 Pro), not counting the download, and needs at least 0.4 GB of browser memory. Memory is the real
-ceiling — a 2M bundle peaks around 2.6 GB of browser heap — which is why the limit sits where it
-does.
+**What to expect.** Measured on an Apple M4 laptop in Chromium, the
+[Swiss-Prot example](/explore/example-datasets#swissprot) (573K proteins) loads in about 1.5 s, not
+counting the download, and synthetic bundles of 2.5M and 5M proteins in about 2.5 s and 4 s. Pan
+and zoom stay at 60 fps up to 2.5M. At 5M they drop to about 30 fps, switching the colouring
+annotation holds the plot for about a second, and switching projections for about half a second;
+both take about half that at 2.5M. The synthetic bundles carry two annotations and short IDs, so a
+real dataset of the same size takes longer.
 
-Bundles above the limit are refused at load with a message naming it. Nothing is ever dropped
-silently.
-
-::: tip
-A bundle's rows are counted as proteins x projections, so a 1.2M-protein bundle carrying two
-projections is 2.4M rows and will be refused. Split the projections into separate bundles if you
-need both.
+::: tip Older bundles
+Bundles from before format v3 are decoded row by row, at about 1.3 GB of browser memory per
+million rows. They are refused above 2,000,000 rows, counted as proteins x projections, with a
+message that says so. Run [`protspace convert`](/guide/python-cli#protspace-convert) to upgrade
+the file; the current format has no row limit.
 :::
 
 ## Technical
