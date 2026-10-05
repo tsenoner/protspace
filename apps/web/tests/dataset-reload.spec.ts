@@ -16,6 +16,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
+import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
@@ -94,9 +95,12 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
   });
 }
 
-async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
+async function loadCustomDatasetFromImportMenu(
+  page: Page,
+  file: Parameters<typeof importUserFile>[1],
+): Promise<void> {
   await openImportMenu(page);
-  await importUserFile(page, datasetPath);
+  await importUserFile(page, file);
 }
 
 async function measureSingleImportLifecycle(
@@ -321,6 +325,33 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     expect(await getProteinCount(page)).toBe(customCount);
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
+  });
+
+  test('a failed import leaves the stored import to be restored on reload', async ({ page }) => {
+    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    await waitForPersistedExploreDataset(page);
+
+    // A file that fails to decode is never saved, so it must not mark the healthy
+    // import still in OPFS as failed.
+    await loadCustomDatasetFromImportMenu(page, {
+      name: 'broken.parquetbundle',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('not-a-valid-bundle'),
+    });
+    await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    expect(await readStoredImport(page)).toEqual({
+      name: CUSTOM_5K_BUNDLE_NAME,
+      lastLoadStatus: 'success',
+    });
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
+    await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
   });
 
   test('reset to demo clears the persisted custom dataset', async ({ page }) => {

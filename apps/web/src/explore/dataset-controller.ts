@@ -604,16 +604,18 @@ export function createDatasetController({
 
     console.error('❌ Data loading error:', customEvent.detail.message);
 
-    if (runningLoadMeta?.kind === 'user' || runningLoadMeta?.kind === 'opfs') {
+    // Only a failed restore says anything about the stored import. A user
+    // import is saved only once it has decoded (`handleDataLoaded`), so one
+    // failing here never replaced it: flagging the stored import would offer
+    // recovery for it on the next visit, although it loads fine.
+    if (runningLoadMeta?.kind === 'opfs') {
       try {
         const message = customEvent.detail.message ?? 'Unknown load error';
         await markLastLoadStatus('error', { error: message });
       } catch (statusError) {
         console.warn('Failed to update OPFS load status to error:', statusError);
       }
-    }
 
-    if (runningLoadMeta?.kind === 'opfs') {
       settleFailed();
 
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
