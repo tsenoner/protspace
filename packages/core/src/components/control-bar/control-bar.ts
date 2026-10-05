@@ -143,6 +143,12 @@ export class ProtspaceControlBar extends LitElement {
   @state() private exportFormat: 'png' | 'pdf' | 'ids' | 'parquet' = EXPORT_DEFAULTS.FORMAT;
   @state() private exportIncludeLegendSettings: boolean = true;
   private _scatterplotElement: ScatterplotElementLike | null = null;
+  /**
+   * The one pending auto-sync timer — a scatter plot lookup retry or the initial
+   * sync. Cleared on disconnect so a removed control bar stops polling (and never
+   * fires after a test environment's `document` is gone).
+   */
+  private _autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Search state
   @state() private allProteinIds: string[] = [];
@@ -1314,6 +1320,7 @@ export class ProtspaceControlBar extends LitElement {
     document.removeEventListener('keydown', this._onDocumentKeydown);
     this.removeEventListener('annotation-opened', this._onAnnotationOpened);
     this.removeEventListener('search-opened', this._onSearchOpened);
+    this._clearAutoSyncTimer();
 
     if (this._scatterplotElement) {
       this._scatterplotElement.removeEventListener('data-change', this._onDataChange);
@@ -1438,7 +1445,22 @@ export class ProtspaceControlBar extends LitElement {
     }
   }
 
+  private _clearAutoSyncTimer() {
+    if (this._autoSyncTimer !== null) {
+      clearTimeout(this._autoSyncTimer);
+      this._autoSyncTimer = null;
+    }
+  }
+
+  private _scheduleAutoSync(callback: () => void, delayMs: number) {
+    this._autoSyncTimer = setTimeout(() => {
+      this._autoSyncTimer = null;
+      if (this.isConnected) callback();
+    }, delayMs);
+  }
+
   private _setupAutoSync() {
+    this._clearAutoSyncTimer();
     // Find scatterplot element with retries
     const trySetup = (attempts: number = 0) => {
       this._scatterplotElement = document.querySelector(
@@ -1469,12 +1491,10 @@ export class ProtspaceControlBar extends LitElement {
         );
 
         // Initial sync after a short delay to ensure scatterplot is ready
-        setTimeout(() => {
-          this._syncWithScatterplot();
-        }, 50);
+        this._scheduleAutoSync(() => this._syncWithScatterplot(), 50);
       } else if (attempts < 10) {
         // Retry up to 10 times with increasing delay
-        setTimeout(() => trySetup(attempts + 1), 100 + attempts * 50);
+        this._scheduleAutoSync(() => trySetup(attempts + 1), 100 + attempts * 50);
       }
     };
 
