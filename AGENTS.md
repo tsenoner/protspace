@@ -40,7 +40,9 @@ Always run `pnpm precommit` before any git commit. It is
 `lint-staged && quality && docs:annotations:check && docs:build`:
 
 - ESLint `--fix` and Prettier `--write`, on staged files only (lint-staged)
-- TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`)
+- TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`); the typecheck
+  ends with `type-check:package-types`, which fails when a package's declared `types` do not
+  resolve to its build output (TypeScript would silently type the package as `any`)
 - `docs:annotations:check` — the generated annotation reference must match its source
 - `docs:build`, a full VitePress build (a dead internal link fails it)
 

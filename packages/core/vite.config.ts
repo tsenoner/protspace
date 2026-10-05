@@ -5,7 +5,8 @@ import dts from 'vite-plugin-dts';
 export default defineConfig({
   plugins: [
     // Declarations mirror src/ under dist/ (tsconfig `rootDir`), which is where package.json's
-    // `types` conditions point. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts): nothing
+    // `types` conditions point; scripts/check-package-types.ts fails `pnpm type-check` if the
+    // two drift apart. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts): nothing
     // references them.
     dts({
       tsconfigPath: './tsconfig.json',
