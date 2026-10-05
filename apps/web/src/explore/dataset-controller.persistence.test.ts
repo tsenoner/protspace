@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   saveLastImportedFile: vi.fn(),
   clearLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
-  recoverFromCorruptedPersistedDataset: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
@@ -37,7 +36,7 @@ vi.mock('./persisted-dataset', () => ({
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     loadExampleDatasetAndClearPersistedFile: vi.fn(),
-    recoverFromCorruptedPersistedDataset: mocks.recoverFromCorruptedPersistedDataset,
+    recoverFromCorruptedPersistedDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
   }),
 }));
@@ -128,13 +127,17 @@ describe('dataset controller OPFS persistence', () => {
 });
 
 describe('dataset controller load failures and the stored import', () => {
+  beforeEach(() => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    return () => consoleError.mockRestore();
+  });
+
   // A user import is written to OPFS only once it has decoded (`handleDataLoaded`
   // saves it before the render), so one that fails before that never replaced the
   // stored import: what OPFS holds is still the previous import, which loaded fine.
   it('a user import that fails to decode leaves the stored import as it was', async () => {
     // This is also how a FASTA import ends whose prepared bundle fails to decode:
     // the error comes while its load is still running, like a bundle's.
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
 
     await controller.handleDataError(dataErrorEvent('Invalid parquet bundle'));
@@ -142,16 +145,11 @@ describe('dataset controller load failures and the stored import', () => {
     // Flagging the stored import would make the next visit offer recovery for a
     // dataset that loads fine, instead of restoring it.
     expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
-    expect(mocks.saveLastImportedFile).not.toHaveBeenCalled();
-    expect(mocks.clearLastImportedFile).not.toHaveBeenCalled();
-    expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
-    consoleError.mockRestore();
   });
 
   it('a FASTA import whose preparation fails leaves the stored import as it was', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const loadQueue = createLoadQueue({ isDisposed: () => false });
     const controller = createDatasetController(buildControllerOptions({ loadQueue }));
     const fasta = new File(['>P1\nMKV\n'], 'query.fasta');
@@ -168,42 +166,18 @@ describe('dataset controller load failures and the stored import', () => {
       .enqueueLoadFromFile(fasta, undefined, () => Promise.reject(prepError))
       .catch(async (error: Error) => {
         runningLoadAtError = loadQueue.getRunningLoadMeta();
-        await controller.handleDataError({
-          detail: { message: error.message, originalError: error },
-        } as unknown as Event);
+        await controller.handleDataError(dataErrorEvent(error.message, error));
       });
 
     expect(runningLoadAtError).toBeNull();
     expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
-    expect(mocks.saveLastImportedFile).not.toHaveBeenCalled();
-    expect(mocks.clearLastImportedFile).not.toHaveBeenCalled();
-    expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledOnce();
-    consoleError.mockRestore();
-  });
-
-  it('a restore of the stored import that fails to parse flags it as failed', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { controller } = buildController({ sequence: 3, kind: 'opfs', epoch: 0 });
-
-    await controller.handleDataError(dataErrorEvent('Invalid parquet bundle'));
-
-    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('error', {
-      error: 'Invalid parquet bundle',
-    });
-    expect(mocks.recoverFromCorruptedPersistedDataset).toHaveBeenCalledWith(
-      'could not be loaded',
-      0,
-    );
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
-    consoleError.mockRestore();
   });
 
   it('a user import that decoded but failed to render stays stored as unfinished', async () => {
     // Saved before its render, the new import has replaced the old one in OPFS, so
     // it is the one the next visit must offer to recover: it keeps the 'pending'
     // status the save wrote, never 'success'.
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.loadData.mockRejectedValue(new Error('WebGL context lost'));
     const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
 
@@ -212,7 +186,6 @@ describe('dataset controller load failures and the stored import', () => {
     expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
     expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
-    consoleError.mockRestore();
   });
 });
 

@@ -29,9 +29,12 @@ export function dataLoadedEvent(detail: Record<string, unknown> = {}): Event {
   return { detail: { data: TEST_DATA, source: 'auto', ...detail } } as unknown as Event;
 }
 
-/** The `data-error` event of a bundle that fails to parse. */
-export function dataErrorEvent(message = 'Corrupt bundle'): Event {
-  return { detail: { message, originalError: new Error(message) } } as unknown as Event;
+/** The `data-error` event of a bundle that fails to parse, unless `originalError` says otherwise. */
+export function dataErrorEvent(
+  message = 'Corrupt bundle',
+  originalError: Error = new Error(message),
+): Event {
+  return { detail: { message, originalError } } as unknown as Event;
 }
 
 /**
