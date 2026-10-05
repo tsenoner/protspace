@@ -89,7 +89,7 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
       await pendingFinalization.promise;
     });
 
-    queuedLoad = nextLoad.catch(() => undefined);
+    queuedLoad = nextLoad.catch(() => {});
 
     return nextLoad.finally(() => {
       if (runningLoadMeta?.sequence === loadMeta.sequence) {

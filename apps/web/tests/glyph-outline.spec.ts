@@ -35,7 +35,10 @@ test('glyph outline appearance across point sizes', async ({ page }) => {
       const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: true });
       if (!gl) return 'no webgl2';
 
-      const compile = (type: number, source: string) => {
+      const compile = (
+        type: number,
+        source: string,
+      ): { err: string | null; sh: WebGLShader | null } => {
         const sh = gl.createShader(type)!;
         gl.shaderSource(sh, source);
         gl.compileShader(sh);

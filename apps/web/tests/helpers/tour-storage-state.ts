@@ -1,3 +1,4 @@
+import type { BrowserContextOptions } from '@playwright/test';
 import { TOUR_STORAGE_KEY } from '../../src/tour/storage-key';
 
 /**
@@ -16,7 +17,7 @@ import { TOUR_STORAGE_KEY } from '../../src/tour/storage-key';
  * seeding the right key against the wrong origin silently seeds nothing. The key
  * itself comes from the app module that writes it, so it cannot drift either.
  */
-export function tourCompletedStorageState(baseUrl: string) {
+export function tourCompletedStorageState(baseUrl: string): BrowserContextOptions['storageState'] {
   return {
     cookies: [],
     origins: [

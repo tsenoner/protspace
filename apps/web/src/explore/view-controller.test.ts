@@ -13,7 +13,7 @@ function createMockElements() {
     getCurrentData: () => ({
       annotations: { ec: {}, pfam: {}, go: {} },
       projections: [{ name: 'UMAP' }, { name: 'PCA' }, { name: 't-SNE' }],
-      protein_ids: [],
+      protein_ids: [] as string[],
     }),
   };
 

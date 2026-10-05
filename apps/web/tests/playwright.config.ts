@@ -1,4 +1,4 @@
-import { defineConfig, devices, type Project } from '@playwright/test';
+import { defineConfig, devices, type BrowserContextOptions, type Project } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
@@ -17,7 +17,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
  */
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
 const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
-const EMPTY_STORAGE_STATE = { cookies: [], origins: [] };
+const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
 
 /**
  * Include an opt-in project only when its env flag is set to '1'.

@@ -5,10 +5,10 @@ import dts from 'vite-plugin-dts';
 export default defineConfig({
   plugins: [
     // Declarations mirror src/ under dist/ (tsconfig `rootDir`), which is where package.json's
-    // `types` conditions point; scripts/check-package-types.ts fails `pnpm type-check` if the
-    // two drift apart. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts): nothing
-    // references them. Test-only helpers stay out too (one imports vitest); only tests import
-    // them, and tsc still type-checks them.
+    // `types` conditions point; if the two drift apart, apps/web's `noImplicitAny` fails
+    // `pnpm type-check` with TS7016. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts):
+    // nothing references them. Test-only helpers stay out too (one imports vitest); only tests
+    // import them, and tsc still type-checks them.
     dts({
       tsconfigPath: './tsconfig.json',
       insertTypesEntry: false,
