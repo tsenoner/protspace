@@ -6,6 +6,7 @@ import {
 } from './numeric-binning';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
 import type { Annotation, NumericBinningStrategy, VisualizationData } from '../types';
+import { djb2Hash } from '../storage/data-hash';
 
 describe('numeric-binning', () => {
   it('creates linear bins with distribution-aware gradient colors', () => {
@@ -805,5 +806,93 @@ describe('numeric-binning logarithmic fallback', () => {
       3.3471647504108475, 22.407023732785827, 150,
     ]);
     expect(Array.from(floats.annotationData)).toEqual([0, 0, 1, 1, 2, 3, 2]);
+  });
+});
+
+describe('numeric-binning recorded outputs', () => {
+  // Output digests at cb6ed698, which sorted the quantile values with a comparator.
+  const RECORDED_DIGESTS = `
+    7d994405 f4d0f7a1 60f0ab0f c1d05405 a18d277a c62b92f7 a3e7d8a0 815a629c
+    5ffc9ce3 c6529dfd 2c7add10 2337d8ec c2d84e66 32a45255 7ff4940f 1b1788e7
+    67da46af 9fb64343 fc9ef595 198b7756 a4f1159d 95f0560d 54526afa f829cfa3
+    7460a423 031481ad 9babfcc2 b296c5dd da82f686 7c8a5971 bc45896f e1309f28
+    e173268f 922cbf63 5546a985 5432690f 019ada84 893b1d83 4be905af 0d8d6b87
+    0ecf64ab ba3842fa 03007ca8 14d5cc6f 1b0b2500 bc117bb5 30d6ae48 4d368683
+  `
+    .trim()
+    .split(/\s+/);
+  const strategies: NumericBinningStrategy[] = ['linear', 'quantile', 'logarithmic'];
+  const quantile = (binCount: number) => ({
+    binCount,
+    strategy: 'quantile' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  /** mulberry32: a seeded generator, so the columns are the same on every run. */
+  function seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** Ties, -0, NaN, ±Infinity and missing values, at magnitudes from 1e-18 to 1e308. */
+  function randomColumn(next: () => number): Array<number | null | undefined> | Float64Array {
+    const pick = <T>(options: readonly T[]) => options[Math.floor(next() * options.length)];
+    const levels = pick([2, 10, 200, 1e6]);
+    const scale = pick([1, 1e-18, 1e6, 1e306]);
+    const integers = next() < 0.5;
+    const positive = next() < 0.4;
+    const specials = positive ? [NaN, Infinity, -Infinity, null, undefined] : [NaN, -0, 0, null];
+    const column = Array.from({ length: Math.floor(next() * 600) }, () => {
+      if (next() < 0.08) return pick(specials);
+      const level = positive ? 1 + next() * levels : (next() - 0.3) * levels;
+      return (integers ? Math.round(level) : level) * scale;
+    });
+    return next() < 0.5 ? Float64Array.from(column, (value) => value ?? NaN) : column;
+  }
+
+  /** The serialized output, with -0, NaN and ±Infinity kept apart from 0 and null. */
+  function serialize(result: ReturnType<typeof materializeNumericAnnotation>): string {
+    return JSON.stringify(result, (_key, value: unknown) => {
+      if (value instanceof Int32Array) return Array.from(value);
+      if (typeof value !== 'number' || (Number.isFinite(value) && !Object.is(value, -0))) {
+        return value;
+      }
+      return Object.is(value, -0) ? '-0' : String(value);
+    });
+  }
+
+  it('reproduces the recorded outputs on random columns', () => {
+    const next = seededRandom(20261005);
+    const randomSettings = () => ({
+      binCount: [1, 2, 3, 5, 7, 10, 12, 20, 50][Math.floor(next() * 9)],
+      strategy: strategies[Math.floor(next() * 3)],
+      paletteId: 'batlow',
+      reverseGradient: next() < 0.5,
+    });
+    const digests = Array.from({ length: 48 }, () => {
+      const column = randomColumn(next);
+      // The second call reads the summary the first one cached, sorted values included.
+      const outputs = [randomSettings(), randomSettings()].map((settings) =>
+        serialize(materializeNumericAnnotation(column, settings)),
+      );
+      return djb2Hash(outputs.join('\n')).toString(16).padStart(8, '0');
+    });
+
+    expect(digests).toEqual(RECORDED_DIGESTS);
+  });
+
+  it('keeps the input order of -0 and +0 in quantile edges', () => {
+    const firstEdge = (values: number[]) =>
+      materializeNumericAnnotation(values, quantile(2)).annotation.numericMetadata?.bins[0]
+        .lowerBound;
+
+    expect(firstEdge([0, -0, 1, 2, 3])).toBe(0);
+    expect(firstEdge([-0, 0, 1, 2, 3])).toBe(-0);
   });
 });
