@@ -8,7 +8,6 @@ import pytest
 from src.protspace.data.annotations.configuration import (
     ALL_ANNOTATIONS,
     ANNOTATION_GROUPS,
-    NEEDED_UNIPROT_ANNOTATIONS,
     AnnotationConfiguration,
     expand_annotation_groups,
 )
@@ -857,10 +856,6 @@ class TestConstants:
             BIOCENTRAL_ANNOTATIONS,
         ]:
             assert all(a in ALL_ANNOTATIONS for a in source)
-
-    def test_needed_uniprot_annotations_constant(self):
-        """Test NEEDED_UNIPROT_ANNOTATIONS constant."""
-        assert NEEDED_UNIPROT_ANNOTATIONS == ["accession", "organism_id"]
 
     def test_length_in_user_annotations(self):
         """Test that length is a user-facing annotation."""
