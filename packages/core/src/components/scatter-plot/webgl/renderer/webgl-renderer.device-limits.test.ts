@@ -20,15 +20,16 @@ describe('WebGLRenderer device limits', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('grows no further than the mark texture the device allows', () => {
-    // 1.5x growth from 800K plans 1.2M, past the 1024² texels a 1024 device gives
-    // the mark texture: the marks would leave the GPU for 900K points that fit.
-    const { renderer, gl } = makeRenderer({ maxTextureSize: 1024 });
-    renderer.render(plotData(800_000));
-    renderer.render(plotData(900_000));
+    // 1.5x growth from 3M plans 4.5M, past the 2048² texels the smallest WebGL2
+    // device gives the mark texture: the marks would leave the GPU for 3.5M
+    // points that fit.
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 2048 });
+    renderer.render(plotData(3_000_000));
+    renderer.render(plotData(3_500_000));
 
-    expect(markAllocations(gl).at(-1)).toEqual([1024, 1024]);
+    expect(markAllocations(gl).at(-1)).toEqual([2048, 2048]);
     expect(renderer.canDrawMarks).toBe(true);
-    expect(renderer.drawnPointCount).toBe(900_000);
+    expect(renderer.drawnPointCount).toBe(3_500_000);
   });
 
   it('draws nothing past the drawable limit, says so once, and allocates nothing', () => {

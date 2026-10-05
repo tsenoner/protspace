@@ -339,7 +339,7 @@ export function resizeDensityTargets(
   }
   destroyDensityTargets(gl, res);
 
-  // RGBA32F because the accumulation is exact to 2^24, well past the 2M point cap;
+  // RGBA32F because the accumulation is exact to 2^24 points a cell;
   // RGBA16F would stall on dense cells and drift the colour of the core.
   const accum = createColorTarget(gl, width, height, gl.RGBA32F, gl.FLOAT, gl.NEAREST);
   const blurred = () => createColorTarget(gl, width, height, gl.RGBA16F, gl.HALF_FLOAT, gl.LINEAR);

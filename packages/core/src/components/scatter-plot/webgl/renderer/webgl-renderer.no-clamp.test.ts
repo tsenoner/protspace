@@ -2,19 +2,18 @@
 /**
  * What the renderer actually draws, and what it uploads.
  *
- * The clamp used to cut at 1,000,000 — silently, by array position, while the UI
- * went on reporting the full count. It is still there (an embedder can assign
- * `.data` directly, bypassing the loader) but it now sits at the loader's own
- * cap, so nothing a user can load reaches it.
+ * Every point it is handed. A clamp used to cut at 1,000,000 and later at
+ * 2,000,000 — silently, by array position, while the UI went on reporting the
+ * full count.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { MAX_RENDERABLE_POINTS } from '../types';
 import {
   plotData,
   styleGetters,
   makeRenderer as makeBaseRenderer,
   makeRendererWithStyle,
+  markAllocations,
   realAtlasAllocations,
 } from './test-support/renderer-fixture';
 
@@ -28,23 +27,17 @@ const makeRenderer = (colors?: string[]) => makeBaseRenderer({ maxTextureSize: 8
 describe('WebGLRenderer draw count', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('draws every point at exactly the cap', () => {
-    // Also covers the whole range above the old 1,000,000 threshold, where the
-    // renderer used to draw half: the clamp is `min(length, cap)`, so the cap
-    // itself is the only interesting point below it.
-    const { renderer } = makeRenderer();
-    renderer.render(plotData(MAX_RENDERABLE_POINTS));
-    expect(renderer.drawnPointCount).toBe(MAX_RENDERABLE_POINTS);
-  });
+  it.each([2048, 8192])('draws 3,000,000 points on a %i device', (maxTextureSize) => {
+    const { renderer, gl } = makeBaseRenderer({ maxTextureSize });
+    renderer.render(plotData(3_000_000));
+    expect(renderer.drawnPointCount).toBe(3_000_000);
 
-  it('still clamps beyond the cap, and the shortfall is observable', () => {
-    // Only reachable by an embedder assigning `.data` directly. The point of the
-    // accessor is that this state can be seen at all.
-    const { renderer } = makeRenderer();
-    const overCap = MAX_RENDERABLE_POINTS + 500_000;
-    renderer.render(plotData(overCap));
-    expect(renderer.drawnPointCount).toBe(MAX_RENDERABLE_POINTS);
-    expect(renderer.drawnPointCount).toBeLessThan(overCap);
+    // A mark texel per point, in rows the device allows.
+    const [width, rows] = markAllocations(gl).at(-1)!;
+    expect(width).toBe(maxTextureSize);
+    expect(rows).toBeLessThanOrEqual(maxTextureSize);
+    expect(width * rows).toBeGreaterThanOrEqual(3_000_000);
+    expect(renderer.canDrawMarks).toBe(true);
   });
 });
 
@@ -102,9 +95,8 @@ describe('WebGLRenderer capacity shrink', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('releases an outsized footprint when a much smaller dataset replaces it', () => {
-    // Grow-only capacity was harmless while the clamp bounded it at 1,000,000.
-    // At a 2,000,000 cap, "load 2M then open the 5K demo" would hold the larger
-    // footprint for the rest of the session. The bytes counter is the observable
+    // Grow-only, "load 2M then open the 5K demo" would hold the larger footprint
+    // for the rest of the session. The bytes counter is the observable
     // proxy for the footprint — and the atlas is the bulk of it, so this needs
     // the multi-label renderer or those bytes never enter the count.
     const { renderer } = makeRenderer(['#f00', '#0f0']);

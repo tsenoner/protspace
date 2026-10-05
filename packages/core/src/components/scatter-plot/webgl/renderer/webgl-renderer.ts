@@ -22,7 +22,6 @@ import {
   type ScalePair,
   type PointAttribLocations,
   type PointUniformLocations,
-  MAX_RENDERABLE_POINTS,
   DEFAULT_GAMMA,
 } from '../types';
 import {
@@ -1471,14 +1470,11 @@ export class WebGLRenderer {
       return;
     }
 
-    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
-
     // Grow to fit, and release a footprint that has become absurd for the data on
-    // screen. Capacity used to be grow-only, which the old 1,000,000 clamp made
-    // harmless; at a 2,000,000 cap, loading 2M and then a 5K demo would hold the
-    // larger footprint for the rest of the session. The planner owns both rules,
-    // so reallocating is simply "the plan changed".
-    const plannedCapacity = this.planCapacity(maxPoints);
+    // screen. Grow-only capacity would hold a 2M load's footprint through the 5K
+    // demo opened after it, for the rest of the session. The planner owns both
+    // rules, so reallocating is simply "the plan changed".
+    const plannedCapacity = this.planCapacity(pd.length);
     if (plannedCapacity !== this.capacity) {
       this.resizeCapacity(plannedCapacity);
       updatePositions = true;
@@ -1545,7 +1541,7 @@ export class WebGLRenderer {
 
     if (needsReorder) {
       this.visibleCount = 0;
-      const count = maxPoints;
+      const count = pd.length;
       // The re-sort below permutes every buffer, so a glide crosses it by slot: a
       // new one starts where the points are drawn, and one in flight keeps its
       // start and its clock. Read from the staged copies, never from `pd`, whose
@@ -1605,7 +1601,7 @@ export class WebGLRenderer {
       // rebuild. Positions and depths are unchanged from that rebuild.
       const src = this.sortedDataRef;
       if (src) {
-        idx = Math.min(this.currentPointCount, maxPoints);
+        idx = Math.min(this.currentPointCount, pd.length);
         const pass = beginStylePass(this.style);
         const table = this.prepareRecordTable(pass);
         restageStyles(
@@ -1615,7 +1611,7 @@ export class WebGLRenderer {
           this.sortOrder,
           src,
           // The count that rebuild staged, so every slot sortOrder holds is resolved.
-          Math.min(src.length, MAX_RENDERABLE_POINTS),
+          src.length,
           idx,
           (_slot, opacity) => this.countStagedSlot(opacity),
         );
@@ -1632,7 +1628,7 @@ export class WebGLRenderer {
         const srcYs = src.ys;
         const xAxis = linearAxis(scales.x);
         const yAxis = linearAxis(scales.y);
-        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
+        for (let i = 0; i < this.currentPointCount && idx < pd.length; i++) {
           const slot = order[i];
           if (updatePositions) {
             this.dataPositions[idx * 2] = mapLinear(xAxis, srcXs[slot]);

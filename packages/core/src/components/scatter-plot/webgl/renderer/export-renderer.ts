@@ -29,7 +29,6 @@ import {
   type ScalePair,
   type FramebufferResources,
   type PointUniformLocations,
-  MAX_RENDERABLE_POINTS,
 } from '../types';
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
@@ -402,13 +401,11 @@ export class ExportRenderer {
     // Get attribute and uniform locations
     const { attribs, uniforms } = resolvePointLocations(gl, pointProgram);
 
-    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
-
     // This context is not the live one, so it must be asked its own limit — but
     // the stride is inherited, so the exported figure segments its markers exactly
     // the way the screen did. A null stride is the live view saying it has no atlas.
     const labelAtlas = planLabelAtlas(
-      Math.max(MIN_CAPACITY, maxPoints),
+      Math.max(MIN_CAPACITY, pd.length),
       readMaxTextureSize(gl),
       options.labelStride === undefined ? MAX_LABELS : options.labelStride,
     );
@@ -425,14 +422,7 @@ export class ExportRenderer {
       labelColorData,
       pointCount,
       selectedStartIndex,
-    } = this.prepareOffscreenBufferData(
-      pd,
-      scales,
-      maxPoints,
-      style,
-      options.selectionActive,
-      labelAtlas,
-    );
+    } = this.prepareOffscreenBufferData(pd, scales, style, options.selectionActive, labelAtlas);
 
     // Create and upload buffers. The flag has to start clean for the check after
     // them to mean "these uploads failed": this context is fresh, but program
@@ -627,7 +617,6 @@ export class ExportRenderer {
   private prepareOffscreenBufferData(
     pd: PlotData,
     scales: ScalePair,
-    maxPoints: number,
     style: WebGLStyleGetters,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
@@ -643,7 +632,7 @@ export class ExportRenderer {
     pointCount: number;
     selectedStartIndex: number;
   } {
-    const capacity = Math.max(MIN_CAPACITY, maxPoints);
+    const capacity = Math.max(MIN_CAPACITY, pd.length);
     const dataPositions = new Float32Array(capacity * 2);
     const sizes = new Float32Array(capacity);
     const colors = new Float32Array(capacity * 4);
@@ -660,7 +649,7 @@ export class ExportRenderer {
     // (stageInPaintOrder): the live path is canonical, so the export includes
     // opacity-0 slots (invisible — F-15 pixels unchanged) and uses the identical
     // stable far->near sort and the same sorted-k selectedStartIndex.
-    const count = maxPoints;
+    const count = pd.length;
 
     const target: StagePointArrays = {
       dataPositions,

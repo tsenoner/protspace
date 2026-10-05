@@ -170,10 +170,5 @@ export interface PointUniformLocations {
 // Configuration Constants
 // ============================================================================
 
-// Last-resort staging clamp: the renderer's name for the shared cap. See
-// `utils/limits.ts` for why it sits where it does and why nothing a user can
-// load reaches it.
-export { MAX_POINTS_PER_PROJECTION as MAX_RENDERABLE_POINTS } from '../../../utils/limits';
-
 /** Default gamma value (standard sRGB) */
 export const DEFAULT_GAMMA = 2.2;
