@@ -693,31 +693,20 @@ export class ProtspaceScatterplot extends LitElement {
       isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
       isMultilabel: () => this._getStyleGetters().isMultilabel(),
     };
-    this._webglRenderer = new WebGLRenderer(
-      this._canvas,
-      () => this._scales,
-      () => this._transform,
-      () => this._mergedConfig,
+    this._webglRenderer = new WebGLRenderer(this._canvas, {
+      getScales: () => this._scales,
+      getTransform: () => this._transform,
+      getConfig: () => this._mergedConfig,
       // The live view stages nothing marked while it draws the marks on the GPU.
-      {
+      style: {
         ...styles,
         getOpacity: (p: PlotDataPoint) => this._getStageModel().opacityOf(p),
         getDepth: (p: PlotDataPoint) => this._getStageGetters().getDepth(p),
         createStylePass: () => this._getStageGetters().createStylePass(this._getStageModel()),
         getPointMarks: (pd: PlotData) => this._getPointMarks(pd),
       },
-      this._handleWebglContextLost,
-      () => this._background.get(),
-      (detail) =>
-        this.dispatchEvent(
-          new CustomEvent<RendererDegradedDetail>('renderer-degraded', {
-            detail,
-            bubbles: true,
-            composed: true,
-          }),
-        ),
       // An export stages the selection with every other style.
-      {
+      exportStyle: {
         ...styles,
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
         getDepth: (p: PlotDataPoint) => this._getDepth(p),
@@ -725,7 +714,17 @@ export class ProtspaceScatterplot extends LitElement {
         // resolves it once, for every point it stages.
         createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
       },
-    );
+      getKnockoutColor: () => this._background.get(),
+      onContextLost: this._handleWebglContextLost,
+      onDegraded: (detail) =>
+        this.dispatchEvent(
+          new CustomEvent<RendererDegradedDetail>('renderer-degraded', {
+            detail,
+            bubbles: true,
+            composed: true,
+          }),
+        ),
+    });
     // A renderer rebuilt after a context loss starts with no selection either.
     this._syncWebglSelectionActive();
     // Compile the shaders while data loads rather than inside the first render.

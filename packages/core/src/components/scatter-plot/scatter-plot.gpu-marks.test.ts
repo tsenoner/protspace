@@ -14,7 +14,10 @@ import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/util
 import type { WebGLStyleGetters } from './webgl/types';
 import { createPassScratch } from './webgl/renderer/pass-staging';
 
-const constructed = vi.hoisted(() => [] as unknown[][]);
+/** The options of each renderer the plot built. */
+const constructed = vi.hoisted(
+  () => [] as { style: WebGLStyleGetters; exportStyle: WebGLStyleGetters }[],
+);
 
 vi.mock('./webgl/color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -23,8 +26,8 @@ vi.mock('./webgl/color-utils', () => ({
 vi.mock('./webgl', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
   WebGLRenderer: class {
-    constructor(...args: unknown[]) {
-      constructed.push(args);
+    constructor(_canvas: unknown, options: (typeof constructed)[number]) {
+      constructed.push(options);
     }
     setSelectionActive() {}
     prewarm() {}
@@ -94,8 +97,8 @@ function rendererStyles(el: Plot) {
   Object.defineProperty(el, '_canvas', { value: document.createElement('canvas') });
   el._createWebglRenderer();
   el._webglRenderer = stub;
-  const args = constructed.at(-1)!;
-  return { live: args[4] as WebGLStyleGetters, exported: args[8] as WebGLStyleGetters };
+  const { style, exportStyle } = constructed.at(-1)!;
+  return { live: style, exported: exportStyle };
 }
 
 const point = (i: number): PlotDataPoint => ({ id: IDS[i], x: i, y: i, originalIndex: i });

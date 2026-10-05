@@ -77,16 +77,14 @@ export function makeRenderer(setup: RendererSetup = {}) {
   const { style, colors, getConfig, getTransform, getScales, onContextLost, ...device } = setup;
   const { canvas, gl, setContextLost } = createMockCanvas(device);
   const degraded: RendererDegradedDetail[] = [];
-  const renderer = new WebGLRenderer(
-    canvas,
-    getScales ?? scales,
-    getTransform ?? (() => d3.zoomIdentity),
-    getConfig ?? (() => ({ width: 800, height: 600 })),
-    style ?? styleGetters(colors),
+  const renderer = new WebGLRenderer(canvas, {
+    getScales: getScales ?? scales,
+    getTransform: getTransform ?? (() => d3.zoomIdentity),
+    getConfig: getConfig ?? (() => ({ width: 800, height: 600 })),
+    style: style ?? styleGetters(colors),
     onContextLost,
-    () => [1, 1, 1],
-    (detail) => degraded.push(detail),
-  );
+    onDegraded: (detail) => degraded.push(detail),
+  });
   return { renderer, canvas, gl: gl as unknown as MockGL, degraded, setContextLost };
 }
 

@@ -161,6 +161,24 @@ interface PendingPrograms {
   gamma: PendingProgram | null;
 }
 
+/** What the scatter plot hands its renderer. */
+interface WebGLRendererOptions {
+  getScales: () => ScalePair | null;
+  getTransform: () => d3.ZoomTransform;
+  getConfig: () => ScatterplotConfig;
+  /**
+   * What the live view stages. With marks (`getPointMarks`) it styles every
+   * point as if none were marked.
+   */
+  style: WebGLStyleGetters;
+  /** What an export stages, marks included: `style` unless the live view marks points on the GPU. */
+  exportStyle?: WebGLStyleGetters;
+  /** White unless given. */
+  getKnockoutColor?: () => readonly [number, number, number];
+  onContextLost?: () => void;
+  onDegraded?: (detail: RendererDegradedDetail) => void;
+}
+
 // ============================================================================
 // WebGL2 Renderer Implementation
 // ============================================================================
@@ -339,23 +357,27 @@ export class WebGLRenderer {
   // config, style getters, transform, gamma, and selection state.
   private readonly exportRenderer = new ExportRenderer();
 
-  /**
-   * @param style What the live view stages. With marks (`getPointMarks`) it styles
-   *   every point as if none were marked.
-   * @param exportStyle What an export stages, marks included: `style` unless the
-   *   live view marks points on the GPU.
-   */
+  private readonly getScales: () => ScalePair | null;
+  private readonly getTransform: () => d3.ZoomTransform;
+  private readonly getConfig: () => ScatterplotConfig;
+  private readonly style: WebGLStyleGetters;
+  private readonly exportStyle: WebGLStyleGetters;
+  private readonly getKnockoutColor: () => readonly [number, number, number];
+  private readonly onContextLost?: () => void;
+  private readonly onDegraded?: (detail: RendererDegradedDetail) => void;
+
   constructor(
     private canvas: HTMLCanvasElement,
-    private getScales: () => ScalePair | null,
-    private getTransform: () => d3.ZoomTransform,
-    private getConfig: () => ScatterplotConfig,
-    private style: WebGLStyleGetters,
-    private onContextLost?: () => void,
-    private getKnockoutColor: () => readonly [number, number, number] = () => [1, 1, 1],
-    private onDegraded?: (detail: RendererDegradedDetail) => void,
-    private exportStyle: WebGLStyleGetters = style,
+    options: WebGLRendererOptions,
   ) {
+    this.getScales = options.getScales;
+    this.getTransform = options.getTransform;
+    this.getConfig = options.getConfig;
+    this.style = options.style;
+    this.exportStyle = options.exportStyle ?? options.style;
+    this.getKnockoutColor = options.getKnockoutColor ?? (() => [1, 1, 1]);
+    this.onContextLost = options.onContextLost;
+    this.onDegraded = options.onDegraded;
     this.lossController = new ContextLossController(this.canvas, () => {
       this.resetRendererState();
       this.onContextLost?.();
@@ -922,7 +944,7 @@ export class WebGLRenderer {
     this.renderPoints(transform);
   }
 
-  dispose() {
+  private dispose() {
     this.discardPrograms(this.pendingPrograms);
     this.pendingPrograms = null;
     if (!this.gl) return;
