@@ -54,11 +54,21 @@ jobs:
   # alone took 19 min (run 36728112695) and 31 min (run 34576016462) —
   # actions/runner-images#14594. Playwright checks the host libraries at launch, so a library
   # the image drops fails the first test loudly rather than hanging.
+  #
+  # Split across parallel shards. The suite is CPU-bound (SwiftShader WebGL), and 2 workers is
+  # the most a 4-vCPU runner takes: 3 workers made every test ~35% slower (PR #423). More
+  # runners is what scales. Shards split by test count; at two, both carry about the same
+  # test time. Add a shard when one runs past ~5 min.
   e2e-chromium:
-    name: E2E Tests (Chromium)
+    name: E2E Tests (Chromium ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    # A normal run is 6-10 min. Without this the default is 360 min.
+    # A normal shard is 4-6 min. Without this the default is 360 min.
     timeout-minutes: 20
+    strategy:
+      # Let every shard finish, so one red run reports all its failures.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,7 +129,7 @@ jobs:
         run: pnpm build --filter=@protspace/core --filter=@protspace/utils
 
       - name: Run Playwright tests
-        run: pnpm test:e2e
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           E2E_BROWSERS: chromium
 
@@ -127,7 +137,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-chromium
+          name: playwright-report-chromium-${{ matrix.shard }}
           path: |
             apps/web/playwright-report
             apps/web/test-results
