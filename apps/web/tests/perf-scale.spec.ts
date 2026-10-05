@@ -97,6 +97,8 @@ const result: {
   hasCounters?: boolean;
   /** The app refused the dataset (over the drawable limit, or a load error): its message. */
   refused?: { reason: string | null; message: string };
+  /** The import threw in the page (a console error) and the plot kept the old dataset. */
+  loadFailed?: string;
   failure?: string;
 } = {
   dataset: DATASET,
@@ -115,6 +117,10 @@ const result: {
   toasts: 0,
   crashed: false,
 };
+
+/** Console errors of the current page; a failed import logs one and keeps the old data. */
+let consoleErrors: string[] = [];
+const LOAD_ERROR = /^Failed to (finalize|load|process)/;
 
 const save = () => fs.writeFileSync(OUT, JSON.stringify(result, null, 1));
 /** Wall-clock marks, which perf/scale.mjs lines up with its memory samples. */
@@ -142,6 +148,9 @@ async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession
     storageState: tourCompletedStorageState(BASE_URL),
   });
   const page = await context.newPage();
+  page.on('console', (m) => {
+    if (m.type() === 'error') consoleErrors.push(m.text().split('\n')[0]);
+  });
   page.on('crash', () => {
     result.crashed = true;
     save();
@@ -218,6 +227,7 @@ async function coldLoad(
     return performance.now();
   });
   mark(`load${i}:chosen`);
+  consoleErrors = [];
   await importBundle(page, DATASET.file).catch((error) => {
     const message = String((error as Error)?.message ?? error);
     if (!message.startsWith('data-error')) throw error;
@@ -246,6 +256,8 @@ async function coldLoad(
   result.degraded.push(...degraded);
   result.n = phases.n;
   result.hasCounters = await page.evaluate(() => !!window.__protspacePerfCounters);
+  const loadError = consoleErrors.find((e) => LOAD_ERROR.test(e));
+  if (loadError) result.loadFailed = loadError;
   const limit = degraded.find((d) => d.reason === 'point-limit-exceeded');
   if (limit) {
     const toast = page.getByText(TOAST).first();
@@ -545,7 +557,7 @@ test(`scale ${DATASET.name}`, async ({ browser }) => {
       if (current) await current.page.context().close();
       current = await coldLoad(browser, i);
       // A refused dataset stays refused: no more loads, no interactions.
-      if (result.refused) return;
+      if (result.refused || result.loadFailed) return;
     }
     if (REPS === 0) return;
     const { page, cdp } = current!;

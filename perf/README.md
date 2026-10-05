@@ -310,7 +310,9 @@ Each dataset and round is one browser run of the `perf-scale` Playwright project
   JS heap).
 - **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired), `refused`
   (the app refused the dataset, over its drawable-point limit or with a load error; `refused`
-  holds the toast or error text, and the run stops there) or `error`;
+  holds the toast or error text, and the run stops there), `load-failed` (the import logged
+  an error and the plot kept the old dataset, as at lean 2^26: building the dataset hash
+  joins the ids past V8's string limit; `loadFailed` holds it) or `error`;
   whether every load drew N points, and the degradation notices. `pmset -g therm` is logged
   before and after each dataset.
 

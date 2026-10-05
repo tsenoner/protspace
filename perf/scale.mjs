@@ -414,18 +414,25 @@ async function runDataset(opts, url, dataset, round) {
             ? 'crash'
             : spec.refused
               ? 'refused'
-              : exitCode === 0
-                ? 'ok'
-                : 'error',
+              : spec.loadFailed
+                ? 'load-failed'
+                : exitCode === 0
+                  ? 'ok'
+                  : 'error',
       // null for a build without the counters, which cannot say what it drew.
       drawnEqualsN:
         spec.hasCounters === false
           ? null
-          : n > 0 && (spec.loads ?? []).every((l) => l.drawn === n) && (spec.drawnAtEnd ?? n) === n,
+          : !spec.loadFailed &&
+            !spec.refused &&
+            n > 0 &&
+            (spec.loads ?? []).every((l) => l.drawn === n) &&
+            (spec.drawnAtEnd ?? n) === n,
       degradedEvents: (spec.degraded ?? []).length,
       failedInteractions: Object.keys(spec.interactionFailures ?? {}),
       toasts: Math.max(spec.toasts ?? 0, ...(spec.loads ?? []).map((l) => l.toasts ?? 0)),
       refused: spec.refused ?? null,
+      loadFailed: spec.loadFailed ?? null,
       guard,
       minAvailableGB: Number.isFinite(minAvailable) ? minAvailable / 2 ** 30 : null,
     },
