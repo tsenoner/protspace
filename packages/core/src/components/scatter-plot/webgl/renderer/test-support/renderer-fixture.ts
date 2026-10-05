@@ -58,37 +58,35 @@ export function styleGetters(colors: string[] = ['#f00']): WebGLStyleGetters {
 
 type MockGL = Record<string, ReturnType<typeof vi.fn>>;
 
+/** The mock device's toggles, plus what the scatter plot would hand the renderer. */
+interface RendererSetup extends MockGLOptions {
+  /** Getters that change mid-session; otherwise `styleGetters(colors)`. */
+  style?: WebGLStyleGetters;
+  colors?: string[];
+  getConfig?: () => ScatterplotConfig;
+  getTransform?: () => d3.ZoomTransform;
+  getScales?: () => ScalePair;
+}
+
 /**
- * A renderer over a mock GL context, with the style getters supplied by the
- * caller — for suites whose getters change mid-session. `overrides` swaps in a
- * live config, camera or scales.
+ * A renderer over a mock GL context: an 800x600 viewport over unit scales at
+ * the identity camera, unless `setup` swaps in a live config, camera or scales.
  */
-export function makeRendererWithStyle(
-  styleGetters: WebGLStyleGetters,
-  opts: MockGLOptions = {},
-  overrides: {
-    getConfig?: () => ScatterplotConfig;
-    getTransform?: () => d3.ZoomTransform;
-    getScales?: () => ScalePair;
-  } = {},
-) {
-  const { canvas, gl, setContextLost } = createMockCanvas(opts);
+export function makeRenderer(setup: RendererSetup = {}) {
+  const { style, colors, getConfig, getTransform, getScales, ...device } = setup;
+  const { canvas, gl, setContextLost } = createMockCanvas(device);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
     canvas,
-    overrides.getScales ?? scales,
-    overrides.getTransform ?? (() => d3.zoomIdentity),
-    overrides.getConfig ?? (() => ({ width: 800, height: 600 })),
-    styleGetters,
+    getScales ?? scales,
+    getTransform ?? (() => d3.zoomIdentity),
+    getConfig ?? (() => ({ width: 800, height: 600 })),
+    style ?? styleGetters(colors),
     undefined,
     () => [1, 1, 1],
     (detail) => degraded.push(detail),
   );
   return { renderer, gl: gl as unknown as MockGL, degraded, setContextLost };
-}
-
-export function makeRenderer(opts: MockGLOptions = {}, colors?: string[]) {
-  return makeRendererWithStyle(styleGetters(colors), opts);
 }
 
 function sizes(texImageCalls: unknown[][]): Array<[number, number]> {

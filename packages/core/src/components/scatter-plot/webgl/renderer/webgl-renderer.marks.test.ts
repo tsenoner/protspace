@@ -19,7 +19,6 @@ import type { StagedRecords } from './record-table';
 import type { SlotPalette } from './density-pass';
 import {
   makeRenderer,
-  makeRendererWithStyle,
   markAllocations,
   plotData as fixturePlotData,
   styleGetters,
@@ -178,13 +177,10 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
     createStylePass: () => getters.createStylePass(),
     getPointMarks: () => pointMarks,
   };
-  const { renderer, gl } = makeRendererWithStyle(
+  const { renderer, gl } = makeRenderer({
     style,
-    {},
-    {
-      getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
-    },
-  );
+    getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+  });
   const draws = recordDraws(renderer, gl as unknown as Record<string, unknown>);
   const internals = renderer as unknown as Internals;
   const populate = vi.spyOn(internals, 'populateBuffers');
@@ -259,7 +255,7 @@ describe('the mark texture', () => {
     let marks: PointMarks | null = null;
     const style = { ...styleGetters(), getPointMarks: () => marks };
     // Rows of 2048 texels, as wide as this device allows.
-    const { renderer, gl } = makeRendererWithStyle(style, { maxTextureSize: 2048 });
+    const { renderer, gl } = makeRenderer({ style, maxTextureSize: 2048 });
     const populate = vi.spyOn(renderer as unknown as Internals, 'populateBuffers');
     const pd = fixturePlotData(5000);
     const mark = (...slots: number[]) => {
@@ -302,7 +298,7 @@ describe('the mark texture', () => {
   it('leaves the marks to staging when the device refuses it, without failing the points', () => {
     const style = styleGetters();
     // A driver refusing anything wider than 1000 texels: only the mark texture is.
-    const { renderer, degraded } = makeRendererWithStyle(style, { driverTextureLimit: 1000 });
+    const { renderer, degraded } = makeRenderer({ style, driverTextureLimit: 1000 });
     // Staged as the scatter plot stages: faded only while the marks cannot be drawn.
     style.getOpacity = () => (renderer.canDrawMarks ? 0.9 : 0.15);
     renderer.render(fixturePlotData(5000));

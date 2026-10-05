@@ -13,7 +13,7 @@ import type { GLResources } from './gl-resources';
 import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL } from './export-shaders';
 import { MORPH_MS, repaintOrder } from './position-morph';
 import type * as PositionMorph from './position-morph';
-import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
+import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
 import { perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -60,14 +60,11 @@ function setup(
   slots[3] = 1;
   const marks: PointMarks = { slots, marked: 1, unmarked: 0.2 };
   const { getDepth, getScales } = overrides;
-  const { renderer, gl, setContextLost } = makeRendererWithStyle(
-    { ...styleGetters(), getPointMarks: () => marks, ...(getDepth && { getDepth }) },
-    {},
-    {
-      getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
-      getScales,
-    },
-  );
+  const { renderer, gl, setContextLost } = makeRenderer({
+    style: { ...styleGetters(), getPointMarks: () => marks, ...(getDepth && { getDepth }) },
+    getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+    getScales,
+  });
 
   const attribs: string[] = [];
   const sources: string[] = [];

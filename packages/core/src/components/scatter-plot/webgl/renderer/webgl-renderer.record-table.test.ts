@@ -9,7 +9,7 @@ import { createStyleGetters, type StyleConfig } from '../../styling/style-getter
 import type { WebGLStyleGetters } from '../types';
 import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
-import { makeRendererWithStyle } from './test-support/renderer-fixture';
+import { makeRenderer } from './test-support/renderer-fixture';
 import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
 
 vi.mock('../color-utils', () => ({
@@ -75,7 +75,7 @@ function setup(data: VisualizationData, opts: MockGLOptions = {}) {
     isMultilabel: () => getters.isMultilabel(),
     createStylePass: () => getters.createStylePass(),
   };
-  const { renderer, gl } = makeRendererWithStyle(style, opts);
+  const { renderer, gl } = makeRenderer({ ...opts, style });
   const pd = plotData(data);
   const internals = renderer as unknown as {
     populateBuffers: (...a: unknown[]) => void;

@@ -10,9 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import {
   plotData,
-  styleGetters,
   makeRenderer as makeBaseRenderer,
-  makeRendererWithStyle,
   markAllocations,
   realAtlasAllocations,
 } from './test-support/renderer-fixture';
@@ -22,7 +20,7 @@ import {
  * allocated when it would be sampled, so a single-label renderer plans none and
  * the assertion passes vacuously.
  */
-const makeRenderer = (colors?: string[]) => makeBaseRenderer({ maxTextureSize: 8192 }, colors);
+const makeRenderer = (colors?: string[]) => makeBaseRenderer({ maxTextureSize: 8192, colors });
 
 describe('WebGLRenderer draw count', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -62,11 +60,7 @@ describe('WebGLRenderer upload accounting', () => {
 
   it('grows dots on zoom-in through a uniform, uploading nothing', () => {
     let transform = d3.zoomIdentity;
-    const { renderer } = makeRendererWithStyle(
-      styleGetters(),
-      {},
-      { getTransform: () => transform },
-    );
+    const { renderer } = makeBaseRenderer({ getTransform: () => transform });
     const pd = plotData(50_000);
 
     renderer.render(pd);

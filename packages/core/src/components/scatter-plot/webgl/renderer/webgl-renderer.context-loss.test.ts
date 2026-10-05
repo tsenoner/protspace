@@ -6,12 +6,7 @@ import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
-import {
-  makeRenderer,
-  makeRendererWithStyle,
-  plotData,
-  styleGetters,
-} from './test-support/renderer-fixture';
+import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
@@ -219,14 +214,10 @@ describe('WebGLRenderer per-frame GPU queries', () => {
     ['contours on', 'on' as const],
   ])('a camera move with %s waits on no GPU query', (_label, densityLayer) => {
     let transform = d3.zoomIdentity;
-    const { renderer, gl } = makeRendererWithStyle(
-      styleGetters(),
-      {},
-      {
-        getConfig: () => ({ width: 800, height: 600, densityLayer }),
-        getTransform: () => transform,
-      },
-    );
+    const { renderer, gl } = makeRenderer({
+      getConfig: () => ({ width: 800, height: 600, densityLayer }),
+      getTransform: () => transform,
+    });
     renderer.render(plotData(50));
 
     const glRecord = gl as unknown as Record<string, () => unknown>;

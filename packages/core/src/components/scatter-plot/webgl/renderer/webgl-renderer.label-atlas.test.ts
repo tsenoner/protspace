@@ -12,7 +12,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   plotData,
   makeRenderer,
-  makeRendererWithStyle,
   styleGetters,
   texImageSizes,
   atlasAllocations,
@@ -41,13 +40,16 @@ describe('WebGLRenderer label atlas', () => {
   it('keeps the historical geometry on an unconstrained device', () => {
     // 573,649 points snap to capacity 573,696 -> 2048 x 2241, which is exactly
     // what this renderer allocated before the atlas was bounded.
-    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192 }, ['#f00', '#0f0']);
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192, colors: ['#f00', '#0f0'] });
     renderer.render(plotData(573_649));
     expect(texImageSizes(gl)).toContainEqual([2048, 2241]);
   });
 
   it('fits the atlas inside a device reporting the spec floor', () => {
-    const { renderer, gl, degraded } = makeRenderer({ maxTextureSize: 2048 }, ['#f00', '#0f0']);
+    const { renderer, gl, degraded } = makeRenderer({
+      maxTextureSize: 2048,
+      colors: ['#f00', '#0f0'],
+    });
     renderer.render(plotData(573_649));
 
     for (const [width, height] of texImageSizes(gl)) {
@@ -62,7 +64,7 @@ describe('WebGLRenderer label atlas', () => {
   it('keeps the atlas within the device as capacity grows across loads', () => {
     // The second load plans 1.5 x 900,096 = 1,350,144, whose atlas needs 5274
     // rows at its narrowest width, past what a 4096 device allows.
-    const { renderer, gl } = makeRenderer({ maxTextureSize: 4096 }, ['#f00', '#0f0']);
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 4096, colors: ['#f00', '#0f0'] });
     renderer.render(plotData(900_000));
     renderer.render(plotData(950_000));
 
@@ -77,10 +79,12 @@ describe('WebGLRenderer label atlas', () => {
     // against it — INVALID_OPERATION, forever, silently.
     // Advertises 8192 but refuses anything over 2048: a driver that lied, which is
     // the only way to reach this path now that the plan respects the stated limit.
-    const { renderer, gl, degraded } = makeRenderer(
-      { maxTextureSize: 8192, driverTextureLimit: 2048, driverError: GL_INVALID_VALUE },
-      ['#f00', '#0f0'],
-    );
+    const { renderer, gl, degraded } = makeRenderer({
+      maxTextureSize: 8192,
+      driverTextureLimit: 2048,
+      driverError: GL_INVALID_VALUE,
+      colors: ['#f00', '#0f0'],
+    });
 
     for (let i = 0; i < 5; i++) {
       renderer.invalidateStyleCache();
@@ -98,10 +102,12 @@ describe('WebGLRenderer label atlas', () => {
   });
 
   it('distinguishes an out-of-memory refusal from an over-size one', () => {
-    const { renderer, degraded } = makeRenderer(
-      { maxTextureSize: 8192, driverTextureLimit: 2048, driverError: GL_OUT_OF_MEMORY },
-      ['#f00', '#0f0'],
-    );
+    const { renderer, degraded } = makeRenderer({
+      maxTextureSize: 8192,
+      driverTextureLimit: 2048,
+      driverError: GL_OUT_OF_MEMORY,
+      colors: ['#f00', '#0f0'],
+    });
     renderer.render(plotData(600_000));
     expect(degraded.map((d) => d.context?.reason)).toContain('label-atlas-out-of-memory');
   });
@@ -118,11 +124,11 @@ describe('WebGLRenderer label atlas', () => {
   }
 
   it('tells the shader not to sample when no atlas is allocated', () => {
-    const { renderer, gl } = makeRenderer(
+    const { renderer, gl } = makeRenderer({
       // Below the spec floor, so no layout fits at all.
-      { maxTextureSize: 1024 },
-      ['#f00', '#0f0'],
-    );
+      maxTextureSize: 1024,
+      colors: ['#f00', '#0f0'],
+    });
     const capacities = capacityUniforms(gl);
     renderer.render(plotData(600_000));
 
@@ -135,7 +141,7 @@ describe('WebGLRenderer label atlas', () => {
 
   it('pushes the allocated capacity to the shader when an atlas fits', () => {
     // Control for the test above: the same probe sees a non-zero capacity.
-    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192 }, ['#f00', '#0f0']);
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192, colors: ['#f00', '#0f0'] });
     const capacities = capacityUniforms(gl);
     renderer.render(plotData(1000));
     expect(capacities().at(-1)).toBeGreaterThanOrEqual(1000);
@@ -145,10 +151,12 @@ describe('WebGLRenderer label atlas', () => {
     // The check follows the allocating bufferData, before any texture call. 1 MB is
     // above the gamma quad's vertices and below any 600k-point attribute array, so
     // only the point buffers are refused.
-    const { renderer, gl, degraded } = makeRenderer(
-      { maxTextureSize: 8192, driverBufferByteLimit: 1_000_000, driverError: GL_OUT_OF_MEMORY },
-      ['#f00', '#0f0'],
-    );
+    const { renderer, gl, degraded } = makeRenderer({
+      maxTextureSize: 8192,
+      driverBufferByteLimit: 1_000_000,
+      driverError: GL_OUT_OF_MEMORY,
+      colors: ['#f00', '#0f0'],
+    });
     renderer.render(plotData(600_000));
 
     expect(degraded.map((d) => d.context?.reason)).toContain('point-buffer-allocation-failed');
@@ -179,7 +187,10 @@ describe('WebGLRenderer label atlas', () => {
     // one". Latching it killed multi-value markers for the rest of the session
     // and toasted the user about a colour table for 0 points. Reachable whenever
     // a render precedes the data: the zoom/pan path calls the renderer directly.
-    const { renderer, gl, degraded } = makeRenderer({ maxTextureSize: 8192 }, ['#f00', '#0f0']);
+    const { renderer, gl, degraded } = makeRenderer({
+      maxTextureSize: 8192,
+      colors: ['#f00', '#0f0'],
+    });
 
     renderer.render(plotData(0));
     expect(degraded).toEqual([]);
@@ -193,7 +204,7 @@ describe('WebGLRenderer label atlas', () => {
     // The reorder branch rewrites every style array into the new slot order, so
     // gating the upload on updateStyles alone left the GPU holding the previous
     // permutation.
-    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192 }, ['#f00', '#0f0']);
+    const { renderer, gl } = makeRenderer({ maxTextureSize: 8192, colors: ['#f00', '#0f0'] });
     renderer.render(plotData(1000));
 
     const colorUploadsBefore = gl.bufferSubData.mock.calls.length;
@@ -217,14 +228,14 @@ describe('WebGLRenderer label atlas is allocated only when it is needed', () => 
    */
   function makeSwitchableRenderer() {
     let colors = ['#f00'];
-    const { renderer, gl } = makeRendererWithStyle(
-      {
+    const { renderer, gl } = makeRenderer({
+      maxTextureSize: 8192,
+      style: {
         ...styleGetters(),
         getColors: () => colors,
         isMultilabel: () => colors.length > 1,
       },
-      { maxTextureSize: 8192 },
-    );
+    });
     return {
       renderer,
       gl,

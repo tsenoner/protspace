@@ -5,7 +5,7 @@ import type { DensityLayerMode } from '@protspace/utils';
 import type { WebGLStyleGetters } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import type { GLResources } from './gl-resources';
-import { makeRendererWithStyle, plotData, styleGetters } from './test-support/renderer-fixture';
+import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
 import type { MockGLOptions } from './test-support/mock-webgl2';
 
 type Config = {
@@ -20,7 +20,9 @@ function setup(
   getTransform: () => d3.ZoomTransform = () => d3.zoomIdentity,
   style: WebGLStyleGetters = styleGetters(),
 ) {
-  const { renderer, gl, degraded, setContextLost } = makeRendererWithStyle(style, opts, {
+  const { renderer, gl, degraded, setContextLost } = makeRenderer({
+    ...opts,
+    style,
     getConfig: () => config as never,
     getTransform,
   });
@@ -449,9 +451,11 @@ describe('N_visible', () => {
     const pd = plotData(10);
     pd.proteinIds = Array.from({ length: 10 }, (_, i) => `p${i}`);
     let hideOdd = true;
-    const { renderer } = makeRendererWithStyle({
-      ...styleGetters(),
-      getOpacity: (sp) => (hideOdd && Number(sp.id.slice(1)) % 2 === 1 ? 0 : 1),
+    const { renderer } = makeRenderer({
+      style: {
+        ...styleGetters(),
+        getOpacity: (sp) => (hideOdd && Number(sp.id.slice(1)) % 2 === 1 ? 0 : 1),
+      },
     });
 
     renderer.render(pd);
@@ -533,11 +537,10 @@ describe('context-loss reset', () => {
   });
 
   it('re-arms the density-unavailable report for the next context', () => {
-    const { renderer, degraded, setContextLost } = makeRendererWithStyle(
-      styleGetters(),
-      { missingFloatExtensions: true },
-      { getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never },
-    );
+    const { renderer, degraded, setContextLost } = makeRenderer({
+      missingFloatExtensions: true,
+      getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
+    });
     renderer.render(plotData(50));
     renderer.render(plotData(50));
     expect(reasons(degraded)).toEqual(['density-unavailable']);
