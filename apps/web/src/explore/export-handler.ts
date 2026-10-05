@@ -82,8 +82,8 @@ export function createExportHandler({
         const modal = document.createElement('protspace-publish-modal') as InstanceType<
           typeof ProtspacePublishModal
         >;
-        modal.plotElement = plotElement as unknown as HTMLElement;
-        modal.legendElement = legendElement as unknown as HTMLElement;
+        modal.plotElement = plotElement;
+        modal.legendElement = legendElement;
         // Restore the last saved publish state (localStorage), else the modal's defaults.
         modal.savedPublishState = loadPublishState();
 
