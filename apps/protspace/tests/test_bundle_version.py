@@ -19,7 +19,6 @@ import pyarrow.parquet as pq
 from protspace.data.annotations.encoding import FORMAT_VERSION_KEY
 from protspace.data.io.bundle import read_bundle, read_tables
 from protspace.data.processors.base_processor import BaseProcessor
-from tests.test_config import sample_data  # noqa: F401 (pytest fixture)
 
 
 def test_create_protein_annotations_table_stamps_format_version():

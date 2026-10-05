@@ -317,7 +317,6 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
 | `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
-| `test_output_combinations.py` | Output format flag combinations |
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
 | `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
 | `test_transfer_cli.py` | Transfer orchestration core and CLI registration |
