@@ -1,0 +1,548 @@
+# Showcase example datasets for the protspace.app Import menu: the demo first,
+# then ascending protein count (D1). Every example ships its UMAP and a PCA (D3).
+#
+# Read by build_showcase.py in this directory; README.md has usage per dataset.
+# OpenSpec change: openspec/changes/curated-example-datasets (design Decisions 1 and
+# 9-13, tasks §6-§7).
+#
+# A column the legend could only show as N/A or as one value fails the
+# `informative-columns` gate unless the recipe keeps it in `keep_uninformative`
+# (a documented column whose one value is itself the fact, e.g. "all Swiss-Prot")
+# or it is the default view's annotation or a tooltip name (W10, G13).
+#
+# Path templates: {repo} is the checkout this file lives in, {home} is $HOME, and
+# every name under [paths] can be used too. Override a path with
+# `--path NAME=VALUE` (or PROTSPACE_SUITE for {suite}). Every input is READ-ONLY:
+# the build writes only under the output root.
+#
+# The view each example opens on is the web catalog's `defaultView`
+# (apps/web/src/explore/example-datasets.ts, `[build] catalog`), its one source:
+# the build orders the columns by it and the gates check it. Pick it from
+# `report/report.md` and the thumbnails (G2, tasks 7.5).
+
+[build]
+uniprot_release = "2026_03"       # annotations are refreshed at this release; the build stops if UniProt serves another
+release_tag = "showcase-2026_03"  # GitHub release hosting every example but the demo (D8)
+# Every file is written as parquetbundle v3. The v2 files published under
+# {id}_{release}.parquetbundle stay as they are (a release file name never carries
+# other bytes), so the v3 files take new names in the same release.
+file_pattern = "{id}_{release}_v3.parquetbundle"
+checksums_file = "SHA256SUMS_v3"  # the release's SHA256SUMS lists the v2 files; stage-release adds this one
+out_root = "{home}/protspace-showcase/2026_03"
+catalog = "{repo}/apps/web/src/explore/example-datasets.ts"
+github_repo = "tsenoner/protspace"
+zenodo_doi = ""                   # the paper-companion deposit's DOI, if known before the build (else write_manifest.py --zenodo-doi, tasks 8.3)
+incomplete_retries = 1            # extra runs of a fetch step whose sources the CLI did not fully retrieve
+incomplete_retry_wait_s = 300     # wait before the first extra run (doubled for the second, …)
+
+[paths]
+suite = "{home}/Documents/projects/protspace-suite"
+nm_data = "{suite}/protspace_publication/nm_2026/data"
+cli_data = "{suite}/protspace/apps/protspace/data"
+
+[report]
+k = 15                # layout neighbours for the kNN label agreement
+max_queries = 20000   # query points sampled per candidate view
+legend_top = 10       # the legend view: top labels + Other
+
+# ---------------------------------------------------------------------------
+# demo: the startup dataset (D3). ToxProt venom proteins, embedded as mature
+# peptides; the four projections are kept, so the docs captures stay valid.
+# ---------------------------------------------------------------------------
+[datasets.demo]
+kind = "demo-refresh"
+name = "Venom toxins (demo)"
+hosting = "repo"
+repo_file = "data.parquetbundle"
+proteins = 7831
+membership = "ToxProt: (taxonomy_id:33208) AND (cc_tissue_specificity:venom OR cc_scl_term:SL-0177) AND (reviewed:true)"
+membership_release = "2026_01"  # from the data: every entry created in 2026_01, none from 2026_02; pre-2026_02 sequences
+paper_release = "2026_01"       # the mature-peptide length column, from the same 2026-05-01 build
+source = [
+  "{repo}/apps/web/tests/fixtures/demo_toxprot_7831.parquetbundle",
+  "{repo}/apps/web/public/data.parquetbundle",
+]
+source_sha256 = "dcebba0f1ca15b49a44ebacd2a0807b2e7b528d51efb84de7a8c8a6ba27770fb"
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2", "ESM2-650M — UMAP 2", "ESM2-650M — PCA 2"]
+refresh_groups = ["all"]                  # InterPro and Biocentral see full-length sequences (G8)
+keep_source_columns = ["length"]          # the embedded mature-peptide length
+fasta = { fallback_tsv = "{cli_data}/toxins/tmp/toxprot.tsv" }
+source_legends = ["protein_families"]     # the hand-curated top 13 + Other
+styles = "styles/demo.json"
+stats = false                             # two embeddings without a metadata `source` column; keep the startup file small
+reviewed = "Swiss-Prot"
+max_obsolete = 50
+keep_uninformative = ["reviewed", "domain", "kingdom", "root"]  # ToxProt is Swiss-Prot animals: one value each, documented columns
+
+[datasets.demo.report]
+annotations = ["protein_families", "ec", "pfam", "order", "family", "predicted_subcellular_location"]
+projections = ["ProtT5 — UMAP 2", "ESM2-650M — UMAP 2"]
+
+[[datasets.demo.gates]]
+type = "coverage"            # was 26.9 % when InterPro saw mature peptides
+column = "pfam"
+min_fraction = 0.5
+
+[[datasets.demo.gates]]
+type = "full_length_inputs"
+min_fraction = 0.99
+
+[[datasets.demo.gates]]
+type = "source_column_kept"
+column = "length"
+
+# ---------------------------------------------------------------------------
+# three-finger-toxins: the EAT example (D1). Snake three-finger toxins at
+# 2026_03: Swiss-Prot curators name each one's class in `cc_similarity`, the
+# TrEMBL entries (mostly venom-gland transcripts) carry none. Every entry is
+# embedded as its mature chain, cut by one rule for references and queries (G1:
+# Swiss-Prot often holds the mature chain, TrEMBL the precursor; see [mature]);
+# InterPro, TED and Biocentral read the full-length sequences (G8).
+# A stratified 20 % of the Swiss-Prot entries is held out; toxin_class and
+# toxin_subfamily are transferred to the held-out and the TrEMBL rows (k = 1,
+# Euclidean). Opens at reliability 0; the docs say "drag to 0.5".
+# ---------------------------------------------------------------------------
+[datasets.three-finger-toxins]
+kind = "embed-build"
+name = "Snake three-finger toxins · EAT"
+hosting = "release"
+proteins = 1089
+membership = '(xref:interpro-IPR003571 OR family:"three-finger toxin family") AND (taxonomy_id:8570)'  # the family clause adds 47 reviewed entries InterPro misses (G7)
+membership_release = "2026_03"
+membership_file = "inputs/three-finger-toxins.accessions.txt"  # the pinned list, relative to this file
+membership_sha256 = "2cc644f18375f522e922103bc450371dc5ec35067b72359c8fd24018938716db"
+# ProtT5-XL-U50 per protein, as UniProt computes it: the half-precision encoder
+# Rostlab/prot_t5_xl_half_uniref50-enc. `local` runs that fixed checkpoint in
+# this build (fp32 on CPU, fp16 on CUDA) instead of a remote service, so a
+# rebuild does not depend on what Biocentral serves. The pins are the first
+# build's output; `input` may name a copy of that file (the Zenodo one), which a
+# rebuild then uses instead of embedding again.
+embed = { model = "prot_t5", backend = "local", vectors_sha256 = "04a3e237bd4dff65ffd2779ff808704b90886f7adcd387bb60a63af80eaf43a2", sha256 = "974854d873c18b5efde52f72be3ab5c606575734dfae584bb2471df0b282605b" }
+methods = "umap2,pca2"   # the PCA survives a projection switch with its EAT rings (docs eat.md)
+projection_params = { n_neighbors = 25, min_dist = 0.1, random_state = 42 }
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+# Only columns with something to show: the snakes share their ranks above
+# family, and InterPro's superfamily, CATH, CDD, PRINTS, SMART and Pfam clan and
+# TMbed's transmembrane type have one value (or none) here; the
+# informative-columns gate lists any that does.
+stages = [
+  { groups = ["protein_families", "reviewed", "length", "fragment", "protein_existence", "annotation_score", "keyword", "xref_pdb", "go_bp", "go_mf", "family", "genus", "species"] },
+  { groups = ["pfam", "signal_peptide", "panther", "prosite"] },   # InterPro, Phobius
+  { groups = ["ted"] },
+  { groups = ["predicted_subcellular_location", "predicted_membrane", "predicted_signal_peptide"] },   # Biocentral: about 1,100 short sequences, minutes
+]
+first_columns = ["toxin_subfamily", "eat_split", "toxin_class_withheld", "toxin_subfamily_withheld", "toxin_class_uniprot_rule", "species", "genus", "family"]
+stats = true
+stats_annotations = ["toxin_class", "toxin_subfamily", "family", "genus", "pfam"]
+envelope = { eatOverlayEnabled = true, eatConfidenceThreshold = 0.0 }
+styles = "styles/three-finger-toxins.json"
+reviewed = "mixed"
+max_obsolete = 0
+# toxin_class_uniprot_rule: one rule (Boigatoxin) labels TrEMBL here, shown as
+# the rule's claim. protein_families: "three-finger toxin family" on every row by
+# the query, kept so the family-parser gate checks the CLI's parser here too
+# (toxin_subfamily and toxin_class hold the levels below it).
+keep_uninformative = ["toxin_class_uniprot_rule", "protein_families"]
+
+# How each entry's mature chain is found (build_showcase.py `mature_chains`):
+# UniProt's Chain (or Peptide) feature, else the sequence without its Signal and
+# Propeptide features. Two gaps in UniProt's features are closed here, so that
+# references and queries are cut alike (the mature-inputs gate checks both):
+# - 16 TrEMBL entries at 2026_03 have no feature at all, though 15 of them are
+#   predicted to carry a signal peptide: 5 precursors, 7 fragments starting inside
+#   the signal peptide, 2 gene models and a colubrid precursor. They are cut after
+#   the signal peptide's conserved end (elapid ...G[YSHN]T before a mature chain
+#   whose first cysteine is residue 3; colubrid ...CLGSA before the propeptide).
+#   The other 11 carry no signal evidence and are used as deposited.
+# - The Chain SignalP gives a TrEMBL precursor keeps a propeptide. Nine reviewed
+#   colubrid toxins (Boiga, Spilotes, Telescopus, Trimorphodon) have a curated
+#   15-residue N-terminal propeptide (DQLGLGRQQIDWGQG and kin), and their mature
+#   chains are embedded without it, as are the colubrid entries sequenced as
+#   protein (C0HJD3, P0C603, P83490). An unreviewed chain starting with one of
+#   those propeptides (≤ 5 of 15 residues differ) loses it too: 71 queries
+#   otherwise formed an island of their own, 3 of them at RI ≥ 0.5.
+[datasets.three-finger-toxins.mature]
+signal_motif = "G[YSHN]T(?=[A-Z]{2}C)|CLGSA(?=[DN][QE])"
+motif_window = 40
+propeptide_max_mismatches = 5
+
+[datasets.three-finger-toxins.labels]
+family = "three-finger toxin family"   # the cc_similarity statement the labels are read from
+keep_rule_labels = ["toxin_class"]     # TrEMBL's automatic "Boigatoxin" rule labels, kept aside as toxin_class_uniprot_rule
+
+[[datasets.three-finger-toxins.labels.columns]]
+name = "toxin_class"   # research2/e2/pilot_tftx.py `cls`: first matching rule wins
+rules = [
+  ["type i alpha", "Type I α-neurotoxin (short)"],
+  ["type ii alpha", "Type II α-neurotoxin (long)"],
+  ["type iii alpha", "Type III α-neurotoxin"],
+  ["kappa", "κ-neurotoxin"],
+  ["cytotoxin", "Cytotoxin"],
+  ["aminergic", "Aminergic / muscarinic"],
+  ["muscarinic", "Aminergic / muscarinic"],
+  ["mambalgin", "Aminergic / muscarinic"],
+  ["ancestral", "Ancestral / non-conventional"],
+  ["short-chain", "Other short-chain"],
+]
+
+[[datasets.three-finger-toxins.labels.columns]]
+name = "toxin_subfamily"
+rules = [
+  ["short-chain subfamily", "Short-chain"],
+  ["long-chain subfamily", "Long-chain"],
+  ["ancestral subfamily", "Ancestral"],
+]
+
+[datasets.three-finger-toxins.holdout]
+split_column = "eat_split"   # reference | holdout | trembl
+stratify = "toxin_class"     # classes and ids are visited sorted (G4)
+fraction = 0.2
+seed = 7
+columns = ["toxin_class", "toxin_subfamily"]   # blanked on hold-out rows; the truth goes to <column>_withheld
+
+[datasets.three-finger-toxins.transfer]
+columns = ["toxin_class", "toxin_subfamily"]
+k = 1
+metric = "euclidean"   # the RI scale the paper uses (W26); cosine puts every query near 1
+query_where = ["eat_split~holdout", "eat_split~trembl"]
+reference_where = ["eat_split~reference"]
+
+[datasets.three-finger-toxins.report]
+annotations = ["toxin_class", "toxin_subfamily", "eat_split", "genus", "family", "pfam"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.three-finger-toxins.gates]]
+type = "category_counts"
+column = "eat_split"
+expected = { reference = 430, holdout = 107, trembl = 552 }
+
+[[datasets.three-finger-toxins.gates]]
+type = "holdout_split"   # which 107 rows are held out, not only how many (NumPy may change its stream)
+split_column = "eat_split"
+value = "holdout"
+split_sha256 = "2abb5245a61ab35aaf2562823240c06ee859d3b442300fcff5859079e0b60468"
+
+[[datasets.three-finger-toxins.gates]]
+type = "no_refill"
+split_column = "eat_split"
+query_value = ["holdout", "trembl"]
+columns = ["toxin_class", "toxin_subfamily"]
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_accuracy"   # tolerances, not the pilot's numbers (G4): a 200-seed sweep gave min 0.887
+column = "toxin_class"
+truth_column = "toxin_class_withheld"
+split_column = "eat_split"
+query_value = "holdout"
+threshold = 0.5
+min_n = 100
+min_accuracy = 88.0
+min_accuracy_at_threshold = 90.0
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_accuracy"
+column = "toxin_subfamily"
+truth_column = "toxin_subfamily_withheld"
+split_column = "eat_split"
+query_value = "holdout"
+threshold = 0.5
+min_n = 100
+min_accuracy = 95.0
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_transfers"   # the rings at RI ≥ 0.5 on the TrEMBL rows; ± 5 % of the built value
+column = "toxin_class"
+split_column = "eat_split"
+query_value = "trembl"
+threshold = 0.5
+expected_predicted = 552   # exact: every TrEMBL row gets a transfer
+# The 2026_03 build. 238 before the colubrid queries lost their propeptide
+# (65 of those 71 now reach 0.5, 3 did); the full-length pilot had 421.
+expected_at_threshold = 312
+rel_tol = 0.05   # for expected_at_threshold only
+
+[[datasets.three-finger-toxins.gates]]
+type = "eat_fanout"   # the pilot's largest donor gave its class to 36 queries
+column = "toxin_class"
+max_fanout = 40
+
+[[datasets.three-finger-toxins.gates]]
+type = "name_agreement"   # research2/e2/tftx_detail.py `hint`: the pilot agreed on 48 of 53
+names_from = "entries"      # UniProt's "Protein names": the bundle has no TrEMBL submission names
+column = "toxin_class"
+split_column = "eat_split"
+query_value = "trembl"
+min_fraction = 0.85
+min_n = 20
+rules = [
+  ["weak neurotoxin|weak toxin|non-conventional|boigatoxin|denmotoxin", "Ancestral / non-conventional"],
+  ["muscarinic", "Aminergic / muscarinic"],
+  ["cytotoxin|cardiotoxin", "Cytotoxin"],
+  ["short neurotoxin|short-chain neurotoxin", "Type I α-neurotoxin (short)"],
+  ["long neurotoxin|long-chain|alpha-elapitoxin|alpha-bungarotoxin", "Type II α-neurotoxin (long)"],
+]
+
+[[datasets.three-finger-toxins.gates]]
+type = "mature_inputs"   # G1 and G7: every row embedded as its mature chain
+family_only_xref = "IPR003571"
+expected_family_only = 47
+
+[[datasets.three-finger-toxins.gates]]
+type = "full_length_inputs"   # G8: InterPro and Biocentral read full-length sequences
+min_fraction = 0.99
+
+# ---------------------------------------------------------------------------
+# human-fly: Fig. 2B. Paper membership (105,562) and coordinates; the 146 rows
+# without a UniProt vector keep their paper position and are annotated from FASTA.
+# ---------------------------------------------------------------------------
+[datasets.human-fly]
+kind = "paper-refresh"
+name = "Human + fly proteomes"
+hosting = "release"
+proteins = 105562
+figure = "Fig. 2B"
+membership = "Reference proteomes UP000005640 (human) and UP000000803 (fly)"
+membership_release = "2025_04"  # from the data: every entry created in 2025_04, none from 2026_01; built 2026-01-26
+embeddings = [
+  "{cli_data}/other/homsap_dromel/homsap_UP000005640.h5:prot_t5",
+  "{cli_data}/other/homsap_dromel/dromel_UP000000803.h5:prot_t5",
+]
+projections_source = "{nm_data}/joint_proteome_105k_stats"
+pins = [
+  { path = "{nm_data}/joint_proteome_105k_stats/projections_metadata.parquet", sha256 = "ad013e9c6fe7b0f9971a327409e59425b3032458dad8b768e9c56a3a497bb5f6" },
+  { path = "{nm_data}/joint_proteome_105k_stats/projections_data.parquet", sha256 = "9de7a914aeb5b3bc0228e60fb1edc14c781a888e7ab794e48aa964ce149df692" },
+  { path = "{cli_data}/other/homsap_dromel/homsap_UP000005640.h5", bytes = 202839568 },
+  { path = "{cli_data}/other/homsap_dromel/dromel_UP000000803.h5", bytes = 53485072 },
+]
+projections = ["UMAP_2=ProtT5 — UMAP 2", "PCA_2=ProtT5 — PCA 2"]
+missing_rows = "annotate"
+# Rows whose UniProt entry is gone (74 at 2026_03) take the paper's species and
+# that species' refreshed lineage instead of literal "None" strings (W18).
+fill_missing_taxonomy = true
+stages = [
+  { groups = ["species", "protein_families", "uniprot", "taxonomy"] },
+  { groups = ["interpro"] },   # 1-1.7 h
+  { groups = ["ted"] },        # 3.3-12 h; do not overlap another TED build (429s)
+  # Skipped (D4, W11): LightAttention and TMbed read the per-residue ProtT5
+  # matrix, which UniProt's mean-pooled vectors cannot give back, so Biocentral
+  # would embed all 103,947 sequences itself (10-25 h on the public server).
+  # The cards say so. --enable-stage biocentral after an operator batch run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
+]
+stats = true
+stats_annotations = ["species", "protein_families", "reviewed", "protein_existence"]
+styles = "styles/human-fly.json"
+reviewed = "mixed"
+max_obsolete = 400   # G17: about 195 expected
+keep_uninformative = ["domain", "kingdom", "root"]  # two animal proteomes: one value each, documented columns
+
+[datasets.human-fly.report]
+annotations = ["species", "protein_families", "reviewed", "protein_existence"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.human-fly.gates]]
+type = "category_counts"
+column = "species"
+expected = { "Homo sapiens" = 83598, "Drosophila melanogaster" = 21964 }
+rel_tol = 0.005
+
+[[datasets.human-fly.gates]]
+type = "coverage"   # W18: the default view shows no N/A species
+column = "species"
+min_fraction = 1.0
+
+[[datasets.human-fly.gates]]
+type = "label_split"   # conserved: kinases sit in the shared region
+column = "protein_families"
+by = "species"
+label = "protein kinase superfamily"
+# 2026_03. The paper counted 1,703: 278 of the 302 rows gained had no family in
+# the paper bundle and now carry UniProt's automatic (|SAM) annotation (G11).
+expected_total = 2001
+rel_tol = 0.15
+min_per_group = { "Homo sapiens" = 100, "Drosophila melanogaster" = 100 }
+
+[[datasets.human-fly.gates]]
+type = "label_exclusive"
+column = "protein_families"
+by = "species"
+group = "Homo sapiens"
+labels = ["MHC class I family", "MHC class II family", "beta-defensin family", "intercrine beta (chemokine CC) family"]
+min_fraction = 0.98
+
+[[datasets.human-fly.gates]]
+type = "label_exclusive"
+column = "protein_families"
+by = "species"
+group = "Drosophila melanogaster"
+labels = ["PBP/GOBP family"]
+min_fraction = 0.98
+
+[[datasets.human-fly.gates]]
+type = "neighbourhood"   # the paper: 1.000 human neighbours
+name = "human-only regions"
+projection = "ProtT5 — UMAP 2"
+column = "species"
+value = "Homo sapiens"
+subset_column = "protein_families"
+subset_labels = ["MHC class I family", "MHC class II family", "intercrine beta (chemokine CC) family"]
+k = 50
+min_mean = 0.9
+
+[[datasets.human-fly.gates]]
+type = "neighbourhood"   # the paper: 0.000 human neighbours
+name = "fly-only regions"
+projection = "ProtT5 — UMAP 2"
+column = "species"
+value = "Drosophila melanogaster"
+subset_column = "protein_families"
+subset_labels = ["PBP/GOBP family"]
+k = 50
+min_mean = 0.9
+
+# ---------------------------------------------------------------------------
+# beta-lactamase: Fig. 3. UniProt family:"beta-lactamase" at 2026_02, the
+# paper's 113,015 entries and coordinates (UMAP first; PCA was index 0).
+# ---------------------------------------------------------------------------
+[datasets.beta-lactamase]
+kind = "paper-refresh"
+name = "β-lactamases"
+hosting = "release"
+proteins = 113015
+figure = "Fig. 3"
+membership = "UniProtKB family:\"beta-lactamase\", all 113,015 hits at 2026_02, unfiltered (every hit has a UniProt ProtT5 vector)"  # derived from the data: 113,015 - 80 retired + 3,325 later-annotated = the 116,260 hits at 2026_03
+membership_release = "2026_02"
+embeddings = ["{nm_data}/beta_lactamase_2026_uniprot.h5:prot_t5"]
+projections_source = "{nm_data}/beta_lactamase_2026_stats/data.parquetbundle"
+pins = [
+  { path = "{nm_data}/beta_lactamase_2026_stats/data.parquetbundle", sha256 = "58c60e6074d6afcdeff400d13e383e07d4d59bd082404c851925352417cef6b0" },
+  { path = "{nm_data}/beta_lactamase_2026_uniprot.h5", bytes = 274218512 },
+]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+stages = [
+  { groups = ["protein_families", "uniprot", "taxonomy"] },
+  { groups = ["interpro"] },   # 0.5-4 h
+  { groups = ["ted"] },        # 3.6-8 h
+  # Skipped (D4, W11): the Biocentral models read per-residue ProtT5, which the
+  # UniProt vectors cannot give back; 109,092 sequences are 10-25 h on the public
+  # server. The card says so. --enable-stage biocentral after an operator run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
+]
+stats = true
+stats_annotations = ["protein_families", "ec", "kingdom", "domain", "signal_peptide", "protein_existence", "reviewed", "xref_pdb"]
+styles = "styles/beta-lactamase.json"
+reviewed = "mixed"
+max_obsolete = 200   # G17: about 80 expected
+
+[datasets.beta-lactamase.report]
+annotations = ["protein_families", "ec", "domain", "kingdom"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.beta-lactamase.gates]]
+type = "category_counts"   # the Fig. 3 legend, drift < 2 %
+column = "protein_families"
+rel_tol = 0.02
+abs_tol = 5
+
+[datasets.beta-lactamase.gates.expected]
+"metallo-beta-lactamase superfamily" = 80446
+"class-A beta-lactamase family" = 11725
+"DNA repair metallo-beta-lactamase (DRMBL) family" = 7459
+"beta-lactamase family" = 3991
+"class-D beta-lactamase family" = 3683
+"class-C beta-lactamase family" = 3236  # 2026_03; the paper (2026_02) had 3,140
+"hcp beta-lactamase family" = 2326
+"P-Pant transferase superfamily" = 25
+"OBAP family" = 15
+"calreticulin family" = 13
+
+[[datasets.beta-lactamase.gates]]
+type = "accession_label"   # curated as class C (IC) ...
+accession = "Q02940"
+column = "protein_families"
+label = "class-C beta-lactamase family"
+
+[[datasets.beta-lactamase.gates]]
+type = "neighbourhood"     # ... but sits away from the other class-C proteins
+name = "Q02940 away from class C"
+projection = "ProtT5 — UMAP 2"
+column = "protein_families"
+value = "class-C beta-lactamase family"
+accessions = ["Q02940"]
+k = 50
+max_mean = 0.2
+
+# ---------------------------------------------------------------------------
+# swissprot: Fig. 2A, marked Large. Paper membership (573,649), the paper's UMAP
+# and its PCA (D3: `ProtT5 — PCA 2`, the Extended Data faithfulness row). Ships
+# only if it loads in ≤ ~35 s with ≤ ~1.5 GB of heap, measured in a browser and
+# recorded with `record-load` (tied to the file's sha256; the PCA adds bytes, so
+# measure again); otherwise rebuild with --web-cut (drops GO and TED; the full
+# file goes to Zenodo; the decision is kept for later builds) and measure that.
+# ---------------------------------------------------------------------------
+[datasets.swissprot]
+kind = "paper-refresh"
+name = "Swiss-Prot"
+hosting = "release"
+large = true
+proteins = 573649
+figure = "Fig. 2A"
+membership = "UniProtKB/Swiss-Prot entries with a UniProt ProtT5 vector (UniProt omits sequences over 12,000 aa)"
+membership_release = "2025_04"  # 573,661 Swiss-Prot entries - 11 over 12,000 aa - 1 empty vector; 2025_04 re-issued 2025_03 unchanged
+embeddings = ["{cli_data}/other/sprot/per-protein.h5:prot_t5"]
+projections_source = "{nm_data}/swissprot_573k_stats"
+pins = [
+  { path = "{nm_data}/swissprot_573k_stats/projections_metadata.parquet", sha256 = "67ded19506da5065b0ca8f039fd9fe5727a74f69823ea84fd7e30851a0c3d57f" },
+  { path = "{nm_data}/swissprot_573k_stats/projections_data.parquet", sha256 = "969dcb46d921c5b3c79e77b836bdec63dbe04b3be78342ab5aa64cbd64603582" },
+  { path = "{cli_data}/other/sprot/per-protein.h5", bytes = 1425064360 },
+]
+projections = ["UMAP_2=ProtT5 — UMAP 2", "PCA_2=ProtT5 — PCA 2"]
+stages = [
+  { groups = ["domain", "uniprot", "taxonomy"] },   # about 1 h
+  { groups = ["interpro"] },                        # about 5 h (2-20 h)
+  { groups = ["ted"] },                             # 18-40 h: the critical path, run it alone
+  # Skipped (D4, W11): LightAttention and TMbed read the per-residue ProtT5
+  # matrix, which UniProt's mean-pooled vectors cannot give back, so Biocentral
+  # would embed all 573,649 proteins itself, several times the 10-25 h of the
+  # other two sets on the public server. The card says so. --enable-stage
+  # biocentral after an operator batch run.
+  { groups = ["biocentral"], enabled = false, name = "biocentral" },
+]
+stats = true
+stats_annotations = ["domain", "kingdom", "protein_existence", "signal_peptide", "protein_families", "xref_pdb"]  # W22: reviewed is one value here; the paper scores xref_pdb
+web_cut = ["go_bp", "go_cc", "go_mf", "ted_domains"]
+styles = "styles/swissprot.json"
+reviewed = "Swiss-Prot"
+max_obsolete = 100   # G17: about 45 expected
+keep_uninformative = ["reviewed"]   # all Swiss-Prot, a documented column
+
+[datasets.swissprot.report]
+annotations = ["domain", "kingdom", "protein_families", "pfam_clan"]
+projections = ["ProtT5 — UMAP 2", "ProtT5 — PCA 2"]
+
+[[datasets.swissprot.gates]]
+type = "category_counts"   # Fig. 2A, within ±1 %
+column = "domain"
+rel_tol = 0.01
+abs_tol = 5
+
+[datasets.swissprot.gates.expected]
+Bacteria = 336823
+Eukaryota = 199528
+Archaea = 19814
+Riboviria = 6881
+Varidnaviria = 4297
+Duplodnaviria = 4018
+Floreoviria = 1293  # Monodnaviria in the paper; the taxonomy renamed the realm by 2026_03
+Adnaviria = 254
+Ribozyviria = 35
+
+[[datasets.swissprot.gates]]
+type = "pfam_duplicates"   # was 70.3 % vs 5.5 % before the InterPro fan-out fix
+warn_gap = 0.05
+max_gap = 0.15
+
+[[datasets.swissprot.gates]]
+type = "browser_load"      # D2, measured by hand: build_showcase.py record-load
+max_seconds = 35
+max_heap_mb = 1536

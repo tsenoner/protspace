@@ -2,18 +2,18 @@ import { test } from '@playwright/test';
 import * as path from 'path';
 import { createSharedCapturePage, selectAnnotation } from './helpers';
 import { IMAGES_DIR } from './paths';
-import { DEMO_ANNOTATION, loadVenomEatBundle } from './eat-helpers';
+import { DEMO_ANNOTATION, loadEatExampleBundle } from './eat-helpers';
 
 /**
  * Static screenshots for `docs/explore/eat.md`.
  *
- * Kept out of `capture-static.spec.ts` because these need the venom EAT bundle
- * rather than the built-in demo dataset, and that file shares one pre-loaded
- * page across every test in it.
+ * Kept out of `capture-static.spec.ts` because these need the three-finger
+ * toxins EAT example rather than the built-in demo dataset, and that file
+ * shares one pre-loaded page across every test in it.
  */
 
 const getPage = createSharedCapturePage(async (page) => {
-  await loadVenomEatBundle(page);
+  await loadEatExampleBundle(page);
   await selectAnnotation(page, DEMO_ANNOTATION);
 });
 
@@ -47,7 +47,7 @@ test.describe('EAT Static Screenshots', () => {
     );
     await badgedRow.locator('.eat-badge').waitFor({ state: 'visible' });
 
-    // The list scrolls and `ec` sits well below the fold, so bring it into the
+    // The list scrolls and `toxin_class` sits below the fold, so bring it into the
     // menu's viewport before capturing. Screenshotting the host element instead
     // would only catch the collapsed trigger: the menu is a taller sibling that
     // overflows it.

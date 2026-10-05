@@ -18,6 +18,17 @@ sys.modules["generate_toxprot_demo"] = toxprot_demo
 spec.loader.exec_module(toxprot_demo)
 
 
+def test_curated_settings_come_from_the_pinned_demo_fixture():
+    # Never the product demo, which is this script's own output.
+    source = toxprot_demo.DEFAULT_SOURCE_SETTINGS
+    assert source.parts[-4:] == (
+        "web",
+        "tests",
+        "fixtures",
+        "demo_toxprot_7831.parquetbundle",
+    )
+
+
 def _write_tsv(path: Path, rows: list[dict]) -> Path:
     cols = ["Entry", "Sequence", "Signal peptide"]
     with path.open("w") as f:
@@ -131,7 +142,7 @@ def _make_synthetic_bundle(path: Path, settings: dict | None = None) -> Path:
     return path
 
 
-def test_postprocess_bundle_replaces_length_drops_extras_and_reorders(tmp_path):
+def test_postprocess_bundle_replaces_length_keeps_columns_and_reorders(tmp_path):
     from protspace.data.io.bundle import read_bundle
 
     target = _make_synthetic_bundle(tmp_path / "target.parquetbundle")
@@ -139,11 +150,20 @@ def test_postprocess_bundle_replaces_length_drops_extras_and_reorders(tmp_path):
     source = _make_synthetic_bundle(
         tmp_path / "source.parquetbundle", settings=source_settings
     )
+    full_length = pa.table(
+        {
+            "identifier": ["P2", "P1"],
+            "signal_peptide": ["", "SP"],
+            "pfam": ["PF2|10", "PF1|11"],
+            "gene_name": ["ignored", "ignored"],
+        }
+    )
 
     toxprot_demo.postprocess_bundle(
         bundle_path=target,
         mature_lengths={"P1": 50, "P2": 150},
         source_settings_bundle=source,
+        full_length_annotations=full_length,
     )
 
     parts, settings = read_bundle(target)
@@ -151,21 +171,26 @@ def test_postprocess_bundle_replaces_length_drops_extras_and_reorders(tmp_path):
     pyd = annotations.to_pydict()
     assert pyd["protein_id"] == ["P1", "P2"]
     assert pyd["length"] == [50, 150]
-    # Drop list applied: signal_peptide removed.
-    assert "signal_peptide" not in annotations.column_names
+    # Full-length columns replace (signal_peptide) or join (pfam) by id.
+    assert pyd["signal_peptide"] == ["SP", ""]
+    assert pyd["pfam"] == ["PF1|11", "PF2|10"]
+    assert "gene_name" not in annotations.column_names
     # Reorder applied: protein_families is the first non-id column.
     assert annotations.column_names[:2] == ["protein_id", "protein_families"]
-    # Settings preserved when there's nothing to restyle (synthetic bundle has
-    # no `pfam` column).
-    assert settings == source_settings
+    assert annotations.schema.metadata[b"protspace_format_version"] == b"2"
+    # The merged full-length pfam column is restyled from the new data.
+    assert list(settings["pfam"]["categories"]) == ["PF1", "PF2"]
+    assert settings["pfam"]["sortMode"] == "manual"
 
 
-def test_drop_and_reorder_columns_filters_and_orders():
+def test_drop_and_reorder_columns_keeps_all_but_internal_and_legacy():
     table = pa.table(
         {
-            # Out of order, with an unwanted column in the middle.
+            # Out of order, with internal and legacy columns in the middle.
             "ec": ["a"],
+            "sequence": ["MKT"],
             "signal_peptide": ["x"],
+            "length_quantile": ["<50"],
             "length": [1],
             "protein_id": ["P1"],
             "protein_families": ["fam"],
@@ -176,8 +201,22 @@ def test_drop_and_reorder_columns_filters_and_orders():
         "protein_id",
         "protein_families",
         "ec",
+        "signal_peptide",
         "length",
     ]
+
+
+def test_an_empty_sp_map_writes_the_full_length_sequences(tmp_path):
+    tsv = _write_tsv(
+        tmp_path / "in.tsv",
+        [
+            {"Entry": "P1", "Sequence": "AAABBBCCC", "Signal peptide": "SIGNAL 1..3"},
+            {"Entry": "P2", "Sequence": "", "Signal peptide": ""},
+        ],
+    )
+    out = tmp_path / "full.fasta"
+    assert toxprot_demo.write_mature_fasta(tsv, {}, out) == {"P1": 9}
+    assert out.read_text() == ">P1\nAAABBBCCC\n"
 
 
 def test_extract_categories_splits_and_cleans():

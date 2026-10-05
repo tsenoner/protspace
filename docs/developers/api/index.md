@@ -229,25 +229,41 @@ Projection, annotation, contours, selection, filter and export controls.
 
 ### Properties
 
-| Property                | Type                      | Description                              |
-| ----------------------- | ------------------------- | ---------------------------------------- |
-| `projections`           | `string[]`                | Projection names to offer                |
-| `annotations`           | `string[]`                | Annotation names to offer                |
-| `selectedProjection`    | `string`                  | Active projection                        |
-| `selectedAnnotation`    | `string`                  | Active annotation                        |
-| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip |
-| `selectionMode`         | `boolean`                 | Selection mode toggle state              |
-| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                    |
-| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`           |
-| `selectedProteinsCount` | `number`                  | Count shown in the selection controls    |
-| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot   |
-| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot   |
+| Property                | Type                      | Description                                                     |
+| ----------------------- | ------------------------- | --------------------------------------------------------------- |
+| `projections`           | `string[]`                | Projection names to offer                                       |
+| `annotations`           | `string[]`                | Annotation names to offer                                       |
+| `selectedProjection`    | `string`                  | Active projection                                               |
+| `selectedAnnotation`    | `string`                  | Active annotation                                               |
+| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip                        |
+| `selectionMode`         | `boolean`                 | Selection mode toggle state                                     |
+| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                                           |
+| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`                                  |
+| `selectedProteinsCount` | `number`                  | Count shown in the selection controls                           |
+| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
+| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
+| `exampleDatasets`       | `ExampleDatasetSummary[]` | Example catalog, listed in the Import menu's "Examples" section |
+| `examplesDocsUrl`       | `string`                  | Page linked as "About these examples ↗"; no link when empty     |
+| `currentExampleId`      | `string \| null`          | id of the example currently loaded, `null` for a user import    |
 
 ### HTML attributes
 
 `selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`, `density-layer`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `current-dataset-is-demo`, `scatterplot-selector`, `auto-sync`.
+`current-dataset-name`, `current-example-id`, `examples-docs-url`, `scatterplot-selector`,
+`auto-sync`. `exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary`
+type is exported from `@protspace/core`:
+
+| Field         | Type      | Shown as                                                    |
+| ------------- | --------- | ----------------------------------------------------------- |
+| `id`          | `string`  | The `load-example-dataset` event's `detail.id`              |
+| `label`       | `string`  | The item's text                                             |
+| `description` | `string`  | The first paragraph of the item's info popover              |
+| `insight?`    | `string`  | The popover's second paragraph: what the curated view shows |
+| `docsUrl?`    | `string`  | The popover's "Learn more ↗" link                           |
+| `large?`      | `boolean` | A "Large" badge on the item                                 |
+
+When `currentExampleId` names an entry, the same info popover sits next to the current dataset name.
 
 ### Events
 
@@ -265,7 +281,7 @@ Projection, annotation, contours, selection, filter and export controls.
 | `reset-isolation`                 | `{}`                                     | Reset-isolation button pressed             |
 | `export`                          | `{ type, ...export options }`            | Export requested                           |
 | `open-publish-editor`             | `{}`                                     | Figure editor requested                    |
-| `load-demo-dataset`               | none                                     | Demo dataset requested                     |
+| `load-example-dataset`            | `{ id: string }`                         | An example dataset was chosen              |
 | `selection-disabled-notification` | `{ message, severity, source, context }` | Host-consumed warning (selection auto-off) |
 
 With `auto-sync`, the control bar also applies these changes directly to the target scatterplot, so
@@ -358,7 +374,7 @@ Exported from `@protspace/core` unless noted.
 
 ### readFileOptimized
 
-Read a file into an `ArrayBuffer`, chunking large files.
+Read a file into an `ArrayBuffer` (`File.arrayBuffer()`, which reads off the main thread).
 
 ```typescript
 function readFileOptimized(file: File): Promise<ArrayBuffer>;

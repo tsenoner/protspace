@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Regenerate the toxprot demo .parquetbundle.
+"""Regenerate the toxprot demo .parquetbundle from scratch.
 
 Fetches UniProt sequences + signal-peptide positions, strips SPs, embeds
-the mature peptides with ProtT5 and ESM2-650M, then runs DR + annotation
-fetch via `protspace prepare`. Finally trims the bundle's annotations to
-the original demo's column set, replaces `length` with mature length,
-and patches the settings JSON: top-9 categories for pfam/ec/superfamily/
-cath are recomputed from the new data; protein_families styling is
-preserved from the existing web demo.
+the mature peptides with ProtT5 and ESM2-650M, then runs DR + the
+sequence-independent annotation sources via `protspace prepare`. The
+sequence-based sources (InterPro, Biocentral) run separately through
+`protspace annotate` on the FULL-LENGTH sequences: local FASTA sequences
+take priority over UniProt's, so feeding them the mature peptides made
+InterPro miss by MD5 (73 % empty Pfam) and made TMbed predict no signal
+peptide for secreted toxins.
+
+Finally the bundle keeps every annotation column (protein_families first),
+replaces `length` with the mature length, and patches the settings JSON:
+top-9 categories for pfam/ec/superfamily/cath are recomputed from the new
+data; protein_families styling is preserved from the pinned demo fixture.
+
+To refresh the annotations while keeping the published layout, use
+`generate_examples/build_showcase.py build --only demo` instead.
 """
 
 from __future__ import annotations
@@ -24,7 +33,11 @@ import sys
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import requests
+
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
 
 logger = logging.getLogger(__name__)
 
@@ -36,38 +49,30 @@ TOXPROT_QUERY = (
 UNIPROT_STREAM_URL = "https://rest.uniprot.org/uniprotkb/stream"
 EMBEDDERS = "prot_t5,esm2_650m"
 METHODS = "umap2:n_neighbors=50;min_dist=0.5,pca2"
-ANNOTATIONS = "default,interpro,taxonomy"
+# Sources that key on the accession (safe with the mature-peptide FASTA).
+ANNOTATIONS = "uniprot,taxonomy,ted"
+# Sources that read the sequence: run on the full-length FASTA instead.
+SEQUENCE_ANNOTATIONS = "interpro,biocentral"
 RANDOM_STATE = 42
 SIGNAL_RE = re.compile(r"SIGNAL\s+(\d+)\.\.(\d+)")
+# The curated legend styling comes from the demo as first published, pinned as a
+# test fixture. The product demo at apps/web/public/data.parquetbundle is this
+# script's output, so reading it would copy whatever the last run wrote.
 DEFAULT_SOURCE_SETTINGS = (
     Path(__file__).resolve().parent.parent.parent
     / "web"
-    / "public"
-    / "data.parquetbundle"
+    / "tests"
+    / "fixtures"
+    / "demo_toxprot_7831.parquetbundle"
 )
 
-# Annotation columns to keep in the final bundle, in display order.
-# Mirrors the original web demo bundle. `length` replaces `length_quantile`
-# because the frontend now does its own binning.
-KEEP_ANNOTATION_COLUMNS: tuple[str, ...] = (
-    "protein_id",
-    "protein_families",
-    "ec",
-    "keyword",
-    "length",
-    "reviewed",
-    "cath",
-    "pfam",
-    "superfamily",
-    "phylum",
-    "class",
-    "order",
-    "family",
-    "genus",
-    "species",
-    "gene_name",
-    "protein_name",
-    "uniprot_kb_id",
+# Columns shown first, in this order; every other annotation column follows.
+LEADING_ANNOTATION_COLUMNS: tuple[str, ...] = ("protein_id", "protein_families")
+# Internal lookup columns and legacy length bins never reach the bundle.
+DROPPED_ANNOTATION_COLUMNS: tuple[str, ...] = (
+    *INTERNAL_ANNOTATIONS,
+    "length_fixed",
+    "length_quantile",
 )
 
 # Annotations whose top-9 categories are recomputed from the new data and
@@ -76,18 +81,8 @@ KEEP_ANNOTATION_COLUMNS: tuple[str, ...] = (
 RESTYLED_ANNOTATIONS: tuple[str, ...] = ("pfam", "ec", "superfamily", "cath")
 
 # First nine Kelly's high-contrast colors (zOrder 0–8). zOrder 9 is __NA__.
-KELLYS_PALETTE: tuple[str, ...] = (
-    "#F3C300",
-    "#875692",
-    "#F38400",
-    "#A1CAF1",
-    "#BE0032",
-    "#C2B280",
-    "#008856",
-    "#E68FAC",
-    "#0067A5",
-)
-NA_COLOR = "#DDDDDD"
+KELLYS_PALETTE: tuple[str, ...] = tuple(KELLYS_COLORS[:9])
+NA_COLOR = NA_PINNED_COLOR
 
 
 def parse_signal_peptides(tsv_path: Path) -> dict[str, int]:
@@ -148,7 +143,10 @@ def write_mature_fasta(
     sp_map: dict[str, int],
     fasta_out: Path,
 ) -> dict[str, int]:
-    """Write FASTA with SPs cleaved; return {accession: mature_length}."""
+    """Write FASTA with SPs cleaved; return {accession: mature_length}.
+
+    An empty ``sp_map`` cuts nothing: the full-length sequences.
+    """
     fasta_out.parent.mkdir(parents=True, exist_ok=True)
     lengths: dict[str, int] = {}
 
@@ -212,12 +210,42 @@ def fetch_toxprot_tsv(query: str, out_path: Path) -> Path:
     return out_path
 
 
-def _drop_and_reorder_columns(annotations: pa.Table) -> pa.Table:
-    """Filter `annotations` to ``KEEP_ANNOTATION_COLUMNS`` (intersection)
-    in that exact order. Columns not in the keep-list are dropped.
+def _merge_full_length_columns(
+    annotations: pa.Table, full_length: pa.Table | None
+) -> pa.Table:
+    """Replace or add the sequence-based columns computed on full-length input.
+
+    Joined by protein id (``annotate`` names it ``identifier``); the always-
+    included name columns ``annotate`` adds are ignored, the bundle has them.
     """
-    keep = [c for c in KEEP_ANNOTATION_COLUMNS if c in annotations.column_names]
-    return annotations.select(keep)
+    if full_length is None:
+        return annotations
+    id_col = "identifier" if "identifier" in full_length.column_names else "protein_id"
+    rows = {pid: i for i, pid in enumerate(full_length.column(id_col).to_pylist())}
+    ids = annotations.column("protein_id").to_pylist()
+    take = pa.array([rows.get(pid) for pid in ids], type=pa.int64())
+    skip = {id_col, "gene_name", "protein_name", "uniprot_kb_id"}
+    skip |= set(DROPPED_ANNOTATION_COLUMNS)
+    for name in full_length.column_names:
+        if name in skip:
+            continue
+        column = full_length.column(name).take(take)
+        if name in annotations.column_names:
+            index = annotations.column_names.index(name)
+            annotations = annotations.set_column(index, name, column)
+        else:
+            annotations = annotations.append_column(name, column)
+    return annotations
+
+
+def _drop_and_reorder_columns(annotations: pa.Table) -> pa.Table:
+    """Keep every annotation column: ``LEADING_ANNOTATION_COLUMNS`` first, the
+    rest in their existing order, minus ``DROPPED_ANNOTATION_COLUMNS``.
+    """
+    names = annotations.column_names
+    lead = [c for c in LEADING_ANNOTATION_COLUMNS if c in names]
+    rest = [c for c in names if c not in lead and c not in DROPPED_ANNOTATION_COLUMNS]
+    return annotations.select(lead + rest)
 
 
 def _extract_categories(cell: str | None) -> list[str]:
@@ -296,10 +324,13 @@ def postprocess_bundle(
     bundle_path: Path,
     mature_lengths: dict[str, int],
     source_settings_bundle: Path,
+    full_length_annotations: pa.Table | None = None,
 ) -> None:
-    """Patch the bundle: mature lengths, column drop+reorder, restyled
-    top-9 categories, and the original ``protein_families`` settings.
+    """Patch the bundle: full-length sequence-based columns, mature lengths,
+    column order, restyled top-9 categories, and the original
+    ``protein_families`` settings.
     """
+    from protspace.data.annotations.encoding import stamp_format_version
     from protspace.data.io.bundle import (
         read_settings_from_bundle,
         read_tables,
@@ -329,7 +360,8 @@ def postprocess_bundle(
         annotations.schema.get_field_index("length"), "length", new_col
     )
 
-    annotations = _drop_and_reorder_columns(annotations)
+    annotations = _merge_full_length_columns(annotations, full_length_annotations)
+    annotations = stamp_format_version(_drop_and_reorder_columns(annotations))
 
     source_settings = read_settings_from_bundle(source_settings_bundle)
     if source_settings is None:
@@ -356,7 +388,7 @@ def main() -> int:
         type=Path,
         default=DEFAULT_SOURCE_SETTINGS,
         help=(
-            "Bundle to copy settings JSON from (the existing web demo). "
+            "Bundle to copy settings JSON from (the pinned demo fixture). "
             f"Default: {DEFAULT_SOURCE_SETTINGS}"
         ),
     )
@@ -409,10 +441,29 @@ def main() -> int:
     if not bundle_path.exists():
         raise SystemExit(f"prepare did not produce {bundle_path}")
 
+    # InterPro and Biocentral on the full-length sequences (see the docstring).
+    full_fasta = tmp_dir / "toxprot_full_length.fasta"
+    write_mature_fasta(tsv_path, {}, full_fasta)  # no signal peptide cut
+    full_parquet = tmp_dir / "full_length_annotations.parquet"
+    annotate = [
+        "protspace",
+        "annotate",
+        "-i",
+        str(full_fasta),
+        "-a",
+        SEQUENCE_ANNOTATIONS,
+        "-o",
+        str(full_parquet),
+        "-v",
+    ]
+    logger.info("Running: %s", shlex.join(annotate))
+    subprocess.run(annotate, check=True)
+
     postprocess_bundle(
         bundle_path=bundle_path,
         mature_lengths=mature_lengths,
         source_settings_bundle=args.source_settings,
+        full_length_annotations=pq.read_table(full_parquet),
     )
     logger.info("Done: %s", bundle_path)
     return 0

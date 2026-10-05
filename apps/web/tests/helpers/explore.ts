@@ -59,6 +59,165 @@ export async function waitForExploreInteractionReady(page: Page, timeout = 10_00
     .catch(() => {});
 }
 
+export async function getProteinCount(page: Page): Promise<number> {
+  const count = await page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
+    return plot?.data?.protein_ids?.length ?? 0;
+  });
+  return Number(count);
+}
+
+export async function waitForProteinCount(
+  page: Page,
+  expected: number,
+  timeout = 30_000,
+): Promise<void> {
+  await page.waitForFunction(
+    (target) => {
+      const plot = document.querySelector('#myPlot') as {
+        data?: { protein_ids?: string[] };
+      } | null;
+      return plot?.data?.protein_ids?.length === target;
+    },
+    expected,
+    { timeout, polling: 500 },
+  );
+  await page
+    .locator('#progressive-loading')
+    .waitFor({ state: 'hidden', timeout })
+    .catch(() => {});
+}
+
+/**
+ * Opens Explore at `/explore` plus `search`, waits for its dataset to load and
+ * closes the product tour; given `count`, also waits until the plot holds that
+ * many proteins.
+ */
+export async function openExplore(page: Page, search = '', count?: number): Promise<void> {
+  await page.goto(`/explore${search}`);
+  await waitForExploreDataLoad(page);
+  await dismissTourIfPresent(page);
+  if (count !== undefined) {
+    await waitForProteinCount(page, count);
+  }
+}
+
+/** The decoded value of the page URL's `key` query parameter, or null when it is absent. */
+export async function getUrlParam(page: Page, key: string): Promise<string | null> {
+  return page.evaluate((name) => new URL(window.location.href).searchParams.get(name), key);
+}
+
+/**
+ * Waits until the page URL's `key` query parameter decodes to `expected` (null:
+ * absent), robust to `+`/`%20`/em-dash encoding.
+ */
+export async function expectUrlParam(
+  page: Page,
+  key: string,
+  expected: string | null,
+): Promise<void> {
+  await expect.poll(() => getUrlParam(page, key)).toBe(expected);
+}
+
+/**
+ * Holds the next request matching `glob` until the returned function is
+ * called. The page may abort the held request meanwhile (a cancelled or
+ * superseded download), so continuing it is allowed to fail.
+ */
+export async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    glob,
+    async (route) => {
+      await gate;
+      await route.fallback().catch(() => {});
+    },
+    { times: 1 },
+  );
+  return release;
+}
+
+/** The view the control bar shows: colour-by annotation, projection and tooltip annotations. */
+interface ControlBarView {
+  annotation: string | null;
+  projection: string | null;
+  tooltip: string[];
+}
+
+export async function getControlBarView(page: Page): Promise<ControlBarView> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & {
+          selectedAnnotation?: string;
+          selectedProjection?: string;
+          tooltipAnnotations?: string[];
+        })
+      | null;
+    return {
+      annotation: controlBar?.selectedAnnotation ?? null,
+      projection: controlBar?.selectedProjection ?? null,
+      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
+    };
+  });
+}
+
+/** A catalog entry's curated view, in the shape `getControlBarView` reads. */
+export function curatedViewOf(entry: {
+  defaultView: { projection: string; annotation: string; tooltip?: readonly string[] };
+}): ControlBarView {
+  return {
+    annotation: entry.defaultView.annotation,
+    projection: entry.defaultView.projection,
+    tooltip: [...(entry.defaultView.tooltip ?? [])],
+  };
+}
+
+/**
+ * Collects the development-mode warnings `dataset-controller.ts` logs when a
+ * loaded example's bundle lacks one of its `defaultView` names.
+ */
+export function collectDefaultViewDriftWarnings(page: Page): string[] {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes('defaultView names missing')) {
+      warnings.push(message.text());
+    }
+  });
+  return warnings;
+}
+
+export async function getCurrentDatasetName(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & { currentDatasetName?: string })
+      | null;
+    return controlBar?.currentDatasetName ?? null;
+  });
+}
+
+export async function openImportMenu(page: Page): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
+  // Importing a custom dataset leaves the menu open (nothing closes it), so only
+  // click the trigger when the menu is closed — re-clicking would toggle it shut.
+  if (!(await ownDataset.isVisible().catch(() => false))) {
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+  }
+  await expect(ownDataset).toBeVisible();
+}
+
+/**
+ * Imports `filePath` through the data loader's file input, the input the
+ * Import menu's "Load your dataset" opens.
+ */
+export async function importUserFile(page: Page, filePath: string): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
+}
+
 export async function getFirstLegendItemValue(page: Page): Promise<string> {
   const value = await page.evaluate(() => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {

@@ -266,9 +266,37 @@ missing producer must not read as a pass):
 uv sync --package protspace --no-dev --locked   # what bundle-contract.yml does
 ```
 
-**Manual testing:** start `pnpm dev`, then load one of the example bundles in
-`apps/web/public/data/` (for example `5K.parquetbundle` for a quick check, or
-`573K_swissprot.parquetbundle` to exercise the large-dataset path).
+**E2E:** the Playwright web server starts `pnpm dev:app` with `VITE_STARTUP_DATASET_URL`
+pointing the startup demo at a pinned fixture, so no scenario depends on the product's demo.
+Locally Playwright reuses a dev server already listening on :8080, and one you started yourself
+lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suite fails its
+"pinned startup demo" check.
+
+**Fixtures, examples and perf data are three different things:**
+
+- **Test fixtures** live in `apps/web/tests/fixtures/` and are the only bundles tests read
+  (`apps/web/tests/helpers/fixtures.ts` names them). A test never reads what the product serves,
+  so rebuilding an example cannot break it. Add a new fixture there rather than pointing a test
+  at `apps/web/public/`. The `example_role_*` fixtures, which stand in for the catalog examples
+  the E2E suite loads (`apps/web/tests/helpers/example-fixtures.ts`), are derived from the
+  others: edit and rerun `uv run apps/web/tests/fixtures/derive-example-role-fixtures.py`
+  rather than editing them by hand.
+- **Examples** are the Import menu's datasets (`apps/web/src/explore/example-datasets.ts`). Only
+  the startup demo is committed (`apps/web/public/data.parquetbundle`). The others are assets of
+  a GitHub release, pinned by size and sha256 in the generated
+  `apps/web/src/explore/example-manifest.ts` (written by
+  `apps/protspace/scripts/generate_examples/write_manifest.py`; never edit it by hand). The
+  deploy downloads and verifies them. For local work, `pnpm examples:fetch` puts them in the
+  gitignored `apps/web/public/examples/`; without it, a dev build fetches a missing example from
+  protspace.app.
+- **Perf datasets** are the WebGL benchmark's bundles, pinned in `perf/datasets.manifest.json`:
+  `pnpm perf:fetch` downloads them into the gitignored `perf/datasets/` (see `perf/README.md`).
+  The opt-in large-bundle E2E project reads the Swiss-Prot one from there.
+
+**Manual testing:** start `pnpm dev` and open the examples from the Import menu, or import a
+bundle yourself: `apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle` for a quick check,
+or `perf/datasets/573K_swissprot.parquetbundle` (after `pnpm perf:fetch --only 573K_swissprot`)
+to exercise the large-dataset path.
 
 ## Documentation
 
@@ -280,6 +308,18 @@ pnpm docs:build    # Build static site
 pnpm docs:preview  # Preview production build
 pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
 ```
+
+**Generated pages:** two pages are written by scripts, so edit their sources and regenerate
+rather than editing the page. `pnpm precommit` and CI fail when either is stale.
+
+- `docs/guide/annotations.md`: from the annotation registry
+  (`packages/utils/src/visualization/annotation-metadata.ts`) and
+  `docs/scripts/annotation-details.ts`; regenerate with `pnpm docs:annotations`.
+- `docs/explore/example-datasets.md`: from the example catalog
+  (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
+  (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
+  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
+  (see `docs/explore/images/README.md`).
 
 **Documentation standards:**
 

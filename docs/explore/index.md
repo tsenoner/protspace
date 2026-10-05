@@ -27,7 +27,7 @@ The control bar contains:
 6. **Isolate button** - Hide unselected proteins
 7. **Filter button** - Filter by annotation values
 8. **Export button** - Save images or data
-9. **Import button** - Load a `.parquetbundle` or a FASTA file
+9. **Import button** - Load a `.parquetbundle` or a FASTA file, or open one of the [example datasets](/explore/example-datasets)
 10. **Contours button** - Draw density rings for each legend colour: Off, Auto, or Always. See
     [Contours](/explore/control-bar#_10-contours)
 

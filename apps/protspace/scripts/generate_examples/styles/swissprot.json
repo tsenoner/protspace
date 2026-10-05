@@ -1,0 +1,31 @@
+{
+  "$comment": "Fig. 2A: domain of life, coloured in Kelly's size-descending order (Bacteria yellow, Eukaryota purple, Archaea orange, ...), N/A grey; listed and drawn smallest first, as the figure does, so Archaea and the viral realms are not buried under Bacteria.",
+  "domain": {
+    "sortMode": "manual",
+    "maxVisibleValues": 10,
+    "pinnedValues": [
+      "Ribozyviria",
+      "Adnaviria",
+      "",
+      "Floreoviria",
+      "Duplodnaviria",
+      "Varidnaviria",
+      "Riboviria",
+      "Archaea",
+      "Eukaryota",
+      "Bacteria"
+    ],
+    "colors": {
+      "Bacteria": "#F3C300",
+      "Eukaryota": "#875692",
+      "Archaea": "#F38400",
+      "Riboviria": "#A1CAF1",
+      "Varidnaviria": "#BE0032",
+      "Duplodnaviria": "#C2B280",
+      "Floreoviria": "#008856",
+      "Adnaviria": "#0067A5",
+      "Ribozyviria": "#F99379",
+      "": "#DDDDDD"
+    }
+  }
+}

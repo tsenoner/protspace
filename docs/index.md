@@ -9,7 +9,10 @@ Get started with ProtSpace - no installation required.
 3. Start exploring your protein embeddings!
 
 ::: tip Don't have data yet?
-Download example datasets from the [data folder on GitHub](https://github.com/tsenoner/protspace/tree/main/apps/web/public/data), or generate your own using the [Google Colab notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb).
+Open the **Import** menu and pick one of the **Examples**: a small demo and the datasets behind the
+ProtSpace paper's figures, no file of your own needed. See
+[Example Datasets](/explore/example-datasets) for what each one contains, or generate your own
+using the [Google Colab notebook](https://colab.research.google.com/github/tsenoner/protspace/blob/main/apps/protspace/notebooks/ProtSpace_Preparation.ipynb).
 :::
 
 ## What Can You Do?

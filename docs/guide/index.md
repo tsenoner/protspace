@@ -49,7 +49,7 @@ Exploring a `.parquetbundle` happens entirely in your browser:
 
 ## Performance
 
-ProtSpace can handle datasets with **570,000+ proteins** (full Swiss-Prot scale) directly in your browser.
+ProtSpace can handle datasets with **570,000+ proteins** (full Swiss-Prot scale) directly in your browser. The [Swiss-Prot example](/explore/example-datasets#swissprot) shows all of them in one map.
 
 ## Next Steps
 

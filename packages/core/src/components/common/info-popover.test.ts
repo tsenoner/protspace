@@ -6,6 +6,7 @@ import './info-popover';
 
 type PopoverEl = HTMLElement & {
   description: string;
+  detail: string;
   docsUrl: string;
   label: string;
   align: 'left' | 'right';
@@ -16,6 +17,7 @@ type PopoverEl = HTMLElement & {
 async function setup(props: Partial<PopoverEl> = {}): Promise<PopoverEl> {
   const el = document.createElement('protspace-info-popover') as PopoverEl;
   el.description = props.description ?? 'A brief summary.';
+  if (props.detail !== undefined) el.detail = props.detail;
   if (props.docsUrl !== undefined) el.docsUrl = props.docsUrl;
   el.label = props.label ?? 'Test annotation';
   if (props.align) el.align = props.align;
@@ -256,6 +258,32 @@ describe('protspace-info-popover', () => {
     await el.updateComplete;
 
     expect((popover(el) as HTMLElement).style.transform).toBe('translateX(106px)');
+  });
+
+  it('renders the detail as a second paragraph that also describes the trigger', async () => {
+    const el = await setup({ detail: 'Look at the three-finger toxins.' });
+    button(el)!.click();
+    await el.updateComplete;
+
+    const dialog = popover(el)!;
+    const detail = dialog.querySelector('.popover-detail') as HTMLElement;
+    expect(detail.textContent?.trim()).toBe('Look at the three-finger toxins.');
+    expect(dialog.querySelector('.popover-description + .popover-detail')).toBe(detail);
+    expect(button(el)!.getAttribute('aria-describedby')).toBe(
+      `${dialog.querySelector('.popover-description')!.id} ${detail.id}`,
+    );
+  });
+
+  it('renders a detail-only popover', async () => {
+    const el = await setup({ description: '', detail: 'Only a detail.' });
+    expect(button(el)).not.toBeNull();
+    button(el)!.click();
+    await el.updateComplete;
+
+    expect(popover(el)!.querySelector('.popover-description')).toBeNull();
+    expect(button(el)!.getAttribute('aria-describedby')).toBe(
+      popover(el)!.querySelector('.popover-detail')!.id,
+    );
   });
 
   it('renders the docs link with the provided URL', async () => {

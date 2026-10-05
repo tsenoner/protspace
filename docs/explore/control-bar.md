@@ -36,7 +36,7 @@ Choose which annotation to use for coloring points:
 
 The Annotation dropdown features:
 
-- **Grouped categories**: Features are organized into sections (UniProt, InterPro, Taxonomy, Other)
+- **Grouped categories**: Features are organized into sections, one per source (Biocentral, InterPro, TED, Taxonomy, UniProt, Other)
 - **Search**: Type to filter features by name (case-insensitive)
 - **Keyboard navigation**: Use arrow keys to move the highlight, Enter to select, Escape to close.
   Hovering does not move the arrow-key highlight, and Enter picks the row under the pointer whenever
@@ -134,7 +134,7 @@ Isolate is useful for examining relationships within a specific protein subset -
 
 ## 7. Filter Button
 
-![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", a live counter shows 1082 of 7831 proteins matched](./images/filter-query-builder.png)
+![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", with a live counter of how many proteins match](./images/filter-query-builder.png)
 
 **Filter** opens a query builder modal for building complex annotation-based filters:
 
@@ -189,9 +189,10 @@ Close the modal with the **×** button, **Cancel**, **Escape** key, or clicking 
 The first condition can optionally be set to **NOT** for immediate negation.
 
 **NOT** deliberately excludes proteins with no value (N/A) for the annotation
-being negated. "NOT phospholipase A2" means "belongs to some other family", not
-"belongs to some other family, or has no family assigned at all". To include
-unannotated proteins as well, add an explicit **N/A** condition with **OR**.
+being negated. Negating one protein family, for example, means "belongs to some
+other family", not "belongs to some other family, or has no family assigned at
+all". To include unannotated proteins as well, add an explicit **N/A** condition
+with **OR**.
 :::
 
 ::: tip Missing values
@@ -243,14 +244,46 @@ See [Exporting Results](/explore/exporting) for image customization options (dim
 
 ## 9. Import
 
-Click **Import** to load a `.parquetbundle` file from your computer.
+Click **Import** to open the menu:
 
-The picker also accepts FASTA files (`.fasta`, `.fa`, `.fna`): ProtSpace sends the sequences to the
-prep service, which computes embeddings and projections and then opens the resulting bundle
-automatically. See [Importing Data](/explore/importing-data) for the full flow, size limits, and
-privacy implications.
+- **Load your dataset** opens a file picker for a `.parquetbundle` or FASTA file from your
+  computer. The picker also accepts FASTA files (`.fasta`, `.fa`, `.fna`): ProtSpace sends the
+  sequences to the prep service, which computes embeddings and projections and then opens the
+  resulting bundle automatically. See [Importing Data](/explore/importing-data) for the full flow,
+  size limits, and privacy implications. You can also drag & drop either file type directly onto
+  the scatterplot.
+- **Examples** lists the startup demo and the datasets behind the ProtSpace paper's figures;
+  [Example Datasets](/explore/example-datasets) describes each one. Each item's label gives the
+  protein count and download size, and its **ⓘ** icon says what the example is and what its
+  curated view shows, with a link to its section of that page; **About these examples** above the
+  list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
+  download size and the memory and time they take to open. The example currently loaded is
+  disabled, and its ⓘ also appears next to the current dataset's name.
 
-You can also drag & drop either file type directly onto the scatterplot.
+Choosing an example loads it, replaces the dataset stored in your browser (see
+[Data & Settings Persistence](/explore/importing-data#data-settings-persistence)), and puts
+`dataset=<id>` in the URL, so the link is shareable and the browser's **Back** button returns to
+whatever was shown before. The exception is your own import: the menu choice clears it, so **Back**
+goes to the entry with no `dataset` parameter, which loads the demo rather than restoring your
+import. A link such as `/explore?dataset=<id>`, with the id from the example's section of
+[Example Datasets](/explore/example-datasets), loads the example without touching the stored
+dataset; visiting the app again without the parameter brings the stored dataset back. An unknown
+id shows a warning and the app starts up normally.
+
+An example opens on its curated view: the projection, colour-by annotation and tooltip fields
+chosen for it. A menu choice always opens that view with contours off, so the previous dataset's
+`annotation`, `projection`, `tooltip` and `density` parameters don't carry over (**Back** still
+returns to them); in a link, those parameters win over the curated ones. As the note under the
+heading says, changes you make to an example aren't kept: it reopens in its curated state every
+time.
+
+While an example downloads, the loading screen shows how much of it has arrived and offers
+**Cancel download** until decoding starts. Cancelling leaves the current plot and the URL as they
+were, with no message; on an empty page (a link opened fresh) it removes the `dataset` parameter
+and runs the startup load instead. If an example fails to download, whether you chose it from the
+menu or went **Back** or **Forward** to it, ProtSpace shows an error with a **Retry** button and
+leaves the current plot and the URL as they were. Only a link opened on an empty page falls back to
+the startup load.
 
 ## 10. Contours
 

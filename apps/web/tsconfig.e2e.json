@@ -9,7 +9,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "types": ["node", "@playwright/test"],
+    "types": ["node", "@playwright/test", "vite/client"],
     "strict": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,

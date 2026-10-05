@@ -164,30 +164,29 @@ function readHeap(): HeapSample {
   };
 }
 
+/**
+ * The default sweep. `pnpm perf` serves `/data/datasets.json` from
+ * `perf/datasets.manifest.json` (the datasets marked `default`), and the files
+ * from the gitignored `perf/datasets/`; there is deliberately no built-in list
+ * to fall back to, because the served list is the one that names what the
+ * perf-datasets release holds. A missing or malformed list is an error, which
+ * the caller records in the results file rather than throwing past it.
+ */
 async function readDatasetList(): Promise<string[]> {
-  const fallback = [
-    '5K',
-    '40K',
-    '7K_toxprot',
-    '35K_ec_brenda',
-    '105K_homoSapiens_drosophilaMelanogaster',
-    '127K_beta_lactamase',
-    '573K_swissprot',
-    'beta_lactamase_ec',
-    'beta_lactamase_pn',
-    'phosphatase',
-  ];
-
-  try {
-    const res = await fetch('/data/datasets.json', { cache: 'no-store' });
-    if (!res.ok) return fallback;
-    const payload = (await res.json()) as unknown;
-    if (!Array.isArray(payload)) return fallback;
-    const ids = payload.filter((v) => typeof v === 'string' && v.length > 0) as string[];
-    return ids.length ? ids : fallback;
-  } catch {
-    return fallback;
+  const res = await fetch('/data/datasets.json', { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(
+      `perf: /data/datasets.json answered ${res.status}; run the suite through \`pnpm perf\`, which serves it`,
+    );
   }
+  const payload = (await res.json().catch((): null => null)) as unknown;
+  const ids = Array.isArray(payload)
+    ? payload.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : [];
+  if (ids.length === 0) {
+    throw new Error('perf: /data/datasets.json lists no datasets');
+  }
+  return ids;
 }
 
 /**
@@ -371,7 +370,13 @@ async function loadDataset(args: Args, datasetId: string, budget: Budget): Promi
   try {
     response = await fetch(url, { signal: transfer });
     if (!response.ok) {
-      throw new Error(`perf: failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      // The perf spec answers a dataset it has no file for with a body naming
+      // the fix (`pnpm perf:fetch`); carry it into the recorded error.
+      const detail = (await response.text().catch(() => '')).trim().slice(0, 200);
+      throw new Error(
+        `perf: failed to fetch ${url}: ${response.status} ${response.statusText}` +
+          (detail ? ` (${detail})` : ''),
+      );
     }
     arrayBuffer = await response.arrayBuffer();
   } catch (error) {
@@ -555,12 +560,24 @@ export async function maybeRunWebglPerfSuite(args: Args): Promise<boolean> {
 
   let emitted = false;
   try {
-    const datasets = await resolveDatasetList(params);
     const runBudget = budgetFrom(runBudgetMs);
     const createdAt = new Date().toISOString();
     const results: unknown[] = [];
     const failures: PerfDatasetFailure[] = [];
     const skipped: PerfDatasetSkip[] = [];
+
+    // No list means nothing to measure, but the results file is still the
+    // diagnosis: it names the failure, and the spec fails on it at once
+    // instead of waiting out its download budget.
+    let datasets: string[] = [];
+    try {
+      datasets = await resolveDatasetList(params);
+    } catch (error) {
+      failures.push({
+        datasetId: 'datasets.json',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     const emitSuite = () => {
       if (emitted) return;

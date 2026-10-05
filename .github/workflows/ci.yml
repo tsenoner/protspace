@@ -86,5 +86,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Both pages are generated; the checks fail when a committed page is stale or its
+      # sources (annotation registry, example catalog, manifest, docs prose) disagree.
+      - name: Check generated annotation reference
+        run: pnpm docs:annotations:check
+
+      - name: Check generated example datasets page
+        run: pnpm docs:examples:check
+
       - name: Build documentation
         run: pnpm docs:build

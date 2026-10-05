@@ -215,7 +215,7 @@ export class DataLoader extends LitElement {
       assertWithinFileSizeLimit(file.size);
       this.completeStep();
 
-      // 2) Optimize ArrayBuffer reading for large files
+      // 2) Read the file into one ArrayBuffer
       const arrayBuffer = await readFileOptimized(file);
       this.completeStep();
 

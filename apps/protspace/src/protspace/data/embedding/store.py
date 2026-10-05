@@ -26,7 +26,7 @@ _PREVIEW = 5
 # mine.h5` gets the same protection a managed cache does.
 _BACKEND_ATTR = "protspace_backend"
 _MODEL_ATTR = "protspace_model"
-_DIGEST_ATTR = "protspace_sequence_sha256"
+SEQUENCE_DIGEST_ATTR = "protspace_sequence_sha256"
 
 # Enough SHA-256 that two residue strings colliding is implausible, short enough
 # that the attribute stays cheap across 570K proteins.
@@ -53,7 +53,7 @@ def _current_ids(f: h5py.File, sequences: Mapping[str, str]) -> set[str]:
         dataset = f.get(pid)
         if dataset is None:
             continue
-        stored = dataset.attrs.get(_DIGEST_ATTR)
+        stored = dataset.attrs.get(SEQUENCE_DIGEST_ATTR)
         if stored is None or str(stored) == sequence_digest(sequence):
             current.add(pid)
     return current
@@ -187,13 +187,13 @@ def save_embeddings(
             sequence = sequences.get(protein_id) if sequences else None
             digest = sequence_digest(sequence) if sequence is not None else None
             if protein_id in f:
-                stored = f[protein_id].attrs.get(_DIGEST_ATTR)
+                stored = f[protein_id].attrs.get(SEQUENCE_DIGEST_ATTR)
                 if digest is None or str(stored) == digest:
                     continue
                 del f[protein_id]
             dataset = f.create_dataset(protein_id, data=emb.astype(np.float32))
             if digest is not None:
-                dataset.attrs[_DIGEST_ATTR] = digest
+                dataset.attrs[SEQUENCE_DIGEST_ATTR] = digest
 
 
 def validate_headers(ids: Iterable[str]) -> None:

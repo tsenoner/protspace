@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from protspace.core.constants import standardize_missing
+from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
 from src.protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
@@ -111,6 +111,12 @@ def _web_missing_tokens() -> set[str]:
     )
     assert block, f"MISSING_VALUE_TOKENS not found in {WEB_MISSING_VALUES}"
     return set(re.findall(r"'([^']*)'", block.group(1)))
+
+
+def test_browser_missing_tokens_match_the_web_app():
+    """``BROWSER_MISSING_TOKENS`` is the web's list: the v3 encoder and the
+    showcase build's gates count N/A exactly as the legend does."""
+    assert _web_missing_tokens() == BROWSER_MISSING_TOKENS
 
 
 class TestNoTransmembraneIsACategory:

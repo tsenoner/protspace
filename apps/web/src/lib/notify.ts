@@ -1,19 +1,28 @@
 import { toast } from '../components/ui/sonner';
 
-export interface NotifyAction {
-  /** Button label shown on the toast. */
-  label: string;
-  /** Link the action opens — a `mailto:` or an `http(s)` URL. */
-  href: string;
-}
+/** A toast button: it opens a link, or runs a callback. Either way it dismisses the toast. */
+type NotifyAction =
+  | {
+      /** Button label shown on the toast. */
+      label: string;
+      /** Link the action opens — a `mailto:` or an `http(s)` URL. */
+      href: string;
+    }
+  | {
+      /** Button label shown on the toast. */
+      label: string;
+      onClick: () => void;
+    };
 
 export interface NotifyOptions {
   title: string;
   description?: string;
   durationMs?: number;
   dedupeKey?: string;
-  /** Optional action button (e.g. a "Report this" bug-report link). */
+  /** Optional primary action button (e.g. "Retry", or a "Report this" bug-report link). */
   action?: NotifyAction;
+  /** Optional second, muted button beside the primary one (sonner's `cancel`). */
+  secondaryAction?: NotifyAction;
 }
 
 type NotifyLevel = 'success' | 'info' | 'warning' | 'error';
@@ -70,17 +79,29 @@ function emitNotification(level: NotifyLevel, options: NotifyOptions): void {
 
   const description = options.description?.trim();
   const duration = options.durationMs ?? DEFAULT_DURATIONS_MS[level];
-  const action = options.action;
+  const { action, secondaryAction, dedupeKey } = options;
+
+  const toSonnerAction = (notifyAction: NotifyAction) => ({
+    label: notifyAction.label,
+    onClick: () => {
+      // Acting on a toast dismisses it, so the same message may show again
+      // right away: a Retry that fails again must be able to say so.
+      if (dedupeKey) {
+        recentNotifications.delete(dedupeKey);
+      }
+      if ('href' in notifyAction) {
+        openHref(notifyAction.href);
+      } else {
+        notifyAction.onClick();
+      }
+    },
+  });
 
   toast[level](options.title, {
     description,
     duration,
-    ...(action && {
-      action: {
-        label: action.label,
-        onClick: () => openHref(action.href),
-      },
-    }),
+    ...(action && { action: toSonnerAction(action) }),
+    ...(secondaryAction && { cancel: toSonnerAction(secondaryAction) }),
   });
 }
 
