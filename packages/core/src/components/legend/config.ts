@@ -4,7 +4,6 @@ import {
   toDisplayValue,
   SHAPE_PATH_GENERATORS,
   NA_VALUE,
-  NA_DISPLAY,
   NA_DEFAULT_COLOR,
   isNAValue,
   toInternalValue,
@@ -46,18 +45,9 @@ export {
   toInternalValue,
   SHAPE_PATH_GENERATORS,
   NA_VALUE,
-  NA_DISPLAY,
   NA_DEFAULT_COLOR,
   isNAValue,
 };
-
-/**
- * Convert internal legend value back to raw data value for matching.
- * NA_VALUE becomes null for matching against raw annotation data.
- */
-export function toDataValue(value: string): string | null {
-  return value === NA_VALUE ? null : value;
-}
 
 /** Event name constants for legend component */
 export const LEGEND_EVENTS = {

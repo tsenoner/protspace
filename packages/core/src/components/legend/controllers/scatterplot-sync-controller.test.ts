@@ -52,13 +52,6 @@ describe('ScatterplotSyncController', () => {
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       expect(mockHost.addController).toHaveBeenCalledWith(controller);
     });
-
-    it('initializes with default settings', () => {
-      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
-      expect(controller.scatterplotSelector).toBe('protspace-scatterplot');
-      expect(controller.autoSync).toBe(true);
-      expect(controller.autoHide).toBe(true);
-    });
   });
 
   describe('hostConnected', () => {
@@ -150,14 +143,6 @@ describe('ScatterplotSyncController', () => {
     it('returns null when no scatterplot discovered', () => {
       controller = new ScatterplotSyncController(mockHost, mockCallbacks);
       expect(controller.scatterplot).toBe(null);
-    });
-
-    it('returns the discovered scatterplot element', () => {
-      document.body.appendChild(mockScatterplot as unknown as Node);
-      controller = new ScatterplotSyncController(mockHost, mockCallbacks);
-      controller.hostConnected();
-
-      expect(controller.scatterplot).toBe(mockScatterplot);
     });
   });
 

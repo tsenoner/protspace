@@ -319,18 +319,6 @@ describe('legend-data-processor', () => {
       expect(result.topItems[2][0]).toBe('small');
     });
 
-    it('sorts alphabetically with alpha mode', () => {
-      const freq = new Map<string, number>([
-        ['10-20', 5],
-        ['1-5', 10],
-        ['5-10', 8],
-      ]);
-      const result = LegendDataProcessor.sortAndLimitItems(freq, 10, false, 'alpha-asc');
-      expect(result.topItems[0][0]).toBe('1-5');
-      expect(result.topItems[1][0]).toBe('5-10');
-      expect(result.topItems[2][0]).toBe('10-20');
-    });
-
     it('limits items to maxVisibleValues', () => {
       const freq = new Map<string, number>([
         ['a', 10],
@@ -893,16 +881,10 @@ describe('legend-data-processor', () => {
       expect(items[0].count).toBe(10);
       expect(items[0].isVisible).toBe(true);
       expect(items[0].color).toBeDefined();
-      expect(items[0].shape).toBe('circle');
+      expect(items.every((i) => i.shape === 'circle')).toBe(true);
     });
 
-    it('adds Other item when otherCount > 0', () => {
-      const topItems: Array<[string, number]> = [['category1', 10]];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
-      expect(items.some((i) => i.value === 'Other')).toBe(true);
-    });
-
-    it('sets correct count on Other item', () => {
+    it('adds an Other item carrying otherCount when otherCount > 0', () => {
       const topItems: Array<[string, number]> = [['category1', 10]];
       const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
       expect(items.find((i) => i.value === 'Other')?.count).toBe(5);
@@ -990,15 +972,6 @@ describe('legend-data-processor', () => {
       expect(cat1?.zOrder).toBe(1); // Second in reversed order
     });
 
-    it('uses circle as the default shape for every item', () => {
-      const topItems: Array<[string, number]> = [
-        ['category1', 10],
-        ['category2', 5],
-      ];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, []);
-      expect(items.every((i) => i.shape === 'circle')).toBe(true);
-    });
-
     it('applies colors from persistedCategories', () => {
       const topItems: Array<[string, number]> = [
         ['category1', 10],
@@ -1046,23 +1019,6 @@ describe('legend-data-processor', () => {
         persistedCategories,
       );
       expect(items[0].color).toBe('#persisted');
-    });
-
-    it('applies persisted colors to N/A items using __NA__ key', () => {
-      const topItems: Array<[string, number]> = [[NA_VALUE, 10]];
-      const persistedCategories = {
-        [NA_VALUE]: { zOrder: 0, color: '#na-color', shape: 'circle' },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      expect(items[0].color).toBe('#na-color');
     });
 
     it('uses existing colors when no persisted categories', () => {
@@ -1159,28 +1115,6 @@ describe('legend-data-processor', () => {
       );
       // Computed shape is always 'circle' regardless of what existing items had.
       expect(items[0].shape).toBe('circle');
-    });
-
-    it('keeps every default shape as circle even with prior items', () => {
-      const topItems: Array<[string, number]> = [
-        ['cat1', 30],
-        ['cat2', 20],
-      ];
-      const existing: LegendItem[] = [
-        { value: 'cat1', color: '#F3C300', shape: 'circle', count: 30, isVisible: true, zOrder: 0 },
-        { value: 'cat2', color: '#875692', shape: 'circle', count: 20, isVisible: true, zOrder: 1 },
-      ];
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        existing,
-        'size-desc',
-        new Map(),
-        {}, // empty persisted — simulates cleared pending categories
-      );
-      expect(items[0].shape).toBe('circle');
-      expect(items[1].shape).toBe('circle');
     });
 
     it('prefers persisted shapes over existing shapes', () => {

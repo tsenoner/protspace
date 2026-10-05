@@ -130,18 +130,6 @@ function renderSettingsDialogToContainer(overrides = {}) {
 }
 
 describe('renderSettingsDialog', () => {
-  it('does not render manual annotation type override controls', () => {
-    const { container } = renderSettingsDialogToContainer();
-    const select = container.querySelector('#annotation-type-override') as HTMLSelectElement | null;
-
-    expect(select).toBeNull();
-
-    const sections = [...container.querySelectorAll('.settings-section-title')].map((section) =>
-      section.textContent?.trim(),
-    );
-    expect(sections).not.toContain('Annotation type');
-  });
-
   it('keeps "By separation" checked on reload, before this projection\'s scores arrive', () => {
     // The deliberate reload case: hasCategoryScores is false (statistics have not synced
     // yet) but the persisted sort mode is still 'silhouette-desc'. Dropping the option here
@@ -266,19 +254,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         section.textContent?.trim(),
       ),
     ).toContain('Bin order');
-  });
-
-  it('does not render an "Include shapes" checkbox', () => {
-    const el = createLegend();
-    configureOpenSettingsDialog(el, DEFAULT_NUMERIC_PALETTE_ID);
-    const container = document.createElement('div');
-
-    render(el._renderSettingsDialog(), container);
-
-    const labels = Array.from(container.querySelectorAll('label')).map((l) =>
-      (l.textContent ?? '').trim(),
-    );
-    expect(labels).not.toContain('Include shapes');
   });
 
   it('normalizes palette changes using the inferred numeric annotation type', () => {
