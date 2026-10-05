@@ -155,7 +155,7 @@ If a previous session failed to finish loading a dataset (the browser crashed, t
 
 After three failed retries the banner shifts tone, recommending you clear or load the demo rather than continue retrying.
 
-A file that ProtSpace cannot read, such as a corrupt bundle or a FASTA file whose preparation fails, is never stored, so it leaves the dataset you imported before in place: that one is restored on your next visit as usual, with no banner. A stored copy that can no longer be read is cleared, and the startup demo loads in its place with a notice.
+A file that ProtSpace cannot read, such as a corrupt bundle or a FASTA file whose preparation fails, is never stored, so it leaves browser storage as it was: your next visit starts as it would have without that import, and no banner offers the file that failed. A stored copy that can no longer be read is cleared, and the startup demo loads in its place with a notice.
 
 ::: info Why a banner instead of just retrying?
 Auto-retry would loop forever on a genuinely broken file. The banner makes the failure visible and lets you choose the recovery path that fits the situation.
