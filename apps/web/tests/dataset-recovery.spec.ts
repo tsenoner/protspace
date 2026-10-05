@@ -67,6 +67,10 @@ async function clearOpfs(page: Page): Promise<void> {
 test.describe('dataset recovery banner', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
+    // Otherwise the first page's own startup load (demo, or restoring
+    // whatever OPFS state a previous test left behind) can still be
+    // writing when the seed/clear below runs, and the two writes race.
+    await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
     await clearOpfs(page);
   });

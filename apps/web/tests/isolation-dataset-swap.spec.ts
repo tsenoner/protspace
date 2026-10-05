@@ -2,8 +2,10 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
+  getProteinCount,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
+  waitForProteinCount,
 } from './helpers/explore';
 
 /**
@@ -21,12 +23,12 @@ const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetb
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
  *
- * Both menu buttons just delegate: "Load your dataset" clicks the hidden file input
- * inside <protspace-data-loader>, and "Load demo dataset" dispatches the
- * `load-demo-dataset` event upward from the control-bar. Driving those entry points
- * directly avoids click-on-shadow-DOM flakiness in headless mode while still hitting
- * exactly the same production code path (data-renderer.applyPlotState → scatterplot
- * .clearIsolationState()), which is what this regression test cares about.
+ * Both menu actions just delegate: "Load your dataset" clicks the hidden file input
+ * inside <protspace-data-loader>, and choosing an example dispatches the
+ * `load-example-dataset` event upward from the control-bar. Driving those entry
+ * points directly avoids click-on-shadow-DOM flakiness in headless mode while still
+ * hitting exactly the same production code path (data-renderer.applyPlotState →
+ * scatterplot.clearIsolationState()), which is what this regression test cares about.
  */
 async function loadCustomDataset(page: Page, datasetPath: string): Promise<void> {
   await waitForExploreInteractionReady(page);
@@ -40,33 +42,14 @@ async function loadDemoDataset(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   await page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
-    cb?.dispatchEvent(new CustomEvent('load-demo-dataset', { bubbles: true, composed: true }));
+    cb?.dispatchEvent(
+      new CustomEvent('load-example-dataset', {
+        detail: { id: 'demo' },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   });
-}
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as { data?: { protein_ids?: string[] } } | null;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as {
-        data?: { protein_ids?: string[] };
-      } | null;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
 }
 
 /** Engage isolation deterministically: take the first N plot points as the selection

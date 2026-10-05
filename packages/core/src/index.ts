@@ -9,6 +9,7 @@ export type {
   SelectionDisabledNotificationContext,
   SelectionDisabledNotificationDetail,
 } from './components/control-bar/control-bar.events';
+export type { ExampleDatasetSummary } from './components/control-bar/types';
 export type { DataLoadedEventDetail } from './components/data-loader/data-loader';
 export type {
   DataErrorContext,
