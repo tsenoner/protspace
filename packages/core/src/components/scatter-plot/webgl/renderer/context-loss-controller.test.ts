@@ -16,7 +16,7 @@ function makeCanvas() {
 }
 
 describe('ContextLossController', () => {
-  // POST-B1 reality (R2 / F-39): the restore path was deleted, so the controller
+  // The restore path was deleted, so the controller
   // registers ONLY `webglcontextlost` — never `webglcontextrestored`.
   it('registers webglcontextlost (and NOT webglcontextrestored) on construction', () => {
     const canvas = makeCanvas();

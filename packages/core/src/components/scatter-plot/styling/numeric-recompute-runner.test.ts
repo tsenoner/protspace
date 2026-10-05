@@ -1,16 +1,16 @@
-// F-04: NumericRecomputeRunner unit characterization.
+// NumericRecomputeRunner unit characterization.
 //
 // The runner owns the numeric-annotation recompute lifecycle extracted verbatim
 // from `_scheduleNumericAnnotationRefresh` (scatter-plot.ts L839-915):
 //   - a monotonically-increasing job id captured per schedule(),
 //   - a synchronous requestUpdate + running-state mirror (setRunning(true)),
 //   - a deferred (RAF) body that bails when its job id was superseded
-//     (the B7/F-23 last-write-wins stale-job drop), runs the component-supplied
+//     (the last-write-wins stale-job drop), runs the component-supplied
 //     `runRecompute()` tail, then clears the running-state mirror,
 //   - a running-state mirror pushed to the host via setRunning(),
 //   - cancel() that drops a pending RAF and invalidates any in-flight job.
 //
-// (F-46) The previously-dispatched `numeric-recompute-start` / `-end`
+// The previously-dispatched `numeric-recompute-start` / `-end`
 // CustomEvents were unconsumed public surface and have been removed; the busy
 // state is now characterized solely via the `setRunning` mirror, the runner's
 // `runningAnnotation()`, and the `runRecompute()` body call.
@@ -26,7 +26,7 @@ function makeHost() {
     getSelectedAnnotation() {
       return this.selectedAnnotation;
     },
-    // F-57: the runner no longer issues an explicit host.requestUpdate(); the Lit
+    // The runner no longer issues an explicit host.requestUpdate(); the Lit
     // update is scheduled by the host's `_numericRecomputeRunning` @state setter,
     // which `setRunning` writes. The busy state is the only scheduling signal.
     setRunning: (r: boolean) => running.push(r),
@@ -61,7 +61,7 @@ describe('NumericRecomputeRunner', () => {
     expect(r.runningAnnotation()).toBe(null);
   });
 
-  it('enters the running state synchronously (F-57: no explicit requestUpdate)', () => {
+  it('enters the running state synchronously (no explicit requestUpdate)', () => {
     const host = makeHost();
     const r = new NumericRecomputeRunner(host);
     r.schedule();

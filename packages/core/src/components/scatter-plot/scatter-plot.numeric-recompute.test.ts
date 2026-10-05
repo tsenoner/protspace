@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// F-23 characterization lock: the numeric-recompute stale-job generation guard.
+// Characterization lock: the numeric-recompute stale-job generation guard.
 //
 // `_scheduleNumericAnnotationRefresh` delegates to the NumericRecomputeRunner,
 // which bumps + captures a per-schedule job id, flips the `_numericRecomputeRunning`
@@ -10,7 +10,7 @@
 // the running state; only the surviving (latest) job's RAF clears it. This locks
 // "last-write-wins" for two overlapping schedules.
 //
-// (F-46) The runner's old public `numeric-recompute-start` / `-end` CustomEvents
+// The runner's old public `numeric-recompute-start` / `-end` CustomEvents
 // were unconsumed and have been removed; the stale-job guard is now characterized
 // via the kept `_numericRecomputeRunning` busy-state mirror.
 //
@@ -29,7 +29,7 @@ import { createPlot, makeFamilyData } from './test-support/plot-fixture';
 const scorePlot = () =>
   createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'score' });
 
-describe('numeric-recompute stale-job guard (F-23 characterization lock)', () => {
+describe('numeric-recompute stale-job guard (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];

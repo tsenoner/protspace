@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * F-28: hover and click must share ONE hit-test (`pickInteractivePointAt`).
+ * Hover and click must share ONE hit-test (`pickInteractivePointAt`).
  * We stub the point index + scales + a single rendered point and assert:
  *   (a) pickInteractivePointAt returns the interactive in-radius point;
  *   (b) it returns null for a non-interactive (hidden) point;
@@ -48,7 +48,7 @@ function makePickScatter(): PlotInternals {
   return sp;
 }
 
-describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
+describe('pickInteractivePointAt (shared hover/click hit-test)', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('returns the interactive in-radius point at the cursor', () => {

@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * F-07: PlotInteractionController owns the d3 zoom/brush/lasso lifecycle and the
+ * PlotInteractionController owns the d3 zoom/brush/lasso lifecycle and the
  * zoom/lasso RAF loops, signalling the host via callbacks (event dispatch
- * stays on the host — INV-03/INV-05). These unit tests drive the controller with
+ * stays on the host). These unit tests drive the controller with
  * a real SVG element + injected callbacks and a synchronous RAF.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -110,7 +110,7 @@ describe('PlotInteractionController', () => {
     expect(svg.querySelector('path.lasso-path')).toBeNull();
   });
 
-  // F-12: resetZoom() runs a 750ms d3 transition on the SVG selection. teardown()
+  // resetZoom() runs a 750ms d3 transition on the SVG selection. teardown()
   // (called from the host's disconnectedCallback) must interrupt that transition so
   // it cannot keep re-arming the zoom RAF / writing the transform after disconnect.
   // d3 stores the pending transition schedule on node.__transition synchronously when

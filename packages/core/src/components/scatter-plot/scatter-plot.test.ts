@@ -251,7 +251,7 @@ describe('scatter-plot WebGL context-loss recovery', () => {
     sp.remove();
   });
 
-  it('F-10: recovery microtask does not rebuild renderer after disconnect', async () => {
+  it('recovery microtask does not rebuild renderer after disconnect', async () => {
     const sp = createPlot();
     // Connect so Lit's update lifecycle (and updateComplete) actually runs,
     // then disconnect synchronously after firing the loss event but BEFORE the

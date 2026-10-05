@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Issue #343: the plot's existing point-count chip exposes whether the active
- * D3 view is zoomed in. The full transform remains non-reactive (F-48); only
+ * D3 view is zoomed in. The full transform remains non-reactive; only
  * crossings between identity and k > 1 schedule a Lit update for the marker.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -32,7 +32,7 @@ const scales = (): ScalePair => ({
 });
 const makeRenderer = () => makeBaseRenderer({ getScales: scales, colors: ['#ff0000'] }).renderer;
 
-describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', () => {
+describe('WebGLRenderer sampled-slot signatures (characterization lock)', () => {
   let renderer: ReturnType<typeof makeRenderer>;
   beforeEach(() => {
     renderer = makeRenderer();
@@ -51,7 +51,7 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
     expect(counters.restage).toBe(1);
   });
 
-  it('LOCK (documents the lossy gap, INV-12/INV-09): a change at an UNSAMPLED slot is MISSED by the signature', () => {
+  it('LOCK (documents the lossy gap): a change at an UNSAMPLED slot is MISSED by the signature', () => {
     // Length 5 → sampled slots for data sig are {0, 2, 4}; slot 1 and 3 are NOT sampled.
     const a = pd([0, 1, 2, 3, 4], [0, 1, 2, 3, 4]);
     renderer.render(a);
@@ -59,7 +59,7 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
     // Mutate only slot 1 (unsampled): same length, identical at 0/2/4 → signature collides.
     renderer.render(pd([0, 99, 2, 3, 4], [0, 1, 2, 3, 4]));
     // Current behavior is INTENTIONALLY lossy; explicit invalidate*() covers real mutation paths.
-    // B6 MUST keep an explicit invalidate on same-shape in-place coordinate swaps (INV-12/INV-09).
+    // Callers MUST keep an explicit invalidate on same-shape in-place coordinate swaps.
     expect(counters.restage).toBe(0);
   });
 
@@ -73,19 +73,19 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
   });
 });
 
-// ── F-55 / F-56 removal guards on a live WebGLRenderer instance ─────────────
-// F-55: the unused public getGamma/setGamma accessors are removed; the gamma
-//       field and its effective-gamma resolver (getEffectiveGamma) stay.
-// F-56: the @deprecated no-op setSelectedAnnotation is removed; the live
-//       invalidation methods survive.
-describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
+// ── Removal guards on a live WebGLRenderer instance ─────────────
+// - The unused public getGamma/setGamma accessors are removed; the gamma
+//   field and its effective-gamma resolver (getEffectiveGamma) stay.
+// - The @deprecated no-op setSelectedAnnotation is removed; the live
+//   invalidation methods survive.
+describe('WebGLRenderer dead-accessor removal guards', () => {
   let renderer: ReturnType<typeof makeRenderer>;
   beforeEach(() => {
     renderer = makeRenderer();
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('F-55: getGamma / setGamma are gone; getEffectiveGamma survives', () => {
+  it('getGamma / setGamma are gone; getEffectiveGamma survives', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.getGamma).toBeUndefined();
     expect(surface.setGamma).toBeUndefined();
@@ -93,7 +93,7 @@ describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
     expect(typeof surface.getEffectiveGamma).toBe('function');
   });
 
-  it('F-56: setSelectedAnnotation is gone; invalidateStyleCache survives', () => {
+  it('setSelectedAnnotation is gone; invalidateStyleCache survives', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.setSelectedAnnotation).toBeUndefined();
     expect(typeof surface.invalidateStyleCache).toBe('function');

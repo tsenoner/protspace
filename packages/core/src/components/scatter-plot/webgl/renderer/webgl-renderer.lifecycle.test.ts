@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { PlotData } from '@protspace/utils';
 import { makeRenderer } from './test-support/renderer-fixture';
 
-// B1 renderer lifecycle behavior-change tests (TDD): F-43, F-39, F-01.
+// Renderer lifecycle behavior-change tests (TDD).
 // These assert POST-change behavior, so on the unmodified tree:
-//   - F-43 (destroy disposes GPU resources)            -> RED
-//   - F-39 (no webglcontextrestored listener)          -> RED
-//   - F-01 programmatic loss routes to onContextLost    -> RED
-//   - F-01 DOM no-double-fire (invariant lock)          -> GREEN
+//   - destroy disposes GPU resources                   -> RED
+//   - no webglcontextrestored listener                 -> RED
+//   - programmatic loss routes to onContextLost         -> RED
+//   - DOM no-double-fire (invariant lock)               -> GREEN
 //
 // The shared mock-webgl2 harness provides the full gl.* surface the render path
 // needs (incl. uniform3f / disableVertexAttribArray), so render()-driven tests
@@ -26,7 +26,7 @@ function makePlotData(n: number): PlotData {
   return { length: n, xs, ys, zs: null, originalIndices: null, proteinIds };
 }
 
-describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
+describe('WebGLRenderer lifecycle', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -40,8 +40,8 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     vi.restoreAllMocks();
   });
 
-  // F-43 — destroy() becomes the single GPU-teardown owner.
-  it('F-43: destroy() deletes GPU resources via dispose()', () => {
+  // destroy() becomes the single GPU-teardown owner.
+  it('destroy() deletes GPU resources via dispose()', () => {
     const { renderer, gl } = makeRenderer();
     // Force lazy resource creation so there are handles to delete.
     renderer.render(makePlotData(3)); // ensureGL() -> createBuffer/VAO/texture/program
@@ -61,8 +61,8 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     expect(del.program.mock.calls.length).toBeGreaterThanOrEqual(1); // pointProgram (+gamma if available)
   });
 
-  // F-39 — delete the unreachable internal handleContextRestored recovery.
-  it('F-39: constructor registers no webglcontextrestored listener', () => {
+  // The unreachable internal handleContextRestored recovery is deleted.
+  it('constructor registers no webglcontextrestored listener', () => {
     const add = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
     const { renderer: r } = makeRenderer({ onContextLost: vi.fn() });
     const types = add.mock.calls.map((c) => c[0]);
@@ -71,8 +71,8 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     r.destroy();
   });
 
-  // F-01 — route programmatic context loss to recovery (sanctioned visible change).
-  it('F-01: programmatic loss (gl.isContextLost) routes to onContextLost once', () => {
+  // Route programmatic context loss to recovery (sanctioned visible change).
+  it('programmatic loss (gl.isContextLost) routes to onContextLost once', () => {
     const onContextLost = vi.fn();
     const { renderer: r, gl } = makeRenderer({ onContextLost });
     r.render(makePlotData(3)); // acquire context
@@ -83,7 +83,7 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     r.destroy();
   });
 
-  it('F-01: DOM webglcontextlost still fires onContextLost exactly once (no double-fire)', () => {
+  it('DOM webglcontextlost still fires onContextLost exactly once (no double-fire)', () => {
     const onContextLost = vi.fn();
     const { renderer: r, canvas } = makeRenderer({ onContextLost });
     r.render(makePlotData(3));

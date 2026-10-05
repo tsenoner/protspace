@@ -19,7 +19,7 @@ const pd: PlotData = {
   originalIndices: null,
   proteinIds: ['p0', 'p1'],
 };
-describe('WebGLRenderer context loss + restore (F-09 characterization lock)', () => {
+describe('WebGLRenderer context loss + restore (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -55,14 +55,14 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     expect(onLost).not.toHaveBeenCalled();
   });
 
-  // F-39: the internal webglcontextrestored recovery handler was deleted. It was
+  // The internal webglcontextrestored recovery handler was deleted. It was
   // unreachable in production (real loss → onContextLost → scatter-plot destroy()s
   // the renderer, which removes the webglcontextlost listener and disposes; the
   // restore listener never survived to fire). Recovery now flows solely through the
   // scatter-plot rebuild-on-loss path. These two cases used to characterize the dead
   // internal handler (they only "passed" because they synthesized the restore event
   // directly); they now pin its absence.
-  it('F-39: no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
+  it('no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
     const { renderer: r, canvas } = makeRenderer();
     r.render(pd); // sets lastRenderedData
     const renderSpy = vi.spyOn(r, 'render');
@@ -72,7 +72,7 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     expect(renderSpy).not.toHaveBeenCalled();
   });
 
-  it('F-39: constructor registers no webglcontextrestored listener', () => {
+  it('constructor registers no webglcontextrestored listener', () => {
     const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
     const { renderer: r } = makeRenderer();
     const types = addSpy.mock.calls.map((c) => c[0]);

@@ -8,7 +8,7 @@ import { computeVisibilityModel } from './visibility-model';
  * Unit contract for the pure visibility model.
  *
  * Each `describe` block maps to a row of the design D5 semantics table
- * (openspec/changes/unified-visibility-model/design.md). The model must be
+ * (openspec/changes/archive/2026-08-12-unified-visibility-model/design.md). The model must be
  * bit-for-bit identical to `createStyleGetters`' opacity semantics, so the
  * assertions below are exact (`toBe`), and the opacity tiers are deliberately
  * distinct so a tier can never silently alias another.
@@ -456,12 +456,12 @@ describe('computeVisibilityModel', () => {
     });
   });
 
-  // ── F-45 removal guard: tierOf / DisplayTier are gone ─────────────────────
+  // ── Removal guard: tierOf / DisplayTier are gone ─────────────────────
   // tierOf was a convenience view with no live readers; the opacity/depth
   // contract carriers (opacityOf / baseOpacityOf / isInteractive) carry all
   // behavior. This guard locks tierOf's removal while proving those carriers
   // — and the full hidden/selected/faded/base distinctions they encode — remain.
-  describe('F-45: model exposes no tierOf, distinctions live in opacity carriers', () => {
+  describe('model exposes no tierOf, distinctions live in opacity carriers', () => {
     it('the model surface has no tierOf member', () => {
       const data = makeData(['A'], Int32Array.of(0));
       const model = computeVisibilityModel(baseInputs({ data }));

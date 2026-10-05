@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * F-27 characterization LOCK — `_style.model()` memo key.
+ * Characterization LOCK — `_style.model()` memo key.
  *
  * `PointStyleState.model()` (the host's `_style`) caches one VisibilityModel instance keyed by
  * reference/value identity on the 10 fields of `VisibilityModelMemoKey`:
@@ -102,7 +102,7 @@ function famData(fam = [0, 0, 0, 1, 1, 1]): VisualizationData {
 
 const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: i, y: i, originalIndex: i });
 
-describe('_style.model() memo key (F-27 characterization lock)', () => {
+describe('_style.model() memo key (characterization lock)', () => {
   function primed(): Internals {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = famData();

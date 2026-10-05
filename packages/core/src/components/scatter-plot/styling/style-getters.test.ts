@@ -636,12 +636,12 @@ describe('style-getters', () => {
     });
   });
 
-  // ── F-44 removal guard: dead stroke getters are gone, live getters survive ──
+  // ── Removal guard: dead stroke getters are gone, live getters survive ──
   // The GPU draws strokes from a hardcoded fragment-shader constant
   // (strokeWidth = 0.15 in webgl-renderer.ts), so createStyleGetters' stroke
   // getters were never consumed. This guard locks their removal and proves the
   // five live keys remain present.
-  describe('F-44: createStyleGetters does not expose stroke getters', () => {
+  describe('createStyleGetters does not expose stroke getters', () => {
     const createMockData = (annotationValues: string[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),
       projections: [

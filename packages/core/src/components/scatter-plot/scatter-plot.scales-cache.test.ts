@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// F-22 characterization lock for the `_scales` cache.
+// Characterization lock for the `_scales` cache.
 //
 // `_scales` (a getter) recomputes ONLY when plotDataLength / width / height /
 // margin change. A same-length coordinate swap (switching projection or
@@ -41,7 +41,7 @@ function twoProjectionData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-describe('_scales cache invalidation (F-22 characterization lock)', () => {
+describe('_scales cache invalidation (characterization lock)', () => {
   it('switching projection (same length, new coords) yields a fresh ScalePair with the new domain', () => {
     const sp = createPlot();
     sp.data = twoProjectionData();

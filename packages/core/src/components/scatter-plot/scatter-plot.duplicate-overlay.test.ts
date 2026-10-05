@@ -3,9 +3,9 @@
  *
  * Characterization lock for the duplicate-stack overlay subsystem.
  *
- * Guards the contracts the F-06 controller-extraction move must preserve:
+ * Guards the contracts the move into DuplicateStackOverlayController must preserve:
  *  1. the shared helper groups exact-coord coincidents and drops solos, keying
- *     by the same per-projection coord key production groups by (F-36 contract);
+ *     by the same per-projection coord key production groups by;
  *  2. the feature is gated off by default (enableDuplicateStackUI === false).
  *     What the gate does once an overlay group exists (layers removed, no
  *     badges, no spiderfy) is tested on the controller directly in
@@ -46,7 +46,7 @@ function makeElement(): DuplicateOverlayInternals {
 }
 
 describe('duplicate-overlay characterization', () => {
-  // Lock 1: helper key contract is the same one production groups by (F-36).
+  // Lock 1: helper key contract is the same one production groups by.
   it('groups exact-coord coincidents and drops solos via the shared helper', () => {
     const r = buildDuplicateStacks([
       { id: 'a', x: 1, y: 1 },

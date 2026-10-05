@@ -13,7 +13,7 @@ beforeAll(() => {
 });
 import './scatter-plot';
 
-// F-06 moved the chunked-compute state into DuplicateStackOverlayController.
+// The extraction moved the chunked-compute state into DuplicateStackOverlayController.
 // ensureForViewport, stacks and cacheKey are TS-private at compile time but
 // reachable at runtime; the probes assert the SAME contracts (a cancelled job
 // commits nothing, viewKey cache hit) without reading the job id itself.
@@ -71,7 +71,7 @@ function prime(): Internals {
   return sp;
 }
 
-describe('duplicate-stack chunked compute (F-24 characterization lock)', () => {
+describe('duplicate-stack chunked compute (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * F-26 characterization lock — the style getters cache invalidation lifecycle.
+ * Characterization lock — the style getters cache invalidation lifecycle.
  *
  * `PointStyleState.getters()` (the host's `_style`) rebuilds the cached getters
  * ONLY after `invalidateGetters()`. The documented entry points call it:
@@ -8,7 +8,7 @@
  *   - `_handleZOrderChange`              — legend z-order change
  *   - `_refreshSelectedAnnotationValues` — selected-annotation switch
  *
- * NOTE (plan B7/F-26): `_processData` itself does NOT invalidate the getters,
+ * NOTE: `_processData` itself does NOT invalidate the getters,
  * so the selected-annotation case is driven through the real nulling path in
  * `_refreshSelectedAnnotationValues` rather than through `_processData`.
  *
@@ -80,7 +80,7 @@ function famData(): VisualizationData {
 
 const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: i, y: i, originalIndex: i });
 
-describe('style getters invalidation lifecycle (F-26 characterization lock)', () => {
+describe('style getters invalidation lifecycle (characterization lock)', () => {
   function primed(): Internals {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = famData();

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * F-48 characterization: writing `_transform` must NOT schedule a Lit reactive
+ * Characterization: writing `_transform` must NOT schedule a Lit reactive
  * update. Pre-change (`@state() _transform`) Lit installs a reactive accessor,
  * so a write calls `requestUpdate('_transform', old)`, enqueues an update, and
  * once that update flushes `updated()` runs and (because `_transform` is not in
@@ -12,10 +12,10 @@
  * The load-bearing signal: a `_transform` write does not call `requestUpdate`,
  * the single Lit hook that schedules an update (and hence the downstream
  * `updated()` -> `_renderPlot()` pass for this non-selection key). Spying
- * `requestUpdate` pins exactly the cause F-48 removes, with no downstream noise.
+ * `requestUpdate` pins exactly the cause the plain-field change removes, with no downstream noise.
  *
  * RED/GREEN status on the UNMODIFIED tree: RED by design — today `_transform` is
- * `@state`, so the write calls `requestUpdate`. It goes GREEN once F-48 demotes
+ * `@state`, so the write calls `requestUpdate`. It goes GREEN once the change demotes
  * `_transform` to a plain (non-reactive) field.
  *
  * The element is constructed via `createElement` and NEVER appended: a reactive
@@ -31,7 +31,7 @@ import * as d3 from 'd3';
 
 import { createPlot } from './test-support/plot-fixture';
 
-describe('F-48 _transform is not a reactive Lit property', () => {
+describe('_transform is not a reactive Lit property', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

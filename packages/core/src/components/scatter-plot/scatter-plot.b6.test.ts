@@ -1,11 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * B6 component characterization for the wired scatter-plot changes
- * (F-60, F-40, F-17, F-18).
+ * Component characterization for the materialization, filtered display-data
+ * and updated() effect-ordering changes.
  *
- * These tests pin the externally observable contract of the B6 batch so the
- * refactor stays behavior-preserving. They follow the proven B7 pattern: the
+ * These tests pin the externally observable contract of these changes so the
+ * refactor stays behavior-preserving. They follow the pattern of the cache tests: the
  * element is constructed via `createElement` and NEVER appended, so Lit's
  * `connectedCallback` / WebGL init never runs (no WebGL context exists in
  * jsdom). The reactive `updated()` dispatcher is exercised by calling it
@@ -14,27 +14,27 @@
  * lifecycle. `_processData()` populates `_plotData` via
  * `DataProcessor.processVisualizationData` and needs no GPU.
  *
- * Fixture shape mirrors the neighbour B7 tests
+ * Fixture shape mirrors the neighbour cache tests
  * (scatter-plot.materialize-cache.test.ts / scatter-plot.scales-cache.test.ts):
  * { protein_ids, projections:[{name,data:Float32Array,dimension:2}],
  *   annotations:{key:{values,colors,shapes}}, annotation_data:{key:[...]},
  *   numeric_annotation_data:{...} } — NOT a makeViz factory.
  *
  * RED/GREEN status on the UNMODIFIED tree:
- *  - F-60 (ref fast-path)                  : GREEN  (existing behavior)
- *  - F-40 includeFilteredProteinIds:false  : GREEN  (existing fast path)
- *  - F-40 filtered correctness             : GREEN  (existing slice)
- *  - F-40 filtered memoization (toBe)      : RED    (not-yet-wired memo)
- *  - F-40 recompute on ref change          : GREEN  (rebuilds anyway today)
- *  - F-17 (virtualization cache)           : REMOVED — #456 deleted the cull it
+ *  - single numeric read (ref fast-path)   : GREEN  (existing behavior)
+ *  - includeFilteredProteinIds:false       : GREEN  (existing fast path)
+ *  - filtered correctness                  : GREEN  (existing slice)
+ *  - filtered memoization (toBe)           : RED    (not-yet-wired memo)
+ *  - recompute on ref change               : GREEN  (rebuilds anyway today)
+ *  - virtualization cache                  : REMOVED — #456 deleted the cull it
  *                                            served, so there is no visible-set
  *                                            memo left to keep fresh. The
  *                                            point index is unchanged, and still
  *                                            covered by the hover, click, brush
  *                                            and lasso tests that use it.
- *  - F-18 filter clear before reprocess    : GREEN  (existing order)
- *  - F-18 data-change emit gating          : GREEN  (existing gate)
- *  - F-18 INV-10 re-default                : GREEN  (existing default)
+ *  - filter clear before reprocess         : GREEN  (existing order)
+ *  - data-change emit gating               : GREEN  (existing gate)
+ *  - selectedAnnotation re-default         : GREEN  (existing default)
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
@@ -50,7 +50,7 @@ const RED = '#ff0000';
  */
 const WITH_SCORE = { other: true, score: true };
 
-/** Fixture whose single annotation key is `only` (for the INV-10 re-default). */
+/** Fixture whose single annotation key is `only` (for the selectedAnnotation re-default). */
 function makeSingleAnnotationData(n = 4): VisualizationData {
   const values = Array.from({ length: n }, (_, i) => (i % 2 === 0 ? 'x' : 'y'));
   const coords = new Float32Array(n * 2);
@@ -89,9 +89,9 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// F-60 — single numeric-column read in the materialization (ref fast-path)
+// Single numeric-column read in the materialization (ref fast-path)
 // ---------------------------------------------------------------------------
-describe('B6 F-60 getMaterializedData single numeric read', () => {
+describe('getMaterializedData single numeric read', () => {
   it('returns a stable reference on repeated calls with unchanged inputs (GREEN)', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
@@ -123,9 +123,9 @@ describe('B6 F-60 getMaterializedData single numeric read', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-40 — memoize the filtered display-data rebuild
+// Memoize the filtered display-data rebuild
 // ---------------------------------------------------------------------------
-describe('B6 F-40 filtered display-data memoization', () => {
+describe('filtered display-data memoization', () => {
   function primed(): PlotInternals {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
@@ -168,14 +168,14 @@ describe('B6 F-40 filtered display-data memoization', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-18 — updated() effect ordering & INV-11 gate
+// updated() effect ordering & the re-processing gate
 //
 // updated() is driven directly with an explicit changedProperties Map (the
 // element is never appended). This exercises the real dispatcher: the
 // filter-clear-before-reprocess order, the data-change emit gate, and the
-// INV-10 selectedAnnotation re-default.
+// selectedAnnotation re-default.
 // ---------------------------------------------------------------------------
-describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
+describe('updated() effect ordering & re-processing gate', () => {
   it('clears stale filters before reprocessing on a data swap (GREEN)', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
@@ -195,7 +195,7 @@ describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
     expect(el._plotData.length).toBe(5);
   });
 
-  it('emits data-change exactly when an INV-11 geometry input changes (GREEN)', () => {
+  it('emits data-change exactly when a re-processing geometry input changes (GREEN)', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
@@ -216,7 +216,7 @@ describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
     expect(seen).toEqual(['data-change']);
   });
 
-  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10, GREEN)', () => {
+  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (GREEN)', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';

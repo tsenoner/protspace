@@ -1,11 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * B2 lifecycle hardening (scatter-plot-part2 audit). These tests pin the
+ * Lifecycle hardening. These tests pin the
  * post-disconnect / post-context-loss behaviour of the host's lifecycle paths.
  * Every assertion targets a DETACHED node or a null-renderer state; the
  * connected render / zoom / selection / numeric flow is untouched and stays
- * byte-identical (INV-03 / INV-05: we only SUPPRESS spurious dispatches from a
+ * byte-identical (event dispatch and detail shapes are unchanged: we only SUPPRESS spurious dispatches from a
  * detached node, never alter a dispatch the user observes while connected).
  *
  * Construct the element via createElement WITHOUT appending it (so isConnected
@@ -13,24 +13,24 @@
  * approach as scatter-plot.test.ts / scatter-plot.isolation.test.ts). We drive
  * the private lifecycle methods directly.
  *
- * Findings:
- *   - F-35 + F-11: firstUpdated constructs EXACTLY ONE WebGLRenderer and never
+ * Covered:
+ *   - firstUpdated constructs EXACTLY ONE WebGLRenderer and never
  *     orphans one (currently RED — firstUpdated double-constructs via
  *     _updateSizeAndRender then again inline).
- *   - F-05: a numeric recompute does not complete after disconnect — the busy
+ *   - a numeric recompute does not complete after disconnect — the busy
  *     state is cleared and a superseded RAF body bails (ALREADY SATISFIED by
- *     B6/F-04 NumericRecomputeRunner.cancel(); this is a characterization lock).
- *     (F-46 removed the old `numeric-recompute-end` event; re-characterized via
+ *     NumericRecomputeRunner.cancel(); this is a characterization lock).
+ *     (The old `numeric-recompute-end` event was removed; re-characterized via
  *     the kept `_numericRecomputeRunning` mirror.)
- *   - F-12: the 750ms resetZoom transition is interrupted on disconnect
- *     (ALREADY SATISFIED by B8 PlotInteractionController.teardown(); this is a
+ *   - the 750ms resetZoom transition is interrupted on disconnect
+ *     (ALREADY SATISFIED by PlotInteractionController.teardown(); this is a
  *     characterization lock asserted via the controller teardown path).
- *   - F-16: a selection committed then disconnected before its deferred RAF
+ *   - a selection committed then disconnected before its deferred RAF
  *     fires dispatches nothing — disconnectedCallback cancels the tracked
  *     _commitSelectionRafId (currently RED — the RAF id is not cancelled). The
  *     suppression is via cancellation, NOT an isConnected body-guard, so the
- *     connected dispatch (scatter-plot.test.ts B7 locks) stays byte-identical.
- *   - F-21: `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
+ *     connected dispatch (scatter-plot.test.ts selection locks) stays byte-identical.
+ *   - `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
  *     null (currently RED — uses a non-null assertion).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -105,7 +105,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () => {
+describe('firstUpdated constructs exactly one WebGLRenderer', () => {
   it('constructs exactly ONE WebGLRenderer and orphans none', () => {
     const sp = makeHost();
     // @query('canvas') resolves only after a render; supply a stub canvas so the
@@ -128,7 +128,7 @@ describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () =>
   });
 });
 
-describe('F-05: numeric recompute does not complete after disconnect', () => {
+describe('numeric recompute does not complete after disconnect', () => {
   it('a numeric recompute scheduled then disconnected leaves no job running', () => {
     const frames = fakeFrames();
     // A cancel that does nothing, so the superseded body still runs and must bail.
@@ -145,7 +145,7 @@ describe('F-05: numeric recompute does not complete after disconnect', () => {
 
     // Drain whatever RAF bodies are still queued: the superseded job must bail
     // (the cancel bumped the job id), so it neither runs the body nor re-enters
-    // the running state. (F-46: the removed -end event is now re-characterized via
+    // the running state. (The removed -end event is now re-characterized via
     // the kept busy-state mirror.)
     frames.run();
 
@@ -153,7 +153,7 @@ describe('F-05: numeric recompute does not complete after disconnect', () => {
   });
 });
 
-describe('F-12: resetZoom transition interrupted on disconnect', () => {
+describe('resetZoom transition interrupted on disconnect', () => {
   it('disconnectedCallback tears down the interaction controller (interrupts the 750ms transition)', () => {
     const sp = makeHost();
     const teardown = vi.fn();
@@ -171,7 +171,7 @@ describe('F-12: resetZoom transition interrupted on disconnect', () => {
   });
 });
 
-describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
+describe('_commitSelection RAF cancelled on disconnect', () => {
   it('a selection committed then disconnected before the RAF fires dispatches nothing', () => {
     // The disconnect cancel must un-queue the pending RAF body, as in the browser.
     const frames = fakeFrames();
@@ -193,7 +193,7 @@ describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
   });
 });
 
-describe('F-21: _renderWebGL is a no-op when the renderer is null', () => {
+describe('_renderWebGL is a no-op when the renderer is null', () => {
   it('does not throw when _webglRenderer is null', () => {
     const sp = makeHost();
     // No firstUpdated ran, so the renderer was never constructed (null). The

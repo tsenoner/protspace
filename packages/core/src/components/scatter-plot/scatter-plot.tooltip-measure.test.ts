@@ -19,7 +19,7 @@ function withStubChild(sp: PlotInternals, height: number, ready: Promise<unknown
   };
 }
 
-describe('tooltip-height async measurement race (F-25 characterization lock)', () => {
+describe('tooltip-height async measurement race (characterization lock)', () => {
   it('a newer hover (token bump) suppresses the stale measure write', async () => {
     const sp = createPlot();
     sp._tooltipData = { id: 'p0' };
