@@ -35,29 +35,6 @@ def _read_part(part_bytes):
     return pq.read_table(io.BytesIO(part_bytes))
 
 
-def test_replaces_annotations_keeps_other_parts(tmp_path):
-    src = tmp_path / "in.parquetbundle"
-    out = tmp_path / "out.parquetbundle"
-    write_bundle(_tables(), src)
-
-    new_annotations = stamp_format_version(
-        pa.table(
-            {
-                "identifier": ["A", "B"],
-                "cat": ["x", "y"],
-                "cat__pred_value": [None, "z"],
-            }
-        )
-    )
-    replace_annotations_in_bundle(src, out, new_annotations)
-
-    parts, settings = read_bundle(out)
-    assert "cat__pred_value" in _read_part(parts[0]).column_names
-    # Projections preserved.
-    assert _read_part(parts[1]).column_names == ["projection_name", "dimensions"]
-    assert _read_part(parts[2]).to_pydict()["x"] == [0.0, 1.0]
-
-
 def test_projection_parts_preserved_byte_for_byte(tmp_path):
     """A v3 rewrite re-encodes part 1 and its payloads (part 6), keeps part 2 as
     stored and realigns part 3 to the new rows — which, for unchanged rows, has
@@ -82,6 +59,11 @@ def test_projection_parts_preserved_byte_for_byte(tmp_path):
     assert out_parts[1] == in_parts[1]  # projections_metadata, byte-identical
     assert out_parts[2] == in_parts[2]  # projections_data, byte-identical
     assert out_parts[3] == in_parts[3]  # settings, byte-identical
+
+    # The replacement landed, and the settings still decode.
+    parts, settings = read_bundle(out)
+    assert "cat__pred_value" in _read_part(parts[0]).column_names
+    assert settings == {"foo": 1}
 
 
 def test_delimiter_in_annotation_cell_raises(tmp_path):
@@ -143,20 +125,6 @@ def test_failed_replace_preserves_original_in_place(tmp_path, monkeypatch):
         replace_annotations_in_bundle(path, path, new_annotations)
     assert path.read_bytes() == original  # untouched
     assert not list(tmp_path.glob("*.tmp"))  # temp cleaned up
-
-
-def test_preserves_settings_when_present(tmp_path):
-    src = tmp_path / "in.parquetbundle"
-    out = tmp_path / "out.parquetbundle"
-    write_bundle(_tables(), src, settings={"foo": 1})
-
-    new_annotations = stamp_format_version(
-        pa.table({"identifier": ["A", "B"], "cat": ["x", "y"]})
-    )
-    replace_annotations_in_bundle(src, out, new_annotations)
-
-    _parts, settings = read_bundle(out)
-    assert settings == {"foo": 1}
 
 
 def test_preserves_statistics_part_when_present(tmp_path):

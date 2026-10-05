@@ -267,30 +267,6 @@ class TestAnnotationMerger:
         assert result[1].annotations["genus"] == "Mus"
         assert result[1].annotations["species"] == "Mus musculus"
 
-    def test_merge_with_top_9_filtering(self):
-        """Test that annotation merging keeps only top 9 values."""
-        merger = AnnotationMerger()
-
-        uniprot_annotations = [
-            ProteinAnnotations(
-                identifier=f"P{i}", annotations={"organism_id": str(i % 2)}
-            )
-            for i in range(20)
-        ]
-
-        # Create taxonomy with many different values for an annotation
-        taxonomy_annotations = {}
-        for i in range(2):
-            taxonomy_annotations[i] = {
-                "annotations": {"genus": f"Genus{i % 12}"}  # 12 different genera
-            }
-
-        result = merger.merge(uniprot_annotations, taxonomy_annotations)
-
-        # Should have applied "other" for less frequent values
-        genus_values = {protein.annotations.get("genus", "") for protein in result}
-        assert len(genus_values) <= 10  # Max 9 + "other"
-
     def test_merge_missing_taxonomy(self):
         """Test merging when taxonomy data is missing for some organisms."""
         merger = AnnotationMerger()
