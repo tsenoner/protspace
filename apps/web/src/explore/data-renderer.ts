@@ -159,24 +159,6 @@ export function createDataRenderer({
     const initialView = resolveInitialView(newData);
     const resolvedInitialView = resolveRenderableView(newData, initialView);
 
-    console.log('Dataset analysis:', {
-      size: dataSize.toLocaleString(),
-      willUseProgressiveLoading: isLargeDataset,
-    });
-
-    if (isLargeDataset) {
-      console.log(
-        `Large dataset detected (${dataSize.toLocaleString()} proteins) - using optimized loading pipeline`,
-      );
-      updateOverlayForStep(
-        overlayController,
-        true,
-        20,
-        'Preparing visualization...',
-        `Found ${dataSize.toLocaleString()} proteins`,
-      );
-    }
-
     updateOverlayForStep(
       overlayController,
       isLargeDataset,
