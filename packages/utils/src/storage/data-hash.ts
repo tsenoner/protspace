@@ -290,6 +290,9 @@ export function generateDatasetHash(input: string[] | DatasetHashInput): string 
  * Records `hash` as the hash of `input`, so `generateDatasetHash(input)` becomes the memo
  * lookup. For a hash computed elsewhere over the same values: the decode worker hashes
  * the dataset before posting it, and structured cloning keeps every value hashed.
+ *
+ * @internal Public only for core's bundle decoder. A hash of any other values poisons the
+ * memo: every later `generateDatasetHash` of `input` returns it.
  */
 export function rememberDatasetHash(input: DatasetHashInput, hash: string): void {
   datasetHashMemo.set(input.protein_ids, {
