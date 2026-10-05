@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -7,6 +7,7 @@ import {
   selectProjection,
   waitForExploreDataLoad,
 } from '../explore';
+import { tourCompletedStorageState } from '../tour-storage-state';
 import {
   installProbes,
   readSnapshot,
@@ -122,9 +123,17 @@ async function blockExternalRequests(page: Page, baseUrl: string): Promise<void>
   );
 }
 
+/** A context with the viewport and pixel ratio the segments assume, past the tour. */
+export function newPerfContext(browser: Browser, baseUrl: string): Promise<BrowserContext> {
+  return browser.newContext({
+    viewport: VIEWPORT,
+    deviceScaleFactor: 1,
+    storageState: tourCompletedStorageState(baseUrl),
+  });
+}
+
 /** Open Explore with the counters on and wait until the first dataset has rendered. */
 export async function openExplore(page: Page, baseUrl: string): Promise<void> {
-  await page.setViewportSize(VIEWPORT);
   await installProbes(page);
   await blockExternalRequests(page, baseUrl);
   await page.goto(new URL('/explore?perfCounters=1', baseUrl).toString());
@@ -274,9 +283,9 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
     {
       name: 'resize',
-      act: async () => {
+      act: async (settleSegment) => {
         await page.setViewportSize(RESIZED);
-        await settle(page);
+        await settleSegment();
         await page.setViewportSize(VIEWPORT);
       },
       pixels: true,

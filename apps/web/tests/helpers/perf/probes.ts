@@ -198,24 +198,14 @@ function diff(before: Snapshot, after: Snapshot): Delta {
   return delta;
 }
 
-interface SettleOptions {
-  quietMs?: number;
-  capMs?: number;
-}
-
-/**
- * Defaults for every `settle()`. Timing mode raises the cap: on a large dataset one
- * interaction can keep the main thread busy for seconds.
- */
-export const settleDefaults: Required<SettleOptions> = { quietMs: 200, capMs: 3_000 };
+const QUIET_MS = 200;
 
 /**
  * Wait in the page until the counters and buffer bytes stay unchanged for at least
- * two animation frames and `quietMs`. Throws at `capMs`: a page that keeps doing work
+ * two animation frames and 200 ms. Throws at `capMs`: a page that keeps doing work
  * with no input is a render loop or leaked work, never something to wait out.
  */
-export async function settle(page: Page, options: SettleOptions = {}): Promise<void> {
-  const { quietMs, capMs } = { ...settleDefaults, ...options };
+export async function settle(page: Page, capMs = 3_000): Promise<void> {
   const result = await page.evaluate(
     ({ quietMs, capMs, gl }) =>
       new Promise<{ ok: boolean; changed: string[] }>((resolve) => {
@@ -260,7 +250,7 @@ export async function settle(page: Page, options: SettleOptions = {}): Promise<v
         };
         requestAnimationFrame(tick);
       }),
-    { quietMs, capMs, gl: GL_COUNTERS },
+    { quietMs: QUIET_MS, capMs, gl: GL_COUNTERS },
   );
   if (!result.ok) {
     throw new Error(
@@ -327,45 +317,22 @@ function percentile(values: number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-export interface SegmentSpec {
-  name: string;
-  act: () => Promise<void>;
-  reset?: () => Promise<void>;
-  /** Compare plot pixels before the segment with pixels after its reset. */
-  pixels?: boolean;
-  /** Keep a screenshot of the plot once `act` settled (timing mode compares builds). */
-  capture?: boolean;
-  /** Then wait this long and count renders: a glide must stop by itself. */
-  idleAfterMs?: number;
-  /** Timing mode: the frames whose gaps give `p95Frame`. */
-  frames?: FrameGaps;
-  timing?: TimingContext;
-}
-
 /**
- * settle → snapshot → act → settle → snapshot → reset → settle, with a pixel
- * round-trip check when asked. Real Playwright input happens inside `act`.
+ * Start recording main-thread time, interactions, long animation frames and, with
+ * `frames`, frame gaps. The returned function stops and reads them; `restageMs` comes
+ * from the counters.
  */
-export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentResult> {
-  await settle(page);
-  const pixelsBefore = spec.pixels ? await plotPixels(page) : null;
-  const before = await readSnapshot(page, !!spec.timing);
-
-  let windowStart = 0;
-  let busyBefore = 0;
-  if (spec.timing) {
-    busyBefore = await taskDuration(spec.timing.cdp);
-    windowStart = await page.evaluate(() => performance.now());
-    if (spec.frames) await armFrameGaps(page, spec.frames);
-  }
-
-  await spec.act();
-  await settle(page);
-
-  let timing: TimingSample | undefined;
-  if (spec.timing) {
-    const busy = (await taskDuration(spec.timing.cdp)) - busyBefore;
-    const frames = spec.frames ? await armFrameGaps(page, null) : null;
+async function openTimingWindow(
+  page: Page,
+  { cdp }: TimingContext,
+  frames: FrameGaps | undefined,
+): Promise<() => Promise<Omit<TimingSample, 'restageMs'>>> {
+  const busyBefore = await taskDuration(cdp);
+  const windowStart = await page.evaluate(() => performance.now());
+  if (frames) await armFrameGaps(page, frames);
+  return async () => {
+    const busy = (await taskDuration(cdp)) - busyBefore;
+    const gaps = frames ? await armFrameGaps(page, null) : null;
     const observed = await page.evaluate((from) => {
       const probe = window.__perfProbe!;
       const events = probe.events.filter((e) => e.start >= from);
@@ -380,24 +347,59 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
         loafScript: top?.script ?? '',
       };
     }, windowStart);
-    timing = {
+    return {
       ...observed,
       busy,
-      restageMs: 0,
-      p95Frame: frames && frames.length > 1 ? percentile(frames.slice(1), 95) : null,
+      p95Frame: gaps && gaps.length > 1 ? percentile(gaps.slice(1), 95) : null,
     };
-  }
+  };
+}
 
+export interface SegmentSpec {
+  name: string;
+  /** Real Playwright input; `settle` waits with the segment's cap. */
+  act: (settle: () => Promise<void>) => Promise<void>;
+  reset?: () => Promise<void>;
+  /** Compare plot pixels before the segment with pixels after its reset. */
+  pixels?: boolean;
+  /** Keep a screenshot of the plot once `act` settled (timing mode compares builds). */
+  capture?: boolean;
+  /** Then wait this long and count renders: a glide must stop by itself. */
+  idleAfterMs?: number;
+  /** Timing mode: the frames whose gaps give `p95Frame`. */
+  frames?: FrameGaps;
+  /**
+   * The cap of every settle in the segment, ms. Timing mode raises it: on a large dataset
+   * one interaction can keep the main thread busy for seconds.
+   */
+  capMs?: number;
+  timing?: TimingContext;
+}
+
+/**
+ * settle → snapshot → act → settle → snapshot → reset → settle, with a pixel
+ * round-trip check when asked. Real Playwright input happens inside `act`.
+ */
+export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentResult> {
+  const settleSegment = () => settle(page, spec.capMs);
+  await settleSegment();
+  const pixelsBefore = spec.pixels ? await plotPixels(page) : null;
+  const before = await readSnapshot(page, !!spec.timing);
+  const closeTiming = spec.timing ? await openTimingWindow(page, spec.timing, spec.frames) : null;
+
+  await spec.act(settleSegment);
+  await settleSegment();
+
+  const timed = closeTiming ? await closeTiming() : null;
   const after = await readSnapshot(page, !!spec.timing);
   const delta = diff(before, after);
   let actPixels: Buffer | undefined;
   if (spec.capture) {
     // A gesture can end with the pointer over a protein; its tooltip is not part of the plot.
     await page.mouse.move(0, 0);
-    await settle(page);
+    await settleSegment();
     actPixels = await plotPixels(page);
   }
-  if (timing) timing.restageMs = Number.isNaN(delta.restageMs) ? null : delta.restageMs;
   let idle: SegmentResult['idle'];
   if (spec.idleAfterMs) {
     const start = await readSnapshot(page, !!spec.timing);
@@ -412,7 +414,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
 
   if (spec.reset) {
     await spec.reset();
-    await settle(page);
+    await settleSegment();
   }
   const pixelsAfter = pixelsBefore ? await plotPixels(page) : null;
   const pixelsSame = pixelsBefore && pixelsAfter ? pixelsBefore.equals(pixelsAfter) : null;
@@ -426,6 +428,8 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     ...(pixelsSame === false ? { pixelDiff: { before: pixelsBefore!, after: pixelsAfter! } } : {}),
     ...(actPixels ? { actPixels } : {}),
     ...(idle ? { idle } : {}),
-    timing,
+    timing: timed
+      ? { ...timed, restageMs: Number.isNaN(delta.restageMs) ? null : delta.restageMs }
+      : undefined,
   };
 }

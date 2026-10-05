@@ -1,4 +1,7 @@
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   CORE_COUNTERS,
   GL_COUNTERS,
@@ -38,6 +41,14 @@ function measure({ delta }: SegmentResult): Measured {
   return Object.fromEntries(
     BUDGET_KEYS.map((key) => [key, key === 'glIsPerRender' ? glIsPerRender : delta[key]]),
   ) as Measured;
+}
+
+/** The checked-out commit, abbreviated. */
+export function gitHead(): string {
+  return execSync('git rev-parse --short HEAD', {
+    cwd: path.dirname(fileURLToPath(import.meta.url)),
+    encoding: 'utf8',
+  }).trim();
 }
 
 export function readBudgets(file: string): BudgetsFile {

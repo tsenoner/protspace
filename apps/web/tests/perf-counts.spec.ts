@@ -1,5 +1,4 @@
 import { expect, test, type Browser } from '@playwright/test';
-import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +12,7 @@ import {
 import {
   checkBudgets,
   formatCountsTable,
+  gitHead,
   readBudgets,
   recordBudgets,
   type BudgetsFile,
@@ -21,11 +21,11 @@ import {
   DEFAULT_BUNDLE,
   buildSegments,
   measureLoad,
+  newPerfContext,
   openExplore,
   readExploreState,
   segmentTraits,
 } from './helpers/perf/scenarios';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
 /**
  * Deterministic work counts per interaction, gated by `perf/budgets.json`.
@@ -49,11 +49,7 @@ interface Run {
 }
 
 async function runOnce(browser: Browser, baseUrl: string): Promise<Run> {
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
-    deviceScaleFactor: 1,
-    storageState: tourCompletedStorageState(baseUrl),
-  });
+  const context = await newPerfContext(browser, baseUrl);
   try {
     const page = await context.newPage();
     await openExplore(page, baseUrl);
@@ -136,8 +132,7 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
   const previous = fs.existsSync(BUDGETS_FILE) ? readBudgets(BUDGETS_FILE) : null;
   let budgets: BudgetsFile | null = previous;
   if (UPDATE) {
-    const head = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
-    budgets = recordBudgets(recorded, previous, head);
+    budgets = recordBudgets(recorded, previous, gitHead());
     fs.writeFileSync(BUDGETS_FILE, `${JSON.stringify(budgets, null, 2)}\n`);
   }
 

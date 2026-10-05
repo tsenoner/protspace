@@ -5,19 +5,18 @@ import {
   type CDPSession,
   type Page,
 } from '@playwright/test';
-import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   segment,
-  settleDefaults,
   type SegmentResult,
   type SegmentSpec,
   type TimingSample,
 } from './helpers/perf/probes';
 import {
   formatTimingTable,
+  gitHead,
   timingMedians,
   type TimingMedians,
   type TimingRow,
@@ -25,11 +24,11 @@ import {
 import {
   buildSegments,
   importBundle,
+  newPerfContext,
   openExplore,
   readExploreState,
   repeatableSegments,
 } from './helpers/perf/scenarios';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
 /**
  * Timing mode: headed Chromium on the real GPU, started by `pnpm perf` (perf/perf.mjs),
@@ -62,6 +61,8 @@ const SAVE_BASELINE = env.PERF_SAVE_BASELINE === '1';
 /** A file to compare against, or `default` for perf/baselines/<dataset>.local.json. */
 const BASELINE = env.PERF_BASELINE ?? '';
 const STAMP = env.PERF_STAMP ?? new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+/** Wall-clock work on a large dataset can keep the page busy for seconds. */
+const SETTLE_CAP_MS = 60_000;
 
 interface Target {
   label: string;
@@ -110,6 +111,7 @@ async function timed(
   try {
     return await segment(target.page, {
       ...spec,
+      capMs: SETTLE_CAP_MS,
       timing: { cdp: target.cdp },
     });
   } finally {
@@ -123,11 +125,7 @@ async function openTarget(
   url: string,
   dataset: Dataset,
 ): Promise<Target> {
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
-    deviceScaleFactor: 1,
-    storageState: tourCompletedStorageState(url),
-  });
+  const context = await newPerfContext(browser, url);
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
   await cdp.send('Performance.enable');
@@ -183,8 +181,6 @@ test.describe.configure({ mode: 'serial' });
 for (const dataset of DATASETS) {
   test(`timing ${dataset.name}`, async ({ browser }, testInfo) => {
     test.setTimeout(60 * 60_000);
-    // Wall-clock work on a large dataset can keep the page busy for seconds.
-    settleDefaults.capMs = 60_000;
     const labels = ['A', 'B'];
     const targets: Target[] = [];
     try {
@@ -253,10 +249,7 @@ for (const dataset of DATASETS) {
     const table = formatTimingTable(title, rows);
     console.log(`\n${table}\n`);
 
-    const head = execSync('git rev-parse --short HEAD', {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    }).trim();
+    const head = gitHead();
     fs.mkdirSync(RESULTS_DIR, { recursive: true });
     const resultsFile = path.join(RESULTS_DIR, `${STAMP}-${dataset.name}.json`);
     const body = {
