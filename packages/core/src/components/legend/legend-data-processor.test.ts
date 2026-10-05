@@ -319,12 +319,11 @@ describe('legend-data-processor', () => {
       const colData = new Int32Array([-1, 0, 1, 0]);
       const isolated = new Set([0, 1]); // proteins p0 (unbinned) and p1 ('low')
 
+      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
+      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, bins, 4, isolated))).toEqual({
         low: 1,
       });
-      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
-      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
-      expect(asObject(legacyCounts(colData, bins, 4, isolated))).toEqual({ low: 1, high: 1 });
     });
 
     it('counts every label of an isolated multi-valued protein', () => {
@@ -332,13 +331,12 @@ describe('legend-data-processor', () => {
       const colData: readonly (readonly number[])[] = [[0, 1], [0], [1]];
       const isolated = new Set([0]); // protein p0, which carries both labels
 
+      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
+      // second label was attributed to a protein that was filtered out.
       expect(asObject(LegendDataProcessor.countFromStorage(colData, labels, 3, isolated))).toEqual({
         A: 1,
         B: 1,
       });
-      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
-      // second label was attributed to a protein that was filtered out.
-      expect(asObject(legacyCounts(colData, labels, 3, isolated))).toEqual({ A: 1 });
     });
   });
 
