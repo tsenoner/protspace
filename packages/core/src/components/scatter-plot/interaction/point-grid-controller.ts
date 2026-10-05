@@ -50,7 +50,7 @@ export class PointGridController {
   // The slots `_visible` marks, built when first asked for. Retained for the
   // duplicate-badge capture path (#301): the full-extent compute iterates it
   // against the raw PlotData arrays instead of traversing the point index (~93×
-  // slower at 570k points, research doc 04).
+  // slower at 570k points).
   private _slots: number[] | null = null;
   private _frameId: number | null = null;
   private _rebuildPending = false;

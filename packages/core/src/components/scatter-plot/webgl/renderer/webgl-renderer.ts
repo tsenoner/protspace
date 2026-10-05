@@ -906,7 +906,7 @@ export class WebGLRenderer {
    * the last-rendered data, the live config + export style getters (which stage
    * the marks the live view draws on the GPU), and the live render state
    * (selection, transform, gamma) so the export equals the on-screen render
-   * (incl. the F-15 two-pass selection blend).
+   * (incl. the two-pass selection blend).
    *
    * @param width Target width in CSS pixels (will be multiplied by DPR)
    * @param height Target height in CSS pixels

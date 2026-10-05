@@ -4,12 +4,12 @@
  * This is a behavior-preserving extraction of the off-screen subsystem that
  * previously lived inline on `WebGLRenderer`. It owns the export pipeline:
  * create a throwaway WebGL2 context sized to the requested export dimensions,
- * stage the points (painter's-algorithm depth sort + F-15 two-pass selection
+ * stage the points (painter's-algorithm depth sort + two-pass selection
  * blend), render through the gamma-correct pipeline when the float extensions
  * are available (falling back to direct rendering otherwise), and copy the
  * result into a 2D canvas for safe export.
  *
- * It consumes the B3 substrate (`resolvePointLocations`, `setupAttributes`,
+ * It consumes the shared renderer primitives (`resolvePointLocations`, `setupAttributes`,
  * `createLinearFramebuffer`, `destroyFramebuffer`, `bindAndClearTarget`,
  * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stageInPaintOrder`,
  * `drawPoints`) and the live point/gamma shader sources, so it shares no
@@ -87,7 +87,7 @@ interface ExportRenderOptions {
   dpr?: number;
   dataDomain?: DataDomain;
   pointSizeReference?: { width: number; height: number };
-  /** Live selection state, forwarded to preserve the F-15 two-pass blend. */
+  /** Live selection state, forwarded to preserve the two-pass selection blend. */
   selectionActive: boolean;
   /** Current live transform; scaled to the export dimensions internally. */
   transform: d3.ZoomTransform;
@@ -625,7 +625,7 @@ export class ExportRenderer {
 
     // Stage slots by depth through the SAME staging as the live path
     // (stageInPaintOrder): the live path is canonical, so the export includes
-    // opacity-0 slots (invisible — F-15 pixels unchanged) and uses the identical
+    // opacity-0 slots (invisible — two-pass selection pixels unchanged) and uses the identical
     // stable far->near sort and the same sorted-k selectedStartIndex.
     const count = pd.length;
 

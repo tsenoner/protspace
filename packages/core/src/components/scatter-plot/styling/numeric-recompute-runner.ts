@@ -1,13 +1,13 @@
 /**
- * F-04: NumericRecomputeRunner
+ * NumericRecomputeRunner
  *
  * Owns the numeric-annotation recompute lifecycle extracted verbatim from
  * `ProtspaceScatterplot._scheduleNumericAnnotationRefresh` (scatter-plot.ts
  * L839-915): the per-schedule job id, the deferred (requestAnimationFrame)
- * heavy-recompute tail, the stale-job drop (B7/F-23 last-write-wins), the
- * running-state mirror, and cancel-on-teardown (F-05).
+ * heavy-recompute tail, the stale-job drop (last-write-wins), the
+ * running-state mirror, and cancel-on-teardown.
  *
- * (F-46) The previously-dispatched `numeric-recompute-start` / `-end`
+ * The previously-dispatched `numeric-recompute-start` / `-end`
  * CustomEvents were unconsumed public surface and have been removed; the busy
  * state is now observable solely via the `setRunning` host mirror and the
  * runner's own `runningAnnotation()`.
@@ -57,7 +57,7 @@ export class NumericRecomputeRunner {
     const annotation = this._host.getSelectedAnnotation();
     const jobId = ++this._jobId;
     this._annotation = annotation;
-    // F-57: setRunning writes the `_numericRecomputeRunning` @state mirror, whose
+    // setRunning writes the `_numericRecomputeRunning` @state mirror, whose
     // reactive setter already schedules a Lit update — an explicit requestUpdate()
     // here was redundant and has been dropped.
     this._host.setRunning(true);
@@ -70,7 +70,7 @@ export class NumericRecomputeRunner {
       this._host.runRecompute();
 
       this._annotation = null;
-      // F-57: the setRunning @state-mirror write schedules the Lit update; the
+      // The setRunning @state-mirror write schedules the Lit update; the
       // explicit requestUpdate() that used to follow was redundant.
       this._host.setRunning(false);
     });

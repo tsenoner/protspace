@@ -9,7 +9,7 @@
  * `style-getters.ts` delegates to it (`getBaseOpacity = visibility.baseOpacityOf`,
  * `getOpacity = visibility.opacityOf`), so there is no second implementation to
  * keep in lockstep. The authoritative contract is the design D5 table in
- * `openspec/changes/unified-visibility-model/design.md`. Subtleties preserved on
+ * `openspec/changes/archive/2026-08-12-unified-visibility-model/design.md`. Subtleties preserved on
  * purpose:
  *
  *   - Hidden ⇒ opacity exactly `0` (consumers agree only at exact 0).

@@ -5,9 +5,9 @@
  * the `webglcontextlost` listener, tracks the idempotent "lost" flag, and fires
  * the renderer-supplied `onLost` callback exactly once.
  *
- * Recovery semantics (post-B1 / F-39): the renderer no longer attempts an
- * in-place context *restore*. B1 deleted the `webglcontextrestored` listener and
- * `handleContextRestored`, so this controller registers ONLY `webglcontextlost`.
+ * Recovery semantics: the renderer no longer attempts an
+ * in-place context *restore*. The `webglcontextrestored` listener and
+ * `handleContextRestored` were deleted, so this controller registers ONLY `webglcontextlost`.
  *
  * This is a behavior-preserving extraction of the renderer's
  * `handleContextLost` / `markContextLost` logic — see webgl-renderer.ts.

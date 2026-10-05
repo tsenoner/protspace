@@ -1,17 +1,16 @@
 /**
  * Owns the entire duplicate-stack / spiderfy / badge overlay subsystem, lifted
- * verbatim out of `scatter-plot.ts` (report F-06). It holds all duplicate-stack
+ * verbatim out of `scatter-plot.ts`. It holds all duplicate-stack
  * state (the per-viewport stack list + lookup maps, the expanded key + spider
  * anchor, the debounce/compute job tokens), schedules the debounced overlay
  * update, runs the chunked viewport compute, and coordinates the badge canvas
- * renderer (F-30) + spiderfy SVG layer (F-32) via the shared helpers (F-36/F-51/
- * F-52).
+ * renderer + spiderfy SVG layer via the shared helpers.
  *
  * Pure/decoupled: this module does NOT import `scatter-plot.ts`. The host wires
  * its overlay group, badges canvas, transform, config, scales, plot data,
  * point index, enablement/selection flags, color getter, and the click/hover hooks
  * through the {@link DuplicateStackOverlayDeps} accessor bundle. Event dispatch
- * stays on the host via `onPointActivate`/`onHover`/`onHoverEnd` (INV-05/INV-03).
+ * stays on the host via `onPointActivate`/`onHover`/`onHoverEnd`, so event shapes stay unchanged.
  *
  * All geometry/style/timing constants and control flow are preserved verbatim
  * from the original inline subsystem; the only edits are `this._x` →
@@ -62,7 +61,7 @@ interface DuplicateStackOverlayDeps {
    * Slot list the point index was last rebuilt with (legend/filter-visible slots,
    * PointGridController.visibleSlots). The full-extent capture compute iterates
    * this against the raw PlotData arrays — NEVER via point index traversal (~93×
-   * slower at 570k points, research doc 04). Null until the first point index
+   * slower at 570k points). Null until the first point index
    * build (or after an empty-data build); capture then renders no badges.
    */
   getVisibleSlots: () => ArrayLike<number> | null;
@@ -92,7 +91,7 @@ export class DuplicateStackOverlayController {
   // A capture landing inside the ≤1-frame window of a RAF-deferred point index
   // rebuild sees either a stale-but-safe slot list or none (no badges that
   // instant) — self-correcting on the next capture; same latency the live
-  // overlay already has (research doc 01).
+  // overlay already has.
   private fullExtentStacks: FullExtentDuplicateStack[] | null = null;
   private computeJobId = 0;
   private computing = false;
@@ -348,7 +347,7 @@ export class DuplicateStackOverlayController {
         return;
       }
 
-      // Finalize: group via the same pure helper the F-24 tests exercise
+      // Finalize: group via the same pure helper the chunked-compute tests exercise
       // (same key fn, finite skip, drop-solos, idToKey-records-solos), then
       // re-project each surviving stack's data-space coords to base pixels.
       const { stacks: rawStacks, idToKey } = buildDuplicateStacks(collected);

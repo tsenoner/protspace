@@ -16,7 +16,7 @@ export interface PlotInteractionHost {
   // Readiness: whether the host's scales (and thus data) exist yet. Mirrors main's
   // `!this._scales` guard so updateSelectionMode is a no-op before data arrives.
   hasScales(): boolean;
-  // host owns _transform (F-48): the controller reads it back through this getter
+  // host owns _transform as a plain, non-reactive field: the controller reads it back through this getter
   // rather than keeping a parallel copy. applyZoom funnels new transforms through
   // onTransform first, so reads here always see the latest value.
   getTransform(): d3.ZoomTransform;
@@ -24,7 +24,7 @@ export interface PlotInteractionHost {
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
   resolveSlotsToIds(slots: number[]): string[];
-  // callbacks — dispatch stays on the host (INV-03/INV-05)
+  // callbacks — event dispatch stays on the host
   onTransform(t: d3.ZoomTransform): void;
   onSelect(ids: string[], clearVisual: () => void): void;
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
@@ -36,9 +36,9 @@ export interface PlotInteractionHost {
 
 /**
  * Owns the d3 zoom/brush/lasso interaction layer, the three SVG groups, and the
- * zoom/lasso RAF loops, lifted out of the scatter-plot god component (F-07). It
+ * zoom/lasso RAF loops, lifted out of the scatter-plot god component. It
  * signals the host via callbacks; the host keeps event dispatch and owns the
- * transform value (written back via onTransform — F-48). Hover throttling and
+ * transform value (written back via onTransform). Hover throttling and
  * picking stay on the host (host-only point index/visibility access).
  */
 export class PlotInteractionController {
@@ -115,7 +115,7 @@ export class PlotInteractionController {
 
   /** Apply a transform (from the d3 zoom handler or programmatic reset). */
   applyZoom(t: d3.ZoomTransform): void {
-    // Host owns the transform (F-48): write it back first so the brush-extent sync
+    // Host owns the transform: write it back first so the brush-extent sync
     // below (and any other host.getTransform() read) sees the new value.
     this.host.onTransform(t);
     if (this._mainGroup) {
