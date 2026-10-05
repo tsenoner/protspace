@@ -152,6 +152,23 @@ describe('render coalescing', () => {
     expect(counters.restage).toBe(0);
   });
 
+  it('a selection change in an update with other keys updates the overlays once', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+    const overlays = vi.spyOn(el, '_updateSelectionOverlays');
+
+    el.selectedProteinIds = ['p0'];
+    el._reconcileSelectionOverlays(
+      new Map<string, unknown>([
+        ['selectedProteinIds', []],
+        ['hiddenAnnotationValues', []],
+      ]),
+    );
+    frames.run();
+    expect(overlays).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it('a flush with nothing requested does not render', () => {
     const { el } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');

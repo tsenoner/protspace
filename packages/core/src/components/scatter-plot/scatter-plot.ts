@@ -1087,12 +1087,11 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _reconcileSelectionOverlays(changedProperties: Map<string, unknown>) {
-    if (
+    const selectionChanged =
       changedProperties.has('selectedProteinIds') ||
       changedProperties.has('highlightedProteinIds') ||
-      changedProperties.has('_focusedValues')
-    ) {
-      this._updateSelectionOverlays();
+      changedProperties.has('_focusedValues');
+    if (selectionChanged) {
       this._syncWebglSelectionActive();
       // Marks the renderer draws on the GPU re-stage nothing. Focus is staged,
       // and moves the selection between the GPU and staging.
@@ -1103,12 +1102,11 @@ export class ProtspaceScatterplot extends LitElement {
       if (this._slotVisible && !this._currentInteractableSlots()) {
         this._scheduleVisibleSlotsRefresh();
       }
-      this._renderLoop.request();
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
     const canSkipRender =
       changedKeys.length > 0 && changedKeys.every((k) => NO_ADDITIONAL_RENDER_KEYS.has(k));
-    if (!canSkipRender) {
+    if (selectionChanged || !canSkipRender) {
       this._renderLoop.request();
       this._updateSelectionOverlays();
     }
