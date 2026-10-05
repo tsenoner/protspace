@@ -9,18 +9,15 @@
  *  2. the feature is gated off by default (enableDuplicateStackUI === false).
  *     What the gate does once an overlay group exists (layers removed, no
  *     badges, no spiderfy) is tested on the controller directly in
- *     duplicate-stack-overlay-controller.enable-gate.test.ts;
- *  3. cancelCompute bumps the compute job id so any in-flight chunked compute
- *     aborts early (stale-result race guard).
+ *     duplicate-stack-overlay-controller.enable-gate.test.ts.
+ *
+ * The cancelled-compute race guard is tested end to end (start, cancel,
+ * drain, restart) in scatter-plot.duplicate-stack-compute.test.ts.
  *
  * The element is created via document.createElement and NOT appended, so Lit's
  * connectedCallback / WebGL init never runs (same pattern as
- * scatter-plot.materialize-cache.test.ts L18-21).
- *
- * F-06 moved the subsystem into DuplicateStackOverlayController; these probes
- * now reach through `el._dupOverlay` while asserting the SAME observable
- * contracts (job-id monotonicity, disabled by default). Lock 1 is name-stable
- * and never changes.
+ * scatter-plot.materialize-cache.test.ts). Lock 1 is name-stable and never
+ * changes.
  */
 import { vi, describe, it, expect } from 'vitest';
 
@@ -40,15 +37,8 @@ import {
   getDuplicateStackKey,
 } from './duplicate-stacks/duplicate-stack-helpers';
 
-interface DuplicateOverlayController {
-  // TS-private at compile time, reachable at runtime — the job-id race guard.
-  computeJobId: number;
-  cancelCompute: () => void;
-}
-
 interface DuplicateOverlayInternals extends HTMLElement {
   _mergedConfig: { enableDuplicateStackUI: boolean };
-  _dupOverlay: DuplicateOverlayController;
 }
 
 function makeElement(): DuplicateOverlayInternals {
@@ -81,13 +71,5 @@ describe('duplicate-overlay characterization', () => {
   it('enableDuplicateStackUI defaults to false', () => {
     const el = makeElement();
     expect(el._mergedConfig.enableDuplicateStackUI).toBe(false);
-  });
-
-  // Lock 3: cancelCompute bumps the job id so an in-flight chunk aborts (race guard).
-  it('cancelling compute bumps the job id (stale-result guard)', () => {
-    const el = makeElement();
-    const before = el._dupOverlay.computeJobId;
-    el._dupOverlay.cancelCompute();
-    expect(el._dupOverlay.computeJobId).toBeGreaterThan(before);
   });
 });
