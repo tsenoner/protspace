@@ -194,16 +194,22 @@ export async function importBundle(page: Page, file: string): Promise<void> {
   if (!(await ownDataset.isVisible().catch(() => false))) {
     await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
   }
+  // A refused file (too large, unreadable) never loads: fail with its message instead.
   const loaded = page.evaluate(
     () =>
-      new Promise<void>((resolve) =>
-        document
-          .getElementById('myDataLoader')
-          ?.addEventListener('data-loaded', () => resolve(), { once: true }),
-      ),
+      new Promise<string | null>((resolve) => {
+        const loader = document.getElementById('myDataLoader');
+        loader?.addEventListener('data-loaded', () => resolve(null), { once: true });
+        loader?.addEventListener(
+          'data-error',
+          (e) => resolve(String((e as CustomEvent).detail?.message ?? 'unknown')),
+          { once: true },
+        );
+      }),
   );
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(file);
-  await loaded;
+  const error = await loaded;
+  if (error !== null) throw new Error(`data-error: ${error}`);
   await waitForExploreDataLoad(page, { timeout: 120_000 });
   // Importing leaves the menu open; close it so it cannot cover the plot.
   if (await ownDataset.isVisible().catch(() => false)) await page.keyboard.press('Escape');

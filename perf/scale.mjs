@@ -98,7 +98,9 @@ function parseArgs(argv) {
     usage(`unknown browser ${opts.browser}`);
   }
   for (const key of ['cold', 'reps', 'rounds', 'port']) {
-    if (!Number.isInteger(opts[key]) || opts[key] < 1) usage(`--${key} must be a positive integer`);
+    if (!Number.isInteger(opts[key]) || opts[key] < (key === 'reps' ? 0 : 1)) {
+      usage(`--${key} must be a positive integer (--reps 0: loads only)`);
+    }
   }
   if (!(opts.guardGB >= 0) || !(opts.timeoutMin === null || opts.timeoutMin > 0)) {
     usage('bad --guard-gb or --timeout-min');
@@ -410,14 +412,20 @@ async function runDataset(opts, url, dataset, round) {
           ? 'timeout'
           : spec.crashed
             ? 'crash'
-            : exitCode === 0
-              ? 'ok'
-              : 'error',
+            : spec.refused
+              ? 'refused'
+              : exitCode === 0
+                ? 'ok'
+                : 'error',
+      // null for a build without the counters, which cannot say what it drew.
       drawnEqualsN:
-        n > 0 && (spec.loads ?? []).every((l) => l.drawn === n) && (spec.drawnAtEnd ?? n) === n,
+        spec.hasCounters === false
+          ? null
+          : n > 0 && (spec.loads ?? []).every((l) => l.drawn === n) && (spec.drawnAtEnd ?? n) === n,
       degradedEvents: (spec.degraded ?? []).length,
       failedInteractions: Object.keys(spec.interactionFailures ?? {}),
       toasts: Math.max(spec.toasts ?? 0, ...(spec.loads ?? []).map((l) => l.toasts ?? 0)),
+      refused: spec.refused ?? null,
       guard,
       minAvailableGB: Number.isFinite(minAvailable) ? minAvailable / 2 ** 30 : null,
     },

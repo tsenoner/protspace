@@ -22,7 +22,8 @@ const env = process.env;
 const DATASET: { name: string; file: string } = JSON.parse(env.PERF_SCALE_DATASET ?? '{}');
 const OUT = env.PERF_SCALE_OUT ?? '';
 const COLD = Math.max(1, Number(env.PERF_SCALE_COLD ?? 10));
-const REPS = Math.max(1, Number(env.PERF_SCALE_REPS ?? 20));
+/** 0 is load-only: the cold imports, no interactions. */
+const REPS = Math.max(0, Number(env.PERF_SCALE_REPS ?? 20));
 const WARMUPS = 2;
 const BASE_URL = env.PLAYWRIGHT_BASE_URL ?? '';
 const VIEWPORT = { width: 1600, height: 1000 };
@@ -92,6 +93,10 @@ const result: {
   drawnAtEnd?: number;
   heapAfterInteractionsMB?: number | null;
   crashed: boolean;
+  /** False on a build from before the counters (main): drawn and the counts are null. */
+  hasCounters?: boolean;
+  /** The app refused the dataset (over the drawable limit, or a load error): its message. */
+  refused?: { reason: string | null; message: string };
   failure?: string;
 } = {
   dataset: DATASET,
@@ -175,7 +180,9 @@ async function coldLoad(
   const busyBefore = await taskDuration(cdp);
   await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
   const t0 = await page.evaluate(() => {
-    const c = window.__protspacePerfCounters!;
+    const c = window.__protspacePerfCounters;
+    // A build without the counters (main) checks its GL handles on every render.
+    const renders = () => (c ? c.render : (window.__perfProbe?.glIs ?? 0));
     const w: LoadWatch = (window.__scaleLoad = {
       loaded: null,
       renderAtLoaded: 0,
@@ -188,7 +195,7 @@ async function coldLoad(
       'data-loaded',
       () => {
         w.loaded = performance.now();
-        w.renderAtLoaded = c.render;
+        w.renderAtLoaded = renders();
       },
       { once: true },
     );
@@ -196,14 +203,14 @@ async function coldLoad(
     const tick = () => {
       if (w.done) return;
       const now = performance.now();
-      const k = `${JSON.stringify(c)} ${window.__perfProbe?.bufferBytes ?? 0}`;
+      const k = `${JSON.stringify(c)} ${renders()} ${window.__perfProbe?.bufferBytes ?? 0}`;
       if (k !== key) {
         key = k;
         w.lastChange = now;
       }
-      if (w.loaded !== null && w.firstFrame === null && c.render > w.renderAtLoaded) {
+      if (w.loaded !== null && w.firstFrame === null && renders() > w.renderAtLoaded) {
         w.firstFrame = now;
-        w.firstDrawn = c.drawn;
+        w.firstDrawn = c ? c.drawn : NaN;
       }
       requestAnimationFrame(tick);
     };
@@ -211,7 +218,12 @@ async function coldLoad(
     return performance.now();
   });
   mark(`load${i}:chosen`);
-  await importBundle(page, DATASET.file);
+  await importBundle(page, DATASET.file).catch((error) => {
+    const message = String((error as Error)?.message ?? error);
+    if (!message.startsWith('data-error')) throw error;
+    result.refused = { reason: 'data-error', message };
+  });
+  if (result.refused) return { page, cdp };
   await settle(page, LOAD_CAP_MS);
   mark(`load${i}:settled`);
   const phases = await page.evaluate((t0) => {
@@ -222,9 +234,9 @@ async function coldLoad(
       chosenToLoadedMs: w.loaded === null ? null : w.loaded - t0,
       chosenToFirstFrameMs: w.firstFrame === null ? null : w.firstFrame - t0,
       chosenToSettledMs: w.lastChange - t0,
-      firstFrameDrawn: w.firstDrawn,
+      firstFrameDrawn: Number.isNaN(w.firstDrawn) ? null : w.firstDrawn,
       n: plot.data?.protein_ids?.length ?? 0,
-      drawn: window.__protspacePerfCounters?.drawn ?? 0,
+      drawn: window.__protspacePerfCounters?.drawn ?? null,
     };
   }, t0);
   await page.waitForTimeout(FOOTPRINT_GAP_MS);
@@ -233,6 +245,13 @@ async function coldLoad(
   const degraded = await page.evaluate(() => window.__scaleDegraded ?? []);
   result.degraded.push(...degraded);
   result.n = phases.n;
+  result.hasCounters = await page.evaluate(() => !!window.__protspacePerfCounters);
+  const limit = degraded.find((d) => d.reason === 'point-limit-exceeded');
+  if (limit) {
+    const toast = page.getByText(TOAST).first();
+    const text = (await toast.count()) ? await toast.innerText() : '';
+    result.refused = { reason: limit.reason, message: text || limit.message };
+  }
   result.loads.push({
     ...phases,
     busyMs,
@@ -388,10 +407,11 @@ async function interactions(page: Page, n: number): Promise<Interaction[]> {
           window.addEventListener(
             'pointerup',
             () => {
-              const c = window.__protspacePerfCounters!;
-              const [r0, t0] = [c.render, performance.now()];
+              const c = window.__protspacePerfCounters;
+              const renders = () => (c ? c.render : (window.__perfProbe?.glIs ?? 0));
+              const [r0, t0] = [renders(), performance.now()];
               const poll = () => {
-                if (c.render > r0) window.__scaleLassoMs = performance.now() - t0;
+                if (renders() > r0) window.__scaleLassoMs = performance.now() - t0;
                 else requestAnimationFrame(poll);
               };
               requestAnimationFrame(poll);
@@ -507,11 +527,12 @@ async function rep(page: Page, cdp: CDPSession | null, def: Interaction): Promis
     restageMs: t?.restageMs ?? r.delta.restageMs,
     p50Frame: t?.p50Frame ?? null,
     p95Frame: t?.p95Frame ?? null,
-    drawsPerSec: t?.drawsPerSec ?? null,
+    // Counted from the plot's renders, which a build without the counters lacks.
+    drawsPerSec: result.hasCounters === false ? null : (t?.drawsPerSec ?? null),
     restage: r.delta.restage,
     render: r.delta.render,
     uploadedBytesTotal: r.delta.bufferBytes,
-    drawn: r.drawn,
+    drawn: Number.isNaN(r.drawn) ? null : r.drawn,
     ...extra,
   };
 }
@@ -523,7 +544,10 @@ test(`scale ${DATASET.name}`, async ({ browser }) => {
     for (let i = 0; i < COLD; i++) {
       if (current) await current.page.context().close();
       current = await coldLoad(browser, i);
+      // A refused dataset stays refused: no more loads, no interactions.
+      if (result.refused) return;
     }
+    if (REPS === 0) return;
     const { page, cdp } = current!;
     result.gpu = await page.evaluate(() => {
       const gl = document.createElement('canvas').getContext('webgl2')!;
@@ -557,7 +581,8 @@ test(`scale ${DATASET.name}`, async ({ browser }) => {
     }
     mark('interactions:end');
     result.heapAfterInteractionsMB = await heapMB(cdp);
-    result.drawnAtEnd = (await readSnapshot(page)).drawn;
+    const drawnAtEnd = (await readSnapshot(page, true)).drawn;
+    result.drawnAtEnd = Number.isNaN(drawnAtEnd) ? undefined : drawnAtEnd;
     result.toasts = await page.getByText(TOAST).count();
     // The last load's page: keep only what the interactions raised after its load.
     const degraded = await page.evaluate(() => window.__scaleDegraded ?? []);

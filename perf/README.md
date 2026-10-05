@@ -269,7 +269,7 @@ pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an alread
 | --------------------- | ----------------------------- | -------------------------------------------------------------------------- |
 | `--datasets a=path,…` | required                      | `name=path`, a path, or a name in `apps/web/public/data/`                  |
 | `--cold N`            | 10                            | cold imports per dataset, each in a fresh context                          |
-| `--reps N`            | 20                            | measured reps per interaction, after 2 warm-ups                            |
+| `--reps N`            | 20                            | measured reps per interaction, after 2 warm-ups; 0 measures loads only     |
 | `--rounds N`          | 1                             | repeat all datasets N times, interleaved                                   |
 | `--browser B`         | `chrome`                      | `chrome` (stable; falls back to Chromium), `chromium`, `firefox`, `webkit` |
 | `--url URL`           | own server                    | measure this server instead of building and serving                        |
@@ -308,13 +308,17 @@ Each dataset and round is one browser run of the `perf-scale` Playwright project
   off macOS). Each reports the peak over the run and per load, the value once each load
   settled, and bytes per point (settled minus the value before the import, over N; also for the
   JS heap).
-- **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired) or `error`;
+- **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired), `refused`
+  (the app refused the dataset, over its drawable-point limit or with a load error; `refused`
+  holds the toast or error text, and the run stops there) or `error`;
   whether every load drew N points, and the degradation notices. `pmset -g therm` is logged
   before and after each dataset.
 
 Output: one `<stamp>-r<round>-<name>.json` per run, with every sample and the raw memory
 samples, then `aggregate.json` and `aggregate.csv` with the median, quartiles, IQR and sample
-count (`samples`) of each metric per dataset, across rounds. Only runs with status `ok` are
+count (`samples`) of each metric per dataset, across rounds. A build without the counters (main) still
+gets its timings, load phases and memory; its drawn counts, work counts and draws/s are
+null, and so is `drawnEqualsN`. Only runs with status `ok` are
 pooled (`okRuns`); a stopped run's partial numbers stay in its own JSON. Keep generated bundles and results out of the repo.
 
 ## Files
