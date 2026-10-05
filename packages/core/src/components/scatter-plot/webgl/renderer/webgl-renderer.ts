@@ -32,8 +32,6 @@ import {
 } from '../shader-utils';
 import {
   IDENTITY_RESCALE,
-  linearAxis,
-  mapLinear,
   rescaleBetween,
   snapshotScales,
   type Rescale,
@@ -1491,7 +1489,6 @@ export class WebGLRenderer {
     if (plannedCapacity !== this.capacity) {
       this.resizeCapacity(plannedCapacity);
       updatePositions = true;
-      updateStyles = true;
     }
 
     // Plan/allocate the atlas for the current capacity before anything stages into
@@ -1500,23 +1497,20 @@ export class WebGLRenderer {
     this.syncLabelAtlas();
 
     // With depth testing disabled (to ensure overlaps are drawn), we preserve z-order using
-    // the painter's algorithm: draw far -> near. This requires reordering the slots, so
-    // whenever styles update we must also update positions to keep all parallel buffers aligned.
-    // However, if only colors changed (not depths), we can skip re-sorting and position updates.
-    let needsReorder = updatePositions;
-    if (this.depthOrderDirty) {
-      // Caller signalled the depth mapping changed — re-sort regardless of the
-      // sample-based check (which can't reliably detect category-level swaps).
-      needsReorder = true;
-      updatePositions = true;
-      this.depthOrderDirty = false;
-    }
+    // the painter's algorithm: draw far -> near. A re-sort reorders the slots, so it stages
+    // positions and styles alike to keep all parallel buffers aligned. Callers stage only on a
+    // change, so a call that does not re-sort changed colors only (not depths): it restyles in
+    // the staged order, skipping the re-sort and the position upload.
+    // A dirty depth order means the caller changed the depth mapping — re-sort regardless of
+    // the sample-based check (which can't reliably detect category-level swaps).
+    let resort = updatePositions || this.depthOrderDirty;
+    this.depthOrderDirty = false;
 
     const sp = this.scratchPoint;
     const oi = pd.originalIndices;
     const { xs, ys } = pd;
 
-    if (updateStyles && !updatePositions) {
+    if (!resort) {
       // Check if depths have actually changed by sampling first few slots
       // If depths are the same, we can skip re-sorting (color-only update optimization)
       const sampleSize = Math.min(100, pd.length);
@@ -1540,19 +1534,13 @@ export class WebGLRenderer {
           break;
         }
       }
-      if (depthsChanged) {
-        needsReorder = true;
-        updatePositions = true;
-      }
-    } else if (updateStyles) {
-      needsReorder = true;
-      updatePositions = true;
+      if (depthsChanged) resort = true;
     }
 
     let idx = 0;
     let morphChanged = false;
 
-    if (needsReorder) {
+    if (resort) {
       this.visibleCount = 0;
       const count = pd.length;
       // The re-sort below permutes every buffer, so a glide crosses it by slot: a
@@ -1607,7 +1595,7 @@ export class WebGLRenderer {
       this.sortedDataRef = pd;
       this.stagedOrderStale = false;
       this.keepRecordTable(pass, table, idx);
-    } else if (updateStyles) {
+    } else {
       this.visibleCount = 0;
       // Color-only update: no reordering needed, just update color/shape buffers.
       // Iterate via sortOrder into sortedDataRef to match the buffer order from the last
@@ -1631,26 +1619,6 @@ export class WebGLRenderer {
         this.stagedOrderStale = this.orderOutOfDate(idx);
         this.keepRecordTable(pass, table, idx);
       }
-    } else {
-      // No reordering and no style updates: only update positions if needed.
-      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
-      const order = this.sortOrder;
-      const src = this.sortedDataRef;
-      if (src) {
-        const srcXs = src.xs;
-        const srcYs = src.ys;
-        const xAxis = linearAxis(scales.x);
-        const yAxis = linearAxis(scales.y);
-        for (let i = 0; i < this.currentPointCount && idx < pd.length; i++) {
-          const slot = order[i];
-          if (updatePositions) {
-            this.dataPositions[idx * 2] = mapLinear(xAxis, srcXs[slot]);
-            this.dataPositions[idx * 2 + 1] = mapLinear(yAxis, srcYs[slot]);
-          }
-
-          idx++;
-        }
-      }
     }
 
     this.currentPointCount = idx;
@@ -1665,7 +1633,7 @@ export class WebGLRenderer {
 
     gl.bindVertexArray(this.resources.pointVao);
 
-    if (updatePositions) {
+    if (resort) {
       this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
       this.stagedScales = snapshotScales(scales);
       // Staged through these scales, so drawn as they are: a glide carried by the
@@ -1674,53 +1642,49 @@ export class WebGLRenderer {
     }
     if (morphChanged) this.syncMorphAttribute(gl);
 
-    // Hoisted from `updateStyles` alone: the reorder branch above rewrites every
-    // style array AND the atlas into the new slot order, so gating the upload on
-    // updateStyles leaves the GPU holding the previous permutation. Reachable via
-    // updatePositions and via depthOrderDirty, neither of which sets updateStyles.
-    if (updateStyles || needsReorder) {
-      // Before the colours: if the table cannot be uploaded, they take the hiding back.
-      if (this.stagedRecords && !this.uploadRecordTable(gl)) this.dropRecordTable(idx);
-      // Only read through a table, but the attribute needs its storage regardless.
-      if (allocating || this.stagedRecords) {
-        this.updateBuffer(gl, this.resources.recordBuffer, this.recordIds, idx);
-      }
-      this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
-      this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
-      this.contourPalette = null;
-      this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
-      this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
-      this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
-      this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
-
-      // One error check per capacity change, on the allocating (bufferData) path
-      // only — never on bufferSubData, so never per frame. It runs BEFORE any
-      // texture call so a failed buffer allocation is neither masked by nor
-      // misattributed to the atlas upload, and against a queue drained just above
-      // so it cannot inherit an unrelated error. gl.isBuffer cannot see this: it
-      // reports handle validity, not whether storage was allocated.
-      if (allocating && gl.getError() !== gl.NO_ERROR) {
-        this.reportDegraded('point-buffer-allocation-failed');
-        // Give the atlas back so the retry has a chance. No second reason is
-        // reported: the atlas allocation was never attempted, so claiming it ran
-        // out of memory would be a fabricated second toast.
-        this.disableLabelAtlas(null);
-        // `disableLabelAtlas` only drops the CPU-side texels. This is what hands
-        // the GPU storage back — the memory the retry actually needs — by
-        // replacing a previously allocated atlas with the 1x1 placeholder. It has
-        // to happen here, because every later populate takes this same early
-        // return (`buffersInitialized` stays false) and never reaches the upload.
-        this.uploadLabelAtlas(gl);
-        gl.bindVertexArray(null);
-        // buffersInitialized stays false: the retry must reallocate with
-        // bufferData, because bufferSubData against a zero-sized store is
-        // INVALID_VALUE forever.
-        return;
-      }
-
-      if (allocating) this.allocateMarkTexture(gl);
-      this.uploadLabelAtlas(gl);
+    // Both branches rewrite every style array AND the atlas: a re-sort into the new
+    // slot order, a restyle in place.
+    // Before the colours: if the table cannot be uploaded, they take the hiding back.
+    if (this.stagedRecords && !this.uploadRecordTable(gl)) this.dropRecordTable(idx);
+    // Only read through a table, but the attribute needs its storage regardless.
+    if (allocating || this.stagedRecords) {
+      this.updateBuffer(gl, this.resources.recordBuffer, this.recordIds, idx);
     }
+    this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
+    this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
+    this.contourPalette = null;
+    this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
+    this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
+    this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
+    this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
+
+    // One error check per capacity change, on the allocating (bufferData) path
+    // only — never on bufferSubData, so never per frame. It runs BEFORE any
+    // texture call so a failed buffer allocation is neither masked by nor
+    // misattributed to the atlas upload, and against a queue drained just above
+    // so it cannot inherit an unrelated error. gl.isBuffer cannot see this: it
+    // reports handle validity, not whether storage was allocated.
+    if (allocating && gl.getError() !== gl.NO_ERROR) {
+      this.reportDegraded('point-buffer-allocation-failed');
+      // Give the atlas back so the retry has a chance. No second reason is
+      // reported: the atlas allocation was never attempted, so claiming it ran
+      // out of memory would be a fabricated second toast.
+      this.disableLabelAtlas(null);
+      // `disableLabelAtlas` only drops the CPU-side texels. This is what hands
+      // the GPU storage back — the memory the retry actually needs — by
+      // replacing a previously allocated atlas with the 1x1 placeholder. It has
+      // to happen here, because every later populate takes this same early
+      // return (`buffersInitialized` stays false) and never reaches the upload.
+      this.uploadLabelAtlas(gl);
+      gl.bindVertexArray(null);
+      // buffersInitialized stays false: the retry must reallocate with
+      // bufferData, because bufferSubData against a zero-sized store is
+      // INVALID_VALUE forever.
+      return;
+    }
+
+    if (allocating) this.allocateMarkTexture(gl);
+    this.uploadLabelAtlas(gl);
 
     gl.bindVertexArray(null);
     this.buffersInitialized = true;
