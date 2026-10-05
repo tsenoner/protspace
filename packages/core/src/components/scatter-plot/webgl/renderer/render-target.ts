@@ -10,12 +10,11 @@
 import type { PointUniformLocations } from '../types';
 import { IDENTITY_RESCALE, type Rescale } from '../../rescale';
 import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
-
-export const LABEL_ATLAS_TEXTURE_UNIT = 1;
-/** The per-record style table's unit, clear of the atlas and the density fields (0, 2-4). */
-export const RECORD_STYLE_TEXTURE_UNIT = 7;
-/** The per-point mark texture's unit, clear of the atlas, the density fields and the table. */
-export const MARK_TEXTURE_UNIT = 6;
+import {
+  LABEL_ATLAS_TEXTURE_UNIT,
+  MARK_TEXTURE_UNIT,
+  RECORD_STYLE_TEXTURE_UNIT,
+} from './texture-units';
 
 /**
  * Binds the given framebuffer (or the default framebuffer when `null`), sets the

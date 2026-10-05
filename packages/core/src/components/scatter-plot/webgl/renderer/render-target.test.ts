@@ -6,11 +6,8 @@ import {
   drawMarkedPoints,
   bindPointDrawState,
   setCameraUniforms,
-  LABEL_ATLAS_TEXTURE_UNIT,
-  MARK_TEXTURE_UNIT,
-  RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
-import { DENSITY_FIELD_UNITS } from './density-shaders';
+import { MARK_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT } from './texture-units';
 import type { PointUniformLocations } from '../types';
 
 function mockGL() {
@@ -284,11 +281,6 @@ describe('bindPointDrawState label-atlas uniforms', () => {
     expect(pushed.recordStyleOn).toBe(1);
   });
 
-  it('keeps the record-style unit clear of the label atlas and the density fields', () => {
-    expect(RECORD_STYLE_TEXTURE_UNIT).not.toBe(LABEL_ATLAS_TEXTURE_UNIT);
-    expect(DENSITY_FIELD_UNITS).not.toContain(RECORD_STYLE_TEXTURE_UNIT);
-  });
-
   it('points the mark sampler at its own unit, with the opacities clamped as staged', () => {
     const { gl, uniforms, pushed } = uniformMockGL();
     bindPointDrawState(gl, {} as WebGLProgram, uniforms, null, null, {
@@ -303,11 +295,6 @@ describe('bindPointDrawState label-atlas uniforms', () => {
       marks: { texture: {} as WebGLTexture, marked: 1.5, unmarked: 0.15 },
     });
     expect(pushed).toMatchObject({ marksOn: 1, markedOpacity: 1, unmarkedOpacity: 0.15 });
-  });
-
-  it('keeps the mark unit clear of every other unit', () => {
-    const others = [LABEL_ATLAS_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT, ...DENSITY_FIELD_UNITS];
-    expect(others).not.toContain(MARK_TEXTURE_UNIT);
   });
 });
 

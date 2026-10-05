@@ -59,9 +59,8 @@ import {
   drawPoints,
   drawMarkedPoints,
   bindPointDrawState,
-  MARK_TEXTURE_UNIT,
-  RECORD_STYLE_TEXTURE_UNIT,
 } from './render-target';
+import { MARK_TEXTURE_UNIT, RECORD_STYLE_TEXTURE_UNIT } from './texture-units';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
   createDensityResources,

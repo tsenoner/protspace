@@ -1,9 +1,11 @@
+import { SCRATCH_TEXTURE_UNIT } from './texture-units';
+
 /** Two-triangle full-screen quad in clip space (matches the live setupQuad buffer). */
 export const QUAD_VERTICES = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
 
 /**
  * Run the gamma-correction full-screen-quad pass: sample `sourceTexture` on
- * TEXTURE0, apply `gamma`, draw the quad from `quadBuffer` (must already hold
+ * the scratch unit, apply `gamma`, draw the quad from `quadBuffer` (must already hold
  * QUAD_VERTICES). Assumes BLEND is already disabled by the caller.
  */
 export function drawGammaQuad(
@@ -19,9 +21,9 @@ export function drawGammaQuad(
   },
 ): void {
   gl.useProgram(program);
-  gl.activeTexture(gl.TEXTURE0);
+  gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
   gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
-  gl.uniform1i(uniforms.linearTexture, 0);
+  gl.uniform1i(uniforms.linearTexture, SCRATCH_TEXTURE_UNIT);
   gl.uniform1f(uniforms.gamma, gamma);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);

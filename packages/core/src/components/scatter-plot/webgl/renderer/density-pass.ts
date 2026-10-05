@@ -9,16 +9,19 @@ import {
   DENSITY_CONTOUR_FLOOR,
   DENSITY_CONTOUR_LIGHTEN,
   DENSITY_CONTOUR_LINE_CSS_PX,
-  DENSITY_FIELD_UNITS,
 } from './density-shaders';
 import { GAMMA_VERTEX_SHADER } from './export-shaders';
 import {
   bindAndClearTarget,
   setCameraUniforms,
-  RECORD_STYLE_TEXTURE_UNIT,
   type CameraParams,
   type CameraUniformLocations,
 } from './render-target';
+import {
+  DENSITY_FIELD_UNITS,
+  RECORD_STYLE_TEXTURE_UNIT,
+  SCRATCH_TEXTURE_UNIT,
+} from './texture-units';
 import type { StagedRecords } from './record-table';
 
 // The grid spans the plot, so the rings depend on data and view, not on dpr or window size.
@@ -402,8 +405,8 @@ function blur(
   const loc = res.contourBlurLoc;
   gl.disable(gl.BLEND);
   gl.useProgram(res.contourBlurProgram);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(loc.source, 0);
+  gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+  gl.uniform1i(loc.source, SCRATCH_TEXTURE_UNIT);
   gl.bindVertexArray(res.quadVao);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, ping.framebuffer);

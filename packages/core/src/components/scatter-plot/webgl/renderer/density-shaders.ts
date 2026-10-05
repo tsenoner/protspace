@@ -5,7 +5,6 @@
  */
 
 import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, RECORD_STYLE_GLSL } from './export-shaders';
-import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
 
 export function gaussianWeights(sigma: number, radius: number): number[] {
   const w: number[] = [];
@@ -53,10 +52,6 @@ ${taps}
 }
 
 export const DENSITY_CATEGORY_CAP = 16;
-// Skips the label-atlas unit so the composite never unbinds the point draw's atlas.
-export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4 }, (_, g) =>
-  g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
-);
 
 // In cells of the density grid, which spans the plot: about 6.4 CSS px on an 1100 px plot.
 export const DENSITY_CONTOUR_SIGMA_GRID_PX = 3;
