@@ -47,9 +47,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _dupOverlay: Host['_dupOverlay'];
   _focusedValues: Host['_focusedValues'];
   _formatConnectorStatus: Host['_formatConnectorStatus'];
-  _getCurrentDisplayData: Host['_getCurrentDisplayData'];
   _getInteractableProteinIds: Host['_getInteractableProteinIds'];
-  _getMaterializedData: Host['_getMaterializedData'];
   _getPointsForRendering: Host['_getPointsForRendering'];
   _getVisiblePointCount: Host['_getVisiblePointCount'];
   _handleCanvasMouseMove: Host['_handleCanvasMouseMove'];

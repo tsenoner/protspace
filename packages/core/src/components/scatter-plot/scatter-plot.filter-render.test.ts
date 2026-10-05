@@ -463,7 +463,7 @@ describe('scatter-plot dataset swap releases the style state', () => {
   it('holds nothing of the old dataset when the new plot data is allocated', () => {
     const sp = makeScatter();
     sp._processData();
-    const oldData = sp._getMaterializedData();
+    const oldData = sp.getMaterializedData();
     // What a session builds over a dataset: a lasso, the id index, marks, getters.
     sp.selectedProteinIds = sp._style.selectSlots(sp._plotData, [1, 2]);
     expect(sp._style.model().idsUnique()).toBe(true);
@@ -612,7 +612,7 @@ describe('scatter-plot numeric recompute display data', () => {
     frames.run();
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe(sp._getMaterializedData());
+    expect(spy.mock.calls[0][0]).toBe(sp.getMaterializedData());
   });
 
   it('annotation values still resolve correctly after recompute under a non-prefix filter', () => {

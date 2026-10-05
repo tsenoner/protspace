@@ -1909,7 +1909,7 @@ export class ProtspaceControlBar extends LitElement {
     }
 
     // A query that matches nothing used to be pushed as an ACTIVE filter, which
-    // blanked the canvas: `_getVisibleProteinIdsSet()` reads an empty
+    // blanked the canvas: `DataViews.filterSet()` reads an empty
     // `filteredProteinIds` as "nothing is visible". Reaching that state was easy —
     // a self-contradicting pair of conditions — and there was no way back, because
     // Apply is disabled and Cancel does not revert. Leave the plot as it is

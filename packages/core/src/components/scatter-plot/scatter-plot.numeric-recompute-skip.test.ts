@@ -176,10 +176,10 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
 
     it('stays the same object when settings that differ in content land on the same bins', () => {
       build('score', {});
-      const before = sp._getMaterializedData();
+      const before = sp.getMaterializedData();
 
       sp.numericAnnotationSettings = { score: defaults() };
-      expect(sp._getMaterializedData()).toBe(before);
+      expect(sp.getMaterializedData()).toBe(before);
     });
 
     it('keeps the visibility model, so an equal copy does not redo its O(N) mask', () => {
@@ -187,24 +187,24 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
       const model = sp._style.model();
 
       sp.numericAnnotationSettings = { score: defaults() };
-      sp._getMaterializedData();
+      sp.getMaterializedData();
       expect(sp._style.model()).toBe(model);
     });
 
     it('becomes a new object when the bins change', () => {
       build('score', { score: settings(3) });
-      const before = sp._getMaterializedData();
+      const before = sp.getMaterializedData();
 
       sp.numericAnnotationSettings = { score: settings(5) };
-      expect(sp._getMaterializedData()).not.toBe(before);
+      expect(sp.getMaterializedData()).not.toBe(before);
     });
 
     it('becomes a new object when the annotation changes, even if its definition would match', () => {
       build('fam', {});
-      const before = sp._getMaterializedData();
+      const before = sp.getMaterializedData();
 
       sp.selectedAnnotation = 'score';
-      expect(sp._getMaterializedData()).not.toBe(before);
+      expect(sp.getMaterializedData()).not.toBe(before);
     });
   });
 });

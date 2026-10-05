@@ -89,23 +89,23 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// F-60 — single numeric-column read in _getMaterializedData (ref fast-path)
+// F-60 — single numeric-column read in the materialization (ref fast-path)
 // ---------------------------------------------------------------------------
-describe('B6 F-60 _getMaterializedData single numeric read', () => {
+describe('B6 F-60 getMaterializedData single numeric read', () => {
   it('returns a stable reference on repeated calls with unchanged inputs (GREEN)', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
 
     // Prime: first call populates the cache + fast-path key fields.
-    const first = el._getMaterializedData();
+    const first = el.getMaterializedData();
     expect(first).toBeTruthy();
 
     // Repeated calls with unchanged inputs hit the ref/primitive fast-path and
     // return the SAME cached object reference (the merge of the two numeric
     // reads into one local must keep this fast-path intact).
-    const a = el._getMaterializedData();
-    const b = el._getMaterializedData();
+    const a = el.getMaterializedData();
+    const b = el.getMaterializedData();
     expect(a).toBe(first);
     expect(b).toBe(first);
   });
@@ -114,10 +114,10 @@ describe('B6 F-60 _getMaterializedData single numeric read', () => {
     const el = createPlot();
     el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
-    const first = el._getMaterializedData();
+    const first = el.getMaterializedData();
 
     el.selectedAnnotation = 'other';
-    const next = el._getMaterializedData();
+    const next = el.getMaterializedData();
     expect(next).not.toBe(first);
   });
 });
@@ -137,32 +137,32 @@ describe('B6 F-40 filtered display-data memoization', () => {
 
   it('filtered slice preserves correctness (GREEN)', () => {
     const el = primed();
-    const a = el._getCurrentDisplayData();
+    const a = el.getCurrentData();
     expect(a).not.toBeNull();
     expect(a!.protein_ids).toEqual(['p1', 'p3']);
   });
 
   it('returns the SAME filtered object on repeated calls with unchanged inputs (RED pre-wire — memoization)', () => {
     const el = primed();
-    const a = el._getCurrentDisplayData();
-    const b = el._getCurrentDisplayData();
+    const a = el.getCurrentData();
+    const b = el.getCurrentData();
     expect(b).toBe(a);
   });
 
   it('recomputes when filteredProteinIds ref changes (GREEN)', () => {
     const el = primed();
-    const a = el._getCurrentDisplayData();
+    const a = el.getCurrentData();
     el.filteredProteinIds = ['p2'];
     el.filtersActive = true;
-    const b = el._getCurrentDisplayData();
+    const b = el.getCurrentData();
     expect(b).not.toBe(a);
     expect(b!.protein_ids).toEqual(['p2']);
   });
 
   it('includeFilteredProteinIds:false bypasses the cache and returns the materialized object (GREEN)', () => {
     const el = primed();
-    const mat = el._getMaterializedData();
-    const out = el._getCurrentDisplayData({ includeFilteredProteinIds: false });
+    const mat = el.getMaterializedData();
+    const out = el.getCurrentData({ includeFilteredProteinIds: false });
     expect(out).toBe(mat);
   });
 });

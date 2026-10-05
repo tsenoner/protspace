@@ -25,11 +25,11 @@ function data(): VisualizationData {
 describe('scatter-plot EAT materialization', () => {
   it('coalesces only while enabled and invalidates the cached view on toggle', () => {
     const plot = createPlot({ data: data(), selectedAnnotation: 'ec', eatOverlayEnabled: true });
-    const enabled = plot._getMaterializedData()!;
+    const enabled = plot.getMaterializedData()!;
     expect(Array.from(enabled.annotation_data.ec as Int32Array)).toEqual([0, 0]);
 
     plot.eatOverlayEnabled = false;
-    const disabled = plot._getMaterializedData()!;
+    const disabled = plot.getMaterializedData()!;
     expect(disabled).not.toBe(enabled);
     expect(Array.from(disabled.annotation_data.ec as Int32Array)).toEqual([0, 1]);
     expect(Array.from(plot.data!.annotation_data.ec as Int32Array)).toEqual([0, 1]);

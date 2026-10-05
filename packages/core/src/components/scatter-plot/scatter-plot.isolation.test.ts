@@ -157,7 +157,7 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     el.data = data;
     el.selectedProjectionIndex = 0;
 
-    // Active view filter excludes p4, so _getCurrentDisplayData returns a strict
+    // Active view filter excludes p4, so the filtered view is a strict
     // subset (length 4 != full length 5). That defeats the originalIndices fast-path
     // length guard and forces the membership-scan fallback.
     el.filtersActive = true;

@@ -14,12 +14,9 @@ import type {
 import {
   DataProcessor,
   buildTooltipView,
-  materializeVisualizationData,
-  viewVisualizationDataByIndices,
   EMPTY_PLOT_DATA,
   clonePlotData,
   materializePlotDataPoint,
-  materializeEatOverlay,
   getProteinAnnotationValues,
 } from '@protspace/utils';
 import type { ScalePair } from '@protspace/utils';
@@ -39,7 +36,6 @@ import { PointStyleState } from './styling/point-style-state';
 import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
-import { sameMaterialization } from './styling/same-materialization';
 import type {
   BrushSelectionDetail,
   ProteinClickDetail,
@@ -69,6 +65,7 @@ import {
   type ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
 import { RenderLoop } from './render-loop';
+import { DataViews } from './data-views';
 
 export type {
   ProvenanceConnectorPair,
@@ -114,10 +111,6 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_isZoomedIn',
   '_mergedConfig',
 ]);
-
-/** Default number of bins for numeric→categorical materialization. Mirrors
- *  materializeVisualizationData's `defaultBinCount = 10` default. */
-const DEFAULT_NUMERIC_BIN_COUNT = 10;
 
 /** Same keys, same values. Style getters read these maps only by key lookup. */
 function sameMapping<T>(current: Record<string, T> | null, next: Record<string, T>): boolean {
@@ -184,22 +177,6 @@ export class ProtspaceScatterplot extends LitElement {
   private _transform = d3.zoomIdentity;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
-  // The proteins in every isolation layer, as ascending indices into `proteinIds`. Kept so
-  // nothing rescans the dataset against the layers: `history`/`layers` identify the
-  // isolation state they were taken from (layers are only ever pushed or replaced).
-  private _isolatedIndicesCache: {
-    history: string[][];
-    layers: number;
-    proteinIds: readonly string[];
-    indices: number[];
-  } | null = null;
-  // getCurrentData()'s isolated view, reused until its inputs change.
-  private _isolatedViewCache: {
-    materialized: VisualizationData;
-    indices: number[];
-    filteredProteinIds: string[] | null;
-    view: VisualizationData;
-  } | null = null;
   private _zOrderMapping: Record<string, number> | null = null;
   private _colorMapping: Record<string, string> | null = null;
   private _shapeMapping: Record<string, string> | null = null;
@@ -235,10 +212,19 @@ export class ProtspaceScatterplot extends LitElement {
   // element itself.
   private _interaction: PlotInteractionController | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
+  // The dataset materialized, through the query filter, and isolated.
+  private readonly _views = new DataViews({
+    data: () => this.data,
+    selectedAnnotation: () => this.selectedAnnotation,
+    numericAnnotationSettings: () => this.numericAnnotationSettings,
+    eatOverlayEnabled: () => this.eatOverlayEnabled,
+    filteredProteinIds: () => (this.filtersActive ? this.filteredProteinIds : null),
+    isolationHistory: () => (this._isolationMode ? this._isolationHistory : null),
+  });
   // The point style chain: the visibility model, the style getters over it, the
   // selection's GPU marks and the interactive slots.
   private readonly _style = new PointStyleState({
-    data: () => this._getMaterializedData(),
+    data: () => this._views.materialized(),
     selectedAnnotation: () => this.selectedAnnotation,
     hiddenAnnotationValues: () => this.hiddenAnnotationValues,
     otherAnnotationValues: () => this.otherAnnotationValues,
@@ -346,35 +332,6 @@ export class ProtspaceScatterplot extends LitElement {
     plane: 'xy' | 'xz' | 'yz';
     culled: boolean;
   } | null = null;
-  // The materialized data (`value`) and what it was built from. A read is answered in
-  // three tiers (`_getMaterializedData`):
-  // 1. The same references and primitives as the build return `value` before the JSON key
-  //    is serialized; the staging loops reach this per point (getOpacity -> visibility
-  //    model -> materialized data). numericAnnotationSettings is replaced wholesale, so
-  //    comparing the selected annotation's settings ref is sound: a rebin yields a new ref.
-  // 2. The same data and numeric column with an equal JSON `key` return `value` too.
-  // 3. When only the numeric settings moved (same data, annotation and overlay) and they
-  //    land on the bins the plot already has (the legend publishing the defaults), the
-  //    rebuild keeps handing out the previous `value`. Everything keyed on its identity
-  //    (the visibility model, the style getters, the plot data's build, the recompute's
-  //    own change check) then holds, instead of rebuilding for an equal copy.
-  private _materialized: {
-    source: VisualizationData;
-    numericValues: Float64Array | null;
-    selectedAnnotation: string | null;
-    eatOverlayEnabled: boolean;
-    selectedSettings: NumericAnnotationDisplaySettingsMap[string] | undefined;
-    key: string;
-    value: VisualizationData;
-  } | null = null;
-  // Memoize the filtered display-data rebuild. Keyed by reference on the
-  // same inputs the filtered slice depends on so repeated reads with unchanged
-  // inputs reuse the prior VisualizationData instead of reallocating.
-  private _filteredDisplayCache: VisualizationData | null = null;
-  private _filteredDisplayCacheDeps: {
-    materialized: VisualizationData | null;
-    filteredProteinIds: string[];
-  } | null = null;
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
     getSelectedAnnotation: () => this.selectedAnnotation,
@@ -406,91 +363,6 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _invalidateScalesCache() {
     this._scalesCache = null;
-  }
-
-  private _getMaterializedData(): VisualizationData | null {
-    if (!this.data) return null;
-
-    const sourceData = this.data;
-    const selectedNumericValues = this.selectedAnnotation
-      ? sourceData.numeric_annotation_data?.[this.selectedAnnotation]
-      : undefined;
-    const selectedNumericValuesCacheRef = selectedNumericValues ?? null;
-    const selectedNumericSettings = this.selectedAnnotation
-      ? this.numericAnnotationSettings?.[this.selectedAnnotation]
-      : undefined;
-    const memo = this._materialized;
-    const sameColumn =
-      memo !== null &&
-      memo.source === sourceData &&
-      memo.numericValues === selectedNumericValuesCacheRef;
-
-    // Tier 1 (see `_materialized`). The JSON key's selectedNumericType and
-    // selectedNumericValuesLength derive from data and selectedAnnotation, both compared here.
-    if (
-      sameColumn &&
-      memo.selectedAnnotation === this.selectedAnnotation &&
-      memo.eatOverlayEnabled === this.eatOverlayEnabled &&
-      memo.selectedSettings === selectedNumericSettings
-    ) {
-      return memo.value;
-    }
-
-    const selectedNumericAnnotation = this.selectedAnnotation
-      ? sourceData.annotations[this.selectedAnnotation]
-      : undefined;
-    const selectedNumericType =
-      selectedNumericAnnotation?.numericType ??
-      selectedNumericAnnotation?.numericMetadata?.numericType ??
-      null;
-
-    const cacheKey = JSON.stringify({
-      dataRef: this.data.protein_ids.length,
-      selectedAnnotation: this.selectedAnnotation,
-      selectedNumericValuesLength: selectedNumericValues?.length ?? 0,
-      selectedNumericType,
-      numericAnnotationSettings: selectedNumericSettings ?? null,
-      annotationKeys: Object.keys(sourceData.annotations),
-      eatOverlayEnabled: this.eatOverlayEnabled,
-    });
-
-    // Tier 2.
-    if (sameColumn && memo.key === cacheKey) return memo.value;
-
-    const rematerialized = materializeEatOverlay(
-      materializeVisualizationData(
-        sourceData,
-        this.numericAnnotationSettings,
-        DEFAULT_NUMERIC_BIN_COUNT,
-        this.selectedAnnotation,
-      ),
-      this.selectedAnnotation,
-      this.eatOverlayEnabled,
-    );
-    // Tier 3.
-    const onlySettingsMoved =
-      sameColumn &&
-      memo.selectedAnnotation === (this.selectedAnnotation ?? null) &&
-      memo.eatOverlayEnabled === this.eatOverlayEnabled;
-    const value =
-      onlySettingsMoved && sameMaterialization(memo.value, rematerialized, this.selectedAnnotation)
-        ? memo.value
-        : rematerialized;
-    this._materialized = {
-      source: sourceData,
-      numericValues: selectedNumericValuesCacheRef,
-      selectedAnnotation: this.selectedAnnotation ?? null,
-      eatOverlayEnabled: this.eatOverlayEnabled,
-      selectedSettings: selectedNumericSettings,
-      key: cacheKey,
-      value,
-    };
-    return value;
-  }
-
-  private _getVisibleProteinIdsSet(): Set<string> | null {
-    if (!this.filtersActive) return null;
-    return new Set(this.filteredProteinIds);
   }
 
   /** The exact set of reactive inputs that affect rendered geometry. */
@@ -855,14 +727,7 @@ export class ProtspaceScatterplot extends LitElement {
       // Here, not in willUpdate: the render before this counts the points over
       // the old plot data, which builds interactive slots over its ids.
       this._style.releaseDataset();
-      // The filtered-display memo is keyed by reference on the previous
-      // materialized object. _getMaterializedData returns a fresh object after a
-      // data swap, so the reference check already misses — but drop the cache
-      // explicitly here too so a stale slice from the previous dataset can never
-      // be returned. Value-identical to the original (no cache) behavior; it only
-      // forces the recompute that would happen anyway.
-      this._filteredDisplayCache = null;
-      this._filteredDisplayCacheDeps = null;
+      this._views.releaseDataset();
       this._fullView = null;
       if (this.filtersActive) {
         this.filteredProteinIds = [];
@@ -1102,13 +967,13 @@ export class ProtspaceScatterplot extends LitElement {
     // index into the full dataset, which the style getters and tooltip path
     // require — a slice-local index would mis-resolve colours/values under any
     // non-prefix filter. Isolation already worked this way; filtering now matches.
-    const dataToUse = this._getMaterializedData();
+    const dataToUse = this._views.materialized();
     if (!dataToUse) {
       this._style.clearMarks();
       return;
     }
 
-    const visibleProteinIds = this._getVisibleProteinIdsSet();
+    const visibleProteinIds = this._views.filterSet();
 
     // Fast path applies only to a projection change on the plain, unfiltered,
     // non-isolated plot. Whenever a filter or isolation is active we rebuild so
@@ -1214,13 +1079,13 @@ export class ProtspaceScatterplot extends LitElement {
    * (NumericRecomputeRunner owns the job id, events, RAF, and running state).
    */
   private _runNumericRecomputeBody() {
-    const materializedData = this._getMaterializedData();
+    const materializedData = this._views.materialized();
     if (!materializedData) return;
 
     // A settings change that leaves the selected annotation's binning alone (another numeric
     // annotation's settings, or a rebin onto the same bins, as when the legend publishes the
     // defaults the plot already used) hands back the object the plot was last built from (see
-    // `_getMaterializedData`). Re-staging then would repeat the whole upload for identical
+    // `DataViews.materialized`). Re-staging then would repeat the whole upload for identical
     // output (~500 ms at 573K).
     const unchanged = this._plotData.length > 0 && materializedData === this._plotDataBuild?.data;
     if (!unchanged) {
@@ -1246,44 +1111,6 @@ export class ProtspaceScatterplot extends LitElement {
         }),
       );
     }
-  }
-
-  private _getCurrentDisplayData(options?: {
-    includeFilteredProteinIds?: boolean;
-  }): VisualizationData | null {
-    const materializedData = this._getMaterializedData();
-    if (!materializedData) return null;
-
-    const visibleProteinIds =
-      options?.includeFilteredProteinIds === false ? null : this._getVisibleProteinIdsSet();
-    if (!visibleProteinIds) {
-      return materializedData;
-    }
-
-    const deps = this._filteredDisplayCacheDeps;
-    if (
-      this._filteredDisplayCache &&
-      deps &&
-      deps.materialized === materializedData &&
-      deps.filteredProteinIds === this.filteredProteinIds
-    ) {
-      return this._filteredDisplayCache;
-    }
-
-    const keptIndices: number[] = [];
-    materializedData.protein_ids.forEach((proteinId, index) => {
-      if (visibleProteinIds.has(proteinId)) {
-        keptIndices.push(index);
-      }
-    });
-
-    const result = viewVisualizationDataByIndices(materializedData, keptIndices);
-    this._filteredDisplayCache = result;
-    this._filteredDisplayCacheDeps = {
-      materialized: materializedData,
-      filteredProteinIds: this.filteredProteinIds,
-    };
-    return result;
   }
 
   /**
@@ -1784,7 +1611,7 @@ export class ProtspaceScatterplot extends LitElement {
     // predictions exist only there, not in the raw `this.data`.
     const data =
       shift && point && this.selectedAnnotation && !this.selectedProteinIds.length
-        ? this._getMaterializedData()
+        ? this._views.materialized()
         : null;
     if (point && data) {
       const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
@@ -2051,8 +1878,8 @@ export class ProtspaceScatterplot extends LitElement {
     // which also yields the next isolated indices.
     const proteinIds = this._plotData.proteinIds;
     const selected = new Set(this.selectedProteinIds);
-    const visible = this._getVisibleProteinIdsSet();
-    const isolated = this._isolatedIndices(proteinIds);
+    const visible = this._views.filterSet();
+    const isolated = this._views.isolatedIndices(proteinIds);
     const keptIndices: number[] = [];
     const keptIds = new Set<string>();
     const keep = (index: number) => {
@@ -2073,12 +1900,7 @@ export class ProtspaceScatterplot extends LitElement {
     // Add valid selection to isolation history
     this._isolationHistory.push(validSelectedIds);
     this._isolationMode = true;
-    this._isolatedIndicesCache = {
-      history: this._isolationHistory,
-      layers: this._isolationHistory.length,
-      proteinIds,
-      indices: keptIndices,
-    };
+    this._views.noteIsolated(this._isolationHistory, proteinIds, keptIndices);
     this.selectedProteinIds = [];
 
     this._reprocessAndRefresh();
@@ -2213,8 +2035,7 @@ export class ProtspaceScatterplot extends LitElement {
     const wasIsolated = this._isolationMode;
     this._isolationHistory = [];
     this._isolationMode = false;
-    this._isolatedIndicesCache = null;
-    this._isolatedViewCache = null;
+    this._views.releaseIsolation();
     if (wasIsolated && !options?.silent) {
       this.dispatchEvent(
         new CustomEvent('data-isolation-reset', {
@@ -2278,72 +2099,12 @@ export class ProtspaceScatterplot extends LitElement {
     return this._isolationMode;
   }
 
-  /**
-   * The proteins in every isolation layer, as ascending indices into `proteinIds`, or `null`
-   * outside isolation. Isolation is a set of proteins, not what is drawn: the plotted set
-   * also lacks every protein the selected projection does not place, which stays part of
-   * the isolated subset.
-   */
-  private _isolatedIndices(proteinIds: readonly string[]): number[] | null {
-    const history = this._isolationHistory;
-    if (!this._isolationMode || history.length === 0) return null;
-    const cached = this._isolatedIndicesCache;
-    if (
-      cached &&
-      cached.history === history &&
-      cached.layers === history.length &&
-      cached.proteinIds === proteinIds
-    ) {
-      return cached.indices;
-    }
-    const layers = history.map((layer) => new Set(layer));
-    const indices: number[] = [];
-    for (let index = 0; index < proteinIds.length; index++) {
-      const id = proteinIds[index];
-      if (layers.every((layer) => layer.has(id))) indices.push(index);
-    }
-    this._isolatedIndicesCache = { history, layers: history.length, proteinIds, indices };
-    return indices;
-  }
-
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null {
-    const materialized = this._getMaterializedData();
-    if (!materialized) return null;
-
-    // In isolation mode the current data is the isolated subset, through the query
-    // filter. It is taken from the isolation layers, not from _plotData: a protein the
-    // selected projection does not place is culled from the plot but stays in the
-    // dataset, so the .parquetbundle export and the legend counts keep it, and an
-    // isolated subset of which no point is placed is still that subset, not the whole
-    // dataset.
-    const isolated = this._isolatedIndices(materialized.protein_ids);
-    if (!isolated) return this._getCurrentDisplayData(options);
-
-    const filteredProteinIds =
-      options?.includeFilteredProteinIds === false || !this.filtersActive
-        ? null
-        : this.filteredProteinIds;
-    const cached = this._isolatedViewCache;
-    if (
-      cached &&
-      cached.materialized === materialized &&
-      cached.indices === isolated &&
-      cached.filteredProteinIds === filteredProteinIds
-    ) {
-      return cached.view;
-    }
-    let keptIndices = isolated;
-    if (filteredProteinIds) {
-      const visible = new Set(filteredProteinIds);
-      keptIndices = isolated.filter((index) => visible.has(materialized.protein_ids[index]));
-    }
-    const view = viewVisualizationDataByIndices(materialized, keptIndices);
-    this._isolatedViewCache = { materialized, indices: isolated, filteredProteinIds, view };
-    return view;
+    return this._views.current(options);
   }
 
   getMaterializedData(): VisualizationData | null {
-    return this._getMaterializedData();
+    return this._views.materialized();
   }
 
   /** Stable authoritative membership for points currently rendered with non-zero opacity. */

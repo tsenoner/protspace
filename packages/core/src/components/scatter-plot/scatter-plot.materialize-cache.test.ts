@@ -1,17 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * Fast-path regression for `_getMaterializedData`.
+ * Fast-path regression for `DataViews.materialized`.
  *
  * The hot per-point opacity path (getOpacity -> visibility model ->
- * _getCurrentDisplayData({ includeFilteredProteinIds: false }) ->
- * _getMaterializedData) reaches `_getMaterializedData` once per point on a
+ * materialized data) reaches `DataViews.materialized` once per point on a
  * WebGL buffer rebuild (~573K times on the flagship dataset). A cheap
  * reference/primitive fast-path returns the cached materialized object before
  * the `JSON.stringify(...Object.keys(...))` cache-key serialization runs.
  *
  * We observe whether the JSON-key slow path ran by spying on `JSON.stringify`:
- * `_getMaterializedData` is the only caller of JSON.stringify on this path in
+ * `DataViews.materialized` is the only caller of JSON.stringify on this path in
  * an unattached element, so a delta of 0 across consecutive calls proves the
  * fast-path fired.
  *
@@ -79,7 +78,7 @@ function makeNumericData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-describe('scatter-plot _getMaterializedData fast-path', () => {
+describe('scatter-plot getMaterializedData fast-path', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -89,15 +88,15 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
 
     // Prime: the JSON-key slow path runs once and populates the cache + the
     // fast-path key fields.
-    const first = sp._getMaterializedData();
+    const first = sp.getMaterializedData();
     expect(first).toBeTruthy();
 
     const spy = vi.spyOn(JSON, 'stringify');
     const before = spy.mock.calls.length;
 
-    const a = sp._getMaterializedData();
-    const b = sp._getMaterializedData();
-    const c = sp._getMaterializedData();
+    const a = sp.getMaterializedData();
+    const b = sp.getMaterializedData();
+    const c = sp.getMaterializedData();
 
     // Fast-path fired: JSON.stringify was never called again.
     expect(spy.mock.calls.length).toBe(before);
@@ -109,13 +108,13 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
 
   it('fast-path miss: changing selectedAnnotation re-materializes', () => {
     const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
-    const first = sp._getMaterializedData();
+    const first = sp.getMaterializedData();
 
     const spy = vi.spyOn(JSON, 'stringify');
     const before = spy.mock.calls.length;
 
     sp.selectedAnnotation = 'other';
-    const next = sp._getMaterializedData();
+    const next = sp.getMaterializedData();
 
     expect(spy.mock.calls.length).toBeGreaterThan(before);
     expect(next).not.toBe(first);
@@ -123,7 +122,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
 
   it('fast-path miss: changing this.data ref re-materializes', () => {
     const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
-    const first = sp._getMaterializedData();
+    const first = sp.getMaterializedData();
 
     const spy = vi.spyOn(JSON, 'stringify');
     const before = spy.mock.calls.length;
@@ -134,7 +133,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
       families: { C: '#0000ff', D: '#ffff00' },
       spacing: 2,
     });
-    const next = sp._getMaterializedData();
+    const next = sp.getMaterializedData();
 
     expect(spy.mock.calls.length).toBeGreaterThan(before);
     expect(next).not.toBe(first);
@@ -145,7 +144,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
     sp.numericAnnotationSettings = {
       score: { binCount: 3, strategy: 'linear', paletteId: 'viridis', reverseGradient: false },
     };
-    const first = sp._getMaterializedData();
+    const first = sp.getMaterializedData();
 
     const spy = vi.spyOn(JSON, 'stringify');
     const before = spy.mock.calls.length;
@@ -156,7 +155,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
       ...sp.numericAnnotationSettings,
       score: { binCount: 5, strategy: 'quantile', paletteId: 'viridis', reverseGradient: false },
     };
-    const next = sp._getMaterializedData();
+    const next = sp.getMaterializedData();
 
     // The rebin MUST miss the fast-path (new per-annotation ref) and re-materialize.
     expect(spy.mock.calls.length).toBeGreaterThan(before);
