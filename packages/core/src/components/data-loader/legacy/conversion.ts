@@ -502,6 +502,11 @@ function finishConversion(
  */
 const OPTIMIZED_PATH_ROW_THRESHOLD = 10_000;
 
+/**
+ * Convert v1/v2 bundle rows or a plain parquet table into visualization data.
+ *
+ * @deprecated Reads only the v1/v2 bundle formats and plain parquet, whose support ends in protspace 5.0.0.
+ */
 export function convertParquetToVisualizationDataOptimized(
   input: BundleExtractionResult | Rows,
   projectionsMetadata?: Rows,
