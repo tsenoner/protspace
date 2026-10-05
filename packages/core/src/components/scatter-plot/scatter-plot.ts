@@ -486,9 +486,6 @@ export class ProtspaceScatterplot extends LitElement {
   private _filteredDisplayCacheDeps: {
     materialized: VisualizationData | null;
     filteredProteinIds: string[];
-    filtersActive: boolean;
-    selectedProjectionIndex: number;
-    projectionPlane: 'xy' | 'xz' | 'yz';
   } | null = null;
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
@@ -1414,10 +1411,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._filteredDisplayCache &&
       deps &&
       deps.materialized === materializedData &&
-      deps.filteredProteinIds === this.filteredProteinIds &&
-      deps.filtersActive === this.filtersActive &&
-      deps.selectedProjectionIndex === this.selectedProjectionIndex &&
-      deps.projectionPlane === this.projectionPlane
+      deps.filteredProteinIds === this.filteredProteinIds
     ) {
       return this._filteredDisplayCache;
     }
@@ -1434,9 +1428,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._filteredDisplayCacheDeps = {
       materialized: materializedData,
       filteredProteinIds: this.filteredProteinIds,
-      filtersActive: this.filtersActive,
-      selectedProjectionIndex: this.selectedProjectionIndex,
-      projectionPlane: this.projectionPlane,
     };
     return result;
   }
