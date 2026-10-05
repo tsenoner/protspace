@@ -146,7 +146,7 @@ describe('density layer, on', () => {
     on.renderer.destroy();
   });
 
-  it('stays off without the float extensions, and says so once', () => {
+  it('stays off without the float extensions, and says so once as density-unavailable, not gamma', () => {
     const on = setup(
       { width: 800, height: 600, densityLayer: 'on' },
       {
@@ -158,7 +158,10 @@ describe('density layer, on', () => {
     on.renderer.render(plotData(50));
 
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-    // No 'gamma-pipeline-unavailable': that fallback is silent on this path (F-09 lock).
+    // Only 'density-unavailable'. A context that never had the float extensions
+    // raises no gamma notice; the missing extension surfaces through the feature
+    // the user asked for (renderer-capability-limits, "The missing extensions
+    // surface through the feature that needs them").
     expect(reasons(on.degraded)).toEqual(['density-unavailable']);
     expect(on.degraded[0].context.detail).toBe('EXT_color_buffer_float missing');
     expect(on.degraded[0].message).toContain('Contours are unavailable on this device');

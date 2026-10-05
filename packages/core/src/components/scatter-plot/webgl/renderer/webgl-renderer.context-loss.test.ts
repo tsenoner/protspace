@@ -4,7 +4,9 @@ import * as d3 from 'd3';
 import { WebGLRenderer } from './webgl-renderer';
 import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
-import { styleGetters } from './test-support/renderer-fixture';
+import type { RendererDegradedDetail } from '../../scatter-plot.events';
+import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
+import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
@@ -114,49 +116,75 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
   });
 });
 
-describe('WebGLRenderer gamma fallback (F-09 characterization lock)', () => {
-  // Restores the createMockCanvas getContext spies and any console.warn spy so
+// renderer-capability-limits, "A capability reduction SHALL reach the user, not
+// only the console": a gamma pipeline the context supports but loses at runtime
+// is reported as 'gamma-pipeline-unavailable'. A context that never had the float
+// extensions (iPhone/iPad WebKit has no EXT_float_blend) is not. Nothing changed
+// in front of that user, and the only visible consequence, contours, is reported
+// as 'density-unavailable' when they are requested (density.test.ts).
+describe('WebGLRenderer gamma fallback reporting', () => {
+  // Restores the createMockCanvas getContext spies and the console.warn spy so
   // none leak into later suites. vi.unstubAllGlobals does not restore vi.spyOn.
   afterEach(() => vi.restoreAllMocks());
-
-  // The contract: without the float extensions the renderer drops to direct
-  // rendering, so getEffectiveGamma() is 1.0 (shouldUseGammaPipeline() is false).
-  //
-  // Deliberately NOT pinned: whether this path warns or reports
-  // 'gamma-pipeline-unavailable'. Today ensureGL sets `gammaPipelineAvailable =
-  // false` before calling handleGammaFallback('required extensions missing'), and
-  // handleGammaFallback's `if (!this.gammaPipelineAvailable) return;` guard then
-  // skips both its console.warn and its reportDegraded call. That contradicts the
-  // renderer-capability-limits scenario "The gamma-pipeline fallback is announced
-  // on the same channel". Reporting it would also show every iPhone/iPad a gamma
-  // notice with contours off, which the density-contours "iPhone or iPad" and
-  // "Contours off" scenarios do not address. Fixing the code or amending the spec
-  // is an open decision, so this test leaves room for either.
-  it('missing float extensions → getEffectiveGamma() drops to 1.0', () => {
+  beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { canvas } = createMockCanvas({ missingFloatExtensions: true });
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-    );
-    r.render(pd); // ensureGL detects missing extensions → gammaPipelineAvailable = false
-    const getGamma = (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma.bind(r);
-    expect(getGamma()).toBe(1.0);
   });
 
-  it('framebuffer incomplete during init → gamma pipeline drops to direct (gamma 1.0)', () => {
-    const { canvas } = createMockCanvas({ framebufferIncomplete: true });
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
+  const gammaOf = (r: WebGLRenderer) =>
+    (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma();
+  const gammaNotices = (degraded: RendererDegradedDetail[]) =>
+    degraded.filter((d) => d.context.reason === 'gamma-pipeline-unavailable');
+
+  it('a context without the float extensions renders direct and raises no gamma notice', () => {
+    const { renderer, degraded } = makeRenderer({ missingFloatExtensions: true });
+    renderer.render(plotData(50));
+    renderer.render(plotData(50));
+
+    expect(gammaOf(renderer)).toBe(1.0);
+    // Contours are off here, so nothing at all is reported.
+    expect(degraded).toEqual([]);
+    renderer.destroy();
+  });
+
+  it('an incomplete linear framebuffer at init is reported once as gamma-pipeline-unavailable', () => {
+    const { renderer, degraded } = makeRenderer({ framebufferIncomplete: true });
+    renderer.render(plotData(50));
+    renderer.render(plotData(50));
+
+    expect(gammaOf(renderer)).toBe(1.0);
+    expect(gammaNotices(degraded)).toHaveLength(1);
+    expect(gammaNotices(degraded)[0].context.detail).toBe('framebuffer incomplete');
+    expect(gammaNotices(degraded)[0].message).toContain('sRGB rather than linear light');
+    renderer.destroy();
+  });
+
+  it('a gamma shader that fails to link is reported once as gamma-pipeline-unavailable', () => {
+    const { renderer, gl, degraded } = makeRenderer();
+    // Fail only the program built from the gamma fragment shader, so the point
+    // shaders still link and the renderer reaches the gamma init.
+    const sources = new WeakMap<object, string>();
+    const gammaPrograms = new WeakSet<object>();
+    const shaderSource = gl.shaderSource;
+    gl.shaderSource = vi.fn((shader: object, src: string) => {
+      sources.set(shader, src);
+      return shaderSource(shader, src);
+    });
+    const attachShader = gl.attachShader;
+    gl.attachShader = vi.fn((program: object, shader: object) => {
+      if (sources.get(shader) === GAMMA_FRAGMENT_SHADER) gammaPrograms.add(program);
+      return attachShader(program, shader);
+    });
+    const getProgramParameter = gl.getProgramParameter;
+    gl.getProgramParameter = vi.fn((program: object, pname: number) =>
+      gammaPrograms.has(program) ? false : getProgramParameter(program, pname),
     );
-    r.render(pd);
-    expect((r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma()).toBe(1.0);
+
+    renderer.render(plotData(50));
+    renderer.render(plotData(50));
+
+    expect(gammaOf(renderer)).toBe(1.0);
+    expect(gammaNotices(degraded)).toHaveLength(1);
+    expect(gammaNotices(degraded)[0].context.detail).toBe('gamma shader init failed');
+    renderer.destroy();
   });
 });

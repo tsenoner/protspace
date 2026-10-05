@@ -4,6 +4,6 @@
 
 ## 2. Tests
 
-- [ ] 2.1 Reword the missing-extensions gamma test as intended behaviour: no `gamma-pipeline-unavailable` at init, `density-unavailable` only when contours are requested.
-- [ ] 2.2 A runtime loss (incomplete framebuffer at init, gamma shader init failure) reports `gamma-pipeline-unavailable` exactly once. Verified by temporarily removing `reportDegraded` from `handleGammaFallback`: the test fails, then passes once restored.
+- [x] 2.1 Reword the missing-extensions gamma test as intended behaviour: no `gamma-pipeline-unavailable` at init, `density-unavailable` only when contours are requested.
+- [x] 2.2 A runtime loss (incomplete framebuffer at init, gamma shader init failure) reports `gamma-pipeline-unavailable` exactly once. Verified by temporarily removing `reportDegraded` from `handleGammaFallback`: the test fails, then passes once restored.
 - [ ] 2.3 `pnpm test:ci`, `pnpm format:check` and `openspec validate --specs --strict` are clean.
