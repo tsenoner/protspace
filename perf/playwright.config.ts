@@ -22,7 +22,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'off',
     video: 'off',
-    headless: false,
+    // Headless still measures the real GPU here: Google Chrome's headless mode (channel 'chrome',
+    // not the bundled headless shell, which is SwiftShader) reports "ANGLE Metal Renderer: Apple
+    // M4 Pro", Firefox a hardware renderer and WebKit "Apple GPU". A headed run opens and
+    // focuses a browser window for every dataset; PERF_HEADED=1 brings it back when wanted.
+    headless: process.env.PERF_HEADED !== '1',
     acceptDownloads: true,
   },
   // outputDir is per project, never shared. Playwright deletes the outputDir of
