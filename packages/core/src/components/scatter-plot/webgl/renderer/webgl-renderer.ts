@@ -54,6 +54,7 @@ import {
   drawPoints,
   drawMarkedPoints,
   bindPointDrawState,
+  type CameraParams,
 } from './render-target';
 import { MarkTexture } from './mark-texture';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
@@ -721,7 +722,7 @@ export class WebGLRenderer {
     if (this.glide.advance()) this.glideEnded();
 
     // Render with gamma-correct pipeline
-    this.renderWithGammaCorrection(transform);
+    this.renderWithGammaCorrection(this.cameraParams(transform));
     if (perfCounters) {
       perfCounters.drawn = this.drawnPointCount;
       if (this.glide.weight > 0) perfCounters.morphFrame++;
@@ -733,13 +734,25 @@ export class WebGLRenderer {
     return this.stagedScales && rescaleBetween(this.stagedScales, scales);
   }
 
+  /** The frame's camera, built once for its point and density draws. */
+  private cameraParams(transform: d3.ZoomTransform): CameraParams {
+    return {
+      width: this.canvas.width,
+      height: this.canvas.height,
+      transform: { x: transform.x, y: transform.y, k: transform.k },
+      dpr: this.dpr,
+      rescale: this.positionRescale,
+      morph: this.glide.weight,
+    };
+  }
+
   /**
    * Render using gamma-correct pipeline:
    * 1. Render points to linear RGB framebuffer
    * 2. Apply gamma correction pass to convert to sRGB for display
    * Falls back to direct rendering if pipeline is unavailable.
    */
-  private renderWithGammaCorrection(transform: d3.ZoomTransform) {
+  private renderWithGammaCorrection(camera: CameraParams) {
     if (!this.gl) return;
 
     if (!this.shouldUseGammaPipeline()) {
@@ -751,19 +764,19 @@ export class WebGLRenderer {
       this.reportDensityUnavailable(
         missing ? `${missing} missing` : 'linear-light pipeline unavailable',
       );
-      this.renderDirect(transform);
+      this.renderDirect(camera);
       return;
     }
 
     const framebuffer = this.resources.linearFramebuffer;
     if (!framebuffer) {
-      this.renderDirect(transform);
+      this.renderDirect(camera);
       return;
     }
 
     const gl = this.gl;
 
-    const density = this.densityFrame(transform);
+    const density = this.densityFrame(camera);
     if (density) {
       // The fields persist between frames, so a re-render that changes none of
       // their inputs (hover, tooltip) only composites them. A glide moves the
@@ -801,7 +814,7 @@ export class WebGLRenderer {
     // Pass 1: Render to linear RGB framebuffer.
     bindAndClearTarget(gl, framebuffer.framebuffer, framebuffer.width, framebuffer.height);
 
-    this.renderPoints(transform, density ? () => compositeDensity(gl, density) : undefined);
+    this.renderPoints(camera, density ? () => compositeDensity(gl, density) : undefined);
 
     // Pass 2: Gamma correction to canvas
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
@@ -809,7 +822,7 @@ export class WebGLRenderer {
     this.renderGammaCorrection();
   }
 
-  private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
+  private densityFrame(camera: CameraParams): DensityFrame | null {
     const config = this.getConfig();
     // Missing means Off here too, as in reportDensityUnavailable and the menu.
     const mode = config.densityLayer ?? DENSITY_DEFAULT;
@@ -823,7 +836,7 @@ export class WebGLRenderer {
     );
     const alpha = densityFrameAlpha(
       this.visibleCount,
-      transform.k,
+      camera.transform.k,
       viewDimensionCss,
       mode === 'on',
     );
@@ -849,14 +862,7 @@ export class WebGLRenderer {
 
     return {
       res,
-      camera: {
-        width: this.canvas.width,
-        height: this.canvas.height,
-        transform: { x: transform.x, y: transform.y, k: transform.k },
-        dpr: this.dpr,
-        rescale: this.positionRescale,
-        morph: this.glide.weight,
-      },
+      camera,
       alpha,
       palette: this.contourPalette,
       recordStyleOn: !!staged,
@@ -887,13 +893,13 @@ export class WebGLRenderer {
     );
   }
 
-  private renderDirect(transform: d3.ZoomTransform) {
+  private renderDirect(camera: CameraParams) {
     if (!this.gl) return;
     const gl = this.gl;
 
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
-    this.renderPoints(transform);
+    this.renderPoints(camera);
   }
 
   private dispose() {
@@ -1271,7 +1277,7 @@ export class WebGLRenderer {
   // Rendering
   // ============================================================================
 
-  private renderPoints(transform: d3.ZoomTransform, afterBasePass?: () => void) {
+  private renderPoints(camera: CameraParams, afterBasePass?: () => void) {
     if (
       !this.gl ||
       this.currentPointCount === 0 ||
@@ -1291,12 +1297,7 @@ export class WebGLRenderer {
       this.resources.pointVao,
       this.resources.labelColorTexture,
       {
-        width: this.canvas.width,
-        height: this.canvas.height,
-        transform: { x: transform.x, y: transform.y, k: transform.k },
-        dpr: this.dpr,
-        rescale: this.positionRescale,
-        morph: this.glide.weight,
+        ...camera,
         pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
