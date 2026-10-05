@@ -19,7 +19,6 @@ import {
   beginSaveImportedFile,
   clearLastImportedFile,
   markLastLoadStatus,
-  type PendingImportedFileSave,
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
@@ -130,7 +129,7 @@ export interface DatasetController {
   isSkippableQueuedLoad(meta: LoadMeta): boolean;
   /**
    * Runs `load` for `file`, copying a user import into OPFS meanwhile. The copy is kept
-   * only when `file` loads (handleDataLoaded); a failed or abandoned load drops it.
+   * only when `file` loads (handleDataLoaded); a failed, stale or abandoned load drops it.
    */
   saveWhileLoading(file: File, load: () => Promise<void>): Promise<void>;
   /** Proteins the loaded file holds that the dataset leaves out (no projection places them). */
@@ -237,15 +236,6 @@ export function createDatasetController({
 
   // The dataset on screen, by its hash (null until the first load renders).
   let currentDatasetHash: string | null = null;
-  let stagedImport: { file: File; save: PendingImportedFileSave } | null = null;
-  /** Empties the staged slot: returns the copy if it is `file`'s, drops any other. */
-  const takeStagedImport = (file?: File): PendingImportedFileSave | undefined => {
-    const staged = stagedImport;
-    stagedImport = null;
-    if (staged?.file === file) return staged?.save;
-    void staged?.save.abort();
-    return undefined;
-  };
   let currentUnplacedProteinCount = 0;
   viewController.subscribeToViewChanges((change) => {
     if (currentDatasetHash !== null) {
@@ -326,7 +316,6 @@ export function createDatasetController({
         bundleFormatVersion,
         unplacedProteinCount = 0,
       } = customEvent.detail;
-      const stagedSave = takeStagedImport(file);
       const runningLoadMeta = loadQueue.getRunningLoadMeta();
       const loadMeta = (file ? loadQueue.getLoadMetaForFile(file) : undefined) ??
         runningLoadMeta ?? {
@@ -341,7 +330,6 @@ export function createDatasetController({
           fileName: file?.name ?? null,
           loadKind: loadMeta.kind,
         });
-        void stagedSave?.abort();
         return;
       }
 
@@ -364,7 +352,6 @@ export function createDatasetController({
             console.warn('Failed to update OPFS load status to success:', statusError);
           }
         }
-        void stagedSave?.abort();
         return;
       }
       ownsOverlay = true;
@@ -385,7 +372,13 @@ export function createDatasetController({
       // leaves the view request and the URL, which that request owns, alone
       // (`isSuperseded()` below).
 
-      if (loadMeta.kind === 'user' && file) {
+      // Taken before the first await, so saveWhileLoading finds the copy settled. A
+      // superseded or stale load returned above and leaves its copy to be dropped there.
+      const pendingSave =
+        loadMeta.pendingSave ??
+        (loadMeta.kind === 'user' && file ? beginSaveImportedFile(file) : undefined);
+      loadMeta.pendingSave = undefined;
+      if (pendingSave) {
         overlayController.update(
           true,
           20,
@@ -393,7 +386,7 @@ export function createDatasetController({
           'Preparing reload support...',
         );
         try {
-          await (stagedSave ?? beginSaveImportedFile(file)).commit();
+          await pendingSave.commit();
         } catch (error) {
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
@@ -614,7 +607,6 @@ export function createDatasetController({
   const handleDataError = async (event: Event) => {
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
-    takeStagedImport();
     const loadSequence = runningLoadMeta?.sequence ?? null;
     const settleFailed = () => {
       if (loadSequence !== null) {
@@ -746,14 +738,18 @@ export function createDatasetController({
     handleDataError,
     isSkippableQueuedLoad: (meta) => meta.example !== undefined && isLoadSuperseded(meta),
     async saveWhileLoading(file, load) {
-      if (loadQueue.getRunningLoadMeta()?.kind === 'user') {
-        stagedImport = { file, save: beginSaveImportedFile(file) };
+      const loadMeta = loadQueue.getRunningLoadMeta();
+      if (loadMeta?.kind !== 'user') {
+        return load();
       }
+      loadMeta.pendingSave = beginSaveImportedFile(file);
       try {
         await load();
       } finally {
-        // The data-loaded or data-error handler has taken the copy by now, unless neither ran.
-        takeStagedImport();
+        // data-loaded has taken the copy by now if the file loaded; after an error, a
+        // stale or superseded result or no result at all it is still here, and is dropped.
+        void loadMeta.pendingSave?.abort();
+        loadMeta.pendingSave = undefined;
       }
     },
     getUnplacedProteinCount: () => currentUnplacedProteinCount,

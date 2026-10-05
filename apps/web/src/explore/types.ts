@@ -1,3 +1,4 @@
+import type { PendingImportedFileSave } from './opfs-dataset-store';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
@@ -83,6 +84,8 @@ export interface LoadMeta {
    * no user request supersedes (the perf suite's).
    */
   epoch?: number;
+  /** A user import's OPFS copy, started with its load and settled by the load's outcome. */
+  pendingSave?: PendingImportedFileSave;
 }
 
 export interface DataLoaderLoadOptions {

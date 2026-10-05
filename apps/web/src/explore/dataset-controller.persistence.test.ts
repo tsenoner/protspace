@@ -181,6 +181,25 @@ describe('dataset controller OPFS copy during the load', () => {
     consoleError.mockRestore();
   });
 
+  it('drops the copy of a load whose result is stale', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // The queue has since registered the file for a newer load.
+    const { controller } = buildController(
+      { sequence: 4, kind: 'user' },
+      { runningLoadMeta: { sequence: 3, kind: 'user' } },
+    );
+    let loaded: Promise<void> = Promise.resolve();
+    await controller.saveWhileLoading(file, async () => {
+      loaded = controller.handleDataLoaded(loadedEvent);
+    });
+    await loaded;
+
+    expect(mocks.abortSave).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).not.toHaveBeenCalled();
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    consoleLog.mockRestore();
+  });
+
   it('drops a copy that no load result took', async () => {
     const { controller } = buildController();
     await controller.saveWhileLoading(file, async () => {});

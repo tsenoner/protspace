@@ -90,10 +90,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       loadQueue.registerFileLoad(file, 'user', undefined, epoch);
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
+      const loadBundle = (bundle: File) =>
+        datasetController.saveWhileLoading(bundle, () => next(bundle, queuedOptions));
       if (!isFastaFile(queuedFile)) {
-        return datasetController.saveWhileLoading(queuedFile, () =>
-          next(queuedFile, queuedOptions),
-        );
+        return loadBundle(queuedFile);
       }
 
       // Advisory client-side pre-check: the backend remains the source of
@@ -248,7 +248,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         return;
       }
       preparation.settle();
-      return datasetController.saveWhileLoading(bundleFile, () => next(bundleFile, queuedOptions));
+      return loadBundle(bundleFile);
     });
   };
   lifecycle.addCleanup(() => {
