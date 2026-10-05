@@ -41,6 +41,23 @@ async function clearPersistedDataset(page: Page): Promise<void> {
   });
 }
 
+/** The stored import's name and load status, or null when OPFS holds none. */
+async function readStoredImport(
+  page: Page,
+): Promise<{ name: string; lastLoadStatus: string } | null> {
+  return page.evaluate(async () => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const store = await root.getDirectoryHandle('protspace-last-import');
+      const metadataFile = await (await store.getFileHandle('metadata.json')).getFile();
+      const { name, lastLoadStatus } = JSON.parse(await metadataFile.text());
+      return { name, lastLoadStatus };
+    } catch {
+      return null;
+    }
+  });
+}
+
 async function writeCorruptedPersistedDataset(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const storageWithDirectory = navigator.storage as StorageManager & {
@@ -321,6 +338,39 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     expect(await getProteinCount(page)).toBe(customCount);
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
+  });
+
+  test('a failed import leaves the stored import to be restored on reload', async ({ page }) => {
+    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    await waitForPersistedExploreDataset(page);
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+
+    // A file that fails to decode is never saved, so it must not mark the healthy
+    // import still in OPFS as failed.
+    await openImportMenu(page);
+    await importUserFile(page, {
+      name: 'broken.parquetbundle',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('not-a-valid-bundle'),
+    });
+    await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    expect(await readStoredImport(page)).toEqual({
+      name: CUSTOM_5K_BUNDLE_NAME,
+      lastLoadStatus: 'success',
+    });
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
+    await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
   });
 
   test('reset to demo clears the persisted custom dataset', async ({ page }) => {

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildControllerOptions, dataLoadedEvent } from './dataset-controller.fixtures';
+import {
+  buildControllerOptions,
+  dataErrorEvent,
+  dataLoadedEvent,
+} from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
+import { FastaPrepError } from './fasta-prep-client';
 import type { LoadMeta } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -9,8 +14,10 @@ const mocks = vi.hoisted(() => ({
   saveLastImportedFile: vi.fn(),
   clearLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
+  recoverFromCorruptedPersistedDataset: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -29,7 +36,7 @@ vi.mock('./persisted-dataset', () => ({
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     loadExampleDatasetAndClearPersistedFile: vi.fn(),
-    recoverFromCorruptedPersistedDataset: vi.fn(),
+    recoverFromCorruptedPersistedDataset: mocks.recoverFromCorruptedPersistedDataset,
     tryLoadPersistedAgain: vi.fn(),
   }),
 }));
@@ -46,7 +53,7 @@ vi.mock('./tooltip-annotations-store', () => ({
 }));
 
 vi.mock('../lib/notify', () => ({
-  notify: { warning: mocks.warning, info: mocks.info, error: vi.fn() },
+  notify: { warning: mocks.warning, info: mocks.info, error: mocks.error },
 }));
 
 import { createDatasetController } from './dataset-controller';
@@ -115,6 +122,74 @@ describe('dataset controller OPFS persistence', () => {
     expect(mocks.warning).toHaveBeenCalledOnce();
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
+    consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller load failures and the stored import', () => {
+  // A user import is written to OPFS only once it has decoded (`handleDataLoaded`
+  // saves it before the render), so one that fails before that never replaced the
+  // stored import: what OPFS holds is still the previous import, which loaded fine.
+  it.each([
+    ['a bundle that fails to parse', dataErrorEvent('Invalid parquet bundle')],
+    [
+      'a FASTA whose preparation the backend rejects',
+      {
+        detail: {
+          message: 'The embedding service is currently unavailable.',
+          originalError: new FastaPrepError('The embedding service is currently unavailable.', {
+            code: 'BIOCENTRAL_UNAVAILABLE',
+          }),
+        },
+      } as unknown as Event,
+    ],
+  ])('%s leaves the stored import as it was', async (_label, errorEvent) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+
+    await controller.handleDataError(errorEvent);
+
+    // Flagging the stored import would make the next visit offer recovery for a
+    // dataset that loads fine, instead of restoring it.
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.saveLastImportedFile).not.toHaveBeenCalled();
+    expect(mocks.clearLastImportedFile).not.toHaveBeenCalled();
+    expect(mocks.recoverFromCorruptedPersistedDataset).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
+    consoleError.mockRestore();
+  });
+
+  it('a restore of the stored import that fails to parse flags it as failed', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = buildController({ sequence: 3, kind: 'opfs', epoch: 0 });
+
+    await controller.handleDataError(dataErrorEvent('Invalid parquet bundle'));
+
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('error', {
+      error: 'Invalid parquet bundle',
+    });
+    expect(mocks.recoverFromCorruptedPersistedDataset).toHaveBeenCalledWith(
+      'could not be loaded',
+      0,
+    );
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
+    consoleError.mockRestore();
+  });
+
+  it('a user import that decoded but failed to render stays stored as unfinished', async () => {
+    // Saved before its render, the new import has replaced the old one in OPFS, so
+    // it is the one the next visit must offer to recover: it keeps the 'pending'
+    // status the save wrote, never 'success'.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.loadData.mockRejectedValue(new Error('WebGL context lost'));
+    const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+
+    await controller.handleDataLoaded(loadedEvent);
+
+    expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
     consoleError.mockRestore();
   });
 });

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -210,12 +210,15 @@ export async function openImportMenu(page: Page): Promise<void> {
 }
 
 /**
- * Imports `filePath` through the data loader's file input, the input the
- * Import menu's "Load your dataset" opens.
+ * Imports `file` (a path, or a payload built in the test) through the data
+ * loader's file input, the input the Import menu's "Load your dataset" opens.
  */
-export async function importUserFile(page: Page, filePath: string): Promise<void> {
+export async function importUserFile(
+  page: Page,
+  file: Parameters<Locator['setInputFiles']>[0],
+): Promise<void> {
   await waitForExploreInteractionReady(page);
-  await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(filePath);
+  await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(file);
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {
