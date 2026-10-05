@@ -6,9 +6,10 @@
  * Guards the contracts the F-06 controller-extraction move must preserve:
  *  1. the shared helper groups exact-coord coincidents and drops solos, keying
  *     by the same per-projection coord key production groups by (F-36 contract);
- *  2. the feature is gated off by default (enableDuplicateStackUI === false) and
- *     the overlay update is a no-op (does not throw) on an element with no
- *     overlay group attached;
+ *  2. the feature is gated off by default (enableDuplicateStackUI === false).
+ *     What the gate does once an overlay group exists (layers removed, no
+ *     badges, no spiderfy) is tested on the controller directly in
+ *     duplicate-stack-overlay-controller.enable-gate.test.ts;
  *  3. cancelCompute bumps the compute job id so any in-flight chunked compute
  *     aborts early (stale-result race guard).
  *
@@ -18,7 +19,7 @@
  *
  * F-06 moved the subsystem into DuplicateStackOverlayController; these probes
  * now reach through `el._dupOverlay` while asserting the SAME observable
- * contracts (job-id monotonicity, no-op-when-disabled). Lock 1 is name-stable
+ * contracts (job-id monotonicity, disabled by default). Lock 1 is name-stable
  * and never changes.
  */
 import { vi, describe, it, expect } from 'vitest';
@@ -42,12 +43,11 @@ import {
 interface DuplicateOverlayController {
   // TS-private at compile time, reachable at runtime — the job-id race guard.
   computeJobId: number;
-  updateSelectionOverlays: (opts?: { duplicateImmediate?: boolean }) => void;
   cancelCompute: () => void;
 }
 
 interface DuplicateOverlayInternals extends HTMLElement {
-  _mergedConfig?: { enableDuplicateStackUI?: boolean };
+  _mergedConfig: { enableDuplicateStackUI: boolean };
   _dupOverlay: DuplicateOverlayController;
 }
 
@@ -77,12 +77,10 @@ describe('duplicate-overlay characterization', () => {
     expect(r.byKey.has(getDuplicateStackKey({ x: 9, y: 9 }))).toBe(false);
   });
 
-  // Lock 2: the feature is gated off by default -> no badge canvas writes, no SVG layer.
-  it('does nothing when enableDuplicateStackUI is false (default)', () => {
+  // Lock 2: the feature is gated off by default.
+  it('enableDuplicateStackUI defaults to false', () => {
     const el = makeElement();
-    expect(el._mergedConfig?.enableDuplicateStackUI ?? false).toBe(false);
-    // The overlay update is a no-op with no overlay group attached; must not throw.
-    expect(() => el._dupOverlay.updateSelectionOverlays()).not.toThrow();
+    expect(el._mergedConfig.enableDuplicateStackUI).toBe(false);
   });
 
   // Lock 3: cancelCompute bumps the job id so an in-flight chunk aborts (race guard).
