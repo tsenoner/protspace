@@ -276,8 +276,8 @@ pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an alread
 | `--port P`            | 8520                          | port of the own `vite preview` server                                      |
 | `--no-build`          |                               | serve the existing `apps/web/dist`                                         |
 | `--out DIR`           | `perf/results/scale-<stamp>/` | where the run and aggregate files go                                       |
-| `--guard-gb G`        | 2                             | kill the browser below G GB of free plus inactive memory                   |
-| `--timeout-min M`     | 60                            | kill a dataset's run after M minutes                                       |
+| `--guard-gb G`        | 3                             | kill the browser below G GB of free plus inactive memory (polled at 5 Hz)  |
+| `--timeout-min M`     | 60 + 1 per 10 MB of bundle    | kill a dataset's run after M minutes (5M SwissProt: 100; raise it at 20M+) |
 
 Each dataset and round is one browser run of the `perf-scale` Playwright project
 (`apps/web/tests/perf-scale.spec.ts`): headed, on the real GPU, 1600 × 1000 at DPR 2, with
@@ -291,22 +291,31 @@ Each dataset and round is one browser run of the `perf-scale` Playwright project
   hide and isolate, click select, search select, a lasso over 15% of the points (sized with the
   plot's own polygon query), the projection switch under reduced motion and with its glide, a
   2000 × 1500 export with a blank-image check, and a scripted 5 s pan and zoom. Each rep reports
-  INP, LoAF, busy and re-stage ms as in timing mode, `settledMs` (act to settled, including the
-  200 ms quiet window), frame gaps p50/p95 (glide and pan-zoom), and the work counts `restage`,
+  INP (null when the step had no input event, as for the scripted export), LoAF, busy and
+  re-stage ms as in timing mode, `settledMs` (act to settled, including the 200 ms quiet
+  window), frame gaps p50/p95 and `drawsPerSec` (glide and pan-zoom; the gaps time animation
+  frames, the draws count plot renders, which at millions of points come far less often), and
+  the work counts `restage`,
   `render` and `uploadedBytesTotal` (buffer bytes uploaded). The lasso adds `upToRenderMs`, from
-  pointerup to the next frame drawn; the export adds `captureMs` and `blank`.
-- **Memory**: `perf/scale.mjs` samples the RSS of the browser's processes every 100 ms with
-  `ps`, classed by `--type=renderer` and `--type=gpu-process`, and reports the peak over the run
-  and per load, the value once each load settled, and bytes per point (settled minus the value
-  before the import, over N; also for the JS heap). RSS on macOS leaves out GPU memory the
-  driver holds outside the GPU process.
+  pointerup to the next frame drawn; the export adds `captureMs` and `blank`. An interaction
+  that throws (a settle over its 120 s cap, say) is recorded in `interactionFailures` with its
+  status and message, and the next one runs.
+- **Memory**: `perf/scale.mjs` finds the browser's processes with `ps`, classed by
+  `--type=renderer` and `--type=gpu-process`, and samples their physical footprint with macOS
+  `footprint` once a second (`memory`, with `source: footprint`). RSS leaves out the Metal and
+  IOSurface memory of the GPU process (216 MB RSS vs 753 MB footprint at 573K) and overstates
+  the renderer, so it is only kept as `rssMemory`, sampled every 100 ms (and used as `memory`
+  off macOS). Each reports the peak over the run and per load, the value once each load
+  settled, and bytes per point (settled minus the value before the import, over N; also for the
+  JS heap).
 - **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired) or `error`;
   whether every load drew N points, and the degradation notices. `pmset -g therm` is logged
   before and after each dataset.
 
 Output: one `<stamp>-r<round>-<name>.json` per run, with every sample and the raw memory
-samples, then `aggregate.json` and `aggregate.csv` with the median, quartiles, IQR and n of each
-metric per dataset, across rounds. Keep generated bundles and results out of the repo.
+samples, then `aggregate.json` and `aggregate.csv` with the median, quartiles, IQR and sample
+count (`samples`) of each metric per dataset, across rounds. Only runs with status `ok` are
+pooled (`okRuns`); a stopped run's partial numbers stay in its own JSON. Keep generated bundles and results out of the repo.
 
 ## Files
 
