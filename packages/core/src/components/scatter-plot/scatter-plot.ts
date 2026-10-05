@@ -463,10 +463,27 @@ export class ProtspaceScatterplot extends LitElement {
     plane: 'xy' | 'xz' | 'yz';
     culled: boolean;
   } | null = null;
-  private _lastMaterializedSource: VisualizationData | null = null;
-  private _lastMaterializedNumericValues: Float64Array | null = null;
-  private _materializedDataCacheKey: string | null = null;
-  private _materializedDataCache: VisualizationData | null = null;
+  // The materialized data (`value`) and what it was built from. A read is answered in
+  // three tiers (`_getMaterializedData`):
+  // 1. The same references and primitives as the build return `value` before the JSON key
+  //    is serialized; the staging loops reach this per point (getOpacity -> visibility
+  //    model -> materialized data). numericAnnotationSettings is replaced wholesale, so
+  //    comparing the selected annotation's settings ref is sound: a rebin yields a new ref.
+  // 2. The same data and numeric column with an equal JSON `key` return `value` too.
+  // 3. When only the numeric settings moved (same data, annotation and overlay) and they
+  //    land on the bins the plot already has (the legend publishing the defaults), the
+  //    rebuild keeps handing out the previous `value`. Everything keyed on its identity
+  //    (the visibility model, the style getters, the plot data's build, the recompute's
+  //    own change check) then holds, instead of rebuilding for an equal copy.
+  private _materialized: {
+    source: VisualizationData;
+    numericValues: Float64Array | null;
+    selectedAnnotation: string | null;
+    eatOverlayEnabled: boolean;
+    selectedSettings: NumericAnnotationDisplaySettingsMap[string] | undefined;
+    key: string;
+    value: VisualizationData;
+  } | null = null;
   // F-40: memoize the filtered display-data rebuild. Keyed by reference on the
   // same inputs the filtered slice depends on so repeated reads with unchanged
   // inputs reuse the prior VisualizationData instead of reallocating.
@@ -478,17 +495,6 @@ export class ProtspaceScatterplot extends LitElement {
     selectedProjectionIndex: number;
     projectionPlane: 'xy' | 'xz' | 'yz';
   } | null = null;
-  // Fast-path keys for _getMaterializedData: avoid JSON.stringify on the hot
-  // per-point path (getOpacity -> visibility model -> materialized data). These
-  // mirror the JSON cacheKey's reference/primitive inputs so a hit can return
-  // the cached object before serializing. numericAnnotationSettings is replaced
-  // wholesale, so comparing the selected annotation's settings ref is sound
-  // (a numeric rebin yields a new ref -> fast-path miss -> JSON path re-materializes).
-  private _lastMaterializedSelectedAnnotation: string | null = null;
-  private _lastMaterializedEatOverlayEnabled = true;
-  private _lastMaterializedSelectedSettings:
-    | NumericAnnotationDisplaySettingsMap[string]
-    | undefined = undefined;
   private _numericRecompute = new NumericRecomputeRunner({
     hasData: () => !!this.data,
     getSelectedAnnotation: () => this.selectedAnnotation,
@@ -555,21 +561,21 @@ export class ProtspaceScatterplot extends LitElement {
     const selectedNumericSettings = this.selectedAnnotation
       ? this.numericAnnotationSettings?.[this.selectedAnnotation]
       : undefined;
+    const memo = this._materialized;
+    const sameColumn =
+      memo !== null &&
+      memo.source === sourceData &&
+      memo.numericValues === selectedNumericValuesCacheRef;
 
-    // Cheap reference/primitive fast-path: on a hit, return the cached object
-    // without the JSON.stringify below. Keyed on the same reference/primitive
-    // inputs the JSON cacheKey uses (selectedNumericType and
-    // selectedNumericValuesLength are derived from data + selectedAnnotation,
-    // both covered here). Reached per-point from the WebGL staging loops.
+    // Tier 1 (see `_materialized`). The JSON key's selectedNumericType and
+    // selectedNumericValuesLength derive from data and selectedAnnotation, both compared here.
     if (
-      this._materializedDataCache &&
-      this._lastMaterializedSource === this.data &&
-      this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
-      this._lastMaterializedSelectedAnnotation === this.selectedAnnotation &&
-      this._lastMaterializedEatOverlayEnabled === this.eatOverlayEnabled &&
-      this._lastMaterializedSelectedSettings === selectedNumericSettings
+      sameColumn &&
+      memo.selectedAnnotation === this.selectedAnnotation &&
+      memo.eatOverlayEnabled === this.eatOverlayEnabled &&
+      memo.selectedSettings === selectedNumericSettings
     ) {
-      return this._materializedDataCache;
+      return memo.value;
     }
 
     const selectedNumericAnnotation = this.selectedAnnotation
@@ -590,14 +596,8 @@ export class ProtspaceScatterplot extends LitElement {
       eatOverlayEnabled: this.eatOverlayEnabled,
     });
 
-    if (
-      this._lastMaterializedSource === this.data &&
-      this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
-      this._materializedDataCacheKey === cacheKey &&
-      this._materializedDataCache
-    ) {
-      return this._materializedDataCache;
-    }
+    // Tier 2.
+    if (sameColumn && memo.key === cacheKey) return memo.value;
 
     const rematerialized = materializeEatOverlay(
       materializeVisualizationData(
@@ -609,29 +609,25 @@ export class ProtspaceScatterplot extends LitElement {
       this.selectedAnnotation,
       this.eatOverlayEnabled,
     );
-    // When only the numeric settings moved (same data, annotation and overlay) and they land on
-    // the bins the plot already has (the legend publishing the defaults), keep handing out the
-    // previous object. Everything keyed on its identity (the visibility model, the style
-    // getters, the plot data's source, the recompute's own change check) then holds, instead of
-    // rebuilding for an equal copy.
-    const previous = this._materializedDataCache;
+    // Tier 3.
     const onlySettingsMoved =
-      previous !== null &&
-      this._lastMaterializedSource === this.data &&
-      this._lastMaterializedNumericValues === selectedNumericValuesCacheRef &&
-      this._lastMaterializedSelectedAnnotation === (this.selectedAnnotation ?? null) &&
-      this._lastMaterializedEatOverlayEnabled === this.eatOverlayEnabled;
-    this._materializedDataCache =
-      onlySettingsMoved && sameMaterialization(previous, rematerialized, this.selectedAnnotation)
-        ? previous
+      sameColumn &&
+      memo.selectedAnnotation === (this.selectedAnnotation ?? null) &&
+      memo.eatOverlayEnabled === this.eatOverlayEnabled;
+    const value =
+      onlySettingsMoved && sameMaterialization(memo.value, rematerialized, this.selectedAnnotation)
+        ? memo.value
         : rematerialized;
-    this._lastMaterializedSource = this.data;
-    this._lastMaterializedNumericValues = selectedNumericValuesCacheRef;
-    this._lastMaterializedSelectedAnnotation = this.selectedAnnotation ?? null;
-    this._lastMaterializedEatOverlayEnabled = this.eatOverlayEnabled;
-    this._lastMaterializedSelectedSettings = selectedNumericSettings;
-    this._materializedDataCacheKey = cacheKey;
-    return this._materializedDataCache;
+    this._materialized = {
+      source: sourceData,
+      numericValues: selectedNumericValuesCacheRef,
+      selectedAnnotation: this.selectedAnnotation ?? null,
+      eatOverlayEnabled: this.eatOverlayEnabled,
+      selectedSettings: selectedNumericSettings,
+      key: cacheKey,
+      value,
+    };
+    return value;
   }
 
   private _getVisibleProteinIdsSet(): Set<string> | null {
