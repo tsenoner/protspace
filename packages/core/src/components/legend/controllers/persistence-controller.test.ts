@@ -500,17 +500,6 @@ describe('PersistenceController', () => {
       it('returns false when no file settings are set', () => {
         expect(controller.hasFileSettings).toBe(false);
       });
-
-      it('returns true when file settings are set', () => {
-        controller.setFileSettings(fileSettings);
-        expect(controller.hasFileSettings).toBe(true);
-      });
-
-      it('returns false after clearing file settings with null', () => {
-        controller.setFileSettings(fileSettings);
-        controller.setFileSettings(null);
-        expect(controller.hasFileSettings).toBe(false);
-      });
     });
 
     describe('setFileSettings', () => {

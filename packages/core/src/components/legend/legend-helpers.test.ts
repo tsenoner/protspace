@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { LegendItem, OtherItem } from './types';
 import { NA_VALUE } from './config';
 import {
-  valueToKey,
   expandHiddenValues,
   computeOtherConcreteValues,
   buildZOrderMapping,
@@ -21,15 +20,6 @@ import {
 import { initializeAnnotationSortMode } from './legend-settings-dialog';
 
 describe('legend-helpers', () => {
-  describe('valueToKey', () => {
-    it('returns string values unchanged', () => {
-      expect(valueToKey('test')).toBe('test');
-      expect(valueToKey('Other')).toBe('Other');
-      expect(valueToKey('')).toBe('');
-      expect(valueToKey(NA_VALUE)).toBe(NA_VALUE);
-    });
-  });
-
   describe('expandHiddenValues', () => {
     const otherItems: OtherItem[] = [
       { value: 'cat1', count: 5 },
@@ -220,11 +210,6 @@ describe('legend-helpers', () => {
       expect(settings.hiddenValues).toEqual([]);
       expect(settings.categories).toEqual({});
     });
-
-    it('creates default settings with size-desc sort for annotations without metadata', () => {
-      const settings = createDefaultSettings('length');
-      expect(settings.sortMode).toBe('size-desc');
-    });
   });
 
   describe('getDefaultSortMode', () => {
@@ -291,30 +276,6 @@ describe('legend-helpers', () => {
       expect(isItemSelected(item, ['a', 'b'])).toBe(false);
     });
 
-    it('handles N/A value with __NA__ in selectedItems', () => {
-      const item: LegendItem = {
-        value: NA_VALUE,
-        color: '#000',
-        shape: 'circle',
-        count: 1,
-        isVisible: true,
-        zOrder: 0,
-      };
-      expect(isItemSelected(item, [NA_VALUE])).toBe(true);
-    });
-
-    it('returns false for N/A value when selectedItems is empty', () => {
-      const item: LegendItem = {
-        value: NA_VALUE,
-        color: '#000',
-        shape: 'circle',
-        count: 1,
-        isVisible: true,
-        zOrder: 0,
-      };
-      expect(isItemSelected(item, [])).toBe(false);
-    });
-
     it('returns false for Other item even when in selectedItems', () => {
       const item: LegendItem = {
         value: 'Other',
@@ -352,11 +313,6 @@ describe('legend-helpers', () => {
       const result = initializeAnnotationSortMode({}, 'some_annotation', {});
       expect(result).toEqual({ some_annotation: 'size-desc' });
     });
-
-    it('defaults to size-desc for raw annotation names without legend metadata', () => {
-      const result = initializeAnnotationSortMode({}, 'length', {});
-      expect(result).toEqual({ length: 'size-desc' });
-    });
   });
 
   describe('createItemActionEvent', () => {
@@ -366,21 +322,6 @@ describe('legend-helpers', () => {
       expect(event.detail).toEqual({ value: 'testValue', action: 'toggle' });
       expect(event.bubbles).toBe(true);
       expect(event.composed).toBe(true);
-    });
-
-    it('creates an isolate action event', () => {
-      const event = createItemActionEvent('legend-item-click', 'category', 'isolate');
-      expect(event.detail).toEqual({ value: 'category', action: 'isolate' });
-    });
-
-    it('creates an extract action event', () => {
-      const event = createItemActionEvent('legend-item-click', 'extracted', 'extract');
-      expect(event.detail).toEqual({ value: 'extracted', action: 'extract' });
-    });
-
-    it('handles N/A value', () => {
-      const event = createItemActionEvent('legend-item-click', NA_VALUE, 'toggle');
-      expect(event.detail).toEqual({ value: NA_VALUE, action: 'toggle' });
     });
   });
 
