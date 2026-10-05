@@ -101,7 +101,7 @@ describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
 });
 
 describe('WebGLRenderer data signature — why re-materialisation was catastrophic (#456)', () => {
-  it('a length change rebuilds even when every sampled coordinate is identical', () => {
+  it('a length change rebuilds even when every sampled slot is identical', () => {
     // This is the mechanism behind the 1M cliff. The viewport cull returned a
     // freshly materialised PlotData per camera move; its CONTENT at the sampled
     // slots was often unchanged, but its LENGTH moved as points entered and left
@@ -115,9 +115,19 @@ describe('WebGLRenderer data signature — why re-materialisation was catastroph
     const renderer = makeRenderer();
     vi.spyOn(internalsOf(renderer), 'renderWithGammaCorrection').mockImplementation(() => {});
 
-    // Same first, middle and last coordinates; one fewer point in between.
-    const full = pd([0, 5, 5, 9], [0, 5, 5, 9]);
-    const subset = pd([0, 5, 9], [0, 5, 9]);
+    // Slot 6 leaves the viewport. The data signature samples slots 0, len/2 and
+    // len-1, the style signature 0, len/4, len/2 and len-1: points p0, p2, p4
+    // and p8 in both arrays, so only the length term tells them apart.
+    const xs = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const full = pd(xs, xs);
+    const kept = (_: unknown, i: number) => i !== 6;
+    const subset: PlotData = {
+      ...full,
+      length: xs.length - 1,
+      xs: full.xs.filter(kept),
+      ys: full.ys.filter(kept),
+      proteinIds: full.proteinIds.filter(kept),
+    };
 
     renderer.render(full);
     Object.assign(counters, createPerfCounters());
