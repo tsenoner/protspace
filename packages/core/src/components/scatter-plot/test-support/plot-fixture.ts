@@ -209,3 +209,31 @@ export function fakeFrames() {
     },
   };
 }
+
+/**
+ * Queues `requestIdleCallback` tasks until the suite runs them, and makes
+ * `cancelIdleCallback` remove one. `vi.unstubAllGlobals()` undoes it.
+ */
+export function fakeIdle() {
+  const queued = new Map<number, () => void>();
+  let lastId = 0;
+  vi.stubGlobal('requestIdleCallback', (task: () => void) => {
+    queued.set(++lastId, task);
+    return lastId;
+  });
+  vi.stubGlobal('cancelIdleCallback', (id: number) => {
+    queued.delete(id);
+  });
+  return {
+    /** The tasks queued so far. */
+    run() {
+      for (const [id, task] of [...queued]) {
+        queued.delete(id);
+        task();
+      }
+    },
+    get size() {
+      return queued.size;
+    },
+  };
+}

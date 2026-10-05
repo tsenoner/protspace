@@ -1964,13 +1964,14 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Build the protein id index of a new dataset while the main thread is idle,
-   * so the first selection does not wait for it (~22 ms and 4 MB at 573K).
+   * so neither the first render nor the first selection waits for it (~22 ms
+   * and 4 MB at 573K). If an id repeats, render the point count again.
    */
   private _scheduleIdIndex() {
     this._cancelIdIndex?.();
     this._cancelIdIndex = whenIdle(() => {
       this._cancelIdIndex = null;
-      this._getVisibilityModel().indexIds();
+      if (!this._getVisibilityModel().idsUnique()) this.requestUpdate();
     });
   }
 
@@ -2011,11 +2012,14 @@ export class ProtspaceScatterplot extends LitElement {
    * The size of `_getInteractableProteinIds()`. Each slot is a distinct protein,
    * so while no protein id repeats that is the interactive slot count, read
    * without building the set: a legend toggle changes it, and at 573K points the
-   * set took ~25 ms.
+   * set took ~25 ms. Until the id index says an id repeats (`_scheduleIdIndex`),
+   * it counts slots.
    */
   private _getVisiblePointCount(): number {
     const slots = this._interactableSlots();
-    return this._getVisibilityModel().idsUnique() ? slots.count : slots.ids().size;
+    return this._getVisibilityModel().idsUniqueIfIndexed() === false
+      ? slots.ids().size
+      : slots.count;
   }
 
   /**

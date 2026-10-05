@@ -97,10 +97,14 @@ export interface VisibilityModel {
    */
   hidesValues(values: readonly string[]): boolean;
   /**
-   * Whether every protein id occurs once, read off the protein id index (built
-   * now if not yet; the first mark builds it anyway). False without data.
+   * Whether every protein id occurs once, read off the protein id index. Builds
+   * the index now if not yet (an O(N) pass, once per dataset; the first mark
+   * builds it anyway), e.g. while idle after a load. Models computed from this
+   * one over the same ids keep it. False without data.
    */
   idsUnique(): boolean;
+  /** `idsUnique()` once the protein id index is built, else null: never builds it. */
+  idsUniqueIfIndexed(): boolean | null;
   /**
    * For each of the first `count` slots of plot data with these `proteinIds` and
    * `originalIndices`, 1 when its protein is selected or highlighted, else 0.
@@ -125,12 +129,6 @@ export interface VisibilityModel {
    * tier at 0 it is this model.
    */
   readonly interactivityKey: object;
-  /**
-   * Build the protein id index now instead of on the first mark (an O(N) pass,
-   * once per dataset), e.g. while idle after a load. Models computed from this
-   * one over the same ids keep it.
-   */
-  indexIds(): void;
 }
 
 /**
@@ -427,7 +425,7 @@ export function computeVisibilityModel(
   }
 
   // The id index, kept from `previous` while the ids are the same array. Its
-  // table is built the first time something is marked, or ahead by `indexIds`
+  // table is built the first time something is marked, or ahead by `idsUnique`
   // (an O(N) pass, once per dataset).
   const proteinIds = data?.protein_ids ?? null;
   const prevIndex = prevCache?.idIndex ?? null;
@@ -538,6 +536,10 @@ export function computeVisibilityModel(
     isHiddenAt,
     hidesValues,
     idsUnique: () => idIndex !== null && idTable(idIndex) !== null,
+    idsUniqueIfIndexed: () => {
+      const table = idIndex?.table;
+      return table === undefined ? null : table !== null;
+    },
     markedSlots,
     marks,
     get unmarked() {
@@ -549,9 +551,6 @@ export function computeVisibilityModel(
             )
           : model;
       return unmarked;
-    },
-    indexIds() {
-      if (idIndex) idTable(idIndex);
     },
     get interactivityKey() {
       return tiersInteractive ? maskCache : model;

@@ -810,12 +810,12 @@ describe('computeVisibilityModel', () => {
       expect(mask.subarray(0, 4)).toEqual(Uint8Array.of(0, 1, 1, 0));
     });
 
-    it('builds the id index on indexIds or the first mark, and keeps it for the same ids', () => {
+    it('builds the id index on idsUnique or the first mark, and keeps it for the same ids', () => {
       // An id repeated in place afterwards shows whether the index was built before.
       const marksAfterRepeat = (indexAhead: boolean) => {
         const fresh = makeData(values, Int32Array.of(0, 1, 2));
         const plain = computeVisibilityModel(baseInputs({ data: fresh }));
-        if (indexAhead) plain.indexIds();
+        if (indexAhead) plain.idsUnique();
         fresh.protein_ids[2] = 'p0';
         const model = computeVisibilityModel(
           baseInputs({ data: fresh, selectedProteinIds: ['p0'] }),
@@ -825,6 +825,24 @@ describe('computeVisibilityModel', () => {
       };
       expect(marksAfterRepeat(true)).toEqual([1, 0, 0]);
       expect(marksAfterRepeat(false)).toEqual([1, 0, 1]);
+    });
+
+    it('tells whether the ids are unique without building the id index', () => {
+      const unique = makeData(values, Int32Array.of(0, 1, 2));
+      const repeated = makeData(values, Int32Array.of(0, 1, 2));
+      repeated.protein_ids[2] = 'p0';
+      for (const [data, want] of [
+        [unique, true],
+        [repeated, false],
+      ] as const) {
+        const model = computeVisibilityModel(baseInputs({ data }));
+        expect(model.idsUniqueIfIndexed()).toBeNull();
+        expect(model.idsUniqueIfIndexed()).toBeNull();
+        expect(model.idsUnique()).toBe(want);
+        expect(model.idsUniqueIfIndexed()).toBe(want);
+        expect(computeVisibilityModel(baseInputs({ data }), model).idsUniqueIfIndexed()).toBe(want);
+      }
+      expect(computeVisibilityModel(baseInputs()).idsUniqueIfIndexed()).toBeNull();
     });
 
     it('finds ids that share hash slots, and none it does not hold', () => {

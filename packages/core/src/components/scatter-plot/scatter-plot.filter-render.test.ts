@@ -23,6 +23,7 @@ import { LegendDataProcessor } from '../legend/legend-data-processor';
 import {
   createPlot,
   fakeFrames,
+  fakeIdle,
   makeFamilyData,
   type PlotInternals,
 } from './test-support/plot-fixture';
@@ -296,20 +297,49 @@ describe('scatter-plot visible point count', () => {
     expect(sp.getInteractableProteinIds()).toBe(ids);
   });
 
-  it('counts a repeated protein id once, whether or not the id set is built', () => {
-    const data = (): VisualizationData => {
-      const d = makeFamilyData({ n: 2 });
-      return { ...d, protein_ids: ['dup', 'dup'] };
-    };
-    const cold = createPlot({ data: data(), selectedAnnotation: 'fam' });
-    cold._processData();
-    expect(cold._plotData.length).toBe(2);
-    expect(cold._getVisiblePointCount()).toBe(1);
+  describe('after a load', () => {
+    afterEach(() => {
+      // Disconnecting cancels the idle build through the stub, so before unstubbing.
+      document.body.replaceChildren();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
 
-    const warm = createPlot({ data: data(), selectedAnnotation: 'fam' });
-    warm._processData();
-    expect(warm.getInteractableProteinIds().size).toBe(1);
-    expect(warm._getVisiblePointCount()).toBe(1);
+    /** A connected plot given `data`, its updates and frames run, its idle build held back. */
+    async function load(data: VisualizationData) {
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null);
+      const frames = fakeFrames();
+      const idle = fakeIdle();
+      const sp = createPlot({ data, selectedAnnotation: 'fam' });
+      document.body.appendChild(sp);
+      while (!(await sp.updateComplete)) {
+        // Lit reports false while an update the previous one triggered is pending.
+      }
+      frames.flush();
+      const label = () => sp.shadowRoot!.querySelector('[role="status"]')!.textContent!.trim();
+      return { sp, idle, label };
+    }
+
+    it('builds no id table for the first point count', async () => {
+      const { sp, idle, label } = await load(makeFamilyData());
+      expect(label()).toBe('6 points');
+      expect(sp._getVisibilityModel().idsUniqueIfIndexed()).toBeNull();
+      // With every id once, the idle build leaves the label alone.
+      idle.run();
+      expect(sp._getVisibilityModel().idsUniqueIfIndexed()).toBe(true);
+      expect(sp.isUpdatePending).toBe(false);
+      expect(label()).toBe('6 points');
+    });
+
+    it('counts a repeated protein id once from the idle build of the id table on', async () => {
+      const d = makeFamilyData({ n: 2 });
+      const { sp, idle, label } = await load({ ...d, protein_ids: ['dup', 'dup'] });
+      // Each slot counts until the idle build finds the repeat.
+      expect(label()).toBe('2 points');
+      idle.run();
+      await sp.updateComplete;
+      expect(label()).toBe('1 points');
+    });
   });
 
   it('recounts after the hidden set changes (memo invalidation)', () => {
