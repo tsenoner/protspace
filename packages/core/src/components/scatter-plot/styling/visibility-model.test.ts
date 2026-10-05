@@ -667,6 +667,78 @@ describe('computeVisibilityModel', () => {
     });
   });
 
+  // ── Marks by protein index agree with lookups by id ─────────────────────
+  describe('marks by index', () => {
+    const values = ['A', 'B', 'C'];
+    const n = 300;
+    const data = makeData(
+      values,
+      Int32Array.from({ length: n }, (_, i) => i % 3),
+    );
+    const ids = data.protein_ids;
+    let seed = 7;
+    const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const pick = <T>(items: readonly T[], p: number) => items.filter(() => random() < p);
+
+    // Marked slots and interactive slots as per-id set lookups decide them.
+    function expected(inputs: VisibilityInputs, oi: Int32Array | null, count: number) {
+      const marked = new Set([...inputs.selectedProteinIds, ...inputs.highlightedProteinIds]);
+      const hasSelection = inputs.selectedProteinIds.length > 0;
+      const { base, selected, faded } = inputs.opacities;
+      const slots: number[] = [];
+      const interactive: number[] = [];
+      for (let s = 0; s < count; s++) {
+        const i = oi ? oi[s] : s;
+        const isMarked = marked.has(ids[i]);
+        const hidden = inputs.hiddenAnnotationValues.includes(values[i % 3]);
+        const opacity = hidden ? 0 : isMarked ? selected : hasSelection ? faded : base;
+        slots.push(isMarked ? 1 : 0);
+        interactive.push(opacity > 0 ? 1 : 0);
+      }
+      return { slots, interactive };
+    }
+
+    it('matches over random selections, highlights, isolations and a faded tier of 0', () => {
+      let model: VisibilityModel | undefined;
+      for (let trial = 0; trial < 40; trial++) {
+        const inputs = baseInputs({
+          data,
+          selectedProteinIds: [...pick(ids, [0, 0.01, 0.3, 1][trial % 4]), 'missing'].slice(
+            trial % 8 === 0 ? 1 : 0,
+          ),
+          highlightedProteinIds: pick(ids, trial % 3 === 0 ? 0.05 : 0),
+          hiddenAnnotationValues: pick(values, 0.3).slice(0, 2),
+          opacities: { ...OPACITIES, faded: trial % 2 ? 0 : OPACITIES.faded },
+        });
+        // Isolation keeps a shuffled subset of the slots.
+        const kept = trial % 5 < 2 ? null : Int32Array.from(pick([...ids.keys()], 0.4));
+        if (kept) kept.sort(() => random() - 0.5);
+        const count = kept ? kept.length : n;
+        // Chained like the plot does, so the id index carries over between models.
+        model = computeVisibilityModel(inputs, model);
+        const want = expected(inputs, kept, count);
+        expect(Array.from(model.markedSlots(ids, kept, count))).toEqual(want.slots);
+        const interactive = Array.from({ length: count }, (_, s) => {
+          const i = kept ? kept[s] : s;
+          return model!.opacityAt(i, ids[i]) > 0 ? 1 : 0;
+        });
+        expect(interactive).toEqual(want.interactive);
+      }
+    });
+
+    it('falls back to the ids for a repeated id or an index that does not hold the id', () => {
+      const repeated = makeData(values, Int32Array.of(0, 1, 2));
+      repeated.protein_ids[2] = 'p0';
+      const model = computeVisibilityModel(
+        baseInputs({ data: repeated, selectedProteinIds: ['p0'] }),
+      );
+      expect(Array.from(model.markedSlots(repeated.protein_ids, null, 3))).toEqual([1, 0, 1]);
+      const other = computeVisibilityModel(baseInputs({ data, selectedProteinIds: ['p5'] }));
+      expect(other.baseOpacityOf(point('p5', 0))).toBe(OPACITIES.selected);
+      expect(other.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+    });
+  });
+
   // ── The selection and highlight as one mark, for the renderer to draw ──────
   describe('marks', () => {
     const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2, 0));

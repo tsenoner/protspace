@@ -249,6 +249,19 @@ interface MaskCache {
   allHidden: boolean;
   hiddenMode: 'none' | 'all' | 'mask';
   hiddenMask: Uint8Array | null;
+  idIndex: IdIndex | null;
+}
+
+/** Each protein's index in `proteinIds`; `index` is null when an id repeats. */
+interface IdIndex {
+  proteinIds: readonly string[];
+  index: Map<string, number> | null;
+}
+
+function buildIdIndex(proteinIds: readonly string[]): IdIndex {
+  const index = new Map<string, number>();
+  for (let i = 0; i < proteinIds.length; i++) index.set(proteinIds[i], i);
+  return { proteinIds, index: index.size === proteinIds.length ? index : null };
 }
 
 interface InternalVisibilityModel extends VisibilityModel {
@@ -268,9 +281,8 @@ export function computeVisibilityModel(
     opacities,
   } = inputs;
 
-  const selectedIdsSet = new Set(selectedProteinIds);
-  const highlightedIdsSet = new Set(highlightedProteinIds);
   const hasSelection = selectedProteinIds.length > 0;
+  const anyMarked = hasSelection || highlightedProteinIds.length > 0;
   const focusedValues = inputs.focusedValues ?? null;
 
   // Reuse the prior hidden mask iff the mask-relevant inputs are reference-equal.
@@ -343,14 +355,38 @@ export function computeVisibilityModel(
     unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
   }
 
-  // With neither set populated the two lookups below cannot match, and staging
-  // asks once per point.
-  const anyMarked = selectedIdsSet.size > 0 || highlightedIdsSet.size > 0;
-  const isMarked = (id: string): boolean => selectedIdsSet.has(id) || highlightedIdsSet.has(id);
+  // The id index, kept from `previous` while the ids are the same array and
+  // built the first time something is marked (an O(N) pass, once per dataset).
+  const proteinIds = data?.protein_ids ?? null;
+  const prevIndex = prevCache?.idIndex ?? null;
+  let idIndex = prevIndex?.proteinIds === proteinIds ? prevIndex : null;
+  if (!idIndex && anyMarked && proteinIds) idIndex = buildIdIndex(proteinIds);
+
+  // The selected and highlighted proteins by index into `proteinIds`, so a point
+  // costs a byte read rather than set lookups.
+  let markedMask: Uint8Array | null = null;
+  if (anyMarked && proteinIds && idIndex?.index) {
+    const index = idIndex.index;
+    markedMask = new Uint8Array(proteinIds.length);
+    for (const ids of [selectedProteinIds, highlightedProteinIds]) {
+      for (const id of ids) {
+        const i = index.get(id);
+        if (i !== undefined) markedMask[i] = 1;
+      }
+    }
+  }
+  // For the points the mask cannot answer: no data, a repeated id, or an index
+  // that does not hold the point's id.
+  let markedIds: Set<string> | null = null;
+  const isMarked = (originalIndex: number, id: string): boolean => {
+    if (markedMask && proteinIds![originalIndex] === id) return markedMask[originalIndex] === 1;
+    markedIds ??= new Set([...selectedProteinIds, ...highlightedProteinIds]);
+    return markedIds.has(id);
+  };
 
   const baseOpacityAt = (originalIndex: number, id: string): number => {
     if (anyMarked) {
-      if (isMarked(id)) return opacities.selected;
+      if (isMarked(originalIndex, id)) return opacities.selected;
       if (hasSelection) return opacities.faded;
     }
     // Focus renders like a selection: focused points on top, the rest flat-faded.
@@ -370,18 +406,21 @@ export function computeVisibilityModel(
   const opacityOf = (point: PlotDataPoint): number => opacityAt(point.originalIndex, point.id);
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
 
-  // A pass per populated set, so a selection alone costs one lookup per slot.
   const markedSlots = (
-    proteinIds: readonly string[],
+    slotIds: readonly string[],
     originalIndices: Int32Array | null,
     count: number,
   ): Uint8Array => {
     const slots = new Uint8Array(count);
-    for (const ids of [selectedIdsSet, highlightedIdsSet]) {
-      if (ids.size === 0) continue;
-      for (let s = 0; s < count; s++) {
-        if (ids.has(proteinIds[originalIndices ? originalIndices[s] : s])) slots[s] = 1;
-      }
+    if (!anyMarked) return slots;
+    if (markedMask && slotIds === proteinIds) {
+      for (let s = 0; s < count; s++)
+        slots[s] = markedMask[originalIndices ? originalIndices[s] : s];
+      return slots;
+    }
+    for (let s = 0; s < count; s++) {
+      const i = originalIndices ? originalIndices[s] : s;
+      if (isMarked(i, slotIds[i])) slots[s] = 1;
     }
     return slots;
   };
@@ -426,6 +465,7 @@ export function computeVisibilityModel(
       allHidden,
       hiddenMode,
       hiddenMask,
+      idIndex,
     } satisfies MaskCache,
     enumerable: false,
     writable: false,
