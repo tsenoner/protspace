@@ -56,7 +56,7 @@ describe('scatter plot: missing coordinates', () => {
     const sp = scatter();
     sp.selectedProjectionIndex = 1;
     sp._processData();
-    sp._buildPointGridIndex();
+    sp._pointGrid.rebuildNow();
 
     const idsOf = (slots: number[]) => slots.map((slot) => plottedIds(sp._plotData)[slot]).sort();
     const far = 1e9;

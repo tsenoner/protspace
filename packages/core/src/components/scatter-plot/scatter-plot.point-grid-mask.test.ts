@@ -45,13 +45,13 @@ let frames: ReturnType<typeof fakeFrames>;
 function prime(n = 600, family?: (i: number) => number): PlotInternals {
   const sp = createPlot({ data: makeData(n, family), selectedAnnotation: 'fam' });
   sp._processData();
-  sp._buildPointGridIndex();
+  sp._pointGrid.rebuildNow();
   return sp;
 }
 
 /** The grid as it was built before: only the slots that are interactive now. */
 function visibleOnlyGrid(sp: PlotInternals): PointGridIndex {
-  const slots = sp._getVisibleSlots()!;
+  const slots = sp._pointGrid.visibleSlots()!;
   const grid = new PointGridIndex();
   grid.setScales(sp._scales as never);
   grid.rebuild(sp._plotData, slots);
@@ -71,12 +71,12 @@ describe('point grid over every slot, masked to the visible ones', () => {
 
   it('re-marks the visible slots on a legend toggle without rebuilding the grid', () => {
     const sp = prime();
-    const rebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
+    const rebuild = vi.spyOn(sp._pointGrid.grid, 'rebuild');
     sp.hiddenAnnotationValues = ['B'];
-    sp._scheduleVisibleSlotsRefresh();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
     expect(rebuild).not.toHaveBeenCalled();
-    const slots = sp._getVisibleSlots()!;
+    const slots = sp._pointGrid.visibleSlots()!;
     expect(slots.length).toBeGreaterThan(0);
     expect(slots.every((s) => familyOf(sp, s) !== 'B')).toBe(true);
     expect(slots.length).toBe(
@@ -97,9 +97,9 @@ describe('point grid over every slot, masked to the visible ones', () => {
       sp.hiddenAnnotationValues = [...hidden];
       const opacityAt = vi.spyOn(sp._getVisibilityModel(), 'opacityAt');
       const count = countFirst ? sp._getVisiblePointCount() : -1;
-      sp._scheduleVisibleSlotsRefresh();
+      sp._pointGrid.scheduleRemark();
       frames.flush();
-      const slots = sp._getVisibleSlots()!;
+      const slots = sp._pointGrid.visibleSlots()!;
       expect(slots).toEqual(all.filter((s) => familyOf(sp, s) !== hidden[0]));
       expect(sp._getVisiblePointCount()).toBe(slots.length);
       if (countFirst) expect(count).toBe(slots.length);
@@ -109,14 +109,14 @@ describe('point grid over every slot, masked to the visible ones', () => {
 
   it('rebuilds when a full rebuild is pending or the plot data changed', () => {
     const sp = prime();
-    const rebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
-    sp._schedulePointGridIndexRebuild();
-    sp._scheduleVisibleSlotsRefresh();
+    const rebuild = vi.spyOn(sp._pointGrid.grid, 'rebuild');
+    sp._pointGrid.scheduleRebuild();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
     expect(rebuild).toHaveBeenCalledTimes(1);
 
     sp._plotData = { ...sp._plotData, xs: new Float32Array(sp._plotData.xs) };
-    sp._scheduleVisibleSlotsRefresh();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
     expect(rebuild).toHaveBeenCalledTimes(2);
   });
@@ -125,7 +125,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const sp = prime();
     for (const hidden of [['B'], ['A', 'C'], ['A', 'B']]) {
       sp.hiddenAnnotationValues = hidden;
-      sp._scheduleVisibleSlotsRefresh();
+      sp._pointGrid.scheduleRemark();
       frames.flush();
       const reference = visibleOnlyGrid(sp);
       const next = seededRandom(hidden.length * 31);
@@ -135,7 +135,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
         const y = sp._scales!.y(next() * 100);
         const r = 1 + next() * 40;
         const expected = reference.findNearest(x, y, r);
-        expect(sp._visibleIndex().findNearest(x, y, r)).toBe(expected);
+        expect(sp._pointGrid.index().findNearest(x, y, r)).toBe(expected);
         if (expected >= 0) hits++;
       }
       expect(hits).toBeGreaterThan(100);
@@ -145,7 +145,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
   it('keeps hidden points out of brushing, lasso and the duplicate stacks', () => {
     const sp = prime();
     sp.hiddenAnnotationValues = ['C'];
-    sp._scheduleVisibleSlotsRefresh();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
     const reference = visibleOnlyGrid(sp);
     const [x0, y0, x1, y1] = [
@@ -182,7 +182,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
       frames.flush();
     };
     // Faded points stay interactive by default: nothing to re-mark.
-    const setVisible = vi.spyOn(sp._pointGridIndex, 'setVisible');
+    const setVisible = vi.spyOn(sp._pointGrid.grid, 'setVisible');
     select(['p3']);
     expect(setVisible).not.toHaveBeenCalled();
     select([]);
@@ -192,32 +192,32 @@ describe('point grid over every slot, masked to the visible ones', () => {
     frames.flush();
     const all = Array.from({ length: sp._plotData.length }, (_, s) => s);
     select(['p3', 'p10']);
-    expect(sp._getVisibleSlots()).toEqual([3, 10]);
+    expect(sp._pointGrid.visibleSlots()).toEqual([3, 10]);
     // A legend change while selected, then the selection cleared.
     sp.hiddenAnnotationValues = [familyOf(sp, 0) === 'A' ? 'B' : 'A'];
     sp.updated(new Map([['hiddenAnnotationValues', undefined]]));
     frames.flush();
     select([]);
     const hidden = sp.hiddenAnnotationValues[0];
-    expect(sp._getVisibleSlots()).toEqual(all.filter((s) => familyOf(sp, s) !== hidden));
+    expect(sp._pointGrid.visibleSlots()).toEqual(all.filter((s) => familyOf(sp, s) !== hidden));
   });
 
   it('queries a grid of just the visible slots while they are few', () => {
     // A is a tenth of the proteins: with B and C hidden, a grid of A alone.
     const sp = prime(800, (i) => (i % 10 === 0 ? 0 : 1 + (i % 2)));
-    const fullRebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
+    const fullRebuild = vi.spyOn(sp._pointGrid.grid, 'rebuild');
     sp.hiddenAnnotationValues = ['B', 'C'];
-    sp._scheduleVisibleSlotsRefresh();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
     expect(fullRebuild).not.toHaveBeenCalled();
-    expect(sp._sparseIndex).not.toBeNull();
+    expect(sp._pointGrid.index()).not.toBe(sp._pointGrid.grid);
     const reference = visibleOnlyGrid(sp);
     const next = seededRandom(5);
     for (let q = 0; q < 2000; q++) {
       const x = sp._scales!.x(next() * 100);
       const y = sp._scales!.y(next() * 100);
       const r = 1 + next() * 40;
-      expect(sp._visibleIndex().findNearest(x, y, r)).toBe(reference.findNearest(x, y, r));
+      expect(sp._pointGrid.index().findNearest(x, y, r)).toBe(reference.findNearest(x, y, r));
     }
     const host = sp._interactionHost();
     const box = [sp._scales!.x(5), sp._scales!.y(95), sp._scales!.x(95), sp._scales!.y(5)] as const;
@@ -225,9 +225,9 @@ describe('point grid over every slot, masked to the visible ones', () => {
 
     // Showing them again drops it, without rebuilding the full grid.
     sp.hiddenAnnotationValues = [];
-    sp._scheduleVisibleSlotsRefresh();
+    sp._pointGrid.scheduleRemark();
     frames.flush();
-    expect(sp._sparseIndex).toBeNull();
+    expect(sp._pointGrid.index()).toBe(sp._pointGrid.grid);
     expect(fullRebuild).not.toHaveBeenCalled();
   });
 });

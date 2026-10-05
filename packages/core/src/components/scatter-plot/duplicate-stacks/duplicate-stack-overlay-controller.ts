@@ -60,7 +60,7 @@ interface DuplicateStackOverlayDeps {
   getPointGridIndex: () => PointGridIndex;
   /**
    * Slot list the point index was last rebuilt with (legend/filter-visible slots,
-   * scatter-plot.ts _buildPointGridIndex). The full-extent capture compute iterates
+   * PointGridController.visibleSlots). The full-extent capture compute iterates
    * this against the raw PlotData arrays — NEVER via point index traversal (~93×
    * slower at 570k points, research doc 04). Null until the first point index
    * build (or after an empty-data build); capture then renders no badges.

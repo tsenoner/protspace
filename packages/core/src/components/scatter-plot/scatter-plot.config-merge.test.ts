@@ -14,7 +14,7 @@ function apply(patch: Partial<ScatterplotConfig>) {
   const sp = createPlot();
   const invalidateStyleCache = vi.fn();
   sp._webglRenderer = { invalidateStyleCache } as never;
-  const reindex = vi.spyOn(sp, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
+  const reindex = vi.spyOn(sp._pointGrid, 'scheduleRebuild').mockImplementation(() => {});
   sp.config = { width: 800, height: 600 };
   sp._reconcileConfigMerge(new Map([['config', undefined]]));
   invalidateStyleCache.mockClear();

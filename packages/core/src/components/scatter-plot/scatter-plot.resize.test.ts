@@ -51,10 +51,10 @@ function makePlot() {
   const el = mountPlot({ data: makeData(), selectedAnnotation: 'fam' });
   sizeTo(el, 800, 600);
   el._updateSizeAndRender();
-  el._buildPointGridIndex();
+  el._pointGrid.rebuildNow();
   frames.run();
   Object.assign(counters, createPerfCounters());
-  const rebuild = vi.spyOn(el, '_buildPointGridIndex');
+  const rebuild = vi.spyOn(el._pointGrid, 'rebuildNow');
   return { el, rebuild };
 }
 
@@ -117,7 +117,7 @@ describe('scatter-plot resize', () => {
     el.data = makeData([0, 3, 5, 20]);
     el._processData();
     // What updated() schedules for a geometry change.
-    el._schedulePointGridIndexRebuild();
+    el._pointGrid.scheduleRebuild();
     sizeTo(el, 1000, 700);
     el._updateSizeAndRender();
     frames.run();

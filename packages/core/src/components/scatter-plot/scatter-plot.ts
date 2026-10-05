@@ -48,7 +48,7 @@ import type {
   ProteinClickDetail,
   RendererDegradedDetail,
 } from './scatter-plot.events';
-import { PointGridIndex } from './interaction/point-grid-index';
+import { PointGridController, type GridStash } from './interaction/point-grid-controller';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
@@ -117,12 +117,6 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_isZoomedIn',
   '_mergedConfig',
 ]);
-
-/**
- * Visible slots below 1 / this of all get a grid of their own (see `_sparseIndex`):
- * the full grid would make a query walk mostly hidden slots.
- */
-const SPARSE_INDEX_SHARE = 4;
 
 /** Default number of bins for numeric→categorical materialization. Mirrors
  *  materializeVisualizationData's `defaultBinCount = 10` default. */
@@ -268,7 +262,20 @@ export class ProtspaceScatterplot extends LitElement {
   @query('svg') private _svg!: SVGSVGElement;
 
   // Internal
-  private _pointGridIndex: PointGridIndex = new PointGridIndex();
+  // The point grid that hit-testing, brushing, lasso and the duplicate stacks query.
+  private _pointGrid = new PointGridController({
+    plotData: () => this._plotData,
+    scales: () => this._scales,
+    scalesKey: () => this._scalesKey(),
+    interactable: () => this._interactableSlots(),
+    onIndexInvalid: () => this._dupOverlay.cancelCompute(),
+    onIndexEmpty: () => this._dupOverlay.resetState(),
+    onIndexMarked: () => this._resetDuplicateOverlay(),
+  });
+  /** The grid over every slot. The brush-selection e2e queries it. */
+  get _pointGridIndex() {
+    return this._pointGrid.grid;
+  }
   private resizeObserver: ResizeObserver;
   // d3 zoom/brush/lasso lifecycle, the three SVG groups, and the zoom/lasso RAF
   // loops live in the controller. Constructed in firstUpdated. Event dispatch +
@@ -317,32 +324,16 @@ export class ProtspaceScatterplot extends LitElement {
   // originalIndices) and must reuse the cache since interactivity is independent
   // of x/y coordinates.
   private _interactableSlotsCache: InteractableSlots | null = null;
-  private _pointGridIndexRebuildRafId: number | null = null;
-  private _pointGridReindexPending = false;
-  private _visibleSlotsStale = false;
-  // The plot data the point grid indexes (every slot of it), and which of those
-  // slots are interactive. Queries see only the marked slots, so a legend
-  // toggle re-marks them instead of rebuilding the grid.
-  private _pointGridSource: PlotData | null = null;
-  // The un-culled plot data and the point grid built over it, set aside while a query
+  // The un-culled plot data and its point grid (both in `grid`), set aside while a query
   // filter or isolation culls the plot. Leaving the cull swaps them back instead of
   // rebuilding both (see `_processData`). `projection`, `proteinIds` and `plane` are what
-  // the plot data was built from, `scales` the size and margins the grid was built at.
+  // the plot data was built from.
   private _fullView: {
-    plotData: PlotData;
-    grid: PointGridIndex;
+    grid: GridStash;
     projection: VisualizationData['projections'][number];
     proteinIds: readonly string[];
     plane: 'xy' | 'xz' | 'yz';
-    scales: string;
   } | null = null;
-  // Set when `_fullView` was swapped back: the next point grid build only re-marks the
-  // visible slots, provided the scales still match the ones it was built at.
-  private _restoredGridScales: string | null = null;
-  private _slotVisible: Uint8Array | null = null;
-  // A grid of just the visible slots, kept while they are a small share of all,
-  // so a query walks them alone, as it did when the grid held only them.
-  private _sparseIndex: PointGridIndex | null = null;
   // Coalesced full renders and the projection glide.
   private _renderLoop = new RenderLoop({
     render: () => this._renderPlot(),
@@ -350,10 +341,6 @@ export class ProtspaceScatterplot extends LitElement {
     setMorphing: (on) => this.toggleAttribute('data-morphing', on),
     endHover: () => this._handleCanvasMouseOut(),
   });
-  // The slots `_slotVisible` marks, built when first asked for. Retained for the duplicate-badge capture path (#301): the
-  // full-extent compute iterates it against the raw PlotData arrays instead
-  // of traversing the point index (~93× slower at 570k points, research doc 04).
-  private _visibleSlots: number[] | null = null;
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
   // Cancels the pending idle build of the protein id index (`_scheduleIdIndex`).
@@ -379,8 +366,8 @@ export class ProtspaceScatterplot extends LitElement {
     getConfig: () => this._mergedConfig,
     getScales: () => this._scales,
     getPlotData: () => this._plotData,
-    getPointGridIndex: () => this._visibleIndex(),
-    getVisibleSlots: () => this._getVisibleSlots(),
+    getPointGridIndex: () => this._pointGrid.index(),
+    getVisibleSlots: () => this._pointGrid.visibleSlots(),
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
     getColor: (p) => this._getColors(p)[0] ?? '#888888',
@@ -698,10 +685,7 @@ export class ProtspaceScatterplot extends LitElement {
   disconnectedCallback() {
     this.resizeObserver.disconnect();
     this._background.disconnect();
-    if (this._pointGridIndexRebuildRafId !== null) {
-      cancelAnimationFrame(this._pointGridIndexRebuildRafId);
-      this._pointGridIndexRebuildRafId = null;
-    }
+    this._pointGrid.cancel();
     this._renderLoop.cancel();
     if (this._hoverRaf !== null) {
       cancelAnimationFrame(this._hoverRaf);
@@ -962,7 +946,7 @@ export class ProtspaceScatterplot extends LitElement {
       // Only the old index map outlives the rebuild, not the old plot data.
       const { length, originalIndices } = this._plotData;
       this._processData();
-      this._schedulePointGridIndexRebuild();
+      this._pointGrid.scheduleRebuild();
       this._webglRenderer?.invalidatePositionCache();
       this._webglRenderer?.invalidateStyleCache();
       // A projection or plane switch keeps every point in its slot unless the new
@@ -1031,7 +1015,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateStyleCache();
       }
       if (CONFIG_INDEX_KEYS.some(changed)) {
-        this._schedulePointGridIndexRebuild();
+        this._pointGrid.scheduleRebuild();
       }
     }
   }
@@ -1044,7 +1028,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('eatOverlayEnabled');
     if (visibilityMembershipChanged) {
       // Positions are unchanged: the point grid only re-marks the interactive slots.
-      this._scheduleVisibleSlotsRefresh();
+      this._pointGrid.scheduleRemark();
       // A legend hide or show changes which categories are drawn, nothing per point.
       const hiddenOnly =
         changedProperties.has('hiddenAnnotationValues') &&
@@ -1108,8 +1092,8 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateStyleCache();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
-      if (this._slotVisible && !this._currentInteractableSlots()) {
-        this._scheduleVisibleSlotsRefresh();
+      if (this._pointGrid.marked && !this._currentInteractableSlots()) {
+        this._pointGrid.scheduleRemark();
       }
     }
     const changedKeys = Array.from(changedProperties.keys(), String);
@@ -1209,39 +1193,27 @@ export class ProtspaceScatterplot extends LitElement {
     // object allocation — just overwrite x/y on the existing PlotData. It bails out when
     // the new projection is missing a point, which only a rebuild can cull.
     const projection = dataToUse.projections[this.selectedProjectionIndex];
-    this._restoredGridScales = null;
     let culled = false;
     if (!onlyProjectionChanged || !this._updatePlotDataCoordinates(dataToUse)) {
       const culling = this._isolationMode || visibleProteinIds !== null;
       // Entering a cull from the full view: set the full view aside with its grid.
-      if (
-        culling &&
-        build &&
-        !build.culled &&
-        this._plotData.length > 0 &&
-        this._pointGridSource === this._plotData &&
-        !this._pointGridReindexPending
-      ) {
-        this._fullView = {
-          plotData: this._plotData,
-          grid: this._pointGridIndex,
-          projection: build.projection,
-          proteinIds: build.proteinIds,
-          plane: build.plane,
-          scales: this._scalesKey(),
-        };
-        this._pointGridIndex = new PointGridIndex();
+      if (culling && build && !build.culled) {
+        const grid = this._pointGrid.detach();
+        if (grid) {
+          this._fullView = {
+            grid,
+            projection: build.projection,
+            proteinIds: build.proteinIds,
+            plane: build.plane,
+          };
+        }
       }
 
       // Release old data references before allocating the new dataset.
       // Without this, old and new PlotData coexist in memory during processing
       // (e.g. 100K + 570K points), which can cause OOM on constrained devices.
       this._plotData = EMPTY_PLOT_DATA;
-      this._pointGridIndex.clear();
-      this._sparseIndex = null;
-      this._slotVisible = null;
-      this._visibleSlots = null;
-      this._pointGridSource = null;
+      this._pointGrid.clear();
       this._webglRenderer?.releaseDataReferences();
       this._clearMarkCaches();
 
@@ -1254,10 +1226,8 @@ export class ProtspaceScatterplot extends LitElement {
         kept.plane === this.projectionPlane
       ) {
         // Leaving the cull for the view it was entered from: what a rebuild would produce.
-        this._plotData = kept.plotData;
-        this._pointGridIndex = kept.grid;
-        this._pointGridSource = kept.plotData;
-        this._restoredGridScales = kept.scales;
+        this._plotData = kept.grid.plotData;
+        this._pointGrid.adopt(kept.grid);
       } else {
         this._plotData = DataProcessor.processVisualizationData(
           dataToUse,
@@ -1325,7 +1295,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._processData();
       }
 
-      this._schedulePointGridIndexRebuild();
+      this._pointGrid.scheduleRebuild();
       this._webglRenderer?.invalidateStyleCache();
       this._renderLoop.request();
       this._updateSelectionOverlays();
@@ -1430,65 +1400,6 @@ export class ProtspaceScatterplot extends LitElement {
     return true;
   }
 
-  private _buildPointGridIndex() {
-    // Cancel any in-flight duplicate stack computation — it uses the old point index
-    // and would overwrite cleared state with stale results when it finishes.
-    this._dupOverlay.cancelCompute();
-
-    if (!this._plotData.length || !this._scales) {
-      this._slotVisible = null;
-      this._visibleSlots = null;
-      this._sparseIndex = null;
-      this._pointGridSource = null;
-      this._dupOverlay.resetState();
-      // No render here — there is nothing to draw.
-      return;
-    }
-    const pd = this._plotData;
-    this._pointGridIndex.setScales(this._scales);
-    const restoredScales = this._restoredGridScales;
-    this._restoredGridScales = null;
-    if (restoredScales === this._scalesKey() && this._pointGridSource === pd) {
-      // The full view's grid, swapped back by `_processData`: only what is visible moved.
-      this._markVisibleSlots();
-      return;
-    }
-    // Every slot, hidden ones too: a change of what is visible then re-marks
-    // `_slotVisible` instead of rebuilding the grid.
-    const slots = new Uint32Array(pd.length);
-    for (let s = 0; s < slots.length; s++) slots[s] = s;
-    this._pointGridIndex.rebuild(pd, slots);
-    if (perfCounters) perfCounters.gridRebuild++;
-    this._pointGridSource = pd;
-    this._markVisibleSlots();
-  }
-
-  /**
-   * Mark the slots hit-testing, brushing and the duplicate stacks see: the
-   * interactive ones, as the point grid used to hold. Queries skip the rest.
-   */
-  private _markVisibleSlots() {
-    const pd = this._plotData;
-    const { visible, count } = this._interactableSlots();
-    this._slotVisible = visible;
-    this._pointGridIndex.setVisible(visible);
-    this._visibleSlots = null;
-    this._sparseIndex = null;
-    // With few slots visible, give them a grid of their own: it costs what a
-    // visible-only rebuild did, and spares every query the hidden slots.
-    if (count * SPARSE_INDEX_SHARE < pd.length && this._scales) {
-      this._sparseIndex = new PointGridIndex();
-      this._sparseIndex.setScales(this._scales);
-      this._sparseIndex.rebuild(pd, this._getVisibleSlots()!);
-    }
-    this._visibleSlotsStale = false;
-    this._resetDuplicateOverlay();
-
-    // No render: the canvas does not read the point index or the slot list. This
-    // render once refreshed the viewport-cull cache, which #456 removed, and
-    // every caller that changes what is drawn requests its own render.
-  }
-
   private _resetDuplicateOverlay() {
     // Duplicate stacks are computed lazily for the current viewport (see the
     // controller's ensureForViewport) to keep point index rebuilds fast on large datasets.
@@ -1499,62 +1410,6 @@ export class ProtspaceScatterplot extends LitElement {
     // rendered synchronously in updated() used a stale cache and nothing would
     // re-trigger them after the deferred point index rebuild.
     this._dupOverlay.updateSelectionOverlays({ duplicateImmediate: true });
-  }
-
-  /**
-   * Rebuild the point grid on the next frame. `reindex: false` asks only for the
-   * re-mark `_scheduleVisibleSlotsRefresh` wants; a pending full rebuild absorbs it,
-   * and so does plot data the grid was not built from.
-   */
-  private _schedulePointGridIndexRebuild(reindex = true) {
-    this._pointGridReindexPending ||= reindex;
-    if (this._pointGridIndexRebuildRafId !== null) {
-      cancelAnimationFrame(this._pointGridIndexRebuildRafId);
-    }
-    this._pointGridIndexRebuildRafId = requestAnimationFrame(() => {
-      this._pointGridIndexRebuildRafId = null;
-      const source = this._pointGridSource;
-      const pd = this._plotData;
-      const reindexNow =
-        this._pointGridReindexPending ||
-        source?.xs !== pd.xs ||
-        source?.ys !== pd.ys ||
-        source?.originalIndices !== pd.originalIndices ||
-        source?.length !== pd.length;
-      this._pointGridReindexPending = false;
-      if (reindexNow) {
-        this._buildPointGridIndex();
-      } else if (this._visibleSlotsStale) {
-        this._dupOverlay.cancelCompute();
-        this._markVisibleSlots();
-      }
-    });
-  }
-
-  /**
-   * Re-mark the interactive slots on the next frame, for a change of which
-   * points are visible only: the grid holds every slot, so it needs no rebuild.
-   */
-  private _scheduleVisibleSlotsRefresh() {
-    this._visibleSlotsStale = true;
-    this._schedulePointGridIndexRebuild(false);
-  }
-
-  /** The visible slots in ascending order, or null before the first point grid build. */
-  private _getVisibleSlots(): number[] | null {
-    const visible = this._slotVisible;
-    if (!visible) return null;
-    if (!this._visibleSlots) {
-      const slots: number[] = [];
-      for (let s = 0; s < visible.length; s++) if (visible[s]) slots.push(s);
-      this._visibleSlots = slots;
-    }
-    return this._visibleSlots;
-  }
-
-  /** The index that answers for the visible slots: theirs alone while they are few. */
-  private _visibleIndex(): PointGridIndex {
-    return this._sparseIndex ?? this._pointGridIndex;
   }
 
   /**
@@ -1572,8 +1427,8 @@ export class ProtspaceScatterplot extends LitElement {
       getSelectionTool: () => this.selectionTool,
       hasScales: () => this._scales != null,
       getTransform: () => this._transform,
-      queryByPolygon: (vertices) => this._visibleIndex().queryByPolygon(vertices),
-      queryByPixels: (x0, y0, x1, y1) => this._visibleIndex().queryByPixels(x0, y0, x1, y1),
+      queryByPolygon: (vertices) => this._pointGrid.index().queryByPolygon(vertices),
+      queryByPixels: (x0, y0, x1, y1) => this._pointGrid.index().queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
         this._transform = t;
@@ -1626,7 +1481,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     this._mergedConfig = { ...this._mergedConfig, width, height };
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
-    this._schedulePointGridIndexRebuild();
+    this._pointGrid.scheduleRebuild();
     // Synchronous: resize() just cleared the canvas (see RenderLoop).
     this._renderLoop.now();
     this._updateSelectionOverlays();
@@ -1795,7 +1650,7 @@ export class ProtspaceScatterplot extends LitElement {
    * Pull-based, memoized accessor for the shared point-visibility model.
    *
    * PULL-BASED on purpose (design D1): there is no `willUpdate`; isolation,
-   * reset, and numeric-rebin rAF all call `_processData`/`_buildPointGridIndex`
+   * reset, and numeric-rebin rAF all call `_processData`/`_pointGrid.rebuildNow`
    * imperatively outside the Lit cycle; and pinned tests drive unattached
    * elements where lifecycle never runs. A lifecycle-recomputed model would be
    * stale at those sites. So the model is computed lazily and memoized purely on
@@ -1935,9 +1790,9 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * The interactive slots of `_plotData`, marked 1 in `visible`, their count,
-   * and their ids. Whichever of the point-count label and `_markVisibleSlots`
-   * runs first pays for the pass. `visible` is shared with the point grid, so it
-   * is never written after.
+   * and their ids. Whichever of the point-count label and the point grid's
+   * marking runs first pays for the pass. `visible` is shared with the point
+   * grid, so it is never written after.
    */
   private _interactableSlots(): InteractableSlots {
     const current = this._currentInteractableSlots();
@@ -2205,7 +2060,7 @@ export class ProtspaceScatterplot extends LitElement {
     const dataY = (mouseY - this._transform.y) / k;
 
     const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
-    const nearestSlot = this._visibleIndex().findNearest(dataX, dataY, hitRadius / k);
+    const nearestSlot = this._pointGrid.index().findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
     const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
@@ -2552,7 +2407,7 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _reprocessAndRefresh(): void {
     this._processData();
-    this._buildPointGridIndex();
+    this._pointGrid.rebuildNow();
 
     if (this._webglRenderer) {
       this._webglRenderer.invalidatePositionCache();

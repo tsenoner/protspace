@@ -49,10 +49,10 @@ function hostWithPointCount(length: number) {
     }),
   });
 
-  el._pointGridIndex = {
+  vi.spyOn(el._pointGrid, 'index').mockReturnValue({
     isBuilt: () => true,
     queryByPixels,
-  } as unknown as PlotInternals['_pointGridIndex'];
+  } as unknown as PlotInternals['_pointGridIndex']);
 
   return { el, queryByPixels };
 }

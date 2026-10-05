@@ -205,7 +205,7 @@ describe('projection glide (host)', () => {
 
     // request() renders on the spot then; a glide would recurse through it.
     vi.stubGlobal('requestAnimationFrame', undefined);
-    vi.spyOn(el, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
+    vi.spyOn(el._pointGrid, 'scheduleRebuild').mockImplementation(() => {});
     vi.stubGlobal('matchMedia', undefined);
     change(el, { selectedProjectionIndex: 0 });
     expect(render).toHaveBeenCalledTimes(2);

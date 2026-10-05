@@ -55,7 +55,7 @@ function prime(): PlotInternals {
   sp.data = dupData();
   sp.selectedAnnotation = 'fam';
   sp._processData(); // builds _plotData
-  sp._buildPointGridIndex(); // builds point index + retains _visibleSlots (direct, no RAF)
+  sp._pointGrid.rebuildNow(); // builds the point grid and its visible slots (direct, no RAF)
   // Stub the renderer after the point index build: only captureAtResolution reads it.
   sp._webglRenderer = {
     renderToCanvas: vi.fn((w: number, h: number, dpr: number) => {

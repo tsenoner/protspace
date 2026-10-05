@@ -215,7 +215,7 @@ describe('scatter-plot isolateSelection (layers)', () => {
     _isolationHistory: string[][];
     _plotData: PlotData;
     _processData(): void;
-    _buildPointGridIndex(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
     isolateSelection(): void;
     getCurrentData(): VisualizationData | null;
   };
@@ -240,7 +240,7 @@ describe('scatter-plot isolateSelection (layers)', () => {
       proteinIds: ids,
     };
     vi.spyOn(el, '_processData').mockImplementation(() => {});
-    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() => {});
+    vi.spyOn(el._pointGrid, 'rebuildNow').mockImplementation(() => {});
     return el;
   }
 
@@ -286,7 +286,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
       invalidateStyleCache(): void;
     };
     _processData(): void;
-    _buildPointGridIndex(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
     _renderPlot(): void;
     _renderLoop: { flush(): void };
     isolateSelection(): void;
@@ -342,9 +342,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
   function instrument(el: RefreshInternals) {
     const calls: string[] = [];
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
-    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() =>
-      calls.push('buildPointGridIndex'),
-    );
+    vi.spyOn(el._pointGrid, 'rebuildNow').mockImplementation(() => calls.push('rebuildGrid'));
     vi.spyOn(el, '_renderPlot').mockImplementation(() => calls.push('renderPlot'));
     // jsdom element is not connected, so updateComplete is an already-resolved promise.
     Object.defineProperty(el, 'updateComplete', {
@@ -355,7 +353,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then requests renderPlot', async () => {
+  it('isolateSelection runs processData → rebuildGrid → requestUpdate, then requests renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
@@ -363,13 +361,13 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     el.isolateSelection();
 
     // Synchronous portion: process + point index happen before requestUpdate; render is deferred.
-    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
+    expect(calls).toEqual(['processData', 'rebuildGrid']);
     expect(requestUpdate).toHaveBeenCalled();
 
     // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
     el._renderLoop.flush();
-    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'rebuildGrid', 'renderPlot']);
   });
 
   it('resetIsolation nulls _plotDataBuild BEFORE reprocess, then runs the same refresh sequence', async () => {
@@ -391,13 +389,13 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     // Divergence preserved: cleared before the shared refresh block runs.
     expect(buildAtProcess).toBeNull();
-    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
+    expect(calls).toEqual(['processData', 'rebuildGrid']);
     expect(requestUpdate).toHaveBeenCalled();
 
     // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
     el._renderLoop.flush();
-    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
+    expect(calls).toEqual(['processData', 'rebuildGrid', 'renderPlot']);
   });
 
   it.each([
@@ -428,7 +426,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
 
     const refresh = [
       'processData',
-      'buildPointGridIndex',
+      'rebuildGrid',
       'invalidatePositionCache',
       'invalidateStyleCache',
     ];
@@ -486,7 +484,7 @@ describe('scatter-plot full view kept across a cull', () => {
     _plotData: PlotData;
     _pointGridIndex: unknown;
     _processData(): void;
-    _buildPointGridIndex(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
     isolateSelection(): void;
     resetIsolation(): void;
     resetZoom(): void;
@@ -509,7 +507,7 @@ describe('scatter-plot full view kept across a cull', () => {
     el.selectedProjectionIndex = 0;
     vi.spyOn(el, 'resetZoom').mockImplementation(() => {});
     el._processData();
-    el._buildPointGridIndex();
+    el._pointGrid.rebuildNow();
     return el;
   }
 
@@ -521,19 +519,19 @@ describe('scatter-plot full view kept across a cull', () => {
   it('swaps the full plot data and point grid back on reset, through nested isolation', () => {
     const el = makeEl();
     const full = el._plotData;
-    const grid = el._pointGridIndex;
+    const grid = el._pointGrid.grid;
     const rebuild = vi.spyOn(DataProcessor, 'processVisualizationData');
 
     isolate(el, ['p1', 'p2', 'p3']);
     isolate(el, ['p2']);
     expect(el._plotData.length).toBe(1);
-    expect(el._pointGridIndex).not.toBe(grid);
+    expect(el._pointGrid.grid).not.toBe(grid);
     rebuild.mockClear();
     const reindex = vi.spyOn(grid as { rebuild(): void }, 'rebuild');
 
     el.resetIsolation();
     expect(el._plotData).toBe(full);
-    expect(el._pointGridIndex).toBe(grid);
+    expect(el._pointGrid.grid).toBe(grid);
     expect(rebuild).not.toHaveBeenCalled();
     expect(reindex).not.toHaveBeenCalled();
     rebuild.mockRestore();

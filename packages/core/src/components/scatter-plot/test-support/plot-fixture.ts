@@ -25,7 +25,6 @@ type Host = ProtspaceScatterplot;
  * `keyof` leaves private members out, which is what lets them be redeclared.
  */
 export type PlotInternals = Pick<Host, keyof Host> & {
-  _buildPointGridIndex: Host['_buildPointGridIndex'];
   _buildStyleGetters: Host['_buildStyleGetters'];
   _canvas: Host['_canvas'];
   _colorMapping: Host['_colorMapping'];
@@ -46,7 +45,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _getStyleGetters: Host['_getStyleGetters'];
   _getVisibilityModel: Host['_getVisibilityModel'];
   _getVisiblePointCount: Host['_getVisiblePointCount'];
-  _getVisibleSlots: Host['_getVisibleSlots'];
   _handleCanvasMouseMove: Host['_handleCanvasMouseMove'];
   _handleColorMappingChange: Host['_handleColorMappingChange'];
   _handleShiftKey: Host['_handleShiftKey'];
@@ -67,7 +65,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _pendingHover: Host['_pendingHover'];
   _plotData: Host['_plotData'];
   _plotDataBuild: Host['_plotDataBuild'];
-  _pointGridIndex: Host['_pointGridIndex'];
+  _pointGrid: Host['_pointGrid'];
   _pointMarks: Host['_pointMarks'];
   _processData: Host['_processData'];
   _rebuildStyle: Host['_rebuildStyle'];
@@ -85,12 +83,9 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _scalesKey: Host['_scalesKey'];
   _scheduleIdIndex: Host['_scheduleIdIndex'];
   _scheduleNumericAnnotationRefresh: Host['_scheduleNumericAnnotationRefresh'];
-  _schedulePointGridIndexRebuild: Host['_schedulePointGridIndexRebuild'];
-  _scheduleVisibleSlotsRefresh: Host['_scheduleVisibleSlotsRefresh'];
   _shapeMapping: Host['_shapeMapping'];
   _slotSelection: Host['_slotSelection'];
   _slotsToInteractiveIds: Host['_slotsToInteractiveIds'];
-  _sparseIndex: Host['_sparseIndex'];
   _styleGettersCache: Host['_styleGettersCache'];
   _svg: Host['_svg'];
   _tooltipData: Host['_tooltipData'];
@@ -100,8 +95,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _unmarkedGetters: Host['_unmarkedGetters'];
   _updateSelectionOverlays: Host['_updateSelectionOverlays'];
   _updateSizeAndRender: Host['_updateSizeAndRender'];
-  _visibleIndex: Host['_visibleIndex'];
-  _visibleSlots: Host['_visibleSlots'];
   _webglRenderer: Host['_webglRenderer'];
   _zOrderMapping: Host['_zOrderMapping'];
 };
