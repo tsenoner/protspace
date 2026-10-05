@@ -14,6 +14,7 @@
 import * as d3 from 'd3';
 import {
   DENSITY_DEFAULT,
+  plotDataOriginalIndex,
   type PlotData,
   type PlotDataPoint,
   type ScatterplotConfig,
@@ -275,8 +276,8 @@ export class WebGLRenderer {
   private passScratch = createPassScratch(0);
   private sortedDataRef: PlotData | null = null;
 
-  // Single reused scratch point for the hot loop — populated per slot, passed to style getters.
-  private scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
+  // The one point the sampled style reads reuse; see `pointAt`.
+  private readonly scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
 
   // Selection-aware two-pass rendering
   private selectionActive = false;
@@ -1360,16 +1361,10 @@ export class WebGLRenderer {
 
     const len = pd.length;
     const indices = [0, Math.floor(len / 4), Math.floor(len / 2), len - 1];
-    const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
     return indices
       .filter((i) => i < len)
       .map((i) => {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = pd.xs[i];
-        sp.y = pd.ys[i];
-        sp.originalIndex = origIdx;
+        const sp = this.pointAt(pd, i);
         // Include depth to avoid missing z-order-only updates when we render via painter's algorithm.
         return `${sp.id}:${this.style.getOpacity(sp).toFixed(2)}:${this.style
           .getDepth(sp)
@@ -1441,16 +1436,9 @@ export class WebGLRenderer {
 
     // Check if depths have actually changed by sampling first few slots
     // If depths are the same, we can skip re-sorting (color-only update optimization)
-    const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
-    const { xs, ys } = pd;
     const sampleSize = Math.min(100, pd.length);
     for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
+      const sp = this.pointAt(pd, i);
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
       const newDepth = composePaintDepth(
@@ -1723,22 +1711,26 @@ export class WebGLRenderer {
    * would leave on screen.
    */
   private stagedDepthsMoved(pd: PlotData): boolean {
-    const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
     const n = Math.min(100, this.currentPointCount);
     for (let k = 0; k < n; k++) {
-      const slot = this.sortOrder[k];
-      const origIdx = oi ? oi[slot] : slot;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = pd.xs[slot];
-      sp.y = pd.ys[slot];
-      sp.originalIndex = origIdx;
+      const sp = this.pointAt(pd, this.sortOrder[k]);
       const opacity = this.style.getOpacity(sp);
       if (opacity === 0) continue;
       const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));
       if (Math.abs(depth - this.stageArrays.depths[k]) > 1e-6) return true;
     }
     return false;
+  }
+
+  /** Slot `slot` of `pd` as the style getters see it, written into the scratch point. */
+  private pointAt(pd: PlotData, slot: number): PlotDataPoint {
+    const sp = this.scratchPoint;
+    const origIdx = plotDataOriginalIndex(pd, slot);
+    sp.id = pd.proteinIds[origIdx];
+    sp.x = pd.xs[slot];
+    sp.y = pd.ys[slot];
+    sp.originalIndex = origIdx;
+    return sp;
   }
 
   /** Count a staged slot that will be drawn. */
