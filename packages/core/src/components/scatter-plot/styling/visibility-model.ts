@@ -30,8 +30,8 @@
  * `annotation_data` into a `Uint8Array` indexed by GLOBAL `originalIndex`, using
  * a precomputed per-bin lookup over `annotation.values`. No
  * `getProteinAnnotationValues` calls, no per-point string/array allocation.
- * Selection/fade is answered by `Set` membership per call — no O(N) selection
- * array.
+ * Selection/highlight is one `Uint8Array` mark per protein index, filled from
+ * the ids through an id index built once per dataset (`IdIndex`).
  */
 
 import type {
@@ -252,16 +252,47 @@ interface MaskCache {
   idIndex: IdIndex | null;
 }
 
-/** Each protein's index in `proteinIds`; `index` is null when an id repeats. */
+/**
+ * Each protein's index in `proteinIds`: an open-addressing table over the ids'
+ * FNV-1a hashes, at most 2/3 full, holding `index + 1` per slot (0 is empty).
+ * 4 MB at 573K proteins, where a `Map` held 14 MB of heap. `table` is null when
+ * an id repeats.
+ */
 interface IdIndex {
   proteinIds: readonly string[];
-  index: Map<string, number> | null;
+  table: Int32Array | null;
+}
+
+function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let k = 0; k < id.length; k++) h = Math.imul(h ^ id.charCodeAt(k), 0x01000193);
+  return h;
 }
 
 function buildIdIndex(proteinIds: readonly string[]): IdIndex {
-  const index = new Map<string, number>();
-  for (let i = 0; i < proteinIds.length; i++) index.set(proteinIds[i], i);
-  return { proteinIds, index: index.size === proteinIds.length ? index : null };
+  let size = 1;
+  while (size < proteinIds.length * 1.5) size *= 2;
+  const table = new Int32Array(size);
+  for (let i = 0; i < proteinIds.length; i++) {
+    const id = proteinIds[i];
+    let slot = hashId(id) & (size - 1);
+    for (let at = table[slot]; at !== 0; at = table[slot]) {
+      if (proteinIds[at - 1] === id) return { proteinIds, table: null };
+      slot = (slot + 1) & (size - 1);
+    }
+    table[slot] = i + 1;
+  }
+  return { proteinIds, table };
+}
+
+/** The index of `id` in the `proteinIds` that `table` was built over, or -1. */
+function findId(table: Int32Array, proteinIds: readonly string[], id: string): number {
+  let slot = hashId(id) & (table.length - 1);
+  for (let at = table[slot]; at !== 0; at = table[slot]) {
+    if (proteinIds[at - 1] === id) return at - 1;
+    slot = (slot + 1) & (table.length - 1);
+  }
+  return -1;
 }
 
 interface InternalVisibilityModel extends VisibilityModel {
@@ -365,13 +396,13 @@ export function computeVisibilityModel(
   // The selected and highlighted proteins by index into `proteinIds`, so a point
   // costs a byte read rather than set lookups.
   let markedMask: Uint8Array | null = null;
-  if (anyMarked && proteinIds && idIndex?.index) {
-    const index = idIndex.index;
+  if (anyMarked && proteinIds && idIndex?.table) {
+    const table = idIndex.table;
     markedMask = new Uint8Array(proteinIds.length);
     for (const ids of [selectedProteinIds, highlightedProteinIds]) {
       for (const id of ids) {
-        const i = index.get(id);
-        if (i !== undefined) markedMask[i] = 1;
+        const i = findId(table, proteinIds, id);
+        if (i >= 0) markedMask[i] = 1;
       }
     }
   }

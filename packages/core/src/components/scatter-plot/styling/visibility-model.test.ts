@@ -737,6 +737,27 @@ describe('computeVisibilityModel', () => {
       expect(other.baseOpacityOf(point('p5', 0))).toBe(OPACITIES.selected);
       expect(other.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.faded);
     });
+
+    it('finds ids that share hash slots, and none it does not hold', () => {
+      const count = 3000;
+      const many = makeData(values, new Int32Array(count));
+      // Prefixes of each other, non-ASCII and empty ids, in a table about half full.
+      many.protein_ids = many.protein_ids.map((_, i) =>
+        i === 0 ? '' : i % 7 ? `${'A'.repeat(i % 4)}${i}` : `Ω${i}é`,
+      );
+      const absent = ['A', 'Ω', 'p1', 'AA', 'A1é', '1 ', `A${count}`];
+      let model: VisibilityModel | undefined;
+      for (const p of [0.001, 0.2, 0.9]) {
+        const selected = [...pick(many.protein_ids, p), ...absent];
+        model = computeVisibilityModel(
+          baseInputs({ data: many, selectedProteinIds: selected }),
+          model,
+        );
+        const chosen = new Set(selected);
+        const want = many.protein_ids.map((id) => (chosen.has(id) ? 1 : 0));
+        expect(Array.from(model.markedSlots(many.protein_ids, null, count))).toEqual(want);
+      }
+    });
   });
 
   // ── The selection and highlight as one mark, for the renderer to draw ──────
