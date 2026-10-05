@@ -280,13 +280,22 @@ export function generateDatasetHash(input: string[] | DatasetHashInput): string 
   const hash = fnv1a64Hash(buildDatasetFingerprint(input));
 
   if (memoKey) {
-    datasetHashMemo.set(memoKey, {
-      annotations: input.annotations,
-      numericAnnotationData: input.numeric_annotation_data,
-      annotationPredicted: input.annotation_predicted,
-      hash,
-    });
+    rememberDatasetHash(input, hash);
   }
 
   return hash;
+}
+
+/**
+ * Records `hash` as the hash of `input`, so `generateDatasetHash(input)` becomes the memo
+ * lookup. For a hash computed elsewhere over the same values: the decode worker hashes
+ * the dataset before posting it, and structured cloning keeps every value hashed.
+ */
+export function rememberDatasetHash(input: DatasetHashInput, hash: string): void {
+  datasetHashMemo.set(input.protein_ids, {
+    annotations: input.annotations,
+    numericAnnotationData: input.numeric_annotation_data,
+    annotationPredicted: input.annotation_predicted,
+    hash,
+  });
 }

@@ -16,6 +16,7 @@ vi.mock('./decode.worker?worker&inline', () => {
   return { default: FakeWorker };
 });
 
+import { generateDatasetHash } from '@protspace/utils';
 import { isWorkerDecodeSupported, decodeBundleInWorker } from './decode-worker-client';
 
 describe('isWorkerDecodeSupported', () => {
@@ -130,6 +131,7 @@ describe('decodeBundleInWorker', () => {
                   data: fakeData,
                   settings: null,
                   formatVersion: 2,
+                  datasetHash: 'worker-hash',
                 },
               }),
             );
@@ -141,6 +143,8 @@ describe('decodeBundleInWorker', () => {
     const buf = new ArrayBuffer(8);
     const result = await decodeBundleInWorker(buf);
     expect(result.data).toBe(fakeData);
+    // The worker's hash is remembered, so hashing the received data is a lookup.
+    expect(generateDatasetHash(result.data)).toBe('worker-hash');
     expect(result.settings).toBeNull();
     expect(result.formatVersion).toBe(2);
     mod.default = OrigClass;

@@ -1,10 +1,13 @@
+import { rememberDatasetHash } from '@protspace/utils';
 import DecodeWorker from './decode.worker?worker&inline';
 import type { DecodedParquetBundle } from './utils/bundle';
 
 export type WorkerDecodeResult = DecodedParquetBundle;
 
-/** What decode.worker.ts posts back: the whole decoded bundle, or the error message. */
-type WorkerDecodeMessage = ({ ok: true } & DecodedParquetBundle) | { ok: false; error?: string };
+/** What decode.worker.ts posts back: the decoded bundle and its dataset hash, or the error. */
+type WorkerDecodeMessage =
+  | ({ ok: true; datasetHash: string } & DecodedParquetBundle)
+  | { ok: false; error?: string };
 
 export function isWorkerDecodeSupported(): boolean {
   return typeof Worker !== 'undefined';
@@ -15,7 +18,9 @@ export function isWorkerDecodeSupported(): boolean {
  * cloned, so it is detached once this returns: a caller that falls back to the main thread
  * must read the bytes again.
  *
- * The result Float32/Int32 typed arrays are transferred back zero-copy.
+ * The result Float32/Int32 typed arrays are transferred back zero-copy. The worker also
+ * hashes the dataset, and that hash is remembered for the received data, so the main
+ * thread's `generateDatasetHash` of it is a lookup.
  * Rejects on worker spawn or runtime error (caller falls back to the main-thread path).
  */
 export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDecodeResult> {
@@ -32,6 +37,7 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
       const d = event.data as WorkerDecodeMessage | undefined;
       cleanup();
       if (d?.ok) {
+        rememberDatasetHash(d.data, d.datasetHash);
         resolve(d);
       } else {
         reject(new Error(d?.error || 'worker decode failed'));

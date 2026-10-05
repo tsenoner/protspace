@@ -1,4 +1,4 @@
-export { generateDatasetHash, djb2Hash } from './data-hash';
+export { generateDatasetHash, rememberDatasetHash, djb2Hash } from './data-hash';
 export {
   buildStorageKey,
   getStorageItem,

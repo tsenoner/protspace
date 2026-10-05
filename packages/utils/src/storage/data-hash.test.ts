@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { djb2Hash, generateDatasetHash } from './data-hash';
+import { djb2Hash, generateDatasetHash, rememberDatasetHash } from './data-hash';
 
 describe('djb2Hash', () => {
   // Pinned outputs, not just shape checks: djb2Hash seeds the numeric-binning `signature`
@@ -556,5 +556,27 @@ describe('generateDatasetHash memoization', () => {
 
     // The original references still resolve to the original hash.
     expect(generateDatasetHash(dataset)).toBe(baseline);
+  });
+});
+
+describe('rememberDatasetHash', () => {
+  const dataset = () => ({
+    protein_ids: ['P2', 'P1'],
+    annotations: { ec: { kind: 'categorical' as const, values: ['1.1.1.1', null] } },
+    numeric_annotation_data: { length: new Float64Array([10, 20]) },
+  });
+
+  it('serves the remembered hash for the same payloads', () => {
+    const data = dataset();
+    rememberDatasetHash(data, 'remembered');
+    expect(generateDatasetHash(data)).toBe('remembered');
+    expect(generateDatasetHash({ ...data })).toBe('remembered');
+  });
+
+  it('recomputes once a payload is replaced', () => {
+    const data = dataset();
+    const computed = generateDatasetHash(dataset());
+    rememberDatasetHash(data, 'remembered');
+    expect(generateDatasetHash({ ...data, annotations: { ...data.annotations } })).toBe(computed);
   });
 });
