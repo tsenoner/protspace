@@ -37,6 +37,7 @@ import {
   type DensityLayerChangeDetail,
   type SelectionDisabledNotificationDetail,
 } from './control-bar.events';
+import type { BrushSelectionDetail, ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
 import './search';
 import './annotation-select';
 import './query-builder';
@@ -1632,12 +1633,7 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _handleProteinSelection(event: Event) {
-    const customEvent = event as CustomEvent<{
-      proteinId: string;
-      // Embedders can dispatch protein-click without it; treat that as no modifiers.
-      modifierKeys?: { ctrl: boolean; meta: boolean; shift: boolean };
-    }>;
-    const { proteinId, modifierKeys } = customEvent.detail;
+    const { proteinId, modifierKeys } = (event as CustomEvent<ProteinClickDetail>).detail;
     if (!proteinId) return;
 
     let newSelection: string[];
@@ -1840,11 +1836,7 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _handleBrushSelection(event: Event) {
-    const customEvent = event as CustomEvent<{
-      proteinIds: string[];
-      isMultiple: boolean;
-      idsUnique?: boolean;
-    }>;
+    const customEvent = event as CustomEvent<BrushSelectionDetail>;
     const ids = Array.isArray(customEvent.detail?.proteinIds) ? customEvent.detail.proteinIds : [];
     const distinct = customEvent.detail?.idsUnique === true;
 

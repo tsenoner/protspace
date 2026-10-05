@@ -16,6 +16,7 @@ import {
   createStructureLoadDetail,
 } from './structure-viewer.events';
 import type { StructureErrorEvent, StructureLoadEvent } from './types';
+import type { ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
 
 @customElement('protspace-structure-viewer')
 export class ProtspaceStructureViewer extends LitElement {
@@ -118,8 +119,7 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   private _handleProteinClick(event: Event) {
-    const customEvent = event as CustomEvent;
-    const { proteinId, modifierKeys } = customEvent.detail;
+    const { proteinId, modifierKeys } = (event as CustomEvent<ProteinClickDetail>).detail;
 
     // Only respond to single clicks (not multi-selection); no modifierKeys means none held
     if (!modifierKeys?.ctrl && !modifierKeys?.meta && !modifierKeys?.shift && this.autoShow) {

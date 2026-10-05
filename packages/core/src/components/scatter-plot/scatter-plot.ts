@@ -43,7 +43,11 @@ import type { PointMarks } from './webgl/types';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
 import { sameMaterialization } from './styling/same-materialization';
-import type { RendererDegradedDetail } from './scatter-plot.events';
+import type {
+  BrushSelectionDetail,
+  ProteinClickDetail,
+  RendererDegradedDetail,
+} from './scatter-plot.events';
 import { PointGridIndex } from './interaction/point-grid-index';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
@@ -1754,7 +1758,7 @@ export class ProtspaceScatterplot extends LitElement {
         this.selectedProteinIds = [...selectedIds];
 
         this.dispatchEvent(
-          new CustomEvent('brush-selection', {
+          new CustomEvent<BrushSelectionDetail>('brush-selection', {
             detail: {
               proteinIds: selectedIds,
               isMultiple: true,
@@ -2280,7 +2284,7 @@ export class ProtspaceScatterplot extends LitElement {
         )
       : null;
     this.dispatchEvent(
-      new CustomEvent('protein-click', {
+      new CustomEvent<ProteinClickDetail>('protein-click', {
         detail: {
           proteinId: point.id,
           point,

@@ -1,4 +1,36 @@
+import type { PlotDataPoint, TooltipView } from '@protspace/utils';
 import type { HostMessageEventDetail } from '../../events';
+
+/**
+ * `brush-selection`: a rectangle or lasso selection was committed. The plot dispatches it,
+ * and the control bar merges it into the selection.
+ */
+export interface BrushSelectionDetail {
+  /** The selected interactive protein ids, one per selected point, in slot order. */
+  proteinIds: string[];
+  /** Always true: a brush or lasso selects a set. */
+  isMultiple: boolean;
+  /**
+   * True when no protein id repeats in the dataset, so `proteinIds` holds each id once and
+   * a merge can skip de-duplicating it. The plot always sets it; an embedder's event may
+   * leave it out, which reads as false.
+   */
+  idsUnique?: boolean;
+}
+
+/** `protein-click`: a point was clicked. The control bar and the structure viewer listen. */
+export interface ProteinClickDetail {
+  proteinId: string;
+  /** The bare plot point. */
+  point: PlotDataPoint;
+  /** The tooltip-friendly projection of the protein's annotations; null without data. */
+  view: TooltipView | null;
+  /**
+   * The modifier keys held during the click. The plot always sets it; an embedder's event
+   * may leave it out, which reads as none held.
+   */
+  modifierKeys?: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean };
+}
 
 /**
  * Why the renderer is running below full capability.
