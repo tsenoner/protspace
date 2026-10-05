@@ -20,7 +20,7 @@ describe('ContextLossController', () => {
   // registers ONLY `webglcontextlost` — never `webglcontextrestored`.
   it('registers webglcontextlost (and NOT webglcontextrestored) on construction', () => {
     const canvas = makeCanvas();
-    new ContextLossController(canvas as unknown as HTMLCanvasElement, vi.fn(), vi.fn());
+    new ContextLossController(canvas as unknown as HTMLCanvasElement, vi.fn());
     expect(canvas._count('webglcontextlost')).toBe(1);
     expect(canvas._count('webglcontextrestored')).toBe(0);
   });
@@ -28,7 +28,7 @@ describe('ContextLossController', () => {
   it('on lost: preventDefault + sets flag + invokes onLost', () => {
     const canvas = makeCanvas();
     const onLost = vi.fn();
-    const ctrl = new ContextLossController(canvas as unknown as HTMLCanvasElement, onLost, vi.fn());
+    const ctrl = new ContextLossController(canvas as unknown as HTMLCanvasElement, onLost);
     const ev = { preventDefault: vi.fn() } as unknown as Event;
     canvas._fire('webglcontextlost', ev);
     expect(
@@ -41,7 +41,7 @@ describe('ContextLossController', () => {
   it('markLost is idempotent (onLost fired once)', () => {
     const canvas = makeCanvas();
     const onLost = vi.fn();
-    const ctrl = new ContextLossController(canvas as unknown as HTMLCanvasElement, onLost, vi.fn());
+    const ctrl = new ContextLossController(canvas as unknown as HTMLCanvasElement, onLost);
     ctrl.markLost();
     ctrl.markLost();
     expect(onLost).toHaveBeenCalledTimes(1);
@@ -50,11 +50,7 @@ describe('ContextLossController', () => {
 
   it('destroy removes the webglcontextlost listener', () => {
     const canvas = makeCanvas();
-    const ctrl = new ContextLossController(
-      canvas as unknown as HTMLCanvasElement,
-      vi.fn(),
-      vi.fn(),
-    );
+    const ctrl = new ContextLossController(canvas as unknown as HTMLCanvasElement, vi.fn());
     ctrl.destroy();
     expect(canvas._count('webglcontextlost')).toBe(0);
   });

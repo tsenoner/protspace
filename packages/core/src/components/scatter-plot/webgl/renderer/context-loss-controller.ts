@@ -8,8 +8,6 @@
  * Recovery semantics (post-B1 / F-39): the renderer no longer attempts an
  * in-place context *restore*. B1 deleted the `webglcontextrestored` listener and
  * `handleContextRestored`, so this controller registers ONLY `webglcontextlost`.
- * The `onRestored` constructor parameter is accepted for call-site compatibility
- * but is intentionally never wired to a `webglcontextrestored` listener.
  *
  * This is a behavior-preserving extraction of the renderer's
  * `handleContextLost` / `markContextLost` logic — see webgl-renderer.ts.
@@ -25,9 +23,6 @@ export class ContextLossController {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly onLost: () => void,
-    // Accepted for call-site compatibility; the post-B1 tree has no restore path,
-    // so no `webglcontextrestored` listener is registered (F-39).
-    _onRestored?: () => void,
   ) {
     this.canvas.addEventListener('webglcontextlost', this.handleContextLost, {
       passive: false,
