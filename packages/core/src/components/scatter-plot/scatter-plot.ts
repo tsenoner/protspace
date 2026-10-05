@@ -38,12 +38,7 @@ import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
 import type { VisibilityInputs, VisibilityModel } from './styling/visibility-model';
-import {
-  MAX_RENDERABLE_POINTS,
-  WebGLRenderer,
-  computeSizeScaleFactor,
-  pointRadiusCss,
-} from './webgl';
+import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
 import type { PointMarks } from './webgl/types';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
@@ -1846,7 +1841,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Run a requested render now, if one is waiting. Anything that reads what the
-   * renderer last drew (export, data extent, hit-testing) calls this first.
+   * renderer last drew (export, data extent) calls this first.
    */
   private _flushRender() {
     if (this._renderRafId !== null) this._renderNow();
@@ -1889,8 +1884,6 @@ export class ProtspaceScatterplot extends LitElement {
     const bytesBefore = perfToken ? this._webglRenderer.uploadedBytesTotal : 0;
 
     const pd = this._getPointsForRendering();
-
-    this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_RENDERABLE_POINTS);
     this._webglRenderer.render(pd);
     this._slotsKept = true;
 
@@ -2394,9 +2387,9 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Shared screen→data hit-test for hover and click (F-28). Resolves the nearest
-   * INTERACTIVE, currently-RENDERED point under the cursor, or null. Owns the
-   * transform inversion, point index `findNearest`, the isInteractive/isPointRendered
-   * guards, and the within-radius distance check. Callers branch only on the result.
+   * INTERACTIVE point under the cursor, or null. Owns the transform inversion,
+   * point index `findNearest`, the isInteractive guard, and the within-radius
+   * distance check. Callers branch only on the result.
    */
   pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
     if (!this._scales) return null;
@@ -2413,12 +2406,6 @@ export class ProtspaceScatterplot extends LitElement {
 
     // Don't pick non-interactive points (hidden/faded-to-0 → opacity 0)
     if (!this._getVisibilityModel().isInteractive(nearestPoint)) return null;
-
-    // Verify the point is actually rendered (not excluded due to point limits)
-    this._flushRender();
-    if (this._webglRenderer && !this._webglRenderer.isPointRendered(nearestPoint.id)) {
-      return null;
-    }
 
     const pointX = this._scales.x(nearestPoint.x);
     const pointY = this._scales.y(nearestPoint.y);

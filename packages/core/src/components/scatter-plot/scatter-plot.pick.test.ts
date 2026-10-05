@@ -29,7 +29,7 @@ type PickInternals = HTMLElement & {
   _plotData: PlotData;
   _transform: d3.ZoomTransform;
   _pointGridIndex: { findNearest(x: number, y: number, r: number): number };
-  _webglRenderer: { isPointRendered(id: string): boolean; pointScale(): number } | null;
+  _webglRenderer: { pointScale(): number } | null;
   _mergedConfig: { pointSize: number };
   _cachedScales: { x(v: number): number; y(v: number): number } | null;
   _scalesCacheDeps: unknown;
@@ -60,7 +60,7 @@ function makePickScatter(): PickInternals {
     proteinIds: sp.data.protein_ids,
   } as unknown as PlotData;
   sp._transform = d3.zoomIdentity;
-  sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 1 };
+  sp._webglRenderer = { pointScale: () => 1 };
   sp._mergedConfig.pointSize = 225;
   // Inject identity scales so scales.x(0)===0 / scales.y(0)===0 (the fixture's
   // documented "dataX===mouseX" assumption). _scales is a cached getter keyed on
@@ -96,7 +96,7 @@ describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
   it('hits the grown dot when zoomed in, in screen px', () => {
     const sp = makePickScatter();
     sp._transform = d3.zoomIdentity.scale(4);
-    sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 2 };
+    sp._webglRenderer = { pointScale: () => 2 };
     const radii: number[] = [];
     sp._pointGridIndex.findNearest = (_x, _y, r) => (radii.push(r), 0);
     expect(sp.pickInteractivePointAt(9.9, 0)?.id).toBe('p0');
@@ -106,7 +106,7 @@ describe('F-28 pickInteractivePointAt (shared hover/click hit-test)', () => {
 
   it('keeps a 4 px hit radius for dots drawn smaller', () => {
     const sp = makePickScatter();
-    sp._webglRenderer = { isPointRendered: () => true, pointScale: () => 0.5 };
+    sp._webglRenderer = { pointScale: () => 0.5 };
     sp._pointGridIndex.findNearest = () => 0;
     expect(sp.pickInteractivePointAt(3.9, 0)?.id).toBe('p0');
     expect(sp.pickInteractivePointAt(4.1, 0)).toBeNull();

@@ -317,10 +317,6 @@ export class WebGLRenderer {
   // Bytes pushed to the GPU since construction; see uploadedBytesTotal.
   private uploadedBytes = 0;
 
-  // Track rendered point IDs for hover detection
-  private trackRenderedPointIds = false;
-  private renderedPointIds = new Set<string>();
-
   // Config
   private dpr = window.devicePixelRatio || 1;
   private styleSignature: string | null = null;
@@ -392,28 +388,6 @@ export class WebGLRenderer {
    */
   invalidateCategoryStyles() {
     this.categoryStylesDirty = true;
-  }
-
-  /**
-   * Enable/disable tracking of the exact set of rendered point IDs.
-   *
-   * This exists to guard hover/click behavior when the renderer truncates the
-   * number of points (e.g. datasets > MAX_RENDERABLE_POINTS).
-   *
-   * For typical datasets (<= MAX_RENDERABLE_POINTS), tracking is unnecessary
-   * and expensive (it adds/clears ~N string IDs on every buffer rebuild), so it
-   * should be kept disabled.
-   */
-  setTrackRenderedPointIds(enabled: boolean) {
-    this.trackRenderedPointIds = enabled;
-    if (!enabled) {
-      this.renderedPointIds.clear();
-    }
-  }
-
-  isPointRendered(pointId: string): boolean {
-    if (!this.trackRenderedPointIds) return true;
-    return this.renderedPointIds.has(pointId);
   }
 
   /**
@@ -1218,7 +1192,6 @@ export class WebGLRenderer {
     this.stylesDirty = true;
     this.lastDataSignature = null;
     this.lastStyleSignature = null;
-    this.renderedPointIds.clear();
     this.sortedDataRef = null;
     this.stagedScales = null;
     this.positionRescale = IDENTITY_RESCALE;
@@ -1496,10 +1469,6 @@ export class WebGLRenderer {
     // `this.stageArrays`.
     this.syncLabelAtlas();
 
-    if (this.trackRenderedPointIds) {
-      this.renderedPointIds.clear();
-    }
-
     // With depth testing disabled (to ensure overlaps are drawn), we preserve z-order using
     // the painter's algorithm: draw far -> near. This requires reordering the slots, so
     // whenever styles update we must also update positions to keep all parallel buffers aligned.
@@ -1590,7 +1559,7 @@ export class WebGLRenderer {
         scales,
         count,
         this.selectionActive,
-        (slot, opacity) => this.countStagedSlot(pd, slot, opacity),
+        (_slot, opacity) => this.countStagedSlot(opacity),
       );
 
       if (before || this.morph) {
@@ -1627,7 +1596,7 @@ export class WebGLRenderer {
           // The count that rebuild staged, so every slot sortOrder holds is resolved.
           Math.min(src.length, MAX_RENDERABLE_POINTS),
           idx,
-          (slot, opacity) => this.countStagedSlot(src, slot, opacity),
+          (_slot, opacity) => this.countStagedSlot(opacity),
         );
         this.stagedOrderStale = this.orderOutOfDate(idx);
         this.keepRecordTable(pass, table, idx);
@@ -1638,26 +1607,12 @@ export class WebGLRenderer {
       const order = this.sortOrder;
       const src = this.sortedDataRef;
       if (src) {
-        const srcOi = src.originalIndices;
         const srcXs = src.xs;
         const srcYs = src.ys;
         const xAxis = linearAxis(scales.x);
         const yAxis = linearAxis(scales.y);
         for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
           const slot = order[i];
-          const origIdx = srcOi ? srcOi[slot] : slot;
-          sp.id = src.proteinIds[origIdx];
-          sp.x = srcXs[slot];
-          sp.y = srcYs[slot];
-          sp.originalIndex = origIdx;
-
-          if (this.trackRenderedPointIds) {
-            const opacity = this.style.getOpacity(sp);
-            if (opacity > 0) {
-              this.renderedPointIds.add(sp.id);
-            }
-          }
-
           if (updatePositions) {
             this.dataPositions[idx * 2] = mapLinear(xAxis, srcXs[slot]);
             this.dataPositions[idx * 2 + 1] = mapLinear(yAxis, srcYs[slot]);
@@ -1784,14 +1739,12 @@ export class WebGLRenderer {
   /**
    * Whether this stage keeps a per-record table, and if so point staging at the
    * record ids it writes. It needs a pass that hides per record and keys every
-   * record by category code: a single-valued annotation, so no pie markers, and
-   * no rendered-id tracking, which a restyle could not keep up to date.
+   * record by category code: a single-valued annotation, so no pie markers.
    */
   private prepareRecordTable(pass: PointStylePass): boolean {
     const codes = pass.records.codes;
     const table =
       !this.labelAtlasActive &&
-      !this.trackRenderedPointIds &&
       !!codes &&
       !!this.resources.recordStyleTexture &&
       recordTableRows(codes.count) <= this.maxTextureSize &&
@@ -1840,7 +1793,7 @@ export class WebGLRenderer {
   private restyleRecords(pd: PlotData): boolean {
     const staged = this.stagedRecords;
     const gl = this.gl;
-    if (!staged || !gl || pd !== this.sortedDataRef || this.trackRenderedPointIds) return false;
+    if (!staged || !gl || pd !== this.sortedDataRef) return false;
     // A style update re-sorts when it samples moved depths. Only a re-sort fixes
     // an order that is already out of date, and staging decides when to re-sort.
     if (this.stagedOrderStale || this.stagedDepthsMoved(pd)) return false;
@@ -2029,14 +1982,9 @@ export class WebGLRenderer {
     return false;
   }
 
-  /** Count a staged slot that will be drawn, and track its id when asked to. */
-  private countStagedSlot(pd: PlotData, slot: number, opacity: number): void {
-    if (!(opacity > 0)) return;
-    this.visibleCount++;
-    if (this.trackRenderedPointIds) {
-      const oi = pd.originalIndices;
-      this.renderedPointIds.add(pd.proteinIds[oi ? oi[slot] : slot]);
-    }
+  /** Count a staged slot that will be drawn. */
+  private countStagedSlot(opacity: number): void {
+    if (opacity > 0) this.visibleCount++;
   }
 
   /**

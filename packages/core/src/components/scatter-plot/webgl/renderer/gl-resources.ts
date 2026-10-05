@@ -10,8 +10,8 @@ import { destroyDensityResources, type DensityResources } from './density-pass';
  * Dirty-flag / signature / cache state is intentionally NOT held here — those
  * stay on WebGLRenderer (labelTextureInitialized, gammaPipelineAvailable,
  * warnedGammaFallback, buffersInitialized, currentPointCount, positionsDirty,
- * stylesDirty, lastDataSignature, lastStyleSignature, renderedPointIds,
- * sortedDataRef, and the WebGL2 context itself).
+ * stylesDirty, lastDataSignature, lastStyleSignature, sortedDataRef, and the
+ * WebGL2 context itself).
  */
 export class GLResources {
   pointProgram: WebGLProgram | null = null;

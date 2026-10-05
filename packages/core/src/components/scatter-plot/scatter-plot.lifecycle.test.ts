@@ -47,8 +47,9 @@ beforeAll(() => {
 });
 
 // Count WebGLRenderer constructions without a real GL context. We preserve the
-// real module's other exports (MAX_RENDERABLE_POINTS) and replace only the
-// renderer with an instrumented stub that records each construction + destroy.
+// real module's other exports (computeSizeScaleFactor, pointRadiusCss) and
+// replace only the renderer with an instrumented stub that records each
+// construction + destroy.
 // The class + registry live in vi.hoisted so the hoisted vi.mock factory can
 // close over them (a top-level const would be a TDZ ReferenceError at mock time).
 const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
@@ -65,7 +66,6 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
     invalidateStyleCache() {}
     invalidateCategoryStyles() {}
     invalidateDepthOrder() {}
-    setTrackRenderedPointIds() {}
     render() {}
     clear() {}
     resize() {}

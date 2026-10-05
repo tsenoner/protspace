@@ -177,15 +177,6 @@ describe('legend changes through the per-record style table', () => {
     expect(populate.mock.calls[0].slice(2)).toEqual([true, true, false]);
   });
 
-  it('re-stages when rendered points are tracked, which a restyle cannot update', () => {
-    const { renderer, populate, restyle } = setup(makeData(9));
-    renderer.setTrackRenderedPointIds(true);
-    restyle({ hiddenAnnotationValues: ['c0'] });
-    expect(populate).toHaveBeenCalledTimes(1);
-    expect(renderer.isPointRendered('P0')).toBe(false);
-    expect(renderer.isPointRendered('P1')).toBe(true);
-  });
-
   it('restyles over the resize map, which keeps placing the points', () => {
     const data = makeData(9);
     const state = { width: 800 };

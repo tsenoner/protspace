@@ -92,7 +92,6 @@ function makeEl(): Internals {
     setStyleSignature: vi.fn(),
     clear: vi.fn(),
     render: vi.fn(),
-    setTrackRenderedPointIds: vi.fn(),
     releaseDataReferences: vi.fn(),
   };
   return el;
