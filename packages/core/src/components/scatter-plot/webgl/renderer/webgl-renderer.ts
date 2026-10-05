@@ -199,10 +199,9 @@ export class WebGLRenderer {
   private densityDisabled = false;
   private contourPalette: SlotPalette | null = null;
   /**
-   * Bumped by every `populateBuffers`, `restyleRecords` and `applyMarks`, the
-   * only writers of the position buffer and of the colours and order points draw
-   * with, and the only places `contourPalette` is invalidated, so it keys the
-   * density fields built from them.
+   * Bumped by `drawnStateChanged`, which every writer of the position buffer and
+   * of the colours and order points draw with calls, so it keys the density
+   * fields built from them.
    */
   private bufferGeneration = 0;
   /** The per-record style table the staged points draw through, if the last stage kept one. */
@@ -1390,8 +1389,7 @@ export class WebGLRenderer {
   ) {
     if (!this.gl) return;
     const gl = this.gl;
-    this.bufferGeneration++;
-    this.markTexture.stale = true;
+    this.drawnStateChanged();
     if (perfCounters) {
       perfCounters.restage++;
       if (updatePositions) perfCounters.restagePos++;
@@ -1583,7 +1581,6 @@ export class WebGLRenderer {
     }
     this.updateBuffer(gl, this.resources.sizeBuffer, sizes, idx);
     this.updateBuffer(gl, this.resources.colorBuffer, colors, idx * 4);
-    this.contourPalette = null;
     this.updateBuffer(gl, this.resources.depthBuffer, depths, idx);
     this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, idx);
     this.updateBuffer(gl, this.resources.shapeBuffer, shapes, idx);
@@ -1664,18 +1661,27 @@ export class WebGLRenderer {
     if (!bytes) return false;
     this.uploadedBytes += bytes;
     this.visibleCount = shownSlotCount(this.recordTable.staged);
-    this.contourPalette = null;
-    this.bufferGeneration++;
-    this.markTexture.stale = true;
+    this.drawnStateChanged();
     return true;
+  }
+
+  /**
+   * The points drawn, their colours or their draw order changed: rebuild what is
+   * built from them, the density fields and the contour palette, and re-apply
+   * the marks.
+   */
+  private drawnStateChanged(): void {
+    this.bufferGeneration++;
+    this.contourPalette = null;
+    this.markTexture.stale = true;
   }
 
   /** Write `marks` over the staged points and upload them; see `MarkTexture.apply`. */
   private applyMarks(marks: PointMarks | null) {
     this.marks = marks;
     // The contour palette ranks colours by draw position, which marks change.
-    this.contourPalette = null;
-    this.bufferGeneration++;
+    // Applying them clears the staleness this sets.
+    this.drawnStateChanged();
     this.uploadedBytes += this.markTexture.apply(this.gl, marks, {
       order: this.sortOrder,
       count: this.currentPointCount,
