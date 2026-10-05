@@ -50,12 +50,8 @@ import {
 import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
-import {
-  readMaxTextureSize,
-  drainGlErrors,
-  allocateLabelAtlas,
-  uploadPlaceholderAtlas,
-} from './label-atlas-texture';
+import { allocateLabelAtlas, uploadPlaceholderAtlas } from './label-atlas-texture';
+import { MIN_CAPACITY, drainGlErrors, readMaxTextureSize } from './device-limits';
 import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
@@ -63,9 +59,6 @@ import {
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
 } from './export-shaders';
-
-// Constants (moved verbatim from webgl-renderer.ts).
-const MIN_CAPACITY = 1024;
 
 // Stable reference dimensions for margin scaling at export time. Tying margin
 // scaling to the live display canvas (via `config.width/height`, which track

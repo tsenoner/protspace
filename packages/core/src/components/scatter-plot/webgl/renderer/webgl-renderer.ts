@@ -85,19 +85,20 @@ import {
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
+import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
-  planLabelAtlas,
-  MAX_LABELS,
-  MIN_MAX_TEXTURE_SIZE,
-  type LabelAtlasPlan,
-} from './label-atlas-plan';
-import {
-  readMaxTextureSize,
-  drainGlErrors,
   allocateLabelAtlas,
   refreshLabelAtlas,
   uploadPlaceholderAtlas,
 } from './label-atlas-texture';
+import {
+  MAX_DRAWABLE_POINTS,
+  MIN_CAPACITY,
+  MIN_MAX_TEXTURE_SIZE,
+  drainGlErrors,
+  maxMarkedPoints,
+  readMaxTextureSize,
+} from './device-limits';
 import {
   createRendererDegradedDetail,
   type RendererDegradedDetail,
@@ -115,7 +116,6 @@ import {
 } from './export-shaders';
 
 // Constants
-const MIN_CAPACITY = 1024;
 /**
  * Allocation granularity for the SoA staging arrays. 256 is the point count that
  * fills one row of the narrowest supported atlas (2048 texels / 8 slices), so a
@@ -124,13 +124,6 @@ const MIN_CAPACITY = 1024;
  * from the plan would be circular.
  */
 const CAPACITY_GRANULARITY = 256;
-/**
- * The most points the renderer draws, set by its widest vertex buffer: a_color,
- * at 16 bytes a point, fills 1 GiB here. WebGL2 has no query for the most a
- * buffer may hold, and Chrome refuses one just under 2 GiB (2^31 - 2^20 bytes,
- * measured on macOS), so this keeps a 2x margin rather than sitting on the edge.
- */
-const MAX_DRAWABLE_POINTS = 2 ** 26;
 
 /**
  * The context attributes are fixed by the first `getContext` call, so every caller passes these.
@@ -422,12 +415,12 @@ export class WebGLRenderer {
 
   /**
    * Whether `getPointMarks` can be drawn: the mark texture holds a texel per
-   * point of the capacity, so up to maxTextureSize² points, and the device did
-   * not refuse it. Otherwise the live view stages the marks with every other
+   * point of the capacity (see `maxMarkedPoints`), and the device did not
+   * refuse it. Otherwise the live view stages the marks with every other
    * style. Known once the capacity is planned, before anything is staged.
    */
   get canDrawMarks(): boolean {
-    return this.capacity <= this.maxTextureSize ** 2 && !this.markTextureRefused;
+    return this.capacity <= maxMarkedPoints(this.maxTextureSize) && !this.markTextureRefused;
   }
 
   /**
@@ -1847,7 +1840,7 @@ export class WebGLRenderer {
   private allocateMarkTexture(gl: WebGL2RenderingContext) {
     const width = this.maxTextureSize;
     const rows = Math.ceil(this.capacity / width);
-    const fits = rows <= width;
+    const fits = this.capacity <= maxMarkedPoints(width);
     this.stagedMarks = new Uint8Array(fits ? rows * width : 0);
     gl.activeTexture(gl.TEXTURE0 + MARK_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, this.resources.markTexture);
@@ -2167,7 +2160,7 @@ export class WebGLRenderer {
       this.capacity,
       MIN_CAPACITY,
       CAPACITY_GRANULARITY,
-      Math.min(MAX_DRAWABLE_POINTS, this.maxTextureSize ** 2),
+      Math.min(MAX_DRAWABLE_POINTS, maxMarkedPoints(this.maxTextureSize)),
     );
   }
 
