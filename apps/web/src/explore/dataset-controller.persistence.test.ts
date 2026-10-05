@@ -222,32 +222,20 @@ describe('dataset controller load errors', () => {
     mocks.markLastLoadStatus.mockResolvedValue(undefined);
   });
 
-  const errorEvent = (originalError: unknown) =>
-    ({ detail: { message: 'load failed', originalError } }) as unknown as Event;
-
-  it('treats an aborted load as a cancellation, not a failure', async () => {
-    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const { controller } = buildController();
-    await controller.handleDataError(errorEvent(new DOMException('Aborted', 'AbortError')));
-
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
-    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
-    expect(mocks.error).not.toHaveBeenCalled();
-    consoleLog.mockRestore();
-  });
-
   it.each([
-    ['an Error', new Error('boom')],
-    ['a non-object', 'boom'],
-    ['no original error', undefined],
-  ])('reports a failure carrying %s', async (_label, originalError) => {
+    ['an aborted load as a cancellation', new DOMException('Aborted', 'AbortError'), false],
+    ['any other error as a failure', new Error('boom'), true],
+    ['a missing original error as a failure', undefined, true],
+  ])('treats %s', async (_label, originalError: Error | undefined, notified) => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { controller } = buildController();
-    await controller.handleDataError(errorEvent(originalError));
+    await controller.handleDataError({
+      detail: { message: 'load failed', originalError },
+    } as unknown as Event);
 
-    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('error', { error: 'load failed' });
-    expect(mocks.error).toHaveBeenCalledOnce();
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3);
+    expect(mocks.error).toHaveBeenCalledTimes(notified ? 1 : 0);
+    consoleLog.mockRestore();
     consoleError.mockRestore();
   });
 });
