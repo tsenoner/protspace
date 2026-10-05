@@ -227,46 +227,55 @@ class TestEmbedSequences:
                 assert "P01308" in hf
                 assert "P01315" in hf
 
-    @patch("src.protspace.data.embedding.biocentral.BiocentralAPI")
-    @patch("src.protspace.data.embedding.biocentral.batched")
-    def test_deduplication(self, mock_batched, mock_api_cls):
-        """Test that duplicate sequences are deduplicated for API calls."""
+    def test_deduplication(self, monkeypatch, tmp_path):
+        """Duplicate sequences are sent to the API once (it rejects batches with
+        duplicates), and the representative's vector fans out to every ID."""
         import h5py
 
-        from src.protspace.data.embedding.biocentral import embed_sequences
+        from src.protspace.data.embedding import biocentral as bc
 
-        fake_api = MagicMock()
-        fake_api.wait_until_healthy.return_value = fake_api
-        mock_api_cls.return_value = fake_api
+        sent: list[dict[str, str]] = []
 
-        fake_result = MagicMock()
-        # Only one representative returned (P01308 is the rep for "AAAA")
-        fake_result.to_dict.return_value = {
-            "P01308": np.array([1.0, 2.0]),
-        }
-        fake_embed_task = MagicMock()
-        fake_embed_task.run.return_value = fake_result
-        fake_api.embed.return_value = fake_embed_task
+        def embed(embedder_name, sequence_data, reduce):
+            sent.append(dict(sequence_data))
+            result = MagicMock()
+            result.to_dict.return_value = {
+                pid: np.array([float(len(seq)), 2.0])
+                for pid, seq in sequence_data.items()
+            }
+            task = MagicMock()
+            task.run.return_value = result
+            return task
 
-        mock_batched.return_value = [["P01308"]]
+        api = MagicMock()
+        api.wait_until_healthy.return_value = api
+        api.embed.side_effect = embed
+        monkeypatch.setattr(bc, "BiocentralAPI", lambda **kw: api)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            h5_path = Path(tmpdir) / "output.h5"
+        h5_path = tmp_path / "output.h5"
+        bc.embed_sequences(
+            sequences={
+                "P01308": "AAAA",
+                "P01315": "AAAA",  # same sequence
+                "P69905": "MKV",
+            },
+            embedder="facebook/esm2_t6_8M_UR50D",
+            h5_path=h5_path,
+        )
 
-            embed_sequences(
-                sequences={
-                    "P01308": "AAAA",
-                    "P01315": "AAAA",  # same sequence
-                },
-                embedder="facebook/esm2_t6_8M_UR50D",
-                h5_path=h5_path,
-            )
+        # Each unique sequence is sent exactly once, under one representative ID.
+        sent_seqs = [seq for batch in sent for seq in batch.values()]
+        assert sorted(sent_seqs) == ["AAAA", "MKV"]
+        sent_ids = {pid for batch in sent for pid in batch}
+        assert len(sent_ids & {"P01308", "P01315"}) == 1
 
-            # Both IDs should have embeddings (expanded from representative)
-            with h5py.File(h5_path, "r") as hf:
-                assert "P01308" in hf
-                assert "P01315" in hf
-                np.testing.assert_array_equal(hf["P01308"][:], hf["P01315"][:])
+        # Both IDs should have embeddings (expanded from representative)
+        with h5py.File(h5_path, "r") as hf:
+            assert {"P01308", "P01315", "P69905"} <= set(hf)
+            np.testing.assert_array_equal(hf["P01308"][:], hf["P01315"][:])
+            # ...and each ID carries its own sequence's vector, not another's.
+            np.testing.assert_array_equal(hf["P01308"][:], [4.0, 2.0])
+            np.testing.assert_array_equal(hf["P69905"][:], [3.0, 2.0])
 
 
 class TestEmbedSequencesCompleteness:
