@@ -17,6 +17,7 @@ import {
   measureLoad,
   openExplore,
   readExploreState,
+  segmentTraits,
 } from './helpers/perf/scenarios';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
@@ -44,16 +45,7 @@ async function runOnce(browser: Browser, baseUrl: string): Promise<SegmentResult
   try {
     const page = await context.newPage();
     await openExplore(page, baseUrl);
-    const load = await measureLoad(page);
-    const results: SegmentResult[] = [
-      {
-        name: 'load',
-        delta: load,
-        drawn: load.drawn,
-        proteinCount: 0,
-        pixelsSame: null,
-      },
-    ];
+    const results = [await measureLoad(page)];
     const state = await readExploreState(page);
     for (const def of buildSegments(page, state, DEFAULT_BUNDLE)) {
       results.push(await segment(page, def));
@@ -67,7 +59,7 @@ async function runOnce(browser: Browser, baseUrl: string): Promise<SegmentResult
 /** Checks that hold whatever the budgets say. */
 function invariants(results: SegmentResult[]): string[] {
   const failures: string[] = [];
-  const load = results.find((r) => r.name === 'load')!;
+  const load = results.find((r) => segmentTraits(r.name).bumpsAllCounters)!;
   // A probe a refactor disconnected reads zero, which would pass every budget.
   const live = [
     'restage',
@@ -80,41 +72,46 @@ function invariants(results: SegmentResult[]): string[] {
     'legendRebuild',
   ] as const;
   for (const key of live) {
-    if (load.delta[key] <= 0) failures.push(`load.${key} is 0: the counter is disconnected`);
+    if (load.delta[key] <= 0) {
+      failures.push(`${load.name}.${key} is 0: the counter is disconnected`);
+    }
   }
-  if (load.delta.uploadBytes <= 0) failures.push('load.uploadBytes is 0: the GL probe is off');
+  if (load.delta.uploadBytes <= 0) {
+    failures.push(`${load.name}.uploadBytes is 0: the GL probe is off`);
+  }
   for (const result of results) {
     if (result.pixelsSame === false) failures.push(`${result.name}: pixels differ after reset`);
-  }
-  const camera = results.find((r) => r.name === 'camera');
-  if (camera && camera.drawn !== camera.proteinCount) {
-    failures.push(`camera: drew ${camera.drawn} of ${camera.proteinCount} points`);
+    if (segmentTraits(result.name).drawsAll && result.drawn !== result.proteinCount) {
+      failures.push(`${result.name}: drew ${result.drawn} of ${result.proteinCount} points`);
+    }
   }
   // Only a projection switch glides, and the glide stops by itself.
-  const glide = results.find((r) => r.name === 'projection-switch');
+  const glide = results.find((r) => segmentTraits(r.name).glides);
   for (const result of results) {
     if (result !== glide && result.delta.morphFrame !== 0) {
       failures.push(`${result.name}: ${result.delta.morphFrame} glide frames`);
     }
   }
   if (glide) {
-    if (!(glide.delta.morphFrame > 0)) failures.push('projection-switch: drew no glide frame');
+    if (!(glide.delta.morphFrame > 0)) failures.push(`${glide.name}: drew no glide frame`);
     if (glide.idle?.renders) {
-      failures.push(`projection-switch: ${glide.idle.renders} renders while idle after the glide`);
+      failures.push(`${glide.name}: ${glide.idle.renders} renders while idle after the glide`);
     }
-    if (glide.idle?.morphing) failures.push('projection-switch: still data-morphing when idle');
+    if (glide.idle?.morphing) failures.push(`${glide.name}: still data-morphing when idle`);
   }
-  if (twinPixels(results)?.same === false) {
-    failures.push('projection-switch: the glide ends on other pixels than the instant switch');
+  const twin = twinPixels(results);
+  if (twin && !twin.same) {
+    failures.push(`${twin.glide.name}: the glide ends on other pixels than ${twin.instant.name}`);
   }
   return failures;
 }
 
 /** The plot after the glide and after the reduced-motion instant switch to the same projection. */
 function twinPixels(results: SegmentResult[]) {
-  const glide = results.find((r) => r.name === 'projection-switch')?.actPixels;
-  const instant = results.find((r) => r.name === 'projection-switch-instant')?.actPixels;
-  return glide && instant ? { glide, instant, same: glide.equals(instant) } : null;
+  const glide = results.find((r) => segmentTraits(r.name).glides);
+  const instant = results.find((r) => segmentTraits(r.name).glideTwin);
+  if (!glide?.actPixels || !instant?.actPixels) return null;
+  return { glide, instant, same: glide.actPixels.equals(instant.actPixels) };
 }
 
 test('perf counts per interaction stay within budget', async ({ browser, baseURL }, testInfo) => {
@@ -156,8 +153,8 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
   const twin = twinPixels(results);
   if (twin && !twin.same) {
     for (const [name, body] of [
-      ['projection-switch-glide', twin.glide],
-      ['projection-switch-instant', twin.instant],
+      [`${twin.glide.name}-glide`, twin.glide.actPixels!],
+      [twin.instant.name, twin.instant.actPixels!],
     ] as const) {
       const file = testInfo.outputPath(`${name}.png`);
       fs.writeFileSync(file, body);

@@ -42,8 +42,10 @@ sleeps a fixed time. It fails at 3 s (60 s in timing mode): a page that keeps wo
 has a render loop or leaked work. Segments that change the view reset it through the UI, and the
 plot's pixels before the segment must equal the pixels after the reset.
 
-The segments are listed once, in `apps/web/tests/helpers/perf/scenarios.ts`, and both modes use
-that list.
+The segments are listed once, in `apps/web/tests/helpers/perf/scenarios.ts`, with what the checks
+need to know about each: whether timing mode can repeat it, which counts follow the number of
+frames it spans, and its role in the checks below. Both modes and `pnpm perf --scenarios` use that
+list.
 
 ## `pnpm perf:counts`
 

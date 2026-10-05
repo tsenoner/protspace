@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { SegmentResult, TimingSample } from './probes';
+import { segmentTraits } from './scenarios';
 
 /** The per-segment numbers a budget can cap. `glIsPerRender` is derived. */
 const BUDGET_KEYS = [
@@ -15,7 +16,7 @@ const BUDGET_KEYS = [
   'uploadBytes',
   'glIsPerRender',
 ] as const;
-type BudgetKey = (typeof BUDGET_KEYS)[number];
+export type BudgetKey = (typeof BUDGET_KEYS)[number];
 type Measured = Record<BudgetKey, number>;
 type SegmentBudget = Partial<Record<BudgetKey, number | null>>;
 
@@ -51,23 +52,11 @@ export function readBudgets(file: string): BudgetsFile {
 }
 
 /**
- * Counts that follow how many frames a load or gesture spans, not our code: report
- * only. Seen varying between runs on one machine (load render 57-59, grid 2-3).
- */
-const FRAME_BOUND_KEYS: BudgetKey[] = ['render', 'glSync', 'gridRebuild', 'glIsPerRender'];
-const FRAME_BOUND: Record<string, BudgetKey[]> = {
-  load: FRAME_BOUND_KEYS,
-  import: FRAME_BOUND_KEYS,
-  'import-no-settings': FRAME_BOUND_KEYS,
-  camera: ['render', 'glSync'],
-};
-
-/**
  * Budgets from several recordings: the max of each count. A count that differed
  * between recordings depends on timing (how many frames a load or gesture spans),
  * so it would flake as a gate and is recorded as null (report only), as are the
- * FRAME_BOUND keys and any key the previous file set to null. Bytes are budgeted
- * only at 0: any other byte count is a property of the dataset.
+ * segment's frame-bound counts and any key the previous file set to null. Bytes are
+ * budgeted only at 0: any other byte count is a property of the dataset.
  */
 export function recordBudgets(
   runs: SegmentResult[][],
@@ -85,12 +74,13 @@ export function recordBudgets(
   const segments: Record<string, SegmentBudget> = {};
   for (const [name, values] of Object.entries(seen)) {
     const old = previous?.segments[name] ?? {};
+    const frameBound = segmentTraits(name).frameBound ?? [];
     const budget: SegmentBudget = {};
     for (const key of BUDGET_KEYS) {
       const recorded = values[key] ?? [];
       const max = Math.max(...recorded);
       const varied = recorded.some((v) => v !== recorded[0]);
-      if (old[key] === null || varied || FRAME_BOUND[name]?.includes(key)) budget[key] = null;
+      if (old[key] === null || varied || frameBound.includes(key)) budget[key] = null;
       else if (key === 'uploadBytes') budget[key] = max === 0 ? 0 : null;
       else if (key === 'glIsPerRender') budget[key] = Math.ceil(max);
       else budget[key] = max;

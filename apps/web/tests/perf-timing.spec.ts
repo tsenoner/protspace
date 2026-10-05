@@ -23,11 +23,11 @@ import {
   type TimingRow,
 } from './helpers/perf/report';
 import {
-  REPEATABLE,
   buildSegments,
   importBundle,
   openExplore,
   readExploreState,
+  repeatableSegments,
 } from './helpers/perf/scenarios';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
@@ -54,7 +54,7 @@ interface Dataset {
 const env = process.env;
 const DATASETS: Dataset[] = JSON.parse(env.PERF_DATASETS ?? '[]');
 const URLS = (env.PERF_URLS ?? '').split(',').filter(Boolean);
-const SCENARIOS = (env.PERF_SCENARIOS ?? '').split(',').filter(Boolean);
+const SCENARIOS = repeatableSegments((env.PERF_SCENARIOS ?? '').split(',').filter(Boolean));
 const RUNS = Math.max(2, Number(env.PERF_RUNS ?? 5));
 const CPU = Math.max(1, Number(env.PERF_CPU ?? 1));
 const TRACE = env.PERF_TRACE === '1';
@@ -154,9 +154,8 @@ async function openTarget(
   );
   record(target, imported, true);
   const state = await readExploreState(page);
-  target.segments = buildSegments(page, state, dataset.file).filter(
-    (def) =>
-      REPEATABLE.includes(def.name) && (SCENARIOS.length === 0 || SCENARIOS.includes(def.name)),
+  target.segments = buildSegments(page, state, dataset.file).filter((def) =>
+    SCENARIOS.includes(def.name),
   );
   return target;
 }

@@ -2,13 +2,77 @@ import { expect, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dismissTourIfPresent, waitForExploreDataLoad } from '../explore';
-import { installProbes, readSnapshot, settle, type SegmentSpec } from './probes';
+import {
+  installProbes,
+  readSnapshot,
+  settle,
+  type SegmentResult,
+  type SegmentSpec,
+} from './probes';
+import type { BudgetKey } from './report';
 
 /**
  * The perf segments, shared by `perf-counts.spec.ts` (headless, budgets) and
  * `perf-timing.spec.ts` (headed, timings). Each segment drives the real UI with
  * Playwright input and, where it changes view state, resets it through the UI.
  */
+
+interface SegmentTraits {
+  /** Leaves the page as it found it, so timing mode can repeat it. */
+  repeatable?: true;
+  /**
+   * Counts that follow how many frames the segment spans, not our code: report only.
+   * Seen varying between runs on one machine (load render 57-59, grid 2-3).
+   */
+  frameBound?: BudgetKey[];
+  /** Bumps every core counter, so a counter that reads 0 here is disconnected. */
+  bumpsAllCounters?: true;
+  /** Draws every point of the dataset. */
+  drawsAll?: true;
+  /** The one segment that glides; the glide stops by itself. */
+  glides?: true;
+  /** The glide's switch without the glide: the frame the glide must end on. */
+  glideTwin?: true;
+}
+
+const LOAD_FRAME_BOUND: BudgetKey[] = ['render', 'glSync', 'gridRebuild', 'glIsPerRender'];
+
+/** Every segment in run order, with what the checks need to know about it. */
+const SEGMENTS = {
+  load: { frameBound: LOAD_FRAME_BOUND, bumpsAllCounters: true },
+  idle: {},
+  'annotation-switch': { repeatable: true },
+  'projection-switch': { repeatable: true, glides: true },
+  'projection-switch-instant': { repeatable: true, glideTwin: true },
+  'legend-isolate': { repeatable: true },
+  camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
+  resize: { repeatable: true },
+  'search-select': { repeatable: true },
+  import: { frameBound: LOAD_FRAME_BOUND },
+  'import-no-settings': { frameBound: LOAD_FRAME_BOUND },
+} satisfies Record<string, SegmentTraits>;
+
+type SegmentName = keyof typeof SEGMENTS;
+
+export function segmentTraits(name: string): SegmentTraits {
+  return (SEGMENTS as Record<string, SegmentTraits>)[name] ?? {};
+}
+
+/**
+ * The segments timing mode repeats: all of them, or those that a prefix names. A prefix
+ * names every segment it starts, so `projection` also runs `projection-switch-instant`.
+ */
+export function repeatableSegments(prefixes: string[]): string[] {
+  const repeatable = Object.keys(SEGMENTS).filter((name) => segmentTraits(name).repeatable);
+  if (prefixes.length === 0) return repeatable;
+  return prefixes.flatMap((prefix) => {
+    const matches = repeatable.filter((name) => name === prefix || name.startsWith(`${prefix}-`));
+    if (!matches.length) {
+      throw new Error(`unknown scenario ${prefix}; one of ${repeatable.join(', ')}`);
+    }
+    return matches;
+  });
+}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_BUNDLE = path.resolve(HERE, '../../../public/data.parquetbundle');
@@ -176,30 +240,6 @@ export async function importBundle(page: Page, file: string): Promise<void> {
   if (await ownDataset.isVisible().catch(() => false)) await page.keyboard.press('Escape');
 }
 
-type SegmentName =
-  | 'load'
-  | 'idle'
-  | 'annotation-switch'
-  | 'projection-switch'
-  | 'projection-switch-instant'
-  | 'legend-isolate'
-  | 'camera'
-  | 'resize'
-  | 'search-select'
-  | 'import'
-  | 'import-no-settings';
-
-/** Segments that leave the page as they found it, so timing mode can repeat them. */
-export const REPEATABLE: SegmentName[] = [
-  'annotation-switch',
-  'projection-switch',
-  'projection-switch-instant',
-  'legend-isolate',
-  'camera',
-  'resize',
-  'search-select',
-];
-
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
 /** Segments 2–11 in run order; `load` is measured by `measureLoad`. */
@@ -320,7 +360,8 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
 }
 
 /** Counts from navigation to a settled first render; counters start at zero. */
-export async function measureLoad(page: Page) {
+export async function measureLoad(page: Page): Promise<SegmentResult> {
   await settle(page);
-  return readSnapshot(page);
+  const load = await readSnapshot(page);
+  return { name: 'load', delta: load, drawn: load.drawn, proteinCount: 0, pixelsSame: null };
 }

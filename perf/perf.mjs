@@ -5,7 +5,8 @@
 //             [--runs 5] [--cpu 4] [--url http://localhost:8301] [--compare http://localhost:8302]
 //             [--save-baseline] [--baseline [file]] [--trace] [--no-build]
 //
-// Translates the flags into PERF_* variables and runs the `perf-timing` Playwright project.
+// Translates the flags into PERF_* variables and runs the `perf-timing` Playwright project,
+// which resolves --scenarios against the segments in apps/web/tests/helpers/perf/scenarios.ts.
 // Without --url it builds the app and serves it with `vite preview` on 8301, and stops
 // that server when the run ends or is interrupted.
 import { spawn } from 'node:child_process';
@@ -16,15 +17,6 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const APP = path.join(ROOT, 'apps/web');
 const PREVIEW_PORT = 8301;
-const SCENARIOS = [
-  'annotation-switch',
-  'projection-switch',
-  'projection-switch-instant',
-  'legend-isolate',
-  'camera',
-  'resize',
-  'search-select',
-];
 
 function usage(message) {
   if (message) console.error(`perf: ${message}\n`);
@@ -95,13 +87,6 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(opts.runs) || opts.runs < 2) usage('--runs must be 2 or more');
   if (!(opts.cpu >= 1)) usage('--cpu must be 1 or more');
-  // `annotation` is short for `annotation-switch`, and so on; `projection` also runs
-  // `projection-switch-instant`, the glide's reference.
-  opts.scenarios = opts.scenarios.flatMap((s) => {
-    const matches = SCENARIOS.filter((name) => name === s || name.startsWith(`${s}-`));
-    if (!matches.length) usage(`unknown scenario ${s}; one of ${SCENARIOS.join(', ')}`);
-    return matches;
-  });
   return opts;
 }
 
