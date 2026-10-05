@@ -55,6 +55,8 @@ describe('PlotInteractionController', () => {
   beforeEach(() => {
     syncRaf();
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    // As on the host's SVG: d3's zoom gestures read their extent from it.
+    svg.setAttribute('viewBox', '0 0 800 600');
     document.body.appendChild(svg);
   });
   afterEach(() => {
@@ -123,5 +125,16 @@ describe('PlotInteractionController', () => {
     expect((svg as NodeWithTransition).__transition).not.toBeUndefined(); // scheduled
     c.teardown();
     expect((svg as NodeWithTransition).__transition).toBeUndefined(); // interrupt() cleared it
+  });
+
+  it('teardown() keeps a zoom that interrupted the reset', () => {
+    const { bridge, calls } = makeHostBridge(svg);
+    const c = new PlotInteractionController(bridge);
+    c.initialize();
+    c.resetZoom();
+    // A wheel or drag interrupts the reset, as d3's zoom gestures do.
+    c.setTransform(d3.zoomIdentity.scale(3));
+    c.teardown();
+    expect(calls.transforms.at(-1)?.k).toBe(3);
   });
 });

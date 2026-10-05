@@ -34,6 +34,7 @@
  *     null (currently RED — uses a non-null assertion).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as d3 from 'd3';
 
 // Count WebGLRenderer constructions without a real GL context. We preserve the
 // real module's other exports (computeSizeScaleFactor, pointRadiusCss) and
@@ -337,6 +338,25 @@ describe('reconnect after disconnect', () => {
     frames.run();
 
     expect(changes).toHaveLength(1);
+    sp.remove();
+  });
+
+  it('lands the reset zoom its disconnect cut short', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+
+    // Zoomed in, then a reset (a double-click or a data load) and a disconnect before it ends.
+    sp._interaction!.setTransform(d3.zoomIdentity.scale(2));
+    sp.resetZoom();
+    sp.remove();
+    document.body.appendChild(sp);
+
+    expect(sp._transform).toEqual(d3.zoomIdentity);
+    // d3's own copy, which the next wheel or drag starts from.
+    expect(d3.zoomTransform(sp._svg!)).toEqual(d3.zoomIdentity);
     sp.remove();
   });
 });

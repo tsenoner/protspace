@@ -55,6 +55,8 @@ export class PlotInteractionController {
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
+  // Reset transitions not yet over. d3 ends, interrupts or cancels each exactly once.
+  private _resetsInFlight = 0;
 
   constructor(private readonly host: PlotInteractionHost) {}
 
@@ -146,7 +148,14 @@ export class PlotInteractionController {
 
   resetZoom(): void {
     if (this._zoom && this._svgSelection) {
-      this._svgSelection.transition().duration(750).call(this._zoom.transform, d3.zoomIdentity);
+      this._resetsInFlight++;
+      this._svgSelection
+        .transition()
+        .duration(750)
+        .call(this._zoom.transform, d3.zoomIdentity)
+        .on('end.reset interrupt.reset cancel.reset', () => {
+          this._resetsInFlight--;
+        });
     }
   }
 
@@ -396,13 +405,15 @@ export class PlotInteractionController {
     this._isLassoing = false;
   }
 
-  /** Cancel the zoom/lasso RAFs, interrupt the reset transition, tear down brush + lasso. */
+  /** Land a reset cut short at its target, cancel the zoom/lasso RAFs, tear down brush + lasso. */
   teardown(): void {
+    // A reset cut short jumps to its target (setTransform interrupts it first), so the plot
+    // reconnects unzoomed rather than partway. Before the RAF cancel, which drops its render.
+    if (this._resetsInFlight > 0) this.setTransform(d3.zoomIdentity);
     if (this._zoomRafId !== null) {
       cancelAnimationFrame(this._zoomRafId);
       this._zoomRafId = null;
     }
-    this._svgSelection?.interrupt();
     if (this._brush) {
       this._brush.on('start', null).on('end', null);
       this._brush = null;
