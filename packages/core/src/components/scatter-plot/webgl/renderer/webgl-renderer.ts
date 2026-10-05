@@ -1,11 +1,14 @@
 /**
- * WebGL2 Renderer with Gamma-Correct Rendering Pipeline
+ * The scatter plot's live WebGL2 point renderer.
  *
- * This renderer implements a two-pass gamma-correct rendering pipeline:
- * 1. Render points to a linear RGB framebuffer
- * 2. Apply gamma correction to convert to sRGB for display
- *
- * Falls back to direct rendering if gamma pipeline is unavailable.
+ * A render stages only what changed (see `populateBuffers`): the points re-sorted
+ * far -> near into a new paint order, or restyled in the staged one, then
+ * uploaded. A category restyle rewrites just the per-record style table, marks
+ * go to the mark texture, and a projection switch glides the points on the GPU.
+ * Points draw into a linear-light float framebuffer, with the density layer
+ * composited between the unselected and the selected ones, and a gamma pass
+ * converts that to sRGB on the canvas. Without float targets they draw directly.
+ * A lost context latches the renderer for good; the host builds a new one.
  */
 
 import * as d3 from 'd3';
@@ -359,11 +362,9 @@ export class WebGLRenderer {
   }
 
   /**
-   * Points the last completed stage actually drew. Zero before the first stage.
-   *
-   * Distinct from the count handed to `render()`: they differ exactly when the
-   * staging clamp truncates, which is the state that used to be invisible. The
-   * perf harness records both, so a run reports its own truncation.
+   * Points the last completed stage drew. Zero before the first stage, and for
+   * data past the drawable limit (see `populateBuffers`). The perf harness checks
+   * it against the points loaded, so a run reports any it drew short.
    */
   get drawnPointCount(): number {
     return this.currentPointCount;
