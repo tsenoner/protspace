@@ -528,25 +528,48 @@ describe('legend-data-processor', () => {
       expect(result.topItems.map(([v]) => v)).toContain('d');
     });
 
+    it('keeps visible values over larger non-visible ones when the cap is tight', () => {
+      const freq = new Map<string, number>([
+        ['a', 10],
+        ['b', 8],
+        ['c', 6],
+        ['d', 4],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        2,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['a', 'c']),
+      );
+      // c is visible, so it keeps its row even though b is larger.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
+    });
+
     it('includes pendingExtract item in visible set', () => {
       const freq = new Map<string, number>([
         ['a', 10],
         ['b', 8],
         ['c', 6],
+        ['d', 4],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
         visibleValues,
         new Map(),
         true,
-        'b', // pendingExtract
+        'c', // pendingExtract
       );
-      expect(result.topItems.map(([v]) => v)).toContain('b');
+      // The freed slot goes to the extracted c, not to the larger b.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('excludes pendingMerge item from visible set', () => {
@@ -574,12 +597,13 @@ describe('legend-data-processor', () => {
     it('handles N/A extraction via pendingExtract', () => {
       const freq = new Map<string, number>([
         ['a', 10],
+        ['b', 8],
         [NA_VALUE, 5],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
@@ -588,7 +612,8 @@ describe('legend-data-processor', () => {
         true,
         NA_VALUE, // Extract N/A
       );
-      expect(result.topItems.map(([v]) => v)).toContain(NA_VALUE);
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', NA_VALUE]);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b']);
     });
 
     it('handles N/A merge via pendingMerge', () => {
@@ -1290,7 +1315,7 @@ describe('legend-data-processor', () => {
       );
       expect(ctx.currentAnnotation).toBe('annotation1');
 
-      LegendDataProcessor.processLegendItems(
+      const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation2',
         countValues(['c', 'd']),
@@ -1300,6 +1325,11 @@ describe('legend-data-processor', () => {
         'size-desc',
       );
       expect(ctx.currentAnnotation).toBe('annotation2');
+      // The new annotation starts again at slot 0 instead of continuing after
+      // annotation1's slots. Compared as a set: c and d tie on count.
+      expect(new Set(result.legendItems.map((i) => i.color))).toEqual(
+        new Set([getVisualEncoding(0).color, getVisualEncoding(1).color]),
+      );
     });
 
     it('creates Other bucket when exceeding max visible', () => {
@@ -1455,35 +1485,36 @@ describe('legend-data-processor', () => {
     });
 
     it('uses visibleValues to restore specific categories', () => {
-      const values = ['a', 'b', 'c', 'd', 'e'];
+      // b (3) outranks c (2), but only a and c were visible before.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a', 'c']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
         countValues(values),
-        10,
+        2,
         false,
         [],
         'size-desc',
         {},
         visibleValues,
       );
-      // Should only include visible values (plus Other for the rest)
       const visibleLegendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
         .map((i) => i.value);
-      expect(visibleLegendValues).toContain('a');
-      expect(visibleLegendValues).toContain('c');
+      expect(visibleLegendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingExtract to add new item', () => {
-      const values = ['a', 'b', 'c'];
+      // c is not in the top 2 by count; only the extract brings it in.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
         countValues(values),
-        10,
+        2,
         false,
         [],
         'size-desc',
@@ -1491,11 +1522,13 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        'b',
+        'c',
       );
-      const legendValues = result.legendItems.map((i) => i.value);
-      expect(legendValues).toContain('a');
-      expect(legendValues).toContain('b');
+      const legendValues = result.legendItems
+        .filter((i) => i.value !== 'Other')
+        .map((i) => i.value);
+      expect(legendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingMerge to remove item', () => {
