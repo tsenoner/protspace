@@ -88,6 +88,20 @@ describe('render coalescing', () => {
     expect(counters.restage).toBe(1);
   });
 
+  it('requests made before a frame queue that one frame between them', () => {
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
+
+    el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
+    el._handleColorMappingChange(colors(false));
+    el._renderLoop.request();
+    expect(frames.size).toBe(1);
+
+    frames.run();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(frames.size).toBe(0);
+  });
+
   it('the one re-stage carries the union of the requests’ invalidations', () => {
     const { el, renderer } = makePlot();
 
