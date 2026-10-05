@@ -121,8 +121,8 @@ export class ProtspaceStructureViewer extends LitElement {
     const customEvent = event as CustomEvent;
     const { proteinId, modifierKeys } = customEvent.detail;
 
-    // Only respond to single clicks (not multi-selection)
-    if (!modifierKeys.ctrl && !modifierKeys.meta && !modifierKeys.shift && this.autoShow) {
+    // Only respond to single clicks (not multi-selection); no modifierKeys means none held
+    if (!modifierKeys?.ctrl && !modifierKeys?.meta && !modifierKeys?.shift && this.autoShow) {
       // Show structure viewer and load protein
       this.proteinId = proteinId;
       this.style.display = 'flex';

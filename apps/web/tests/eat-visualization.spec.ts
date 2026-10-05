@@ -583,6 +583,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
         detail: {
           proteinId,
           point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+          modifierKeys: { ctrl: false, meta: false, shift: false, alt: false },
         },
         bubbles: true,
         composed: true,
@@ -600,6 +601,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
         detail: {
           proteinId,
           point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+          modifierKeys: { ctrl: false, meta: false, shift: false, alt: false },
         },
         bubbles: true,
         composed: true,
@@ -659,6 +661,10 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     position: { x: clearClickBounds!.width - 12, y: clearClickBounds!.height - 12 },
   });
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
+  // The point clicks above also selected a protein, as a real click does. Clear it so the
+  // export markers below are sampled without the selection dimming the other points.
+  await controlBar.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(controlBar.getByRole('button', { name: 'Clear', exact: true })).toBeDisabled();
 
   await page.setViewportSize({ width: 601, height: 844 });
   const compactControlBar = await controlBar.evaluate((element) => {

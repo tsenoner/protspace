@@ -1634,7 +1634,8 @@ export class ProtspaceControlBar extends LitElement {
   private _handleProteinSelection(event: Event) {
     const customEvent = event as CustomEvent<{
       proteinId: string;
-      modifierKeys: { ctrl: boolean; meta: boolean; shift: boolean };
+      // Embedders can dispatch protein-click without it; treat that as no modifiers.
+      modifierKeys?: { ctrl: boolean; meta: boolean; shift: boolean };
     }>;
     const { proteinId, modifierKeys } = customEvent.detail;
     if (!proteinId) return;
@@ -1642,7 +1643,7 @@ export class ProtspaceControlBar extends LitElement {
     let newSelection: string[];
 
     // Toggle mode: When selectionMode is active OR modifier keys are pressed
-    if (this.selectionMode || modifierKeys.ctrl || modifierKeys.meta) {
+    if (this.selectionMode || modifierKeys?.ctrl || modifierKeys?.meta) {
       newSelection = toggleProteinSelection(proteinId, this.selectedIdsChips);
     }
     // Replace mode: No modifier keys and selectionMode inactive
