@@ -2,7 +2,12 @@
 
 `pnpm perf --save-baseline` writes the median timings of each segment to
 `perf/baselines/<dataset>.local.json`. `pnpm perf --baseline` reads that file back and reports each
-cell as `baseline→now ratio`.
+cell as `baseline→now ratio`:
+
+```sh
+pnpm perf --save-baseline   # on main
+pnpm perf --baseline        # on your branch
+```
 
 These files are gitignored, one set per machine. Timings depend on the hardware and swing about 2×
 with the power state, so a baseline from another machine, or from the same laptop on battery,

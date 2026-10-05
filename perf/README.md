@@ -72,9 +72,9 @@ after the parallel suite. It prints one table, value/budget per cell, with `!` o
 budget:
 
 ```
-segment            restage  pos  style  render  glIs/r  sync  proc  legU  legR  grid  upload  pixels
-annotation-switch  6/6      2/2  6/6    7/7     10/10   0/0   0/0   2/2   2/2   1/1   2.0MB   same
-camera             0/0      0/0  0/0    28      10/10   0     0/0   0/0   0/0   0/0   0B/0B   same
+segment            restage  pos  style  render  glIs/r  sync  proc  legU  legR  grid  upload   pixels
+annotation-switch  1/1      1/1  1/1    1/1     0/0     0/0   0/0   2/2   2/2   0/0   367.1KB  same
+camera             0/0      0/0  0/0    27      0/0     0     0/0   0/0   0/0   0/0   0B/0B    same
 ```
 
 It fails when:
@@ -200,14 +200,7 @@ its `restage ms` cells read `-` with no ratio, for example `-→4`.
 
 ### Baselines
 
-To compare against an earlier run on the same machine:
-
-```sh
-pnpm perf --save-baseline   # on main
-pnpm perf --baseline        # on your branch: cells read baseline→now
-```
-
-See `baselines/README.md`.
+To compare against an earlier run on the same machine, see `baselines/README.md`.
 
 ## Files
 
