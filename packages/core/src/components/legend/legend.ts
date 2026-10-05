@@ -78,6 +78,9 @@ import {
   createItemActionEvent,
   updateItemsVisibility,
   isolateItem,
+  isSecondClickOfDouble,
+  isolationBase,
+  type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
 import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
@@ -339,13 +342,8 @@ export class ProtspaceLegend extends LitElement {
    */
   private _annotationShapeSize: number | null = null;
 
-  // The mouse click that toggled an item, until its dblclick arrives: the legend before it and
-  // as it left it, so a dblclick can isolate from the former unless something else has moved.
-  private _firstClick: {
-    valueKey: string;
-    itemsBefore: LegendItem[];
-    itemsAfter: LegendItem[];
-  } | null = null;
+  // Kept until its dblclick arrives, which isolates from `isolationBase`.
+  private _firstClick: FirstClick | null = null;
 
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
@@ -2197,23 +2195,10 @@ export class ProtspaceLegend extends LitElement {
   // Item Interactions
   // ─────────────────────────────────────────────────────────────────
 
-  /**
-   * A mouse double-click arrives as click (detail 1), click (detail 2), dblclick, the last two in
-   * one task. Toggling on the second click only to isolate right after would hand the plot the
-   * item's hide, show and isolate as separate states, so that click is left to the dblclick.
-   * Touch and pen clicks keep toggling: not every engine sends a dblclick for a double tap.
-   */
+  /** Toggles, except on the second click of a double-click (`isSecondClickOfDouble`). */
   private _handleItemMouseClick(value: string, event: MouseEvent): void {
     const valueKey = valueToKey(value);
-    const pointerType = (event as Partial<PointerEvent>).pointerType;
-    if (
-      event.detail === 2 &&
-      this._firstClick?.valueKey === valueKey &&
-      pointerType !== 'touch' &&
-      pointerType !== 'pen'
-    ) {
-      return;
-    }
+    if (isSecondClickOfDouble(this._firstClick, valueKey, event)) return;
 
     const itemsBefore = this._legendItems;
     this._handleItemClick(value);
@@ -2221,17 +2206,10 @@ export class ProtspaceLegend extends LitElement {
       event.detail === 1 ? { valueKey, itemsBefore, itemsAfter: this._legendItems } : null;
   }
 
-  /**
-   * Isolates from the legend as it stood before the first click, so that click's hide or show
-   * does not leak into the result: double-clicking the isolated item restores the full set, as
-   * `isolateItem` intends, instead of re-isolating it.
-   */
   private _handleItemMouseDoubleClick(value: string): void {
     const first = this._firstClick;
     this._firstClick = null;
-    const unchanged =
-      first?.valueKey === valueToKey(value) && first.itemsAfter === this._legendItems;
-    this._handleItemDoubleClick(value, unchanged ? first.itemsBefore : this._legendItems);
+    this._handleItemDoubleClick(value, isolationBase(first, valueToKey(value), this._legendItems));
   }
 
   private _handleItemClick(value: string): void {

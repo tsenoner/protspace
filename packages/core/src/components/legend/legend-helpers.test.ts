@@ -16,6 +16,9 @@ import {
   createItemActionEvent,
   updateItemsVisibility,
   isolateItem,
+  isSecondClickOfDouble,
+  isolationBase,
+  type FirstClick,
 } from './legend-helpers';
 import { initializeAnnotationSortMode } from './legend-settings-dialog';
 
@@ -423,6 +426,54 @@ describe('legend-helpers', () => {
       expect(result.items[0].isVisible).toBe(true);
       expect(result.items[1].isVisible).toBe(false);
       expect(result.hiddenValues).toEqual(['a']);
+    });
+  });
+
+  describe('isSecondClickOfDouble', () => {
+    const first: FirstClick = { valueKey: 'a', itemsBefore: [], itemsAfter: [] };
+
+    it('leaves the second mouse click on the toggled item to the dblclick', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2 })).toBe(true);
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'mouse' })).toBe(true);
+    });
+
+    it('toggles a first click, a click on another item and a click with no toggle before it', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 1 })).toBe(false);
+      expect(isSecondClickOfDouble(first, 'b', { detail: 2 })).toBe(false);
+      expect(isSecondClickOfDouble(null, 'a', { detail: 2 })).toBe(false);
+    });
+
+    it('toggles touch and pen taps, which may never get a dblclick', () => {
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'touch' })).toBe(false);
+      expect(isSecondClickOfDouble(first, 'a', { detail: 2, pointerType: 'pen' })).toBe(false);
+    });
+  });
+
+  describe('isolationBase', () => {
+    const item = (value: string, isVisible: boolean): LegendItem => ({
+      value,
+      color: '#000',
+      shape: 'circle',
+      count: 1,
+      isVisible,
+      zOrder: 0,
+    });
+    const before = [item('a', true), item('b', true)];
+    const after = [item('a', false), item('b', true)];
+    const first: FirstClick = { valueKey: 'a', itemsBefore: before, itemsAfter: after };
+
+    it('is the legend before the first click while nothing else has moved it', () => {
+      expect(isolationBase(first, 'a', after)).toBe(before);
+    });
+
+    it('is the current legend once something else has replaced it', () => {
+      const rebuilt = after.map((entry) => ({ ...entry }));
+      expect(isolationBase(first, 'a', rebuilt)).toBe(rebuilt);
+    });
+
+    it('is the current legend for another item or without a first click', () => {
+      expect(isolationBase(first, 'b', after)).toBe(after);
+      expect(isolationBase(null, 'a', after)).toBe(after);
     });
   });
 });
