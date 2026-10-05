@@ -50,7 +50,6 @@ function perPointGetters(): WebGLStyleGetters {
 describe('staging without a style pass from the host', () => {
   it('stages through the per-point getters exactly as before', () => {
     const style = perPointGetters();
-    // Above and below the radix sort's threshold.
     for (const n of [300, 3000]) {
       const pd = plotData(n);
       const expected = stageArrays(n, 4, true);

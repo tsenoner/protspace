@@ -219,7 +219,6 @@ describe('category style pass', () => {
 
   for (const storage of storages) {
     describe(`${storage} storage`, () => {
-      // 3000 points: above the radix sort's threshold.
       const data = makeData(3000, storage);
 
       it('stages the defaults exactly as the per-point getters did', () => {

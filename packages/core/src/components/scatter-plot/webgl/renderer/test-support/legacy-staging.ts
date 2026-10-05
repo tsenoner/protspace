@@ -6,7 +6,6 @@
 import type { PlotData, PlotDataPoint } from '@protspace/utils';
 import type { ScalePair, WebGLStyleGetters } from '../../types';
 import { composePaintDepth } from '../point-staging';
-import { sortIndicesByDepthDescending } from '../depth-sort';
 import { stagePointStyle, type StagePointArrays } from '../stage-point';
 
 export function stageArrays(capacity: number, maxLabels: number, atlas: boolean): StagePointArrays {
@@ -47,7 +46,8 @@ export function legacyStage(
     depths[i] = composePaintDepth(style.getDepth(p), style.getOpacity(p), style.isPredicted(p));
   }
   const order = new Uint32Array(count);
-  sortIndicesByDepthDescending(order, depths, count);
+  for (let i = 0; i < count; i++) order[i] = i;
+  order.sort((a, b) => depths[b] - depths[a] || a - b);
   let firstSelected = -1;
   for (let k = 0; k < count; k++) {
     const slot = order[k];
