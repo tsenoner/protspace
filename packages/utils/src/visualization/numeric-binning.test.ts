@@ -5,7 +5,7 @@ import {
   resolveNumericAnnotationDisplaySettings,
 } from './numeric-binning';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
-import type { Annotation, VisualizationData } from '../types';
+import type { Annotation, NumericBinningStrategy, VisualizationData } from '../types';
 
 describe('numeric-binning', () => {
   it('creates linear bins with distribution-aware gradient colors', () => {
@@ -736,5 +736,74 @@ describe('numeric-binning sorted values', () => {
     expect(
       materializeNumericAnnotation(values, quantile(4)).annotation.numericMetadata?.strategy,
     ).toBe('quantile');
+  });
+});
+
+describe('numeric-binning logarithmic fallback', () => {
+  const settings = (strategy: NumericBinningStrategy, binCount: number) => ({
+    binCount,
+    strategy,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+  // A zero and a negative value rule out log edges; eleven distinct values keep quantile edges.
+  const mixedSign = [5, -2, 9, 0, 3, 7, 1, 8, 3, 6, 4, 2, 0];
+
+  it('gives a fresh column the bins of an explicit quantile call', () => {
+    const fallback = materializeNumericAnnotation([...mixedSign], settings('logarithmic', 4));
+
+    expect(fallback).toEqual(materializeNumericAnnotation([...mixedSign], settings('quantile', 4)));
+    expect(fallback.annotation.numericMetadata?.strategy).toBe('quantile');
+    expect(fallback.annotation.numericMetadata?.bins).toHaveLength(4);
+  });
+
+  it('gives the quantile bins whatever ran on the column before', () => {
+    const earlier = (['linear', 'quantile', 'logarithmic'] as const).flatMap((strategy) =>
+      [2, 4, 8].map((binCount) => settings(strategy, binCount)),
+    );
+    const expected = materializeNumericAnnotation([...mixedSign], settings('quantile', 4));
+    for (const first of earlier) {
+      for (const second of earlier) {
+        const column = [...mixedSign];
+        materializeNumericAnnotation(column, first);
+        materializeNumericAnnotation(column, second);
+
+        expect(materializeNumericAnnotation(column, settings('logarithmic', 4))).toEqual(expected);
+        expect(materializeNumericAnnotation(column, settings('quantile', 4))).toEqual(expected);
+      }
+    }
+  });
+
+  it('keeps log edges on positive values, cached or not', () => {
+    const integers = [2, 5, 20, 50, 200, 500, 2000, 5000];
+    const fresh = materializeNumericAnnotation([...integers], settings('logarithmic', 3));
+    materializeNumericAnnotation(integers, settings('quantile', 3));
+
+    expect(materializeNumericAnnotation(integers, settings('logarithmic', 3))).toEqual(fresh);
+    expect(fresh.annotation.numericMetadata?.strategy).toBe('logarithmic');
+    expect(fresh.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '2 - 20',
+      '50 - 200',
+      '500 - 5000',
+    ]);
+    expect(fresh.annotation.numericMetadata?.bins.map((bin) => bin.colorPosition)).toEqual([
+      0, 0.5, 1,
+    ]);
+    expect(Array.from(fresh.annotationData)).toEqual([0, 0, 0, 1, 1, 2, 2, 2]);
+
+    const floats = materializeNumericAnnotation(
+      [0.5, 1.5, 4, 12, 40, null, 150],
+      settings('logarithmic', 4),
+    );
+    expect(floats.annotation.numericMetadata?.strategy).toBe('logarithmic');
+    expect(floats.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '0.5 - 1.5',
+      '4.0 - 12.0',
+      '40.0 - 150.0',
+    ]);
+    expect(floats.annotation.numericMetadata?.bins.map((bin) => bin.upperBound)).toEqual([
+      3.3471647504108475, 22.407023732785827, 150,
+    ]);
+    expect(Array.from(floats.annotationData)).toEqual([0, 0, 1, 1, 2, 3, 2]);
   });
 });

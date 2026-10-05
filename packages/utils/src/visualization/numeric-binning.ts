@@ -614,10 +614,11 @@ export function materializeNumericAnnotation(
   annotation: Annotation;
   annotationData: Int32Array;
 } {
-  const summary = createSummary(values, {
+  // Binning compares the distinct count only with bin counts of at most max(1, binCount).
+  const distinctCountLimit = Math.max(1, settings.binCount) + 1;
+  let summary = createSummary(values, {
     includeSortedValues: settings.strategy === 'quantile',
-    // Binning compares the distinct count only with bin counts of at most max(1, binCount).
-    distinctCountLimit: Math.max(1, settings.binCount) + 1,
+    distinctCountLimit,
   });
   const resolvedNumericType = numericType ?? (summary.allIntegers ? 'int' : 'float');
   // Reserve one slot for N/A when missing values exist, so the total
@@ -664,6 +665,10 @@ export function materializeNumericAnnotation(
     };
   }
 
+  // `logarithmic` on values <= 0 falls back to quantile edges, which read the sorted values.
+  if (effectiveSettings.strategy === 'quantile' && !summary.finiteValues) {
+    summary = createSummary(values, { includeSortedValues: true, distinctCountLimit });
+  }
   const edges = createEdges(summary, effectiveSettings);
   const counts = new Array(Math.max(0, edges.length - 1)).fill(0);
   // A preallocated loop with per-bin min/max in typed arrays: one pass, no per-row object

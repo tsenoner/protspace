@@ -110,7 +110,7 @@ When the selected annotation is numeric and a numeric gradient palette is active
 - `Quantile`
 - `Logarithmic`
 
-`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise ProtSpace falls back to linear binning.
+`Quantile` is the default distribution, automatically falling back to `Linear` when the number of distinct values is small enough that quantile edges would collapse. `Logarithmic` is only available when all non-null values are strictly positive; otherwise ProtSpace falls back to `Quantile` (and from there to `Linear`, as above).
 
 ### Reverse Gradient Direction
 
