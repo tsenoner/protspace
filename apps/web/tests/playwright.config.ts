@@ -28,6 +28,12 @@ const OWN_PORT = process.env.PLAYWRIGHT_PORT;
 if (OWN_PORT !== undefined && !/^\d+$/.test(OWN_PORT)) {
   throw new Error(`PLAYWRIGHT_PORT must be a port number, got "${OWN_PORT}"`);
 }
+// The counts gate measures whatever server it reaches, so it never runs on a reused one.
+if (process.env.PERF_COUNTS === '1' && !OWN_PORT && !process.env.PLAYWRIGHT_BASE_URL) {
+  throw new Error(
+    'PERF_COUNTS=1 needs its own server: run `pnpm perf:counts`, or set PLAYWRIGHT_PORT or PLAYWRIGHT_BASE_URL',
+  );
+}
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${OWN_PORT ?? 8080}`;
 const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
 const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
@@ -36,7 +42,7 @@ const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: []
  * Include an opt-in project only when its env flag is set to '1'.
  *
  * Spreading `[]` is how Playwright configs express "not in the default suite"; this keeps the
- * three opt-in projects from repeating the same ternary-around-an-array-literal boilerplate.
+ * opt-in projects from repeating the same ternary-around-an-array-literal boilerplate.
  */
 const optIn = (envVar: string, project: Project): Project[] =>
   process.env[envVar] === '1' ? [project] : [];
@@ -211,15 +217,16 @@ export default defineConfig({
       },
       testMatch: /load-large-bundle\.spec\.ts/,
     }),
-    {
-      // Work counts per interaction, gated by tests/perf/budgets.json. See perf/README.md.
+    // Work counts per interaction, gated by tests/perf/budgets.json. Kept out of the parallel
+    // pool: `pnpm perf:counts` runs it alone, on this checkout's own server. See perf/README.md.
+    ...optIn('PERF_COUNTS', {
       name: 'perf-counts',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 720 },
       },
       testMatch: /perf-counts\.spec\.ts/,
-    },
+    }),
     // Timings on the real GPU, headed. Started by `pnpm perf` (perf/perf.mjs); see perf/README.md.
     ...optIn('PERF_TIMING', {
       name: 'perf-timing',

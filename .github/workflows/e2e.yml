@@ -133,6 +133,14 @@ jobs:
         env:
           E2E_BROWSERS: chromium
 
+      # The counts gate runs alone, on its own server (perf/README.md). Its own output and report
+      # folders keep it from overwriting the e2e run's.
+      - name: Run perf counts
+        if: ${{ !cancelled() }}
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: apps/web/playwright-report/perf-counts
+        run: pnpm perf:counts --output=apps/web/test-results/perf-counts
+
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

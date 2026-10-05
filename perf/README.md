@@ -56,13 +56,15 @@ PLAYWRIGHT_BASE_URL=http://localhost:8303 pnpm perf:counts   # against a server 
 `pnpm perf:counts` builds this checkout's packages and starts its own Vite server on 8310 (or
 `PLAYWRIGHT_PORT`). It never reuses a server, so a dev server from another checkout cannot be
 measured by mistake; if the port is taken, the run stops. `pnpm test:e2e` instead starts or reuses
-`pnpm dev:app` on 8080, which may be another checkout's server.
+`pnpm dev:app` on 8080, which may be another checkout's server, so it leaves the counts out: the
+project is opt-in (`PERF_COUNTS=1`, which the script sets) and refuses a run without its own
+server or `PLAYWRIGHT_BASE_URL`.
 
 It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
 (`apps/web/public/data.parquetbundle`), then imports `apps/web/public/data/phosphatase.parquetbundle`,
-which has no legend settings (`import-no-settings`). It is a default project of
-`apps/web/tests/playwright.config.ts`, so `pnpm test:e2e` and the e2e CI workflow run it too. It
-prints one table, value/budget per cell, with `!` on a cell over budget:
+which has no legend settings (`import-no-settings`). The e2e CI workflow runs it as its own step,
+after the parallel suite. It prints one table, value/budget per cell, with `!` on a cell over
+budget:
 
 ```
 segment            restage  pos  style  render  glIs/r  sync  proc  legU  legR  grid  upload  pixels
@@ -202,7 +204,7 @@ See `baselines/README.md`.
 
 ```
 packages/core/src/utils/perf-counters.ts   the flag-gated counters
-apps/web/tests/perf-counts.spec.ts         counts gate (default e2e project)
+apps/web/tests/perf-counts.spec.ts         counts gate (opt-in project, PERF_COUNTS=1)
 apps/web/tests/perf-timing.spec.ts         timing mode (opt-in project, PERF_TIMING=1)
 apps/web/tests/helpers/perf/probes.ts      init script, settle(), segment()
 apps/web/tests/helpers/perf/scenarios.ts   the segments
