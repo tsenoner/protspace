@@ -6,9 +6,10 @@ export default defineConfig({
   plugins: [
     // Declarations mirror src/ under dist/ (tsconfig `rootDir`), which is where package.json's
     // `types` conditions point; if the two drift apart, apps/web's `noImplicitAny` fails
-    // `pnpm type-check` with TS7016. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts):
-    // nothing references them. Test-only helpers stay out too (one imports vitest); only tests
-    // import them, and tsc still type-checks them.
+    // `pnpm type-check` with TS7016, but only for subpaths apps/web imports (today both).
+    // No per-entry stubs (dist/core.d.ts, dist/publish.d.ts): nothing references them.
+    // Test-only helpers stay out too (two import vitest); only tests import them, and tsc
+    // still type-checks them.
     dts({
       tsconfigPath: './tsconfig.json',
       insertTypesEntry: false,
