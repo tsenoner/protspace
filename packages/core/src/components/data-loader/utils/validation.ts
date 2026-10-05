@@ -25,7 +25,6 @@ export const DEFAULT_VALIDATION_LIMITS = {
   maxFileSizeBytes: 2 * 1024 * 1024 * 1024, // 2 GB
   maxRows: LEGACY_MAX_ROWS,
   maxColumns: 200,
-  maxTotalCells: 1_000_000_000,
   maxCellStringLength: 256,
 } as const;
 
@@ -67,6 +66,8 @@ export function assertWithinFileSizeLimit(
  * Refuse a v1/v2 dataset of more than `maxRows` rows, naming the count, the limit, what
  * it counts and the way out. A bare "N exceeds limit" reached the user as a toast whose
  * only action was "Report this", inviting a bug report about intended behaviour (#456).
+ * Through `validateRowsBasic` it also caps the rows of a plain parquet file read by
+ * `loadFromUrl`, which then gets the same v1/v2 wording.
  */
 export function assertWithinLegacyRowLimit(
   rows: number,
@@ -86,12 +87,10 @@ export function validateRowsBasic(
   {
     maxRows = DEFAULT_VALIDATION_LIMITS.maxRows,
     maxColumns = DEFAULT_VALIDATION_LIMITS.maxColumns,
-    maxTotalCells = DEFAULT_VALIDATION_LIMITS.maxTotalCells,
     maxCellStringLength = DEFAULT_VALIDATION_LIMITS.maxCellStringLength,
   }: {
     maxRows?: number;
     maxColumns?: number;
-    maxTotalCells?: number;
     maxCellStringLength?: number;
   } = {},
 ): asserts rows is Rows {
@@ -112,10 +111,6 @@ export function validateRowsBasic(
   }
   if (columnNames.length > maxColumns) {
     throw new Error(`Too many columns: ${columnNames.length} exceeds limit`);
-  }
-  const totalCells = rows.length * columnNames.length;
-  if (totalCells > maxTotalCells) {
-    throw new Error(`Dataset too large: ${totalCells} cells exceeds limit`);
   }
   // Scan a small sample for dangerous content and overlong strings
   const sampleSize = Math.min(1000, rows.length);
