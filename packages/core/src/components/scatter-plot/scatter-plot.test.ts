@@ -16,6 +16,7 @@
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
+import type { VisibilityModel } from './styling/visibility-model';
 import {
   PlotInteractionController,
   type PlotInteractionHost,
@@ -78,6 +79,8 @@ type SelectionInternals = HTMLElement & {
   _pointGridIndex: PointIndexStub;
   _interactionHost(): PlotInteractionHost;
   _handleBrushEnd(event: { selection: [[number, number], [number, number]] | null }): void;
+  _slotSelection: { ids: readonly string[]; mask: Uint8Array } | null;
+  _getVisibilityModel(): VisibilityModel;
 };
 
 /**
@@ -192,6 +195,32 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     // Interactive (family B) at slots 0,1,2 → originalIndex 5,4,3 → p5,p4,p3,
     // emitted in slot order.
     expect(events[0].detail.proteinIds).toEqual(['p5', 'p4', 'p3']);
+  });
+
+  it('marks a lassoed selection from its slots once its ids come back', () => {
+    const originalIndices = new Int32Array([5, 4, 3, 2, 1, 0]);
+    const sp = makeSelectionScatter(originalIndices);
+    sp.hiddenAnnotationValues = ['A'];
+    sp._pointGridIndex.queryByPolygon = () => [0, 1, 2, 3, 4, 5];
+
+    const events: CustomEvent[] = [];
+    sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
+
+    stubSyncRaf();
+    runLassoSelection(sp);
+
+    // p5, p4, p3 by protein index. Claiming p0 too shows the mask stands in for lookups.
+    const lasso = sp._slotSelection!;
+    expect(lasso.ids).toBe(events[0].detail.proteinIds);
+    expect(Array.from(lasso.mask)).toEqual([0, 0, 0, 1, 1, 1]);
+    lasso.mask[0] = 1;
+    // The control bar sets the selection back as a copy.
+    sp.selectedProteinIds = [...events[0].detail.proteinIds];
+    const marks = sp._getVisibilityModel().markedSlots(sp.data.protein_ids, originalIndices, 6);
+    expect(Array.from(marks)).toEqual([1, 1, 1, 0, 0, 1]);
+    sp.selectedProteinIds = ['p5', 'p4'];
+    const fewer = sp._getVisibilityModel().markedSlots(sp.data.protein_ids, originalIndices, 6);
+    expect(Array.from(fewer)).toEqual([1, 1, 0, 0, 0, 0]);
   });
 
   it('emits no event and clears the visual when every hit is non-interactive', () => {

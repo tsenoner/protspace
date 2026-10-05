@@ -37,7 +37,7 @@ import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { createStyleGetters } from './styling/style-getters';
 import { computeVisibilityModel } from './styling/visibility-model';
-import type { VisibilityModel } from './styling/visibility-model';
+import type { VisibilityInputs, VisibilityModel } from './styling/visibility-model';
 import {
   MAX_RENDERABLE_POINTS,
   WebGLRenderer,
@@ -308,6 +308,9 @@ export class ProtspaceScatterplot extends LitElement {
     highlighted: string[];
     marks: PointMarks;
   } | null = null;
+  // The last lasso or brush selection with its mark per protein index, built
+  // from its slots (`_slotsToInteractiveIds`).
+  private _slotSelection: VisibilityInputs['selectionMask'] = null;
   // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
   // which is nulled out on color/shape mapping changes). The key comparison in
   // _getVisibilityModel covers every visibility-relevant input exhaustively:
@@ -1730,21 +1733,28 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Resolve a list of point index slots to the protein ids of the interactive
-   * points among them, in a single allocation-free pass.
+   * points among them, in a single pass.
    *
    * Shared by lasso and brush selection. Reads the memoized interactable slots
    * (`isInteractive` per slot) instead of asking the visibility model per hit,
-   * which at ~190K lassoed points of the 573K dataset took ~8 ms.
+   * which at ~190K lassoed points of the 573K dataset took ~8 ms. Also keeps
+   * their mark per protein index as `_slotSelection`, so the selection the ids
+   * come back as is marked without looking each one up (~12 ms at ~190K).
    */
   private _slotsToInteractiveIds(slots: number[]): string[] {
     const pd = this._plotData;
     const oi = pd.originalIndices;
     const { visible } = this._interactableSlots();
     const ids: string[] = [];
+    const mask = new Uint8Array(pd.proteinIds.length);
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i];
-      if (visible[s] === 1) ids.push(pd.proteinIds[oi ? oi[s] : s]);
+      if (visible[s] !== 1) continue;
+      const origIdx = oi ? oi[s] : s;
+      ids.push(pd.proteinIds[origIdx]);
+      mask[origIdx] = 1;
     }
+    this._slotSelection = { ids, proteinIds: pd.proteinIds, mask };
     return ids;
   }
 
@@ -1999,6 +2009,7 @@ export class ProtspaceScatterplot extends LitElement {
         highlightedProteinIds: this.highlightedProteinIds,
         opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
         focusedValues: this._focusedValues,
+        selectionMask: this._slotSelection,
       },
       this._visibilityModelCache ?? undefined,
     );
@@ -2202,6 +2213,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _clearMarkCaches() {
     this._unmarkedGetters = null;
     this._pointMarks = null;
+    this._slotSelection = null;
   }
 
   /** The style getters the live view stages, over {@link _getStageModel}. */

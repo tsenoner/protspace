@@ -58,6 +58,17 @@ export interface VisibilityInputs {
   opacities: { base: number; selected: number; faded: number };
   /** Internal values to keep in focus (Shift+hover); every other point fades. */
   focusedValues?: string[] | null;
+  /**
+   * A mark per index into `proteinIds` for exactly the proteins of `ids`, as a
+   * lasso builds it from its slots. It stands in for looking the selection up
+   * while `selectedProteinIds` holds the same ids in the same order and
+   * `proteinIds` is `data.protein_ids`. Never written.
+   */
+  selectionMask?: {
+    ids: readonly string[];
+    proteinIds: readonly string[];
+    mask: Uint8Array;
+  } | null;
 }
 
 export interface VisibilityModel {
@@ -295,6 +306,12 @@ function findId(table: Int32Array, proteinIds: readonly string[], id: string): n
   return -1;
 }
 
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 interface InternalVisibilityModel extends VisibilityModel {
   [MASK_CACHE]: MaskCache;
 }
@@ -398,8 +415,16 @@ export function computeVisibilityModel(
   let markedMask: Uint8Array | null = null;
   if (anyMarked && proteinIds && idIndex?.table) {
     const table = idIndex.table;
-    markedMask = new Uint8Array(proteinIds.length);
-    for (const ids of [selectedProteinIds, highlightedProteinIds]) {
+    // With every id once (a table), a mask of the selected ids is the selection's.
+    const given = inputs.selectionMask;
+    const fromSlots = given?.proteinIds === proteinIds && sameIds(given.ids, selectedProteinIds);
+    let lookups = [selectedProteinIds, highlightedProteinIds];
+    if (!fromSlots) markedMask = new Uint8Array(proteinIds.length);
+    else {
+      markedMask = highlightedProteinIds.length ? given.mask.slice() : given.mask;
+      lookups = [highlightedProteinIds];
+    }
+    for (const ids of lookups) {
       for (const id of ids) {
         const i = findId(table, proteinIds, id);
         if (i >= 0) markedMask[i] = 1;

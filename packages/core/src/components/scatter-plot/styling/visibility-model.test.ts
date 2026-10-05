@@ -738,6 +738,78 @@ describe('computeVisibilityModel', () => {
       expect(other.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.faded);
     });
 
+    it('marks a lassoed selection like its ids, under isolation, highlights and merges', () => {
+      let model: VisibilityModel | undefined;
+      for (let trial = 0; trial < 30; trial++) {
+        const kept = trial % 3 ? Int32Array.from(pick([...ids.keys()], 0.5)) : null;
+        if (kept) kept.sort(() => random() - 0.5);
+        const count = kept ? kept.length : n;
+        // The lasso's ids and mask, as the plot builds them from the slots.
+        const mask = new Uint8Array(n);
+        const lassoed = pick([...Array(count).keys()], [0.02, 0.4, 1][trial % 3]).map((s) => {
+          const i = kept ? kept[s] : s;
+          mask[i] = 1;
+          return ids[i];
+        });
+        const unchanged = mask.slice();
+        // The ids come back as a copy, or merged into an earlier selection.
+        const selected = trial % 4 === 3 ? [...pick(ids, 0.1), ...lassoed] : [...lassoed];
+        const inputs = baseInputs({
+          data,
+          selectedProteinIds: selected,
+          highlightedProteinIds: pick(ids, trial % 2 ? 0.05 : 0),
+          hiddenAnnotationValues: pick(values, 0.3).slice(0, 2),
+        });
+        model = computeVisibilityModel(
+          { ...inputs, selectionMask: { ids: lassoed, proteinIds: ids, mask } },
+          model,
+        );
+        const want = expected(inputs, kept, count);
+        expect(Array.from(model.markedSlots(ids, kept, count))).toEqual(want.slots);
+        const interactive = Array.from({ length: count }, (_, s) => {
+          const i = kept ? kept[s] : s;
+          return model!.opacityAt(i, ids[i]) > 0 ? 1 : 0;
+        });
+        expect(interactive).toEqual(want.interactive);
+        expect(mask).toEqual(unchanged);
+      }
+    });
+
+    it('takes a given mask only for the same ids over the same, unrepeated protein ids', () => {
+      // The mask claims p2 as well, to show when it stands in for the lookups.
+      const mask = Uint8Array.from({ length: n }, (_, i) => (i === 1 || i === 2 ? 1 : 0));
+      const selectionMask = { ids: ['p1'], proteinIds: ids, mask };
+      const marked = (overrides: Partial<VisibilityInputs>, over = data) =>
+        Array.from(
+          computeVisibilityModel(
+            baseInputs({ data: over, selectionMask, ...overrides }),
+          ).markedSlots(over.protein_ids, null, 4),
+        );
+      expect(marked({ selectedProteinIds: ['p1'] })).toEqual([0, 1, 1, 0]);
+      expect(marked({ selectedProteinIds: ['p1'], highlightedProteinIds: ['p0'] })).toEqual([
+        1, 1, 1, 0,
+      ]);
+      expect(marked({ selectedProteinIds: ['p1', 'p3'] })).toEqual([0, 1, 0, 1]);
+      expect(
+        marked({
+          selectedProteinIds: ['p1'],
+          selectionMask: { ...selectionMask, proteinIds: [...ids] },
+        }),
+      ).toEqual([0, 1, 0, 0]);
+      const repeated = makeData(values, Int32Array.of(0, 1, 2, 0));
+      repeated.protein_ids[3] = 'p1';
+      expect(
+        marked(
+          {
+            selectedProteinIds: ['p1'],
+            selectionMask: { ...selectionMask, proteinIds: repeated.protein_ids },
+          },
+          repeated,
+        ),
+      ).toEqual([0, 1, 0, 1]);
+      expect(mask.subarray(0, 4)).toEqual(Uint8Array.of(0, 1, 1, 0));
+    });
+
     it('finds ids that share hash slots, and none it does not hold', () => {
       const count = 3000;
       const many = makeData(values, new Int32Array(count));
