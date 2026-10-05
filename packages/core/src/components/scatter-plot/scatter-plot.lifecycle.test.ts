@@ -80,6 +80,7 @@ vi.mock('./webgl', async (importOriginal) => {
 import {
   createPlot,
   fakeFrames,
+  fakeIdle,
   makeFamilyData,
   type PlotInternals,
 } from './test-support/plot-fixture';
@@ -283,6 +284,18 @@ describe('reconnect after disconnect', () => {
     frames.flush();
 
     expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    sp.remove();
+  });
+
+  it('builds the protein id index whose idle build the disconnect cancelled', async () => {
+    const frames = fakeFrames();
+    const idle = fakeIdle();
+    const data = { ...makeFamilyData(), protein_ids: ['a', 'a', 'b', 'b', 'c', 'c'] };
+    const sp = await reconnectedPlot(frames, { data });
+    idle.run();
+
+    // Three proteins in six slots: the point count is of proteins once the index says so.
+    expect(sp._getVisiblePointCount()).toBe(3);
     sp.remove();
   });
 });
