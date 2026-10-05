@@ -4,13 +4,16 @@
 //   pnpm perf:scale --datasets 573K=/abs/a.parquetbundle,5M=/abs/b.parquetbundle
 //                   [--cold 10] [--reps 20] [--rounds 1] [--browser chrome|chromium|firefox|webkit]
 //                   [--url http://localhost:8520] [--port 8520] [--no-build]
-//                   [--out perf/results/scale-<stamp>] [--guard-gb 2] [--timeout-min 60]
+//                   [--out perf/results/scale-<stamp>] [--guard-gb 3] [--timeout-min <auto>]
 //
 // One browser run per dataset and round (the `perf-scale` Playwright project); rounds
-// interleave the datasets. Around each run it logs `pmset -g therm`, samples the RSS of the
-// browser's renderer and GPU processes every 100 ms, and polls free memory every 500 ms:
+// interleave the datasets. Around each run it logs `pmset -g therm`, samples the memory of
+// the browser's renderer and GPU processes (macOS `footprint`, which counts Metal and
+// IOSurface memory, every second; RSS every 100 ms), and polls free memory every 200 ms:
 // below --guard-gb of free plus inactive memory it kills the browser (status `oom-guard`).
-// Writes one JSON per run, then aggregate.json and aggregate.csv (median, IQR, n per metric).
+// --timeout-min caps each run; by default 60 min plus 1 min per 10 MB of bundle.
+// Writes one JSON per run, then aggregate.json and aggregate.csv (median, IQR and sample
+// count per metric, over the runs with status `ok`).
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,8 +47,8 @@ function parseArgs(argv) {
     port: 8520,
     build: true,
     out: path.join(ROOT, 'perf/results', `scale-${stamp}`),
-    guardGB: 2,
-    timeoutMin: 60,
+    guardGB: 3,
+    timeoutMin: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -97,7 +100,9 @@ function parseArgs(argv) {
   for (const key of ['cold', 'reps', 'rounds', 'port']) {
     if (!Number.isInteger(opts[key]) || opts[key] < 1) usage(`--${key} must be a positive integer`);
   }
-  if (!(opts.guardGB >= 0) || !(opts.timeoutMin > 0)) usage('bad --guard-gb or --timeout-min');
+  if (!(opts.guardGB >= 0) || !(opts.timeoutMin === null || opts.timeoutMin > 0)) {
+    usage('bad --guard-gb or --timeout-min');
+  }
   if ([8080, 8091].includes(opts.port)) usage(`port ${opts.port} is reserved`);
   if (opts.browser === 'chrome' && !fs.existsSync(CHROME_PATHS[process.platform] ?? '')) {
     console.warn('perf:scale: Chrome stable not found, using the bundled Chromium');
@@ -217,6 +222,26 @@ function browserProcesses(table, root) {
     });
 }
 
+const UNITS = { B: 1, KB: 2 ** 10, MB: 2 ** 20, GB: 2 ** 30 };
+
+/** pid → physical footprint in bytes (macOS `footprint`, which counts GPU memory). */
+async function footprints(pids) {
+  const { stdout } = await exec(
+    'footprint',
+    pids.flatMap((pid) => ['-p', String(pid)]),
+    {
+      maxBuffer: 64 * 2 ** 20,
+    },
+  );
+  const out = new Map();
+  for (const [, pid, value, unit] of stdout.matchAll(
+    /\[(\d+)\]:.*?Footprint: ([\d.]+) (B|KB|MB|GB)/g,
+  )) {
+    out.set(Number(pid), Number(value) * UNITS[unit]);
+  }
+  return out;
+}
+
 /** Free plus inactive memory, in bytes, from vm_stat. */
 async function availableBytes() {
   const { stdout } = await exec('vm_stat');
@@ -251,6 +276,8 @@ async function runDataset(opts, url, dataset, round) {
   const runFile = path.join(opts.out, `${stamp}-r${round}-${dataset.name}.json`);
   const specFile = `${runFile}.spec`;
   const thermalBefore = await thermal();
+  const timeoutMin =
+    opts.timeoutMin ?? Math.ceil(60 + fs.statSync(dataset.file).size / (10 * 2 ** 20));
   console.log(`\n== ${dataset.name} (round ${round + 1}/${opts.rounds}) ${thermalBefore ?? ''}`);
 
   const child = spawn(
@@ -274,7 +301,7 @@ async function runDataset(opts, url, dataset, round) {
         PERF_SCALE_OUT: specFile,
         PERF_SCALE_COLD: String(opts.cold),
         PERF_SCALE_REPS: String(opts.reps),
-        PERF_SCALE_TIMEOUT_MS: String(opts.timeoutMin * 60_000),
+        PERF_SCALE_TIMEOUT_MS: String(timeoutMin * 60_000),
         PLAYWRIGHT_BASE_URL: url,
       },
     },
@@ -307,6 +334,31 @@ async function runDataset(opts, url, dataset, round) {
       busy = false;
     }
   }, 100);
+  // footprint walks each process's regions; once a second is enough and keeps it cheap.
+  const footprintRows = [];
+  let footprintBusy = false;
+  const footprintSampler =
+    process.platform === 'darwin' &&
+    setInterval(async () => {
+      if (footprintBusy) return;
+      footprintBusy = true;
+      try {
+        const procs = browserProcesses(lastTable, child.pid).filter((p) =>
+          ['renderer', 'gpu'].includes(p.kind),
+        );
+        if (procs.length) {
+          const t = Date.now();
+          const bytes = await footprints(procs.map((p) => p.pid));
+          const sum = { renderer: 0, gpu: 0 };
+          for (const p of procs) sum[p.kind] += bytes.get(p.pid) ?? 0;
+          footprintRows.push([t, sum.renderer, sum.gpu]);
+        }
+      } catch {
+        // a process exited mid-sample; the next tick samples again
+      } finally {
+        footprintBusy = false;
+      }
+    }, 1_000);
   const watchdog = setInterval(async () => {
     try {
       const available = await availableBytes();
@@ -323,18 +375,19 @@ async function runDataset(opts, url, dataset, round) {
     } catch {
       // vm_stat failed once
     }
-  }, 500);
+  }, 200);
   const timer = setTimeout(async () => {
     timedOut = true;
-    console.error(`perf:scale: ${dataset.name} over ${opts.timeoutMin} min; killing the browser`);
+    console.error(`perf:scale: ${dataset.name} over ${timeoutMin} min; killing the browser`);
     killTree(await processTable(), child.pid);
     child.kill('SIGTERM');
-  }, opts.timeoutMin * 60_000);
+  }, timeoutMin * 60_000);
   const exitCode = await new Promise((resolve) =>
     child.on('exit', (code, signal) => resolve(code ?? signal)),
   );
   children.delete(child);
   clearInterval(sampler);
+  clearInterval(footprintSampler);
   clearInterval(watchdog);
   clearTimeout(timer);
 
@@ -362,17 +415,26 @@ async function runDataset(opts, url, dataset, round) {
       drawnEqualsN:
         n > 0 && (spec.loads ?? []).every((l) => l.drawn === n) && (spec.drawnAtEnd ?? n) === n,
       degradedEvents: (spec.degraded ?? []).length,
+      failedInteractions: Object.keys(spec.interactionFailures ?? {}),
       toasts: Math.max(spec.toasts ?? 0, ...(spec.loads ?? []).map((l) => l.toasts ?? 0)),
       guard,
       minAvailableGB: Number.isFinite(minAvailable) ? minAvailable / 2 ** 30 : null,
     },
-    memory: memorySummary(samples, spec.marks ?? [], spec.loads ?? [], n, seen),
+    timeoutMin,
+    // Footprint where macOS has it: RSS leaves out the GPU process's Metal memory.
+    memory: {
+      source: footprintRows.length ? 'footprint' : 'rss',
+      ...memorySummary(footprintRows.length ? footprintRows : samples, spec, n),
+    },
+    rssMemory: { ...memorySummary(samples, spec, n), processesSeen: seen },
+    footprintSamples: { columns: ['t', 'renderer', 'gpu'], rows: footprintRows },
     memorySamples: { columns: ['t', 'renderer', 'gpu', 'browser', 'other'], rows: samples },
   };
   fs.writeFileSync(runFile, JSON.stringify(result));
   console.log(
     `== ${dataset.name}: ${result.status.result}, N ${n}, drawn==N ${result.status.drawnEqualsN}, ` +
-      `peak renderer ${mb(result.memory.peak.renderer)} MB, gpu ${mb(result.memory.peak.gpu)} MB` +
+      `peak ${result.memory.source} renderer ${mb(result.memory.peak.renderer)} MB, ` +
+      `gpu ${mb(result.memory.peak.gpu)} MB` +
       ` -> ${path.relative(ROOT, runFile)}`,
   );
   return result;
@@ -385,7 +447,7 @@ const mb = (bytes) => (bytes == null ? '-' : Math.round(bytes / 2 ** 20));
  * sample after its `settled` mark), and bytes per point: settled minus the sample before the
  * file was chosen (the demo dataset), over N.
  */
-function memorySummary(samples, marks, loads, n, seen) {
+function memorySummary(samples, { marks = [], loads = [] }, n) {
   const at = (name) => marks.find((m) => m.name === name)?.t;
   const peakOf = (rows) => ({
     renderer: Math.max(0, ...rows.map((r) => r[1])),
@@ -419,8 +481,7 @@ function memorySummary(samples, marks, loads, n, seen) {
   });
   const start = at('interactions:start');
   return {
-    sampleCount: samples.length,
-    processesSeen: seen,
+    samples: samples.length,
     peak: peakOf(samples),
     peakDuringInteractions: start ? peakOf(samples.filter((r) => r[0] >= start)) : null,
     loads: perLoad,
@@ -449,6 +510,7 @@ function runMetrics(run) {
     }
   }
   for (const [k, v] of Object.entries(run.memory?.peak ?? {})) add(`memory.runPeak.${k}`, v);
+  for (const [k, v] of Object.entries(run.rssMemory?.peak ?? {})) add(`rss.runPeak.${k}`, v);
   add('memory.heapAfterInteractionsMB', run.heapAfterInteractionsMB);
   for (const [name, reps] of Object.entries(run.interactions ?? {})) {
     for (const sample of reps) {
@@ -467,14 +529,18 @@ function aggregate(runs) {
       fileBytes: run.fileBytes,
       n: run.n,
       statuses: [],
+      okRuns: 0,
       metrics: {},
     };
     entry.n ??= run.n;
     entry.statuses.push({ round: run.round, ...run.status });
+    byDataset.set(run.dataset.name, entry);
+    // A guarded, timed-out, crashed or failed run stopped part way; its numbers stay in its JSON.
+    if (run.status.result !== 'ok') continue;
+    entry.okRuns++;
     for (const [key, values] of Object.entries(runMetrics(run))) {
       (entry.metrics[key] ??= []).push(...values);
     }
-    byDataset.set(run.dataset.name, entry);
   }
   return [...byDataset.values()].map((entry) => ({
     ...entry,
@@ -482,14 +548,14 @@ function aggregate(runs) {
       Object.entries(entry.metrics).map(([key, values]) => {
         const sorted = [...values].sort((a, b) => a - b);
         const [q1, median, q3] = [0.25, 0.5, 0.75].map((q) => quantile(sorted, q));
-        return [key, { median, q1, q3, iqr: q3 - q1, n: sorted.length }];
+        return [key, { median, q1, q3, iqr: q3 - q1, samples: sorted.length }];
       }),
     ),
   }));
 }
 
 function toCsv(datasets) {
-  const lines = ['dataset,N,fileBytes,metric,median,q1,q3,iqr,n'];
+  const lines = ['dataset,N,fileBytes,okRuns,metric,median,q1,q3,iqr,samples'];
   for (const d of datasets) {
     for (const [key, m] of Object.entries(d.metrics)) {
       const r = (v) => Number(v.toPrecision(6));
@@ -498,12 +564,13 @@ function toCsv(datasets) {
           d.dataset,
           d.n ?? '',
           d.fileBytes ?? '',
+          d.okRuns,
           key,
           r(m.median),
           r(m.q1),
           r(m.q3),
           r(m.iqr),
-          m.n,
+          m.samples,
         ].join(','),
       );
     }
@@ -547,7 +614,7 @@ async function main() {
     console.log(
       `${d.dataset.padEnd(10)} N ${String(d.n ?? '-').padStart(9)}  load ${m('load.chosenToSettledMs')} ms` +
         `  annotation INP ${m('annotation-switch.inp')} ms  lasso ${m('lasso.upToRenderMs')} ms` +
-        `  pan p95 ${m('pan-zoom.p95Frame')} ms  ` +
+        `  pan p95 ${m('pan-zoom.p95Frame')} ms, ${m('pan-zoom.drawsPerSec')} draws/s  ` +
         `status ${d.statuses.map((s) => s.result).join(',')}`,
     );
   }
