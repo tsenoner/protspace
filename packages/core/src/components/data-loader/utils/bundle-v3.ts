@@ -66,7 +66,7 @@ import {
   dropUnplacedProteins,
   generateColorsAndShapes,
   normalizeEatCompanionColumns,
-} from './conversion';
+} from './dataset-build';
 import type { Rows } from './types';
 
 // ignoreBOM keeps a leading U+FEFF as a character: it is part of a label, not an
