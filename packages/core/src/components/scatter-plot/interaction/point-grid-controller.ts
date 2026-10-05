@@ -65,9 +65,12 @@ export class PointGridController {
     return this._grid;
   }
 
-  /** Whether the visible slots are marked: from the first build with something to index until `clear`. */
-  get marked(): boolean {
-    return this._visible !== null;
+  /**
+   * The `visible` of the `interactable()` the slots were last marked from: null
+   * before the first build with something to index and after `clear`.
+   */
+  get marks(): Uint8Array | null {
+    return this._visible;
   }
 
   /** The index that answers for the visible slots: theirs alone while they are few. */

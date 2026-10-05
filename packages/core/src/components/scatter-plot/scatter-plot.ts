@@ -1094,7 +1094,9 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderer?.invalidateStyleCache();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
-      if (this._pointGrid.marked && !this._currentInteractableSlots()) {
+      // The point-count label may have counted them already: compare the grid's marks.
+      const marks = this._pointGrid.marks;
+      if (marks && marks !== this._currentInteractableSlots()?.visible) {
         this._pointGrid.scheduleRemark();
       }
     }

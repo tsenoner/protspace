@@ -206,10 +206,10 @@ describe('PointGridController', () => {
 
   it('drops the marks when there is nothing to index', () => {
     const { host, grid } = setup();
-    expect(grid.marked).toBe(true);
+    expect(grid.marks).not.toBeNull();
     host.pd = makePlotData(0);
     grid.rebuildNow();
-    expect(grid.marked).toBe(false);
+    expect(grid.marks).toBeNull();
     expect(grid.visibleSlots()).toBeNull();
     expect(host.calls).toEqual(['invalid', 'empty']);
     expect(counters.gridRebuild).toBe(0);

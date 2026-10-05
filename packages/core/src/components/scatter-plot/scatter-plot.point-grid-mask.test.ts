@@ -202,6 +202,40 @@ describe('point grid over every slot, masked to the visible ones', () => {
     expect(sp._pointGrid.visibleSlots()).toEqual(all.filter((s) => familyOf(sp, s) !== hidden));
   });
 
+  it('re-marks them when the point-count label counted the new selection first', () => {
+    const sp = prime();
+    // As Lit does: `render`, whose label counts the interactive slots, before `updated`.
+    const update = (key: string) => {
+      sp.render();
+      sp.updated(new Map([[key, undefined]]));
+      frames.flush();
+    };
+    const setVisible = vi.spyOn(sp._pointGrid.grid, 'setVisible');
+    sp.selectedProteinIds = ['p3', 'p10'];
+    update('selectedProteinIds');
+    // Faded points stay interactive by default: nothing to re-mark.
+    expect(setVisible).not.toHaveBeenCalled();
+    sp.config = { fadedOpacity: 0 };
+    update('config');
+    expect(sp._pointGrid.visibleSlots()).toEqual([3, 10]);
+
+    sp.selectedProteinIds = ['p20', 'p30'];
+    update('selectedProteinIds');
+    // Hover finds the newly selected points, and no faded one.
+    const at = (slot: number) =>
+      [sp._scales!.x(sp._plotData.xs[slot]), sp._scales!.y(sp._plotData.ys[slot])] as const;
+    expect(sp.pickInteractivePointAt(...at(20))?.id).toBe('p20');
+    expect(sp.pickInteractivePointAt(...at(30))?.id).toBe('p30');
+    expect(sp.pickInteractivePointAt(...at(3))).toBeNull();
+    // The duplicate stacks read the slot list and the index.
+    expect(sp._pointGrid.visibleSlots()).toEqual([20, 30]);
+    const [x0, y0, x1, y1] = [-10, 110, 110, -10].map((v, i) =>
+      i % 2 ? sp._scales!.y(v) : sp._scales!.x(v),
+    );
+    const hits = sp._dupOverlay.deps.getPointGridIndex().queryByPixels(x0, y0, x1, y1);
+    expect(hits.sort((a, b) => a - b)).toEqual([20, 30]);
+  });
+
   it('queries a grid of just the visible slots while they are few', () => {
     // A is a tenth of the proteins: with B and C hidden, a grid of A alone.
     const sp = prime(800, (i) => (i % 10 === 0 ? 0 : 1 + (i % 2)));
