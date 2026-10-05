@@ -316,13 +316,17 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       const renderer = (
         document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
-              _webglRenderer?: { predicted?: Float32Array; currentPointCount?: number };
+              _webglRenderer?: {
+                stageArrays?: { predicted: Float32Array };
+                currentPointCount?: number;
+              };
             })
           | null
       )?._webglRenderer;
       const count = renderer?.currentPointCount ?? 0;
-      return renderer?.predicted
-        ? Array.from(renderer.predicted.subarray(0, count)).filter((value) => value === 1).length
+      const predicted = renderer?.stageArrays?.predicted;
+      return predicted
+        ? Array.from(predicted.subarray(0, count)).filter((value) => value === 1).length
         : -1;
     });
 
@@ -449,26 +453,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
 
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const renderer = (
-          document.querySelector('protspace-scatterplot') as unknown as
-            | (Element & {
-                _webglRenderer?: {
-                  predicted?: Float32Array;
-                  currentPointCount?: number;
-                };
-              })
-            | null
-        )?._webglRenderer;
-        const count = renderer?.currentPointCount ?? 0;
-        return renderer?.predicted
-          ? Array.from(renderer.predicted.subarray(0, count)).filter((value) => value === 1).length
-          : -1;
-      }),
-    )
-    .toBe(213);
+  await expect.poll(predictedVisibleCount).toBe(213);
 
   await eatToggle.uncheck();
   await expect(threshold).toBeDisabled();
