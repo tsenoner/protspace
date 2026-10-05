@@ -34,7 +34,7 @@ vi.mock('./decode.worker?worker&inline', () => ({
 
 vi.mock('./utils/bundle', () => ({ decodeParquetBundle: mocks.decodeParquetBundle }));
 
-import { generateDatasetHash } from '@protspace/utils';
+import { generateDatasetHash, generateLegacyDatasetHash } from '@protspace/utils';
 import { decodeBundle } from './bundle-decoder';
 
 const decoded = (formatVersion: number): DecodedParquetBundle => ({
@@ -81,7 +81,7 @@ describe('decodeBundle', () => {
     expect(reread).not.toHaveBeenCalled();
   });
 
-  it('resolves with the worker result and remembers its dataset hash', async () => {
+  it('resolves with the worker result and remembers its dataset hashes', async () => {
     const fromWorker = decoded(3);
     mocks.reply.mockImplementation((worker: FakeWorker) =>
       answer(worker, {
@@ -89,14 +89,16 @@ describe('decodeBundle', () => {
         ok: true,
         ...fromWorker,
         datasetHash: 'worker-hash',
+        legacyDatasetHash: 'worker-legacy-hash',
       }),
     );
 
     const result = await decodeBundle(bytes, reread);
 
     expect(result.data).toBe(fromWorker.data);
-    // The worker's hash is remembered, so hashing the received data is a lookup.
+    // The worker's hashes are remembered, so hashing the received data is a lookup.
     expect(generateDatasetHash(result.data)).toBe('worker-hash');
+    expect(generateLegacyDatasetHash(result.data)).toBe('worker-legacy-hash');
     expect(result.settings).toBeNull();
     expect(result.formatVersion).toBe(3);
     expect(mocks.decodeParquetBundle).not.toHaveBeenCalled();

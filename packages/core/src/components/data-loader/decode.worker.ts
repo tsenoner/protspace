@@ -1,4 +1,4 @@
-import { generateDatasetHash } from '@protspace/utils';
+import { generateDatasetHash, generateLegacyDatasetHash } from '@protspace/utils';
 import { decodeParquetBundle } from './utils/bundle';
 import { collectTransferables } from './decode-transferables';
 
@@ -18,8 +18,9 @@ ctx.onmessage = async (event: MessageEvent<DecodeRequest>) => {
     const decoded = await decodeParquetBundle(arrayBuffer);
     // Hashed here, before the buffers move, so the main thread need not walk the dataset.
     const datasetHash = generateDatasetHash(decoded.data);
+    const legacyDatasetHash = generateLegacyDatasetHash(decoded.data);
     ctx.postMessage(
-      { type: 'decode-result', ok: true, ...decoded, datasetHash },
+      { type: 'decode-result', ok: true, ...decoded, datasetHash, legacyDatasetHash },
       collectTransferables(decoded.data),
     );
   } catch (error) {

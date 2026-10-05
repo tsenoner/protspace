@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { generateDatasetHash, type VisualizationData } from '@protspace/utils';
+import {
+  generateDatasetHash,
+  generateLegacyDatasetHash,
+  type VisualizationData,
+} from '@protspace/utils';
 import { decodeParquetBundle } from './utils/bundle';
 
 const BUNDLES = [
@@ -26,8 +30,9 @@ vi.stubGlobal('self', scope);
 await import('./decode.worker');
 
 describe('decode worker dataset hash', () => {
-  it.each(BUNDLES)('equals the main-thread hash for %s', async (path) => {
-    const mainThreadHash = generateDatasetHash((await decodeParquetBundle(read(path))).data);
+  it.each(BUNDLES)('equals the main-thread hashes for %s', async (path) => {
+    const mainThreadData = (await decodeParquetBundle(read(path))).data;
+    const mainThreadHash = generateDatasetHash(mainThreadData);
 
     scope.postMessage.mockClear();
     await scope.onmessage?.({ data: { type: 'decode-bundle', arrayBuffer: read(path) } });
@@ -35,10 +40,12 @@ describe('decode worker dataset hash', () => {
     // What the main thread receives: the buffers moved, everything else cloned.
     const received = structuredClone(message, { transfer }) as {
       datasetHash: string;
+      legacyDatasetHash: string;
       data: VisualizationData;
     };
 
     expect(received.datasetHash).toBe(mainThreadHash);
+    expect(received.legacyDatasetHash).toBe(generateLegacyDatasetHash(mainThreadData));
     // A fresh id array misses the memo, so this hashes the received values again.
     const rehashed = { ...received.data, protein_ids: [...received.data.protein_ids] };
     expect(generateDatasetHash(rehashed)).toBe(mainThreadHash);

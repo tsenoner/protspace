@@ -2,9 +2,9 @@ import { rememberDatasetHash } from '@protspace/utils';
 import DecodeWorker from './decode.worker?worker&inline';
 import { decodeParquetBundle, type DecodedParquetBundle } from './utils/bundle';
 
-/** What decode.worker.ts posts back: the decoded bundle and its dataset hash, or the error. */
+/** What decode.worker.ts posts back: the decoded bundle and its dataset hashes, or the error. */
 type WorkerDecodeMessage =
-  | ({ ok: true; datasetHash: string } & DecodedParquetBundle)
+  | ({ ok: true; datasetHash: string; legacyDatasetHash: string } & DecodedParquetBundle)
   | { ok: false; error?: string };
 
 /**
@@ -29,8 +29,8 @@ export async function decodeBundle(
 
 /**
  * The result Float32/Int32 typed arrays are transferred back zero-copy. The worker also
- * hashes the dataset, and that hash is remembered for the received data, so the main
- * thread's `generateDatasetHash` of it is a lookup.
+ * hashes the dataset, and both its hashes are remembered for the received data, so
+ * hashing it on the main thread is a lookup.
  * Rejects on worker spawn or runtime error.
  */
 function decodeInWorker(bytes: ArrayBuffer): Promise<DecodedParquetBundle> {
@@ -47,7 +47,7 @@ function decodeInWorker(bytes: ArrayBuffer): Promise<DecodedParquetBundle> {
       const d = event.data as WorkerDecodeMessage | undefined;
       cleanup();
       if (d?.ok) {
-        rememberDatasetHash(d.data, d.datasetHash);
+        rememberDatasetHash(d.data, d.datasetHash, d.legacyDatasetHash);
         resolve(d);
       } else {
         reject(new Error(d?.error || 'worker decode failed'));
