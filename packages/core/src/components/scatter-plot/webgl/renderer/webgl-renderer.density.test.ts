@@ -4,8 +4,8 @@ import * as d3 from 'd3';
 import type { DensityLayerMode } from '@protspace/utils';
 import type { WebGLStyleGetters } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
-import type { GLResources } from './gl-resources';
 import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 import type { MockGLOptions } from './test-support/mock-webgl2';
 
 type Config = {
@@ -32,7 +32,7 @@ function setup(
     glRecord: gl as unknown as Record<string, (...a: unknown[]) => unknown>,
     degraded,
     setContextLost,
-    resources: (renderer as unknown as { resources: GLResources }).resources,
+    resources: internalsOf(renderer).resources,
   };
 }
 
@@ -532,7 +532,7 @@ describe('context-loss reset', () => {
 
     on.setContextLost(true);
     on.renderer.render(plotData(50));
-    expect((on.renderer as unknown as { densityDisabled: boolean }).densityDisabled).toBe(false);
+    expect(internalsOf(on.renderer).densityDisabled).toBe(false);
     on.renderer.destroy();
   });
 
@@ -547,10 +547,7 @@ describe('context-loss reset', () => {
 
     setContextLost(true);
     renderer.render(plotData(50));
-    const priv = renderer as unknown as {
-      degradeReported: Set<string>;
-      missingFloatExtension: string | null;
-    };
+    const priv = internalsOf(renderer);
     expect(priv.degradeReported.size).toBe(0);
     expect(priv.missingFloatExtension).toBeNull();
     renderer.destroy();

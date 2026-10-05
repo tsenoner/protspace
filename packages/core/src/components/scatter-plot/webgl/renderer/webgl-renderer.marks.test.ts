@@ -14,15 +14,13 @@ import { createStyleGetters, type StyleConfig } from '../../styling/style-getter
 import { computeVisibilityModel } from '../../styling/visibility-model';
 import type { PointMarks, WebGLStyleGetters } from '../types';
 import type { WebGLRenderer } from './webgl-renderer';
-import type { GLResources } from './gl-resources';
-import type { StagedRecords } from './record-table';
-import type { SlotPalette } from './density-pass';
 import {
   makeRenderer,
   markAllocations,
   plotData as fixturePlotData,
   styleGetters,
 } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -90,27 +88,12 @@ const config: StyleConfig = {
   eatOverlayEnabled: true,
 };
 
-type Internals = {
-  resources: GLResources;
-  colors: Float32Array;
-  dataPositions: Float32Array;
-  sizes: Float32Array;
-  shapes: Float32Array;
-  labelCounts: Float32Array;
-  predicted: Float32Array;
-  recordIds: Float32Array;
-  stagedMarks: Uint8Array;
-  stagedRecords: StagedRecords | null;
-  atlas: { plan: { stride: number }; texels: Uint8Array } | null;
-  contourPalette: SlotPalette | null;
-};
-
 /**
  * Every vertex a draw of the point program rasterises, in order. Other draws
  * (density, gamma) are listed by mode and count, which places the composite.
  */
 function recordDraws(renderer: WebGLRenderer, gl: Record<string, unknown>): string[] {
-  const r = renderer as unknown as Internals;
+  const r = internalsOf(renderer);
   const list: string[] = [];
   const uniforms: Record<string, number> = {};
   let program: unknown = null;
@@ -190,7 +173,7 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
     getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
   });
   const draws = recordDraws(renderer, gl as unknown as Record<string, unknown>);
-  const internals = renderer as unknown as Internals;
+  const internals = internalsOf(renderer);
   const view = (next: Partial<StyleConfig>) => {
     const merged = { ...config, ...state, ...next };
     state = { ...state, ...next };
@@ -316,7 +299,7 @@ describe('the mark texture', () => {
     expect(degraded).toEqual([]);
     expect(renderer.canDrawMarks).toBe(false);
     // The frame it was refused in is staged again, as the scatter plot now stages it.
-    expect((renderer as unknown as Internals).colors[3]).toBeCloseTo(0.15);
+    expect(internalsOf(renderer).colors[3]).toBeCloseTo(0.15);
   });
 });
 

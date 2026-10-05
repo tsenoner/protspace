@@ -4,6 +4,7 @@ import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
 import { makeRenderer as makeBaseRenderer } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -38,10 +39,7 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
     // Stub the gamma draw pass: this lock characterizes the signature/re-stage gate
     // only, not pixel output, so neutralizing the draw pass keeps render() cheap and leaves
     // every assertion intact.
-    vi.spyOn(
-      renderer as unknown as { renderWithGammaCorrection: (...a: unknown[]) => void },
-      'renderWithGammaCorrection',
-    ).mockImplementation(() => {});
+    vi.spyOn(internalsOf(renderer), 'renderWithGammaCorrection').mockImplementation(() => {});
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -91,8 +89,7 @@ describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.getGamma).toBeUndefined();
     expect(surface.setGamma).toBeUndefined();
-    // getEffectiveGamma is private; reach it through the same indexed view used
-    // by the context-loss lock.
+    // getEffectiveGamma is private, which the indexed view reaches all the same.
     expect(typeof surface.getEffectiveGamma).toBe('function');
   });
 
@@ -116,10 +113,7 @@ describe('WebGLRenderer data signature — why re-materialisation was catastroph
     // handed the same object, so the signature cannot move. The check itself is
     // correct and stays.
     const renderer = makeRenderer();
-    vi.spyOn(
-      renderer as unknown as { renderWithGammaCorrection: (...a: unknown[]) => void },
-      'renderWithGammaCorrection',
-    ).mockImplementation(() => {});
+    vi.spyOn(internalsOf(renderer), 'renderWithGammaCorrection').mockImplementation(() => {});
 
     // Same first, middle and last coordinates; one fewer point in between.
     const full = pd([0, 5, 5, 9], [0, 5, 5, 9]);

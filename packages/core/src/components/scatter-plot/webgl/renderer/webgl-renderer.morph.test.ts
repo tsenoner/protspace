@@ -8,12 +8,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { PlotData } from '@protspace/utils';
-import type { PointAttribLocations, PointMarks, ScalePair, WebGLStyleGetters } from '../types';
-import type { GLResources } from './gl-resources';
+import type { PointMarks, ScalePair, WebGLStyleGetters } from '../types';
 import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL } from './export-shaders';
 import { MORPH_MS, repaintOrder } from './position-morph';
 import type * as PositionMorph from './position-morph';
 import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 import { perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -134,11 +134,7 @@ function setup(
     },
   });
 
-  const internals = renderer as unknown as {
-    resources: GLResources;
-    pointAttribLocations: PointAttribLocations;
-    sortOrder: Uint32Array;
-  };
+  const internals = internalsOf(renderer);
   /** The data of every upload to `buffer`, in order. */
   const uploads = (buffer: unknown) => log.filter((e) => e.buffer === buffer).map((e) => e.data);
   return {

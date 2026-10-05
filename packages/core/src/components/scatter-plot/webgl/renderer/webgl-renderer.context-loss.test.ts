@@ -6,6 +6,7 @@ import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
 import type { WebGLRenderer } from './webgl-renderer';
 import { makeRenderer, plotData } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
 // (incl. uniform3f / disableVertexAttribArray), so render()-driven tests below can
@@ -95,8 +96,7 @@ describe('WebGLRenderer gamma fallback reporting', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  const gammaOf = (r: WebGLRenderer) =>
-    (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma();
+  const gammaOf = (r: WebGLRenderer) => internalsOf(r).getEffectiveGamma();
   const gammaNotices = (degraded: RendererDegradedDetail[]) =>
     degraded.filter((d) => d.context.reason === 'gamma-pipeline-unavailable');
 
