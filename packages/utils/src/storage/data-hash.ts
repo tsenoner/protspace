@@ -92,10 +92,19 @@ function formatFNV1a64(state: Fnv1a64State): string {
   return state.hi.toString(16).padStart(8, '0') + state.lo.toString(16).padStart(8, '0');
 }
 
-function fnv1a64Hash(str: string): string {
-  const state = createFNV1a64();
-  appendFNV1a64(state, str);
-  return formatFNV1a64(state);
+/**
+ * Hashes `values.join(separator)` without building that string: past about 48M
+ * protein ids it would exceed V8's maximum string length.
+ */
+function appendJoinedFNV1a64(
+  state: Fnv1a64State,
+  values: readonly string[],
+  separator: string,
+): void {
+  for (let i = 0; i < values.length; i++) {
+    if (i > 0) appendFNV1a64(state, separator);
+    appendFNV1a64(state, values[i]);
+  }
 }
 
 /**
@@ -171,11 +180,13 @@ function buildNumericMetadataFingerprint(
   );
 }
 
-function buildDatasetFingerprint(
+/** Appends the fingerprint `${sorted ids joined by \x00}\x02${annotations}\x02` to `state`. */
+function appendDatasetFingerprint(
+  state: Fnv1a64State,
   data: DatasetHashInput,
   proteinIds: readonly string[],
   proteinIndexOrder: readonly number[],
-): string {
+): void {
   const sortedIds = proteinIndexOrder.map((index) => proteinIds[index]);
   const annotationFingerprint = Object.entries(data.annotations ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
@@ -206,7 +217,8 @@ function buildDatasetFingerprint(
     })
     .join('\x01');
 
-  return `${sortedIds.join('\x00')}\x02${annotationFingerprint}\x02`;
+  appendJoinedFNV1a64(state, sortedIds, '\x00');
+  appendFNV1a64(state, `\x02${annotationFingerprint}\x02`);
 }
 
 function buildPredictionFingerprint(
@@ -257,7 +269,7 @@ function hashDataset(data: DatasetHashInput): DatasetHashes {
   const proteinIds = Array.isArray(data.protein_ids) ? data.protein_ids : [];
   const proteinIndexOrder = buildProteinIndexOrder(proteinIds);
   const state = createFNV1a64();
-  appendFNV1a64(state, buildDatasetFingerprint(data, proteinIds, proteinIndexOrder));
+  appendDatasetFingerprint(state, data, proteinIds, proteinIndexOrder);
   const legacyHash = formatFNV1a64(state);
   appendFNV1a64(state, buildPredictionFingerprint(data, proteinIds, proteinIndexOrder));
   return { hash: formatFNV1a64(state), legacyHash };
@@ -287,7 +299,9 @@ function datasetHashes(input: string[] | DatasetHashInput): DatasetHashes {
   }
 
   if (Array.isArray(input)) {
-    const hash = fnv1a64Hash([...input].sort().join('\x00'));
+    const state = createFNV1a64();
+    appendJoinedFNV1a64(state, [...input].sort(), '\x00');
+    const hash = formatFNV1a64(state);
     return { hash, legacyHash: hash };
   }
 
