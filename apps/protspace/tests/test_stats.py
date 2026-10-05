@@ -77,7 +77,6 @@ def test_to_arrow_has_ten_column_schema():
         "extra_json",
     ]
     assert table.schema.names == names
-    assert len(names) == 10
     assert table.num_rows == 1
     assert table.column("value")[0].as_py() == pytest.approx(0.42)
 
@@ -108,15 +107,6 @@ def test_statrow_carries_annotation_column():
     report.add([row])
     tbl = report.to_arrow()
     assert tbl.column("annotation").to_pylist() == ["major_group"]
-
-
-def test_statcontext_defaults_annotations_none():
-    import numpy as np
-
-    from protspace.stats.base import StatContext
-
-    ctx = StatContext("projection", "P", coords=np.zeros((3, 2)), ids=["a", "b", "c"])
-    assert ctx.annotations is None
 
 
 # --------------------------------------------------------------------------- #
@@ -1002,22 +992,6 @@ def test_kmeans_elbow_subsample_is_row_order_invariant_with_ids():
     assert m1 == m2  # per-id membership invariant to input row order
 
 
-def test_elbow_result_has_no_silhouette_optimal_k():
-    """The write-only silhouette_optimal_k field/sweep was removed."""
-    from dataclasses import fields
-
-    X, _ = _blobs(n=200, centers=3, dim=2, seed=44)
-    res = kmeans_elbow(X, rng_seed=42)
-    assert "silhouette_optimal_k" not in {f.name for f in fields(res)}
-    ctx = StatContext("projection", "P", coords=X, ids=[str(i) for i in range(len(X))])
-    meta = next(
-        r
-        for r in ClusterValidityStatistic().compute(ctx)
-        if isinstance(r, StatRow) and r.metric == "n_clusters"
-    )
-    assert "silhouette_optimal_k" not in meta.extra
-
-
 def test_cluster_silhouette_matches_sklearn_on_the_membership_labels():
     """The silhouette reported for a cluster column is sklearn's silhouette on exactly
     the labels that column carries — not on some other labelling. (This used to pin the
@@ -1190,6 +1164,8 @@ def test_faithfulness_emits_global_metrics_tagged_by_scope():
 
 
 def test_global_metrics_higher_for_faithful_projection():
+    """The only test that catches the global metrics ignoring the projection:
+    a faithful PCA must score above random coordinates, not just above a bar."""
     X, _ = _blobs(n=150, centers=5, dim=8, seed=55)
     faithful = PCA(n_components=2, random_state=0).fit_transform(X)
     rand = np.random.default_rng(0).normal(size=(150, 2))

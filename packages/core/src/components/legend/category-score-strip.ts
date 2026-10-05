@@ -137,10 +137,9 @@ class ProtspaceScoreStrip extends LitElement {
       </div>
       <!-- The strip's only accessible surface. The dots carry their values in <title>, but the
            <svg> is role="img" with an aria-label, which replaces its whole subtree in the
-           accessibility tree, and the legend rows deliberately do not repeat the number (see
-           legend.score-sync.test.ts, "keeps a scored row down to its label and count"). Without
-           this list the per-category scores — the entire point of the strip — are unreachable
-           to assistive tech. -->
+           accessibility tree, and the legend rows deliberately do not repeat the number (a
+           scored row shows only its label and count). Without this list the per-category
+           scores — the entire point of the strip — are unreachable to assistive tech. -->
       <ul class="sr-only">
         ${this.points.map(
           (point) => html`<li>${point.category}: ${formatStatValue(point.value)}</li>`,

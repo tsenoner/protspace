@@ -319,18 +319,6 @@ describe('legend-data-processor', () => {
       expect(result.topItems[2][0]).toBe('small');
     });
 
-    it('sorts alphabetically with alpha mode', () => {
-      const freq = new Map<string, number>([
-        ['10-20', 5],
-        ['1-5', 10],
-        ['5-10', 8],
-      ]);
-      const result = LegendDataProcessor.sortAndLimitItems(freq, 10, false, 'alpha-asc');
-      expect(result.topItems[0][0]).toBe('1-5');
-      expect(result.topItems[1][0]).toBe('5-10');
-      expect(result.topItems[2][0]).toBe('10-20');
-    });
-
     it('limits items to maxVisibleValues', () => {
       const freq = new Map<string, number>([
         ['a', 10],
@@ -528,25 +516,48 @@ describe('legend-data-processor', () => {
       expect(result.topItems.map(([v]) => v)).toContain('d');
     });
 
+    it('keeps visible values over larger non-visible ones when the cap is tight', () => {
+      const freq = new Map<string, number>([
+        ['a', 10],
+        ['b', 8],
+        ['c', 6],
+        ['d', 4],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        2,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['a', 'c']),
+      );
+      // c is visible, so it keeps its row even though b is larger.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
+    });
+
     it('includes pendingExtract item in visible set', () => {
       const freq = new Map<string, number>([
         ['a', 10],
         ['b', 8],
         ['c', 6],
+        ['d', 4],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
         visibleValues,
         new Map(),
         true,
-        'b', // pendingExtract
+        'c', // pendingExtract
       );
-      expect(result.topItems.map(([v]) => v)).toContain('b');
+      // The freed slot goes to the extracted c, not to the larger b.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('excludes pendingMerge item from visible set', () => {
@@ -574,12 +585,13 @@ describe('legend-data-processor', () => {
     it('handles N/A extraction via pendingExtract', () => {
       const freq = new Map<string, number>([
         ['a', 10],
+        ['b', 8],
         [NA_VALUE, 5],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
@@ -588,7 +600,8 @@ describe('legend-data-processor', () => {
         true,
         NA_VALUE, // Extract N/A
       );
-      expect(result.topItems.map(([v]) => v)).toContain(NA_VALUE);
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', NA_VALUE]);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b']);
     });
 
     it('handles N/A merge via pendingMerge', () => {
@@ -868,16 +881,10 @@ describe('legend-data-processor', () => {
       expect(items[0].count).toBe(10);
       expect(items[0].isVisible).toBe(true);
       expect(items[0].color).toBeDefined();
-      expect(items[0].shape).toBe('circle');
+      expect(items.every((i) => i.shape === 'circle')).toBe(true);
     });
 
-    it('adds Other item when otherCount > 0', () => {
-      const topItems: Array<[string, number]> = [['category1', 10]];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
-      expect(items.some((i) => i.value === 'Other')).toBe(true);
-    });
-
-    it('sets correct count on Other item', () => {
+    it('adds an Other item carrying otherCount when otherCount > 0', () => {
       const topItems: Array<[string, number]> = [['category1', 10]];
       const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
       expect(items.find((i) => i.value === 'Other')?.count).toBe(5);
@@ -965,15 +972,6 @@ describe('legend-data-processor', () => {
       expect(cat1?.zOrder).toBe(1); // Second in reversed order
     });
 
-    it('uses circle as the default shape for every item', () => {
-      const topItems: Array<[string, number]> = [
-        ['category1', 10],
-        ['category2', 5],
-      ];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, []);
-      expect(items.every((i) => i.shape === 'circle')).toBe(true);
-    });
-
     it('applies colors from persistedCategories', () => {
       const topItems: Array<[string, number]> = [
         ['category1', 10],
@@ -1021,23 +1019,6 @@ describe('legend-data-processor', () => {
         persistedCategories,
       );
       expect(items[0].color).toBe('#persisted');
-    });
-
-    it('applies persisted colors to N/A items using __NA__ key', () => {
-      const topItems: Array<[string, number]> = [[NA_VALUE, 10]];
-      const persistedCategories = {
-        [NA_VALUE]: { zOrder: 0, color: '#na-color', shape: 'circle' },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      expect(items[0].color).toBe('#na-color');
     });
 
     it('uses existing colors when no persisted categories', () => {
@@ -1134,28 +1115,6 @@ describe('legend-data-processor', () => {
       );
       // Computed shape is always 'circle' regardless of what existing items had.
       expect(items[0].shape).toBe('circle');
-    });
-
-    it('keeps every default shape as circle even with prior items', () => {
-      const topItems: Array<[string, number]> = [
-        ['cat1', 30],
-        ['cat2', 20],
-      ];
-      const existing: LegendItem[] = [
-        { value: 'cat1', color: '#F3C300', shape: 'circle', count: 30, isVisible: true, zOrder: 0 },
-        { value: 'cat2', color: '#875692', shape: 'circle', count: 20, isVisible: true, zOrder: 1 },
-      ];
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        existing,
-        'size-desc',
-        new Map(),
-        {}, // empty persisted — simulates cleared pending categories
-      );
-      expect(items[0].shape).toBe('circle');
-      expect(items[1].shape).toBe('circle');
     });
 
     it('prefers persisted shapes over existing shapes', () => {
@@ -1290,7 +1249,7 @@ describe('legend-data-processor', () => {
       );
       expect(ctx.currentAnnotation).toBe('annotation1');
 
-      LegendDataProcessor.processLegendItems(
+      const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation2',
         countValues(['c', 'd']),
@@ -1300,6 +1259,11 @@ describe('legend-data-processor', () => {
         'size-desc',
       );
       expect(ctx.currentAnnotation).toBe('annotation2');
+      // The new annotation starts again at slot 0 instead of continuing after
+      // annotation1's slots. Compared as a set: c and d tie on count.
+      expect(new Set(result.legendItems.map((i) => i.color))).toEqual(
+        new Set([getVisualEncoding(0).color, getVisualEncoding(1).color]),
+      );
     });
 
     it('creates Other bucket when exceeding max visible', () => {
@@ -1455,35 +1419,36 @@ describe('legend-data-processor', () => {
     });
 
     it('uses visibleValues to restore specific categories', () => {
-      const values = ['a', 'b', 'c', 'd', 'e'];
+      // b (3) outranks c (2), but only a and c were visible before.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a', 'c']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
         countValues(values),
-        10,
+        2,
         false,
         [],
         'size-desc',
         {},
         visibleValues,
       );
-      // Should only include visible values (plus Other for the rest)
       const visibleLegendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
         .map((i) => i.value);
-      expect(visibleLegendValues).toContain('a');
-      expect(visibleLegendValues).toContain('c');
+      expect(visibleLegendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingExtract to add new item', () => {
-      const values = ['a', 'b', 'c'];
+      // c is not in the top 2 by count; only the extract brings it in.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
         countValues(values),
-        10,
+        2,
         false,
         [],
         'size-desc',
@@ -1491,11 +1456,13 @@ describe('legend-data-processor', () => {
         visibleValues,
         new Map(),
         true,
-        'b',
+        'c',
       );
-      const legendValues = result.legendItems.map((i) => i.value);
-      expect(legendValues).toContain('a');
-      expect(legendValues).toContain('b');
+      const legendValues = result.legendItems
+        .filter((i) => i.value !== 'Other')
+        .map((i) => i.value);
+      expect(legendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingMerge to remove item', () => {

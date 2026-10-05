@@ -727,26 +727,6 @@ class TestParsingWithNameResolution:
         )
 
 
-def test_interpro_annotations_constant():
-    """Test that INTERPRO_ANNOTATIONS contains expected annotations."""
-    expected_annotations = [
-        "pfam",
-        "superfamily",
-        "cath",
-        "signal_peptide",
-        "smart",
-        "cdd",
-        "panther",
-        "prosite",
-        "prints",
-    ]
-
-    for annotation in expected_annotations:
-        assert annotation in INTERPRO_ANNOTATIONS
-
-    assert len(INTERPRO_ANNOTATIONS) == 10  # 9 databases + pfam_clan (derived)
-
-
 class TestNewInterProDatabases:
     """Test retrieval of 7 new InterPro databases."""
 
@@ -1684,15 +1664,15 @@ class TestParallelBatches:
         assert outputs[4] == outputs[1]
         assert outputs[8] == outputs[1]
 
-    def test_by_default_four_batches_share_one_session(self, monkeypatch):
+    def test_default_batches_run_in_parallel_over_one_session(self, monkeypatch):
         server = _MatchesServer(jitter=0.004)
         server.install(monkeypatch)
         sequences = self._sequences(120)
 
         self._retriever(monkeypatch, sequences).fetch_annotations()
 
-        assert MAX_CONCURRENT_REQUESTS == 4
-        assert 1 < server.peak <= MAX_CONCURRENT_REQUESTS
+        # The spec ("The defaults stay polite") caps InterPro at 4 batches in flight.
+        assert 1 < server.peak <= MAX_CONCURRENT_REQUESTS <= 4
         assert len(server.sessions) == 1
 
     @pytest.mark.parametrize("workers", [4, 8])

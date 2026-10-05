@@ -30,13 +30,18 @@ def test_scores_each_annotation_on_ctx_coords():
     assert 0.4 < s.value <= 1.0  # well-separated blobs → high silhouette
 
 
-def test_space_kind_is_taken_from_context():
+def test_embedding_pass_takes_space_from_context_and_emits_per_category_rows():
     X, y = _blobs(n=120, centers=3, dim=8, seed=4)
     ids = [f"p{i}" for i in range(120)]
     ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
     outs = AnnotationValidityStatistic().compute(
         StatContext("embedding", "prot_t5", coords=X, ids=ids, annotations=ann)
     )
+    per_cat = [r for r in outs if r.category is not None]
+    assert per_cat
+    # Not just "some per-category row survived": suppressing per-category silhouette
+    # alone, while leaving the Davies-Bouldin per-category rows, must also fail here.
+    assert any(r.metric == "silhouette" for r in per_cat)
     assert all(r.space_kind == "embedding" for r in outs)
     assert all(r.space_name == "prot_t5" for r in outs)
 
@@ -292,21 +297,6 @@ def test_calinski_harabasz_stays_aggregate_only():
     ch = [r for r in outs if r.metric == "calinski_harabasz"]
     assert len(ch) == 1
     assert ch[0].category is None
-
-
-def test_per_category_rows_are_emitted_for_the_embedding_pass_too():
-    X, y = _blobs(n=120, centers=3, dim=8, seed=4)
-    ids = [f"p{i}" for i in range(120)]
-    ann = {"grp": {pid: f"g{int(c)}" for pid, c in zip(ids, y, strict=True)}}
-    outs = AnnotationValidityStatistic().compute(
-        StatContext("embedding", "prot_t5", coords=X, ids=ids, annotations=ann)
-    )
-    per_cat = [r for r in outs if r.category is not None]
-    assert per_cat
-    assert all(r.space_kind == "embedding" for r in per_cat)
-    # Not just "some per-category row survived": suppressing per-category silhouette
-    # alone, while leaving the Davies-Bouldin per-category rows, must also fail here.
-    assert any(r.metric == "silhouette" for r in per_cat)
 
 
 def test_singleton_category_is_dropped_but_the_others_still_score():

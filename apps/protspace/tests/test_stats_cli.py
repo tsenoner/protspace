@@ -109,7 +109,8 @@ def test_stats_command_writes_aggregate_only_part(tmp_path):
     contributes only its K-selection meta row (n_clusters) — annotation-based
     silhouette/DBI/CH (family=annotation_validity) and cluster_agreement (ARI/NMI)
     both require annotations and are absent here (see
-    test_stats_command_computes_annotation_validity for the annotated path)."""
+    test_stats_command_computes_annotation_validity for the annotated path). The
+    per-protein computation has nowhere to land without -a, so it is skipped."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -242,23 +243,6 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     # membership value = a bare "cluster N" category, like any curated annotation
     value = str(df[cluster_cols[0]].iloc[0])
     assert value.startswith("cluster ") and "|" not in value
-
-
-def test_stats_without_annotations_does_not_compute_per_protein(tmp_path):
-    """Without -a, stats stays aggregate+faithfulness only (the per-protein
-    computation has nowhere to land, so it is skipped)."""
-    from typer.testing import CliRunner
-
-    from protspace.cli.app import app
-
-    h5_path, proj, _ = _project_dir(tmp_path)
-    out = tmp_path / "statistics.parquet"
-    result = CliRunner().invoke(
-        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out)]
-    )
-    assert result.exit_code == 0, result.output
-    table = pq.read_table(str(out))
-    assert set(table.column("stat_family").to_pylist()) == {"cluster_validity"}
 
 
 def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):

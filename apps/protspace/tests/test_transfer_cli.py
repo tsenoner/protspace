@@ -9,6 +9,7 @@ import pytest
 from protspace.analysis.classification import Rule
 from protspace.cli.transfer import run_transfer
 from protspace.data.annotations.encoding import stamp_format_version
+from tests.cli_output import plain
 
 
 def _three_protein_inputs(extra_columns=None):
@@ -19,6 +20,7 @@ def _three_protein_inputs(extra_columns=None):
     if extra_columns:
         cols.update(extra_columns)
     annotations = pa.table(cols)
+    # TRINITY_1 sits right on top of the neurotoxin reference P00001.
     embeddings = {
         "TRINITY_1": np.array([0.0, 0.0], dtype=np.float32),
         "P00001": np.array([0.05, 0.0], dtype=np.float32),
@@ -63,24 +65,8 @@ def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     return bundle_path, h5_path
 
 
-def _inputs():
-    annotations = pa.table(
-        {
-            "identifier": ["TRINITY_1", "P00001", "P00002"],
-            "protein_category": ["", "neurotoxin", "enzyme"],
-        }
-    )
-    # TRINITY_1 sits right on top of the neurotoxin reference P00001.
-    embeddings = {
-        "TRINITY_1": np.array([0.0, 0.0], dtype=np.float32),
-        "P00001": np.array([0.05, 0.0], dtype=np.float32),
-        "P00002": np.array([9.0, 0.0], dtype=np.float32),
-    }
-    return annotations, embeddings
-
-
 def test_run_transfer_predicts_for_query_with_missing_value():
-    annotations, embeddings = _inputs()
+    annotations, embeddings = _three_protein_inputs()
     out = run_transfer(
         annotations=annotations,
         embeddings=embeddings,
@@ -130,7 +116,7 @@ def test_run_transfer_treats_nan_as_missing():
 
 
 def test_run_transfer_skips_proteins_without_embeddings():
-    annotations, embeddings = _inputs()
+    annotations, embeddings = _three_protein_inputs()
     embeddings.pop("TRINITY_1")  # no embedding -> cannot be a query
     with pytest.raises(ValueError, match="no query"):
         run_transfer(
@@ -178,6 +164,11 @@ def test_run_transfer_k_greater_than_one():
     )
     by_id = {r["identifier"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    # The nearest neighbour wins for any k here; only the confidence sees the
+    # second vote (k=1 would give ~0.909).
+    assert by_id["TRINITY_1"]["protein_category__pred_confidence"] == pytest.approx(
+        0.4545, abs=1e-3
+    )
 
 
 def test_run_transfer_cosine_metric():
@@ -260,6 +251,7 @@ def test_cli_bad_where_column_is_clean_error(tmp_path):
 
 
 def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
+    import click
     import h5py
     from typer.testing import CliRunner
 
@@ -271,7 +263,9 @@ def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
         f.attrs["model_name"] = "m"
         f.create_dataset("ZZZ", data=np.array([0.0, 0.0], dtype=np.float32))
     out = tmp_path / "out.parquetbundle"
-    result = CliRunner().invoke(
+    # Rich wraps the error panel to the terminal width; pin it so a narrow
+    # exported COLUMNS cannot split the message fragments asserted below.
+    result = CliRunner(env={"COLUMNS": "200"}).invoke(
         app,
         [
             "transfer",
@@ -289,18 +283,20 @@ def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, ValueError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "matching embedding" in result.output
 
 
 def test_cli_no_query_match_is_clean_error(tmp_path):
+    import click
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
 
     bundle, h5 = _write_bundle_and_h5(tmp_path)
     out = tmp_path / "out.parquetbundle"
-    result = CliRunner().invoke(
+    result = CliRunner(env={"COLUMNS": "200"}).invoke(
         app,
         [
             "transfer",
@@ -318,11 +314,13 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, ValueError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "matched no query proteins" in result.output
 
 
 def test_cli_both_id_columns_present_is_clean_error(tmp_path):
+    import click
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -331,7 +329,7 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
         tmp_path, extra_columns={"identifier": ["TRINITY_1", "P00001"]}
     )
     out = tmp_path / "out.parquetbundle"
-    result = CliRunner().invoke(
+    result = CliRunner(env={"COLUMNS": "200"}).invoke(
         app,
         [
             "transfer",
@@ -349,18 +347,22 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, KeyError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "both 'protein_id'" in result.output
 
 
-def test_transfer_command_is_registered():
+def test_transfer_help_renders():
+    """The only `--help` render test in the suite: the usage line alone always
+    names the command, so check that a real option made it into the help."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
 
-    result = CliRunner().invoke(app, ["transfer", "--help"])
-    assert result.exit_code == 0
-    assert "transfer" in result.output.lower()
+    # Wide enough that Rich does not truncate the option names.
+    result = CliRunner().invoke(app, ["transfer", "--help"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert "--query-id-prefix" in plain(result.output)
 
 
 def test_cli_end_to_end_protein_id_bundle(tmp_path):

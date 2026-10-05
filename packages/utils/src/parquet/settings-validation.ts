@@ -275,7 +275,7 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
   };
 }
 
-export function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
+function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
     return null;
   }

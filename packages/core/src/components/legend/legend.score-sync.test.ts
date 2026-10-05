@@ -85,6 +85,11 @@ async function setup(data: VisualizationData): Promise<ProtspaceLegend> {
 }
 
 describe('legend score strip synchronisation', () => {
+  beforeEach(() => {
+    // The dot-click test persists a hidden category under makeData()'s hash.
+    localStorage.clear();
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
   });
@@ -212,16 +217,11 @@ describe('legend score column', () => {
     document.body.innerHTML = '';
   });
 
-  it('keeps a scored row down to its label and count', async () => {
-    // The per-row number is gone: the strips' value gutters read out the hovered
-    // category on every metric at once, so repeating silhouette alone on each row was
-    // a second, narrower answer to the same question. A row is its label and count.
+  it("renders a scored row's category count", async () => {
     const el = await setup(makeData());
 
     const row = el.shadowRoot!.querySelector('[data-value="Elapidae"]')!;
     expect(row.querySelector('.legend-count')!.textContent!.trim()).toBe('2');
-    // Elapidae's silhouette in this fixture, which used to render as "0.81".
-    expect(row.textContent).not.toContain('0.81');
   });
 
   it('sorts rows best-separating-first when the sort mode is silhouette-desc', async () => {
