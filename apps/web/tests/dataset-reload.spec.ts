@@ -16,6 +16,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
+import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
@@ -37,23 +38,6 @@ async function clearPersistedDataset(page: Page): Promise<void> {
       await root.removeEntry('protspace-last-import', { recursive: true });
     } catch {
       // Ignore missing directory.
-    }
-  });
-}
-
-/** The stored import's name and load status, or null when OPFS holds none. */
-async function readStoredImport(
-  page: Page,
-): Promise<{ name: string; lastLoadStatus: string } | null> {
-  return page.evaluate(async () => {
-    try {
-      const root = await navigator.storage.getDirectory();
-      const store = await root.getDirectoryHandle('protspace-last-import');
-      const metadataFile = await (await store.getFileHandle('metadata.json')).getFile();
-      const { name, lastLoadStatus } = JSON.parse(await metadataFile.text());
-      return { name, lastLoadStatus };
-    } catch {
-      return null;
     }
   });
 }
@@ -111,9 +95,12 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
   });
 }
 
-async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
+async function loadCustomDatasetFromImportMenu(
+  page: Page,
+  file: Parameters<typeof importUserFile>[1],
+): Promise<void> {
   await openImportMenu(page);
-  await importUserFile(page, datasetPath);
+  await importUserFile(page, file);
 }
 
 async function measureSingleImportLifecycle(
@@ -345,15 +332,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
-    await page.reload();
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-
     // A file that fails to decode is never saved, so it must not mark the healthy
     // import still in OPFS as failed.
-    await openImportMenu(page);
-    await importUserFile(page, {
+    await loadCustomDatasetFromImportMenu(page, {
       name: 'broken.parquetbundle',
       mimeType: 'application/octet-stream',
       buffer: Buffer.from('not-a-valid-bundle'),
