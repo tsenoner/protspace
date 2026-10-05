@@ -3,8 +3,8 @@
  *
  * Lasso / brush selection: the slot→id resolution is shared by both paths via
  * the `_slotsToInteractiveIds` helper. The lasso cases drive the live
- * PlotInteractionController (via the element's `_interactionHost()` bridge) and
- * the brush case drives the `_handleBrushEnd` host shim; both assert the
+ * PlotInteractionController (via the element's `_interactionHost()` bridge), and
+ * so do the brush cases, through its brush-end handler; both assert the
  * dispatched `brush-selection` event carries ONLY the interactive ids, in slot
  * order, resolving originalIndex → proteinId correctly in both the identity
  * (originalIndices === null) and explicit-mapping cases.
@@ -37,6 +37,23 @@ function runLassoSelection(sp: PlotInternals) {
   controller.extendLasso([10, 0]);
   controller.extendLasso([10, 10]);
   controller.endLasso();
+}
+
+/**
+ * The live brush path the same way: the controller's brush-end handler, which the d3
+ * brush calls when a drag ends, resolves the rectangle's slots → ids via
+ * host.queryByPixels/resolveSlotsToIds and dispatches through host.onSelect.
+ */
+function runBrushSelection(sp: PlotInternals) {
+  const controller = new PlotInteractionController(sp._interactionHost()) as unknown as {
+    _handleBrushEnd(event: { selection: [[number, number], [number, number]] }): void;
+  };
+  controller._handleBrushEnd({
+    selection: [
+      [0, 0],
+      [10, 10],
+    ],
+  });
 }
 
 /**
@@ -114,12 +131,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
     const frames = fakeFrames();
-    sp._handleBrushEnd({
-      selection: [
-        [0, 0],
-        [10, 10],
-      ],
-    });
+    runBrushSelection(sp);
     frames.flush();
 
     expect(events).toHaveLength(1);
@@ -189,12 +201,7 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     sp.addEventListener('brush-selection', (e) => events.push(e as CustomEvent));
 
     const frames = fakeFrames();
-    sp._handleBrushEnd({
-      selection: [
-        [0, 0],
-        [10, 10],
-      ],
-    });
+    runBrushSelection(sp);
     frames.flush();
 
     expect(events).toHaveLength(0);

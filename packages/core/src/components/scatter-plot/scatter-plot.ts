@@ -1653,26 +1653,6 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Host shim retained for the characterization suite: the live brush
-   * lifecycle (incl. clearing the brush rectangle on commit) lives in
-   * PlotInteractionController, but scatter-plot.test.ts drives this handler
-   * directly. Body stays behavior-identical for slot→id resolution + dispatch;
-   * the brush-rectangle clear is owned by the controller for the live path.
-   * Public so the test can drive it (mirrors pickInteractivePointAt); not called
-   * from app code (controller owns the live path).
-   */
-  _handleBrushEnd(event: d3.D3BrushEvent<unknown>) {
-    if (!event.selection) return;
-
-    const [[x0, y0], [x1, y1]] = event.selection as [[number, number], [number, number]];
-    const slots = this._visibleIndex().queryByPixels(x0, y0, x1, y1);
-    const selectedIds = this._slotsToInteractiveIds(slots);
-    this._commitSelection(selectedIds, () => {
-      /* brush-rectangle clear owned by the controller for the live path */
-    });
-  }
-
-  /**
    * Shared selection commit logic for both brush and lasso.
    * Updates selectedProteinIds, dispatches the event, and schedules visual cleanup.
    */
