@@ -500,11 +500,12 @@ describe('density layer failure is not a gamma failure', () => {
   });
 });
 
-// The renderer no longer checks its handles every frame, so resetRendererState
-// runs only on a context loss. A loss is permanent for the renderer (F-39): it
-// draws nothing afterwards, so the reset is observable only on its private state.
-describe('context-loss reset', () => {
-  it('clears the density latch on a context loss', () => {
+// main's stale-handle reset tests cleared this latch on a dead GL handle. The
+// renderer no longer checks its handles per frame, and a context loss latches
+// the renderer for good (the host builds a new instance, which tries afresh),
+// so only the latch itself is left to pin.
+describe('density latch', () => {
+  it('holds after the device recovers', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
     // Fail only the float density target (as in the grid-allocation test above),
@@ -523,33 +524,12 @@ describe('context-loss reset', () => {
     on.renderer.render(plotData(50));
     expect(reasons(on.degraded)).toEqual(['density-unavailable']);
 
-    // The device recovers, but the latch holds: a re-render that would
-    // re-accumulate the field still draws no density.
+    // A re-render that would re-accumulate the field still draws no density.
     failDensityTarget = false;
     on.renderer.invalidateStyleCache();
     on.renderer.render(plotData(50));
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
-
-    on.setContextLost(true);
-    on.renderer.render(plotData(50));
-    expect(internalsOf(on.renderer).densityDisabled).toBe(false);
+    expect(reasons(on.degraded)).toEqual(['density-unavailable']);
     on.renderer.destroy();
-  });
-
-  it('re-arms the density-unavailable report for the next context', () => {
-    const { renderer, degraded, setContextLost } = makeRenderer({
-      missingFloatExtensions: true,
-      getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,
-    });
-    renderer.render(plotData(50));
-    renderer.render(plotData(50));
-    expect(reasons(degraded)).toEqual(['density-unavailable']);
-
-    setContextLost(true);
-    renderer.render(plotData(50));
-    const priv = internalsOf(renderer);
-    expect(priv.degradeReported.size).toBe(0);
-    expect(priv.missingFloatExtension).toBeNull();
-    renderer.destroy();
   });
 });

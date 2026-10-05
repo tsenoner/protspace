@@ -1136,37 +1136,23 @@ export class WebGLRenderer {
     this.lossController.markLost();
   }
 
+  /**
+   * Drop what the lost context owned, and the data staged for it. The loss
+   * latches this renderer for good (the host builds a new one), so state only a
+   * draw reads stays as it is. An export still reads the atlas fields (see
+   * `exportLabelStride`).
+   */
   private resetRendererState() {
     this.discardPrograms(this.pendingPrograms);
     this.pendingPrograms = null;
     this.gl = null;
     this.resources.reset();
-    this.pointAttribLocations = null;
-    this.pointUniformLocations = null;
-    this.gammaCorrectionUniformLocations = null;
-    this.labelTextureInitialized = false;
     this.atlas = null;
     this.labelAtlasDisabled = false;
-    this.labelAtlasActive = false;
-    this.densityDisabled = false;
-    this.degradeReported.clear();
-    this.gammaPipelineAvailable = true;
-    this.warnedGammaFallback = false;
-    this.missingFloatExtension = null;
-    this.buffersInitialized = false;
-    this.currentPointCount = 0;
-    this.visibleCount = 0;
-    this.positionsDirty = true;
-    this.stylesDirty = true;
-    this.lastDataSignature = null;
-    this.lastStyleSignature = null;
     this.sortedDataRef = null;
-    this.stagedScales = null;
-    this.positionRescale = IDENTITY_RESCALE;
-    // Its buffer went with the context, and the restore draws the staged positions.
+    // Drops its start positions, and `isMorphing` stops asking for frames.
     this.glide.end();
     this.recordTable.reset();
-    this.marks = null;
     this.markTexture.reset();
   }
 
@@ -1826,8 +1812,7 @@ export class WebGLRenderer {
 
   /**
    * Report a capability reduction to the host, at most once per reason per
-   * renderer instance. `resetRendererState` clears the latch, so a context loss
-   * and rebuild can report again.
+   * renderer instance. A context loss gets a new instance, which reports afresh.
    */
   private reportDegraded(reason: RendererDegradedReason, detail?: string) {
     if (this.degradeReported.has(reason)) return;
