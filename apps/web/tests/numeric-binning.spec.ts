@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
+import { dismissTourIfPresent, selectAnnotation, waitForExploreDataLoad } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -306,44 +306,6 @@ async function openLegendSettings(page: Page): Promise<void> {
   await dismissTourIfPresent(page);
   await page.locator('protspace-legend button[aria-label="Legend settings"]').click();
   await expect(page.locator('protspace-legend #legend-settings-dialog')).toBeVisible();
-}
-
-async function selectAnnotation(page: Page, annotation: string): Promise<void> {
-  await dismissTourIfPresent(page);
-  await page.locator('protspace-control-bar protspace-annotation-select .dropdown-trigger').click();
-  // Items render the friendly display label (e.g. "Sequence length") but carry
-  // the raw annotation key on data-annotation; click by key so this stays
-  // label-agnostic.
-  await page
-    .locator(
-      `protspace-control-bar protspace-annotation-select .dropdown-item[data-annotation="${annotation}"]`,
-    )
-    .first()
-    .click();
-  // The control bar applies a menu pick after the next paint. Re-picking the current
-  // annotation leaves the state polled below unchanged, so wait out that frame too.
-  await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
-  );
-
-  await page.waitForFunction((nextAnnotation) => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & { selectedAnnotation?: string })
-      | null;
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { selectedAnnotation?: string })
-      | null;
-    const legend = document.querySelector('protspace-legend') as
-      | (Element & { selectedAnnotation?: string })
-      | null;
-
-    return (
-      plot?.selectedAnnotation === nextAnnotation &&
-      controlBar?.selectedAnnotation === nextAnnotation &&
-      legend?.selectedAnnotation === nextAnnotation &&
-      nextAnnotation.length > 0
-    );
-  }, annotation);
 }
 
 async function readLegendSettingsDialog(page: Page) {

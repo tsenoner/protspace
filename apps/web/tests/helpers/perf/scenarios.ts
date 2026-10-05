@@ -1,7 +1,12 @@
 import { expect, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dismissTourIfPresent, waitForExploreDataLoad } from '../explore';
+import {
+  dismissTourIfPresent,
+  selectAnnotation,
+  selectProjection,
+  waitForExploreDataLoad,
+} from '../explore';
 import {
   installProbes,
   readSnapshot,
@@ -97,7 +102,6 @@ type PlotHost = Element & {
     projections?: Array<{ name: string }>;
   };
   selectedAnnotation?: string;
-  selectedProjectionIndex?: number;
   pickInteractivePointAt?: (x: number, y: number) => unknown;
 };
 
@@ -153,51 +157,6 @@ export async function readExploreState(page: Page): Promise<ExploreState> {
   expect(state.switchTo, 'dataset has a single annotation').not.toBe('');
   expect(state.legendValue, 'no legend item to isolate').not.toBe('');
   return state;
-}
-
-async function waitForPlotState(
-  page: Page,
-  key: 'selectedAnnotation' | 'selectedProjectionIndex',
-  value: string | number,
-): Promise<void> {
-  try {
-    await page.waitForFunction(
-      ({ key, value }) => (document.querySelector('#myPlot') as PlotHost | null)?.[key] === value,
-      { key, value },
-      { timeout: 10_000 },
-    );
-  } catch (error) {
-    const actual = await page
-      .locator('#myPlot')
-      .evaluate((plot: PlotHost, k) => String(plot[k]), key)
-      .catch(() => 'unreadable');
-    throw new Error(`#myPlot.${key} never became ${JSON.stringify(value)} (still ${actual})`, {
-      cause: error,
-    });
-  }
-}
-
-async function selectAnnotation(page: Page, annotation: string): Promise<void> {
-  const select = page.locator('protspace-control-bar protspace-annotation-select');
-  const item = select.locator(`.dropdown-item[data-annotation="${annotation}"]`);
-  // The trigger toggles, so only click it when the menu is closed.
-  if (!(await item.isVisible())) await select.locator('.dropdown-trigger').click();
-  await expect(item, `annotation menu item "${annotation}" not shown`).toBeVisible({
-    timeout: 5_000,
-  });
-  await item.click();
-  await waitForPlotState(page, 'selectedAnnotation', annotation);
-  // The menu stays open after a pick; close it so it cannot cover the plot.
-  if (await select.locator('.dropdown-item').first().isVisible()) {
-    await page.keyboard.press('Escape');
-  }
-}
-
-async function selectProjection(page: Page, index: number): Promise<void> {
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.getByRole('button', { name: 'Projection:' }).click();
-  await controlBar.locator('.projection-container .dropdown-item').nth(index).click();
-  await waitForPlotState(page, 'selectedProjectionIndex', index);
 }
 
 /** A point on the plot with no protein under it, in page coordinates. */
