@@ -202,6 +202,47 @@ its `restage ms` cells read `-` with no ratio, for example `-→4`.
 
 To compare against an earlier run on the same machine, see `baselines/README.md`.
 
+## Scaling datasets
+
+`perf/scale/generate.py` writes synthetic v3 bundles of any size for the scaling benchmark. It
+needs only [uv](https://docs.astral.sh/uv/); its dependencies (pyarrow, numpy) are declared
+inline. `DATA` is an absolute directory outside the repo:
+
+```sh
+uv run perf/scale/generate.py swissprot --source apps/web/public/data/573K_swissprot.parquetbundle \
+  --n 5000000 --out $DATA/swissprot-5M.parquetbundle
+uv run perf/scale/generate.py lean --n 67108864 --out $DATA/lean-67108864.parquetbundle
+pnpm perf --datasets "$DATA/swissprot-5M.parquetbundle" --runs 2
+```
+
+| Profile     | Rows                                                                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `swissprot` | the source rows resampled with replacement, all 23 annotations kept (scores too), new UniProt-like accessions, both projections jittered by a Gaussian of sigma half the source row's 5th-neighbour distance |
+| `lean`      | one categorical column (50 categories), one multi-valued column (300 labels, 2 hits each), sorted accessions, a clustered projection and a rotated, noisy copy of it                                         |
+
+Flags: `--seed` (default 0), `--chunk` (rows per row group, default 1M), `--tmp` (temporary
+files, about the size of parts 3 and 6). The same seed and chunk size give the same file. It
+prints rows, file size, time and peak RSS.
+
+Rows are written a chunk at a time by `perf/scale/bundle_writer.py`, a generic chunked v3 writer
+(ids, categorical, multi-valued with optional scores and numeric columns, any number of 2-D or
+3-D projections) that a real dataset can reuse. Streaming holds about one chunk in memory; the
+end, which writes each CSR payload as one parquet value, needs about 3.5x the largest payload.
+The writer refuses what the reader would: a payload over 2 GiB, a column over 2^31 hits, or a
+part that compresses more than 32x.
+
+On an M-series MacBook (2026-10-06):
+
+| Bundle        | File   | Time | Peak RSS |
+| ------------- | ------ | ---- | -------- |
+| swissprot 1M  | 77 MB  | 14 s | 1.2 GB   |
+| swissprot 5M  | 379 MB | 14 s | 1.4 GB   |
+| swissprot 30M | 2.3 GB | 25 s | 2.2 GB   |
+| lean 5M       | 131 MB | 1 s  | 0.7 GB   |
+| lean 2^26     | 1.8 GB | 14 s | 2.3 GB   |
+
+About 12 s of every swissprot run is the 5th-neighbour search on the source.
+
 ## Files
 
 ```
@@ -218,6 +259,8 @@ perf/playwright.config.ts                  its Playwright config
 apps/web/src/perf/webgl-perf-suite.ts      its in-page runner, loaded on `?webglPerf=1`
 perf/datasets.manifest.json                the datasets `pnpm perf:fetch` downloads
 perf/plot_perf_results.py                  plots of its results
+perf/scale/generate.py                     synthetic scaling bundles (`uv run`)
+perf/scale/bundle_writer.py                chunked v3 bundle writer
 ```
 
 ## `pnpm perf:webgl` (cross-browser WebGL suite)
