@@ -63,12 +63,12 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _invalidateScalesCache: Host['_invalidateScalesCache'];
   _isolationHistory: Host['_isolationHistory'];
   _isolationMode: Host['_isolationMode'];
-  _lastDataRef: Host['_lastDataRef'];
   _measureTooltipHeight: Host['_measureTooltipHeight'];
   _mergedConfig: Host['_mergedConfig'];
   _numericRecomputeRunning: Host['_numericRecomputeRunning'];
   _pendingHover: Host['_pendingHover'];
   _plotData: Host['_plotData'];
+  _plotDataBuild: Host['_plotDataBuild'];
   _pointGridIndex: Host['_pointGridIndex'];
   _pointMarks: Host['_pointMarks'];
   _processData: Host['_processData'];

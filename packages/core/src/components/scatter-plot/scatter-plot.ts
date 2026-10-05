@@ -450,19 +450,19 @@ export class ProtspaceScatterplot extends LitElement {
   // before updateComplete resolves (route change is a common GPU-recycle trigger).
   private _webglRecoveryToken = 0;
 
-  // Track data reference to detect projection-only changes (same data object, different projection index).
-  private _lastDataRef: VisualizationData | null = null;
-  // What the current _plotData was built from (see `_fullView`).
-  private _plotDataSource: {
+  // What the current _plotData was built from (see `_fullView`); the same `data` with
+  // another projection index is a projection-only change. `culled`: the build culled
+  // (filter, isolation or a missing coordinate). The coordinate-only fast path must not
+  // run over a culled build: it can never restore removed points, so clearing a filter
+  // would leave the canvas showing the old subset while the legend (fed from
+  // getCurrentData()) shows everything.
+  private _plotDataBuild: {
+    data: VisualizationData;
     projection: VisualizationData['projections'][number];
     proteinIds: readonly string[];
     plane: 'xy' | 'xz' | 'yz';
+    culled: boolean;
   } | null = null;
-  // Whether the current _plotData was built with a cull (filter or isolation).
-  // The coordinate-only fast path must not run over a culled build: it can never
-  // restore removed points, so clearing a filter would leave the canvas showing
-  // the old subset while the legend (fed from getCurrentData()) shows everything.
-  private _plotDataWasCulled = false;
   private _lastMaterializedSource: VisualizationData | null = null;
   private _lastMaterializedNumericValues: Float64Array | null = null;
   private _materializedDataCacheKey: string | null = null;
@@ -1282,33 +1282,37 @@ export class ProtspaceScatterplot extends LitElement {
     // build must also have been un-culled: a culled _plotData is missing points
     // that only a full rebuild can restore (e.g. right after Reset All flips
     // filtersActive back to false).
+    const build = this._plotDataBuild;
     const onlyProjectionChanged =
       this._plotData.length > 0 &&
-      this._lastDataRef === dataToUse &&
+      build?.data === dataToUse &&
       !this._isolationMode &&
       !this.filtersActive &&
-      !this._plotDataWasCulled;
+      !build.culled;
 
     // Fast path: update coordinates in-place from the new projection data. No new
     // object allocation — just overwrite x/y on the existing PlotData. It bails out when
     // the new projection is missing a point, which only a rebuild can cull.
     const projection = dataToUse.projections[this.selectedProjectionIndex];
     this._restoredGridScales = null;
+    let culled = false;
     if (!onlyProjectionChanged || !this._updatePlotDataCoordinates(dataToUse)) {
       const culling = this._isolationMode || visibleProteinIds !== null;
       // Entering a cull from the full view: set the full view aside with its grid.
       if (
         culling &&
-        !this._plotDataWasCulled &&
+        build &&
+        !build.culled &&
         this._plotData.length > 0 &&
-        this._plotDataSource &&
         this._pointGridSource === this._plotData &&
         !this._pointGridReindexPending
       ) {
         this._fullView = {
           plotData: this._plotData,
           grid: this._pointGridIndex,
-          ...this._plotDataSource,
+          projection: build.projection,
+          proteinIds: build.proteinIds,
+          plane: build.plane,
           scales: this._scalesKey(),
         };
         this._pointGridIndex = new PointGridIndex();
@@ -1350,15 +1354,15 @@ export class ProtspaceScatterplot extends LitElement {
         );
       }
       // Any cull — filter, isolation or a missing coordinate — leaves an index map.
-      this._plotDataWasCulled = this._plotData.originalIndices !== null;
+      culled = this._plotData.originalIndices !== null;
     }
-    this._plotDataSource = {
+    this._plotDataBuild = {
+      data: dataToUse,
       projection,
       proteinIds: dataToUse.protein_ids,
       plane: this.projectionPlane,
+      culled,
     };
-
-    this._lastDataRef = dataToUse;
 
     // z-order is resolved in WebGL depth (see style getters), so we avoid sorting 500k+ points on CPU.
 
@@ -1376,7 +1380,7 @@ export class ProtspaceScatterplot extends LitElement {
     // Style-getters read annotation values lazily via getProteinAnnotationValues —
     // changing the selected annotation only requires re-render + cache invalidation.
     this._plotData = clonePlotData(this._plotData);
-    this._lastDataRef = dataToUse;
+    if (this._plotDataBuild) this._plotDataBuild = { ...this._plotDataBuild, data: dataToUse };
     this._styleGettersCache = null;
   }
 
@@ -1407,7 +1411,7 @@ export class ProtspaceScatterplot extends LitElement {
     // defaults the plot already used) hands back the object the plot was last built from (see
     // `_getMaterializedData`). Re-staging then would repeat the whole upload for identical
     // output (~500 ms at 573K).
-    const unchanged = this._plotData.length > 0 && materializedData === this._lastDataRef;
+    const unchanged = this._plotData.length > 0 && materializedData === this._plotDataBuild?.data;
     if (!unchanged) {
       if (this._plotData.length > 0) {
         this._refreshSelectedAnnotationValues(displayData);
@@ -2733,8 +2737,9 @@ export class ProtspaceScatterplot extends LitElement {
    * Shared isolation render-refresh: reprocess derived plot data, rebuild the
    * point index, invalidate the WebGL renderer's caches, request a Lit
    * update, and render once the update settles. Called by isolateSelection() and
-   * resetIsolation() — the only divergence (resetIsolation clears _lastDataRef to
-   * force the full-rebuild path) stays at the call site, before this method runs.
+   * resetIsolation() — the only divergence (resetIsolation forgets the plot data's
+   * build, forcing the full-rebuild path) stays at the call site, before this
+   * method runs.
    */
   private _reprocessAndRefresh(): void {
     this._processData();
@@ -2946,9 +2951,9 @@ export class ProtspaceScatterplot extends LitElement {
     this.clearIsolationState({ silent: true });
     this.selectedProteinIds = [];
 
-    // Invalidate data ref so _processData takes the full rebuild path
+    // Forget the build so _processData takes the full rebuild path
     // instead of the fast coordinate-only path (which would keep the filtered subset)
-    this._lastDataRef = null;
+    this._plotDataBuild = null;
 
     this._reprocessAndRefresh();
 

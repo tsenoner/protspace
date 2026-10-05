@@ -372,25 +372,25 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
   });
 
-  it('resetIsolation nulls _lastDataRef BEFORE reprocess, then runs the same refresh sequence', async () => {
+  it('resetIsolation nulls _plotDataBuild BEFORE reprocess, then runs the same refresh sequence', async () => {
     const el = makeEl();
     el._isolationMode = true;
     el._isolationHistory = [['p1', 'p3']];
-    el._lastDataRef = { stale: true };
+    el._plotDataBuild = { stale: true };
     const { calls, requestUpdate } = instrument(el);
-    // Capture _lastDataRef at the moment _processData is (re)invoked.
-    let lastDataRefAtProcess: unknown = 'unset';
+    // Capture _plotDataBuild at the moment _processData is (re)invoked.
+    let buildAtProcess: unknown = 'unset';
     (
       el._processData as unknown as { mockImplementation: (f: () => void) => void }
     ).mockImplementation(() => {
-      lastDataRefAtProcess = el._lastDataRef;
+      buildAtProcess = el._plotDataBuild;
       calls.push('processData');
     });
 
     el.resetIsolation();
 
     // Divergence preserved: cleared before the shared refresh block runs.
-    expect(lastDataRefAtProcess).toBeNull();
+    expect(buildAtProcess).toBeNull();
     expect(calls).toEqual(['processData', 'buildPointGridIndex']);
     expect(requestUpdate).toHaveBeenCalled();
 
