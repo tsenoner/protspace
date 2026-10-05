@@ -84,6 +84,14 @@ import {
   type SlotPalette,
 } from './density-pass';
 import { densityFrameAlpha } from './density-crossfade';
+import {
+  MAX_FRAME_STEP_MS,
+  drawnPositions,
+  frameTime,
+  morphWeight,
+  repaintOrder,
+  samePaintOrder,
+} from './position-morph';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
 import type { StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
@@ -295,6 +303,13 @@ export class WebGLRenderer {
   private selectionActive = false;
   private selectedStartIndex = 0;
 
+  // Projection glide (see position-morph.ts). `morph.from` holds the positions
+  // the points glide from, staged like `dataPositions`, and only while they move.
+  private morphRequested = false;
+  private morph: { from: Float32Array; elapsed: number; last: number } | null = null;
+  /** Weight of `morph.from` in the frame being drawn; 0 outside a glide. */
+  private morphWeightNow = 0;
+
   // Caching
   private lastDataSignature: string | null = null;
   private lastStyleSignature: string | null = null;
@@ -453,6 +468,27 @@ export class WebGLRenderer {
 
   invalidatePositionCache() {
     this.positionsDirty = true;
+  }
+
+  /**
+   * Glide the points from where they are drawn to the positions the next render
+   * stages, instead of jumping there. Meant for a change that keeps every point
+   * in its slot (a projection or plane switch); dropped when that render stages
+   * no positions or the point count changes.
+   */
+  morphNextPositionChange() {
+    this.morphRequested = true;
+  }
+
+  /** Drop a glide request, and end a glide, so the next frame draws the staged positions. */
+  cancelMorph() {
+    this.morphRequested = false;
+    if (this.morph) this.endMorph();
+  }
+
+  /** True while the points glide; the host keeps rendering frames until it is false. */
+  get isMorphing(): boolean {
+    return this.morph !== null;
   }
 
   /**
@@ -654,6 +690,9 @@ export class WebGLRenderer {
 
   render(pd: PlotData) {
     if (perfCounters) perfCounters.render++;
+    // A glide request applies to this render only.
+    const morphRequested = this.morphRequested;
+    this.morphRequested = false;
     // Store PlotData for potential off-screen export rendering
     this.lastRenderedData = pd;
 
@@ -712,11 +751,11 @@ export class WebGLRenderer {
         this.restyleRecords(pd);
       if (!restyled) {
         const refused = this.markTextureRefused;
-        this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+        this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate, morphRequested);
         // The device refused a new mark texture, or took one after refusing: the
         // marks were staged for the other, so stage them as the live view now does.
         if (this.markTextureRefused !== refused) {
-          this.populateBuffers(pd, scales, false, true);
+          this.populateBuffers(pd, scales, false, true, false);
           styleSignature = this.computeStyleSignature(pd);
         }
       }
@@ -733,10 +772,14 @@ export class WebGLRenderer {
     if (marks !== this.marks || this.marksStale) this.applyMarks(marks);
     // Asked after staging, which may have laid the positions out afresh.
     this.positionRescale = this.rescaleStagedTo(scales) ?? IDENTITY_RESCALE;
+    this.advanceMorph();
 
     // Render with gamma-correct pipeline
     this.renderWithGammaCorrection(transform);
-    if (perfCounters) perfCounters.drawn = this.drawnPointCount;
+    if (perfCounters) {
+      perfCounters.drawn = this.drawnPointCount;
+      if (this.morphWeightNow > 0) perfCounters.morphFrame++;
+    }
   }
 
   /** Map from the staged positions to `scales`' pixels; null when there is none. */
@@ -777,8 +820,16 @@ export class WebGLRenderer {
     const density = this.densityFrame(transform);
     if (density) {
       // The fields persist between frames, so a re-render that changes none of
-      // their inputs (hover, tooltip) only composites them.
-      const { width, height, dpr, transform: t, rescale: r = IDENTITY_RESCALE } = density.camera;
+      // their inputs (hover, tooltip) only composites them. A glide moves the
+      // points every frame, so it re-accumulates them every frame.
+      const {
+        width,
+        height,
+        dpr,
+        transform: t,
+        rescale: r = IDENTITY_RESCALE,
+        morph = 0,
+      } = density.camera;
       const key = [
         this.bufferGeneration,
         this.currentPointCount,
@@ -792,6 +843,7 @@ export class WebGLRenderer {
         r.x.offset,
         r.y.scale,
         r.y.offset,
+        morph,
       ].join();
       if (density.res.fieldsKey !== key) {
         this.bindRecordStyle(gl);
@@ -857,6 +909,7 @@ export class WebGLRenderer {
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
         rescale: this.positionRescale,
+        morph: this.morphWeightNow,
       },
       alpha,
       palette: this.contourPalette,
@@ -1169,6 +1222,9 @@ export class WebGLRenderer {
     this.sortedDataRef = null;
     this.stagedScales = null;
     this.positionRescale = IDENTITY_RESCALE;
+    // Its buffer went with the context, and the restore draws the staged positions.
+    this.morph = null;
+    this.morphWeightNow = 0;
     this.stagedRecords = null;
     this.recordStyleRows = 0;
     this.marks = null;
@@ -1320,6 +1376,7 @@ export class WebGLRenderer {
         transform: { x: transform.x, y: transform.y, k: transform.k },
         dpr: this.dpr,
         rescale: this.positionRescale,
+        morph: this.morphWeightNow,
         pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
@@ -1408,6 +1465,7 @@ export class WebGLRenderer {
     scales: ScalePair,
     updatePositions: boolean,
     updateStyles: boolean,
+    morphRequested: boolean,
   ) {
     if (!this.gl) return;
     const gl = this.gl;
@@ -1493,10 +1551,30 @@ export class WebGLRenderer {
     }
 
     let idx = 0;
+    let morphChanged = false;
 
     if (needsReorder) {
       this.visibleCount = 0;
       const count = maxPoints;
+      // The re-sort below permutes every buffer, so a glide crosses it by slot: a
+      // new one starts where the points are drawn, and one in flight keeps its
+      // start and its clock. Read from the staged copies, never from `pd`, whose
+      // coordinates a projection switch may already have overwritten.
+      const before =
+        (morphRequested || this.morph) &&
+        this.buffersInitialized &&
+        count === this.currentPointCount
+          ? {
+              drawn: drawnPositions(
+                this.dataPositions,
+                this.morph?.from ?? null,
+                morphRequested ? this.morphWeightNow : 1,
+                this.positionRescale,
+                count,
+              ),
+              order: this.sortOrder.slice(0, count),
+            }
+          : null;
       // Hidden points (opacity=0) are staged too, so sort order is preserved across
       // visibility toggles, enabling the fast color-only update path instead of a
       // full rebuild + re-sort. Shared with the export path, which stages the same
@@ -1514,6 +1592,16 @@ export class WebGLRenderer {
         this.selectionActive,
         (slot, opacity) => this.countStagedSlot(pd, slot, opacity),
       );
+
+      if (before || this.morph) {
+        if (before && !samePaintOrder(before.order, this.sortOrder, count)) {
+          repaintOrder(before.drawn, before.order, this.sortOrder, count);
+        }
+        const clock =
+          !morphRequested && this.morph ? this.morph : { elapsed: 0, last: frameTime() };
+        this.morph = before && { from: before.drawn, elapsed: clock.elapsed, last: clock.last };
+        morphChanged = true;
+      }
 
       idx = count;
       // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
@@ -1595,7 +1683,11 @@ export class WebGLRenderer {
     if (updatePositions) {
       this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
       this.stagedScales = snapshotScales(scales);
+      // Staged through these scales, so drawn as they are: a glide carried by the
+      // second stage a render may run (see render()) reads this.
+      this.positionRescale = IDENTITY_RESCALE;
     }
+    if (morphChanged) this.syncMorphAttribute(gl);
 
     // Hoisted from `updateStyles` alone: the reorder branch above rewrites every
     // style array AND the atlas into the new slot order, so gating the upload on
@@ -1647,6 +1739,46 @@ export class WebGLRenderer {
 
     gl.bindVertexArray(null);
     this.buffersInitialized = true;
+  }
+
+  /**
+   * Upload the glide's start positions and switch their attribute on, or, with
+   * no glide, switch it off and hand its storage back. Expects the point VAO bound.
+   */
+  private syncMorphAttribute(gl: WebGL2RenderingContext) {
+    if (!this.pointAttribLocations) return;
+    const location = this.pointAttribLocations.prevPosition;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.prevPositionBuffer);
+    if (this.morph) {
+      this.uploadedBytes += this.morph.from.byteLength;
+      gl.bufferData(gl.ARRAY_BUFFER, this.morph.from, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(location);
+    } else {
+      gl.disableVertexAttribArray(location);
+      gl.bufferData(gl.ARRAY_BUFFER, 0, gl.STATIC_DRAW);
+    }
+  }
+
+  /** Set this frame's glide weight, and end the glide once it reaches 0. */
+  private advanceMorph() {
+    const morph = this.morph;
+    if (morph) {
+      const now = frameTime();
+      morph.elapsed += Math.min(now - morph.last, MAX_FRAME_STEP_MS);
+      morph.last = now;
+    }
+    this.morphWeightNow = morph ? morphWeight(morph.elapsed) : 0;
+    if (morph && this.morphWeightNow === 0) this.endMorph();
+  }
+
+  private endMorph() {
+    this.morph = null;
+    this.morphWeightNow = 0;
+    const gl = this.gl;
+    if (!gl) return;
+    gl.bindVertexArray(this.resources.pointVao);
+    this.syncMorphAttribute(gl);
+    gl.bindVertexArray(null);
   }
 
   /**

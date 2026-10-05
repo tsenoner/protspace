@@ -174,7 +174,7 @@ describe('legend changes through the per-record style table', () => {
     renderer.invalidatePositionCache();
     restyle({ hiddenAnnotationValues: ['c0'] });
     expect(populate).toHaveBeenCalledTimes(1);
-    expect(populate.mock.calls[0].slice(2)).toEqual([true, true]);
+    expect(populate.mock.calls[0].slice(2)).toEqual([true, true, false]);
   });
 
   it('re-stages when rendered points are tracked, which a restyle cannot update', () => {

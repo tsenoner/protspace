@@ -115,7 +115,7 @@ describe('WebGLRenderer resize', () => {
     renderer.invalidateStyleCache();
     const [restyled] = render();
     expect(populate).toHaveBeenCalledTimes(1);
-    expect(populate.mock.calls[0].slice(2)).toEqual([false, true]);
+    expect(populate.mock.calls[0].slice(2)).toEqual([false, true, false]);
     expect(restyled).toEqual(resized);
   });
 

@@ -16,6 +16,8 @@ interface PerfCounters {
   render: number;
   /** Points drawn by the most recent render (a value, not a count). */
   drawn: number;
+  /** Renders drawn while a projection glide moves the points. */
+  morphFrame: number;
   processData: number;
   gridRebuild: number;
   legendUpdate: number;
@@ -32,6 +34,7 @@ function createPerfCounters(): PerfCounters | null {
     restageMs: 0,
     render: 0,
     drawn: 0,
+    morphFrame: 0,
     processData: 0,
     gridRebuild: 0,
     legendUpdate: 0,

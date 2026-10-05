@@ -61,18 +61,22 @@ type MockGL = Record<string, ReturnType<typeof vi.fn>>;
 /**
  * A renderer over a mock GL context, with the style getters supplied by the
  * caller — for suites whose getters change mid-session. `overrides` swaps in a
- * live config or camera.
+ * live config, camera or scales.
  */
 export function makeRendererWithStyle(
   styleGetters: WebGLStyleGetters,
   opts: MockGLOptions = {},
-  overrides: { getConfig?: () => ScatterplotConfig; getTransform?: () => d3.ZoomTransform } = {},
+  overrides: {
+    getConfig?: () => ScatterplotConfig;
+    getTransform?: () => d3.ZoomTransform;
+    getScales?: () => ScalePair;
+  } = {},
 ) {
   const { canvas, gl, setContextLost } = createMockCanvas(opts);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
     canvas,
-    scales,
+    overrides.getScales ?? scales,
     overrides.getTransform ?? (() => d3.zoomIdentity),
     overrides.getConfig ?? (() => ({ width: 800, height: 600 })),
     styleGetters,
