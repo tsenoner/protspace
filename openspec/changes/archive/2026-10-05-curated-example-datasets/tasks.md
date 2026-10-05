@@ -305,7 +305,8 @@ Before every commit:
   - [x] `pnpm docs:examples:check`, `pnpm docs:annotations:check`, `pnpm docs:build`: CI's Build Documentation job, and locally;
   - [ ] `pnpm perf:fetch && PERF_DATASETS=venom_eat_stats,573K_swissprot pnpm perf`: not run; no run of the harness is recorded for this branch. The fetch half is verified (8.1, and CI's checksum job against the `perf-datasets` release); the harness needs :8080 free (its config pins `localhost:8080` with `reuseExistingServer: false`), and its two datasets are frozen release files this change does not alter;
   - [x] `uv run pytest apps/protspace/tests`, `uv run ruff check`: CI's protspace CI (Python) jobs (lint; tests on 3.12, 3.13 and 3.14).
-- [ ] 7.13 Reread `proposal.md`/`design.md` against the final diff and update them; update the `example-datasets` Purpose line to say "curated and documented"; `openspec validate curated-example-datasets --strict`; archive as the last commit before the merge.
+- [x] 7.13 Reread `proposal.md`/`design.md` against the final diff and update them; update the `example-datasets` Purpose line to say "curated and documented"; `openspec validate curated-example-datasets --strict`; archive as the last commit before the merge.
+  - Result (2026-10-05): reread against `git diff origin/main...HEAD` and brought up to date (the v3 rebuild on 4.16.0, Swiss-Prot's D2 outcome, the deleted interim catalog and lists, the sizes, the published releases, the resolved author facts, and the docs check's rules without the interim condition); the change validated `--strict` and was archived in the branch's last commit, with the specs it updated formatted and the Purpose line rewritten. 7.12's perf harness run, 8.3, 8.4, 8.6, 8.7 and §9 stay open.
 
 ## 8. Owner-only steps (prepared by scripts; not executed by this change)
 
