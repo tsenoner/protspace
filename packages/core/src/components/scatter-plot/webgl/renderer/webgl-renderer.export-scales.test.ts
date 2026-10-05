@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import { ExportRenderer } from './export-renderer';
 import type { PlotData } from '@protspace/utils';
-import type { ScalePair } from '../types';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer } from './test-support/renderer-fixture';
 
 const pd: PlotData = {
   length: 2,
@@ -16,30 +12,16 @@ const pd: PlotData = {
   originalIndices: null,
   proteinIds: ['p0', 'p1'],
 };
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
 const config = { width: 800, height: 600 };
-
-function makeRenderer() {
-  const { canvas } = createMockCanvas({});
-  return new WebGLRenderer(
-    canvas,
-    scales,
-    () => d3.zoomIdentity,
-    () => config,
-    styleGetters(),
-  );
-}
 
 describe('WebGLRenderer.createExportScales (facade pass-through, #301/#302)', () => {
   it('returns null before anything has been rendered', () => {
-    expect(makeRenderer().createExportScales(400, 300)).toBeNull();
+    const { renderer } = makeRenderer({ getConfig: () => config });
+    expect(renderer.createExportScales(400, 300)).toBeNull();
   });
 
   it('after render(), delegates to ExportRenderer.createExportScales with the last-rendered data + live config', () => {
-    const r = makeRenderer();
+    const { renderer: r } = makeRenderer({ getConfig: () => config });
     r.render(pd);
     const got = r.createExportScales(400, 300);
     const want = ExportRenderer.createExportScales(config, pd, 400, 300);

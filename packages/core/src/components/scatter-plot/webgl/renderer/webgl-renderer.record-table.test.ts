@@ -8,9 +8,8 @@ import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
 import type { WebGLStyleGetters } from '../types';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import { makeRenderer } from './test-support/renderer-fixture';
-import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
+import type { MockGLOptions } from './test-support/mock-webgl2';
 
 vi.mock('../color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -191,21 +190,18 @@ describe('legend changes through the per-record style table', () => {
       isMultilabel: () => getters.isMultilabel(),
       createStylePass: () => getters.createStylePass(),
     };
-    const { canvas, gl } = createMockCanvas();
-    const renderer = new WebGLRenderer(
-      canvas,
-      () => ({
+    const { renderer, gl } = makeRenderer({
+      style,
+      getScales: () => ({
         x: d3
           .scaleLinear()
           .domain([0, 101])
           .range([40, state.width - 40]),
         y: d3.scaleLinear().domain([0, 103]).range([560, 40]),
       }),
-      () => d3.zoomIdentity,
-      () => ({ width: state.width, height: 600 }),
-      style,
-    );
-    const uniform4f = (gl as unknown as { uniform4f: ReturnType<typeof vi.fn> }).uniform4f;
+      getConfig: () => ({ width: state.width, height: 600 }),
+    });
+    const uniform4f = gl.uniform4f;
     const populate = vi.spyOn(
       renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
       'populateBuffers',

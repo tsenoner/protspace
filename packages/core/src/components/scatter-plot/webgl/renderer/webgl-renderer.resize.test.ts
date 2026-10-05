@@ -8,9 +8,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
 import type { DensityLayerMode, PlotData } from '@protspace/utils';
-import { WebGLRenderer } from './webgl-renderer';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer } from './test-support/renderer-fixture';
 
 const XS = [0, 2.5, 7, 10];
 const YS = [10, 1, 4.5, 0];
@@ -43,15 +41,12 @@ function setup(densityLayer: DensityLayerMode = 'off') {
       .domain(state.domain)
       .range([state.height - 40, 40]),
   });
-  const { canvas, gl } = createMockCanvas();
-  const renderer = new WebGLRenderer(
-    canvas,
-    scales,
-    () => state.transform,
-    () => ({ width: state.width, height: state.height, densityLayer }),
-    styleGetters(),
-  );
-  const uniform4f = (gl as unknown as { uniform4f: ReturnType<typeof vi.fn> }).uniform4f;
+  const { renderer, gl } = makeRenderer({
+    getScales: scales,
+    getTransform: () => state.transform,
+    getConfig: () => ({ width: state.width, height: state.height, densityLayer }),
+  });
+  const uniform4f = gl.uniform4f;
   const populate = vi.spyOn(
     renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
     'populateBuffers',

@@ -66,6 +66,7 @@ interface RendererSetup extends MockGLOptions {
   getConfig?: () => ScatterplotConfig;
   getTransform?: () => d3.ZoomTransform;
   getScales?: () => ScalePair;
+  onContextLost?: () => void;
 }
 
 /**
@@ -73,7 +74,7 @@ interface RendererSetup extends MockGLOptions {
  * the identity camera, unless `setup` swaps in a live config, camera or scales.
  */
 export function makeRenderer(setup: RendererSetup = {}) {
-  const { style, colors, getConfig, getTransform, getScales, ...device } = setup;
+  const { style, colors, getConfig, getTransform, getScales, onContextLost, ...device } = setup;
   const { canvas, gl, setContextLost } = createMockCanvas(device);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
@@ -82,11 +83,11 @@ export function makeRenderer(setup: RendererSetup = {}) {
     getTransform ?? (() => d3.zoomIdentity),
     getConfig ?? (() => ({ width: 800, height: 600 })),
     style ?? styleGetters(colors),
-    undefined,
+    onContextLost,
     () => [1, 1, 1],
     (detail) => degraded.push(detail),
   );
-  return { renderer, gl: gl as unknown as MockGL, degraded, setContextLost };
+  return { renderer, canvas, gl: gl as unknown as MockGL, degraded, setContextLost };
 }
 
 function sizes(texImageCalls: unknown[][]): Array<[number, number]> {

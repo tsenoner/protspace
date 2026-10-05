@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
-import type { ScalePair } from '../types';
 import { MAX_LABELS } from './label-atlas-plan';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer } from './test-support/renderer-fixture';
 
 /**
  * #294: the figure editor (publish modal) captures the scatterplot via
@@ -16,10 +13,6 @@ import { createMockCanvas } from './test-support/mock-webgl2';
  * editor never inherits a stale zoom and its zoom-inset mapping stays correct.
  */
 
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
 type ExportRendererSeam = {
   exportRenderer: {
     renderToCanvas: (...args: unknown[]) => HTMLCanvasElement;
@@ -27,14 +20,7 @@ type ExportRendererSeam = {
 };
 
 function setup(transform: d3.ZoomTransform, colors?: string[]) {
-  const { canvas } = createMockCanvas({});
-  const renderer = new WebGLRenderer(
-    canvas,
-    scales,
-    () => transform,
-    () => ({ width: 800, height: 600 }),
-    styleGetters(colors),
-  );
+  const { renderer } = makeRenderer({ getTransform: () => transform, colors });
   // Intercept the off-screen export pass (needs a real WebGL2 context we don't
   // have under jsdom). We only assert which transform the facade forwards.
   const spy = vi
