@@ -484,38 +484,33 @@ describe('scatter-plot data-change dispatch reflects the filtered view', () => {
 // ---------------------------------------------------------------------------
 // Numeric recompute uses reference-stable display data under an active filter.
 //
-// _scheduleNumericAnnotationRefresh's rAF resolves `displayData` via
-// _getCurrentDisplayData({ includeFilteredProteinIds: false }) — returning the
-// cached materialized object by reference rather than building a full deep-slice
-// of the filtered subset (which the only consumer,
-// _refreshSelectedAnnotationValues, never reads). The data-change payload (built
-// from getCurrentData() with no options) still carries the filtered subset.
+// _scheduleNumericAnnotationRefresh's rAF hands _refreshSelectedAnnotationValues
+// the cached materialized object by reference rather than a full deep-slice of the
+// filtered subset, which it never reads. The data-change payload (built from
+// getCurrentData() with no options) still carries the filtered subset.
 // ---------------------------------------------------------------------------
 describe('scatter-plot numeric recompute display data', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('resolves displayData with includeFilteredProteinIds:false (no filtered deep-slice)', () => {
+  it('refreshes with the materialized object, not a filtered deep-slice', () => {
     const sp = makeScatter();
     sp.filteredProteinIds = ['p3', 'p4', 'p5'];
     sp.filtersActive = true;
     sp._processData(); // prime _plotData so the recompute takes the refresh branch
+    // A build from other data, so the recompute does not skip as unchanged.
+    sp._plotDataBuild = null;
 
     // The recompute runs on the next frame.
     const frames = fakeFrames();
 
-    const spy = vi.spyOn(sp, '_getCurrentDisplayData');
+    const spy = vi.spyOn(sp, '_refreshSelectedAnnotationValues');
     sp._scheduleNumericAnnotationRefresh();
     frames.run();
 
-    // The FIRST _getCurrentDisplayData call in the rAF body is the `displayData`
-    // resolution — it must use { includeFilteredProteinIds: false } (under the
-    // old code it was called with no args, which deep-slices the filtered subset).
-    // (Later calls from getCurrentData() for the data-change payload deliberately
-    // pass no options; those are the event-payload path, not the displayData path.)
-    expect(spy.mock.calls.length).toBeGreaterThan(0);
-    expect(spy.mock.calls[0][0]).toEqual({ includeFilteredProteinIds: false });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe(sp._getMaterializedData());
   });
 
   it('annotation values still resolve correctly after recompute under a non-prefix filter', () => {

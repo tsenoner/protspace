@@ -878,7 +878,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (this.data && changedProperties.has('eatOverlayEnabled')) {
       this.dispatchEvent(
         new CustomEvent('data-change', {
-          detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
+          detail: { data: this.getCurrentData() },
           bubbles: true,
           composed: true,
         }),
@@ -1044,7 +1044,7 @@ export class ProtspaceScatterplot extends LitElement {
             // is shown — counts update to the kept set, exactly as isolation does.
             // The legend preserves its visible-category structure via the constrained
             // state reported by the sync controller's getIsolationState().
-            detail: { data: this.getCurrentData() ?? this._getMaterializedData() ?? this.data },
+            detail: { data: this.getCurrentData() },
             bubbles: true,
             composed: true,
           }),
@@ -1366,15 +1366,6 @@ export class ProtspaceScatterplot extends LitElement {
     const materializedData = this._getMaterializedData();
     if (!materializedData) return;
 
-    // _refreshSelectedAnnotationValues only reads annotations / annotation_data
-    // (both present on the materialized object) and then triggers a lazy
-    // style-getter rebuild that itself uses includeFilteredProteinIds:false.
-    // Excluding filtered ids returns the cached materialized object by
-    // reference (no per-point deep-slice of projections/numeric/scores/evidence),
-    // matching the pattern at _getVisibilityModel / _buildStyleGetters.
-    const displayData =
-      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ?? materializedData;
-
     // A settings change that leaves the selected annotation's binning alone (another numeric
     // annotation's settings, or a rebin onto the same bins, as when the legend publishes the
     // defaults the plot already used) hands back the object the plot was last built from (see
@@ -1383,7 +1374,7 @@ export class ProtspaceScatterplot extends LitElement {
     const unchanged = this._plotData.length > 0 && materializedData === this._plotDataBuild?.data;
     if (!unchanged) {
       if (this._plotData.length > 0) {
-        this._refreshSelectedAnnotationValues(displayData);
+        this._refreshSelectedAnnotationValues(materializedData);
       } else {
         this._processData();
       }
@@ -1394,7 +1385,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._updateSelectionOverlays();
     }
 
-    const currentData = this.getCurrentData() ?? displayData ?? materializedData ?? this.data;
+    const currentData = this.getCurrentData();
     if (currentData) {
       this.dispatchEvent(
         new CustomEvent('data-change', {
@@ -1932,10 +1923,9 @@ export class ProtspaceScatterplot extends LitElement {
    * input identity — no lifecycle hooks, no version counters, no invalidation
    * plumbing.
    *
-   * Keys (all reference/strict-equality): the materialized display data (same
-   * source `_buildStyleGetters` uses — `_getCurrentDisplayData` returns the
-   * cached materialized object by reference when filtered ids are excluded, so
-   * it is reference-stable until materialization is rebuilt), `selectedAnnotation`,
+   * Keys (all reference/strict-equality): the materialized data (the source
+   * `_buildStyleGetters` uses, reference-stable until materialization is
+   * rebuilt), `selectedAnnotation`,
    * `hiddenAnnotationValues` ref, selection/highlight refs, and the three opacity
    * numbers from the merged config. (Opacities are extracted as three plain
    * numbers rather than keying on `_mergedConfig` itself: `_mergedConfig` is
@@ -1951,10 +1941,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _getVisibilityModel(): VisibilityModel {
     // Same data expression `_buildStyleGetters` uses, so the component path and
     // the hit-test path share one model instance over one data reference.
-    const data =
-      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
-      this._getMaterializedData() ??
-      this.data;
+    const data = this._getMaterializedData();
     const baseOpacity = this._mergedConfig.baseOpacity;
     const selectedOpacity = this._mergedConfig.selectedOpacity;
     const fadedOpacity = this._mergedConfig.fadedOpacity;
@@ -2071,10 +2058,7 @@ export class ProtspaceScatterplot extends LitElement {
     return {
       originalIndices: pd.originalIndices,
       plotLength: pd.length,
-      data:
-        this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
-        this._getMaterializedData() ??
-        this.data,
+      data: this._getMaterializedData(),
       selectedAnnotation: this.selectedAnnotation,
       hiddenAnnotationValues: this.hiddenAnnotationValues,
       selectedProteinIds: allOpacityTiersInteractive ? null : this.selectedProteinIds,
@@ -2141,10 +2125,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _buildStyleGetters(
     model: VisibilityModel = this._getVisibilityModel(),
   ): ReturnType<typeof createStyleGetters> {
-    const styleData =
-      this._getCurrentDisplayData({ includeFilteredProteinIds: false }) ??
-      this._getMaterializedData() ??
-      this.data;
+    const styleData = this._getMaterializedData();
 
     return createStyleGetters(
       styleData,
@@ -2471,7 +2452,7 @@ export class ProtspaceScatterplot extends LitElement {
     // predictions exist only there, not in the raw `this.data`.
     const data =
       shift && point && this.selectedAnnotation && !this.selectedProteinIds.length
-        ? (this._getMaterializedData() ?? this.data)
+        ? this._getMaterializedData()
         : null;
     if (point && data) {
       const values = getProteinAnnotationValues(data, point.originalIndex, this.selectedAnnotation);
