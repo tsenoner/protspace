@@ -7,12 +7,13 @@ export default defineConfig({
     // Declarations mirror src/ under dist/ (tsconfig `rootDir`), which is where package.json's
     // `types` conditions point; scripts/check-package-types.ts fails `pnpm type-check` if the
     // two drift apart. No per-entry stubs (dist/core.d.ts, dist/publish.d.ts): nothing
-    // references them.
+    // references them. Test-only helpers stay out too (one imports vitest); only tests import
+    // them, and tsc still type-checks them.
     dts({
       tsconfigPath: './tsconfig.json',
       insertTypesEntry: false,
       include: ['src/**/*'],
-      exclude: ['src/**/*.test.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/test-support/**', 'src/**/*.test-support.ts'],
       rollupTypes: false,
       copyDtsFiles: true,
     }),
