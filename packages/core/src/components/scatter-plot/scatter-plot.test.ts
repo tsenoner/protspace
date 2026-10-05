@@ -176,16 +176,16 @@ describe('scatter-plot lasso/brush selection (slot → interactive id)', () => {
     frames.flush();
 
     // p5, p4, p3 by protein index. Claiming p0 too shows the mask stands in for lookups.
-    const lasso = sp._slotSelection!;
+    const lasso = sp._style._slotSelection!;
     expect(lasso.ids).toBe(events[0].detail.proteinIds);
     expect(Array.from(lasso.mask)).toEqual([0, 0, 0, 1, 1, 1]);
     lasso.mask[0] = 1;
     // The control bar sets the selection back as a copy.
     sp.selectedProteinIds = [...events[0].detail.proteinIds];
-    const marks = sp._getVisibilityModel().markedSlots(sp.data!.protein_ids, originalIndices, 6);
+    const marks = sp._style.model().markedSlots(sp.data!.protein_ids, originalIndices, 6);
     expect(Array.from(marks)).toEqual([1, 1, 1, 0, 0, 1]);
     sp.selectedProteinIds = ['p5', 'p4'];
-    const fewer = sp._getVisibilityModel().markedSlots(sp.data!.protein_ids, originalIndices, 6);
+    const fewer = sp._style.model().markedSlots(sp.data!.protein_ids, originalIndices, 6);
     expect(Array.from(fewer)).toEqual([1, 1, 0, 0, 0, 0]);
   });
 
@@ -218,13 +218,13 @@ describe('scatter-plot id index', () => {
     const idle: Array<() => void> = [];
     vi.stubGlobal('requestIdleCallback', (task: () => void) => idle.push(task));
     const sp = makeSelectionScatter(null);
-    sp._scheduleIdIndex();
+    sp._style.scheduleIdIndex();
     expect(idle).toHaveLength(1);
     idle[0]();
     // An id repeated in place afterwards is not in the index built before it.
     sp.data!.protein_ids[2] = 'p0';
     sp.selectedProteinIds = ['p0'];
-    const marks = sp._getVisibilityModel().markedSlots(sp.data!.protein_ids, null, 6);
+    const marks = sp._style.model().markedSlots(sp.data!.protein_ids, null, 6);
     expect(Array.from(marks)).toEqual([1, 0, 0, 0, 0, 0]);
   });
 });

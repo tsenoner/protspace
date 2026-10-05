@@ -78,10 +78,10 @@ function makeEl(): Plot {
 function makeMarkedEl(): Plot {
   const el = makeEl();
   select(el, ['p1']);
-  el._getPointMarks(el._plotData);
-  el._getStageGetters();
-  expect(el._pointMarks).not.toBeNull();
-  expect(el._unmarkedGetters).not.toBeNull();
+  el._style.pointMarks(el._plotData);
+  el._style.stageGetters();
+  expect(el._style._pointMarks).not.toBeNull();
+  expect(el._style._unmarkedGetters).not.toBeNull();
   return el;
 }
 
@@ -125,23 +125,23 @@ describe('selection drawn as GPU marks', () => {
     const el = makeEl();
     select(el, ['p1', 'p4']);
     el.highlightedProteinIds = ['p2'];
-    const marks = el._getPointMarks(el._plotData)!;
+    const marks = el._style.pointMarks(el._plotData)!;
     expect(Array.from(marks.slots)).toEqual([0, 1, 1, 0, 1]);
     expect(marks).toMatchObject({ marked: 1, unmarked: 0.15 });
     // A highlight alone leaves the rest at base opacity.
     select(el, []);
-    expect(el._getPointMarks(el._plotData)).toMatchObject({ marked: 1, unmarked: 0.9 });
+    expect(el._style.pointMarks(el._plotData)).toMatchObject({ marked: 1, unmarked: 0.9 });
     el.highlightedProteinIds = [];
-    expect(el._getPointMarks(el._plotData)).toBeNull();
+    expect(el._style.pointMarks(el._plotData)).toBeNull();
   });
 
   it('builds the marks once per selection', () => {
     const el = makeEl();
     select(el, ['p1']);
-    const marks = el._getPointMarks(el._plotData);
-    expect(el._getPointMarks(el._plotData)).toBe(marks);
+    const marks = el._style.pointMarks(el._plotData);
+    expect(el._style.pointMarks(el._plotData)).toBe(marks);
     select(el, ['p1']);
-    expect(el._getPointMarks(el._plotData)).not.toBe(marks);
+    expect(el._style.pointMarks(el._plotData)).not.toBe(marks);
   });
 
   it('stages the live view unmarked, and an export with the selection', () => {
@@ -165,19 +165,19 @@ describe('selection drawn as GPU marks', () => {
       const el = makeMarkedEl();
       el.data = next;
       el._processData();
-      expect(el._pointMarks).toBeNull();
-      expect(el._unmarkedGetters).toBeNull();
+      expect(el._style._pointMarks).toBeNull();
+      expect(el._style._unmarkedGetters).toBeNull();
     }
   });
 
   it('lets go of them once nothing is marked, or the marks are staged', () => {
     const el = makeMarkedEl();
     select(el, []);
-    expect(el._getPointMarks(el._plotData)).toBeNull();
-    expect(el._pointMarks).toBeNull();
+    expect(el._style.pointMarks(el._plotData)).toBeNull();
+    expect(el._style._pointMarks).toBeNull();
     el._focusedValues = ['A'];
-    el._getStageGetters();
-    expect(el._unmarkedGetters).toBeNull();
+    el._style.stageGetters();
+    expect(el._style._unmarkedGetters).toBeNull();
   });
 });
 
@@ -190,7 +190,7 @@ describe('selection staged on the CPU', () => {
     el.highlightedProteinIds = ['p1'];
     el.updated(changed('highlightedProteinIds'));
     expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(2);
-    expect(el._getPointMarks(el._plotData)).toBeNull();
+    expect(el._style.pointMarks(el._plotData)).toBeNull();
     const { live } = rendererStyles(el);
     expect(live.getOpacity(point(1))).toBe(1);
     expect(live.getOpacity(point(3))).toBe(0.15);
@@ -204,7 +204,7 @@ describe('selection staged on the CPU', () => {
     Object.assign(el._webglRenderer!, { canDrawMarks: false });
     select(el, ['p1']);
     expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(1);
-    expect(el._getPointMarks(el._plotData)).toBeNull();
+    expect(el._style.pointMarks(el._plotData)).toBeNull();
     const { live } = rendererStyles(el);
     expect(stagedOpacities(live, el._plotData)).toEqual([0.15, 1, 0.15, 0.15, 0.15]);
   });
@@ -217,7 +217,7 @@ describe('selection staged on the CPU', () => {
       el._webglRenderer!.invalidateStyleCache.mockClear();
       select(el, ['p1']);
       expect(el._webglRenderer!.invalidateStyleCache).toHaveBeenCalledTimes(1);
-      expect(el._getPointMarks(el._plotData)).toBeNull();
+      expect(el._style.pointMarks(el._plotData)).toBeNull();
       const { live, exported } = rendererStyles(el);
       expect(live.getOpacity(point(0))).toBe(exported.getOpacity(point(0)));
     }

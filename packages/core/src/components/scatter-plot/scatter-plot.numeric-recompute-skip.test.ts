@@ -184,11 +184,11 @@ describe('numeric recompute: re-stage only when the materialized data changed', 
 
     it('keeps the visibility model, so an equal copy does not redo its O(N) mask', () => {
       build('score', {});
-      const model = sp._getVisibilityModel();
+      const model = sp._style.model();
 
       sp.numericAnnotationSettings = { score: defaults() };
       sp._getMaterializedData();
-      expect(sp._getVisibilityModel()).toBe(model);
+      expect(sp._style.model()).toBe(model);
     });
 
     it('becomes a new object when the bins change', () => {

@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { createMockCanvas } from '../webgl/renderer/test-support/mock-webgl2';
 import type { ProtspaceScatterplot } from '../scatter-plot';
+import type { PointStyleState } from '../styling/point-style-state';
 import '../scatter-plot';
 
 // jsdom has no ResizeObserver, and the element constructs one.
@@ -19,13 +20,19 @@ if (!('ResizeObserver' in globalThis)) {
 
 type Host = ProtspaceScatterplot;
 
+/** The plot's style state, with the private members the suites reach into made public. */
+type StyleInternals = Pick<PointStyleState, keyof PointStyleState> & {
+  _pointMarks: PointStyleState['_pointMarks'];
+  _slotSelection: PointStyleState['_slotSelection'];
+  _unmarkedGetters: PointStyleState['_unmarkedGetters'];
+};
+
 /**
  * The element, with the private members the suites reach into made public. Each one is
  * typed from the element, so a rename fails type-check here instead of in no suite.
  * `keyof` leaves private members out, which is what lets them be redeclared.
  */
 export type PlotInternals = Pick<Host, keyof Host> & {
-  _buildStyleGetters: Host['_buildStyleGetters'];
   _canvas: Host['_canvas'];
   _colorMapping: Host['_colorMapping'];
   _commitSelection: Host['_commitSelection'];
@@ -39,11 +46,7 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _getCurrentDisplayData: Host['_getCurrentDisplayData'];
   _getInteractableProteinIds: Host['_getInteractableProteinIds'];
   _getMaterializedData: Host['_getMaterializedData'];
-  _getPointMarks: Host['_getPointMarks'];
   _getPointsForRendering: Host['_getPointsForRendering'];
-  _getStageGetters: Host['_getStageGetters'];
-  _getStyleGetters: Host['_getStyleGetters'];
-  _getVisibilityModel: Host['_getVisibilityModel'];
   _getVisiblePointCount: Host['_getVisiblePointCount'];
   _handleCanvasMouseMove: Host['_handleCanvasMouseMove'];
   _handleColorMappingChange: Host['_handleColorMappingChange'];
@@ -53,7 +56,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _handleZOrderChange: Host['_handleZOrderChange'];
   _hoveredProteinId: Host['_hoveredProteinId'];
   _hoverRaf: Host['_hoverRaf'];
-  _interactableSlots: Host['_interactableSlots'];
   _interaction: Host['_interaction'];
   _interactionHost: Host['_interactionHost'];
   _invalidateScalesCache: Host['_invalidateScalesCache'];
@@ -66,7 +68,6 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   _plotData: Host['_plotData'];
   _plotDataBuild: Host['_plotDataBuild'];
   _pointGrid: Host['_pointGrid'];
-  _pointMarks: Host['_pointMarks'];
   _processData: Host['_processData'];
   _rebuildStyle: Host['_rebuildStyle'];
   _reconcileConfigMerge: Host['_reconcileConfigMerge'];
@@ -81,18 +82,15 @@ export type PlotInternals = Pick<Host, keyof Host> & {
   readonly _scales: Host['_scales'];
   _scalesCache: Host['_scalesCache'];
   _scalesKey: Host['_scalesKey'];
-  _scheduleIdIndex: Host['_scheduleIdIndex'];
   _scheduleNumericAnnotationRefresh: Host['_scheduleNumericAnnotationRefresh'];
   _shapeMapping: Host['_shapeMapping'];
-  _slotSelection: Host['_slotSelection'];
+  _style: StyleInternals;
   _slotsToInteractiveIds: Host['_slotsToInteractiveIds'];
-  _styleGettersCache: Host['_styleGettersCache'];
   _svg: Host['_svg'];
   _tooltipData: Host['_tooltipData'];
   _tooltipHeight: Host['_tooltipHeight'];
   _tooltipMeasureToken: Host['_tooltipMeasureToken'];
   _transform: Host['_transform'];
-  _unmarkedGetters: Host['_unmarkedGetters'];
   _updateSelectionOverlays: Host['_updateSelectionOverlays'];
   _updateSizeAndRender: Host['_updateSizeAndRender'];
   _webglRenderer: Host['_webglRenderer'];

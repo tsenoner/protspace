@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * F-27 characterization LOCK — `_getVisibilityModel` memo key.
+ * F-27 characterization LOCK — `_style.model()` memo key.
  *
- * `_getVisibilityModel` caches one VisibilityModel instance keyed by
+ * `PointStyleState.model()` (the host's `_style`) caches one VisibilityModel instance keyed by
  * reference/value identity on the 10 fields of `VisibilityModelMemoKey`:
  *   data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
  *   highlightedProteinIds, baseOpacity, selectedOpacity, fadedOpacity,
@@ -53,7 +53,7 @@ type Internals = HTMLElement & {
   _focusedValues: string[] | null;
   _mergedConfig: Opacities;
   _processData(): void;
-  _getVisibilityModel(): { opacityOf(p: PlotDataPoint): number };
+  _style: { model(): { opacityOf(p: PlotDataPoint): number } };
 };
 
 const BASE = 0.8;
@@ -102,7 +102,7 @@ function famData(fam = [0, 0, 0, 1, 1, 1]): VisualizationData {
 
 const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: i, y: i, originalIndex: i });
 
-describe('_getVisibilityModel memo key (F-27 characterization lock)', () => {
+describe('_style.model() memo key (F-27 characterization lock)', () => {
   function primed(): Internals {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = famData();
@@ -126,7 +126,7 @@ describe('_getVisibilityModel memo key (F-27 characterization lock)', () => {
 
   it('no input change → cache HIT (same model instance)', () => {
     const sp = primed();
-    expect(sp._getVisibilityModel()).toBe(sp._getVisibilityModel());
+    expect(sp._style.model()).toBe(sp._style.model());
   });
 
   // Each key field, when flipped, must produce a cache MISS whose opacityOf(probe)
@@ -221,10 +221,10 @@ describe('_getVisibilityModel memo key (F-27 characterization lock)', () => {
   it.each(flips)('flipping %s → cache MISS with the new opacity', (_field, c) => {
     const sp = primed();
     c.setup?.(sp);
-    const before = sp._getVisibilityModel();
+    const before = sp._style.model();
     expect(before.opacityOf(point(c.probe))).toBe(c.before);
     c.flip(sp);
-    const after = sp._getVisibilityModel();
+    const after = sp._style.model();
     expect(after).not.toBe(before);
     expect(after.opacityOf(point(c.probe))).toBe(c.after);
   });

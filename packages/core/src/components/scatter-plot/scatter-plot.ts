@@ -35,11 +35,8 @@ import './projection-metadata/projection-metadata';
 import './tooltips/protspace-tips';
 import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
-import { createStyleGetters } from './styling/style-getters';
-import { computeVisibilityModel } from './styling/visibility-model';
-import type { VisibilityInputs, VisibilityModel } from './styling/visibility-model';
+import { PointStyleState } from './styling/point-style-state';
 import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
-import type { PointMarks } from './webgl/types';
 import { resolveColor } from './webgl/color-utils';
 import { BackgroundColorCache } from './styling/background-color-cache';
 import { sameMaterialization } from './styling/same-materialization';
@@ -128,51 +125,6 @@ function sameMapping<T>(current: Record<string, T> | null, next: Record<string, 
   const keys = Object.keys(current);
   if (keys.length !== Object.keys(next).length) return false;
   return keys.every((k) => Object.prototype.hasOwnProperty.call(next, k) && current[k] === next[k]);
-}
-
-/**
- * Memoization key for `_getVisibilityModel`. Stored as a plain struct so each
- * field is compared by strict equality (===) in the guard in that method.
- * An identity-compared object or array ref cannot go into a string hash —
- * the coercion loses identity and causes spurious cache hits — so the struct
- * approach is the correct trade-off here.
- */
-type VisibilityModelMemoKey = {
-  data: VisualizationData | null;
-  selectedAnnotation: string;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[];
-  highlightedProteinIds: string[];
-  baseOpacity: number;
-  selectedOpacity: number;
-  fadedOpacity: number;
-  eatOverlayEnabled: boolean;
-  focusedValues: string[] | null;
-};
-
-/** The interactive slots of the plot data, see `_interactableSlots`. */
-interface InteractableSlots {
-  /** What they were marked for: the plot data's slots and the model's `interactivityKey`. */
-  readonly originalIndices: Int32Array | null;
-  readonly length: number;
-  readonly interactivityKey: object;
-  readonly visible: Uint8Array;
-  readonly count: number;
-  /** The protein ids of the slots `visible` marks, in slot order; gathered on the first call. */
-  ids(): ReadonlySet<string>;
-}
-
-/**
- * Run `task` once the main thread is idle (at most 2 s on), or after a short
- * delay where `requestIdleCallback` is missing (Safari). Returns its cancel.
- */
-function whenIdle(task: () => void): () => void {
-  if (typeof requestIdleCallback === 'function') {
-    const handle = requestIdleCallback(task, { timeout: 2000 });
-    return () => cancelIdleCallback(handle);
-  }
-  const handle = setTimeout(task, 500);
-  return () => clearTimeout(handle);
 }
 
 /** Whether two index maps (null: every point, in order) put the same point in each slot. */
@@ -267,7 +219,7 @@ export class ProtspaceScatterplot extends LitElement {
     plotData: () => this._plotData,
     scales: () => this._scales,
     scalesKey: () => this._scalesKey(),
-    interactable: () => this._interactableSlots(),
+    interactable: () => this._style.interactable(this._plotData),
     onIndexInvalid: () => this._dupOverlay.cancelCompute(),
     onIndexEmpty: () => this._dupOverlay.resetState(),
     onIndexMarked: () => this._resetDuplicateOverlay(),
@@ -283,47 +235,25 @@ export class ProtspaceScatterplot extends LitElement {
   // element itself.
   private _interaction: PlotInteractionController | null = null;
   private _webglRenderer: WebGLRenderer | null = null;
-  private _styleGettersCache: ReturnType<typeof createStyleGetters> | null = null;
-  // The getters over the model with nothing marked (`_getStageGetters`), with
-  // the getters and model they were built from.
-  private _unmarkedGetters: {
-    from: ReturnType<typeof createStyleGetters>;
-    model: VisibilityModel;
-    getters: ReturnType<typeof createStyleGetters>;
-  } | null = null;
-  // The last marks `_getPointMarks` built, with the plot slots and the
-  // selection and highlight they were built for.
-  private _pointMarks: {
-    proteinIds: readonly string[];
-    originalIndices: Int32Array | null;
-    selected: string[];
-    highlighted: string[];
-    marks: PointMarks;
-  } | null = null;
-  // The last lasso or brush selection with its mark per protein index, built
-  // from its slots (`_slotsToInteractiveIds`).
-  private _slotSelection: VisibilityInputs['selectionMask'] = null;
-  // Deliberately NOT cleared to `null` by event handlers (unlike _styleGettersCache,
-  // which is nulled out on color/shape mapping changes). The key comparison in
-  // _getVisibilityModel covers every visibility-relevant input exhaustively:
-  // data, selectedAnnotation, hiddenAnnotationValues, selectedProteinIds,
-  // highlightedProteinIds, the three opacity numbers, eatOverlayEnabled and the
-  // shift-focus values. There are no deps on
-  // colorMapping, zOrderMapping, otherAnnotationValues, or sizes that would
-  // require event-handler invalidation — those inputs do not feed into the
-  // visibility model.
-  private _visibilityModelCache: VisibilityModel | null = null;
-  private _visibilityModelKey: VisibilityModelMemoKey | null = null;
-  // Which slots are INTERACTIVE (opacityOf > 0), how many, and their ids: the
-  // point-count label, provenance and the point grid's marks share this one
-  // pass (see `_interactableSlots`). Keyed on the visibility model's
-  // `interactivityKey`, which a selection changes only while some opacity tier
-  // is 0 (a configured fadedOpacity of 0 makes non-selected points
-  // non-interactive). Plot-data is keyed by (originalIndices ref + length), NOT
-  // the container ref: a projection switch clones _plotData (new container, same
-  // originalIndices) and must reuse the cache since interactivity is independent
-  // of x/y coordinates.
-  private _interactableSlotsCache: InteractableSlots | null = null;
+  // The point style chain: the visibility model, the style getters over it, the
+  // selection's GPU marks and the interactive slots.
+  private readonly _style = new PointStyleState({
+    data: () => this._getMaterializedData(),
+    selectedAnnotation: () => this.selectedAnnotation,
+    hiddenAnnotationValues: () => this.hiddenAnnotationValues,
+    otherAnnotationValues: () => this.otherAnnotationValues,
+    selectedProteinIds: () => this.selectedProteinIds,
+    highlightedProteinIds: () => this.highlightedProteinIds,
+    focusedValues: () => this._focusedValues,
+    eatOverlayEnabled: () => this.eatOverlayEnabled,
+    config: () => this._mergedConfig,
+    zOrderMapping: () => this._zOrderMapping,
+    colorMapping: () => this._colorMapping,
+    shapeMapping: () => this._shapeMapping,
+    canDrawMarks: () => this._webglRenderer?.canDrawMarks ?? true,
+    // If an id repeats, render the point count again.
+    onIdsRepeat: () => this.requestUpdate(),
+  });
   // The un-culled plot data and its point grid (both in `grid`), set aside while a query
   // filter or isolation culls the plot. Leaving the cull swaps them back instead of
   // rebuilding both (see `_processData`). `projection`, `proteinIds` and `plane` are what
@@ -343,8 +273,6 @@ export class ProtspaceScatterplot extends LitElement {
   });
   private _hoverRaf: number | null = null;
   private _commitSelectionRafId: number | null = null;
-  // Cancels the pending idle build of the protein id index (`_scheduleIdIndex`).
-  private _cancelIdIndex: (() => void) | null = null;
   private _pendingHover: { event: MouseEvent; mouseX: number; mouseY: number } | null = null;
   private _scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
   private _hoveredProteinId: string | null = null;
@@ -370,7 +298,7 @@ export class ProtspaceScatterplot extends LitElement {
     getVisibleSlots: () => this._pointGrid.visibleSlots(),
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
-    getColor: (p) => this._getColors(p)[0] ?? '#888888',
+    getColor: (p) => this._style.getters().getColors(p)[0] ?? '#888888',
     onPointActivate: (e, p) => this._handleClick(e, p),
     onHover: (e, p) => this._handleMouseOver(e, p),
     onHoverEnd: () => this._clearHoverState(),
@@ -611,12 +539,13 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _createWebglRenderer() {
     if (!this._canvas) return;
+    const style = this._style;
     const styles = {
-      getColors: (p: PlotDataPoint) => this._getColors(p),
-      getPointSize: (p: PlotDataPoint) => this._getPointSize(p),
-      getShape: (p: PlotDataPoint) => this._getPointShape(p),
-      isPredicted: (p: PlotDataPoint) => this._getStyleGetters().isPredicted(p),
-      isMultilabel: () => this._getStyleGetters().isMultilabel(),
+      getColors: (p: PlotDataPoint) => style.getters().getColors(p),
+      getPointSize: (p: PlotDataPoint) => style.getters().getPointSize(p),
+      getShape: (p: PlotDataPoint) => style.getters().getPointShape(p),
+      isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
+      isMultilabel: () => style.getters().isMultilabel(),
     };
     this._webglRenderer = new WebGLRenderer(this._canvas, {
       getScales: () => this._scales,
@@ -625,19 +554,19 @@ export class ProtspaceScatterplot extends LitElement {
       // The live view stages nothing marked while it draws the marks on the GPU.
       style: {
         ...styles,
-        getOpacity: (p: PlotDataPoint) => this._getStageModel().opacityOf(p),
-        getDepth: (p: PlotDataPoint) => this._getStageGetters().getDepth(p),
-        createStylePass: () => this._getStageGetters().createStylePass(this._getStageModel()),
-        getPointMarks: (pd: PlotData) => this._getPointMarks(pd),
+        getOpacity: (p: PlotDataPoint) => style.stageModel().opacityOf(p),
+        getDepth: (p: PlotDataPoint) => style.stageGetters().getDepth(p),
+        createStylePass: () => style.stageGetters().createStylePass(style.stageModel()),
+        getPointMarks: (pd: PlotData) => style.pointMarks(pd),
       },
       // An export stages the selection with every other style.
       exportStyle: {
         ...styles,
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => this._getDepth(p),
+        getDepth: (p: PlotDataPoint) => style.getters().getDepth(p),
         // The getters above resolve the visibility model per point; a pass
         // resolves it once, for every point it stages.
-        createStylePass: () => this._getStyleGetters().createStylePass(this._getVisibilityModel()),
+        createStylePass: () => style.getters().createStylePass(style.model()),
       },
       getKnockoutColor: () => this._background.get(),
       onContextLost: this._handleWebglContextLost,
@@ -676,8 +605,8 @@ export class ProtspaceScatterplot extends LitElement {
     if (this.hasUpdated) {
       this._interaction?.updateSelectionMode();
       this._numericRecompute.resume();
-      if (this.data && this._getVisibilityModel().idsUniqueIfIndexed() === null) {
-        this._scheduleIdIndex();
+      if (this.data && this._style.model().idsUniqueIfIndexed() === null) {
+        this._style.scheduleIdIndex();
       }
     }
   }
@@ -695,8 +624,7 @@ export class ProtspaceScatterplot extends LitElement {
       cancelAnimationFrame(this._commitSelectionRafId);
       this._commitSelectionRafId = null;
     }
-    this._cancelIdIndex?.();
-    this._cancelIdIndex = null;
+    this._style.cancelIdIndex();
     this._pendingHover = null;
     this._numericRecompute.cancel();
     this._dupOverlay.cancelDebounce();
@@ -775,7 +703,7 @@ export class ProtspaceScatterplot extends LitElement {
     if (sameMapping(this._zOrderMapping, detail.zOrderMapping)) return;
     this._zOrderMapping = detail.zOrderMapping;
     // z-order affects GPU depth; force a fresh style getter cache so getDepth sees the new mapping
-    this._styleGettersCache = null;
+    this._style.invalidateGetters();
 
     if (this._plotData.length > 0) {
       // Z-order mapping changed but coordinates didn't — re-sort by depth without
@@ -802,7 +730,7 @@ export class ProtspaceScatterplot extends LitElement {
     const colorOnly = detail.colorOnly ?? false;
 
     // Force fresh style getters to use new color/shape mapping
-    this._styleGettersCache = null;
+    this._style.invalidateGetters();
 
     if (this._plotData.length > 0) {
       // Color-only changes skip the depth re-sort, and restyle whole
@@ -961,7 +889,7 @@ export class ProtspaceScatterplot extends LitElement {
       );
       if (changedProperties.has('data')) {
         this.resetZoom();
-        this._scheduleIdIndex();
+        this._style.scheduleIdIndex();
       }
 
       if (changedProperties.has('data') && this.data) {
@@ -1077,7 +1005,7 @@ export class ProtspaceScatterplot extends LitElement {
       changedProperties.has('eatOverlayEnabled') ||
       changedProperties.has('config')
     ) {
-      this._styleGettersCache = this._buildStyleGetters();
+      this._style.refreshGetters();
     }
   }
 
@@ -1090,13 +1018,13 @@ export class ProtspaceScatterplot extends LitElement {
       this._syncWebglSelectionActive();
       // Marks the renderer draws on the GPU re-stage nothing. Focus is staged,
       // and moves the selection between the GPU and staging.
-      if (changedProperties.has('_focusedValues') || !this._marksOnGpu()) {
+      if (changedProperties.has('_focusedValues') || !this._style.marksOnGpu()) {
         this._webglRenderer?.invalidateStyleCache();
       }
       // With an opacity tier at 0, the change also moves which points are interactive.
       // The point-count label may have counted them already: compare the grid's marks.
       const marks = this._pointGrid.marks;
-      if (marks && marks !== this._currentInteractableSlots()?.visible) {
+      if (marks && marks !== this._style.currentInteractable(this._plotData)?.visible) {
         this._pointGrid.scheduleRemark();
       }
     }
@@ -1173,7 +1101,7 @@ export class ProtspaceScatterplot extends LitElement {
     // non-prefix filter. Isolation already worked this way; filtering now matches.
     const dataToUse = this._getMaterializedData();
     if (!dataToUse) {
-      this._clearMarkCaches();
+      this._style.clearMarks();
       return;
     }
 
@@ -1219,7 +1147,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._plotData = EMPTY_PLOT_DATA;
       this._pointGrid.clear();
       this._webglRenderer?.releaseDataReferences();
-      this._clearMarkCaches();
+      this._style.clearMarks();
 
       const kept = culling ? null : this._fullView;
       if (!culling) this._fullView = null;
@@ -1270,7 +1198,7 @@ export class ProtspaceScatterplot extends LitElement {
     // changing the selected annotation only requires re-render + cache invalidation.
     this._plotData = clonePlotData(this._plotData);
     if (this._plotDataBuild) this._plotDataBuild = { ...this._plotDataBuild, data: dataToUse };
-    this._styleGettersCache = null;
+    this._style.invalidateGetters();
   }
 
   private _scheduleNumericAnnotationRefresh() {
@@ -1496,29 +1424,10 @@ export class ProtspaceScatterplot extends LitElement {
 
   /**
    * Resolve a list of point index slots to the protein ids of the interactive
-   * points among them, in a single pass.
-   *
-   * Shared by lasso and brush selection. Reads the memoized interactable slots
-   * (`isInteractive` per slot) instead of asking the visibility model per hit,
-   * which at ~190K lassoed points of the 573K dataset took ~8 ms. Also keeps
-   * their mark per protein index as `_slotSelection`, so the selection the ids
-   * come back as is marked without looking each one up (~12 ms at ~190K).
+   * points among them, in a single pass. Shared by lasso and brush selection.
    */
   private _slotsToInteractiveIds(slots: number[]): string[] {
-    const pd = this._plotData;
-    const oi = pd.originalIndices;
-    const { visible } = this._interactableSlots();
-    const ids: string[] = [];
-    const mask = new Uint8Array(pd.proteinIds.length);
-    for (let i = 0; i < slots.length; i++) {
-      const s = slots[i];
-      if (visible[s] !== 1) continue;
-      const origIdx = oi ? oi[s] : s;
-      ids.push(pd.proteinIds[origIdx]);
-      mask[origIdx] = 1;
-    }
-    this._slotSelection = { ids, proteinIds: pd.proteinIds, mask };
-    return ids;
+    return this._style.selectSlots(this._plotData, slots);
   }
 
   /**
@@ -1535,7 +1444,7 @@ export class ProtspaceScatterplot extends LitElement {
       this._commitSelectionRafId = requestAnimationFrame(() => {
         this._commitSelectionRafId = null;
         // The ids come from distinct slots, so none repeats if no protein id does.
-        const idsUnique = this._getVisibilityModel().idsUnique();
+        const idsUnique = this._style.model().idsUnique();
         this.selectedProteinIds = [...selectedIds];
 
         this.dispatchEvent(
@@ -1625,21 +1534,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.updateSelectionOverlays(options);
   }
 
-  private _getPointShape(point: PlotDataPoint): string {
-    const getters = this._getStyleGetters();
-    return getters.getPointShape(point);
-  }
-
-  private _getColors(point: PlotDataPoint): string[] {
-    const getters = this._getStyleGetters();
-    return getters.getColors(point);
-  }
-
-  private _getPointSize(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getPointSize(point);
-  }
-
   private _getOpacity(point: PlotDataPoint): number {
     // Facade: two external consumers reach into this private member —
     // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
@@ -1647,312 +1541,29 @@ export class ProtspaceScatterplot extends LitElement {
     // method without migrating those callers first.
     // Delegates to the shared visibility model, which is the single opacity
     // authority.
-    return this._getVisibilityModel().opacityOf(point);
+    return this._style.model().opacityOf(point);
   }
 
   /**
-   * Pull-based, memoized accessor for the shared point-visibility model.
-   *
-   * PULL-BASED on purpose (design D1): there is no `willUpdate`; isolation,
-   * reset, and numeric-rebin rAF all call `_processData`/`_pointGrid.rebuildNow`
-   * imperatively outside the Lit cycle; and pinned tests drive unattached
-   * elements where lifecycle never runs. A lifecycle-recomputed model would be
-   * stale at those sites. So the model is computed lazily and memoized purely on
-   * input identity — no lifecycle hooks, no version counters, no invalidation
-   * plumbing.
-   *
-   * Keys (all reference/strict-equality): the materialized data (the source
-   * `_buildStyleGetters` uses, reference-stable until materialization is
-   * rebuilt), `selectedAnnotation`, `hiddenAnnotationValues` ref,
-   * selection/highlight refs, `eatOverlayEnabled`, the shift-focus values ref, and
-   * the three opacity numbers from the merged config. (Opacities are extracted as three plain
-   * numbers rather than keying on `_mergedConfig` itself: `_mergedConfig` is
-   * rebuilt as a new object on unrelated changes such as width/height/margin, so
-   * its reference is never stable as a cache key.)
-   *
-   * Two-level: on a miss we pass the previous model to `computeVisibilityModel`,
-   * which reuses the O(N) hidden mask when (data, selectedAnnotation, hidden ref)
-   * are unchanged — so selection/highlight/opacity-only changes never redo the
-   * mask pass. Isolation is NOT an input: it is physical culling upstream; the
-   * model sees only the materialized data + alpha-layer inputs.
-   */
-  private _getVisibilityModel(): VisibilityModel {
-    // Same data expression `_buildStyleGetters` uses, so the component path and
-    // the hit-test path share one model instance over one data reference.
-    const data = this._getMaterializedData();
-    const baseOpacity = this._mergedConfig.baseOpacity;
-    const selectedOpacity = this._mergedConfig.selectedOpacity;
-    const fadedOpacity = this._mergedConfig.fadedOpacity;
-
-    const key = this._visibilityModelKey;
-    if (
-      this._visibilityModelCache &&
-      key &&
-      key.data === data &&
-      key.selectedAnnotation === this.selectedAnnotation &&
-      key.hiddenAnnotationValues === this.hiddenAnnotationValues &&
-      key.selectedProteinIds === this.selectedProteinIds &&
-      key.highlightedProteinIds === this.highlightedProteinIds &&
-      key.baseOpacity === baseOpacity &&
-      key.selectedOpacity === selectedOpacity &&
-      key.fadedOpacity === fadedOpacity &&
-      key.eatOverlayEnabled === this.eatOverlayEnabled &&
-      key.focusedValues === this._focusedValues
-    ) {
-      return this._visibilityModelCache;
-    }
-
-    const model = computeVisibilityModel(
-      {
-        data,
-        selectedAnnotation: this.selectedAnnotation,
-        hiddenAnnotationValues: this.hiddenAnnotationValues,
-        selectedProteinIds: this.selectedProteinIds,
-        highlightedProteinIds: this.highlightedProteinIds,
-        opacities: { base: baseOpacity, selected: selectedOpacity, faded: fadedOpacity },
-        focusedValues: this._focusedValues,
-        selectionMask: this._slotSelection,
-      },
-      this._visibilityModelCache ?? undefined,
-    );
-
-    this._visibilityModelCache = model;
-    this._visibilityModelKey = {
-      data,
-      selectedAnnotation: this.selectedAnnotation,
-      hiddenAnnotationValues: this.hiddenAnnotationValues,
-      selectedProteinIds: this.selectedProteinIds,
-      highlightedProteinIds: this.highlightedProteinIds,
-      baseOpacity,
-      selectedOpacity,
-      fadedOpacity,
-      eatOverlayEnabled: this.eatOverlayEnabled,
-      focusedValues: this._focusedValues,
-    };
-    return model;
-  }
-
-  /**
-   * Build the protein id index of a new dataset while the main thread is idle,
-   * so neither the first render nor the first selection waits for it (~22 ms
-   * and 4 MB at 573K). If an id repeats, render the point count again.
-   */
-  private _scheduleIdIndex() {
-    this._cancelIdIndex?.();
-    this._cancelIdIndex = whenIdle(() => {
-      this._cancelIdIndex = null;
-      if (!this._getVisibilityModel().idsUnique()) this.requestUpdate();
-    });
-  }
-
-  /**
-   * Number of INTERACTIVE plot points in the chart (opacityOf > 0): the points
-   * the user can actually see and interact with. `_plotData` is already
-   * physically culled by isolation and query filters; this further drops
-   * legend-hidden points AND selection-faded points whose configured
-   * any selected/base/faded tier is 0 (opacity 0 == invisible, exactly what the
-   * WebGL renderer and hit-test treat as non-interactive). The memo key therefore
-   * includes selection/highlight whenever any supported tier can cross the
-   * interactive boundary, and keys plot-data on (originalIndices ref + length)
-   * rather than the `_plotData` container ref so a pure projection switch
-   * (which clonePlotData()s a new container sharing the same originalIndices)
-   * reuses the cache — interactivity is independent of x/y coordinates.
+   * The ids of the INTERACTIVE plot points (opacityOf > 0): the points the user
+   * can actually see and interact with. `_plotData` is already physically culled
+   * by isolation and query filters; this further drops legend-hidden points AND
+   * selection-faded points whose configured tier is 0.
    */
   private _getInteractableProteinIds(): ReadonlySet<string> {
-    return this._interactableSlots().ids();
-  }
-
-  /**
-   * `_interactableSlotsCache` if it marks the slots of `_plotData` under the
-   * current visibility. Under the default all-positive tiers, connector-owned
-   * highlights keep it.
-   */
-  private _currentInteractableSlots(): InteractableSlots | null {
-    const slots = this._interactableSlotsCache;
-    const pd = this._plotData;
-    return slots &&
-      slots.originalIndices === pd.originalIndices &&
-      slots.length === pd.length &&
-      slots.interactivityKey === this._getVisibilityModel().interactivityKey
-      ? slots
-      : null;
+    return this._style.interactable(this._plotData).ids();
   }
 
   /**
    * The size of `_getInteractableProteinIds()`. Each slot is a distinct protein,
    * so while no protein id repeats that is the interactive slot count, read
    * without building the set: a legend toggle changes it, and at 573K points the
-   * set took ~25 ms. Until the id index says an id repeats (`_scheduleIdIndex`),
+   * set took ~25 ms. Until the id index says an id repeats (`scheduleIdIndex`),
    * it counts slots.
    */
   private _getVisiblePointCount(): number {
-    const slots = this._interactableSlots();
-    return this._getVisibilityModel().idsUniqueIfIndexed() === false
-      ? slots.ids().size
-      : slots.count;
-  }
-
-  /**
-   * The interactive slots of `_plotData`, marked 1 in `visible`, their count,
-   * and their ids. Whichever of the point-count label and the point grid's
-   * marking runs first pays for the pass. `visible` is shared with the point
-   * grid, so it is never written after.
-   */
-  private _interactableSlots(): InteractableSlots {
-    const current = this._currentInteractableSlots();
-    if (current) return current;
-    const pd = this._plotData;
-    const model = this._getVisibilityModel();
-    const oi = pd.originalIndices;
-    const proteinIds = pd.proteinIds;
-    const visible = new Uint8Array(pd.length);
-    let count = 0;
-    for (let s = 0; s < pd.length; s++) {
-      const origIdx = oi ? oi[s] : s;
-      // isInteractive: opacityOf(point) > 0.
-      if (model.opacityAt(origIdx, proteinIds[origIdx]) > 0) {
-        visible[s] = 1;
-        count++;
-      }
-    }
-    let ids: Set<string> | null = null;
-    this._interactableSlotsCache = {
-      originalIndices: oi,
-      length: pd.length,
-      interactivityKey: model.interactivityKey,
-      visible,
-      count,
-      ids() {
-        if (ids) return ids;
-        ids = new Set();
-        for (let s = 0; s < visible.length; s++) {
-          if (visible[s] === 1) ids.add(proteinIds[oi ? oi[s] : s]);
-        }
-        return ids;
-      },
-    };
-    return this._interactableSlotsCache;
-  }
-
-  private _getDepth(point: PlotDataPoint): number {
-    const getters = this._getStyleGetters();
-    return getters.getDepth(point);
-  }
-
-  /** Build style getters for the current data and visual state. */
-  private _buildStyleGetters(
-    model: VisibilityModel = this._getVisibilityModel(),
-  ): ReturnType<typeof createStyleGetters> {
-    const styleData = this._getMaterializedData();
-
-    return createStyleGetters(
-      styleData,
-      {
-        selectedProteinIds: this.selectedProteinIds,
-        highlightedProteinIds: this.highlightedProteinIds,
-        selectedAnnotation: this.selectedAnnotation,
-        hiddenAnnotationValues: this.hiddenAnnotationValues,
-        otherAnnotationValues: this.otherAnnotationValues,
-        zOrderMapping: this._zOrderMapping,
-        colorMapping: this._colorMapping,
-        shapeMapping: this._shapeMapping,
-        sizes: {
-          base: this._mergedConfig.pointSize,
-        },
-        opacities: {
-          base: this._mergedConfig.baseOpacity,
-          selected: this._mergedConfig.selectedOpacity,
-          faded: this._mergedConfig.fadedOpacity,
-        },
-        eatOverlayEnabled: this.eatOverlayEnabled,
-      },
-      model,
-    );
-  }
-
-  private _getStyleGetters() {
-    if (!this._styleGettersCache) {
-      this._styleGettersCache = this._buildStyleGetters();
-    }
-    return this._styleGettersCache;
-  }
-
-  /**
-   * Whether the renderer draws the selection and highlight as marks on the GPU
-   * (`_getPointMarks`) rather than staging them: not while focus fades points by
-   * category, nor with opacities the marks cannot draw as staging does, nor
-   * while the renderer cannot draw marks for the dataset.
-   */
-  private _marksOnGpu(): boolean {
-    return (
-      this._focusedValues === null &&
-      this._getStyleGetters().canMarkOnGpu() &&
-      (this._webglRenderer?.canDrawMarks ?? true)
-    );
-  }
-
-  /** The visibility model the live view stages: with nothing marked while the GPU draws the marks. */
-  private _getStageModel(): VisibilityModel {
-    const model = this._getVisibilityModel();
-    return this._marksOnGpu() ? model.unmarked : model;
-  }
-
-  /** Drop the unmarked getters and the last marks, which hold the data they were built over. */
-  private _clearMarkCaches() {
-    this._unmarkedGetters = null;
-    this._pointMarks = null;
-    this._slotSelection = null;
-  }
-
-  /** The style getters the live view stages, over {@link _getStageModel}. */
-  private _getStageGetters(): ReturnType<typeof createStyleGetters> {
-    const getters = this._getStyleGetters();
-    if (!this._marksOnGpu()) {
-      this._unmarkedGetters = null;
-      return getters;
-    }
-    const model = this._getVisibilityModel().unmarked;
-    const cached = this._unmarkedGetters;
-    if (cached?.from === getters && cached.model === model) return cached.getters;
-    this._unmarkedGetters = { from: getters, model, getters: this._buildStyleGetters(model) };
-    return this._unmarkedGetters.getters;
-  }
-
-  /**
-   * The selection and highlight as marks over the points of `pd`, for the
-   * renderer to draw on the GPU; null while they are staged instead, or while
-   * nothing is marked. Built once per change of either.
-   */
-  private _getPointMarks(pd: PlotData): PointMarks | null {
-    const model = this._marksOnGpu() ? this._getVisibilityModel() : null;
-    const opacities = model?.marks;
-    if (!model || !opacities) {
-      this._pointMarks = null;
-      return null;
-    }
-    const cached = this._pointMarks;
-    if (
-      cached &&
-      cached.proteinIds === pd.proteinIds &&
-      cached.originalIndices === pd.originalIndices &&
-      cached.marks.slots.length === pd.length &&
-      cached.selected === this.selectedProteinIds &&
-      cached.highlighted === this.highlightedProteinIds &&
-      cached.marks.marked === opacities.marked &&
-      cached.marks.unmarked === opacities.unmarked
-    ) {
-      return cached.marks;
-    }
-    const slots = model.markedSlots(pd.proteinIds, pd.originalIndices, pd.length);
-    const marks = { slots, ...opacities };
-    this._pointMarks = {
-      proteinIds: pd.proteinIds,
-      originalIndices: pd.originalIndices,
-      selected: this.selectedProteinIds,
-      highlighted: this.highlightedProteinIds,
-      marks,
-    };
-    return marks;
+    const slots = this._style.interactable(this._plotData);
+    return this._style.model().idsUniqueIfIndexed() === false ? slots.ids().size : slots.count;
   }
 
   private _getLocalPointerPosition(event: MouseEvent): {
@@ -2070,7 +1681,7 @@ export class ProtspaceScatterplot extends LitElement {
     const nearestPoint = materializePlotDataPoint(this._plotData, nearestSlot);
 
     // Don't pick non-interactive points (hidden/faded-to-0 → opacity 0)
-    if (!this._getVisibilityModel().isInteractive(nearestPoint)) return null;
+    if (!this._style.model().isInteractive(nearestPoint)) return null;
 
     const pointX = this._scales.x(nearestPoint.x);
     const pointY = this._scales.y(nearestPoint.y);
@@ -2758,7 +2369,7 @@ export class ProtspaceScatterplot extends LitElement {
     const point = this._scratchPoint;
     point.id = proteinId;
     point.originalIndex = originalIndex;
-    return this._getVisibilityModel().isInteractive(point);
+    return this._style.model().isInteractive(point);
   }
 
   /**

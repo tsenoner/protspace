@@ -95,7 +95,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
       [['A'], false],
     ] as const) {
       sp.hiddenAnnotationValues = [...hidden];
-      const opacityAt = vi.spyOn(sp._getVisibilityModel(), 'opacityAt');
+      const opacityAt = vi.spyOn(sp._style.model(), 'opacityAt');
       const count = countFirst ? sp._getVisiblePointCount() : -1;
       sp._pointGrid.scheduleRemark();
       frames.flush();

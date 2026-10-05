@@ -68,7 +68,7 @@ interface DuplicateStackOverlayDeps {
   getVisibleSlots: () => ArrayLike<number> | null;
   isEnabled: () => boolean; // _mergedConfig.enableDuplicateStackUI
   isSelectionMode: () => boolean;
-  getColor: (p: PlotDataPoint) => string; // _getColors(p)[0] ?? '#888888'
+  getColor: (p: PlotDataPoint) => string; // _style.getters().getColors(p)[0] ?? '#888888'
   onPointActivate: (event: MouseEvent, p: PlotDataPoint) => void; // host _handleClick
   onHover: (event: MouseEvent, p: PlotDataPoint) => void; // host _handleMouseOver
   onHoverEnd: () => void; // host _clearHoverState

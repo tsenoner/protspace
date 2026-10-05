@@ -53,7 +53,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     sp.filtersActive = true;
 
     sp._processData();
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
 
     expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
@@ -71,7 +71,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     prefix.filteredProteinIds = ['p0', 'p1', 'p2'];
     prefix.filtersActive = true;
     prefix._processData();
-    const prefixGetters = prefix._buildStyleGetters();
+    const prefixGetters = prefix._style.getters();
     for (const point of plotPoints(prefix._plotData)) {
       expect(prefixGetters.getColors(point)).toEqual([RED]);
     }
@@ -79,7 +79,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     // No filter at all — full plot, both families correct.
     const full = makeScatter();
     full._processData();
-    const fullGetters = full._buildStyleGetters();
+    const fullGetters = full._style.getters();
     const colorById = new Map(
       plotPoints(full._plotData).map((p) => [p.id, fullGetters.getColors(p)]),
     );
@@ -92,7 +92,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
 // Task 1.7 — Order-independence of query filter × legend hide
 //
 // The filter channel (_processData / filteredProteinIds) and the legend hide
-// channel (hiddenAnnotationValues / _buildStyleGetters) are orthogonal:
+// channel (hiddenAnnotationValues / the style getters) are orthogonal:
 //   • filter determines which points land in _plotData
 //   • hide sets opacity to 0 for matching points but never culls them
 //
@@ -123,7 +123,7 @@ describe('scatter-plot filter × hide order-independence', () => {
       sp.filtersActive = true;
       sp._processData();
     }
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
     return { sp, getters };
   }
 
@@ -278,7 +278,7 @@ describe('scatter-plot visible point count', () => {
     for (const [hidden, selected] of states) {
       sp.hiddenAnnotationValues = hidden;
       sp.selectedProteinIds = selected;
-      const ids = vi.spyOn(sp._interactableSlots(), 'ids');
+      const ids = vi.spyOn(sp._style.interactable(sp._plotData), 'ids');
       const count = sp._getVisiblePointCount();
       expect(ids).not.toHaveBeenCalled();
       expect(count).toBe(sp.getInteractableProteinIds().size);
@@ -323,10 +323,10 @@ describe('scatter-plot visible point count', () => {
     it('builds no id table for the first point count', async () => {
       const { sp, idle, label } = await load(makeFamilyData());
       expect(label()).toBe('6 points');
-      expect(sp._getVisibilityModel().idsUniqueIfIndexed()).toBeNull();
+      expect(sp._style.model().idsUniqueIfIndexed()).toBeNull();
       // With every id once, the idle build leaves the label alone.
       idle.run();
-      expect(sp._getVisibilityModel().idsUniqueIfIndexed()).toBe(true);
+      expect(sp._style.model().idsUniqueIfIndexed()).toBe(true);
       expect(sp.isUpdatePending).toBe(false);
       expect(label()).toBe('6 points');
     });
@@ -578,7 +578,7 @@ describe('scatter-plot numeric recompute display data', () => {
     sp._scheduleNumericAnnotationRefresh();
     frames.run();
 
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
     for (const point of plotPoints(sp._plotData)) {
       expect(getters.getColors(point)).toEqual([GREEN]);
       expect(getters.getOpacity(point)).toBeGreaterThan(0);
