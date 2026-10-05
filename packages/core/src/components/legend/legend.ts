@@ -1651,7 +1651,7 @@ export class ProtspaceLegend extends LitElement {
     this._updateAnnotationValues(data, selectedAnnotation);
     this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
     // Taken from the unsliced element, not from the incoming payload.
-    // `sliceVisualizationDataByIndices` strips `statisticsRows` from a filtered or isolated
+    // `sliceWith` in utils strips `statisticsRows` from a filtered or isolated
     // view on purpose (a slice must not carry scores that describe the whole dataset), so
     // reading them off `data` made every filter look identical to "this annotation was never
     // scored" -- which is why this used to need a sticky per-annotation memory to tell the two

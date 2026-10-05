@@ -221,7 +221,8 @@ export interface VisualizationData {
   /**
    * The same part parsed for rendering, derived from `statistics` at load and never
    * written back to it. The two must be cleared together whenever the underlying data
-   * changes; `sliceVisualizationDataByIndices` is the one place that happens.
+   * changes; `sliceWith`, which the eager slice and the lazy view both go through, is the
+   * one place that happens.
    */
   statisticsRows?: readonly ProjectionStatisticRow[];
 }

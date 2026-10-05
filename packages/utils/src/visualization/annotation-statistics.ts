@@ -324,7 +324,7 @@ export function isAutoClusterColumn(
  * column this is rather than which statistics rows describe it. Two reasons it must not consult
  * the rows:
  *
- * - The rows are not always there. `sliceVisualizationDataByIndices` clears them for a filtered
+ * - The rows are not always there. `sliceWith` clears them for a filtered
  *   or isolated view, and a bundle re-exported from that view carries the `cluster_*` column and
  *   its per-point payload but no statistics part at all. A rows-based test answers "no" there and
  *   the caller then treats a generated column as a curated one.
