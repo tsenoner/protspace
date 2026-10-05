@@ -24,6 +24,7 @@ const COUNT_KEYS = [
   'glIs',
   'glSync',
   'uploadBytes',
+  'morphFrame',
 ] as const;
 type CountKey = (typeof COUNT_KEYS)[number];
 
@@ -42,7 +43,7 @@ export interface TimingSample {
   busy: number;
   /** null on a build without the counters. */
   restageMs: number | null;
-  /** 95th percentile gap between animation frames, ms; only for segments that arm it. */
+  /** 95th percentile gap between animation frames, ms; only for segments that set `frames`. */
   p95Frame: number | null;
 }
 
@@ -58,6 +59,8 @@ export interface SegmentResult {
   pixelDiff?: { before: Buffer; after: Buffer };
   /** The plot once `act` settled, when the spec asked to capture it. */
   actPixels?: Buffer;
+  /** Renders in the idle window after `act`, and whether the plot still glides then. */
+  idle?: { renders: number; morphing: boolean };
   timing?: TimingSample;
 }
 
@@ -183,6 +186,7 @@ export async function readSnapshot(page: Page, optional = false): Promise<Snapsh
       glIs: p.glIs,
       glSync: p.glSync,
       uploadBytes: p.uploadBytes,
+      morphFrame: count('morphFrame'),
     };
   }, optional);
 }
@@ -278,32 +282,37 @@ async function proteinCount(page: Page): Promise<number> {
   });
 }
 
-/** Start and stop the frame-gap recorder; only the camera segment arms it. */
-async function armFrameGaps(page: Page, on: boolean): Promise<number[] | null> {
-  return page.evaluate((arm) => {
+/**
+ * Start (with the frames to keep) and stop the frame-gap recorder. 'glide' keeps a gap
+ * only when the frame that ends it starts with the plot gliding (`data-morphing`).
+ */
+async function armFrameGaps(page: Page, frames: FrameGaps | null): Promise<number[] | null> {
+  return page.evaluate((keep) => {
     const probe = window.__perfProbe!;
-    if (!arm) {
-      const frames = probe.frames;
+    if (!keep) {
+      const gaps = probe.frames;
       probe.frames = null;
-      return frames;
+      return gaps;
     }
-    const frames: number[] = [];
-    probe.frames = frames;
+    const gaps: number[] = [];
+    probe.frames = gaps;
+    const plot = document.querySelector('#myPlot');
     let last = performance.now();
     const tick = (now: number) => {
-      if (probe.frames !== frames) return;
-      frames.push(now - last);
+      if (probe.frames !== gaps) return;
+      if (keep === 'all' || plot?.hasAttribute('data-morphing')) gaps.push(now - last);
       last = now;
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
     return null;
-  }, on);
+  }, frames);
 }
+
+type FrameGaps = 'all' | 'glide';
 
 interface TimingContext {
   cdp: CDPSession;
-  frameGaps: boolean;
 }
 
 async function taskDuration(cdp: CDPSession): Promise<number> {
@@ -325,6 +334,10 @@ export interface SegmentSpec {
   pixels?: boolean;
   /** Keep a screenshot of the plot once `act` settled (timing mode compares builds). */
   capture?: boolean;
+  /** Then wait this long and count renders: a glide must stop by itself. */
+  idleAfterMs?: number;
+  /** Timing mode: the frames whose gaps give `p95Frame`. */
+  frames?: FrameGaps;
   timing?: TimingContext;
 }
 
@@ -342,7 +355,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
   if (spec.timing) {
     busyBefore = await taskDuration(spec.timing.cdp);
     windowStart = await page.evaluate(() => performance.now());
-    if (spec.timing.frameGaps) await armFrameGaps(page, true);
+    if (spec.frames) await armFrameGaps(page, spec.frames);
   }
 
   await spec.act();
@@ -351,7 +364,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
   let timing: TimingSample | undefined;
   if (spec.timing) {
     const busy = (await taskDuration(spec.timing.cdp)) - busyBefore;
-    const frames = spec.timing.frameGaps ? await armFrameGaps(page, false) : null;
+    const frames = spec.frames ? await armFrameGaps(page, null) : null;
     const observed = await page.evaluate((from) => {
       const probe = window.__perfProbe!;
       const events = probe.events.filter((e) => e.start >= from);
@@ -384,6 +397,17 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     actPixels = await plotPixels(page);
   }
   if (timing) timing.restageMs = Number.isNaN(delta.restageMs) ? null : delta.restageMs;
+  let idle: SegmentResult['idle'];
+  if (spec.idleAfterMs) {
+    const start = await readSnapshot(page, !!spec.timing);
+    await page.waitForTimeout(spec.idleAfterMs);
+    idle = {
+      renders: (await readSnapshot(page, !!spec.timing)).render - start.render,
+      morphing: await page
+        .locator('#myPlot')
+        .evaluate((plot) => plot.hasAttribute('data-morphing')),
+    };
+  }
 
   if (spec.reset) {
     await spec.reset();
@@ -400,6 +424,7 @@ export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentRes
     pixelsSame,
     ...(pixelsSame === false ? { pixelDiff: { before: pixelsBefore!, after: pixelsAfter! } } : {}),
     ...(actPixels ? { actPixels } : {}),
+    ...(idle ? { idle } : {}),
     timing,
   };
 }

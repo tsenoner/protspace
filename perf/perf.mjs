@@ -19,6 +19,7 @@ const PREVIEW_PORT = 8301;
 const SCENARIOS = [
   'annotation-switch',
   'projection-switch',
+  'projection-switch-instant',
   'legend-isolate',
   'camera',
   'resize',
@@ -94,11 +95,12 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(opts.runs) || opts.runs < 2) usage('--runs must be 2 or more');
   if (!(opts.cpu >= 1)) usage('--cpu must be 1 or more');
-  // `annotation` is short for `annotation-switch`, and so on.
-  opts.scenarios = opts.scenarios.map((s) => {
-    const match = SCENARIOS.find((name) => name === s || name.startsWith(`${s}-`));
-    if (!match) usage(`unknown scenario ${s}; one of ${SCENARIOS.join(', ')}`);
-    return match;
+  // `annotation` is short for `annotation-switch`, and so on; `projection` also runs
+  // `projection-switch-instant`, the glide's reference.
+  opts.scenarios = opts.scenarios.flatMap((s) => {
+    const matches = SCENARIOS.filter((name) => name === s || name.startsWith(`${s}-`));
+    if (!matches.length) usage(`unknown scenario ${s}; one of ${SCENARIOS.join(', ')}`);
+    return matches;
   });
   return opts;
 }

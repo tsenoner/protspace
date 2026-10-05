@@ -110,7 +110,7 @@ async function timed(
   try {
     return await segment(target.page, {
       ...spec,
-      timing: { cdp: target.cdp, frameGaps: spec.name === 'camera' },
+      timing: { cdp: target.cdp },
     });
   } finally {
     if (TRACE) await browser.stopTracing();

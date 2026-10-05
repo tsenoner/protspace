@@ -181,6 +181,7 @@ type SegmentName =
   | 'idle'
   | 'annotation-switch'
   | 'projection-switch'
+  | 'projection-switch-instant'
   | 'legend-isolate'
   | 'camera'
   | 'resize'
@@ -192,6 +193,7 @@ type SegmentName =
 export const REPEATABLE: SegmentName[] = [
   'annotation-switch',
   'projection-switch',
+  'projection-switch-instant',
   'legend-isolate',
   'camera',
   'resize',
@@ -200,7 +202,7 @@ export const REPEATABLE: SegmentName[] = [
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–10 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–11 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -215,12 +217,30 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
   ];
   if (state.projectionCount > 1) {
-    segments.push({
-      name: 'projection-switch',
-      act: () => selectProjection(page, 1),
-      reset: () => selectProjection(page, 0),
-      pixels: true,
-    });
+    segments.push(
+      {
+        name: 'projection-switch',
+        act: () => selectProjection(page, 1),
+        reset: () => selectProjection(page, 0),
+        pixels: true,
+        capture: true,
+        idleAfterMs: 1_000,
+        frames: 'glide',
+      },
+      // The same switch without the glide: one render, and the frame the glide must end on.
+      {
+        name: 'projection-switch-instant',
+        act: async () => {
+          await page.emulateMedia({ reducedMotion: 'reduce' });
+          await selectProjection(page, 1);
+        },
+        reset: async () => {
+          await selectProjection(page, 0);
+          await page.emulateMedia({ reducedMotion: null });
+        },
+        capture: true,
+      },
+    );
   }
   const legendItem = page.locator(
     `protspace-legend .legend-item[data-value="${state.legendValue.replace(/"/g, '\\"')}"]`,
@@ -245,6 +265,7 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
         await page.mouse.up();
         for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -120);
       },
+      frames: 'all',
       reset: async () => {
         const background = await plotBackground(page);
         await page.mouse.dblclick(background.x, background.y);

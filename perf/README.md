@@ -1,9 +1,9 @@
 # Performance checks
 
-Two Playwright modes drive the real Explore UI: annotation switch, projection switch, legend
-isolate, camera drag and wheel, resize, search, import. A third tool, the cross-browser WebGL
-suite (`pnpm perf:webgl`), measures render passes per dataset in Chrome, Firefox and Safari; see its
-section at the end.
+Two Playwright modes drive the real Explore UI: annotation switch, projection switch (a glide,
+then the same switch under reduced motion, which is instant), legend isolate, camera drag and
+wheel, resize, search, import. A third tool, the cross-browser WebGL suite (`pnpm perf:webgl`),
+measures render passes per dataset in Chrome, Firefox and Safari; see its section at the end.
 
 | Command            | What it measures            | Browser                   | Gated                  | Time       |
 | ------------------ | --------------------------- | ------------------------- | ---------------------- | ---------- |
@@ -75,6 +75,8 @@ It fails when:
 - a count is above its budget;
 - the pixels after a reset differ (both screenshots are attached to the report);
 - the camera segment draws fewer points than the dataset has;
+- the projection switch draws no glide frame (`morphFrame`), renders during the second after it
+  settled, or ends on other pixels than the instant switch; or another segment draws a glide frame;
 - a `load` counter reads 0, which means a probe got disconnected;
 - the page does not settle.
 
@@ -107,18 +109,18 @@ pnpm perf --datasets /abs/path/other.parquetbundle
 pnpm perf --scenarios annotation,camera --cpu 4
 ```
 
-| Flag                | Default    | Meaning                                                                    |
-| ------------------- | ---------- | -------------------------------------------------------------------------- |
-| `--datasets a,b`    | `default`  | `default` (the demo bundle), a name in `apps/web/public/data/`, or a path  |
-| `--scenarios a,b`   | all        | `annotation`, `projection`, `legend`, `camera`, `resize`, `search`         |
-| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                    |
-| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does    |
-| `--url URL`         | own server | measure this server instead of building and serving the app                |
-| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                      |
-| `--compare URL`     |            | a second build, measured interleaved with the first                        |
-| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                 |
-| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json` |
-| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`   |
+| Flag                | Default    | Meaning                                                                            |
+| ------------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `--datasets a,b`    | `default`  | `default` (the demo bundle), a name in `apps/web/public/data/`, or a path          |
+| `--scenarios a,b`   | all        | `annotation`, `projection` (both switches), `legend`, `camera`, `resize`, `search` |
+| `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                            |
+| `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does            |
+| `--url URL`         | own server | measure this server instead of building and serving the app                        |
+| `--no-build`        |            | serve the existing `apps/web/dist` without rebuilding                              |
+| `--compare URL`     |            | a second build, measured interleaved with the first                                |
+| `--save-baseline`   |            | write the medians to `perf/baselines/<dataset>.local.json`                         |
+| `--baseline [file]` |            | report against that file, or against `perf/baselines/<dataset>.local.json`         |
+| `--trace`           |            | record a DevTools trace per segment under `perf/results/<stamp>-traces/`           |
 
 Without `--url`, `perf/perf.mjs` builds the app and serves it with `vite preview --port 8301
 --strictPort`, and stops that server on exit, on failure and on Ctrl-C. It never uses or stops
@@ -139,7 +141,8 @@ camera             40      0        -            87       0           18        
 - **LoAF ms / top script**: the longest long animation frame, and the script that took most of it.
 - **busy ms**: main-thread task time (CDP `TaskDuration`).
 - **restage ms**: time inside GPU re-stages, from the counters.
-- **p95 frame**: 95th percentile gap between frames, camera segment only.
+- **p95 frame**: 95th percentile gap between frames: every frame of the camera segment, and the
+  frames of the projection glide (while the plot has `data-morphing`), the switch frame included.
 - **heap**: JS heap after a forced GC, once the runs are done.
 
 Event Timing and Long Animation Frames exist only in Chromium, so timing mode runs only there.

@@ -54,6 +54,19 @@
       "uploadBytes": null,
       "glIsPerRender": 0
     },
+    "projection-switch-instant": {
+      "restage": 1,
+      "restagePos": 1,
+      "restageStyle": 1,
+      "render": 1,
+      "processData": 1,
+      "gridRebuild": 1,
+      "legendUpdate": 1,
+      "legendRebuild": 1,
+      "glSync": 0,
+      "uploadBytes": null,
+      "glIsPerRender": 0
+    },
     "legend-isolate": {
       "restage": 0,
       "restagePos": 0,

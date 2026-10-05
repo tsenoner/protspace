@@ -90,7 +90,31 @@ function invariants(results: SegmentResult[]): string[] {
   if (camera && camera.drawn !== camera.proteinCount) {
     failures.push(`camera: drew ${camera.drawn} of ${camera.proteinCount} points`);
   }
+  // Only a projection switch glides, and the glide stops by itself.
+  const glide = results.find((r) => r.name === 'projection-switch');
+  for (const result of results) {
+    if (result !== glide && result.delta.morphFrame !== 0) {
+      failures.push(`${result.name}: ${result.delta.morphFrame} glide frames`);
+    }
+  }
+  if (glide) {
+    if (!(glide.delta.morphFrame > 0)) failures.push('projection-switch: drew no glide frame');
+    if (glide.idle?.renders) {
+      failures.push(`projection-switch: ${glide.idle.renders} renders while idle after the glide`);
+    }
+    if (glide.idle?.morphing) failures.push('projection-switch: still data-morphing when idle');
+  }
+  if (twinPixels(results)?.same === false) {
+    failures.push('projection-switch: the glide ends on other pixels than the instant switch');
+  }
   return failures;
+}
+
+/** The plot after the glide and after the reduced-motion instant switch to the same projection. */
+function twinPixels(results: SegmentResult[]) {
+  const glide = results.find((r) => r.name === 'projection-switch')?.actPixels;
+  const instant = results.find((r) => r.name === 'projection-switch-instant')?.actPixels;
+  return glide && instant ? { glide, instant, same: glide.equals(instant) } : null;
 }
 
 test('perf counts per interaction stay within budget', async ({ browser, baseURL }, testInfo) => {
@@ -116,7 +140,7 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
   await testInfo.attach('perf-counts.json', {
     body: JSON.stringify(
       { budgets, runs },
-      (key, value) => (key === 'pixelDiff' ? undefined : value),
+      (key, value) => (key === 'pixelDiff' || key === 'actPixels' ? undefined : value),
       2,
     ),
     contentType: 'application/json',
@@ -127,6 +151,17 @@ test('perf counts per interaction stay within budget', async ({ browser, baseURL
       const file = testInfo.outputPath(`${result.name}-${when}.png`);
       fs.writeFileSync(file, body);
       await testInfo.attach(`${result.name}-${when}.png`, { path: file, contentType: 'image/png' });
+    }
+  }
+  const twin = twinPixels(results);
+  if (twin && !twin.same) {
+    for (const [name, body] of [
+      ['projection-switch-glide', twin.glide],
+      ['projection-switch-instant', twin.instant],
+    ] as const) {
+      const file = testInfo.outputPath(`${name}.png`);
+      fs.writeFileSync(file, body);
+      await testInfo.attach(`${name}.png`, { path: file, contentType: 'image/png' });
     }
   }
 
