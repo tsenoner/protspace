@@ -83,6 +83,8 @@ const result: {
   loads: Sample[];
   interactions: Record<string, Sample[]>;
   skipped: string[];
+  /** Interactions that threw (a settle over its cap, say); the later ones still run. */
+  interactionFailures: Record<string, { status: string; message: string }>;
   degraded: Array<{ message: string; reason: string | null }>;
   toasts: number;
   drawnAtEnd?: number;
@@ -101,6 +103,7 @@ const result: {
   loads: [],
   interactions: {},
   skipped: [],
+  interactionFailures: {},
   degraded: [],
   toasts: 0,
   crashed: false,
@@ -500,6 +503,7 @@ async function rep(page: Page, cdp: CDPSession | null, def: Interaction): Promis
     restageMs: t?.restageMs ?? r.delta.restageMs,
     p50Frame: t?.p50Frame ?? null,
     p95Frame: t?.p95Frame ?? null,
+    drawsPerSec: t?.drawsPerSec ?? null,
     restage: r.delta.restage,
     render: r.delta.render,
     uploadedBytesTotal: r.delta.bufferBytes,
@@ -531,9 +535,19 @@ test(`scale ${DATASET.name}`, async ({ browser }) => {
     for (const def of await interactions(page, result.n ?? 0)) {
       mark(`${def.name}:start`);
       const samples: Sample[] = (result.interactions[def.name] = []);
-      for (let k = 0; k < WARMUPS + REPS; k++) {
-        const sample = await rep(page, cdp, def);
-        if (k >= WARMUPS) samples.push(sample);
+      try {
+        for (let k = 0; k < WARMUPS + REPS; k++) {
+          const sample = await rep(page, cdp, def);
+          if (k >= WARMUPS) samples.push(sample);
+        }
+      } catch (error) {
+        const message = String((error as Error)?.message ?? error).split('\n')[0];
+        result.interactionFailures[def.name] = {
+          status: /did not settle/.test(message) ? 'settle-cap' : 'error',
+          message,
+        };
+        // No reset: a toggle cannot tell whether the act or its reset was the slow step.
+        await settle(page, LOAD_CAP_MS).catch(() => {});
       }
       save();
     }

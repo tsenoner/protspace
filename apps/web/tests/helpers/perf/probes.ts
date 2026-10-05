@@ -41,8 +41,8 @@ interface Snapshot extends Record<CountKey, number> {
 type Delta = Omit<Snapshot, 'drawn'>;
 
 export interface TimingSample {
-  /** Longest Event Timing duration of any interaction in the window (INP-like), ms. */
-  inp: number;
+  /** Longest Event Timing duration of any interaction in the window (INP-like), ms; null with no input. */
+  inp: number | null;
   /** Longest long-animation-frame in the window, ms, and its longest script. */
   loaf: number;
   loafScript: string;
@@ -54,6 +54,8 @@ export interface TimingSample {
   p95Frame: number | null;
   /** Median gap between those frames, ms. */
   p50Frame: number | null;
+  /** Plot draws (render counter steps) per second over those frames. */
+  drawsPerSec: number | null;
 }
 
 export interface SegmentResult {
@@ -76,7 +78,7 @@ export interface SegmentResult {
 interface ProbeState extends Record<(typeof GL_COUNTERS)[number], number> {
   events: Array<{ start: number; duration: number }>;
   loafs: Array<{ start: number; duration: number; script: string }>;
-  frames: number[] | null;
+  frames: { gaps: number[]; draws: number } | null;
 }
 
 declare global {
@@ -286,22 +288,29 @@ async function proteinCount(page: Page): Promise<number> {
  * Start (with the frames to keep) and stop the frame-gap recorder. 'glide' keeps a gap
  * only when the frame that ends it starts with the plot gliding (`data-morphing`).
  */
-async function armFrameGaps(page: Page, frames: FrameGaps | null): Promise<number[] | null> {
+async function armFrameGaps(page: Page, frames: FrameGaps | null): Promise<ProbeState['frames']> {
   return page.evaluate((keep) => {
     const probe = window.__perfProbe!;
     if (!keep) {
-      const gaps = probe.frames;
+      const recorded = probe.frames;
       probe.frames = null;
-      return gaps;
+      return recorded;
     }
-    const gaps: number[] = [];
-    probe.frames = gaps;
+    const recorded = { gaps: [] as number[], draws: 0 };
+    probe.frames = recorded;
     const plot = document.querySelector('#myPlot');
+    const renders = () => window.__protspacePerfCounters?.render ?? 0;
     let last = performance.now();
+    let lastRender = renders();
     const tick = (now: number) => {
-      if (probe.frames !== gaps) return;
-      if (keep === 'all' || plot?.hasAttribute('data-morphing')) gaps.push(now - last);
+      if (probe.frames !== recorded) return;
+      const render = renders();
+      if (keep === 'all' || plot?.hasAttribute('data-morphing')) {
+        recorded.gaps.push(now - last);
+        if (render > lastRender) recorded.draws++;
+      }
       last = now;
+      lastRender = render;
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -341,7 +350,9 @@ async function openTimingWindow(
   if (frames) await armFrameGaps(page, frames);
   return async () => {
     const busy = (await taskDuration(cdp)) - busyBefore;
-    const gaps = frames ? await armFrameGaps(page, null) : null;
+    const recorded = frames ? await armFrameGaps(page, null) : null;
+    const gaps = recorded?.gaps;
+    const spanMs = gaps?.reduce((sum, g) => sum + g, 0) ?? 0;
     const observed = await page.evaluate((from) => {
       const probe = window.__perfProbe!;
       const events = probe.events.filter((e) => e.start >= from);
@@ -351,7 +362,7 @@ async function openTimingWindow(
         null,
       );
       return {
-        inp: events.reduce((max, e) => Math.max(max, e.duration), 0),
+        inp: events.length ? Math.max(...events.map((e) => e.duration)) : null,
         loaf: top?.duration ?? 0,
         loafScript: top?.script ?? '',
       };
@@ -361,6 +372,7 @@ async function openTimingWindow(
       busy,
       p95Frame: gaps && gaps.length > 1 ? percentile(gaps.slice(1), 95) : null,
       p50Frame: gaps && gaps.length > 1 ? percentile(gaps.slice(1), 50) : null,
+      drawsPerSec: recorded && spanMs > 0 ? (1000 * recorded.draws) / spanMs : null,
     };
   };
 }
