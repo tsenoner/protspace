@@ -1,5 +1,4 @@
 import type { PlotData, PlotDataPoint } from '@protspace/utils';
-import type { StagePointStyleArrays } from './renderer/stage-point';
 
 // ScalePair is owned by @protspace/utils (data-processor `createScales`); re-export
 // it here so webgl code importing `ScalePair` from this module still resolves.
@@ -48,9 +47,6 @@ export interface PointMarks {
   readonly unmarked: number;
 }
 
-/** Record id of a slot whose style is not in the records table. */
-export const PER_POINT_STYLE = -1;
-
 /**
  * Style shared by every point with the same record id. The scatter plot keys
  * records by category code, so they can also be uploaded as a per-category table.
@@ -81,14 +77,11 @@ export interface SlotStyleScratch {
   readonly opacity: Float64Array;
   /** `composePaintDepth(getDepth, getOpacity, isPredicted)`. */
   readonly depth: Float32Array;
-  /** Record id, or {@link PER_POINT_STYLE}. */
+  /** Record id: the index of the slot's style in the pass's `records`. */
   readonly record: Int32Array;
-  /** `isPredicted` as 0 or 1, read for slots that have a record. */
+  /** `isPredicted` as 0 or 1. */
   readonly predicted: Uint8Array;
-  /**
-   * `getOpacity` as if the legend hid nothing, for slots with a record. Only a
-   * pass with `hiddenRecords` writes it.
-   */
+  /** `getOpacity` as if the legend hid nothing. Only a pass with `hiddenRecords` writes it. */
   readonly base: Float64Array;
 }
 
@@ -96,7 +89,7 @@ export interface SlotStyleScratch {
 export interface PointStylePass {
   /** Read after `resolve`, which may add records. */
   readonly records: PointStyleRecords;
-  /** Fill `out` for slots `[0, count)` of `pd`. */
+  /** Fill `out` for slots `[0, count)` of `pd`, giving every slot a record. */
   resolve(pd: PlotData, count: number, out: SlotStyleScratch): void;
   /**
    * Per record, whether the legend hides its points (opacity 0), read after
@@ -104,17 +97,6 @@ export interface PointStylePass {
    * applied per record: `opacity` is `base`, or 0 where the record is hidden.
    */
   readonly hiddenRecords?: readonly boolean[];
-  /**
-   * Write the style channels of a slot `resolve` marked {@link PER_POINT_STYLE}.
-   * A pass that gives every slot a record has none.
-   */
-  stageSlot?(
-    target: StagePointStyleArrays,
-    idx: number,
-    pd: PlotData,
-    slot: number,
-    opacity: number,
-  ): void;
 }
 
 /**

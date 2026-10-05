@@ -1,39 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import {
-  createStageArrays,
-  packPointStyle,
-  stagePointStyle,
-  type StagePointArrays,
-  type StagePointStyle,
-} from './stage-point';
+import { createStageArrays, packPointStyle, type StagePointArrays } from './stage-point';
 import { MAX_LABELS } from './label-atlas-plan';
-import type { PlotDataPoint } from '@protspace/utils';
 
 function arrays(capacity: number, maxLabels: number = MAX_LABELS): StagePointArrays {
   return createStageArrays(capacity, maxLabels, new Uint8Array(capacity * maxLabels * 4));
 }
 
-function styleWithColors(colors: string[]): StagePointStyle {
-  return {
-    getColors: () => colors,
-    getPointSize: () => 36,
-    getShape: () => 'circle',
-    isPredicted: () => false,
-  } as unknown as StagePointStyle;
+/** A circle of size 36 (sqrt(36)/3 = 2), not predicted, at full opacity. */
+function packColors(a: StagePointArrays, idx: number, colors: string[]): void {
+  packPointStyle(a, idx, colors, 'circle', 36, 1, false);
 }
 
-const style = {
-  getColors: () => ['#ff0000'],
-  getPointSize: () => 36, // sqrt(36)/3 = 2
-  getShape: () => 'circle', // shapeIndex 0
-  isPredicted: () => false,
-} as unknown as StagePointStyle;
-
-describe('stagePointStyle', () => {
+describe('packPointStyle', () => {
   it('writes clamped color, CSS diameter, shape and flags for one slot', () => {
     const a = arrays(4);
-    const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    stagePointStyle(a, /*idx*/ 1, sp, /*opacity*/ 0.5, style);
+    packPointStyle(a, /*idx*/ 1, ['#ff0000'], 'circle', 36, /*opacity*/ 0.5, false);
     expect(a.colors[4]).toBeCloseTo(1); // r
     expect(a.colors[7]).toBeCloseTo(0.5); // clamped opacity
     expect(a.sizes[1]).toBeCloseTo(4);
@@ -47,31 +28,13 @@ describe('stagePointStyle', () => {
 
   it('applies DIAMOND_SIZE_SCALE for shapeIndex 2 (diamond)', () => {
     const a = arrays(2);
-    const diamond = {
-      getColors: () => ['#00ff00'],
-      getPointSize: () => 36,
-      getShape: () => 'diamond',
-      isPredicted: () => true,
-    } as never;
-    const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    stagePointStyle(a, 0, sp, 1, diamond);
+    packPointStyle(a, 0, ['#00ff00'], 'diamond', 36, 1, true);
     expect(a.sizes[0]).toBeCloseTo(5);
     expect(a.predicted[0]).toBe(1);
   });
-
-  it('packs exactly what packPointStyle packs from the same values', () => {
-    const viaGetters = arrays(2);
-    const direct = arrays(2);
-    const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
-    const pie = styleWithColors(['#123456', '#abcdef', '#fedcba']);
-    stagePointStyle(viaGetters, 1, sp, 0.7, pie);
-    packPointStyle(direct, 1, ['#123456', '#abcdef', '#fedcba'], 'circle', 36, 0.7, false);
-    expect(viaGetters).toEqual(direct);
-  });
 });
 
-describe('stagePointStyle label capacity', () => {
-  const sp: PlotDataPoint = { id: 'p', x: 0, y: 0, originalIndex: 0 };
+describe('packPointStyle label capacity', () => {
   const twelveColors = [
     '#000000',
     '#111111',
@@ -92,13 +55,13 @@ describe('stagePointStyle label capacity', () => {
     // so slices 8..11 sampled the NEXT point's storage — an unrelated protein's
     // colours, presented as this one's data.
     const a = arrays(4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors));
+    packColors(a, 1, twelveColors);
     expect(a.labelCounts[1]).toBe(MAX_LABELS);
   });
 
   it('honours a reduced stride in both the count and the texels written', () => {
     const a = arrays(4, 4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(twelveColors));
+    packColors(a, 1, twelveColors);
     expect(a.labelCounts[1]).toBe(4);
     // Slot 1 owns texels [4, 8) at stride 4; slot 2's first texel must stay clear.
     const slotTwoFirstTexel = 2 * 4 * 4;
@@ -108,15 +71,13 @@ describe('stagePointStyle label capacity', () => {
   it('stages counts and skips texels when no atlas is allocated', () => {
     const a = arrays(4);
     a.labelColorData = null;
-    expect(() =>
-      stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000', '#00ff00'])),
-    ).not.toThrow();
+    expect(() => packColors(a, 1, ['#ff0000', '#00ff00'])).not.toThrow();
     expect(a.labelCounts[1]).toBe(2);
   });
 
   it('leaves a single-label point at one slice', () => {
     const a = arrays(4);
-    stagePointStyle(a, 1, sp, 1, styleWithColors(['#ff0000']));
+    packColors(a, 1, ['#ff0000']);
     expect(a.labelCounts[1]).toBe(1);
   });
 });

@@ -3,20 +3,12 @@
  * off-screen export so both write the same buffers.
  *
  * The pass resolves every slot's opacity, paint depth and style record in one
- * loop. A slot with a record copies that record's packed channels; a slot the
- * pass leaves without one is packed by the pass's `stageSlot`. Records are
- * packed with {@link packPointStyle}, the same function that packs a single
- * point, so the two routes cannot encode a style differently.
+ * loop. Each record is packed once with {@link packPointStyle}, and every slot
+ * copies its record's packed channels.
  */
 
 import type { PlotData } from '@protspace/utils';
-import {
-  PER_POINT_STYLE,
-  type PointStylePass,
-  type PointStyleRecords,
-  type ScalePair,
-  type SlotStyleScratch,
-} from '../types';
+import type { PointStylePass, PointStyleRecords, ScalePair, SlotStyleScratch } from '../types';
 import { linearAxis, mapLinear } from './rescale';
 import { buildPaintOrder } from './point-staging';
 import { packPointStyle, type StagePointArrays, type StagePointStyleArrays } from './stage-point';
@@ -74,15 +66,27 @@ export function packRecords(
   return { channels, colorCounts };
 }
 
-/** {@link packPointStyle} for a point with record `r`, from the record's packed channels. */
-function copyRecordStyle(
+/**
+ * Write the style channels of `slot` at index `idx`, copied from its record's
+ * packed channels. With `target.recordIds` the renderer applies the legend's
+ * hiding per record, so the slot also takes its record id, and its opacity as
+ * if nothing were hidden. Its opacity is `base`, or 0 where hidden (see
+ * `hiddenRecords`), so only a zero needs `base` read.
+ */
+function stageSlotStyle(
   target: StagePointStyleArrays,
   idx: number,
+  scratch: SlotStyleScratch,
   packed: PackedRecords,
-  r: number,
-  opacity: number,
-  predicted: number,
+  slot: number,
 ): void {
+  const r = scratch.record[slot];
+  let opacity = scratch.opacity[slot];
+  const ids = target.recordIds;
+  if (ids) {
+    ids[idx] = r;
+    if (opacity === 0) opacity = scratch.base[slot];
+  }
   const { channels } = packed;
   const c = idx * 4;
   const rc = r * 4;
@@ -93,7 +97,7 @@ function copyRecordStyle(
   target.sizes[idx] = channels.sizes[r];
   target.labelCounts[idx] = channels.labelCounts[r];
   target.shapes[idx] = channels.shapes[r];
-  target.predicted[idx] = predicted;
+  target.predicted[idx] = scratch.predicted[slot];
 
   // The texels fillLabelColorTexels writes for a point with more than one colour.
   const texels = target.labelColorData;
@@ -111,27 +115,6 @@ function copyRecordStyle(
     texels[to + 2] = recordTexels[from + 2];
     texels[to + 3] = recordTexels[from + 3];
   }
-}
-
-/**
- * The alpha a slot is staged with. With `target.recordIds` the renderer applies
- * the legend's hiding per record, so a slot with a record carries its opacity
- * as if nothing were hidden, and its record id; -1 marks a slot without one.
- * Such an opacity is `base`, or 0 where hidden (see `hiddenRecords`), so only a
- * zero needs `base` read.
- */
-function slotAlpha(
-  target: StagePointStyleArrays,
-  idx: number,
-  scratch: SlotStyleScratch,
-  slot: number,
-  r: number,
-): number {
-  const opacity = scratch.opacity[slot];
-  const ids = target.recordIds;
-  if (!ids) return opacity;
-  ids[idx] = r;
-  return opacity === 0 && r !== PER_POINT_STYLE ? scratch.base[slot] : opacity;
 }
 
 /**
@@ -153,7 +136,7 @@ export function stageInPaintOrder(
   pass.resolve(pd, count, scratch);
   const packed = packRecords(pass.records, target);
   scratch.packed = packed;
-  const { opacity, depth, record, predicted } = scratch;
+  const { opacity, depth } = scratch;
   const { xs, ys } = pd;
   const xAxis = linearAxis(scales.x);
   const yAxis = linearAxis(scales.y);
@@ -170,10 +153,7 @@ export function stageInPaintOrder(
       target.dataPositions[k * 2] = mapLinear(xAxis, xs[slot]);
       target.dataPositions[k * 2 + 1] = mapLinear(yAxis, ys[slot]);
       target.depths[k] = depth[slot];
-      const r = record[slot];
-      const alpha = slotAlpha(target, k, scratch, slot, r);
-      if (r === PER_POINT_STYLE) pass.stageSlot!(target, k, pd, slot, alpha);
-      else copyRecordStyle(target, k, packed, r, alpha, predicted[slot]);
+      stageSlotStyle(target, k, scratch, packed, slot);
       return slotOpacity;
     },
     scratch.sortScratch,
@@ -200,13 +180,9 @@ export function restageStyles(
   pass.resolve(src, slotCount, scratch);
   const packed = packRecords(pass.records, target);
   scratch.packed = packed;
-  const { opacity, record, predicted } = scratch;
   for (let i = 0; i < count; i++) {
     const slot = order[i];
-    onStaged?.(slot, opacity[slot]);
-    const r = record[slot];
-    const alpha = slotAlpha(target, i, scratch, slot, r);
-    if (r === PER_POINT_STYLE) pass.stageSlot!(target, i, src, slot, alpha);
-    else copyRecordStyle(target, i, packed, r, alpha, predicted[slot]);
+    onStaged?.(slot, scratch.opacity[slot]);
+    stageSlotStyle(target, i, scratch, packed, slot);
   }
 }

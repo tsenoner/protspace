@@ -1471,7 +1471,7 @@ export class WebGLRenderer {
     }
 
     // Plan/allocate the atlas for the current capacity before anything stages into
-    // it — stagePointStyle reads its stride and its backing array through
+    // it — staging reads its stride and its backing array through
     // `this.stageArrays`.
     this.syncLabelAtlas();
 

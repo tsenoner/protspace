@@ -36,12 +36,15 @@ function plotData(n: number): PlotData {
 /** Staging arrays for `n` points, with texels for four labels a point. */
 const stageArrays = (n: number) => createStageArrays(n, 4, new Uint8Array(n * 4 * 4));
 
-/** Getters whose every output varies by point, with a pass that has no records. */
-function perPointGetters(): WebGLStyleGetters {
+/**
+ * Getters whose every output varies by point, but the point size: a pass has
+ * one, so it varies by pass.
+ */
+function perPointGetters(pointSize = 12): WebGLStyleGetters {
   const colorSets = [['#102030'], ['#405060', '#708090'], [], ['#a0b0c0', '#d0e0f0', '#123456']];
   return {
     getColors: (p: PlotDataPoint) => colorSets[p.originalIndex % 4],
-    getPointSize: (p: PlotDataPoint) => 10 + (p.originalIndex % 5),
+    getPointSize: () => pointSize,
     getOpacity: (p: PlotDataPoint) => [0, 0.2, 0.8, 1][p.originalIndex % 4],
     getDepth: (p: PlotDataPoint) => (p.originalIndex % 6) / 6,
     getShape: (p: PlotDataPoint) => ['circle', 'diamond', 'square'][p.originalIndex % 3],
@@ -53,7 +56,7 @@ function perPointGetters(): WebGLStyleGetters {
   };
 }
 
-describe('staging slots without a record', () => {
+describe('staging through a pass over the getters', () => {
   it('stages through the per-point getters exactly as the reference does', () => {
     const style = perPointGetters();
     for (const n of [300, 3000]) {
@@ -64,7 +67,6 @@ describe('staging slots without a record', () => {
       const staged = stageArrays(n);
       const order = new Uint32Array(n);
       const pass = style.createStylePass();
-      expect(pass.records.colors).toHaveLength(0);
       const visible: number[] = [];
       const cut = stageInPaintOrder(
         staged,
@@ -80,6 +82,8 @@ describe('staging slots without a record', () => {
         },
       );
 
+      // A record per colour set and shape: 4 x 3.
+      expect(pass.records.colors).toHaveLength(12);
       expect(Array.from(order)).toEqual(Array.from(reference.order));
       expect(cut).toBe(reference.cut);
       expect(staged).toEqual(expected);
@@ -114,14 +118,17 @@ describe('staging slots without a record', () => {
     const scratch = createPassScratch(n);
     stageInPaintOrder(staged, style.createStylePass(), scratch, order, pd, scales, n, false);
 
-    const recolored: WebGLStyleGetters = { ...style, getColors: () => ['#ffffff', '#000000'] };
+    const restyled: WebGLStyleGetters = {
+      ...perPointGetters(7),
+      getColors: () => ['#ffffff', '#000000'],
+    };
     // A restage leaves positions, depths and unused texels as the stage left them.
     const expected = stageArrays(n);
     expected.dataPositions.set(staged.dataPositions);
     expected.depths.set(staged.depths);
     expected.labelColorData!.set(staged.labelColorData!);
-    referenceRestage(recolored, pd, order, n, expected);
-    restageStyles(staged, recolored.createStylePass(), scratch, order, pd, n, n);
+    referenceRestage(restyled, pd, order, n, expected);
+    restageStyles(staged, restyled.createStylePass(), scratch, order, pd, n, n);
     expect(staged).toEqual(expected);
   });
 });

@@ -1,6 +1,4 @@
-import type { PlotDataPoint } from '@protspace/utils';
 import { getShapeIndex } from '@protspace/utils';
-import type { WebGLStyleGetters } from '../types';
 import { resolveColor } from '../color-utils';
 import { fillLabelColorTexels } from './label-texture-utils';
 import { pointRadiusCss } from './point-scale';
@@ -58,16 +56,10 @@ export function createStageArrays(
   };
 }
 
-/** The subset of style getters a single staged-point write depends on. */
-export type StagePointStyle = Pick<
-  WebGLStyleGetters,
-  'getColors' | 'getPointSize' | 'getShape' | 'isPredicted'
->;
-
 /**
- * What `stagePointStyle` touches: the style channels it writes (everything except
- * position and depth), plus `maxLabels`, which is an INPUT — the atlas stride it
- * clamps against, not a channel it fills.
+ * The channels a point's style is staged into: everything except position and
+ * depth. `maxLabels` is an INPUT — the atlas stride {@link packPointStyle} clamps
+ * against, not a channel it fills.
  */
 export type StagePointStyleArrays = Pick<
   StagePointArrays,
@@ -83,33 +75,10 @@ export type StagePointStyleArrays = Pick<
 
 /**
  * Write a point's *style* channels (color, alpha, size, shape, label texels) into
- * `target` at slot `idx`, from the per-point getters. The reference staging the
- * passes are checked against styles every point through it.
+ * `target` at slot `idx`, from style values that are already resolved: the single
+ * source of truth for the style packing. A style pass packs each record through it.
  *
  * Pure helper: no GL, no WebGLRenderer import.
- */
-export function stagePointStyle(
-  target: StagePointStyleArrays,
-  idx: number,
-  sp: PlotDataPoint,
-  opacity: number,
-  style: StagePointStyle,
-): void {
-  packPointStyle(
-    target,
-    idx,
-    style.getColors(sp),
-    style.getShape(sp),
-    style.getPointSize(sp),
-    opacity,
-    style.isPredicted(sp),
-  );
-}
-
-/**
- * Write style channels from style values that are already resolved: the single
- * source of truth for the per-point style packing. {@link stagePointStyle} feeds
- * it the per-point getters; a style pass feeds it one category at a time.
  */
 export function packPointStyle(
   target: StagePointStyleArrays,
