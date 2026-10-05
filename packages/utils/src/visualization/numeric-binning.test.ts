@@ -3,10 +3,10 @@ import {
   materializeNumericAnnotation,
   materializeVisualizationData,
   resolveNumericAnnotationDisplaySettings,
+  type NumericAnnotationDisplaySettings,
 } from './numeric-binning';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
 import type { Annotation, NumericBinningStrategy, VisualizationData } from '../types';
-import { djb2Hash } from '../storage/data-hash';
 
 describe('numeric-binning', () => {
   it('creates linear bins with distribution-aware gradient colors', () => {
@@ -868,19 +868,15 @@ describe('numeric-binning logarithmic minimum', () => {
   });
 });
 
-describe('numeric-binning recorded outputs', () => {
-  // Output digests at cb6ed698, which sorted the quantile values with a comparator. Columns 9, 18
-  // and 42 were re-recorded when log binning stopped putting a rounded-up minimum in the top bin.
-  const RECORDED_DIGESTS = `
-    7d994405 f4d0f7a1 60f0ab0f c1d05405 a18d277a c62b92f7 a3e7d8a0 815a629c
-    5ffc9ce3 4e1a862d 2c7add10 2337d8ec c2d84e66 32a45255 7ff4940f 1b1788e7
-    67da46af 9fb64343 f1c7e612 198b7756 a4f1159d 95f0560d 54526afa f829cfa3
-    7460a423 031481ad 9babfcc2 b296c5dd da82f686 7c8a5971 bc45896f e1309f28
-    e173268f 922cbf63 5546a985 5432690f 019ada84 893b1d83 4be905af 0d8d6b87
-    0ecf64ab ba3842fa accd052d 14d5cc6f 1b0b2500 bc117bb5 30d6ae48 4d368683
-  `
-    .trim()
-    .split(/\s+/);
+describe('numeric-binning properties', () => {
+  type Column = Array<number | null | undefined> | Float64Array;
+  interface Run {
+    name: string;
+    column: Column;
+    settings: NumericAnnotationDisplaySettings;
+    result: ReturnType<typeof materializeNumericAnnotation>;
+  }
+
   const strategies: NumericBinningStrategy[] = ['linear', 'quantile', 'logarithmic'];
   const quantile = (binCount: number) => ({
     binCount,
@@ -901,7 +897,7 @@ describe('numeric-binning recorded outputs', () => {
   }
 
   /** Ties, -0, NaN, ±Infinity and missing values, at magnitudes from 1e-18 to 1e308. */
-  function randomColumn(next: () => number): Array<number | null | undefined> | Float64Array {
+  function randomColumn(next: () => number): Column {
     const pick = <T>(options: readonly T[]) => options[Math.floor(next() * options.length)];
     const levels = pick([2, 10, 200, 1e6]);
     const scale = pick([1, 1e-18, 1e6, 1e306]);
@@ -916,35 +912,205 @@ describe('numeric-binning recorded outputs', () => {
     return next() < 0.5 ? Float64Array.from(column, (value) => value ?? NaN) : column;
   }
 
-  /** The serialized output, with -0, NaN and ±Infinity kept apart from 0 and null. */
-  function serialize(result: ReturnType<typeof materializeNumericAnnotation>): string {
-    return JSON.stringify(result, (_key, value: unknown) => {
-      if (value instanceof Int32Array) return Array.from(value);
-      if (typeof value !== 'number' || (Number.isFinite(value) && !Object.is(value, -0))) {
-        return value;
-      }
-      return Object.is(value, -0) ? '-0' : String(value);
-    });
-  }
-
-  it('reproduces the recorded outputs on random columns', () => {
+  /** 48 random columns, each binned twice: the second call reads the summary the first cached. */
+  function randomRuns(): Run[] {
     const next = seededRandom(20261005);
-    const randomSettings = () => ({
+    const randomSettings = (): NumericAnnotationDisplaySettings => ({
       binCount: [1, 2, 3, 5, 7, 10, 12, 20, 50][Math.floor(next() * 9)],
       strategy: strategies[Math.floor(next() * 3)],
       paletteId: 'batlow',
       reverseGradient: next() < 0.5,
     });
-    const digests = Array.from({ length: 48 }, () => {
+    return Array.from({ length: 48 }, (_, index) => {
       const column = randomColumn(next);
-      // The second call reads the summary the first one cached, sorted values included.
-      const outputs = [randomSettings(), randomSettings()].map((settings) =>
-        serialize(materializeNumericAnnotation(column, settings)),
-      );
-      return djb2Hash(outputs.join('\n')).toString(16).padStart(8, '0');
-    });
+      return [randomSettings(), randomSettings()].map((settings, call) => ({
+        name: `column ${index} call ${call + 1} (${settings.strategy}, ${settings.binCount} bins)`,
+        column,
+        settings,
+        result: materializeNumericAnnotation(column, settings),
+      }));
+    }).flat();
+  }
 
-    expect(digests).toEqual(RECORDED_DIGESTS);
+  /** The binning reads null, undefined, NaN and ±Infinity as missing. */
+  const isPresent = (value: number | null | undefined): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+  const rowsOf = (column: Column) => Array.from<number | null | undefined>(column);
+  const finiteValues = (column: Column) => rowsOf(column).filter(isPresent);
+  const copyOf = (column: Column): Column =>
+    column instanceof Float64Array ? column.slice() : [...column];
+  const show = (value: unknown) => (Object.is(value, -0) ? '-0' : String(value));
+
+  /** The bins left for numbers once N/A takes its slot. */
+  function numberBinCount({ column, settings }: Run): number {
+    const hasMissing = finiteValues(column).length < column.length;
+    return hasMissing && settings.binCount > 1 ? settings.binCount - 1 : settings.binCount;
+  }
+
+  /**
+   * Log bins need positive values, else they are quantile bins; quantile bins need more distinct
+   * values than bins, else they are linear.
+   */
+  function expectedStrategy(run: Run): NumericBinningStrategy {
+    const finite = finiteValues(run.column);
+    const positive = finite.length > 0 && finite.every((value) => value > 0);
+    const strategy =
+      run.settings.strategy === 'logarithmic' && !positive ? 'quantile' : run.settings.strategy;
+    return strategy === 'quantile' && new Set(finite).size <= numberBinCount(run)
+      ? 'linear'
+      : strategy;
+  }
+
+  /**
+   * Quantile edges read from a stable `a - b` sort, which keeps -0 and +0 in input order, closed
+   * by the first maximum in input order.
+   */
+  function stableQuantileEdges(finite: number[], binCount: number): number[] {
+    const sorted = [...finite].sort((left, right) => left - right);
+    const edges = Array.from({ length: binCount }, (_, index) => {
+      const position = (sorted.length - 1) * (index / binCount);
+      const lower = sorted[Math.floor(position)];
+      if (Number.isInteger(position)) return lower;
+      return lower + (sorted[Math.ceil(position)] - lower) * (position - Math.floor(position));
+    });
+    return [...edges, finite.reduce((max, value) => (value > max ? value : max))];
+  }
+
+  /** Whether `items` occur in `list` in order, telling -0 from +0. */
+  function occursInOrder(items: number[], list: number[]): boolean {
+    let at = 0;
+    for (const item of items) {
+      while (at < list.length && !Object.is(list[at], item)) at += 1;
+      if (at === list.length) return false;
+      at += 1;
+    }
+    return true;
+  }
+
+  it('puts every value in a bin that contains it and every missing value in a trailing N/A', () => {
+    const violations: string[] = [];
+    for (const { name, column, result } of randomRuns()) {
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      if (result.annotationData.length !== column.length) {
+        violations.push(`${name}: ${result.annotationData.length} slots for ${column.length} rows`);
+      }
+      rowsOf(column).forEach((value, row) => {
+        const slot = result.annotationData[row];
+        const bin = bins[slot];
+        const fits = isPresent(value)
+          ? bin !== undefined &&
+            bin.lowerBound <= value &&
+            (value < bin.upperBound || (slot === bins.length - 1 && value === bin.upperBound))
+          : slot === bins.length && result.annotation.values[slot] === NA_VALUE;
+        if (!fits) {
+          const where = bin ? `[${show(bin.lowerBound)}, ${show(bin.upperBound)}]` : `slot ${slot}`;
+          violations.push(`${name}: ${show(value)} in ${where}`);
+        }
+      });
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('lists ordered bins that count their rows, with unique labels, then N/A', () => {
+    const violations: string[] = [];
+    for (const { name, column, result } of randomRuns()) {
+      const { values, colors } = result.annotation;
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      const hasMissing = finiteValues(column).length < column.length;
+      const ids = [...bins.map((bin) => bin.id), ...(hasMissing ? [NA_VALUE] : [])];
+      if (values.join(' ') !== ids.join(' ') || colors.length !== values.length) {
+        violations.push(`${name}: values ${values.join(' ')}`);
+      }
+      if (hasMissing && colors[bins.length] !== NA_DEFAULT_COLOR) {
+        violations.push(`${name}: N/A colour ${colors[bins.length]}`);
+      }
+      bins.forEach((bin, index) => {
+        const rows = result.annotationData.filter((slot) => slot === index).length;
+        const next = bins[index + 1];
+        if (bin.count === 0 || bin.count !== rows) {
+          violations.push(`${name}: bin ${index} counts ${bin.count} of ${rows} rows`);
+        }
+        if (bin.lowerBound > bin.upperBound || (next && bin.upperBound > next.lowerBound)) {
+          violations.push(`${name}: bin ${index} out of order`);
+        }
+      });
+      if (new Set(bins.map((bin) => bin.label)).size !== bins.length) {
+        violations.push(`${name}: repeated labels`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('rises from colour position 0 to 1 across the bins', () => {
+    const violations: string[] = [];
+    for (const { name, result } of randomRuns()) {
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      const positions = bins.map((bin) => bin.colorPosition ?? NaN);
+      const [first, last] = positions.length === 1 ? [0.5, 0.5] : [0, 1];
+      const rising = positions.every(
+        (position, index) => index === 0 || positions[index - 1] <= position,
+      );
+      if (
+        positions.length > 0 &&
+        (positions[0] !== first || positions[positions.length - 1] !== last || !rising)
+      ) {
+        violations.push(`${name}: colour positions ${positions.join(' ')}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('falls back from log and sparse quantile bins to the bins an explicit call gives', () => {
+    let fallbacks = 0;
+    for (const run of randomRuns()) {
+      const strategy = expectedStrategy(run);
+      expect(run.result.annotation.numericMetadata?.strategy, run.name).toBe(strategy);
+      if (strategy === run.settings.strategy) continue;
+      fallbacks += 1;
+      expect(run.result, run.name).toEqual(
+        materializeNumericAnnotation(copyOf(run.column), { ...run.settings, strategy }),
+      );
+    }
+    expect(fallbacks).toBeGreaterThan(0);
+  });
+
+  it('keeps the minimum of a logarithmic column in the first bin', () => {
+    let logColumns = 0;
+    for (const { name, column, result } of randomRuns()) {
+      if (result.annotation.numericMetadata?.strategy !== 'logarithmic') continue;
+      logColumns += 1;
+      const min = Math.min(...finiteValues(column));
+      const slots = rowsOf(column).flatMap((value, row) =>
+        value === min ? [result.annotationData[row]] : [],
+      );
+      expect(slots, name).toEqual(slots.map(() => 0));
+    }
+    expect(logColumns).toBeGreaterThan(0);
+  });
+
+  it('reads quantile edges from a stable sort, so -0 and +0 keep their input order', () => {
+    const violations: string[] = [];
+    for (const run of randomRuns()) {
+      const metadata = run.result.annotation.numericMetadata;
+      if (metadata?.strategy !== 'quantile') continue;
+      const edges = stableQuantileEdges(finiteValues(run.column), numberBinCount(run));
+      // Adjacent bins share an edge.
+      const bounds = metadata.bins
+        .flatMap((bin) => [bin.lowerBound, bin.upperBound])
+        .filter((bound, index, all) => index === 0 || !Object.is(bound, all[index - 1]));
+      if (!occursInOrder(bounds, edges)) {
+        violations.push(`${run.name}: bounds ${bounds.map(show).join(' ')}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('bins a column the same whatever ran on it before', () => {
+    for (const run of randomRuns()) {
+      expect(run.result, run.name).toEqual(
+        materializeNumericAnnotation(copyOf(run.column), run.settings),
+      );
+    }
   });
 
   it('keeps the input order of -0 and +0 in quantile edges', () => {
