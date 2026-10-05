@@ -144,6 +144,11 @@ export function createDataRenderer({
   const yieldToBrowser = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+  /**
+   * Render a loaded dataset. This only advances the loading overlay; it never dismisses
+   * it. The caller (dataset-controller.ts handleDataLoaded) does that once the whole
+   * load has settled, so the overlay neither uncovers a half-drawn plot nor lingers.
+   */
   return async function loadData(newData: VisualizationData): Promise<EffectiveExploreView | null> {
     if (getIsDisposed()) {
       return null;
@@ -172,98 +177,78 @@ export function createDataRenderer({
         'Preparing visualization...',
         `Found ${dataSize.toLocaleString()} proteins`,
       );
-    } else {
-      overlayController.update(false);
     }
 
-    try {
-      updateOverlayForStep(
-        overlayController,
-        isLargeDataset,
-        20,
-        'Rendering scatterplot points...',
-        `Visualizing ${dataSize.toLocaleString()} proteins`,
-      );
+    updateOverlayForStep(
+      overlayController,
+      isLargeDataset,
+      20,
+      'Rendering scatterplot points...',
+      `Visualizing ${dataSize.toLocaleString()} proteins`,
+    );
 
-      await yieldToBrowser();
+    await yieldToBrowser();
 
-      console.log('Updating scatterplot with new data...');
-      controlBar.autoSync = false;
-      legendElement.autoSync = false;
+    console.log('Updating scatterplot with new data...');
+    controlBar.autoSync = false;
+    legendElement.autoSync = false;
 
-      applyPlotState(plotElement, newData, resolvedInitialView);
-      applyControlBarState(controlBar, resolvedInitialView);
+    applyPlotState(plotElement, newData, resolvedInitialView);
+    applyControlBarState(controlBar, resolvedInitialView);
 
-      updateOverlayForStep(
-        overlayController,
-        isLargeDataset,
-        40,
-        'Configuring controls and filters...',
-        `Visualizing ${dataSize.toLocaleString()} proteins`,
-      );
+    updateOverlayForStep(
+      overlayController,
+      isLargeDataset,
+      40,
+      'Configuring controls and filters...',
+      `Visualizing ${dataSize.toLocaleString()} proteins`,
+    );
 
-      await yieldToBrowser();
-      await yieldToBrowser();
+    await yieldToBrowser();
+    await yieldToBrowser();
 
-      controlBar.autoSync = true;
+    controlBar.autoSync = true;
 
-      updateOverlayForStep(
-        overlayController,
-        isLargeDataset,
-        60,
-        'Organizing color categories...',
-        `Visualizing ${dataSize.toLocaleString()} proteins`,
-      );
+    updateOverlayForStep(
+      overlayController,
+      isLargeDataset,
+      60,
+      'Organizing color categories...',
+      `Visualizing ${dataSize.toLocaleString()} proteins`,
+    );
 
-      await yieldToBrowser();
-      await syncLegendState(legendElement, interactionController, isLargeDataset);
+    await yieldToBrowser();
+    await syncLegendState(legendElement, interactionController, isLargeDataset);
 
-      updateOverlayForStep(
-        overlayController,
-        isLargeDataset,
-        95,
-        'Finalizing view...',
-        `Visualizing ${dataSize.toLocaleString()} proteins`,
-      );
+    updateOverlayForStep(
+      overlayController,
+      isLargeDataset,
+      95,
+      'Finalizing view...',
+      `Visualizing ${dataSize.toLocaleString()} proteins`,
+    );
 
-      await yieldToBrowser();
+    await yieldToBrowser();
 
-      if (structureViewer.style.display !== 'none') {
-        structureViewer.style.display = 'none';
-      }
-
-      updateOverlayForStep(
-        overlayController,
-        isLargeDataset,
-        100,
-        'Ready to explore!',
-        `Visualizing ${dataSize.toLocaleString()} proteins`,
-      );
-
-      if (isLargeDataset) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-
-      if (getIsDisposed()) {
-        return null;
-      }
-
-      const loadingTime = performance.now() - startTime;
-      console.log('Data loading completed:', {
-        proteins: newData.protein_ids.length.toLocaleString(),
-        loadingTime: `${Math.round(loadingTime)}ms`,
-      });
-
-      return {
-        annotation: resolvedInitialView.annotation,
-        projection: resolvedInitialView.projectionName,
-        tooltip: [...resolvedInitialView.tooltip],
-        density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
-      };
-    } finally {
-      if (isLargeDataset && !getIsDisposed()) {
-        overlayController.update(false);
-      }
+    if (structureViewer.style.display !== 'none') {
+      structureViewer.style.display = 'none';
     }
+
+    if (getIsDisposed()) {
+      return null;
+    }
+
+    const loadingTime = performance.now() - startTime;
+    console.log('Data loading completed:', {
+      proteins: newData.protein_ids.length.toLocaleString(),
+      loadingTime: `${Math.round(loadingTime)}ms`,
+    });
+
+    return {
+      annotation: resolvedInitialView.annotation,
+      projection: resolvedInitialView.projectionName,
+      tooltip: [...resolvedInitialView.tooltip],
+      density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
+    };
   };
 }

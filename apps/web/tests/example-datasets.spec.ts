@@ -159,8 +159,7 @@ test.describe('Example datasets: the suite runs on its pinned startup demo', () 
       if (request.url().endsWith('.parquetbundle')) startupRequests.push(request.url());
     });
     await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await waitForProteinCount(page, DEMO_COUNT);
+    await waitForExploreDataLoad(page, { proteinCount: DEMO_COUNT });
 
     expect(startupRequests.map((url) => new URL(url).pathname)).toEqual([STARTUP_DATASET_URL]);
   });
@@ -195,9 +194,8 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // `./data.parquetbundle` is covered by `example-fetch.test.ts` and
     // `example-url.test.ts`.
     await page.goto('/explore/');
-    await waitForExploreDataLoad(page);
+    await waitForExploreDataLoad(page, { proteinCount: DEMO_COUNT });
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, DEMO_COUNT);
 
     // Catalog URLs are relative (`./data/…` or `./examples/…`); resolved
     // against this route they would hit /explore/…, which the SPA fallback
@@ -209,9 +207,7 @@ test.describe('Example datasets: Import menu and deep link', () => {
     expect(new URL((await request).url()).pathname).toBe(
       `/${SMALL.entry.url.replace(/^\.\//, '')}`,
     );
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-    await waitForProteinCount(page, SMALL.count);
+    await waitForExploreDataLoad(page, { proteinCount: SMALL.count });
   });
 
   test('menu choices push dataset= and Back/Forward walk through them', async ({ page }) => {
@@ -443,10 +439,13 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await page.goBack(); // -> dataset=SLOW, fetch held by the route above
     await expectUrlParam(page, 'dataset', SLOW.id);
 
+    // Back again once the (now-unblocked) fetch has finished, so the race is
+    // against SLOW's decode specifically, not its network fetch.
+    const slowFetched = page.waitForEvent('requestfinished', (request) =>
+      request.url().endsWith(SLOW.entry.url.slice(1)),
+    );
     releaseSlow();
-    // Give the (now-unblocked) fetch a moment to land before Back again, so
-    // the race is against SLOW's decode specifically, not its network fetch.
-    await page.waitForTimeout(150);
+    await slowFetched;
     await page.goBack(); // -> dataset=SMALL, while SLOW may still be decoding
     await waitForProteinCount(page, SMALL.count);
     await expectUrlParam(page, 'dataset', SMALL.id);
@@ -848,8 +847,7 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
     // The stored import is untouched and healthy: opening the app without
     // the parameter restores it, with no recovery banner.
     await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await waitForProteinCount(page, 40026);
+    await waitForExploreDataLoad(page, { proteinCount: 40026 });
     await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
   });
 
@@ -1005,9 +1003,8 @@ test.describe('Example datasets: examples reopen in their curated state (d)', ()
     // The change is saved like any other, and discarded when the example loads again.
     const exampleValue = await hideFirstLegendCategory(page);
     await page.reload();
-    await waitForExploreDataLoad(page);
+    await waitForExploreDataLoad(page, { proteinCount: DEMO_COUNT });
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, DEMO_COUNT);
     await expectUrlParam(page, 'dataset', 'demo');
     expect(await isLegendItemHidden(page, exampleValue)).toBe(false);
 
@@ -1019,9 +1016,8 @@ test.describe('Example datasets: examples reopen in their curated state (d)', ()
     await pickAnnotation(page, 'ec');
     const importValue = await hideFirstLegendCategory(page);
     await page.reload();
-    await waitForExploreDataLoad(page);
+    await waitForExploreDataLoad(page, { proteinCount: USER_IMPORT_COUNT });
     await dismissTourIfPresent(page);
-    await waitForProteinCount(page, USER_IMPORT_COUNT);
     expect(await isLegendItemHidden(page, importValue)).toBe(true);
   });
 });

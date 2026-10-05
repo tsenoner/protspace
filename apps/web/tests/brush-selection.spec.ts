@@ -1,16 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForExploreDataLoad, dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, getProteinCount, waitForExploreDataLoad } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async function getProteinCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-}
 
 /** Read the list of currently selected protein IDs from the scatter-plot. */
 async function getSelectedProteinIds(page: Page): Promise<string[]> {

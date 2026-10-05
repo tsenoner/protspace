@@ -241,16 +241,38 @@ describe('loading-overlay note rendering', () => {
   });
 
   it('does not render a note after hide+show when no note arg is passed on re-show', () => {
-    vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => {} });
     const ctrl = createLoadingOverlayController(doc as unknown as Document);
     ctrl.update(true, 10, 'msg', 'sub', { text: 'Ephemeral note' });
     expect(getNoteEl()).not.toBeNull();
-    // hide resets currentNote (triggers window.setTimeout for fade-out)
+    // hide resets currentNote and removes the overlay
     ctrl.update(false);
     // Re-show without a note arg — overlay is recreated fresh, no note
     ctrl.update(true, 5, 'new msg', 'new sub');
     expect(getNoteEl()).toBeNull();
     ctrl.dispose();
-    vi.unstubAllGlobals();
+  });
+});
+
+describe('loading-overlay dismissal', () => {
+  it('removes the overlay synchronously, with no fade and no timer', () => {
+    // No `window` stub: a removal timer would throw here, and a fade would leave
+    // the element in the document after update(false) returns.
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 50, 'msg', 'sub');
+    expect(doc.getElementById('progressive-loading')).not.toBeNull();
+
+    ctrl.update(false);
+
+    expect(doc.getElementById('progressive-loading')).toBeNull();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    ctrl.dispose();
+  });
+
+  it('is a no-op when no overlay is shown', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    expect(() => ctrl.update(false)).not.toThrow();
+    expect(doc.getElementById('progressive-loading')).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -58,6 +58,9 @@ async function loadBundleFromBytes(
         },
         { bytes: byteValues, nextFileName: fileName },
       );
+      // `data-loaded` fires before the app's post-load work (view restore); wait for the
+      // load to settle so a test's next step cannot race it.
+      await waitForExploreDataLoad(page);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -124,15 +127,7 @@ async function loadDataset(page: Page): Promise<void> {
 async function loadDemoDataset(page: Page): Promise<void> {
   await page.goto('/explore');
   await dismissTourIfPresent(page);
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => unknown;
-          data?: { annotations?: Record<string, unknown> };
-        })
-      | null;
-    return typeof plot?.getCurrentData === 'function' && Boolean(plot?.data?.annotations);
-  });
+  await waitForExploreDataLoad(page);
   // 'order' is a clean Taxonomy categorical (18 values, no NAs) and uses the
   // default size-desc sort, which suits the legend keyboard/pointer-drag tests.
   // The previous pick was 'ec', but the demo bundle bakes a curated manual sort

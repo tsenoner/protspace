@@ -30,7 +30,10 @@ pnpm perf                        # 10 iterations per scenario (default)
 PERF_ITERATIONS=5 pnpm perf      # override iteration count
 ```
 
-This launches headed browsers (Chrome, Firefox, Safari), loads every dataset
+This launches Chrome, Firefox and Safari headless, so no window takes focus
+while it runs; each still renders on the hardware GPU (Chrome through its
+`channel: 'chrome'` headless mode, not the SwiftShader headless shell the E2E
+suite uses). Set `PERF_HEADED=1` to watch the run in headed windows. It loads every dataset
 the manifest marks `"default": true` (the ten of the former
 `apps/web/public/data/datasets.json`), and runs the scenarios in the
 table below against each one.

@@ -1,4 +1,10 @@
-import { defineConfig, devices, type BrowserContextOptions, type Project } from '@playwright/test';
+import {
+  defineConfig,
+  devices,
+  type BrowserContextOptions,
+  type PlaywrightTestConfig,
+  type Project,
+} from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { STARTUP_DATASET_URL } from './helpers/fixtures';
 import { tourCompletedStorageState } from './helpers/tour-storage-state';
@@ -28,6 +34,27 @@ const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: []
  */
 const optIn = (envVar: string, project: Project): Project[] =>
   process.env[envVar] === '1' ? [project] : [];
+
+/**
+ * Restrict the suite to the browsers named in E2E_BROWSERS (comma-separated), e.g.
+ * `E2E_BROWSERS=firefox,webkit`. Unset runs every project.
+ *
+ * CI runs Chromium on the bare runner and Firefox/WebKit in the Playwright container, because
+ * WebKit's apt dependencies (~180 packages) are what stalls on a slow Ubuntu mirror — see
+ * e2e.yml. `devices[...]` presets set `defaultBrowserType`; a hand-written project may set
+ * `browserName` instead, and a project with neither launches Chromium.
+ */
+const E2E_BROWSERS = process.env.E2E_BROWSERS
+  ? process.env.E2E_BROWSERS.split(',').map((b) => b.trim())
+  : undefined;
+const forBrowsers = (
+  projects: NonNullable<PlaywrightTestConfig['projects']>,
+): NonNullable<PlaywrightTestConfig['projects']> =>
+  projects.filter(
+    (p) =>
+      !E2E_BROWSERS ||
+      E2E_BROWSERS.includes(p.use?.browserName ?? p.use?.defaultBrowserType ?? 'chromium'),
+  );
 
 export default defineConfig({
   testDir: TEST_DIR,
@@ -78,7 +105,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
+  projects: forBrowsers([
     {
       name: 'product-tour',
       use: {
@@ -273,7 +300,7 @@ export default defineConfig({
       },
       testMatch: /fasta-prep\.live\.spec\.ts/,
     }),
-  ],
+  ]),
 
   outputDir: '../test-results/',
 });

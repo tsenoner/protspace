@@ -47,8 +47,9 @@ export async function awaitTwoFrames(page: Page): Promise<void> {
 /**
  * Wait for the scatterplot to finish loading data and for the first render
  * pass to populate the plot's internal layout state. Also waits for the
- * `#progressive-loading` overlay (loading-overlay.ts) to fully remove
- * itself — without this, screenshots can land during the 500 ms fade-out.
+ * `#progressive-loading` overlay (loading-overlay.ts) to be removed, which the
+ * app does once the load has settled — without this, screenshots can land
+ * while the overlay still covers the plot.
  */
 export async function waitForDataLoad(
   page: Page,
@@ -80,8 +81,8 @@ export async function waitForDataLoad(
     { timeout, polling: 200 },
   );
 
-  // The loading overlay fades out (opacity 0.5s) then removes itself ~500 ms
-  // later. Wait for the element to be gone from the DOM.
+  // The loading overlay is removed once the load's post-load work has finished.
+  // Wait for the element to be gone from the DOM.
   await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
     timeout,
     polling: 100,

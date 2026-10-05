@@ -18,6 +18,7 @@ import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
  */
 
 const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
+const CUSTOM_5K_PROTEIN_COUNT = 5181;
 
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
@@ -95,24 +96,12 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
   });
 
   test('Reset clears when swapping demo → custom while isolated', async ({ page }) => {
-    const demoCount = await getProteinCount(page);
-
     await engageIsolation(page);
     await expect(resetButton(page)).toBeVisible();
     expect(await readControlBarIsolationMode(page)).toBe(true);
 
     await importUserFile(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as {
-          data?: { protein_ids?: string[] };
-        } | null;
-        const len = plot?.data?.protein_ids?.length ?? 0;
-        return len > 0 && len !== originalCount;
-      },
-      demoCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await expect(resetButton(page)).toHaveCount(0);
     expect(await readControlBarIsolationMode(page)).toBe(false);
@@ -122,17 +111,7 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
     const demoCount = await getProteinCount(page);
 
     await importUserFile(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as {
-          data?: { protein_ids?: string[] };
-        } | null;
-        const len = plot?.data?.protein_ids?.length ?? 0;
-        return len > 0 && len !== originalCount;
-      },
-      demoCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await engageIsolation(page);
     await expect(resetButton(page)).toBeVisible();

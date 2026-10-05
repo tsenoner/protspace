@@ -10,7 +10,6 @@ import {
   curatedViewOf,
   dismissTourIfPresent,
   getControlBarView,
-  getProteinCount,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
@@ -99,11 +98,8 @@ test.describe('every example opens on its curated view', () => {
 
       await page.goto(`/explore?dataset=${entry.id}`);
       await dismissTourIfPresent(page);
-      await waitForExploreDataLoad(page, loadTimeout);
-
-      await expect
-        .poll(() => getProteinCount(page), { timeout: loadTimeout })
-        .toBe(record.proteins);
+      // The manifest's count, so the wait cannot pass on another dataset.
+      await waitForExploreDataLoad(page, { timeout: loadTimeout, proteinCount: record.proteins });
       await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(entry));
       expect(await page.evaluate(() => window.location.search)).toBe(`?dataset=${entry.id}`);
       expect(driftWarnings).toEqual([]);
