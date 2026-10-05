@@ -17,7 +17,7 @@ package (``protspace.data.io.bundle``, the one implementation of the format), so
 reads a file of any container version (a legacy v1/v2 paper source, or the
 intermediates of a CLI from before format v3) and always writes the final bundle as
 v3, whatever version the CLI checkout writes. Inputs are read-only; everything is
-written under the output root (default ``~/protspace-showcase/2026_03``), which may
+written under the output root (default ``<suite>/protspace-showcase/2026_03``), which may
 not lie inside the repository or an input directory.
 
 Subcommands::
@@ -6106,7 +6106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.release = args.release or config.build.get("uniprot_release")
         args.out_root = (
             args.out_root
-            or config.path(config.build.get("out_root", "{home}/protspace-showcase"))
+            or config.path(config.build.get("out_root", "{suite}/protspace-showcase"))
         ).expanduser()
         return handlers[args.command](args, config)
     except BuildError as error:

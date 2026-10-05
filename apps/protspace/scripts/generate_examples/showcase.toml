@@ -28,7 +28,7 @@ release_tag = "showcase-2026_03"  # GitHub release hosting every example but the
 # other bytes), so the v3 files take new names in the same release.
 file_pattern = "{id}_{release}_v3.parquetbundle"
 checksums_file = "SHA256SUMS_v3"  # the release's SHA256SUMS lists the v2 files; stage-release adds this one
-out_root = "{home}/protspace-showcase/2026_03"
+out_root = "{suite}/protspace-showcase/2026_03"
 catalog = "{repo}/apps/web/src/explore/example-datasets.ts"
 github_repo = "tsenoner/protspace"
 zenodo_doi = ""                   # the paper-companion deposit's DOI, if known before the build (else write_manifest.py --zenodo-doi, tasks 8.3)
