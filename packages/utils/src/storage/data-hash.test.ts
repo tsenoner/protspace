@@ -507,6 +507,25 @@ describe('generateDatasetHash value stability', () => {
       );
     }
   });
+
+  it('keeps the stored values of a dataset with annotations, numeric data and predictions', () => {
+    const dataset = {
+      protein_ids: ['P2', 'P1', 'P3'],
+      annotations: {
+        family: { kind: 'categorical' as const, values: ['a', 'b', null] },
+        length: { kind: 'numeric' as const, values: [] },
+      },
+      numeric_annotation_data: { length: new Float64Array([30, 10, 20]) },
+    };
+    const predictions = {
+      family: [null, null, { value: 'a', confidence: 0.8, source: 'P1' }],
+    };
+
+    expect(generateDatasetHash(dataset)).toBe('5d5799bb4909e07d');
+    expect(generateDatasetHash({ ...dataset, annotation_predicted: predictions })).toBe(
+      'b74f5a0a2861ab1f',
+    );
+  });
 });
 
 describe('generateDatasetHash memoization', () => {

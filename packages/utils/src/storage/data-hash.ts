@@ -171,9 +171,11 @@ function buildNumericMetadataFingerprint(
   );
 }
 
-function buildDatasetFingerprint(data: DatasetHashInput): string {
-  const proteinIds = Array.isArray(data.protein_ids) ? data.protein_ids : [];
-  const proteinIndexOrder = buildProteinIndexOrder(proteinIds);
+function buildDatasetFingerprint(
+  data: DatasetHashInput,
+  proteinIds: readonly string[],
+  proteinIndexOrder: readonly number[],
+): string {
   const sortedIds = proteinIndexOrder.map((index) => proteinIds[index]);
   const annotationFingerprint = Object.entries(data.annotations ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
@@ -204,7 +206,15 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
     })
     .join('\x01');
 
-  const predictionFingerprint = Object.entries(data.annotation_predicted ?? {})
+  return `${sortedIds.join('\x00')}\x02${annotationFingerprint}\x02`;
+}
+
+function buildPredictionFingerprint(
+  data: DatasetHashInput,
+  proteinIds: readonly string[],
+  proteinIndexOrder: readonly number[],
+): string {
+  return Object.entries(data.annotation_predicted ?? {})
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([annotationName, cells]) => {
       const hash = createFNV1a64();
@@ -234,8 +244,15 @@ function buildDatasetFingerprint(data: DatasetHashInput): string {
       return `${annotationName}::${count}::${formatFNV1a64(hash)}`;
     })
     .join('\x01');
+}
 
-  return [sortedIds.join('\x00'), annotationFingerprint, predictionFingerprint].join('\x02');
+function hashDataset(data: DatasetHashInput): string {
+  const proteinIds = Array.isArray(data.protein_ids) ? data.protein_ids : [];
+  const proteinIndexOrder = buildProteinIndexOrder(proteinIds);
+  const state = createFNV1a64();
+  appendFNV1a64(state, buildDatasetFingerprint(data, proteinIds, proteinIndexOrder));
+  appendFNV1a64(state, buildPredictionFingerprint(data, proteinIds, proteinIndexOrder));
+  return formatFNV1a64(state);
 }
 
 /**
@@ -277,7 +294,7 @@ export function generateDatasetHash(input: string[] | DatasetHashInput): string 
     return memo.hash;
   }
 
-  const hash = fnv1a64Hash(buildDatasetFingerprint(input));
+  const hash = hashDataset(input);
 
   if (memoKey) {
     rememberDatasetHash(input, hash);
