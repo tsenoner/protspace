@@ -222,9 +222,10 @@ export class DataLoader extends LitElement {
         try {
           decoded = await decodeBundleInWorker(arrayBuffer);
         } catch (workerError) {
-          // Fallback: main-thread decode (worker unsupported / runtime failure).
+          // Fallback: main-thread decode (worker unsupported / runtime failure). The
+          // worker may have taken the bytes (they are transferred), so read them again.
           console.warn('Worker decode failed, falling back to main thread:', workerError);
-          decoded = await decodeParquetBundle(arrayBuffer);
+          decoded = await decodeParquetBundle(await file.arrayBuffer());
         }
       } else {
         decoded = await decodeParquetBundle(arrayBuffer);

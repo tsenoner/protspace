@@ -11,15 +11,12 @@ export function isWorkerDecodeSupported(): boolean {
 }
 
 /**
- * Decode+convert a parquetbundle in a worker. The input `arrayBuffer` is cloned into
- * the worker via structured-clone (postMessage without transfer list), so the caller's
- * buffer remains valid for the main-thread fallback if the worker path fails.
+ * Decode+convert a parquetbundle in a worker. The input `arrayBuffer` is transferred, not
+ * cloned, so it is detached once this returns: a caller that falls back to the main thread
+ * must read the bytes again.
  *
  * The result Float32/Int32 typed arrays are transferred back zero-copy.
  * Rejects on worker spawn or runtime error (caller falls back to the main-thread path).
- *
- * NOTE: Transfer-in is intentionally omitted here to keep the fallback safe. It can be
- * added as a future optimisation once the worker path is confirmed stable in production.
  */
 export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDecodeResult> {
   return new Promise((resolve, reject) => {
@@ -44,7 +41,6 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
       cleanup();
       reject(new Error(`decode worker error: ${event.message || 'unknown'}`));
     };
-    // Clone-in (no transfer list): keeps arrayBuffer valid for fallback if worker fails.
-    worker.postMessage({ type: 'decode-bundle', arrayBuffer });
+    worker.postMessage({ type: 'decode-bundle', arrayBuffer }, [arrayBuffer]);
   });
 }

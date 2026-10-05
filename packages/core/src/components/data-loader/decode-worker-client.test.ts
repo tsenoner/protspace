@@ -146,6 +146,29 @@ describe('decodeBundleInWorker', () => {
     mod.default = OrigClass;
   });
 
+  it('transfers the input buffer instead of cloning it', async () => {
+    const mod = await import('./decode.worker?worker&inline');
+    const OrigClass = mod.default;
+    let transfer: Transferable[] | undefined;
+    mod.default = class FakeTransferWorker {
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      onerror: ((e: ErrorEvent) => void) | null = null;
+      terminate(): void {
+        /* no-op */
+      }
+      postMessage(_msg: unknown, list?: Transferable[]): void {
+        transfer = list;
+        setTimeout(() => this.onmessage?.(new MessageEvent('message', { data: { ok: false } })), 0);
+      }
+    } as unknown as typeof mod.default;
+
+    const buf = new ArrayBuffer(8);
+    await expect(decodeBundleInWorker(buf)).rejects.toThrow('worker decode failed');
+    expect(transfer).toHaveLength(1);
+    expect(transfer?.[0]).toBe(buf);
+    mod.default = OrigClass;
+  });
+
   it('rejects when worker fires onerror', async () => {
     const mod = await import('./decode.worker?worker&inline');
     const OrigClass = mod.default;
