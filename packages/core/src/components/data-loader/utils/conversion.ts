@@ -904,12 +904,12 @@ export function convertParquetToVisualizationDataOptimized(
   projectionsMetadata?: Rows,
 ): Promise<VisualizationData> {
   if (Array.isArray(input)) {
-    // Legacy path: raw rows passed directly (e.g. from tests or plain parquet files)
-    validateRowsBasic(input);
-    const dataSize = input.length;
-    if (dataSize < OPTIMIZED_PATH_ROW_THRESHOLD) {
+    // Legacy path: raw rows passed directly (e.g. from tests or plain parquet files).
+    // The small-data implementation validates them itself.
+    if (input.length < OPTIMIZED_PATH_ROW_THRESHOLD) {
       return Promise.resolve(convertParquetToVisualizationData(input, projectionsMetadata));
     }
+    validateRowsBasic(input);
     return convertLargeDatasetOptimizedRaw(input, projectionsMetadata).then((data) =>
       finishConversion(data, input),
     );
