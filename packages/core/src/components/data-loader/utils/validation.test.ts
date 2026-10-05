@@ -74,6 +74,6 @@ describe('validateRowsBasic row limit message', () => {
     expect(message).toContain('11');
     expect(message).toContain('10');
     expect(message).toMatch(/proteins x projections/);
-    expect(message).toMatch(/separate bundles|subset/i);
+    expect(message).toMatch(/run "protspace convert"/i);
   });
 });

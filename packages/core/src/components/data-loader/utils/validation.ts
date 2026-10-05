@@ -1,24 +1,29 @@
 import type { Rows } from './types';
 import { sanitizeForMessage } from '@protspace/utils';
-import { MAX_POINTS_PER_PROJECTION } from '../../../utils/limits';
 
 // Parquet magic bytes 'PAR1'
 const PARQUET_MAGIC = new Uint8Array([0x50, 0x41, 0x52, 0x31]);
+
+/**
+ * The most rows a v1/v2 bundle may hold. Its reader decodes every row to an object, at
+ * ~1.3 GB of heap per million (#456), and the cap keeps a load inside the ~4.4 GB heap
+ * instead of crashing the tab. Format v3 has no such cap: its reader bounds allocation
+ * by part size.
+ */
+const LEGACY_MAX_ROWS = 2_000_000;
 
 /**
  * Safety limits to avoid abusive inputs. Exported so callers and tests read the
  * same numbers the defaults below are built from.
  *
  * `maxRows`: projections_data is long-format — one row per (protein x
- * projection) — so capping ROWS at the per-projection POINT cap bounds
- * proteins-per-projection for any projection count >= 1, with no
- * distinct-protein scan, which matters because this runs before grouping.
- * Derived rather than duplicated so the loader and the renderer cannot disagree
- * again (#456); pinned by limits.invariant.test.ts.
+ * projection) — so capping ROWS bounds proteins-per-projection for any
+ * projection count >= 1, with no distinct-protein scan, which matters because
+ * this runs before grouping.
  */
 export const DEFAULT_VALIDATION_LIMITS = {
   maxFileSizeBytes: 500 * 1024 * 1024, // 500MB
-  maxRows: MAX_POINTS_PER_PROJECTION,
+  maxRows: LEGACY_MAX_ROWS,
   maxColumns: 200,
   maxTotalCells: 1_000_000_000,
   maxCellStringLength: 256,
@@ -55,6 +60,24 @@ export function assertWithinFileSizeLimit(
   }
 }
 
+/**
+ * Refuse a v1/v2 dataset of more than `maxRows` rows, naming the count, the limit, what
+ * it counts and the way out. A bare "N exceeds limit" reached the user as a toast whose
+ * only action was "Report this", inviting a bug report about intended behaviour (#456).
+ */
+export function assertWithinLegacyRowLimit(
+  rows: number,
+  maxRows: number = DEFAULT_VALIDATION_LIMITS.maxRows,
+): void {
+  if (rows > maxRows) {
+    throw new Error(
+      `Dataset too large for a v1/v2 bundle: ${rows.toLocaleString()} rows (proteins x ` +
+        `projections) exceeds the limit of ${maxRows.toLocaleString()}. Run "protspace convert" ` +
+        `on the file to upgrade it to the current format, which has no such limit.`,
+    );
+  }
+}
+
 export function validateRowsBasic(
   rows: unknown,
   {
@@ -75,17 +98,7 @@ export function validateRowsBasic(
   if (rows.length === 0) {
     throw new Error('No data rows found in file');
   }
-  if (rows.length > maxRows) {
-    // Name the limit and what it counts. The old message ("Too many rows: N
-    // exceeds limit") gave the user an unexplained number, no limit, no
-    // remediation — and the toast then offered a "Report this" bug-report
-    // action for entirely intended behaviour.
-    throw new Error(
-      `Dataset too large: ${rows.length.toLocaleString()} rows exceeds the limit of ` +
-        `${maxRows.toLocaleString()} (proteins x projections). Split the projections into ` +
-        `separate bundles, or subset the dataset before bundling.`,
-    );
-  }
+  assertWithinLegacyRowLimit(rows.length, maxRows);
   const first = rows[0];
   if (typeof first !== 'object' || first == null) {
     throw new Error('Rows must be objects');

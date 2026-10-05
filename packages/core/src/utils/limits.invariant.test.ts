@@ -13,17 +13,13 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_POINTS_PER_PROJECTION } from './limits';
 import { MAX_RENDERABLE_POINTS } from '../components/scatter-plot/webgl/types';
-import { DEFAULT_VALIDATION_LIMITS } from '../components/data-loader/utils/validation';
 
 describe('point-count limits', () => {
-  // Both hold by construction today — each site imports the shared symbol rather
-  // than copying its value. They are here to fail the moment someone replaces a
+  // Holds by construction today — the renderer imports the shared symbol rather
+  // than copying its value. It is here to fail the moment someone replaces the
   // derivation with a literal, which is exactly how the two drifted apart before.
+  // The loader's row cap is its own, and covers v1/v2 bundles only.
   it('the renderer clamp is the shared cap', () => {
     expect(MAX_RENDERABLE_POINTS).toBe(MAX_POINTS_PER_PROJECTION);
-  });
-
-  it('the loader row cap is the shared cap', () => {
-    expect(DEFAULT_VALIDATION_LIMITS.maxRows).toBe(MAX_POINTS_PER_PROJECTION);
   });
 });

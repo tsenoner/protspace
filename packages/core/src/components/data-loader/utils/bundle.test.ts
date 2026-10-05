@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import { parquetWriteBuffer } from 'hyparquet-writer';
 import {
   BUNDLE_DELIMITER,
+  BUNDLE_DELIMITER_BYTES,
+  concatenateBuffers,
   isParquetBundle,
   findBundleDelimiterPositions,
   type BundleSettings,
 } from '@protspace/utils';
-import { extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { DEFAULT_VALIDATION_LIMITS } from './validation';
 
 // Helper to create a mock parquet-like buffer with PAR1 magic bytes
 function createMockParquetBuffer(content: string = 'test'): ArrayBuffer {
@@ -264,4 +268,41 @@ describe('BundleSettings type', () => {
     expect(Object.keys(settings.legendSettings)).toHaveLength(2);
     expect(settings.legendSettings.family.categories.kinase.color).toBe('#00ff00');
   });
+});
+
+describe('legacy row cap', () => {
+  it('refuses a v1/v2 bundle above it, pointing at protspace convert', async () => {
+    const rows = DEFAULT_VALIDATION_LIMITS.maxRows + 1;
+    const coordinates = Float32Array.from({ length: rows }, (_, i) => i);
+    const write = (columnData: { name: string; data: unknown[] | Float32Array }[]) =>
+      parquetWriteBuffer({ columnData: columnData as never });
+    const bundle = concatenateBuffers(
+      [
+        write([
+          { name: 'identifier', data: ['P0'] },
+          { name: 'family', data: ['a'] },
+        ]),
+        write([
+          { name: 'projection_name', data: ['pca2'] },
+          { name: 'dimensions', data: [2] },
+          { name: 'info_json', data: ['{}'] },
+        ]),
+        write([
+          { name: 'projection_name', data: new Array<string>(rows).fill('pca2') },
+          { name: 'identifier', data: Array.from({ length: rows }, (_, i) => `P${i}`) },
+          { name: 'x', data: coordinates },
+          { name: 'y', data: coordinates },
+        ]),
+      ],
+      BUNDLE_DELIMITER_BYTES,
+    );
+
+    const error = await decodeParquetBundle(bundle).then(
+      () => null,
+      (reason: Error) => reason,
+    );
+
+    expect(error?.message).toContain(`${rows.toLocaleString()} rows (proteins x projections)`);
+    expect(error?.message).toMatch(/Run "protspace convert" on the file/);
+  }, 60_000);
 });

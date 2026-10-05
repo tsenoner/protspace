@@ -7,7 +7,11 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import type { Rows, GenericRow } from './types';
-import { validateProjectionRows, validateRowsBasic } from './validation';
+import {
+  assertWithinLegacyRowLimit,
+  validateProjectionRows,
+  validateRowsBasic,
+} from './validation';
 import { convertParquetToVisualizationDataOptimized } from './conversion';
 import { readV3Bundle } from './bundle-v3';
 import {
@@ -199,6 +203,11 @@ async function extractRowsFromParts(
         'extractRowsFromParquetBundle handles v1 and v2.',
     );
   }
+  // Every row below is decoded to an object, so the row cap is checked on part 3's
+  // footer first: a bundle over it is refused before any of it is decoded.
+  // `validateProjectionRows` checks the decoded rows again.
+  const part3Metadata = parquetMetadata(part3);
+  assertWithinLegacyRowLimit(Number(part3Metadata.num_rows));
   const formatVersion = part1Metadata ? readFormatVersion(part1Metadata) : 1;
   const numericColumnTypes: Readonly<Record<string, 'int' | 'float'>> = part1Metadata
     ? readNumericColumnTypes(part1Metadata)
@@ -215,7 +224,7 @@ async function extractRowsFromParts(
   part1 = null;
   const projectionsMetadataData = await parquetReadObjects({ file: part2 });
   part2 = null;
-  const projectionsData = await parquetReadObjects({ file: part3 });
+  const projectionsData = await parquetReadObjects({ file: part3, metadata: part3Metadata });
   part3 = null;
 
   // Parse settings if present
