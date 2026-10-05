@@ -940,6 +940,8 @@ async function convertLargeDatasetOptimizedRaw(
 async function convertLargeDatasetOptimized(
   extraction: BundleExtractionResult,
 ): Promise<VisualizationData> {
+  // The projection rows always carry projection_name, x and y: the extraction refuses
+  // them otherwise (`validateProjectionRows`), so there is no legacy layout to handle.
   const {
     projections: projectionRows,
     annotationsById,
@@ -947,31 +949,23 @@ async function convertLargeDatasetOptimized(
     projectionsMetadata,
     formatVersion,
   } = extraction;
-  const columnNames = Object.keys(projectionRows[0]);
-  const hasProjectionName = columnNames.includes('projection_name');
-  const hasXY = columnNames.includes('x') && columnNames.includes('y');
-  if (hasProjectionName && hasXY) {
-    // Derive annotation column names from the first annotation row.
-    // Safe because the upstream parquet decoder produces a uniform schema
-    // for all rows in a single table (selectedAnnotationsData), so any
-    // row's keys are a complete column set. If a future writer emits
-    // sparse rows, switch to a union of all rows' keys.
-    const annotationColumnNames =
-      annotationsById.size > 0
-        ? Object.keys(annotationsById.values().next().value as GenericRow)
-        : [];
-    return convertBundleFormatDataOptimizedSeparated(
-      projectionRows,
-      annotationsById,
-      projectionIdColumn,
-      annotationColumnNames,
-      projectionsMetadata,
-      formatVersion,
-    );
-  }
-  // Legacy format: materialize rows (should not happen with bundle extraction, but safe fallback)
-  const rows = materializeMergedRows(extraction);
-  return convertLegacyFormatData(rows, columnNames, formatVersion);
+  // Derive annotation column names from the first annotation row.
+  // Safe because the upstream parquet decoder produces a uniform schema
+  // for all rows in a single table (selectedAnnotationsData), so any
+  // row's keys are a complete column set. If a future writer emits
+  // sparse rows, switch to a union of all rows' keys.
+  const annotationColumnNames =
+    annotationsById.size > 0
+      ? Object.keys(annotationsById.values().next().value as GenericRow)
+      : [];
+  return convertBundleFormatDataOptimizedSeparated(
+    projectionRows,
+    annotationsById,
+    projectionIdColumn,
+    annotationColumnNames,
+    projectionsMetadata,
+    formatVersion,
+  );
 }
 
 function convertBundleFormatData(

@@ -368,10 +368,8 @@ export function findColumn(columnNames: string[], candidates: string[]): string 
 
 /**
  * Materializes a single merged row per protein by spreading annotation fields
- * into projection rows. Used by:
- *  - the small-dataset path of `convertParquetToVisualizationData` (where the
- *    O(N) spread cost is acceptable), and
- *  - the legacy-format fallback in `convertLargeDatasetOptimized`.
+ * into projection rows. Used by the small-dataset path of
+ * `convertParquetToVisualizationData`, where the O(N) spread cost is acceptable.
  *
  * The large-bundle hot path stays on the separated shape and never calls this.
  */
