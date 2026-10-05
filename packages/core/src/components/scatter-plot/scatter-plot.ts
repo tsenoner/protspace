@@ -738,6 +738,7 @@ export class ProtspaceScatterplot extends LitElement {
     window.removeEventListener('keydown', this._handleShiftKey);
     window.removeEventListener('keyup', this._handleShiftKey);
     window.removeEventListener('blur', this._handleWindowBlur);
+    this._tooltipData = null;
     this._hoveredPoint = null;
     this._shiftDown = false;
     this._focusedValues = null;

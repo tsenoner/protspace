@@ -64,6 +64,9 @@ const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
       this.resizes++;
     }
     releaseDataReferences() {}
+    pointScale() {
+      return 1;
+    }
     cancelMorph() {}
     destroy() {
       this.destroyed = true;
@@ -296,6 +299,25 @@ describe('reconnect after disconnect', () => {
 
     // Three proteins in six slots: the point count is of proteins once the index says so.
     expect(sp._getVisiblePointCount()).toBe(3);
+    sp.remove();
+  });
+
+  it('drops the tooltip of the point hovered before the disconnect', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const { x, y } = sp._scales!;
+    sp._svg!.dispatchEvent(mouse('mousemove', x(0), y(0)));
+    frames.run();
+    expect(sp._tooltipData).not.toBeNull();
+
+    sp.remove();
+    document.body.appendChild(sp);
+    sp._updateSizeAndRender();
+
+    expect(sp._tooltipData).toBeNull();
     sp.remove();
   });
 });
