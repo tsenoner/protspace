@@ -196,6 +196,14 @@ function sameInteractableKey(a: InteractableKey | null, b: InteractableKey): boo
   );
 }
 
+/** Whether two index maps (null: every point, in order) put the same point in each slot. */
+function sameSlots(a: Int32Array | null, b: Int32Array | null): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 // Default configuration moved to config.ts
 
 /**
@@ -357,6 +365,9 @@ export class ProtspaceScatterplot extends LitElement {
   // The renderer ORs every invalidate*() into its own dirty flags, so that one
   // render stages the union of what the requests needed.
   private _renderRafId: number | null = null;
+  // Whether every point is still in the slot it was last drawn in, which a
+  // projection switch needs to glide (see _reprocessGeometryIfNeeded).
+  private _slotsKept = true;
   // The slots `_slotVisible` marks, built when first asked for. Retained for the duplicate-badge capture path (#301): the
   // full-extent compute iterates it against the raw PlotData arrays instead
   // of traversing the point index (~93× slower at 570k points, research doc 04).
@@ -750,6 +761,7 @@ export class ProtspaceScatterplot extends LitElement {
     this._dupOverlay.cancelCompute();
     this._dupOverlay.clearBadges();
     this._connectorOverlay.clear();
+    this._cancelProjectionMorph();
     this._webglRenderer?.destroy();
     // Cancels the zoom/lasso RAFs, interrupts the reset transition, and tears
     // down the d3 brush + lasso (F-07).
@@ -982,13 +994,54 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
+  /**
+   * Glide the points to the positions the next render stages instead of jumping
+   * there (see WebGLRenderer.morphNextPositionChange); _renderPlot draws one
+   * frame per animation frame until they arrive. Badges, overlays and hover
+   * already follow the new positions, so they stay hidden until then.
+   */
+  private _requestProjectionMorph() {
+    // Without animation frames _requestRender renders on the spot, so the glide
+    // would recurse through every one of its frames.
+    if (
+      typeof requestAnimationFrame !== 'function' ||
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      this._cancelProjectionMorph();
+      return;
+    }
+    if (!this._webglRenderer) return;
+    this._webglRenderer.morphNextPositionChange();
+    this._handleCanvasMouseOut();
+    this.toggleAttribute('data-morphing', true);
+  }
+
+  /** End any glide at once: the next frame draws the staged positions. */
+  private _cancelProjectionMorph() {
+    this._webglRenderer?.cancelMorph();
+    this.toggleAttribute('data-morphing', false);
+  }
+
   /** INV-11: reprocess geometry + emit data-change when a geometry input changes. */
   private _reprocessGeometryIfNeeded(changedProperties: Map<string, unknown>) {
     if (this._geometryInputsChanged(changedProperties)) {
+      // Only the old index map outlives the rebuild, not the old plot data.
+      const { length, originalIndices } = this._plotData;
       this._processData();
       this._schedulePointGridIndexRebuild();
       this._webglRenderer?.invalidatePositionCache();
       this._webglRenderer?.invalidateStyleCache();
+      // A projection or plane switch keeps every point in its slot unless the new
+      // projection lacks some point's coordinates; any other geometry change may
+      // move them.
+      this._slotsKept &&=
+        !changedProperties.has('data') &&
+        !changedProperties.has('filteredProteinIds') &&
+        !changedProperties.has('filtersActive') &&
+        this._plotData.length === length &&
+        sameSlots(originalIndices, this._plotData.originalIndices);
+      if (this._slotsKept) this._requestProjectionMorph();
+      else this._cancelProjectionMorph();
       if (changedProperties.has('data')) {
         this.resetZoom();
       }
@@ -1792,6 +1845,10 @@ export class ProtspaceScatterplot extends LitElement {
     if (this._canvas && this._webglRenderer) {
       this._renderWebGL('plot');
       this._interaction?.setupCanvasEventHandling();
+      // A glide draws a frame per animation frame, in the render that every
+      // other request for that frame shares.
+      if (this._webglRenderer.isMorphing) this._requestRender();
+      else this.toggleAttribute('data-morphing', false);
     }
   }
 
@@ -1807,6 +1864,7 @@ export class ProtspaceScatterplot extends LitElement {
 
     this._webglRenderer.setTrackRenderedPointIds(pd.length > MAX_RENDERABLE_POINTS);
     this._webglRenderer.render(pd);
+    this._slotsKept = true;
 
     if (perfToken) {
       const cpuEndTs = performance.now();
@@ -2275,7 +2333,8 @@ export class ProtspaceScatterplot extends LitElement {
    * Coalesces rapid mousemoves to at most one hover computation per animation frame.
    */
   private _handleCanvasMouseMove(event: MouseEvent): void {
-    if (!this._scales) return;
+    // Hover hit-tests the new positions, so it pauses while the points glide there.
+    if (!this._scales || this._webglRenderer?.isMorphing) return;
     // d3.pointer must be read synchronously: event.currentTarget is null after dispatch.
     const [mouseX, mouseY] = d3.pointer(event);
     // Mouse events carry the real modifier state: resync in case a Shift keyup never reached us.

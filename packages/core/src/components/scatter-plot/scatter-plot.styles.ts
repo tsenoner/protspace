@@ -78,6 +78,13 @@ const scatterplotStylesCore = css`
     pointer-events: none;
   }
 
+  /* Duplicate badges, spiderfied stacks and EAT connectors already sit at the
+     new projection's positions; hide them while the points glide there. */
+  :host([data-morphing]) .badges-canvas,
+  :host([data-morphing]) .overlay-container {
+    opacity: 0;
+  }
+
   /* D3 brush (drag-to-select rectangle) */
   .brush-container rect.selection {
     fill: var(--protspace-brush-fill);

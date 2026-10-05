@@ -1,0 +1,342 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * The host side of the projection glide: which geometry changes ask the renderer
+ * to glide, how the frames are driven, and what pauses meanwhile. A projection or
+ * plane switch that keeps every point in its slot glides; any other geometry
+ * change ends a glide at once. The glide's frames ride the coalesced render
+ * request, one render per frame, and stop when it ends.
+ *
+ * As in scatter-plot.render-coalescing.test.ts the element is never appended: a
+ * real WebGLRenderer on the mock WebGL2 canvas is attached by hand, and updated()
+ * is called with the properties a Lit update would have reported.
+ */
+import { vi, describe, it, expect, beforeEach, afterEach, type MockInstance } from 'vitest';
+import type { PlotData, VisualizationData } from '@protspace/utils';
+import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
+import { MORPH_MS, drawnPositions, morphWeight } from './webgl/renderer/position-morph';
+import type * as PositionMorph from './webgl/renderer/position-morph';
+
+const clock = vi.hoisted(() => ({ now: 1000 }));
+const counters = vi.hoisted(() => ({ morphFrame: 0 }));
+
+vi.hoisted(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  }
+});
+vi.mock('./webgl/renderer/position-morph', async (importOriginal) => {
+  const actual = await importOriginal<typeof PositionMorph>();
+  return { ...actual, frameTime: () => clock.now, drawnPositions: vi.fn(actual.drawnPositions) };
+});
+vi.mock('../../utils/perf-counters', () => ({ perfCounters: counters }));
+
+import './scatter-plot';
+
+type Renderer = {
+  readonly isMorphing: boolean;
+  render(pd: PlotData): void;
+  invalidatePositionCache(): void;
+  morphNextPositionChange(): void;
+  cancelMorph(): void;
+};
+
+type Inputs = {
+  data: VisualizationData;
+  selectedProjectionIndex: number;
+  projectionPlane: 'xy' | 'xz' | 'yz';
+  filteredProteinIds: string[];
+  filtersActive: boolean;
+};
+
+type Internals = HTMLElement &
+  Inputs & {
+    selectedAnnotation: string;
+    selectedProteinIds: string[];
+    _plotData: PlotData;
+    _webglRenderer: Renderer | null;
+    _hoveredProteinId: string | null;
+    _hoverRaf: number | null;
+    _pendingHover: unknown;
+    _processData(): void;
+    _createWebglRenderer(): void;
+    _requestRender(): void;
+    _flushRender(): void;
+    _schedulePointGridIndexRebuild(): void;
+    _handleCanvasMouseMove(event: MouseEvent): void;
+    isolateSelection(): void;
+    updated(changed: Map<string, unknown>): void;
+    disconnectedCallback(): void;
+  };
+
+// p3 has no coordinates in 'gap'. 'pca3' is 3D, for the plane switch.
+const PROJECTIONS = [
+  { name: 'umap', dimension: 2, data: [0, 0, 1, 1, 2, 2, 3, 3] },
+  { name: 'pca', dimension: 2, data: [3, 0, 2, 1, 1, 2, 0, 3] },
+  { name: 'pca3', dimension: 3, data: [0, 0, 1, 1, 1, 0, 2, 2, 3, 3, 3, 2] },
+  { name: 'gap', dimension: 2, data: [0, 1, 1, 0, 2, 3, NaN, NaN] },
+];
+
+function makeData(shift = 0): VisualizationData {
+  return {
+    protein_ids: ['p0', 'p1', 'p2', 'p3'],
+    projections: PROJECTIONS.map((p) => ({
+      ...p,
+      data: new Float32Array(p.data.map((v) => v + shift)),
+    })),
+    annotations: {
+      fam: {
+        kind: 'categorical',
+        values: ['A', 'B'],
+        colors: ['#f00', '#0f0'],
+        shapes: ['circle', 'square'],
+      },
+    },
+    annotation_data: { fam: new Int32Array([0, 1, 0, 1]) },
+  } as unknown as VisualizationData;
+}
+
+// Frame callbacks by id. Unlike an array stub, cancelling the callback that is
+// running (as _flushRender does) leaves nothing behind in the next frame.
+const frames = new Map<number, FrameRequestCallback>();
+let lastFrameId = 0;
+const runFrame = () => {
+  for (const id of [...frames.keys()]) {
+    const cb = frames.get(id);
+    frames.delete(id);
+    cb?.(clock.now);
+  }
+};
+
+/** An unattached plot with data, a real renderer, and one render already drawn. */
+function makePlot(inputs: Partial<Inputs> = {}) {
+  const el = document.createElement('protspace-scatterplot') as Internals;
+  el.data = makeData();
+  el.selectedAnnotation = 'fam';
+  Object.assign(el, inputs);
+  el._processData();
+  const { canvas } = createMockCanvas();
+  Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
+  el._createWebglRenderer();
+  const renderer = el._webglRenderer!;
+  el._requestRender();
+  el._flushRender();
+  frames.clear();
+  const render = vi.spyOn(renderer, 'render');
+  const request = vi.spyOn(renderer, 'morphNextPositionChange');
+  return { el, renderer, render, request };
+}
+
+/** Set geometry inputs and run updated() with what a Lit update would report. */
+function change(el: Internals, inputs: Partial<Inputs>) {
+  const changed = new Map<string, unknown>();
+  for (const key of Object.keys(inputs) as (keyof Inputs)[]) changed.set(key, el[key]);
+  Object.assign(el, inputs);
+  el.updated(changed);
+}
+
+/** Run frames 16 ms apart until none is queued; returns the renders each one drew. */
+function runFrames(render: MockInstance, beforeEachFrame?: () => void): number[] {
+  const perFrame: number[] = [];
+  while (frames.size > 0) {
+    if (perFrame.length > 2 * (MORPH_MS / 16)) throw new Error('frames never stop');
+    beforeEachFrame?.();
+    clock.now += 16;
+    const before = render.mock.calls.length;
+    runFrame();
+    perFrame.push(render.mock.calls.length - before);
+  }
+  return perFrame;
+}
+
+// The switch render draws the glide's start, then one frame per 16 ms until MORPH_MS.
+const GLIDE_RENDERS = MORPH_MS / 16 + 1;
+
+beforeEach(() => {
+  frames.clear();
+  counters.morphFrame = 0;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    frames.set(++lastFrameId, cb);
+    return lastFrameId;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('projection glide (host)', () => {
+  it('a projection switch requests once after the invalidations, then renders once per frame until done', () => {
+    const { el, renderer, render, request } = makePlot();
+    const invalidate = vi.spyOn(renderer, 'invalidatePositionCache');
+
+    change(el, { selectedProjectionIndex: 1 });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.invocationCallOrder[0]).toBeGreaterThan(
+      invalidate.mock.invocationCallOrder[0],
+    );
+    expect(el.hasAttribute('data-morphing')).toBe(true);
+
+    // Other render requests during the glide share its frames.
+    const perFrame = runFrames(render, () => {
+      if (!renderer.isMorphing) return;
+      el._requestRender();
+      el._requestRender();
+    });
+    expect(perFrame).toEqual(Array(GLIDE_RENDERS).fill(1));
+    expect(counters.morphFrame).toBe(GLIDE_RENDERS - 1);
+    expect(renderer.isMorphing).toBe(false);
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+  });
+
+  it('a plane switch glides', () => {
+    const { el, renderer, render, request } = makePlot({ selectedProjectionIndex: 2 });
+
+    change(el, { projectionPlane: 'xz' });
+    expect(request).toHaveBeenCalledTimes(1);
+    runFrame();
+    expect(renderer.isMorphing).toBe(true);
+    expect(runFrames(render)).toHaveLength(GLIDE_RENDERS - 1);
+  });
+
+  it('a data, filter or isolation change never glides', () => {
+    const { el, renderer, render, request } = makePlot();
+
+    change(el, { data: makeData(1) });
+    expect(runFrames(render)).toEqual([1]);
+    change(el, { filteredProteinIds: ['p0', 'p1', 'p3'], filtersActive: true });
+    expect(runFrames(render)).toEqual([1]);
+    change(el, { selectedProjectionIndex: 1, filteredProteinIds: ['p0', 'p1'] });
+    expect(runFrames(render)).toEqual([1]);
+    el.selectedProteinIds = ['p0'];
+    el.isolateSelection();
+    el._requestRender();
+    expect(runFrames(render)).toEqual([1]);
+
+    expect(request).not.toHaveBeenCalled();
+    expect(renderer.isMorphing).toBe(false);
+    expect(counters.morphFrame).toBe(0);
+  });
+
+  it('an isolation mid-glide ends it on the next frame', () => {
+    const { el, renderer, render } = makePlot();
+    change(el, { selectedProjectionIndex: 1 });
+    runFrame();
+    runFrame();
+
+    el.selectedProteinIds = ['p0', 'p1'];
+    el.isolateSelection();
+    expect(runFrames(render)).toEqual([1]);
+    expect(renderer.isMorphing).toBe(false);
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+  });
+
+  it('a filtered switch glides only while every point keeps its slot', () => {
+    const { el, request } = makePlot({
+      filteredProteinIds: ['p0', 'p1', 'p3'],
+      filtersActive: true,
+    });
+    const slots = el._plotData.originalIndices;
+
+    // The rebuild makes a new, equal index map.
+    change(el, { selectedProjectionIndex: 1 });
+    expect(el._plotData.originalIndices).not.toBe(slots);
+    expect(request).toHaveBeenCalledTimes(1);
+
+    // 'gap' has no coordinates for p3, so the rebuild culls it.
+    change(el, { selectedProjectionIndex: 3 });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+  });
+
+  it('switches instantly under reduced motion, and without requestAnimationFrame', () => {
+    const { el, renderer, render, request } = makePlot();
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce') }));
+
+    change(el, { selectedProjectionIndex: 1 });
+    expect(runFrames(render)).toEqual([1]);
+
+    // _requestRender renders on the spot then; a glide would recurse through it.
+    vi.stubGlobal('requestAnimationFrame', undefined);
+    vi.spyOn(el, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
+    vi.stubGlobal('matchMedia', undefined);
+    change(el, { selectedProjectionIndex: 0 });
+    expect(render).toHaveBeenCalledTimes(2);
+
+    expect(request).not.toHaveBeenCalled();
+    expect(renderer.isMorphing).toBe(false);
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+  });
+
+  it('a second switch mid-glide restarts it from the drawn blend', () => {
+    const { el, render, request } = makePlot();
+    change(el, { selectedProjectionIndex: 1 });
+    runFrame();
+    for (let i = 0; i < 10; i++) {
+      clock.now += 16;
+      runFrame();
+    }
+    vi.mocked(drawnPositions).mockClear();
+
+    change(el, { selectedProjectionIndex: 0 });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(runFrames(render)).toHaveLength(GLIDE_RENDERS);
+    const [, from, weight] = vi.mocked(drawnPositions).mock.calls[0];
+    expect(from).toBeInstanceOf(Float32Array);
+    expect(weight).toBe(morphWeight(160));
+  });
+
+  it('a dataset swap mid-glide ends it at once, even at the same point count', () => {
+    const { el, renderer, render, request } = makePlot();
+    change(el, { selectedProjectionIndex: 1 });
+    runFrame();
+    runFrame();
+    vi.mocked(drawnPositions).mockClear();
+    const glideFrames = counters.morphFrame;
+
+    change(el, { data: makeData(1) });
+    expect(renderer.isMorphing).toBe(false);
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+    // A switch before the swap is drawn has no drawn positions of this dataset to start from.
+    change(el, { selectedProjectionIndex: 0 });
+    expect(request).toHaveBeenCalledTimes(1);
+
+    expect(runFrames(render)).toEqual([1]);
+    expect(drawnPositions).not.toHaveBeenCalled();
+    expect(counters.morphFrame).toBe(glideFrames);
+  });
+
+  it('disconnecting mid-glide drops data-morphing and stops the frames', () => {
+    const { el, render } = makePlot();
+    change(el, { selectedProjectionIndex: 1 });
+    runFrame();
+
+    el.disconnectedCallback();
+    expect(el.hasAttribute('data-morphing')).toBe(false);
+    expect(runFrames(render)).not.toContain(1);
+  });
+
+  it('pauses hover while the points glide', () => {
+    const { el, render } = makePlot();
+    el._hoveredProteinId = 'p1';
+    const hovers: unknown[] = [];
+    el.addEventListener('protein-hover', (e) => hovers.push((e as CustomEvent).detail.proteinId));
+
+    change(el, { selectedProjectionIndex: 1 });
+    expect(hovers).toEqual([null]);
+    runFrame();
+    el._handleCanvasMouseMove(new MouseEvent('mousemove'));
+    expect(el._pendingHover).toBeNull();
+    expect(el._hoverRaf).toBeNull();
+
+    runFrames(render);
+    el._handleCanvasMouseMove(new MouseEvent('mousemove'));
+    expect(el._hoverRaf).not.toBeNull();
+  });
+});
