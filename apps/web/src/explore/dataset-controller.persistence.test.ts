@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildControllerOptions, dataLoadedEvent } from './dataset-controller.fixtures';
+import {
+  buildControllerOptions,
+  dataErrorEvent,
+  dataLoadedEvent,
+} from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
+import { FastaPrepError } from './fasta-prep-client';
+import { createLoadQueue } from './load-queue';
 import type { LoadMeta } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   resolvePendingLoadFinalization: vi.fn(),
   warning: vi.fn(),
   info: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -46,7 +53,7 @@ vi.mock('./tooltip-annotations-store', () => ({
 }));
 
 vi.mock('../lib/notify', () => ({
-  notify: { warning: mocks.warning, info: mocks.info, error: vi.fn() },
+  notify: { warning: mocks.warning, info: mocks.info, error: mocks.error },
 }));
 
 import { createDatasetController } from './dataset-controller';
@@ -116,6 +123,71 @@ describe('dataset controller OPFS persistence', () => {
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
     consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller load failures and the stored import', () => {
+  beforeEach(() => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    return () => consoleError.mockRestore();
+  });
+
+  // A user import is written to OPFS only once it has decoded (`handleDataLoaded`
+  // saves it before the render), so one that fails before that never replaced the
+  // stored import: what OPFS holds is still the previous import, which loaded fine.
+  it('a user import that fails to decode leaves the stored import as it was', async () => {
+    // This is also how a FASTA import ends whose prepared bundle fails to decode:
+    // the error comes while its load is still running, like a bundle's.
+    const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+
+    await controller.handleDataError(dataErrorEvent('Invalid parquet bundle'));
+
+    // Flagging the stored import would make the next visit offer recovery for a
+    // dataset that loads fine, instead of restoring it.
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
+  });
+
+  it('a FASTA import whose preparation fails leaves the stored import as it was', async () => {
+    const loadQueue = createLoadQueue({ isDisposed: () => false });
+    const controller = createDatasetController(buildControllerOptions({ loadQueue }));
+    const fasta = new File(['>P1\nMKV\n'], 'query.fasta');
+    loadQueue.registerFileLoad(fasta, 'user', undefined, 1);
+    const prepError = new FastaPrepError('The embedding service is currently unavailable.', {
+      code: 'BIOCENTRAL_UNAVAILABLE',
+    });
+
+    // The preparation runs inside the load's queue slot (`runtime.ts`), so its
+    // error ends that slot before the data loader reports it: as in
+    // `DataLoader.loadFromFile`, the error event follows the rejected load.
+    // With nothing queued behind it, no load is running by then; a load queued
+    // behind it would already have taken the slot.
+    let runningLoadAtError: LoadMeta | null | undefined;
+    await loadQueue
+      .enqueueLoadFromFile(fasta, undefined, () => Promise.reject(prepError))
+      .catch(async (error: Error) => {
+        runningLoadAtError = loadQueue.getRunningLoadMeta();
+        await controller.handleDataError(dataErrorEvent(error.message, error));
+      });
+
+    expect(runningLoadAtError).toBeNull();
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledOnce();
+  });
+
+  it('a user import that decoded but failed to render stays stored as unfinished', async () => {
+    // Saved before its render, the new import has replaced the old one in OPFS, so
+    // it is the one the next visit must offer to recover: it keeps the 'pending'
+    // status the save wrote, never 'success'.
+    mocks.loadData.mockRejectedValue(new Error('WebGL context lost'));
+    const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+
+    await controller.handleDataLoaded(loadedEvent);
+
+    expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
   });
 });
 

@@ -56,6 +56,23 @@ export async function seedOpfsState(page: Page, params: SeedOpfsParams): Promise
   );
 }
 
+/** The stored import's name and load status, or null when OPFS holds none. */
+export async function readStoredImport(
+  page: Page,
+): Promise<{ name: string; lastLoadStatus: string } | null> {
+  return page.evaluate(async () => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const store = await root.getDirectoryHandle('protspace-last-import');
+      const metadataFile = await (await store.getFileHandle('metadata.json')).getFile();
+      const { name, lastLoadStatus } = JSON.parse(await metadataFile.text());
+      return { name, lastLoadStatus };
+    } catch {
+      return null;
+    }
+  });
+}
+
 /** Removes the stored import from OPFS, if any. */
 export async function clearOpfs(page: Page): Promise<void> {
   await page.evaluate(async () => {

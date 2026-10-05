@@ -374,7 +374,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     errorSpy.mockRestore();
   });
 
-  it('an OPFS restore that fails to parse recovers under the epoch it began with', async () => {
+  it('an OPFS restore that fails to parse is flagged and recovers under the epoch it began with', async () => {
     // A menu click still downloading has taken a newer epoch; passing the
     // restore's own epoch lets the recovery clear the store without loading
     // the demo over the click.
@@ -387,6 +387,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
 
     await controller.handleDataError(dataErrorEvent());
 
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('error', { error: 'Corrupt bundle' });
     expect(mocks.persisted.recoverFromCorruptedPersistedDataset).toHaveBeenCalledWith(
       'could not be loaded',
       2,
