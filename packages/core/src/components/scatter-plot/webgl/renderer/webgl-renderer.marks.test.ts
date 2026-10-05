@@ -21,6 +21,7 @@ import {
   styleGetters,
 } from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';
+import { liveStyle } from './test-support/style-fixture';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
 
@@ -157,17 +158,7 @@ function setup(data: VisualizationData, pd: PlotData, marks: boolean) {
   let state: Partial<StyleConfig> = {};
   let getters = createStyleGetters(data, config);
   let pointMarks: PointMarks | null = null;
-  const style: WebGLStyleGetters = {
-    getColors: (p) => getters.getColors(p),
-    getPointSize: (p) => getters.getPointSize(p),
-    getOpacity: (p) => getters.getOpacity(p),
-    getDepth: (p) => getters.getDepth(p),
-    getShape: (p) => getters.getPointShape(p),
-    isPredicted: (p) => getters.isPredicted(p),
-    isMultilabel: () => getters.isMultilabel(),
-    createStylePass: () => getters.createStylePass(),
-    getPointMarks: () => pointMarks,
-  };
+  const style: WebGLStyleGetters = { ...liveStyle(() => getters), getPointMarks: () => pointMarks };
   const { renderer, gl } = makeRenderer({
     style,
     getConfig: () => ({ width: 800, height: 600, densityLayer: 'on' }) as never,

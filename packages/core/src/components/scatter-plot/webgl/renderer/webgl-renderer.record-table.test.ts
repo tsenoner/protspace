@@ -6,9 +6,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
 import { createStyleGetters, type StyleConfig } from '../../styling/style-getters';
-import type { WebGLStyleGetters } from '../types';
 import * as d3 from 'd3';
 import { makeRenderer } from './test-support/renderer-fixture';
+import { liveStyle } from './test-support/style-fixture';
 import type { MockGLOptions } from './test-support/mock-webgl2';
 import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
 import type * as PerfCounters from '../../../../utils/perf-counters';
@@ -73,17 +73,7 @@ const config: StyleConfig = {
 /** The renderer over getters the test swaps, as the scatter plot does on a legend change. */
 function setup(data: VisualizationData, opts: MockGLOptions = {}) {
   let getters = createStyleGetters(data, config);
-  const style: WebGLStyleGetters = {
-    getColors: (p) => getters.getColors(p),
-    getPointSize: (p) => getters.getPointSize(p),
-    getOpacity: (p) => getters.getOpacity(p),
-    getDepth: (p) => getters.getDepth(p),
-    getShape: (p) => getters.getPointShape(p),
-    isPredicted: (p) => getters.isPredicted(p),
-    isMultilabel: () => getters.isMultilabel(),
-    createStylePass: () => getters.createStylePass(),
-  };
-  const { renderer, gl } = makeRenderer({ ...opts, style });
+  const { renderer, gl } = makeRenderer({ ...opts, style: liveStyle(() => getters) });
   const pd = plotData(data);
   renderer.render(pd);
   expect(counters.restage).toBe(1);
@@ -182,18 +172,8 @@ describe('legend changes through the per-record style table', () => {
     const data = makeData(9);
     const state = { width: 800 };
     let getters = createStyleGetters(data, config);
-    const style: WebGLStyleGetters = {
-      getColors: (p) => getters.getColors(p),
-      getPointSize: (p) => getters.getPointSize(p),
-      getOpacity: (p) => getters.getOpacity(p),
-      getDepth: (p) => getters.getDepth(p),
-      getShape: (p) => getters.getPointShape(p),
-      isPredicted: (p) => getters.isPredicted(p),
-      isMultilabel: () => getters.isMultilabel(),
-      createStylePass: () => getters.createStylePass(),
-    };
     const { renderer, gl } = makeRenderer({
-      style,
+      style: liveStyle(() => getters),
       getScales: () => ({
         x: d3
           .scaleLinear()
