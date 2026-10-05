@@ -46,7 +46,7 @@ describe('plot-data-accessors', () => {
       expect(getProteinAnnotationValues(baseData(), 1, 'species')).toEqual(['mouse']);
     });
 
-    it('returns __NA__ for missing slot (-1) in Int32Array column', () => {
+    it('returns [] for missing slot (-1) in Int32Array column', () => {
       expect(getProteinAnnotationValues(baseData(), 1, 'gene_name')).toEqual([]);
     });
 
@@ -251,7 +251,7 @@ describe('plot-data-accessors', () => {
       expect(view.blocks).toEqual([]);
     });
 
-    it('returns empty header arrays when the named annotations are absent', () => {
+    it('returns empty header arrays for absent protein_name / uniprot_kb_id (gene_name still set)', () => {
       const view = buildTooltipView(baseData(), 0, 'species');
       expect(view.geneName).toEqual(['BRCA1']); // baseData has gene_name
       // No protein_name / uniprot_kb_id in baseData

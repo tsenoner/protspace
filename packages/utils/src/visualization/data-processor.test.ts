@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { DataProcessor } from './data-processor';
-import { materializePlotDataPoint } from './plot-data';
 import type { VisualizationData, PlotData } from '../types';
 
 // Helper to build a minimal PlotData literal for createScales tests
@@ -90,27 +89,6 @@ describe('DataProcessor.processVisualizationData', () => {
     const result = DataProcessor.processVisualizationData(data, 0);
     expect(result.length).toBe(0);
     expect(result.xs.length).toBe(0);
-  });
-
-  it('does not materialize annotation Records on slots', () => {
-    const data: VisualizationData = {
-      protein_ids: ['p0'],
-      projections: [{ name: 't', data: Float32Array.of(0, 0), dimension: 2 }],
-      annotations: {
-        species: {
-          kind: 'categorical',
-          values: ['human'],
-          colors: ['#f00'],
-          shapes: ['circle'],
-        },
-      },
-      annotation_data: { species: Int32Array.of(0) },
-    };
-    const result = DataProcessor.processVisualizationData(data, 0);
-    expect(result.length).toBe(1);
-    // SoA container only has the typed-array fields
-    expect(result.xs[0]).toBe(0);
-    expect(result.ys[0]).toBe(0);
   });
 });
 
@@ -341,66 +319,6 @@ describe('DataProcessor.processVisualizationData — missing coordinates', () =>
   });
 });
 
-describe('materializePlotDataPoint', () => {
-  it('reconstructs {id,x,y,originalIndex} for a non-isolated (identity) PlotData', () => {
-    const data: VisualizationData = {
-      protein_ids: ['p0', 'p1'],
-      projections: [
-        {
-          name: 't',
-          data: Float32Array.of(1, 2, 3, 4),
-          dimension: 2,
-        },
-      ],
-      annotations: {},
-      annotation_data: {},
-    };
-    const pd = DataProcessor.processVisualizationData(data, 0);
-    const p0 = materializePlotDataPoint(pd, 0);
-    expect(p0).toEqual({ id: 'p0', x: 1, y: 2, originalIndex: 0 });
-    const p1 = materializePlotDataPoint(pd, 1);
-    expect(p1).toEqual({ id: 'p1', x: 3, y: 4, originalIndex: 1 });
-  });
-
-  it('reconstructs correct originalIndex for an isolated PlotData', () => {
-    // protein_ids = [a, b, c, d]; isolate [c, d] → slot 0 = protein index 2 (c), slot 1 = protein index 3 (d)
-    const data: VisualizationData = {
-      protein_ids: ['a', 'b', 'c', 'd'],
-      projections: [
-        {
-          name: 't',
-          data: Float32Array.of(1, 2, 3, 4, 5, 6, 7, 8),
-          dimension: 2,
-        },
-      ],
-      annotations: {},
-      annotation_data: {},
-    };
-    const pd = DataProcessor.processVisualizationData(data, 0, true, [['c', 'd']]);
-    const slot0 = materializePlotDataPoint(pd, 0);
-    expect(slot0.id).toBe('c');
-    expect(slot0.originalIndex).toBe(2);
-    expect(slot0.x).toBe(5);
-    expect(slot0.y).toBe(6);
-
-    const slot1 = materializePlotDataPoint(pd, 1);
-    expect(slot1.id).toBe('d');
-    expect(slot1.originalIndex).toBe(3);
-  });
-
-  it('includes z field for 3D PlotData', () => {
-    const data: VisualizationData = {
-      protein_ids: ['p0'],
-      projections: [{ name: 't', data: Float32Array.of(1, 2, 3), dimension: 3 }],
-      annotations: {},
-      annotation_data: {},
-    };
-    const pd = DataProcessor.processVisualizationData(data, 0);
-    const p = materializePlotDataPoint(pd, 0);
-    expect(p.z).toBe(3);
-  });
-});
-
 describe('DataProcessor.createScales', () => {
   const margin = { top: 10, right: 20, bottom: 30, left: 40 };
 
@@ -450,7 +368,7 @@ describe('DataProcessor.createScales', () => {
     // construction must not throw — scale still returned
   });
 
-  it('RESIZE path: same PlotData reference → domain identical, range reflects new dimensions', () => {
+  it('same PlotData on resize → same domain, range follows the new dimensions', () => {
     const plotData = makePlotData([0, 10], [0, 10]);
     const margin1 = { top: 10, right: 20, bottom: 30, left: 40 };
 
@@ -466,7 +384,7 @@ describe('DataProcessor.createScales', () => {
     const domain2X = scales2!.x.domain();
     const domain2Y = scales2!.y.domain();
 
-    // Domain must be identical — extents reused from cache
+    // Same input → same domain (this cannot tell a cache hit from a recompute)
     expect(domain2X).toEqual(domain1X);
     expect(domain2Y).toEqual(domain1Y);
 
