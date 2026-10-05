@@ -22,7 +22,7 @@ const LEGACY_MAX_ROWS = 2_000_000;
  * this runs before grouping.
  */
 export const DEFAULT_VALIDATION_LIMITS = {
-  maxFileSizeBytes: 500 * 1024 * 1024, // 500MB
+  maxFileSizeBytes: 2 * 1024 * 1024 * 1024, // 2 GB
   maxRows: LEGACY_MAX_ROWS,
   maxColumns: 200,
   maxTotalCells: 1_000_000_000,
@@ -56,7 +56,10 @@ export function assertWithinFileSizeLimit(
   maxSizeBytes = DEFAULT_VALIDATION_LIMITS.maxFileSizeBytes,
 ): void {
   if (sizeBytes > maxSizeBytes) {
-    throw new Error(`File too large: ${(sizeBytes / (1024 * 1024)).toFixed(2)}MB exceeds limit`);
+    const mb = (bytes: number, digits: number) => (bytes / (1024 * 1024)).toFixed(digits);
+    throw new Error(
+      `File too large: ${mb(sizeBytes, 2)} MB exceeds the ${mb(maxSizeBytes, 0)} MB limit`,
+    );
   }
 }
 

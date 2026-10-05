@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateRowsBasic } from './validation';
+import { assertWithinFileSizeLimit, validateRowsBasic } from './validation';
 
 function makeRows(overrides: Record<string, unknown> = {}): Record<string, unknown>[] {
   return [{ id: '1', name: 'test', ...overrides }];
@@ -75,5 +75,15 @@ describe('validateRowsBasic row limit message', () => {
     expect(message).toContain('10');
     expect(message).toMatch(/proteins x projections/);
     expect(message).toMatch(/run "protspace convert"/i);
+  });
+});
+
+describe('assertWithinFileSizeLimit', () => {
+  it('admits a 2 GB file and names the limit when refusing a larger one', () => {
+    const limit = 2 * 1024 ** 3;
+    expect(() => assertWithinFileSizeLimit(limit)).not.toThrow();
+    expect(() => assertWithinFileSizeLimit(limit + 1024 ** 2)).toThrow(
+      'File too large: 2049.00 MB exceeds the 2048 MB limit',
+    );
   });
 });
