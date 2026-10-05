@@ -1,15 +1,16 @@
 # Performance checks
 
-Two Playwright modes drive the real Explore UI: annotation switch, projection switch (a glide,
+Three Playwright modes drive the real Explore UI: annotation switch, projection switch (a glide,
 then the same switch under reduced motion, which is instant), legend isolate, camera drag and
-wheel, resize, search, import. A third tool, the cross-browser WebGL suite (`pnpm perf:webgl`),
+wheel, resize, search, import. A separate tool, the cross-browser WebGL suite (`pnpm perf:webgl`),
 measures render passes per dataset in Chrome, Firefox and Safari; see its section at the end.
 
-| Command            | What it measures            | Browser                   | Gated                  | Time       |
-| ------------------ | --------------------------- | ------------------------- | ---------------------- | ---------- |
-| `pnpm perf:counts` | work counts per interaction | headless Chromium         | yes, by `budgets.json` | about 20 s |
-| `pnpm perf`        | timings per interaction     | headed Chromium, real GPU | no                     | about 50 s |
-| `pnpm perf:webgl`  | render passes per dataset   | Chrome, Firefox, Safari   | no                     | minutes    |
+| Command            | What it measures            | Browser                   | Gated                  | Time                |
+| ------------------ | --------------------------- | ------------------------- | ---------------------- | ------------------- |
+| `pnpm perf:counts` | work counts per interaction | headless Chromium         | yes, by `budgets.json` | about 20 s          |
+| `pnpm perf`        | timings per interaction     | headed Chromium, real GPU | no                     | about 50 s          |
+| `pnpm perf:scale`  | timings and memory over N   | headed Chrome, real GPU   | no                     | minutes per dataset |
+| `pnpm perf:webgl`  | render passes per dataset   | Chrome, Firefox, Safari   | no                     | minutes             |
 
 Counts do not depend on the machine, so they gate CI. Timings swing about 2× with the power state
 (battery, Low Power Mode), so they are only reported, as medians or as ratios between two builds
@@ -160,22 +161,25 @@ Event Timing and Long Animation Frames exist only in Chromium, so timing mode ru
 
 ### 573K example
 
-`pnpm perf --url http://localhost:8422 --datasets 573K_swissprot` takes about 3 minutes, most of
-it in the 4 + 1 runs of each segment. On an M-series MacBook on power (2026-10-04):
+`pnpm perf --url http://localhost:8473 --datasets 573K_swissprot` takes about 3 minutes, most of
+it in the 4 + 1 runs of each segment. On an M4 MacBook on power (2026-10-05, 3b3ca462):
 
 ```
-573K_swissprot  runs 4 (+1 warm-up)  cpu 1x  A=:8422  heap 45MB     median
-segment            INP ms  LoAF ms  top script                            busy ms  restage ms  p95 frame
-import             56      3917     FrameRequestCallback                  6911     6380        -
-annotation-switch  2224    2170     DIV.onclick                           2188     2110        -
-projection-switch  3104    3046     DIV.onclick                           3065     3009        -
-legend-isolate     3288    3230     BUTTON.ondblclick                     3244     3159        -
-camera             56      0        -                                     83       0           18
-resize             0       1115     ResizeObserverCallback                2237     2159        -
-search-select      1152    505      INPUT#protein-search-input.onkeydown  1110     1093        -
+573K_swissprot  runs 4 (+1 warm-up)  cpu 1x  A=:8473  heap 29MB     median
+segment                    INP ms  LoAF ms  top script            busy ms  restage ms  p95 frame
+import                     88      79       FrameRequestCallback  304      56          -
+annotation-switch          40      56       FrameRequestCallback  73       38          -
+projection-switch          40      70       FrameRequestCallback  116      35          17
+projection-switch-instant  40      68       FrameRequestCallback  91       33          -
+legend-isolate             56      0        -                     34       0           -
+camera                     56      0        -                     63       0           17
+resize                     0       0        -                     95       0           -
+search-select              36      0        -                     28       0           -
 ```
 
-At this size the re-stage (`restage ms`) is nearly all of each interaction.
+A switch of annotation or projection re-stages the GPU buffers once, about half of its
+main-thread time; legend, camera, resize and search no longer re-stage. Before the perf work
+(2026-10-04) each of these took 1 to 3 s at this size, nearly all of it in re-stages.
 
 ### Comparing two builds
 
@@ -247,6 +251,63 @@ On an M-series MacBook (2026-10-06):
 
 About 12 s of every swissprot run is the 5th-neighbour search on the source.
 
+## `pnpm perf:scale` (scaling benchmark)
+
+How far Explore scales with the number of points N, for papers and capacity planning. Per
+dataset it imports the bundle cold several times, then times each interaction, counts its work,
+and samples the browser's memory. Run it through the lock, wrapped in caffeinate, with nothing
+else using the GPU:
+
+```sh
+caffeinate -dims node ../protspace-perf/perf/lab/with-lock.mjs pnpm perf:scale \
+  --datasets 573K=apps/web/public/data/573K_swissprot.parquetbundle,5M=/abs/synth-5M.parquetbundle
+pnpm perf:scale --datasets 573K_swissprot --cold 2 --reps 5        # a quick check, about 3 min
+pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an already served build
+```
+
+| Flag                  | Default                       | Meaning                                                                    |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------------- |
+| `--datasets a=path,…` | required                      | `name=path`, a path, or a name in `apps/web/public/data/`                  |
+| `--cold N`            | 10                            | cold imports per dataset, each in a fresh context                          |
+| `--reps N`            | 20                            | measured reps per interaction, after 2 warm-ups                            |
+| `--rounds N`          | 1                             | repeat all datasets N times, interleaved                                   |
+| `--browser B`         | `chrome`                      | `chrome` (stable; falls back to Chromium), `chromium`, `firefox`, `webkit` |
+| `--url URL`           | own server                    | measure this server instead of building and serving                        |
+| `--port P`            | 8520                          | port of the own `vite preview` server                                      |
+| `--no-build`          |                               | serve the existing `apps/web/dist`                                         |
+| `--out DIR`           | `perf/results/scale-<stamp>/` | where the run and aggregate files go                                       |
+| `--guard-gb G`        | 2                             | kill the browser below G GB of free plus inactive memory                   |
+| `--timeout-min M`     | 60                            | kill a dataset's run after M minutes                                       |
+
+Each dataset and round is one browser run of the `perf-scale` Playwright project
+(`apps/web/tests/perf-scale.spec.ts`): headed, on the real GPU, 1600 × 1000 at DPR 2, with
+`?perfCounters`. It measures:
+
+- **Cold loads** (`--cold`): Explore opens on the demo dataset, then the bundle is imported
+  through the import control. In the page: file chosen → `data-loaded` → first frame drawn
+  after it → last counter change before the page settled (`load.chosenTo*Ms`). Also the points
+  drawn, the JS heap after a forced GC before and after, toasts and `renderer-degraded` events.
+- **Interactions**, on the last loaded page, 2 warm-ups then `--reps`: annotation switch, legend
+  hide and isolate, click select, search select, a lasso over 15% of the points (sized with the
+  plot's own polygon query), the projection switch under reduced motion and with its glide, a
+  2000 × 1500 export with a blank-image check, and a scripted 5 s pan and zoom. Each rep reports
+  INP, LoAF, busy and re-stage ms as in timing mode, `settledMs` (act to settled, including the
+  200 ms quiet window), frame gaps p50/p95 (glide and pan-zoom), and the work counts `restage`,
+  `render` and `uploadedBytesTotal` (buffer bytes uploaded). The lasso adds `upToRenderMs`, from
+  pointerup to the next frame drawn; the export adds `captureMs` and `blank`.
+- **Memory**: `perf/scale.mjs` samples the RSS of the browser's processes every 100 ms with
+  `ps`, classed by `--type=renderer` and `--type=gpu-process`, and reports the peak over the run
+  and per load, the value once each load settled, and bytes per point (settled minus the value
+  before the import, over N; also for the JS heap). RSS on macOS leaves out GPU memory the
+  driver holds outside the GPU process.
+- **Status**: `ok`, `crash`, `timeout`, `oom-guard` (the free-memory guard fired) or `error`;
+  whether every load drew N points, and the degradation notices. `pmset -g therm` is logged
+  before and after each dataset.
+
+Output: one `<stamp>-r<round>-<name>.json` per run, with every sample and the raw memory
+samples, then `aggregate.json` and `aggregate.csv` with the median, quartiles, IQR and n of each
+metric per dataset, across rounds. Keep generated bundles and results out of the repo.
+
 ## Files
 
 ```
@@ -265,6 +326,8 @@ perf/datasets.manifest.json                the datasets `pnpm perf:fetch` downlo
 perf/plot_perf_results.py                  plots of its results
 perf/scale/generate.py                     synthetic scaling bundles (`uv run`)
 perf/scale/bundle_writer.py                chunked v3 bundle writer
+apps/web/tests/perf-scale.spec.ts          scaling benchmark (opt-in project, PERF_SCALE=1)
+perf/scale.mjs                             `pnpm perf:scale`: server, memory, guard, aggregation
 ```
 
 ## `pnpm perf:webgl` (cross-browser WebGL suite)
