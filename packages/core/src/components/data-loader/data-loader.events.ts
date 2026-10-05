@@ -8,7 +8,10 @@ export interface DataErrorEventDetail extends HostMessageEventDetail<
   'data-loader',
   'error',
   DataErrorContext
-> {}
+> {
+  /** Always an `Error`: the loader wraps any non-Error it catches before dispatching. */
+  originalError?: Error;
+}
 
 export function createDataErrorEventDetail(
   message: string,

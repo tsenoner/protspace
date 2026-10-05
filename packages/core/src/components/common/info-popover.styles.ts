@@ -106,8 +106,13 @@ export const infoPopoverStyles = css`
     border-top: none;
   }
 
-  .popover-description {
+  .popover-description,
+  .popover-detail {
     margin: 0;
+  }
+
+  .popover-description + .popover-detail {
+    margin-top: 0.4rem;
   }
 
   .popover-link {

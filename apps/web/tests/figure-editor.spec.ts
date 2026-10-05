@@ -51,7 +51,7 @@ async function openFigureEditor(page: Page): Promise<void> {
  *  through the shadow-DOM overlay canvas. */
 async function setInsets(page: Page, insets: Inset[]): Promise<void> {
   await page.evaluate((nextInsets) => {
-    const m = document.querySelector('protspace-publish-modal') as
+    const m = document.querySelector('protspace-publish-modal') as unknown as
       | (HTMLElement & {
           _state: unknown;
           _plotCacheKey: string;
@@ -273,7 +273,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     // beforeEach already ran waitForExploreDataLoad, dismissTourIfPresent,
     // and openFigureEditor. Set small dimensions to keep the test fast.
     await page.evaluate(() => {
-      const m = document.querySelector('protspace-publish-modal') as
+      const m = document.querySelector('protspace-publish-modal') as unknown as
         | (HTMLElement & {
             _state: Record<string, unknown>;
             requestUpdate: () => void;
@@ -363,7 +363,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     ]);
 
     const initialInsetRenderSize = await page.evaluate(() => {
-      const modal = document.querySelector('protspace-publish-modal') as
+      const modal = document.querySelector('protspace-publish-modal') as unknown as
         | (HTMLElement & { _lastInsetCanvases: HTMLCanvasElement[] })
         | null;
       const insetCanvas = modal?._lastInsetCanvases[0];
@@ -375,7 +375,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     // target resizes. Keep a coarse responsiveness watchdog here while final
     // geometry and a usable preview remain the correctness assertions.
     const resizeOperation = page.evaluate(async () => {
-      const m = document.querySelector('protspace-publish-modal') as
+      const m = document.querySelector('protspace-publish-modal') as unknown as
         | (HTMLElement & {
             _state: { insets: Array<Record<string, unknown>> };
             requestUpdate: () => void;
@@ -408,7 +408,7 @@ test.describe('figure editor — geometric inset zoom', () => {
     await expect
       .poll(() =>
         page.evaluate((initialSize) => {
-          const modal = document.querySelector('protspace-publish-modal') as
+          const modal = document.querySelector('protspace-publish-modal') as unknown as
             | (HTMLElement & {
                 shadowRoot: ShadowRoot;
                 _lastInsetCanvases: HTMLCanvasElement[];
@@ -433,7 +433,7 @@ test.describe('figure editor — geometric inset zoom', () => {
       .toEqual({ previewReady: true, settled: true, finalInsetRendered: true });
 
     const finalRect = await page.evaluate(() => {
-      const modal = document.querySelector('protspace-publish-modal') as
+      const modal = document.querySelector('protspace-publish-modal') as unknown as
         | (HTMLElement & {
             _state: {
               insets: Array<{ targetRect: { x: number; y: number; w: number; h: number } }>;

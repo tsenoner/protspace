@@ -229,8 +229,9 @@ category.
 
 - **WHEN** a user increases or decreases legend point size
 - **THEN** the hollow transferred outline remains visibly thicker than the anti-alias fringe
-- **AND** a visible hollow interior remains at the default and maximum supported sizes (10 and 64);
-  at the smallest sizes the interior may fall below one device pixel
+- **AND** a visible hollow interior remains at shape sizes 10 and 64, the default for datasets of up
+  to 10,000 proteins and the maximum; at the smallest sizes, the default on the largest datasets,
+  the interior may fall below one device pixel
 - **AND** its responsive thickness is bounded rather than required to scale linearly with marker
   diameter, with identical live and exported rendering at the same point scale
 

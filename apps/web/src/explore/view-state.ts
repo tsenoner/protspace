@@ -12,6 +12,16 @@ export interface RequestedExploreView {
   density?: DensityLayerMode;
 }
 
+/**
+ * A dataset's own landing view (an example's curated `defaultView`). It fills
+ * whatever a view request leaves unset; see `resolveExploreView`.
+ */
+export interface ExploreViewDefaults {
+  annotation?: string;
+  projection?: string;
+  tooltip?: readonly string[];
+}
+
 export interface ExploreViewNormalization {
   annotation: boolean;
   projection: boolean;

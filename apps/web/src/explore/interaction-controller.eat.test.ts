@@ -41,7 +41,7 @@ function setup(data = makeData()) {
   const plotElement = {
     data,
     selectedAnnotation: 'ec',
-    selectedProteinIds: [],
+    selectedProteinIds: [] as string[],
     eatOverlayEnabled: true,
     isProteinLegendEligible: vi.fn(() => true),
     isProteinInCurrentView: vi.fn((index: number) => currentView.has(index)),

@@ -4,7 +4,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { StructureService, getBaseAccession } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
-import { createMolstarViewer, type MolstarViewer } from './molstar-loader';
+import { createMolstarViewer, type MolstarViewer, type StructureColorMode } from './molstar-loader';
 import { RESOURCE_LINKS } from './header-links';
 import {
   createStructureErrorEventDetail,
@@ -37,6 +37,8 @@ export class ProtspaceStructureViewer extends LitElement {
   @state() private _error: string | null = null;
   @state() private _viewer: MolstarViewer | null = null;
   @state() private _structureData: StructureData | null = null;
+  @state() private _colorMode: StructureColorMode = 'plddt';
+  private _loadController: AbortController | null = null;
   private _scatterplotElement: Element | null = null;
 
   // Refs
@@ -44,6 +46,9 @@ export class ProtspaceStructureViewer extends LitElement {
 
   protected updated(changedProperties: Map<string | number | symbol, unknown>) {
     if (changedProperties.has('proteinId')) {
+      // Cancel the in-flight load now: the deferred _cleanup runs a frame later, and until
+      // then the old load would still count as current
+      this._loadController?.abort();
       // Defer loading to avoid triggering updates during update cycle
       requestAnimationFrame(() => {
         if (this.proteinId) {
@@ -152,33 +157,54 @@ export class ProtspaceStructureViewer extends LitElement {
       return;
     }
 
+    // Clean up any existing viewer; this also cancels any load still in flight
+    this._cleanup();
+    const loadController = new AbortController();
+    this._loadController = loadController;
+    const { signal } = loadController;
+
     this._isLoading = true;
     this._error = null;
-    this._structureData = null;
 
     // Dispatch loading event
     this._dispatchStructureLoadEvent('loading');
 
     try {
-      // Clean up any existing viewer
-      this._cleanup();
-
       // Use service to load structure data
-      this._structureData = await StructureService.loadStructure(this.proteinId);
+      const structureData = await StructureService.loadStructure(this.proteinId, signal);
+      if (signal.aborted) {
+        this._revokeBlobUrl(structureData);
+        return;
+      }
+      this._structureData = structureData;
 
       // Create Mol* viewer
       await this.updateComplete;
+      if (signal.aborted) return;
       if (!this._viewerContainer) {
         throw new Error('Viewer container not available');
       }
-      this._viewer = await createMolstarViewer(this._viewerContainer);
+      // Each load mounts Mol* into its own element, which cleanup removes, so a viewer that
+      // finishes mounting after its load was replaced never shares the replacement's container
+      const mount = document.createElement('div');
+      mount.className = 'molstar-mount';
+      this._viewerContainer.appendChild(mount);
+      const viewer = await createMolstarViewer(mount, structureData.tedDomains);
+      if (signal.aborted) {
+        this._disposeViewer(viewer);
+        return;
+      }
+      this._viewer = viewer;
 
       // Load structure into viewer based on source
-      await this._displayStructure(this._structureData);
+      await this._displayStructure(structureData);
+      if (signal.aborted) return;
 
       this._isLoading = false;
       this._dispatchStructureLoadEvent('loaded');
     } catch (error) {
+      // A load replaced or closed mid-flight must not surface an error for the current state
+      if (signal.aborted) return;
       const originalError = error instanceof Error ? error : undefined;
       const formattedId = this.proteinId ? getBaseAccession(this.proteinId) : '';
       const genericMessage = `No 3D structure was found for ${formattedId}.`;
@@ -231,12 +257,13 @@ export class ProtspaceStructureViewer extends LitElement {
   }
 
   private _cleanup() {
+    this._loadController?.abort();
+    this._loadController = null;
+    this._isLoading = false;
+    this._colorMode = 'plddt';
+
     if (this._viewer) {
-      try {
-        this._viewer.dispose();
-      } catch (error) {
-        console.warn('[StructureViewer] Error disposing viewer:', error);
-      }
+      this._disposeViewer(this._viewer);
       this._viewer = null;
     }
 
@@ -245,15 +272,26 @@ export class ProtspaceStructureViewer extends LitElement {
     }
 
     // Clean up blob URL to prevent memory leaks
-    if (this._structureData?.url && this._structureData.url.startsWith('blob:')) {
+    this._revokeBlobUrl(this._structureData);
+    this._structureData = null;
+  }
+
+  private _disposeViewer(viewer: MolstarViewer) {
+    try {
+      viewer.dispose();
+    } catch (error) {
+      console.warn('[StructureViewer] Error disposing viewer:', error);
+    }
+  }
+
+  private _revokeBlobUrl(structureData: StructureData | null) {
+    if (structureData?.url && structureData.url.startsWith('blob:')) {
       try {
-        URL.revokeObjectURL(this._structureData.url);
+        URL.revokeObjectURL(structureData.url);
       } catch (error) {
         console.warn('[StructureViewer] Error revoking blob URL:', error);
       }
     }
-
-    this._structureData = null;
   }
 
   private _dispatchStructureLoadEvent(status: 'loading' | 'loaded') {
@@ -288,6 +326,38 @@ export class ProtspaceStructureViewer extends LitElement {
 
   private _handleClose() {
     this.close(); // Use internal close method
+  }
+
+  private get _hasTedDomains(): boolean {
+    return !!this._structureData?.tedDomains.length;
+  }
+
+  private get _canChangeColorMode(): boolean {
+    return !this._isLoading && !!this._viewer;
+  }
+
+  private get _tedButtonTitle(): string {
+    if (!this._canChangeColorMode) return 'Available once the structure has loaded';
+    return this._hasTedDomains
+      ? 'Color residues by TED domain'
+      : 'TED domain annotations are unavailable for this protein';
+  }
+
+  private async _handleColorModeChange(mode: StructureColorMode) {
+    const viewer = this._viewer;
+    if (!viewer || this._colorMode === mode) return;
+    if (mode === 'ted-domains' && !this._hasTedDomains) return;
+
+    // The control reflects the request immediately; the adapter applies requests in order
+    const previousMode = this._colorMode;
+    this._colorMode = mode;
+    try {
+      await viewer.setColorTheme(mode);
+    } catch (error) {
+      // Only roll back if neither a newer request nor a new structure has taken over
+      if (this._viewer === viewer && this._colorMode === mode) this._colorMode = previousMode;
+      console.warn('[StructureViewer] Failed to change structure color mode:', error);
+    }
   }
 
   render() {
@@ -363,11 +433,52 @@ export class ProtspaceStructureViewer extends LitElement {
         <div class="viewer-content"></div>
       </div>
 
+      ${!this._error
+        ? html`
+            <div class="color-toolbar">
+              <span class="color-toolbar-label">Color by</span>
+              <div
+                class="segmented color-mode-group"
+                role="group"
+                aria-label="Structure color mode"
+              >
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-color-mode="plddt"
+                  aria-pressed=${this._colorMode === 'plddt'}
+                  .disabled=${!this._canChangeColorMode}
+                  @click=${() => this._handleColorModeChange('plddt')}
+                >
+                  pLDDT
+                </button>
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-color-mode="ted-domains"
+                  aria-pressed=${this._colorMode === 'ted-domains'}
+                  .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
+                  title=${this._tedButtonTitle}
+                  @click=${() => this._handleColorModeChange('ted-domains')}
+                >
+                  TED domains
+                </button>
+              </div>
+            </div>
+          `
+        : ''}
       ${this.showTips && !this._error
         ? html`
             <div class="tips">
-              <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll to
-              zoom.<br />Colors show pLDDT confidence (blue = high, red = low).
+              <span class="interaction-tip">
+                <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll
+                to zoom.
+              </span>
+              <span class="color-description">
+                ${this._colorMode === 'ted-domains'
+                  ? 'Colors distinguish TED domains; gray residues are unassigned.'
+                  : 'Colors show pLDDT confidence (blue = high, red = low).'}
+              </span>
             </div>
           `
         : ''}

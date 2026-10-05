@@ -1,6 +1,27 @@
 ## Performance benchmarking & plotting
 
-### 1. Run benchmarks
+### 1. Fetch the datasets
+
+The benchmark does not read anything the app ships. Its bundles are assets of
+the `perf-datasets` GitHub release, pinned by id, size and sha256 in
+[`datasets.manifest.json`](./datasets.manifest.json). From the **repo root**:
+
+```sh
+pnpm perf:fetch                          # all of them into perf/datasets/ (gitignored)
+pnpm perf:fetch --only 573K_swissprot    # just the ones you need
+```
+
+The fetch verifies every file and fails on a mismatch; a file already there
+with the right bytes is kept. The release holds, under their original names,
+the eleven bundles the app used to serve from `apps/web/public/data/`, plus the
+manuscript's 113K β-lactamase bundle (`beta_lactamase_2026_stats`) and the
+832-protein phosphatase EAT bundle (`phosphatase_eat`), so the ids below and the
+manuscript's perf protocol keep working whatever the Import menu's examples
+become. `apps/protspace/scripts/generate_examples/stage_perf.py`
+stages the release and rewrites the manifest; publishing it is the repository
+owner's step.
+
+### 2. Run benchmarks
 
 From the **repo root**, run the Playwright-based WebGL performance suite:
 
@@ -10,8 +31,13 @@ PERF_ITERATIONS=5 pnpm perf      # override iteration count
 ```
 
 This launches headed browsers (Chrome, Firefox, Safari), loads every dataset
-listed in `apps/web/public/data/datasets.json`, and runs the scenarios in the
+the manifest marks `"default": true` (the ten of the former
+`apps/web/public/data/datasets.json`), and runs the scenarios in the
 table below against each one.
+The spec serves the in-page suite's `/data/datasets.json` and
+`/data/<id>.parquetbundle` requests from the manifest and `perf/datasets/`; a
+dataset that was never fetched is recorded under `failures`, naming
+`pnpm perf:fetch`, and the rest of the sweep still runs.
 
 The run blocks the Cloudflare Web Analytics beacon that `apps/web/index.html`
 loads. It has no place inside a measured window, and its cross-origin POST was
@@ -22,8 +48,10 @@ fail every run. `performance.memory` is Chrome-only, so the heap fields in the
 #### Scoping to specific datasets
 
 Use `PERF_DATASETS` (comma-separated dataset IDs) to benchmark only the
-datasets you care about. This is especially useful for the large `573K_swissprot`
-dataset, which is too slow to include in every full suite run:
+datasets you care about, including the ones outside the default sweep
+(`573K_swissprot`, `beta_lactamase_2026_stats`, `phosphatase_eat`). This is
+especially useful for the large `573K_swissprot` dataset, which is too slow to
+include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
@@ -39,13 +67,14 @@ as a positional test filter instead of a project filter and every browser projec
 runs.
 
 A dataset ID is a **file name**: the in-page suite loads
-`/data/${datasetId}.parquetbundle` (`apps/web/src/perf/webgl-perf-suite.ts`). So
-`PERF_DATASETS=573K_swissprot` measures the v2 bundle
-`apps/web/public/data/573K_swissprot.parquetbundle`, and the ParquetBundle v3 file
-is a separate dataset id, `573K_swissprot_v3`. Neither 573K bundle is committed.
+`/data/${datasetId}.parquetbundle` (`apps/web/src/perf/webgl-perf-suite.ts`), and
+the spec answers it with the manifest entry of that `file`. So
+`PERF_DATASETS=573K_swissprot` measures `perf/datasets/573K_swissprot.parquetbundle`;
+an id the manifest does not list, such as the ParquetBundle v3 `573K_swissprot_v3`,
+answers 404 and is recorded under `failures`.
 
 The spec passes the IDs to the in-page suite via the `webglPerfDatasets` URL
-parameter, which overrides the default `datasets.json` list.
+parameter, which overrides the default list.
 
 Dated copies of runs worth comparing against live in `perf/baselines/`; see the
 README there.
@@ -178,7 +207,7 @@ perf/test-results/webgl-perf-suite-chrome/
 
 The CDP sidecar is best-effort and is silently skipped on Firefox and Safari.
 
-### 2. Generate plots
+### 3. Generate plots
 
 #### Setup (kept entirely in `perf/`)
 

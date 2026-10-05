@@ -69,8 +69,15 @@ CLAUDE.md
 # Codex (CLI-generated OpenSpec skills; run `openspec init` locally)
 .codex
 
-# Local-only large fixture for the load-reliability Playwright spec
+# Former local-only fixture of load-large-bundle.spec.ts, which now reads the
+# perf-datasets copy in perf/datasets/; ignored so a leftover copy is never committed.
 apps/web/tests/fixtures/sprot_50.parquetbundle
+
+# Release-hosted example bundles, downloaded by `pnpm examples:fetch` (the deploy
+# fetches them into dist/ instead; neither copy is ever committed).
+apps/web/public/examples/
+# The perf-datasets release, downloaded by `pnpm perf:fetch`.
+/perf/datasets/
 
 # Notebook scratch: the Colab notebooks fetch/write these into the working
 # directory, which is the repo root when they are run locally.

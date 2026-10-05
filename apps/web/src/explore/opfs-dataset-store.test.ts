@@ -6,6 +6,7 @@ import {
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
+  restoreLastLoadStatus,
   saveLastImportedFile,
 } from './opfs-dataset-store';
 
@@ -291,6 +292,33 @@ describe('lastLoadStatus APIs', () => {
     stubNavigator(root);
 
     await markLastLoadStatus('pending');
+    expect(await readLastLoadStatus()).toBeNull();
+  });
+
+  it('restores a status read earlier, attempt count and error included', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+
+    const file = new File(['x'], 'a.parquetbundle');
+    await saveLastImportedFile(file);
+    await markLastLoadStatus('error', { error: 'boom' });
+    const before = await readLastLoadStatus();
+    await markLastLoadStatus('pending');
+    expect((await readLastLoadStatus())?.status).toBe('pending');
+
+    await restoreLastLoadStatus(before!);
+    expect(await readLastLoadStatus()).toEqual({
+      status: 'error',
+      lastError: 'boom',
+      failedAttempts: 1,
+    });
+  });
+
+  it('restoring is a no-op when no metadata is present', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+
+    await restoreLastLoadStatus({ status: 'success', failedAttempts: 0 });
     expect(await readLastLoadStatus()).toBeNull();
   });
 

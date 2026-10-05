@@ -41,14 +41,10 @@ from tests.bundle_v3_helpers import (
     read,
 )
 
-REAL_BUNDLE = (
-    Path(__file__).resolve().parents[3]
-    / "apps"
-    / "web"
-    / "public"
-    / "data"
-    / "venom_eat_stats.parquetbundle"
-)
+WEB_APP = Path(__file__).resolve().parents[3] / "apps" / "web"
+# The 811-protein bundle the app served as ``data/venom_eat_stats`` until the
+# curated example catalog replaced ``public/data/``, as #477 converted it to v3.
+REAL_BUNDLE = WEB_APP / "tests" / "fixtures" / "venom_eat_stats_811_v3.parquetbundle"
 
 
 # --------------------------------------------------------------------------- #
@@ -652,15 +648,17 @@ def test_flat_concatenates_a_multi_chunk_column():
 
 
 # --------------------------------------------------------------------------- #
-# the real shipped bundle
+# a real converted bundle, and the bundle the app serves
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.skipif(not REAL_BUNDLE.exists(), reason="web sample data not checked out")
+@pytest.mark.skipif(
+    not REAL_BUNDLE.exists(), reason="web test fixtures not checked out"
+)
 def test_real_bundle_round_trip():
     """``venom_eat_stats`` (v3, converted from v2; 811 x 36) is a fixed point.
 
-    Decoding the shipped bundle and encoding the tables again gives back the same
+    Decoding the converted bundle and encoding the tables again gives back the same
     parts, column for column: numerics, scored hits, the EAT overlay, the
     projection gap handling and part 2.  The v2 -> v3 differences this dataset
     went through on conversion (``%.4f`` scores losing a trailing zero, null
@@ -681,15 +679,15 @@ def test_real_bundle_round_trip():
     assert list(parts) == [*core[:3], core[5]]
 
 
-SERVED_BUNDLES = sorted(
-    [
-        *(REAL_BUNDLE.parent.glob("*.parquetbundle")),
-        REAL_BUNDLE.parents[1] / "data.parquetbundle",
-    ]
+# The one bundle the repository serves: the startup demo. Every other example is
+# a release asset, pinned by sha256 in ``apps/web/src/explore/example-manifest.ts``.
+SERVED_BUNDLES = [WEB_APP / "public" / "data.parquetbundle"]
+
+
+@pytest.mark.skipif(
+    not all(path.exists() for path in SERVED_BUNDLES),
+    reason="web sample data not checked out",
 )
-
-
-@pytest.mark.skipif(not REAL_BUNDLE.exists(), reason="web sample data not checked out")
 @pytest.mark.parametrize("path", SERVED_BUNDLES, ids=lambda path: path.name)
 def test_served_bundle_is_what_convert_writes_today(path):
     """Every dataset the app serves is v3 without the internal lookup columns.

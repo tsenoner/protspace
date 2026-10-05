@@ -142,7 +142,7 @@ describe('loadData overlay handling', () => {
       legendElement: {},
       overlayController: { update: overlayUpdate },
       plotElement: { clearIsolationState: vi.fn(), requestUpdate: vi.fn(), config: {} },
-      resolveInitialView: () => null,
+      resolveInitialView: (): null => null,
       structureViewer: { style: { display: 'none' } },
     } as unknown as Parameters<typeof createDataRenderer>[0]);
     return { loadData, overlayUpdate };

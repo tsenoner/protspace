@@ -93,7 +93,7 @@ _ANNOTATION_SETTINGS_KEYS = frozenset(
 )
 
 
-def _is_frontend_envelope(settings: object) -> bool:
+def is_frontend_envelope(settings: object) -> bool:
     """True only for the frontend's nested part-4 shape.
 
     Bare key presence is not a safe discriminator: annotation names come from
@@ -136,9 +136,7 @@ def unwrap_settings(settings: dict) -> dict:
     frontend-written dict hits scalar envelope values (``eatOverlayEnabled`` is a
     bool) and every legend colour/shape is silently dropped.
     """
-    return (
-        settings[LEGEND_SETTINGS_KEY] if _is_frontend_envelope(settings) else settings
-    )
+    return settings[LEGEND_SETTINGS_KEY] if is_frontend_envelope(settings) else settings
 
 
 def rewrap_settings(settings: dict, template: dict | None) -> dict:
@@ -155,7 +153,7 @@ def rewrap_settings(settings: dict, template: dict | None) -> dict:
     which that function filters out — so replacing the map wholesale would drop
     every numeric annotation's ``numericSettings``, palette and hidden values.
     """
-    if not _is_frontend_envelope(template):
+    if not is_frontend_envelope(template):
         return settings
     return {
         **template,

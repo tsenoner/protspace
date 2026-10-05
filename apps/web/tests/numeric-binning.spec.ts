@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
+import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -14,7 +15,7 @@ const RAW_NUMERIC_BUNDLE_PATH = path.join(
   'fixtures',
   'phosphatase_no_binning.parquetbundle',
 );
-const REPLACEMENT_BUNDLE_PATH = path.join(SPEC_DIR, '..', 'public', 'data', '5K.parquetbundle');
+const REPLACEMENT_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 
 async function loadBundleFromBytes(
   page: Page,
@@ -81,7 +82,7 @@ async function loadBundleFromBytes(
 }
 
 async function loadDataset(page: Page): Promise<void> {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1058,7 +1059,7 @@ test('raw numeric annotations are materialized into frontend bins', async ({ pag
 });
 
 test('numeric settings are staged, saved, and restored on re-import', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1206,7 +1207,7 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
 test('reset restores numeric settings defaults and clears saved state on re-import', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1637,7 +1638,7 @@ test('categorical keyboard reorder promotes to manual order and keeps Other fixe
 test('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -2273,7 +2274,7 @@ test('categorical drag-promoted manual order persists after re-import', async ({
 });
 
 test('long categorical legend labels wrap instead of clipping', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -2514,14 +2515,14 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
+      const cb = document.querySelector('protspace-control-bar') as unknown as
         | (Element & { filterActive?: boolean })
         | null;
       return cb?.filterActive ?? false;
     }),
   ).toBe(true);
 
-  await loadBundleFromBytes(page, replacementBundleBytes, '5K.parquetbundle');
+  await loadBundleFromBytes(page, replacementBundleBytes, 'toxprot_5181_pca3d.parquetbundle');
 
   // Loading a new dataset clears the active filter and renders the full
   // replacement data.
@@ -2536,7 +2537,7 @@ test('loading a new dataset clears active filters before rendering the replaceme
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
-    const cb = document.querySelector('protspace-control-bar') as
+    const cb = document.querySelector('protspace-control-bar') as unknown as
       | (Element & { filterActive?: boolean })
       | null;
     return {

@@ -27,6 +27,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The e2e-validation scenario "a role fixture is derived, not hand-edited": the four
+  # example_role_* fixtures must be exactly what the derivation script writes from the pinned
+  # fixtures, or the suite would test views no real example has. Fast and independent of
+  # Playwright, so it is a job of its own.
+  role-fixtures:
+    name: Example role fixtures are derived
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+
+      # The script pins its own pyarrow (inline metadata), so uv runs it outside the project.
+      - name: The committed role fixtures are what the script derives
+        run: uv run apps/web/tests/fixtures/derive-example-role-fixtures.py --check
+
   # Every default project except the Firefox/WebKit compatibility projects below. No apt:
   # every Chromium system library is already on the ubuntu-24.04 image. `--with-deps chromium
   # firefox webkit` used to pull ~180 packages (125 MB, nearly all WebKit's GStreamer/GTK4

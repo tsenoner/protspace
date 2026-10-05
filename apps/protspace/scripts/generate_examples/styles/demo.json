@@ -1,0 +1,27 @@
+{
+  "$comment": "As scripts/generate_toxprot_demo.py: the top nine values plus N/A for pfam, ec, superfamily and cath. protein_families keeps the demo's hand-curated legend (source_legends).",
+  "pfam": {
+    "sortMode": "manual",
+    "zOrderSort": "size-desc",
+    "maxVisibleValues": 10,
+    "pinnedValues": ["__REST__", ""]
+  },
+  "ec": {
+    "sortMode": "manual",
+    "zOrderSort": "size-desc",
+    "maxVisibleValues": 10,
+    "pinnedValues": ["__REST__", ""]
+  },
+  "superfamily": {
+    "sortMode": "manual",
+    "zOrderSort": "size-desc",
+    "maxVisibleValues": 10,
+    "pinnedValues": ["__REST__", ""]
+  },
+  "cath": {
+    "sortMode": "manual",
+    "zOrderSort": "size-desc",
+    "maxVisibleValues": 10,
+    "pinnedValues": ["__REST__", ""]
+  }
+}

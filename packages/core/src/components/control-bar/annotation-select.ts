@@ -304,7 +304,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                     >
                                     ${hasEatPredictions
                                       ? html`<span
-                                          class="eat-badge"
+                                          class="menu-badge eat-badge"
                                           title="Embedding Annotation Transfer predictions available"
                                           aria-label="EAT predictions available"
                                           >EAT</span
@@ -312,7 +312,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                       : ''}
                                     ${stats
                                       ? html`<span
-                                          class="stats-badge"
+                                          class="menu-badge stats-badge"
                                           title="Quality statistics available: select this annotation and open the projection metadata panel"
                                           aria-label="Quality statistics available"
                                           >STATS</span

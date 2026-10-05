@@ -21,8 +21,8 @@ has to agree with the container key in both directions.
 
 v3 is a *container-boundary* encoding: :func:`write_bundle` takes the v2-shaped
 tables the pipeline already builds and emits v3 parts, and every read here
-(:func:`read_tables`, :func:`read_bundle`, :func:`extract_bundle_to_dir`) hands
-back v2-shaped tables again, so nothing above this module has to know.  See
+(:func:`read_tables`, :func:`read_bundle_contents`, :func:`read_bundle`,
+:func:`extract_bundle_to_dir`) hands back v2-shaped tables again, so nothing above this module has to know.  See
 :mod:`protspace.data.io.bundle_v3`.
 
 Reading a legacy container is deprecated: every public *read* of one logs a
@@ -37,6 +37,7 @@ import io
 import json
 import logging
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
@@ -254,6 +255,50 @@ def read_tables(
     if keyed and payloads is None:
         annotations = _keyed_as_the_legacy_reader_keyed_it(annotations)
     return annotations, metadata, projections
+
+
+@dataclass(frozen=True)
+class BundleContents:
+    """Everything a bundle holds, as :func:`read_bundle_contents` reads it.
+
+    The three core tables are v2-shaped whatever the container (see
+    :func:`read_tables`); ``settings`` and ``statistics`` are ``None`` when the
+    bundle has none. ``container_version`` is part 1's
+    ``protspace_container_version`` (3), or ``None`` for a legacy container.
+    """
+
+    annotations: pa.Table
+    metadata: pa.Table
+    projections: pa.Table
+    settings: dict | None = None
+    statistics: pa.Table | None = None
+    container_version: int | None = None
+
+
+def read_bundle_contents(
+    path_or_bytes: Path | str | bytes, *, warn_legacy: bool = True
+) -> BundleContents:
+    """Read every part of a bundle with one split and one decode.
+
+    For a caller that needs more than the core tables (a verifier, a build that
+    rewrites the settings), where :func:`read_tables`,
+    :func:`read_settings_from_bundle` and :func:`read_statistics_from_bundle`
+    would each split the file again. A legacy container is read as it is stored,
+    never migrated. ``warn_legacy=False`` drops the deprecation warning, for a
+    caller that reads legacy files on purpose (a pinned input).
+    """
+    core, settings, statistics, payloads = _parse_bundle(
+        path_or_bytes, warn_legacy=warn_legacy
+    )
+    annotations, metadata, projections = _core_tables(core, payloads)
+    return BundleContents(
+        annotations=annotations,
+        metadata=metadata,
+        projections=projections,
+        settings=read_settings_from_bytes(settings) if settings else None,
+        statistics=read_part(statistics) if statistics else None,
+        container_version=CONTAINER_VERSION if payloads is not None else None,
+    )
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:

@@ -168,7 +168,7 @@ Category filtering and color mapping with automatic settings persistence.
 | `proteinIds`         | `string[]`                | `[]`    | Protein IDs backing the counts          |
 | `selectedItems`      | `string[]`                | `[]`    | Selected legend entries                 |
 | `maxVisibleValues`   | `number`                  | -       | Max categories (or target numeric bins) |
-| `shapeSize`          | `number`                  | -       | Size of legend symbols                  |
+| `shapeSize`          | `number`                  | -       | Dot size in use (see below)             |
 | `isolationMode`      | `boolean`                 | `false` | Reflects the plot's isolation state     |
 | `isolationHistory`   | `string[][]`              | `[]`    | Isolation stack from the plot           |
 
@@ -196,14 +196,19 @@ Category filtering and color mapping with automatic settings persistence.
 
 Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
 A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
-`shapeSize` may only be seeded from the current annotation.
+`shapeSize` may only be seeded from the current annotation, or be the default computed from the
+dataset's protein count, `clamp(round(10 · (10000 / N)^⅔), 1, 10)`, which is never stored or
+exported. The legend resolves `shapeSize` from the picked or applied size, then the annotation's own
+`shapeSize` (10 and 30 read as unset), then that default.
 
 ### Persistence
 
 User customizations (visibility, colors, ordering, settings) are saved to `localStorage` per dataset
 and annotation. Per-category state is not persisted for numeric annotations, whose legend entries
 are generated bin IDs. The shape size is stored per dataset instead: once picked, it applies to
-every annotation.
+every annotation. Reset in the settings dialog clears it, and every annotation's own size, so the
+default applies again; saving the dialog with the size field emptied does the same for the size
+alone.
 
 ### Example
 
@@ -224,25 +229,41 @@ Projection, annotation, contours, selection, filter and export controls.
 
 ### Properties
 
-| Property                | Type                      | Description                              |
-| ----------------------- | ------------------------- | ---------------------------------------- |
-| `projections`           | `string[]`                | Projection names to offer                |
-| `annotations`           | `string[]`                | Annotation names to offer                |
-| `selectedProjection`    | `string`                  | Active projection                        |
-| `selectedAnnotation`    | `string`                  | Active annotation                        |
-| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip |
-| `selectionMode`         | `boolean`                 | Selection mode toggle state              |
-| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                    |
-| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`           |
-| `selectedProteinsCount` | `number`                  | Count shown in the selection controls    |
-| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot   |
-| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot   |
+| Property                | Type                      | Description                                                     |
+| ----------------------- | ------------------------- | --------------------------------------------------------------- |
+| `projections`           | `string[]`                | Projection names to offer                                       |
+| `annotations`           | `string[]`                | Annotation names to offer                                       |
+| `selectedProjection`    | `string`                  | Active projection                                               |
+| `selectedAnnotation`    | `string`                  | Active annotation                                               |
+| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip                        |
+| `selectionMode`         | `boolean`                 | Selection mode toggle state                                     |
+| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                                           |
+| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`                                  |
+| `selectedProteinsCount` | `number`                  | Count shown in the selection controls                           |
+| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
+| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
+| `exampleDatasets`       | `ExampleDatasetSummary[]` | Example catalog, listed in the Import menu's "Examples" section |
+| `examplesDocsUrl`       | `string`                  | Page linked as "About these examples ↗"; no link when empty     |
+| `currentExampleId`      | `string \| null`          | id of the example currently loaded, `null` for a user import    |
 
 ### HTML attributes
 
 `selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`, `density-layer`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `current-dataset-is-demo`, `scatterplot-selector`, `auto-sync`.
+`current-dataset-name`, `current-example-id`, `examples-docs-url`, `scatterplot-selector`,
+`auto-sync`. `exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary`
+type is exported from `@protspace/core`:
+
+| Field         | Type      | Shown as                                                    |
+| ------------- | --------- | ----------------------------------------------------------- |
+| `id`          | `string`  | The `load-example-dataset` event's `detail.id`              |
+| `label`       | `string`  | The item's text                                             |
+| `description` | `string`  | The first paragraph of the item's info popover              |
+| `insight?`    | `string`  | The popover's second paragraph: what the curated view shows |
+| `docsUrl?`    | `string`  | The popover's "Learn more ↗" link                           |
+| `large?`      | `boolean` | A "Large" badge on the item                                 |
+
+When `currentExampleId` names an entry, the same info popover sits next to the current dataset name.
 
 ### Events
 
@@ -260,7 +281,7 @@ Projection, annotation, contours, selection, filter and export controls.
 | `reset-isolation`                 | `{}`                                     | Reset-isolation button pressed             |
 | `export`                          | `{ type, ...export options }`            | Export requested                           |
 | `open-publish-editor`             | `{}`                                     | Figure editor requested                    |
-| `load-demo-dataset`               | none                                     | Demo dataset requested                     |
+| `load-example-dataset`            | `{ id: string }`                         | An example dataset was chosen              |
 | `selection-disabled-notification` | `{ message, severity, source, context }` | Host-consumed warning (selection auto-off) |
 
 With `auto-sync`, the control bar also applies these changes directly to the target scatterplot, so
@@ -353,7 +374,7 @@ Exported from `@protspace/core` unless noted.
 
 ### readFileOptimized
 
-Read a file into an `ArrayBuffer`, chunking large files.
+Read a file into an `ArrayBuffer` (`File.arrayBuffer()`, which reads off the main thread).
 
 ```typescript
 function readFileOptimized(file: File): Promise<ArrayBuffer>;

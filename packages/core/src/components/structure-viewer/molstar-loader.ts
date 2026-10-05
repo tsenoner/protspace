@@ -1,8 +1,21 @@
 // Mol* dynamic loader and viewer factory
 
+import type { TedDomain } from '@protspace/utils';
+import { getTedDomainColor, TED_UNASSIGNED_COLOR } from './ted-domain-coloring';
+
 const MOLSTAR_VERSION = '3.44.0';
 const MOLSTAR_SCRIPT_URL = `https://cdn.jsdelivr.net/npm/molstar@${MOLSTAR_VERSION}/build/viewer/molstar.js`;
 const MOLSTAR_CSS_URL = `https://cdn.jsdelivr.net/npm/molstar@${MOLSTAR_VERSION}/build/viewer/molstar.css`;
+const TED_COLOR_THEME_NAME = 'protspace-ted-domain';
+// Mol*'s click-to-focus behavior draws its own ball-and-stick representations with its own themes
+const FOCUS_BEHAVIOR_NAME = 'create-structure-focus-representation';
+const FOCUS_PARTS = [
+  { tag: 'structure-focus-target-repr', param: 'targetParams' },
+  { tag: 'structure-focus-surr-repr', param: 'surroundingsParams' },
+] as const;
+type FocusParam = (typeof FOCUS_PARTS)[number]['param'];
+
+export type StructureColorMode = 'plddt' | 'ted-domains';
 
 export interface MolstarViewer {
   loadStructureFromUrl: (
@@ -11,7 +24,113 @@ export interface MolstarViewer {
     isBinary?: boolean,
     options?: Record<string, unknown>,
   ) => Promise<void>;
+  setColorTheme: (mode: StructureColorMode) => Promise<void>;
   dispose: () => void;
+}
+
+interface MolstarUnit {
+  kind: number;
+  elements: ArrayLike<number>;
+  model: {
+    atomicHierarchy: {
+      residueAtomSegments: { index: ArrayLike<number> };
+      residues: { label_seq_id: { value: (index: number) => number } };
+    };
+  };
+}
+
+interface MolstarLocation {
+  kind?: string;
+  unit?: MolstarUnit;
+  element?: number;
+  aUnit?: MolstarUnit;
+  aIndex?: number;
+}
+
+interface MolstarColorTheme {
+  name: string;
+  params?: unknown;
+}
+
+interface MolstarRepresentationRef {
+  cell: {
+    transform: {
+      ref: string;
+      tags?: string[];
+      params?: { type?: { name: string }; colorTheme?: MolstarColorTheme };
+    };
+  };
+}
+
+interface MolstarFocusBehaviorParams {
+  targetParams: { colorTheme: MolstarColorTheme };
+  surroundingsParams: { colorTheme: MolstarColorTheme };
+}
+
+interface MolstarBehaviorCell {
+  transform: {
+    ref: string;
+    transformer: { definition: { name: string } };
+    params?: MolstarFocusBehaviorParams;
+  };
+}
+
+interface MolstarComponentRef {
+  representations: MolstarRepresentationRef[];
+}
+
+interface MolstarStructureRef {
+  components: MolstarComponentRef[];
+}
+
+interface MolstarThemeUpdate {
+  color?: string;
+  colorParams?: unknown;
+}
+
+interface MolstarPlugin {
+  state: {
+    behaviors: {
+      cells: Map<string, MolstarBehaviorCell>;
+      build: () => {
+        to: (ref: string) => {
+          update: (edit: (params: MolstarFocusBehaviorParams) => void) => unknown;
+        };
+        commit: () => Promise<unknown>;
+      };
+    };
+  };
+  dataTransaction: (
+    edits: () => Promise<void>,
+    options?: { rethrowErrors?: boolean },
+  ) => Promise<void>;
+  representation: {
+    structure: {
+      themes: {
+        colorThemeRegistry: { add: (provider: unknown) => void };
+      };
+    };
+  };
+  managers: {
+    structure: {
+      hierarchy: { current: { structures: MolstarStructureRef[] } };
+      component: {
+        updateRepresentationsTheme: (
+          components: MolstarComponentRef[],
+          params: (
+            component: MolstarComponentRef,
+            representation: MolstarRepresentationRef,
+          ) => MolstarThemeUpdate,
+        ) => Promise<unknown> | undefined;
+      };
+    };
+  };
+}
+
+interface RawMolstarViewer {
+  loadStructureFromUrl: MolstarViewer['loadStructureFromUrl'];
+  dispose: () => void;
+  plugin: MolstarPlugin;
 }
 
 declare global {
@@ -35,10 +154,52 @@ declare global {
             validationProvider?: string;
             extensions?: unknown[];
           },
-        ) => Promise<MolstarViewer>;
+        ) => Promise<RawMolstarViewer>;
       };
     };
   }
+}
+
+function getResidueSequenceNumber(location: MolstarLocation): number | null {
+  const unit = location.kind === 'bond-location' ? location.aUnit : location.unit;
+  const element =
+    location.kind === 'bond-location' && unit && location.aIndex !== undefined
+      ? unit.elements[location.aIndex]
+      : location.element;
+
+  // Mol* Unit.Kind.Atomic is 0. Coarse units do not expose atomic residue numbering.
+  if (!unit || unit.kind !== 0 || element === undefined) return null;
+
+  const residueIndex = unit.model.atomicHierarchy.residueAtomSegments.index[element];
+  if (residueIndex === undefined) return null;
+
+  const sequenceNumber = unit.model.atomicHierarchy.residues.label_seq_id.value(residueIndex);
+  return Number.isFinite(sequenceNumber) ? sequenceNumber : null;
+}
+
+function createTedColorThemeProvider(domains: TedDomain[]) {
+  const factory = (_context: unknown, props: Record<string, never>) => ({
+    factory,
+    granularity: 'group' as const,
+    color: (location: MolstarLocation) => {
+      const residueSequenceNumber = getResidueSequenceNumber(location);
+      return residueSequenceNumber === null
+        ? TED_UNASSIGNED_COLOR
+        : getTedDomainColor(residueSequenceNumber, domains);
+    },
+    props,
+    description: 'Assigns categorical colors to TED domains.',
+  });
+
+  return {
+    name: TED_COLOR_THEME_NAME,
+    label: 'TED Domains',
+    category: 'Custom',
+    factory,
+    getParams: () => ({}),
+    defaultValues: {},
+    isApplicable: () => true,
+  };
 }
 
 async function ensureMolstarResourcesLoaded(): Promise<void> {
@@ -104,7 +265,10 @@ function installValidationInterceptor(): void {
   validationInterceptorInstalled = true;
 }
 
-export async function createMolstarViewer(container: HTMLElement): Promise<MolstarViewer> {
+export async function createMolstarViewer(
+  container: HTMLElement,
+  tedDomains: TedDomain[],
+): Promise<MolstarViewer> {
   await ensureMolstarResourcesLoaded();
 
   // Install fetch interceptor to suppress validation server errors
@@ -125,5 +289,112 @@ export async function createMolstarViewer(container: HTMLElement): Promise<Molst
   if (!viewer) {
     throw new Error('Failed to initialize Mol* viewer');
   }
-  return viewer;
+
+  const { plugin } = viewer;
+  plugin.representation.structure.themes.colorThemeRegistry.add(
+    createTedColorThemeProvider(tedDomains),
+  );
+
+  // Preset themes (pLDDT for AlphaFold mmCIF, chain-id for a model without confidence data),
+  // captured before the first switch away so pLDDT mode restores exactly them. Keyed by
+  // representation ref, or by behavior param for the focus behavior's representations.
+  const presetThemes = new Map<string, MolstarColorTheme>();
+  const capturePresetTheme = (key: string, theme: MolstarColorTheme | undefined) => {
+    if (theme && theme.name !== TED_COLOR_THEME_NAME && !presetThemes.has(key)) {
+      presetThemes.set(key, theme);
+    }
+  };
+  const representationKey = ({ cell }: MolstarRepresentationRef) =>
+    FOCUS_PARTS.find(({ tag }) => cell.transform.tags?.includes(tag))?.param ?? cell.transform.ref;
+  // Interaction (non-covalent contact) representations keep their own interaction-type theme:
+  // TED has no residue for an interaction location and would paint every contact gray
+  const isThemeable = ({ cell }: MolstarRepresentationRef) =>
+    cell.transform.params?.type?.name !== 'interactions';
+  const findFocusBehavior = () =>
+    [...plugin.state.behaviors.cells.values()].find(
+      (cell) => cell.transform.transformer.definition.name === FOCUS_BEHAVIOR_NAME,
+    );
+
+  const applyColorTheme = async (mode: StructureColorMode) => {
+    const components = plugin.managers.structure.hierarchy.current.structures.flatMap(
+      (structure) => structure.components,
+    );
+    const representations = components
+      .flatMap((component) => component.representations)
+      .filter(isThemeable);
+    const focusBehavior = findFocusBehavior();
+    const previousFocusThemes = new Map(
+      FOCUS_PARTS.map(({ param }) => [param, focusBehavior?.transform.params?.[param].colorTheme]),
+    );
+    for (const repr of representations) {
+      capturePresetTheme(representationKey(repr), repr.cell.transform.params?.colorTheme);
+    }
+    for (const { param } of FOCUS_PARTS) {
+      capturePresetTheme(param, focusBehavior?.transform.params?.[param].colorTheme);
+    }
+    const themeFor = (key: string): MolstarColorTheme | undefined =>
+      mode === 'ted-domains' ? { name: TED_COLOR_THEME_NAME, params: {} } : presetThemes.get(key);
+
+    const updateFocusBehavior = async (
+      themeForPart: (param: FocusParam) => MolstarColorTheme | undefined,
+    ) => {
+      if (!focusBehavior) return;
+      const update = plugin.state.behaviors.build();
+      update.to(focusBehavior.transform.ref).update((params) => {
+        for (const { param } of FOCUS_PARTS) {
+          const theme = themeForPart(param);
+          if (theme) params[param].colorTheme = theme;
+        }
+      });
+      await update.commit();
+    };
+
+    try {
+      // One transaction for every structure, so a failed representation reverts them all
+      await plugin.dataTransaction(
+        async () => {
+          // Focus representations are created lazily from the behavior's params and drop out of
+          // the hierarchy while nothing is focused, so the behavior itself must follow the mode
+          await updateFocusBehavior(themeFor);
+          await plugin.managers.structure.component.updateRepresentationsTheme(
+            components,
+            (_component, repr) => {
+              if (!isThemeable(repr)) return {};
+              const theme = themeFor(representationKey(repr));
+              return theme
+                ? { color: theme.name, colorParams: theme.params }
+                : { color: 'default' };
+            },
+          );
+        },
+        { rethrowErrors: true },
+      );
+
+      // Mol* reverts a failed transform without throwing, so confirm the theme landed
+      const applied = representations.every(
+        ({ cell }) =>
+          (cell.transform.params?.colorTheme?.name === TED_COLOR_THEME_NAME) ===
+          (mode === 'ted-domains'),
+      );
+      if (!applied) throw new Error(`Mol* did not apply the ${mode} color theme`);
+    } catch (error) {
+      // The behavior lives in a separate state tree the data transaction does not revert, so
+      // put its themes back too, or later focus representations would use the failed mode
+      await updateFocusBehavior((param) => previousFocusThemes.get(param)).catch(() => {});
+      throw error;
+    }
+  };
+
+  // Theme updates are serialized so the most recently requested mode is applied last
+  let colorThemeQueue: Promise<void> = Promise.resolve();
+
+  return {
+    loadStructureFromUrl: (...args) => viewer.loadStructureFromUrl(...args),
+    setColorTheme: (mode) => {
+      const apply = () => applyColorTheme(mode);
+      colorThemeQueue = colorThemeQueue.then(apply, apply);
+      return colorThemeQueue;
+    },
+    dispose: () => viewer.dispose(),
+  };
 }

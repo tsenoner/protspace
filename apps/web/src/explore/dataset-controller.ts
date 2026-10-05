@@ -7,6 +7,7 @@ import type {
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
 } from '@protspace/core';
+import type { VisualizationData } from '@protspace/utils';
 import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, generateDatasetHash } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import {
@@ -14,80 +15,221 @@ import {
   getDatasetPersistenceFailureNotification,
   getLegacyBundleFormatNotification,
 } from './notifications';
-import { markLastLoadStatus, saveLastImportedFile } from './opfs-dataset-store';
+import {
+  clearLastImportedFile,
+  markLastLoadStatus,
+  saveLastImportedFile,
+} from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
+import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
+import { progressAfterExampleDownload, type LoadingOverlayController } from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
-import type { PersistedLoadOutcome } from './persisted-dataset';
+import type {
+  ExampleLoadCancel,
+  ImportPreparation,
+  PersistedLoadOutcome,
+} from './persisted-dataset';
 import { readTooltipAnnotations, writeTooltipAnnotations } from './tooltip-annotations-store';
+import type {
+  DatasetChangeSource,
+  ExampleCancelResult,
+  ExampleLoadOutcome,
+  LoadMeta,
+} from './types';
+import { createEmptyExploreViewRequest } from './url-state';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
   controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
-  defaultDatasetName: string;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
   loadQueue: LoadQueue;
-  overlayController: {
-    update(show: boolean, progress?: number, message?: string, subMessage?: string): void;
-  };
+  overlayController: Pick<LoadingOverlayController, 'update' | 'setCancelHandler'>;
   plotElement: ProtspaceScatterplot;
-  setCurrentDatasetIsDemo(isDemo: boolean): void;
+  setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
   structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
+  /**
+   * Called after the loading overlay's Cancel has aborted an example
+   * download, under the new user epoch it took (`handleCancelledExampleLoad`
+   * in startup.ts).
+   */
+  onExampleLoadCancelled?(cancel: ExampleLoadCancel): void;
 }
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
-  loadPersistedOrDefaultDataset(): Promise<PersistedLoadOutcome>;
+  /**
+   * Loads an example in place of the stored import (a menu choice), which
+   * `handleDataLoaded` clears once the example has decoded and is current.
+   */
+  loadExampleDatasetAndClearPersistedFile(
+    entry: ExampleDataset,
+    source: DatasetChangeSource,
+  ): Promise<ExampleLoadOutcome>;
+  /**
+   * Loads an example without touching OPFS (`'url'`: a `?dataset=` deep link
+   * or Back/Forward), under `epoch` when given (see `beginUserRequest`).
+   */
+  loadExampleDataset(
+    entry: ExampleDataset,
+    source: DatasetChangeSource,
+    options?: { epoch?: number },
+  ): Promise<ExampleLoadOutcome>;
+  /** The startup load without an example; app-initiated, under `epoch` when given. */
+  loadPersistedOrDefaultDataset(options?: { epoch?: number }): Promise<PersistedLoadOutcome>;
   tryLoadPersistedAgain(file: File): Promise<void>;
+  /**
+   * Starts a user request: takes a new request epoch, which supersedes any
+   * example load still in flight and aborts its download, and returns it.
+   * Called for a user file import, for Back/Forward, and on teardown, so a
+   * slower, now-stale load can never overwrite what the user asked for.
+   */
+  beginUserRequest(): number;
+  /** The request epoch an app-initiated flow starting now runs under. */
+  currentRequestEpoch(): number;
+  /**
+   * Starts the preparation step (a FASTA upload) of the user import that took
+   * `epoch`: the next user request aborts it and takes its Cancel button over
+   * (`beginImportPreparation` in persisted-dataset.ts).
+   */
+  beginImportPreparation(epoch: number): ImportPreparation;
+  /** Whether any dataset has been rendered yet (false only before the first load succeeds). */
+  hasDisplayedDataset(): boolean;
+  /**
+   * Cancels the example load in flight (only one started from `source`, when
+   * given): supersedes it as a user request, aborts its download and
+   * dismisses its overlay. One that has begun replacing the plot is
+   * `'committed'` and finishes.
+   */
+  cancelPendingExampleLoad(options?: { source?: DatasetChangeSource }): ExampleCancelResult;
+  subscribeToDatasetChanges(
+    callback: (exampleId: string | null, source: DatasetChangeSource) => void,
+  ): () => void;
+  /**
+   * Reports the Retry of a failed `?dataset=` download, for the URL sync hook
+   * to re-request (`retryUrlExample` in persisted-dataset.ts).
+   */
+  subscribeToExampleRetries(callback: (exampleId: string) => void): () => void;
   handleLoadingStart(): void;
   handleLoadingProgress(event: Event): void;
   handleDataLoaded(event: Event): Promise<void>;
   handleDataError(event: Event): Promise<void>;
+  /**
+   * Whether the load queue can skip `meta`'s load without decoding it: an
+   * example load a newer user request has superseded while it waited. A
+   * superseded OPFS restore or user import still decodes, so the restore
+   * records its stored status and the import its outcome.
+   */
+  isSkippableQueuedLoad(meta: LoadMeta): boolean;
   /** Proteins the loaded file holds that the dataset leaves out (no projection places them). */
   getUnplacedProteinCount(): number;
+}
+
+/**
+ * Development aid: names every `defaultView` name the loaded bundle lacks. The
+ * view then falls back to the bundle's first annotation or projection and
+ * drops the missing tooltip names (see `resolveExploreView`).
+ */
+function warnOnMissingDefaultViewNames(entry: ExampleDataset, data: VisualizationData): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  const annotations = new Set(Object.keys(data.annotations));
+  const projections = new Set(data.projections.map((projection) => projection.name));
+  const { annotation, projection, tooltip = [] } = entry.defaultView;
+  const missing = [
+    ...(annotations.has(annotation) ? [] : [`annotation "${annotation}"`]),
+    ...(projections.has(projection) ? [] : [`projection "${projection}"`]),
+    ...tooltip.filter((name) => !annotations.has(name)).map((name) => `tooltip "${name}"`),
+  ];
+  if (missing.length > 0) {
+    console.warn(
+      `Example "${entry.id}" defaultView names missing from its bundle: ${missing.join(', ')}`,
+    );
+  }
 }
 
 export function createDatasetController({
   controlBar,
   dataLoader,
-  defaultDatasetName,
   getIsDisposed,
   interactionController,
   legendElement,
   loadQueue,
   overlayController,
   plotElement,
-  setCurrentDatasetIsDemo,
+  setCurrentExampleId,
   setCurrentDatasetName,
   structureViewer,
   viewController,
+  onExampleLoadCancelled,
 }: DatasetControllerOptions): DatasetController {
+  // An example's download fills the first part of the loading bar
+  // (persisted-dataset.ts). Its decode and render phases report 0–100 of
+  // their own, mapped onto the rest, so the bar never runs backwards. A load
+  // a newer request has superseded leaves the overlay alone: that request
+  // owns it, and a render step or the render's final hide would otherwise
+  // cover or dismiss its "Downloading…".
+  const phaseOverlayController: Pick<LoadingOverlayController, 'update'> = {
+    update(show, progress, message, subMessage, note) {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
+      const afterDownload =
+        show && progress !== undefined && loadQueue.getRunningLoadMeta()?.example != null;
+      overlayController.update(
+        show,
+        afterDownload ? progressAfterExampleDownload(progress) : progress,
+        message,
+        subMessage,
+        note,
+      );
+    },
+  };
+
   const loadData = createDataRenderer({
     controlBar,
     getIsDisposed,
     interactionController,
     legendElement,
-    overlayController,
+    overlayController: phaseOverlayController,
     plotElement,
     resolveInitialView: viewController.resolveLatestView,
     structureViewer,
   });
 
+  const exampleRetrySubscribers = new Set<(exampleId: string) => void>();
   const persistedDatasetController = createPersistedDatasetController({
     dataLoader,
-    registerFileLoad(file, kind) {
-      loadQueue.registerFileLoad(file, kind);
-    },
-    setCurrentDatasetIsDemo,
+    overlayController,
+    registerFileLoad: loadQueue.registerFileLoad,
+    awaitLoadOutcome: loadQueue.awaitLoadOutcome,
+    setCurrentExampleId,
     setCurrentDatasetName,
+    retryUrlExample(exampleId) {
+      exampleRetrySubscribers.forEach((callback) => callback(exampleId));
+    },
+    onExampleLoadCancelled,
+    isDisposed: getIsDisposed,
   });
 
+  // Reports which example (or no example) is now showing and why, so the URL
+  // sync hook can decide whether/how to write `?dataset=`. Only successful
+  // loads are reported, plus a 'recovery-required' startup (nothing showing).
+  const datasetChangeSubscribers = new Set<
+    (exampleId: string | null, source: DatasetChangeSource) => void
+  >();
+  const emitDatasetChange = (exampleId: string | null, source: DatasetChangeSource) => {
+    datasetChangeSubscribers.forEach((callback) => callback(exampleId, source));
+  };
+
+  // The dataset on screen, by its hash (null until the first load renders).
   let currentDatasetHash: string | null = null;
   let currentUnplacedProteinCount = 0;
   viewController.subscribeToViewChanges((change) => {
@@ -96,11 +238,68 @@ export function createDatasetController({
     }
   });
 
+  // Name, id and the dataset-change emit for a successful example load happen
+  // in `handleDataLoaded`, keyed on the example in load meta, so a load that
+  // later fails to parse never announces success.
+  const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
+    await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(
+      DEFAULT_EXAMPLE_DATASET,
+      'startup',
+    );
+  };
+
+  const loadPersistedOrDefaultDataset = async (
+    options: { epoch?: number } = {},
+  ): Promise<PersistedLoadOutcome> => {
+    const outcome = await persistedDatasetController.loadPersistedOrDefaultDataset(options);
+    if (outcome.kind === 'recovery-required') {
+      // Nothing loads while the recovery banner is up, so nothing reaches
+      // `handleDataLoaded`: report "no example" here so a stale `?dataset=`
+      // from a failed/unknown deep link is replace-deleted from the URL. And
+      // dismiss the overlay of an example load this request superseded (a
+      // Back to an entry without `dataset=`), which would otherwise stay up.
+      overlayController.update(false);
+      // The banner's file names the current dataset only on an empty page:
+      // after a Back/Forward the plot still shows the dataset it showed, and
+      // keeps its name until the user picks a banner action.
+      if (currentDatasetHash === null) {
+        setCurrentDatasetName(outcome.file.name);
+        setCurrentExampleId(null);
+      }
+      emitDatasetChange(null, 'startup');
+    } else if (outcome.kind === 'default-failed' && currentDatasetHash === null) {
+      // The demo standing in for a failed or unknown deep link failed too,
+      // and nothing is on screen: drop the stale `?dataset=` as the demo's
+      // own load would have (its failure toast offers Retry).
+      emitDatasetChange(null, 'startup');
+    }
+    // 'auto-loaded' (OPFS) and 'default-loaded' (demo) report through
+    // `handleDataLoaded` on success; 'preempted' means a user request took
+    // over, and that request reports its own outcome.
+    return outcome;
+  };
+
+  /**
+   * Whether a newer user request has superseded `meta`'s load (an example
+   * load, an OPFS restore or a user import), by the epoch it began under.
+   * Loads without an epoch (the perf suite's) are never superseded.
+   */
+  const isLoadSuperseded = (meta: LoadMeta | null | undefined): boolean =>
+    meta?.epoch !== undefined && !persistedDatasetController.isCurrentRequest(meta.epoch);
+
   const handleDataLoaded = async (event: Event) => {
     let loadSequence: number | null = null;
-    // Set once this call is known to finish the running load, which is the load that
-    // showed the overlay. A stale result must leave that load's overlay alone.
+    // True only once this load has rendered and finalized; a stale load, one
+    // superseded before it rendered, or a throwing one resolves its pending
+    // finalization as a failure.
+    let success = false;
+    // Set once this call is known to finish the load that showed the overlay. A stale
+    // result, or one a newer user request superseded, must leave that request's overlay
+    // alone.
     let ownsOverlay = false;
+    // Set once a newer user request is known to have superseded this load (checked
+    // after the render, or on a failure): that request owns the overlay by then.
+    let superseded = false;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -128,7 +327,45 @@ export function createDatasetController({
         });
         return;
       }
+
+      // A load a newer user request has superseded by now must not save,
+      // render, label itself, emit, or touch the view: the newer request owns
+      // the screen, and its own load renders over this one or its fallback
+      // runs. That covers example loads, and also the startup restore of the
+      // stored import and a user import, whose emit would otherwise remove
+      // `dataset=` from the entry a Back/Forward went to. The queue-level
+      // check above can't see this (this load is still the running one).
+      const isSuperseded = () => isLoadSuperseded(loadMeta);
+      if (isSuperseded()) {
+        if (loadMeta.kind === 'opfs') {
+          // The stored import decoded fine; only a newer request kept it off
+          // screen. Record that, so no 'pending' status is left behind to
+          // offer recovery for it, and a later startup load restores it.
+          try {
+            await markLastLoadStatus('success');
+          } catch (statusError) {
+            console.warn('Failed to update OPFS load status to success:', statusError);
+          }
+        }
+        return;
+      }
       ownsOverlay = true;
+      if (loadMeta.example && loadMeta.epoch !== undefined) {
+        // From here the example replaces the stored import and the plot, so
+        // it can no longer be cancelled (a Back/Forward that only changes the
+        // view leaves it to finish).
+        persistedDatasetController.commitExampleLoad(loadMeta.epoch);
+      }
+
+      // From here the load replaces the stored import (saving a user import,
+      // clearing it for a menu choice) and then the plot, so it finishes even
+      // when a newer user request supersedes it meanwhile. Stopping between
+      // the two would leave the store out of step with the screen: the import
+      // still on screen deleted, or a new one saved as 'pending' but never
+      // shown, which the next visit offers to recover. The newer request's own
+      // load is queued behind this one and replaces it; until then this load
+      // leaves the view request and the URL, which that request owns, alone
+      // (`isSuperseded()` below).
 
       if (loadMeta.kind === 'user' && file) {
         overlayController.update(
@@ -143,6 +380,18 @@ export function createDatasetController({
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
+      } else if (loadMeta.example?.replacesStoredImport) {
+        // A menu choice replaces the stored import only now that the example
+        // has downloaded, decoded and is still current — never before the
+        // fetch, which deleted the import still on screen whenever the
+        // download or parse failed or the request was superseded. Running
+        // inside this load's queue slot also orders it after the save of any
+        // user import queued ahead of it, so the last choice is what sticks.
+        try {
+          await clearLastImportedFile();
+        } catch (error) {
+          console.warn('Failed to clear persisted dataset before showing example dataset:', error);
+        }
       }
 
       const datasetHash = generateDatasetHash(data);
@@ -152,7 +401,32 @@ export function createDatasetController({
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
       controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
 
+      // The dataset's own landing view fills whatever the view request leaves
+      // unset. Set for every load (null for user imports, OPFS restores and
+      // perf loads) before `loadData`, which resolves the initial view.
+      viewController.setDatasetDefaults(loadMeta.example?.entry.defaultView ?? null);
+      if (loadMeta.example) {
+        warnOnMissingDefaultViewNames(loadMeta.example.entry, data);
+      }
+      if (loadMeta.example?.source === 'menu' && !isSuperseded()) {
+        // A menu choice opens the example on its curated view, contours Off.
+        // The recorded request still holds the previous dataset's annotation,
+        // projection, tooltip and contour mode, which would otherwise carry
+        // over wherever the names also exist in this bundle;
+        // `getDatasetSearchParamsUpdate` drops the same parameters from the
+        // pushed URL. Reset only here, for a load that decoded and is still
+        // current, so a failed or superseded menu choice leaves the request,
+        // the plot and the URL as they were.
+        viewController.recordRequestedView(createEmptyExploreViewRequest());
+      }
+
       await loadData(data);
+
+      // `loadData` can take long enough for a newer user request to land
+      // while it runs. This dataset is on screen all the same, so it is
+      // labelled and recorded as the one displayed; only the URL and the view
+      // request, which that request owns, are left alone.
+      superseded = isSuperseded();
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
@@ -174,12 +448,24 @@ export function createDatasetController({
           settings.eatConfidenceThreshold !== undefined ||
           settings.shapeSize !== undefined);
 
-      if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
+      // An example load carries its entry in load meta (set by
+      // persisted-dataset.ts's `loadExampleDataset`), so it's identified by
+      // that, not by `kind === 'default'` — the perf suite also issues
+      // 'default'-kind loads and must never be labelled as an example.
+      if (loadMeta.example) {
+        setCurrentDatasetName(loadMeta.example.entry.label);
+        setCurrentExampleId(loadMeta.example.entry.id);
+        emitDatasetChange(
+          loadMeta.example.entry.id,
+          superseded ? 'superseded' : loadMeta.example.source,
+        );
+      } else if ((loadMeta.kind === 'user' || loadMeta.kind === 'opfs') && file) {
         setCurrentDatasetName(file.name);
-        setCurrentDatasetIsDemo(false);
-      } else if (loadMeta.kind === 'default') {
-        setCurrentDatasetName(defaultDatasetName);
-        setCurrentDatasetIsDemo(true);
+        setCurrentExampleId(null);
+        emitDatasetChange(
+          null,
+          superseded ? 'superseded' : loadMeta.kind === 'user' ? 'user' : 'startup',
+        );
       }
 
       // Must be set before the restore block so that any view-change emitted by
@@ -189,71 +475,78 @@ export function createDatasetController({
       currentDatasetHash = datasetHash;
       currentUnplacedProteinCount = unplacedProteinCount;
 
-      const latestRequest = viewController.getLatestViewRequest();
-      // A first-ever load (no previous dataset) that happens to be a user file drop
-      // is NOT a stale-URL situation — there is no previous dataset whose tooltip
-      // param could be carried over — so honor the URL like annotation/projection do.
-      const isUserImport = loadMeta.kind === 'user' && hadPreviousDataset;
+      // The tooltip restore and the view apply resolve the latest view request,
+      // which a newer request that superseded this load has replaced with its
+      // own, and they write the URL entry that request went to.
+      if (!superseded) {
+        const latestRequest = viewController.getLatestViewRequest();
+        // A first-ever load (no previous dataset) that happens to be a user file drop
+        // is NOT a stale-URL situation — there is no previous dataset whose tooltip
+        // param could be carried over — so honor the URL like annotation/projection do.
+        const isUserImport = loadMeta.kind === 'user' && hadPreviousDataset;
 
-      // Read the persisted tooltip set once; used in both branches below.
-      const savedTooltip = readTooltipAnnotations(datasetHash);
+        // Read the persisted tooltip set once; used in both branches below.
+        const savedTooltip = readTooltipAnnotations(datasetHash);
 
-      if (isUserImport) {
-        // The URL may still carry a tooltip= param that was set for the PREVIOUSLY
-        // loaded dataset (A). That param is stale for the newly imported dataset (B)
-        // and must be ignored. We always restore B's own persisted tooltip set and,
-        // when the URL had a stale tooltip param, we force a URL rewrite so the URL
-        // reflects B's state rather than A's.
-        //
-        // Only emit a view change when there is something to do:
-        //   - saved has entries (need to restore them), OR
-        //   - URL had a stale param (need to erase it from the URL).
-        const staleUrlHadTooltip = latestRequest.present.tooltip;
-        if (savedTooltip.length > 0 || staleUrlHadTooltip) {
-          viewController.setRequestedView({
-            ...latestRequest,
-            requested: {
-              ...latestRequest.requested,
-              tooltip: savedTooltip.length > 0 ? savedTooltip : undefined,
-            },
-            present: {
-              ...latestRequest.present,
-              tooltip: savedTooltip.length > 0,
-            },
-            normalize: {
-              ...latestRequest.normalize,
-              // Setting normalize.tooltip=true forces the URL-sync handler to
-              // rewrite (or delete) the tooltip param so the URL matches B's
-              // effective tooltip instead of carrying A's stale value.
-              // This is needed for both the "saved non-empty" case (case 1, sets
-              // tooltip=<saved>) and the "saved empty" case (case 2, removes the
-              // param). When the URL had no stale param and saved is non-empty
-              // (case 3), this stays false so the URL is left silent as expected.
-              tooltip: staleUrlHadTooltip || latestRequest.normalize.tooltip,
-            },
-          });
-        }
-      } else {
-        // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
-        // is authoritative. Only restore the persisted set when the URL is silent.
-        if (!latestRequest.present.tooltip) {
-          if (savedTooltip.length > 0) {
+        if (isUserImport) {
+          // The URL may still carry a tooltip= param that was set for the PREVIOUSLY
+          // loaded dataset (A). That param is stale for the newly imported dataset (B)
+          // and must be ignored. We always restore B's own persisted tooltip set and,
+          // when the URL had a stale tooltip param, we force a URL rewrite so the URL
+          // reflects B's state rather than A's.
+          //
+          // Only emit a view change when there is something to do:
+          //   - saved has entries (need to restore them), OR
+          //   - URL had a stale param (need to erase it from the URL).
+          const staleUrlHadTooltip = latestRequest.present.tooltip;
+          if (savedTooltip.length > 0 || staleUrlHadTooltip) {
             viewController.setRequestedView({
               ...latestRequest,
               requested: {
                 ...latestRequest.requested,
-                tooltip: savedTooltip,
+                tooltip: savedTooltip.length > 0 ? savedTooltip : undefined,
               },
               present: {
                 ...latestRequest.present,
-                tooltip: true,
+                tooltip: savedTooltip.length > 0,
+              },
+              normalize: {
+                ...latestRequest.normalize,
+                // Setting normalize.tooltip=true forces the URL-sync handler to
+                // rewrite (or delete) the tooltip param so the URL matches B's
+                // effective tooltip instead of carrying A's stale value.
+                // This is needed for both the "saved non-empty" case (case 1, sets
+                // tooltip=<saved>) and the "saved empty" case (case 2, removes the
+                // param). When the URL had no stale param and saved is non-empty
+                // (case 3), this stays false so the URL is left silent as expected.
+                tooltip: staleUrlHadTooltip || latestRequest.normalize.tooltip,
               },
             });
           }
+        } else {
+          // Default load ('default') or OPFS restore ('opfs'): the URL tooltip param
+          // is authoritative. Only restore the persisted set when the URL is silent.
+          // Examples never have one (their saved state was wiped above), so a
+          // menu choice, whose request was reset above, lands on the curated view.
+          if (!latestRequest.present.tooltip) {
+            if (savedTooltip.length > 0) {
+              viewController.setRequestedView({
+                ...latestRequest,
+                requested: {
+                  ...latestRequest.requested,
+                  tooltip: savedTooltip,
+                },
+                present: {
+                  ...latestRequest.present,
+                  tooltip: true,
+                },
+              });
+            }
+          }
         }
-      }
 
-      viewController.applyLatestViewForDatasetLoad(data);
+        viewController.applyLatestViewForDatasetLoad(data);
+      }
 
       // Only for the user's own imports: a dataset the app serves itself never shows it,
       // whatever its format, since a visitor cannot convert it (they are all v3 anyway).
@@ -272,116 +565,169 @@ export function createDatasetController({
       } catch (statusError) {
         console.warn('Failed to update OPFS load status to success:', statusError);
       }
+
+      success = true;
     } catch (error) {
       console.error('Failed to finalize loaded dataset state:', error);
       // Nothing later would take the overlay down after a failure here, even one
       // thrown before the stale check could establish ownership.
       ownsOverlay = true;
+      superseded = isRunningLoadSuperseded();
     } finally {
       // The load has settled — rendered, settings and view restored, status recorded,
       // or failed along the way — so take the overlay down now, and before the next
-      // queued load may start and show its own.
-      if (ownsOverlay) {
+      // queued load may start and show its own. Not when a newer user request has
+      // superseded this load meanwhile: that request owns the overlay (an example
+      // still downloading shows its progress there) and takes it down itself.
+      if (ownsOverlay && !superseded) {
         overlayController.update(false);
       }
       if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        loadQueue.resolvePendingLoadFinalization(loadSequence, success);
       }
     }
   };
+
+  // A load superseded while it decodes (a newer user request, or a cancel)
+  // still reports decode progress. It must not put the overlay back up: a
+  // cancel has dismissed it, and a newer request owns it.
+  const isRunningLoadSuperseded = (): boolean => isLoadSuperseded(loadQueue.getRunningLoadMeta());
 
   const handleDataError = async (event: Event) => {
     const customEvent = event as CustomEvent<DataErrorEventDetail>;
     const runningLoadMeta = loadQueue.getRunningLoadMeta();
     const loadSequence = runningLoadMeta?.sequence ?? null;
-    const isCancelled = customEvent.detail.originalError?.name === 'AbortError';
+    const settleFailed = () => {
+      if (loadSequence !== null) {
+        loadQueue.resolvePendingLoadFinalization(loadSequence, false);
+      }
+    };
 
-    // `data-loading-start` showed the overlay for this load; nothing else would take
-    // it down, so a failed or cancelled load would leave it covering the page. A
-    // newer queued load shows it again through its own `data-loading-start`. A failed
-    // persisted dataset is the exception: it decides below whether the app goes on to
-    // load the demo dataset, and keeps the page covered until then.
-    if (isCancelled || runningLoadMeta?.kind !== 'opfs') {
-      overlayController.update(false);
+    if (customEvent.detail.originalError?.name === 'AbortError') {
+      console.log('Data load cancelled by user');
+      settleFailed();
+      return;
     }
 
-    if (isCancelled) {
-      console.log('Data load cancelled by user');
-      if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
-      }
+    // A superseded example request is abandoned silently (see the
+    // openspec/specs/example-datasets "A request is superseded" scenario): its
+    // parse failure must not toast, and must not dismiss the overlay that the
+    // newer request — possibly still downloading — now owns.
+    if (runningLoadMeta?.example && isLoadSuperseded(runningLoadMeta)) {
+      console.warn(
+        `Ignoring load error for superseded example "${runningLoadMeta.example.entry.id}":`,
+        customEvent.detail.message,
+      );
+      settleFailed();
       return;
     }
 
     console.error('❌ Data loading error:', customEvent.detail.message);
 
-    if (runningLoadMeta?.kind === 'user' || runningLoadMeta?.kind === 'opfs') {
+    // Only a failed restore says anything about the stored import. A user
+    // import is saved only once it has decoded (`handleDataLoaded`), so one
+    // failing here never replaced it: flagging the stored import would offer
+    // recovery for it on the next visit, although it loads fine.
+    if (runningLoadMeta?.kind === 'opfs') {
       try {
         const message = customEvent.detail.message ?? 'Unknown load error';
         await markLastLoadStatus('error', { error: message });
       } catch (statusError) {
         console.warn('Failed to update OPFS load status to error:', statusError);
       }
-    }
 
-    if (runningLoadMeta?.kind === 'opfs') {
       if (loadSequence !== null && loadQueue.getLatestSequence() > loadSequence) {
-        // A newer load is already queued and takes over the overlay once this one
-        // is released.
-        overlayController.update(false);
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
+        // A newer load is queued behind this one and shows the overlay again when it
+        // starts, or it already ran, and then nothing else would take this load's
+        // overlay down. Dismiss it before releasing the queue, unless a newer user
+        // request superseded the restore: the overlay is that request's.
+        if (!isLoadSuperseded(runningLoadMeta)) {
+          overlayController.update(false);
+        }
+        settleFailed();
         await persistedDatasetController.clearCorruptedPersistedDataset('could not be loaded');
         return;
       }
 
-      // Keep the page covered while the demo dataset is fetched, so nothing can be
-      // imported in the gap and then be replaced by the demo load queued behind it.
-      overlayController.update(
-        true,
-        5,
-        'Loading the demo dataset...',
-        'The stored dataset could not be loaded',
-      );
-      if (loadSequence !== null) {
-        loadQueue.resolvePendingLoadFinalization(loadSequence);
-      }
-      await persistedDatasetController.recoverFromCorruptedPersistedDataset('could not be loaded');
+      // Otherwise the overlay stays up: the demo that replaces the broken copy shows its
+      // download on it and dismisses it once its own load settles or fails, or the user
+      // request that superseded the restore owns it by now.
+      settleFailed();
 
-      // The demo load dismisses the overlay itself once it settles. When it never
-      // started (the fetch failed) and no other load is running, nothing else will.
-      const runningAfterRecovery = loadQueue.getRunningLoadMeta();
-      if (runningAfterRecovery === null || runningAfterRecovery.sequence === loadSequence) {
-        overlayController.update(false);
-      }
+      // Loads the demo only if no user request has moved past the epoch the
+      // restore began under (a menu click still downloading, say); otherwise
+      // it just clears the broken copy.
+      await persistedDatasetController.recoverFromCorruptedPersistedDataset(
+        'could not be loaded',
+        runningLoadMeta.epoch,
+      );
       return;
     }
 
-    notify.error(getDataLoadFailureNotification(customEvent.detail));
-
-    if (loadSequence !== null) {
-      loadQueue.resolvePendingLoadFinalization(loadSequence);
+    // 'user' and 'default' (including example loads) both reach here on a load that fetched fine but
+    // failed to parse. Neither loadData (data-renderer.ts, success only) nor
+    // the fetch-catch branch in persisted-dataset.ts (network failure only)
+    // runs for this path, so nothing else dismisses the loading overlay —
+    // without this, the UI stays behind it, unusable, until reload. A user
+    // import a newer request has superseded still reports its failure, but
+    // the overlay is that request's (an example still downloading, say).
+    if (!isLoadSuperseded(runningLoadMeta)) {
+      overlayController.update(false);
     }
+    notify.error(getDataLoadFailureNotification(customEvent.detail));
+    settleFailed();
   };
 
   return {
-    loadDefaultDatasetAndClearPersistedFile:
-      persistedDatasetController.loadDefaultDatasetAndClearPersistedFile,
-    loadPersistedOrDefaultDataset: persistedDatasetController.loadPersistedOrDefaultDataset,
+    loadDefaultDatasetAndClearPersistedFile,
+    loadExampleDatasetAndClearPersistedFile:
+      persistedDatasetController.loadExampleDatasetAndClearPersistedFile,
+    loadExampleDataset: persistedDatasetController.loadExampleDataset,
+    loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,
+    beginUserRequest: persistedDatasetController.beginUserRequest,
+    beginImportPreparation: persistedDatasetController.beginImportPreparation,
+    currentRequestEpoch: persistedDatasetController.currentRequestEpoch,
+    cancelPendingExampleLoad: persistedDatasetController.cancelPendingExampleLoad,
+    hasDisplayedDataset: () => currentDatasetHash !== null,
+    subscribeToDatasetChanges(callback) {
+      datasetChangeSubscribers.add(callback);
+      return () => {
+        datasetChangeSubscribers.delete(callback);
+      };
+    },
+    subscribeToExampleRetries(callback) {
+      exampleRetrySubscribers.add(callback);
+      return () => {
+        exampleRetrySubscribers.delete(callback);
+      };
+    },
     handleLoadingStart() {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
       console.log('Data loading started');
-      overlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
+      phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
     },
     handleLoadingProgress(event: Event) {
+      if (isRunningLoadSuperseded()) {
+        return;
+      }
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));
-      overlayController.update(true, visualProgress, 'Reading protein data...', 'Uploading...');
+      phaseOverlayController.update(
+        true,
+        visualProgress,
+        'Reading protein data...',
+        'Uploading...',
+      );
     },
     handleDataLoaded,
     handleDataError,
+    isSkippableQueuedLoad: (meta) => meta.example !== undefined && isLoadSuperseded(meta),
     getUnplacedProteinCount: () => currentUnplacedProteinCount,
   };
 }
 
-export type { PersistedLoadOutcome };
+export type { ExampleLoadCancel, PersistedLoadOutcome };

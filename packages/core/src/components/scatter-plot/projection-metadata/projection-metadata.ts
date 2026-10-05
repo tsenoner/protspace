@@ -70,15 +70,21 @@ const SCOPE_HEADINGS: Record<string, string> = {
  * What the two value columns mean. Their headings are one word each ("Projection" /
  * "Embedding") because the longer forms sized the grid's auto tracks and squeezed the
  * metric-name column down to 36px — so the headings cannot themselves explain *why* there are
- * two numbers, that the second is a ceiling, and that the gap between them is the cost of
- * flattening to 2D. That explanation lives here, behind the section's ⓘ.
+ * two numbers, that the second is the embedding reference, and what a gap between them means.
+ * That explanation lives here, behind the section's ⓘ.
+ *
+ * It says "reference", not "ceiling": a projection can score higher than its embedding. The
+ * example bundles show it (β-lactamase `signal_peptide` silhouette 0.20 in PCA against 0.07 in
+ * the embedding), because flattening can pull an annotation's categories apart as well as merge
+ * them.
  */
 const SEPARATION_SCOPE_DESCRIPTION =
   'Two numbers per metric. "Projection" scores the layout you are looking at. "Embedding" ' +
   'scores the same annotation on the full high-dimensional embedding this projection was ' +
-  'computed from — flattening it to 2D can only lose structure, never add it, so that column ' +
-  'is the best any projection of this data could achieve. A small gap means the projection ' +
-  'kept what was there; a large one means it lost it.';
+  'computed from, the reference to read the projection against. Usually the projection ' +
+  'keeps less: a small gap means it kept what was there, a large one means it lost some. ' +
+  'A projection can also score higher than its embedding, when flattening happens to pull ' +
+  'the categories apart; that describes the layout, not the proteins.';
 
 /** A faithfulness metric before display: the raw key is kept so it can be looked up. */
 interface QualityEntry {
@@ -379,9 +385,9 @@ class ProtspaceProjectionMetadata extends LitElement {
     agreement: ClusterAgreement,
   ) {
     const scope = summary ? this._statScopeLine(summary) : '';
-    // A bundle prepared without an embedding pass has every ceiling null: naming a column
+    // A bundle prepared without an embedding pass has every embedding value null: naming a column
     // of entirely blank cells would only take width back from the label column for nothing.
-    const hasEmbeddingCeiling = summary?.validity.some((metric) => metric.embedding !== null);
+    const hasEmbeddingReference = summary?.validity.some((metric) => metric.embedding !== null);
     return html`
       <div class="annotation-stats">
         ${summary && summary.validity.length > 0
@@ -403,7 +409,7 @@ class ProtspaceProjectionMetadata extends LitElement {
                   .description=${SEPARATION_SCOPE_DESCRIPTION}
                 ></protspace-info-popover>
               </div>
-              ${hasEmbeddingCeiling
+              ${hasEmbeddingReference
                 ? html`
                     <!-- One word each. These sit in the grid's two auto-sized columns, which
                          size to max-content, so the longer headings "This projection" and
@@ -536,7 +542,7 @@ class ProtspaceProjectionMetadata extends LitElement {
   /**
    * One metric row: name (with an arrow for the direction that counts as better), its value in
    * this projection, and (for annotation-validity metrics) the same metric in the source
-   * embedding, which is the separability ceiling the projection is measured against.
+   * embedding, the reference the projection's separation is read against.
    */
   private _renderStatMetric(metric: AnnotationStatMetric) {
     // Marked on every metric, not only on the one that inverts: an arrow that shows up on
