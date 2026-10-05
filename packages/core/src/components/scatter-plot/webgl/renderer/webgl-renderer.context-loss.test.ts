@@ -119,17 +119,21 @@ describe('WebGLRenderer gamma fallback (F-09 characterization lock)', () => {
   // none leak into later suites. vi.unstubAllGlobals does not restore vi.spyOn.
   afterEach(() => vi.restoreAllMocks());
 
-  // CHARACTERIZATION LOCK (verified against the unmodified tree, webgl-renderer.ts):
-  // On the missing-float-extensions path, ensureGL sets `gammaPipelineAvailable = false`
-  // (L1492) BEFORE calling handleGammaFallback('required extensions missing') (L1494).
-  // handleGammaFallback's first line `if (!this.gammaPipelineAvailable) return;` (L535)
-  // short-circuits past console.warn, so production emits ZERO warnings on this path
-  // (the warn-once message is effectively unreachable for the missing-extensions case)
-  // while getEffectiveGamma() still drops to 1.0 (shouldUseGammaPipeline() === false).
-  // This pins BOTH facts; any refactor that changes the warn count or the gamma value
-  // fails the lock. (The plan sketch asserted "warns once"; the true count is 0.)
-  it('missing float extensions → getEffectiveGamma() drops to 1.0 (silently, no warn)', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  // The contract: without the float extensions the renderer drops to direct
+  // rendering, so getEffectiveGamma() is 1.0 (shouldUseGammaPipeline() is false).
+  //
+  // Deliberately NOT pinned: whether this path warns or reports
+  // 'gamma-pipeline-unavailable'. Today ensureGL sets `gammaPipelineAvailable =
+  // false` before calling handleGammaFallback('required extensions missing'), and
+  // handleGammaFallback's `if (!this.gammaPipelineAvailable) return;` guard then
+  // skips both its console.warn and its reportDegraded call. That contradicts the
+  // renderer-capability-limits scenario "The gamma-pipeline fallback is announced
+  // on the same channel". Reporting it would also show every iPhone/iPad a gamma
+  // notice with contours off, which the density-contours "iPhone or iPad" and
+  // "Contours off" scenarios do not address. Fixing the code or amending the spec
+  // is an open decision, so this test leaves room for either.
+  it('missing float extensions → getEffectiveGamma() drops to 1.0', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { canvas } = createMockCanvas({ missingFloatExtensions: true });
     const r = new WebGLRenderer(
       canvas,
@@ -141,7 +145,6 @@ describe('WebGLRenderer gamma fallback (F-09 characterization lock)', () => {
     r.render(pd); // ensureGL detects missing extensions → gammaPipelineAvailable = false
     const getGamma = (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma.bind(r);
     expect(getGamma()).toBe(1.0);
-    expect(warnSpy).toHaveBeenCalledTimes(0); // L1492-before-L1494 ordering bypasses the warn
   });
 
   it('framebuffer incomplete during init → gamma pipeline drops to direct (gamma 1.0)', () => {
