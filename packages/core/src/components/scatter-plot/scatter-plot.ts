@@ -1679,27 +1679,18 @@ export class ProtspaceScatterplot extends LitElement {
    * Resolve a list of point index slots to the protein ids of the interactive
    * points among them, in a single allocation-free pass.
    *
-   * Shared by lasso and brush selection. Reuses `_scratchPoint` and the cached
-   * visibility model so that selecting from the ~573K-point flagship dataset
-   * does not allocate a PlotDataPoint per hit plus two intermediate arrays.
-   * `isInteractive` reads only `id`/`originalIndex`, so the scratch point's
-   * x/y (and absent z) are irrelevant here — behavior matches the prior
-   * `slots.map(materialize).filter(isInteractive).map(p => p.id)` chain.
+   * Shared by lasso and brush selection. Reads the memoized interactable slots
+   * (`isInteractive` per slot) instead of asking the visibility model per hit,
+   * which at ~190K lassoed points of the 573K dataset took ~8 ms.
    */
   private _slotsToInteractiveIds(slots: number[]): string[] {
     const pd = this._plotData;
     const oi = pd.originalIndices;
-    const sp = this._scratchPoint;
-    const model = this._getVisibilityModel();
+    const { visible } = this._interactableSlots();
     const ids: string[] = [];
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i];
-      const origIdx = oi ? oi[s] : s;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = pd.xs[s];
-      sp.y = pd.ys[s];
-      sp.originalIndex = origIdx;
-      if (model.isInteractive(sp)) ids.push(sp.id);
+      if (visible[s] === 1) ids.push(pd.proteinIds[oi ? oi[s] : s]);
     }
     return ids;
   }
