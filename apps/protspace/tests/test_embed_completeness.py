@@ -61,13 +61,20 @@ class TestFinishRun:
         assert store.finish_run(h5, ["a", "b"], skipped={"b": "too long"}) == h5
 
     def test_skips_are_named_with_their_reason(self, tmp_path, caplog):
+        # Distinctive IDs, checked per record: single letters would also match the
+        # logger name, so a warning that dropped the identifiers would still pass.
         h5 = tmp_path / "o.h5"
         _write(h5, ["a"])
         with caplog.at_level("WARNING"):
-            store.finish_run(h5, ["a", "b", "c"], skipped={"b": "too long", "c": "OOM"})
-        text = caplog.text
-        assert "too long" in text and "OOM" in text
-        assert "b" in text and "c" in text
+            store.finish_run(
+                h5,
+                ["a", "SKIP_LONG", "SKIP_OOM"],
+                skipped={"SKIP_LONG": "too long", "SKIP_OOM": "OOM"},
+            )
+        msgs = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+        assert any("too long" in m and "SKIP_LONG" in m for m in msgs), msgs
+        assert any("OOM" in m and "SKIP_OOM" in m for m in msgs), msgs
+        assert not any("SKIP_LONG" in m and "SKIP_OOM" in m for m in msgs), msgs
 
     def test_skipping_everything_is_still_a_failure(self, tmp_path):
         h5 = tmp_path / "o.h5"
