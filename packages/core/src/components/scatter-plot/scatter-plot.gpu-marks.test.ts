@@ -11,19 +11,10 @@
  */
 import { vi, describe, it, expect } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import type { PointMarks, WebGLStyleGetters } from './webgl/types';
+import type { WebGLStyleGetters } from './webgl/types';
 import { createPassScratch } from './webgl/renderer/pass-staging';
 
-const constructed = vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-  return [] as unknown[][];
-});
+const constructed = vi.hoisted(() => [] as unknown[][]);
 
 vi.mock('./webgl/color-utils', () => ({
   resolveColor: (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255),
@@ -41,24 +32,11 @@ vi.mock('./webgl', async (importOriginal) => ({
   },
 }));
 
-import './scatter-plot';
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
-type Internals = HTMLElement & {
-  data: VisualizationData | null;
-  selectedAnnotation: string;
-  selectedProteinIds: string[];
-  highlightedProteinIds: string[];
-  config: Record<string, unknown>;
-  _focusedValues: string[] | null;
-  _plotData: PlotData;
+/** The plot, with the stub renderer `makeEl` gives it. */
+type Plot = Omit<PlotInternals, '_webglRenderer'> & {
   _webglRenderer: Record<string, ReturnType<typeof vi.fn>> | null;
-  updated(changed: Map<string, unknown>): void;
-  _processData(): void;
-  _createWebglRenderer(): void;
-  _getPointMarks(pd: PlotData): PointMarks | null;
-  _getStageGetters(): unknown;
-  _pointMarks: unknown;
-  _unmarkedGetters: unknown;
 };
 
 const IDS = ['p0', 'p1', 'p2', 'p3', 'p4'];
@@ -81,10 +59,8 @@ function changed(...keys: string[]): Map<string, unknown> {
   return new Map(keys.map((k) => [k, undefined]));
 }
 
-function makeEl(): Internals {
-  const el = document.createElement('protspace-scatterplot') as unknown as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
+function makeEl(): Plot {
+  const el = createPlot({ data: makeData(), selectedAnnotation: 'fam' }) as unknown as Plot;
   el._processData();
   el._webglRenderer = {
     invalidateStyleCache: vi.fn(),
@@ -98,7 +74,7 @@ function makeEl(): Internals {
 }
 
 /** `el` with the marks of a selection built, and the getters staged under them. */
-function makeMarkedEl(): Internals {
+function makeMarkedEl(): Plot {
   const el = makeEl();
   select(el, ['p1']);
   el._getPointMarks(el._plotData);
@@ -109,13 +85,13 @@ function makeMarkedEl(): Internals {
 }
 
 /** Select `ids` as the control bar does, and run the update it triggers. */
-function select(el: Internals, ids: string[]) {
+function select(el: Plot, ids: string[]) {
   el.selectedProteinIds = ids;
   el.updated(changed('selectedProteinIds'));
 }
 
 /** The live and export style getters `el` would hand a renderer it built now. */
-function rendererStyles(el: Internals) {
+function rendererStyles(el: Plot) {
   const stub = el._webglRenderer;
   Object.defineProperty(el, '_canvas', { value: document.createElement('canvas') });
   el._createWebglRenderer();

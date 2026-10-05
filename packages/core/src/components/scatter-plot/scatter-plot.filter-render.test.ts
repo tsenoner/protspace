@@ -20,17 +20,12 @@ import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/util
 import { plotDataId, materializePlotDataPoint, clonePlotData } from '@protspace/utils';
 import { LegendDataProcessor } from '../legend/legend-data-processor';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
+import {
+  createPlot,
+  fakeFrames,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 const RED = '#ff0000';
 const GREEN = '#00ff00';
@@ -45,100 +40,8 @@ function plotPoints(pd: PlotData): PlotDataPoint[] {
   return Array.from({ length: pd.length }, (_, s) => materializePlotDataPoint(pd, s));
 }
 
-type ScatterplotInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProjectionIndex: number;
-  filteredProteinIds: string[];
-  filtersActive: boolean;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[];
-  highlightedProteinIds: string[];
-  _plotData: PlotData;
-  _mergedConfig: {
-    baseOpacity: number;
-    selectedOpacity: number;
-    fadedOpacity: number;
-    [k: string]: unknown;
-  };
-  _processData(): void;
-  _getVisiblePointCount(): number;
-  getInteractableProteinIds(): ReadonlySet<string>;
-  _scheduleNumericAnnotationRefresh(): void;
-  _getCurrentDisplayData(options?: {
-    includeFilteredProteinIds?: boolean;
-  }): VisualizationData | null;
-  getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null;
-  _buildStyleGetters(): {
-    getColors(point: PlotDataPoint): string[];
-    getOpacity(point: PlotDataPoint): number;
-  };
-  updated(changedProperties: Map<string, unknown>): void;
-};
-
-/**
- * Six proteins. p0–p2 are family "A" (red), p3–p5 are family "B" (green).
- * annotation_data rows hold an index into `annotations.fam.values`, and
- * valueToColor is derived from values↔colors positionally, so A→red, B→green.
- */
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      // each row points at the first index of its family value in `values`
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-  } as unknown as VisualizationData;
-}
-
-function makeScatter(): ScatterplotInternals {
-  const sp = document.createElement('protspace-scatterplot') as ScatterplotInternals;
-  sp.data = makeFamilyData();
-  sp.selectedAnnotation = 'fam';
-  return sp;
-}
-
-/**
- * Dataset 2 for swap tests. Protein ids are 'q*' so they cannot overlap a
- * stale filter that references 'p1' / 'p3'. The 'fam' annotation is preserved
- * so selectedAnnotation stays valid across the swap.
- */
-function makeDataset2(): VisualizationData {
-  const families = ['C', 'C', 'C', 'D', 'D', 'D'];
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i * 2;
-    coords[i * 2 + 1] = i * 2;
-  });
-  return {
-    protein_ids: families.map((_, i) => `q${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map((v) => (v === 'C' ? '#0000ff' : '#ffff00')),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-  } as unknown as VisualizationData;
+function makeScatter(): PlotInternals {
+  return createPlot({ data: makeFamilyData(), selectedAnnotation: 'fam' });
 }
 
 describe('scatter-plot query-filter rendering integrity', () => {
@@ -475,7 +378,11 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
 
     // Swap to dataset 2 (q0–q5). None of its ids overlap the stale filter.
     const oldData = sp.data;
-    const dataset2 = makeDataset2();
+    const dataset2 = makeFamilyData({
+      idPrefix: 'q',
+      families: { C: '#0000ff', D: '#ffff00' },
+      spacing: 2,
+    });
     sp.data = dataset2;
 
     // Simulate the Lit updated() lifecycle pass with 'data' in changedProperties.
@@ -550,7 +457,7 @@ describe('scatter-plot data-change dispatch reflects the filtered view', () => {
       ys: new Float32Array([1, 3]),
       zs: null,
       originalIndices: new Int32Array([1, 3]),
-      proteinIds: sp.data.protein_ids,
+      proteinIds: sp.data!.protein_ids,
     } as unknown as PlotData;
 
     let captured: VisualizationData | null = null;
@@ -595,14 +502,12 @@ describe('scatter-plot numeric recompute display data', () => {
     sp.filtersActive = true;
     sp._processData(); // prime _plotData so the recompute takes the refresh branch
 
-    // Run the recompute's rAF synchronously.
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    // The recompute runs on the next frame.
+    const frames = fakeFrames();
 
     const spy = vi.spyOn(sp, '_getCurrentDisplayData');
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
     // The FIRST _getCurrentDisplayData call in the rAF body is the `displayData`
     // resolution — it must use { includeFilteredProteinIds: false } (under the
@@ -619,11 +524,9 @@ describe('scatter-plot numeric recompute display data', () => {
     sp.filtersActive = true;
     sp._processData();
 
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    const frames = fakeFrames();
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
     const getters = sp._buildStyleGetters();
     for (const point of plotPoints(sp._plotData)) {
@@ -643,11 +546,9 @@ describe('scatter-plot numeric recompute display data', () => {
       captured = (e as CustomEvent).detail.data as VisualizationData;
     });
 
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    const frames = fakeFrames();
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
     expect(captured).not.toBeNull();
     const payload = captured as unknown as VisualizationData;

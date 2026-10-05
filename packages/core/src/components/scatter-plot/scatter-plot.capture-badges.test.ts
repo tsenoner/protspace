@@ -10,43 +10,17 @@
  * suite (duplicate-stack-overlay-controller.capture-badges.test.ts) pins
  * coverage and canvas geometry.
  *
- * Constructed via createElement without appending (no connectedCallback), so
- * the WebGL/canvas init never runs under jsdom. ResizeObserver is stubbed
- * before the element module is imported (the constructor news one up).
+ * Constructed without appending (no connectedCallback), so the WebGL/canvas
+ * init never runs under jsdom.
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 import { computeSizeScaleFactor } from './webgl';
-import type { BadgeCaptureProjection } from './duplicate-stacks/duplicate-stack-types';
-
-type CaptureInternals = HTMLElement & {
-  _webglRenderer: unknown;
-  _dupOverlay: { captureBadges(projection: BadgeCaptureProjection): unknown };
-  captureAtResolution(
-    width: number,
-    height: number,
-    options?: {
-      dpr?: number;
-      resetView?: boolean;
-      dataDomain?: { xMin: number; xMax: number; yMin: number; yMax: number };
-    },
-  ): HTMLCanvasElement;
-};
 
 const fakeScales = { x: (n: number) => n, y: (n: number) => n };
 
-function stubRenderer(el: CaptureInternals, opts: { scales?: typeof fakeScales | null } = {}) {
+function stubRenderer(el: PlotInternals, opts: { scales?: typeof fakeScales | null } = {}) {
   const renderToCanvas = vi.fn((w: number, h: number, dpr: number) => {
     const c = document.createElement('canvas');
     c.width = Math.floor(w * dpr);
@@ -54,15 +28,15 @@ function stubRenderer(el: CaptureInternals, opts: { scales?: typeof fakeScales |
     return c;
   });
   const createExportScales = vi.fn(() => (opts.scales === undefined ? fakeScales : opts.scales));
-  el._webglRenderer = { renderToCanvas, createExportScales };
+  el._webglRenderer = { renderToCanvas, createExportScales } as never;
   return { renderToCanvas, createExportScales };
 }
 
 describe('scatter-plot captureAtResolution — badge projection wiring (#301/#302)', () => {
-  let el: CaptureInternals;
+  let el: PlotInternals;
 
   beforeEach(() => {
-    el = document.createElement('protspace-scatterplot') as CaptureInternals;
+    el = createPlot();
   });
 
   it('passes the export-geometry projection to captureBadges when resetView is true', () => {

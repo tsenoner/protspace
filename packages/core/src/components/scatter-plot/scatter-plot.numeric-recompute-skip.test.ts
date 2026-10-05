@@ -12,29 +12,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { NumericAnnotationDisplaySettings, VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  numericAnnotationSettings: Record<string, NumericAnnotationDisplaySettings>;
-  _plotData: unknown;
-  _webglRenderer: unknown;
-  _processData(): void;
-  _runNumericRecomputeBody(): void;
-  _getMaterializedData(): VisualizationData | null;
-  _getVisibilityModel(): unknown;
-};
+import { createPlot, fakeFrames, type PlotInternals } from './test-support/plot-fixture';
 
 const settings = (binCount: number): NumericAnnotationDisplaySettings => ({
   binCount,
@@ -91,29 +69,29 @@ function makeData(): VisualizationData {
 }
 
 describe('numeric recompute: re-stage only when the materialized data changed', () => {
-  let sp: Internals;
+  let sp: PlotInternals;
   let renderer: { invalidateStyleCache: ReturnType<typeof vi.fn>; setStyleSignature: () => void };
   let requestRender: ReturnType<typeof vi.fn>;
   let dataChanges: number;
 
   const build = (selected: string, initial: Record<string, NumericAnnotationDisplaySettings>) => {
-    sp = document.createElement('protspace-scatterplot') as Internals;
-    sp.data = makeData();
-    sp.selectedAnnotation = selected;
-    sp.numericAnnotationSettings = initial;
+    sp = createPlot({
+      data: makeData(),
+      selectedAnnotation: selected,
+      numericAnnotationSettings: initial,
+    });
     sp._processData(); // the plot as the first render left it
     renderer = { invalidateStyleCache: vi.fn(), setStyleSignature: () => {} };
-    sp._webglRenderer = renderer;
+    sp._webglRenderer = renderer as never;
     requestRender = vi.fn();
-    (sp as unknown as { _requestRender: () => void })._requestRender = requestRender;
+    sp._requestRender = requestRender;
     dataChanges = 0;
     sp.addEventListener('data-change', () => dataChanges++);
   };
 
   beforeEach(() => {
     // The point index rebuild is deferred to a frame; it is not under test.
-    vi.stubGlobal('requestAnimationFrame', () => 1);
-    vi.stubGlobal('cancelAnimationFrame', () => {});
+    fakeFrames();
   });
 
   afterEach(() => vi.unstubAllGlobals());

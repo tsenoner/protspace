@@ -29,22 +29,7 @@
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import * as d3 from 'd3';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type TransformInternals = HTMLElement & {
-  _transform: d3.ZoomTransform;
-  requestUpdate(name?: PropertyKey, oldValue?: unknown): void;
-};
+import { createPlot } from './test-support/plot-fixture';
 
 describe('F-48 _transform is not a reactive Lit property', () => {
   afterEach(() => {
@@ -52,7 +37,7 @@ describe('F-48 _transform is not a reactive Lit property', () => {
   });
 
   it('writing _transform does not call requestUpdate (no Lit update scheduled)', () => {
-    const sp = document.createElement('protspace-scatterplot') as TransformInternals;
+    const sp = createPlot();
     // Not appended: a reactive @state setter still calls requestUpdate
     // synchronously on write, so the spy captures the scheduling hook without
     // any connection / updateComplete await (which would hang on an un-appended

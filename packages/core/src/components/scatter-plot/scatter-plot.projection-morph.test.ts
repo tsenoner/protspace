@@ -12,23 +12,13 @@
  * is called with the properties a Lit update would have reported.
  */
 import { vi, describe, it, expect, beforeEach, afterEach, type MockInstance } from 'vitest';
-import type { PlotData, VisualizationData } from '@protspace/utils';
-import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
+import type { VisualizationData } from '@protspace/utils';
 import { MORPH_MS, drawnPositions, morphWeight } from './webgl/renderer/position-morph';
 import type * as PositionMorph from './webgl/renderer/position-morph';
 import type * as PerfCounters from '../../utils/perf-counters';
 
 const clock = vi.hoisted(() => ({ now: 1000 }));
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
 vi.mock('./webgl/renderer/position-morph', async (importOriginal) => {
   const actual = await importOriginal<typeof PositionMorph>();
   return { ...actual, frameTime: () => clock.now, drawnPositions: vi.fn(actual.drawnPositions) };
@@ -38,46 +28,15 @@ vi.mock('../../utils/perf-counters', async (importOriginal) => {
   return { ...actual, perfCounters: actual.createPerfCounters() };
 });
 
-import './scatter-plot';
 import { perfCounters } from '../../utils/perf-counters';
+import { fakeFrames, mountPlot, type PlotInternals } from './test-support/plot-fixture';
 
 const counters = perfCounters!;
 
-type Renderer = {
-  readonly isMorphing: boolean;
-  render(pd: PlotData): void;
-  invalidatePositionCache(): void;
-  morphNextPositionChange(): void;
-  cancelMorph(): void;
-};
-
-type Inputs = {
-  data: VisualizationData;
-  selectedProjectionIndex: number;
-  projectionPlane: 'xy' | 'xz' | 'yz';
-  filteredProteinIds: string[];
-  filtersActive: boolean;
-};
-
-type Internals = HTMLElement &
-  Inputs & {
-    selectedAnnotation: string;
-    selectedProteinIds: string[];
-    _plotData: PlotData;
-    _webglRenderer: Renderer | null;
-    _hoveredProteinId: string | null;
-    _hoverRaf: number | null;
-    _pendingHover: unknown;
-    _processData(): void;
-    _createWebglRenderer(): void;
-    _requestRender(): void;
-    _flushRender(): void;
-    _schedulePointGridIndexRebuild(): void;
-    _handleCanvasMouseMove(event: MouseEvent): void;
-    isolateSelection(): void;
-    updated(changed: Map<string, unknown>): void;
-    disconnectedCallback(): void;
-  };
+type Inputs = Pick<
+  PlotInternals,
+  'data' | 'selectedProjectionIndex' | 'projectionPlane' | 'filteredProteinIds' | 'filtersActive'
+>;
 
 // p3 has no coordinates in 'gap'. 'pca3' is 3D, for the plane switch.
 const PROJECTIONS = [
@@ -106,31 +65,12 @@ function makeData(shift = 0): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-// Frame callbacks by id. Unlike an array stub, cancelling the callback that is
-// running (as _flushRender does) leaves nothing behind in the next frame.
-const frames = new Map<number, FrameRequestCallback>();
-let lastFrameId = 0;
-const runFrame = () => {
-  for (const id of [...frames.keys()]) {
-    const cb = frames.get(id);
-    frames.delete(id);
-    cb?.(clock.now);
-  }
-};
+let frames: ReturnType<typeof fakeFrames>;
 
 /** An unattached plot with data, a real renderer, and one render already drawn. */
 function makePlot(inputs: Partial<Inputs> = {}) {
-  const el = document.createElement('protspace-scatterplot') as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
-  Object.assign(el, inputs);
-  el._processData();
-  const { canvas } = createMockCanvas();
-  Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
-  el._createWebglRenderer();
+  const el = mountPlot({ data: makeData(), selectedAnnotation: 'fam', ...inputs });
   const renderer = el._webglRenderer!;
-  el._requestRender();
-  el._flushRender();
   frames.clear();
   const render = vi.spyOn(renderer, 'render');
   const request = vi.spyOn(renderer, 'morphNextPositionChange');
@@ -138,7 +78,7 @@ function makePlot(inputs: Partial<Inputs> = {}) {
 }
 
 /** Set geometry inputs and run updated() with what a Lit update would report. */
-function change(el: Internals, inputs: Partial<Inputs>) {
+function change(el: PlotInternals, inputs: Partial<Inputs>) {
   const changed = new Map<string, unknown>();
   for (const key of Object.keys(inputs) as (keyof Inputs)[]) changed.set(key, el[key]);
   Object.assign(el, inputs);
@@ -153,7 +93,7 @@ function runFrames(render: MockInstance, beforeEachFrame?: () => void): number[]
     beforeEachFrame?.();
     clock.now += 16;
     const before = render.mock.calls.length;
-    runFrame();
+    frames.run();
     perFrame.push(render.mock.calls.length - before);
   }
   return perFrame;
@@ -163,13 +103,8 @@ function runFrames(render: MockInstance, beforeEachFrame?: () => void): number[]
 const GLIDE_RENDERS = MORPH_MS / 16 + 1;
 
 beforeEach(() => {
-  frames.clear();
+  frames = fakeFrames();
   counters.morphFrame = 0;
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-    frames.set(++lastFrameId, cb);
-    return lastFrameId;
-  });
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
 
 afterEach(() => {
@@ -206,7 +141,7 @@ describe('projection glide (host)', () => {
 
     change(el, { projectionPlane: 'xz' });
     expect(request).toHaveBeenCalledTimes(1);
-    runFrame();
+    frames.run();
     expect(renderer.isMorphing).toBe(true);
     expect(runFrames(render)).toHaveLength(GLIDE_RENDERS - 1);
   });
@@ -233,8 +168,8 @@ describe('projection glide (host)', () => {
   it('an isolation mid-glide ends it on the next frame', () => {
     const { el, renderer, render } = makePlot();
     change(el, { selectedProjectionIndex: 1 });
-    runFrame();
-    runFrame();
+    frames.run();
+    frames.run();
 
     el.selectedProteinIds = ['p0', 'p1'];
     el.isolateSelection();
@@ -283,10 +218,10 @@ describe('projection glide (host)', () => {
   it('a second switch mid-glide restarts it from the drawn blend', () => {
     const { el, render, request } = makePlot();
     change(el, { selectedProjectionIndex: 1 });
-    runFrame();
+    frames.run();
     for (let i = 0; i < 10; i++) {
       clock.now += 16;
-      runFrame();
+      frames.run();
     }
     vi.mocked(drawnPositions).mockClear();
 
@@ -301,8 +236,8 @@ describe('projection glide (host)', () => {
   it('a dataset swap mid-glide ends it at once, even at the same point count', () => {
     const { el, renderer, render, request } = makePlot();
     change(el, { selectedProjectionIndex: 1 });
-    runFrame();
-    runFrame();
+    frames.run();
+    frames.run();
     vi.mocked(drawnPositions).mockClear();
     const glideFrames = counters.morphFrame;
 
@@ -321,7 +256,7 @@ describe('projection glide (host)', () => {
   it('disconnecting mid-glide drops data-morphing and stops the frames', () => {
     const { el, render } = makePlot();
     change(el, { selectedProjectionIndex: 1 });
-    runFrame();
+    frames.run();
 
     el.disconnectedCallback();
     expect(el.hasAttribute('data-morphing')).toBe(false);
@@ -336,7 +271,7 @@ describe('projection glide (host)', () => {
 
     change(el, { selectedProjectionIndex: 1 });
     expect(hovers).toEqual([null]);
-    runFrame();
+    frames.run();
     el._handleCanvasMouseMove(new MouseEvent('mousemove'));
     expect(el._pendingHover).toBeNull();
     expect(el._hoverRaf).toBeNull();

@@ -1,25 +1,7 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
-
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  eatOverlayEnabled: boolean;
-  _getMaterializedData(): VisualizationData;
-  _schedulePointGridIndexRebuild(): void;
-  updated(changedProperties: Map<string, unknown>): void;
-};
+import { createPlot } from './test-support/plot-fixture';
 
 function data(): VisualizationData {
   return {
@@ -42,17 +24,14 @@ function data(): VisualizationData {
 
 describe('scatter-plot EAT materialization', () => {
   it('coalesces only while enabled and invalidates the cached view on toggle', () => {
-    const plot = document.createElement('protspace-scatterplot') as Internals;
-    plot.data = data();
-    plot.selectedAnnotation = 'ec';
-    plot.eatOverlayEnabled = true;
-    const enabled = plot._getMaterializedData();
+    const plot = createPlot({ data: data(), selectedAnnotation: 'ec', eatOverlayEnabled: true });
+    const enabled = plot._getMaterializedData()!;
     expect(Array.from(enabled.annotation_data.ec as Int32Array)).toEqual([0, 0]);
 
     plot.eatOverlayEnabled = false;
-    const disabled = plot._getMaterializedData();
+    const disabled = plot._getMaterializedData()!;
     expect(disabled).not.toBe(enabled);
     expect(Array.from(disabled.annotation_data.ec as Int32Array)).toEqual([0, 1]);
-    expect(Array.from(plot.data.annotation_data.ec as Int32Array)).toEqual([0, 1]);
+    expect(Array.from(plot.data!.annotation_data.ec as Int32Array)).toEqual([0, 1]);
   });
 });

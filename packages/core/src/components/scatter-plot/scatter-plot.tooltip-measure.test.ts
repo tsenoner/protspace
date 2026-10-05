@@ -1,24 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  _tooltipData: unknown;
-  _tooltipHeight: number | null;
-  _tooltipMeasureToken: number;
-  renderRoot: { querySelector(s: string): unknown };
-  _measureTooltipHeight(): void;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 // A controllable deferred standing in for the child tooltip's updateComplete.
 function makeDeferred<T>() {
@@ -29,7 +12,7 @@ function makeDeferred<T>() {
   return { promise, resolve };
 }
 
-function withStubChild(sp: Internals, height: number, ready: Promise<unknown>) {
+function withStubChild(sp: PlotInternals, height: number, ready: Promise<unknown>) {
   const child = { offsetHeight: height, updateComplete: ready } as unknown;
   (sp as unknown as { renderRoot: { querySelector: () => unknown } }).renderRoot = {
     querySelector: (s: string) => (s.includes('protein-tooltip') ? child : null),
@@ -38,7 +21,7 @@ function withStubChild(sp: Internals, height: number, ready: Promise<unknown>) {
 
 describe('tooltip-height async measurement race (F-25 characterization lock)', () => {
   it('a newer hover (token bump) suppresses the stale measure write', async () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
+    const sp = createPlot();
     sp._tooltipData = { id: 'p0' };
     sp._tooltipHeight = null;
     const d = makeDeferred<void>();
@@ -52,7 +35,7 @@ describe('tooltip-height async measurement race (F-25 characterization lock)', (
   });
 
   it('clearing _tooltipData before resolve suppresses the write', async () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
+    const sp = createPlot();
     sp._tooltipData = { id: 'p0' };
     sp._tooltipHeight = null;
     const d = makeDeferred<void>();
@@ -66,7 +49,7 @@ describe('tooltip-height async measurement race (F-25 characterization lock)', (
   });
 
   it('a single in-flight measure with a matching token writes the height', async () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
+    const sp = createPlot();
     sp._tooltipData = { id: 'p0' };
     sp._tooltipHeight = null;
     const d = makeDeferred<void>();

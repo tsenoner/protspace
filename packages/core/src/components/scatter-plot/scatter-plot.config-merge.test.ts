@@ -5,32 +5,15 @@
  * restage the WebGL styles, geometry/interactivity keys rebuild the point
  * index, and render-only keys (contours) do neither.
  */
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ScatterplotConfig } from '@protspace/utils';
 
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  config: Partial<ScatterplotConfig>;
-  _webglRenderer: { invalidateStyleCache(): void; setStyleSignature(s: string): void } | null;
-  _schedulePointGridIndexRebuild(): void;
-  _reconcileConfigMerge(changed: Map<string, unknown>): void;
-};
+import { createPlot } from './test-support/plot-fixture';
 
 function apply(patch: Partial<ScatterplotConfig>) {
-  const sp = document.createElement('protspace-scatterplot') as Internals;
+  const sp = createPlot();
   const invalidateStyleCache = vi.fn();
-  sp._webglRenderer = { invalidateStyleCache, setStyleSignature: vi.fn() };
+  sp._webglRenderer = { invalidateStyleCache, setStyleSignature: vi.fn() } as never;
   const reindex = vi.spyOn(sp, '_schedulePointGridIndexRebuild').mockImplementation(() => {});
   sp.config = { width: 800, height: 600 };
   sp._reconcileConfigMerge(new Map([['config', undefined]]));

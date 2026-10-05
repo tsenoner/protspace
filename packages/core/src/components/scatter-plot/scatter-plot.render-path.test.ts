@@ -16,29 +16,11 @@
  * milliseconds and fail on the pre-fix tree for the right reason: at 1.5M the old
  * code took the cull branch and returned a freshly materialised object.
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PlotData } from '@protspace/utils';
 import * as d3 from 'd3';
 
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  _plotData: PlotData;
-  _scales: unknown;
-  _transform: d3.ZoomTransform;
-  _pointGridIndex: { isBuilt: () => boolean; queryByPixels: (...a: number[]) => number[] };
-  _getPointsForRendering(): PlotData;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 /**
  * A scatter-plot with just enough state for `_getPointsForRendering` to run: a
@@ -47,7 +29,7 @@ type Internals = HTMLElement & {
  * the second disjunct of its gate.
  */
 function hostWithPointCount(length: number) {
-  const el = document.createElement('protspace-scatterplot') as Internals;
+  const el = createPlot();
   const queryByPixels = vi.fn(() => [0, 1, 2]);
 
   el._plotData = {
@@ -70,7 +52,7 @@ function hostWithPointCount(length: number) {
   el._pointGridIndex = {
     isBuilt: () => true,
     queryByPixels,
-  } as unknown as Internals['_pointGridIndex'];
+  } as unknown as PlotInternals['_pointGridIndex'];
 
   return { el, queryByPixels };
 }

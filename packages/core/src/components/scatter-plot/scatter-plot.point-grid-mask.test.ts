@@ -4,54 +4,11 @@
  * only re-marks them. Every query must answer as a grid of just the visible
  * slots did, which is what the point grid held before.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import type { PlotData, VisualizationData } from '@protspace/utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { VisualizationData } from '@protspace/utils';
 import { PointGridIndex } from './interaction/point-grid-index';
-
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[];
-  _plotData: PlotData;
-  _scales: { x: (v: number) => number; y: (v: number) => number } | null;
-  _pointGridIndex: PointGridIndex;
-  _processData(): void;
-  _buildPointGridIndex(): void;
-  _schedulePointGridIndexRebuild(reindex?: boolean): void;
-  _scheduleVisibleSlotsRefresh(): void;
-  _getVisibleSlots(): number[] | null;
-  _visibleIndex(): PointGridIndex;
-  _interactionHost(): {
-    queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
-    queryByPolygon(vertices: [number, number][]): number[];
-  };
-  _dupOverlay: { deps: { getPointGridIndex(): Pick<PointGridIndex, 'queryByPixels'> } };
-  _sparseIndex: PointGridIndex | null;
-  _getVisiblePointCount(): number;
-  _getVisibilityModel(): { opacityAt(origIdx: number, id: string): number };
-  config: Record<string, unknown>;
-  updated(changed: Map<string, unknown>): void;
-};
-
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 2 ** 32;
-  };
-}
+import { seededRandom } from '../../test-support/seeded-random';
+import { createPlot, fakeFrames, type PlotInternals } from './test-support/plot-fixture';
 
 const FAMILIES = ['A', 'B', 'C'];
 
@@ -60,7 +17,7 @@ const FAMILIES = ['A', 'B', 'C'];
  * picks each one's family; uniform by default.
  */
 function makeData(n: number, family?: (i: number) => number): VisualizationData {
-  const next = rng(7);
+  const next = seededRandom(7);
   const coords = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) {
     const copy = i > 0 && next() < 0.2 ? Math.floor(next() * i) : -1;
@@ -83,23 +40,17 @@ function makeData(n: number, family?: (i: number) => number): VisualizationData 
   } as unknown as VisualizationData;
 }
 
-let rafQueue: FrameRequestCallback[];
+let frames: ReturnType<typeof fakeFrames>;
 
-function flushFrames() {
-  while (rafQueue.length) rafQueue.shift()!(performance.now());
-}
-
-function prime(n = 600, family?: (i: number) => number): Internals {
-  const sp = document.createElement('protspace-scatterplot') as Internals;
-  sp.data = makeData(n, family);
-  sp.selectedAnnotation = 'fam';
+function prime(n = 600, family?: (i: number) => number): PlotInternals {
+  const sp = createPlot({ data: makeData(n, family), selectedAnnotation: 'fam' });
   sp._processData();
   sp._buildPointGridIndex();
   return sp;
 }
 
 /** The grid as it was built before: only the slots that are interactive now. */
-function visibleOnlyGrid(sp: Internals): PointGridIndex {
+function visibleOnlyGrid(sp: PlotInternals): PointGridIndex {
   const slots = sp._getVisibleSlots()!;
   const grid = new PointGridIndex();
   grid.setScales(sp._scales as never);
@@ -107,19 +58,14 @@ function visibleOnlyGrid(sp: Internals): PointGridIndex {
   return grid;
 }
 
-function familyOf(sp: Internals, slot: number): string {
-  const rows = sp.data.annotation_data.fam as Int32Array;
+function familyOf(sp: PlotInternals, slot: number): string {
+  const rows = sp.data!.annotation_data.fam as Int32Array;
   return FAMILIES[rows[slot]];
 }
 
 describe('point grid over every slot, masked to the visible ones', () => {
   beforeEach(() => {
-    rafQueue = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      rafQueue.push(cb);
-      return rafQueue.length;
-    });
-    vi.stubGlobal('cancelAnimationFrame', () => {});
+    frames = fakeFrames();
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -128,7 +74,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const rebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
     sp.hiddenAnnotationValues = ['B'];
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     expect(rebuild).not.toHaveBeenCalled();
     const slots = sp._getVisibleSlots()!;
     expect(slots.length).toBeGreaterThan(0);
@@ -152,7 +98,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
       const opacityAt = vi.spyOn(sp._getVisibilityModel(), 'opacityAt');
       const count = countFirst ? sp._getVisiblePointCount() : -1;
       sp._scheduleVisibleSlotsRefresh();
-      flushFrames();
+      frames.flush();
       const slots = sp._getVisibleSlots()!;
       expect(slots).toEqual(all.filter((s) => familyOf(sp, s) !== hidden[0]));
       expect(sp._getVisiblePointCount()).toBe(slots.length);
@@ -166,12 +112,12 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const rebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
     sp._schedulePointGridIndexRebuild();
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     expect(rebuild).toHaveBeenCalledTimes(1);
 
     sp._plotData = { ...sp._plotData, xs: new Float32Array(sp._plotData.xs) };
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     expect(rebuild).toHaveBeenCalledTimes(2);
   });
 
@@ -180,9 +126,9 @@ describe('point grid over every slot, masked to the visible ones', () => {
     for (const hidden of [['B'], ['A', 'C'], ['A', 'B']]) {
       sp.hiddenAnnotationValues = hidden;
       sp._scheduleVisibleSlotsRefresh();
-      flushFrames();
+      frames.flush();
       const reference = visibleOnlyGrid(sp);
-      const next = rng(hidden.length * 31);
+      const next = seededRandom(hidden.length * 31);
       let hits = 0;
       for (let q = 0; q < 3000; q++) {
         const x = sp._scales!.x(next() * 100);
@@ -200,7 +146,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const sp = prime();
     sp.hiddenAnnotationValues = ['C'];
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     const reference = visibleOnlyGrid(sp);
     const [x0, y0, x1, y1] = [
       sp._scales!.x(10),
@@ -233,7 +179,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const select = (ids: string[]) => {
       sp.selectedProteinIds = ids;
       sp.updated(new Map([['selectedProteinIds', undefined]]));
-      flushFrames();
+      frames.flush();
     };
     // Faded points stay interactive by default: nothing to re-mark.
     const setVisible = vi.spyOn(sp._pointGridIndex, 'setVisible');
@@ -243,14 +189,14 @@ describe('point grid over every slot, masked to the visible ones', () => {
 
     sp.config = { fadedOpacity: 0 };
     sp.updated(new Map([['config', undefined]]));
-    flushFrames();
+    frames.flush();
     const all = Array.from({ length: sp._plotData.length }, (_, s) => s);
     select(['p3', 'p10']);
     expect(sp._getVisibleSlots()).toEqual([3, 10]);
     // A legend change while selected, then the selection cleared.
     sp.hiddenAnnotationValues = [familyOf(sp, 0) === 'A' ? 'B' : 'A'];
     sp.updated(new Map([['hiddenAnnotationValues', undefined]]));
-    flushFrames();
+    frames.flush();
     select([]);
     const hidden = sp.hiddenAnnotationValues[0];
     expect(sp._getVisibleSlots()).toEqual(all.filter((s) => familyOf(sp, s) !== hidden));
@@ -262,11 +208,11 @@ describe('point grid over every slot, masked to the visible ones', () => {
     const fullRebuild = vi.spyOn(sp._pointGridIndex, 'rebuild');
     sp.hiddenAnnotationValues = ['B', 'C'];
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     expect(fullRebuild).not.toHaveBeenCalled();
     expect(sp._sparseIndex).not.toBeNull();
     const reference = visibleOnlyGrid(sp);
-    const next = rng(5);
+    const next = seededRandom(5);
     for (let q = 0; q < 2000; q++) {
       const x = sp._scales!.x(next() * 100);
       const y = sp._scales!.y(next() * 100);
@@ -280,7 +226,7 @@ describe('point grid over every slot, masked to the visible ones', () => {
     // Showing them again drops it, without rebuilding the full grid.
     sp.hiddenAnnotationValues = [];
     sp._scheduleVisibleSlotsRefresh();
-    flushFrames();
+    frames.flush();
     expect(sp._sparseIndex).toBeNull();
     expect(fullRebuild).not.toHaveBeenCalled();
   });

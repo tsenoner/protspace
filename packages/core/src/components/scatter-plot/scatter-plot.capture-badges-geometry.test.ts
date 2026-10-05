@@ -10,41 +10,11 @@
  * aspect ratio, with the dots' size factor.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { VisualizationData, PlotData, ScatterplotConfig } from '@protspace/utils';
+import type { VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
+import { createPlot, fakeFrames, type PlotInternals } from './test-support/plot-fixture';
 import { ExportRenderer } from './webgl/renderer/export-renderer';
 import { DuplicateBadgesCanvasRenderer } from './duplicate-stacks/duplicate-badges-canvas-renderer';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  _processData(): void;
-  _buildPointGridIndex(): void;
-  _plotData: PlotData;
-  _mergedConfig: Required<ScatterplotConfig>;
-  _scales: { x: (n: number) => number; y: (n: number) => number } | null;
-  _webglRenderer: unknown;
-  _dupOverlay: {
-    ensureForViewport(k: string, a: number, b: number, c: number, d: number): boolean;
-    stacks: unknown[];
-  };
-  captureAtResolution(
-    width: number,
-    height: number,
-    options?: { resetView?: boolean },
-  ): HTMLCanvasElement;
-};
 
 // Three duplicate stacks at far-apart coords + two solos; a single annotation
 // value so nothing is legend-hidden. Shape mirrors
@@ -77,8 +47,8 @@ function dupData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-function prime(): Internals {
-  const sp = document.createElement('protspace-scatterplot') as Internals;
+function prime(): PlotInternals {
+  const sp = createPlot();
   // Unattached elements never run Lit's update cycle, so _reconcileConfigMerge
   // never fires — enable the overlay directly on the merged config.
   sp._mergedConfig = { ...sp._mergedConfig, enableDuplicateStackUI: true };
@@ -97,28 +67,19 @@ function prime(): Internals {
     createExportScales: vi.fn((w: number, h: number) =>
       ExportRenderer.createExportScales(sp._mergedConfig, sp._plotData, w, h),
     ),
-  };
+  } as never;
   return sp;
 }
 
 describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
-  let rafQueue: FrameRequestCallback[];
+  let frames: ReturnType<typeof fakeFrames>;
   beforeEach(() => {
-    rafQueue = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      rafQueue.push(cb);
-      return rafQueue.length;
-    });
+    frames = fakeFrames();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
-  const drain = () => {
-    const q = rafQueue;
-    rafQueue = [];
-    q.forEach((cb) => cb(0));
-  };
 
   it('after zooming the live view onto one stack, a 1600×400 capture still badges all three stacks, each on its export-projected dot', () => {
     const sp = prime();
@@ -129,7 +90,7 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
     const ax = live.x(0);
     const ay = live.y(0);
     sp._dupOverlay.ensureForViewport('zoomed', ax - 10, ay - 10, ax + 10, ay + 10);
-    drain();
+    frames.run();
     expect(sp._dupOverlay.stacks).toHaveLength(1);
 
     const out = sp.captureAtResolution(1600, 400, { resetView: true });

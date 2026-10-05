@@ -20,104 +20,18 @@
  * scatter-plot.filter-render.test.ts).
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import type { VisualizationData, NumericAnnotationDisplaySettingsMap } from '@protspace/utils';
+import type { VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type ScatterplotInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  numericAnnotationSettings: NumericAnnotationDisplaySettingsMap;
-  _getMaterializedData(): unknown;
-};
-
-const RED = '#ff0000';
-const GREEN = '#00ff00';
+import { createPlot, makeFamilyData } from './test-support/plot-fixture';
 
 /**
- * Categorical fixture: p0–p2 family "A", p3–p5 family "B". Mirrors
- * makeFamilyData in scatter-plot.filter-render.test.ts.
+ * `other` is a second categorical annotation, so we can flip selectedAnnotation.
+ * `score` is a numeric column (never the selected annotation here), so
+ * materializeVisualizationData returns a FRESH object on each materialization
+ * rather than echoing the source ref (its categorical-only short-circuit). This
+ * lets the reference-change assertions below distinguish re-materialization.
  */
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-      // a second categorical annotation so we can flip selectedAnnotation
-      other: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-      other: families.map((v) => [families.indexOf(v)]),
-    },
-    // A numeric column (never the selected annotation here) so
-    // materializeVisualizationData returns a FRESH object on each materialization
-    // rather than echoing the source ref (its categorical-only short-circuit).
-    // This lets the reference-change assertions below distinguish re-materialization.
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
-
-/** Second categorical dataset (distinct object ref) for the data-swap test. */
-function makeDataset2(): VisualizationData {
-  const families = ['C', 'C', 'C', 'D', 'D', 'D'];
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i * 2;
-    coords[i * 2 + 1] = i * 2;
-  });
-  return {
-    protein_ids: families.map((_, i) => `q${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map((v) => (v === 'C' ? '#0000ff' : '#ffff00')),
-        shapes: families.map(() => 'circle'),
-      },
-      other: {
-        values: families,
-        colors: families.map((v) => (v === 'C' ? '#0000ff' : '#ffff00')),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-      other: families.map((v) => [families.indexOf(v)]),
-    },
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
+const FAMILY = { other: true, score: true };
 
 /**
  * Fixture with a numeric annotation `score` so we can exercise the
@@ -165,20 +79,13 @@ function makeNumericData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-function makeScatter(data: VisualizationData, annotation: string): ScatterplotInternals {
-  const sp = document.createElement('protspace-scatterplot') as ScatterplotInternals;
-  sp.data = data;
-  sp.selectedAnnotation = annotation;
-  return sp;
-}
-
 describe('scatter-plot _getMaterializedData fast-path', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('repeated calls with unchanged inputs skip JSON.stringify', () => {
-    const sp = makeScatter(makeFamilyData(), 'fam');
+    const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
 
     // Prime: the JSON-key slow path runs once and populates the cache + the
     // fast-path key fields.
@@ -201,7 +108,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
   });
 
   it('fast-path miss: changing selectedAnnotation re-materializes', () => {
-    const sp = makeScatter(makeFamilyData(), 'fam');
+    const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
     const first = sp._getMaterializedData();
 
     const spy = vi.spyOn(JSON, 'stringify');
@@ -215,13 +122,18 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
   });
 
   it('fast-path miss: changing this.data ref re-materializes', () => {
-    const sp = makeScatter(makeFamilyData(), 'fam');
+    const sp = createPlot({ data: makeFamilyData(FAMILY), selectedAnnotation: 'fam' });
     const first = sp._getMaterializedData();
 
     const spy = vi.spyOn(JSON, 'stringify');
     const before = spy.mock.calls.length;
 
-    sp.data = makeDataset2();
+    sp.data = makeFamilyData({
+      ...FAMILY,
+      idPrefix: 'q',
+      families: { C: '#0000ff', D: '#ffff00' },
+      spacing: 2,
+    });
     const next = sp._getMaterializedData();
 
     expect(spy.mock.calls.length).toBeGreaterThan(before);
@@ -229,7 +141,7 @@ describe('scatter-plot _getMaterializedData fast-path', () => {
   });
 
   it('numeric-rebin: replacing numericAnnotationSettings wholesale re-materializes (fast-path miss)', () => {
-    const sp = makeScatter(makeNumericData(), 'score');
+    const sp = createPlot({ data: makeNumericData(), selectedAnnotation: 'score' });
     sp.numericAnnotationSettings = {
       score: { binCount: 3, strategy: 'linear', paletteId: 'viridis', reverseGradient: false },
     };

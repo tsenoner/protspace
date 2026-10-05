@@ -47,40 +47,13 @@
  * private handlers directly.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-function makeData(): VisualizationData {
-  const fams = ['A', 'A', 'B'];
-  const coords = new Float32Array(fams.length * 2);
-  fams.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: fams.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: fams,
-        colors: ['#f00', '#f00', '#0f0'],
-        shapes: fams.map(() => 'circle'),
-      },
-    },
-    annotation_data: { fam: fams.map((v) => [fams.indexOf(v)]) },
-  } as unknown as VisualizationData;
-}
+import {
+  createPlot,
+  fakeFrames,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 type WebglStub = {
   invalidateDepthOrder: ReturnType<typeof vi.fn>;
@@ -98,33 +71,18 @@ type WebglStub = {
   setStyleSignature: ReturnType<typeof vi.fn>;
 };
 
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  _plotData: { length: number };
-  _zOrderMapping: Record<string, number> | null;
-  _colorMapping: Record<string, string> | null;
-  _shapeMapping: Record<string, string> | null;
-  _styleGettersCache: unknown;
-  _renderPlot(): void;
-  _flushRender(): void;
-  _webglRenderer: WebglStub;
-  _numericRecomputeRunning: boolean;
-  _handleZOrderChange(event: Event): void;
-  _handleColorMappingChange(event: Event): void;
-  _scheduleNumericAnnotationRefresh(): void;
-  _rebuildStyleAndSignature(changed: Map<string, unknown>): void;
-  requestUpdate(name?: PropertyKey, oldValue?: unknown): void;
-};
+/** The plot, with the stub renderer `makeEl` gives it. */
+type Plot = Omit<PlotInternals, '_webglRenderer'> & { _webglRenderer: WebglStub };
 
-function makeEl(): Internals {
-  const el = document.createElement('protspace-scatterplot') as unknown as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
+function makeEl(): Plot {
+  const el = createPlot({
+    data: makeFamilyData({ n: 3, families: { A: '#f00', B: '#0f0' } }),
+    selectedAnnotation: 'fam',
+  }) as unknown as Plot;
   // Simulate post-process state: non-empty plot so the handler render branch runs.
   (el as unknown as { _plotData: unknown })._plotData = { length: 3 };
   // Stub the renderer so invalidate* calls are no-ops and observable.
-  (el as unknown as { _webglRenderer: WebglStub })._webglRenderer = {
+  el._webglRenderer = {
     invalidateDepthOrder: vi.fn(),
     invalidateStyleCache: vi.fn(),
     invalidateCategoryStyles: vi.fn(),
@@ -149,11 +107,10 @@ function zOrderEvent(detail: unknown): Event {
 // lands before teardown is a timing race, so it surfaced as an intermittent CI
 // failure rather than a consistent one.
 //
-// Holding the callbacks unrun keeps the file to the synchronous, never-connected
-// contract its header describes.
+// Holding the callbacks unrun (fakeFrames queues them, and no test runs a frame)
+// keeps the file to the synchronous, never-connected contract its header describes.
 beforeEach(() => {
-  vi.stubGlobal('requestAnimationFrame', () => 1);
-  vi.stubGlobal('cancelAnimationFrame', () => {});
+  fakeFrames();
 });
 
 afterEach(() => {

@@ -17,63 +17,17 @@
 // We queue (do NOT run inline) RAFs via a stubbed requestAnimationFrame so the
 // two overlapping schedules both register before either body executes, then
 // drain them to exercise the drop.
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
-
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  _scheduleNumericAnnotationRefresh(): void;
-  _numericRecomputeRunning: boolean;
-};
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createPlot, makeFamilyData } from './test-support/plot-fixture';
 
 /**
- * Real VisualizationData fixture, mirroring makeFamilyData from
- * scatter-plot.materialize-cache.test.ts (the plan sketch's `features` /
- * `feature_data` / `metadata.dimensions` shape is not a real VisualizationData
- * and would make `_getMaterializedData` throw on the missing `annotations` map,
- * causing the RAF body to bail before reaching the end event). `score` is a
- * numeric column selected as the active annotation; it is intentionally absent
- * from `annotations` (the production code reads `annotations[selectedAnnotation]`
- * with optional chaining, so this stays valid and triggers the numeric path).
+ * `score` is a numeric column selected as the active annotation; it is
+ * intentionally absent from `annotations` (the production code reads
+ * `annotations[selectedAnnotation]` with optional chaining, so this stays valid
+ * and triggers the numeric path).
  */
-function numericData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? '#ff0000' : '#00ff00');
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
+const scorePlot = () =>
+  createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'score' });
 
 describe('numeric-recompute stale-job guard (F-23 characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
@@ -92,9 +46,7 @@ describe('numeric-recompute stale-job guard (F-23 characterization lock)', () =>
   };
 
   it('only the latest of two overlapping schedules clears the running state', () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
-    sp.data = numericData();
-    sp.selectedAnnotation = 'score';
+    const sp = scorePlot();
 
     sp._scheduleNumericAnnotationRefresh(); // job 1 → queues RAF #1
     sp._scheduleNumericAnnotationRefresh(); // job 2 → bumps id, queues RAF #2
@@ -105,9 +57,7 @@ describe('numeric-recompute stale-job guard (F-23 characterization lock)', () =>
   });
 
   it('the superseded job does not clear the running state before the latest job runs', () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
-    sp.data = numericData();
-    sp.selectedAnnotation = 'score';
+    const sp = scorePlot();
 
     sp._scheduleNumericAnnotationRefresh(); // job 1 → queues RAF #1
     sp._scheduleNumericAnnotationRefresh(); // job 2 → bumps id, queues RAF #2

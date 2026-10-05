@@ -33,18 +33,7 @@
  *   - F-21: `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
  *     null (currently RED — uses a non-null assertion).
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
-
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // Count WebGLRenderer constructions without a real GL context. We preserve the
 // real module's other exports (computeSizeScaleFactor, pointRadiusCss) and
@@ -82,61 +71,10 @@ vi.mock('./webgl', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer };
 });
 
-type FakeWebGLRenderer = InstanceType<typeof FakeWebGLRenderer>;
+import { createPlot, fakeFrames, makeFamilyData } from './test-support/plot-fixture';
 
-import './scatter-plot';
-
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? '#ff0000' : '#00ff00');
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
-
-type Host = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProteinIds: string[];
-  _canvas?: HTMLCanvasElement;
-  firstUpdated(): void;
-  disconnectedCallback(): void;
-  _scheduleNumericAnnotationRefresh(): void;
-  _commitSelection(ids: string[], clearVisual: () => void): void;
-  _renderWebGL(trigger?: string): void;
-  _numericRecomputeRunning: boolean;
-  _webglRenderer: FakeWebGLRenderer | null;
-  _interaction: {
-    teardown(): void;
-    resetZoom(): void;
-    initialize(): void;
-  } | null;
-};
-
-function makeHost(): Host {
-  const sp = document.createElement('protspace-scatterplot') as Host;
-  sp.data = makeFamilyData();
-  sp.selectedAnnotation = 'fam';
-  return sp;
+function makeHost() {
+  return createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
 }
 
 afterEach(() => {
@@ -170,11 +108,8 @@ describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () =>
 
 describe('F-05: numeric recompute does not complete after disconnect', () => {
   it('a numeric recompute scheduled then disconnected leaves no job running', () => {
-    const rafQueue: FrameRequestCallback[] = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      rafQueue.push(cb);
-      return rafQueue.length;
-    });
+    const frames = fakeFrames();
+    // A cancel that does nothing, so the superseded body still runs and must bail.
     vi.stubGlobal('cancelAnimationFrame', () => {});
 
     const sp = makeHost();
@@ -190,7 +125,7 @@ describe('F-05: numeric recompute does not complete after disconnect', () => {
     // (the cancel bumped the job id), so it neither runs the body nor re-enters
     // the running state. (F-46: the removed -end event is now re-characterized via
     // the kept busy-state mirror.)
-    rafQueue.forEach((cb) => cb(0));
+    frames.run();
 
     expect(sp._numericRecomputeRunning).toBe(false);
   });
@@ -206,7 +141,7 @@ describe('F-12: resetZoom transition interrupted on disconnect', () => {
       teardown,
       resetZoom: () => {},
       initialize: () => {},
-    };
+    } as never;
 
     sp.disconnectedCallback();
 
@@ -216,18 +151,8 @@ describe('F-12: resetZoom transition interrupted on disconnect', () => {
 
 describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
   it('a selection committed then disconnected before the RAF fires dispatches nothing', () => {
-    // Map id -> callback so cancelAnimationFrame can actually remove a pending
-    // RAF body (mirrors the browser: the disconnect cancel must un-queue it).
-    const rafQueue = new Map<number, FrameRequestCallback>();
-    let nextId = 1;
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      const id = nextId++;
-      rafQueue.set(id, cb);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      rafQueue.delete(id);
-    });
+    // The disconnect cancel must un-queue the pending RAF body, as in the browser.
+    const frames = fakeFrames();
 
     const sp = makeHost();
     const brushEvents: unknown[] = [];
@@ -239,7 +164,7 @@ describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
     sp.disconnectedCallback();
 
     // Drain whatever survives: the cancelled commit RAF is gone, so nothing fires.
-    rafQueue.forEach((cb) => cb(0));
+    frames.run();
 
     expect(brushEvents).toHaveLength(0);
     expect(sp.selectedProteinIds).not.toEqual(['p0', 'p1']);

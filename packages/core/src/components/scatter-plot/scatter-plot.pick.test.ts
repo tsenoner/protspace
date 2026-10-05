@@ -8,33 +8,9 @@
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
+import type { PlotData, VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type PickInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  hiddenAnnotationValues: string[];
-  _plotData: PlotData;
-  _transform: d3.ZoomTransform;
-  _pointGridIndex: { findNearest(x: number, y: number, r: number): number };
-  _webglRenderer: { pointScale(): number } | null;
-  _mergedConfig: { pointSize: number };
-  _cachedScales: { x(v: number): number; y(v: number): number } | null;
-  _scalesCacheDeps: unknown;
-  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 function makeData(): VisualizationData {
   return {
@@ -47,20 +23,18 @@ function makeData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-function makePickScatter(): PickInternals {
-  const sp = document.createElement('protspace-scatterplot') as PickInternals;
-  sp.data = makeData();
-  sp.selectedAnnotation = 'fam';
+function makePickScatter(): PlotInternals {
+  const sp = createPlot({ data: makeData(), selectedAnnotation: 'fam' });
   sp._plotData = {
     length: 2,
     xs: new Float32Array([0, 50]),
     ys: new Float32Array([0, 50]),
     zs: null,
     originalIndices: null,
-    proteinIds: sp.data.protein_ids,
+    proteinIds: sp.data!.protein_ids,
   } as unknown as PlotData;
   sp._transform = d3.zoomIdentity;
-  sp._webglRenderer = { pointScale: () => 1 };
+  sp._webglRenderer = { pointScale: () => 1 } as never;
   sp._mergedConfig.pointSize = 225;
   // Inject identity scales so scales.x(0)===0 / scales.y(0)===0 (the fixture's
   // documented "dataX===mouseX" assumption). _scales is a cached getter keyed on

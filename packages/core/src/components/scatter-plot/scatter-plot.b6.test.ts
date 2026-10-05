@@ -37,89 +37,18 @@
  *  - F-18 INV-10 re-default                : GREEN  (existing default)
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import type {
-  VisualizationData,
-  NumericAnnotationDisplaySettingsMap,
-  PlotData,
-} from '@protspace/utils';
-
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
+import type { VisualizationData } from '@protspace/utils';
+import { createPlot, makeFamilyData, type PlotInternals } from './test-support/plot-fixture';
 
 const RED = '#ff0000';
-const GREEN = '#00ff00';
-
-type Internals = HTMLElement & {
-  // public reactive props
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProjectionIndex: number;
-  projectionPlane: string;
-  filteredProteinIds: string[];
-  filtersActive: boolean;
-  selectedProteinIds: string[];
-  numericAnnotationSettings: NumericAnnotationDisplaySettingsMap;
-  // internals under test
-  _plotData: PlotData;
-  updated(changed: Map<string, unknown>): void;
-  _processData(): void;
-  _getMaterializedData(): VisualizationData | null;
-  _getCurrentDisplayData(options?: {
-    includeFilteredProteinIds?: boolean;
-  }): VisualizationData | null;
-};
 
 /**
- * Categorical family fixture with N points across two families plus a numeric
- * column that is NEVER the selected annotation — this forces
- * materializeVisualizationData to return a FRESH object on each materialization
- * (its categorical-only short-circuit echoes the source ref otherwise), so the
- * reference-identity assertions below are meaningful. Mirrors makeFamilyData in
- * scatter-plot.materialize-cache.test.ts.
+ * Two families plus a numeric column that is NEVER the selected annotation: it
+ * forces materializeVisualizationData to return a FRESH object on each
+ * materialization (its categorical-only short-circuit echoes the source ref
+ * otherwise), so the reference-identity assertions below are meaningful.
  */
-function makeFamilyData(opts?: { n?: number; idPrefix?: string }): VisualizationData {
-  const n = opts?.n ?? 6;
-  const idPrefix = opts?.idPrefix ?? 'p';
-  const families = Array.from({ length: n }, (_, i) => (i < Math.ceil(n / 2) ? 'A' : 'B'));
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(n * 2);
-  for (let i = 0; i < n; i++) {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  }
-  return {
-    protein_ids: families.map((_, i) => `${idPrefix}${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-      other: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-      other: families.map((v) => [families.indexOf(v)]),
-    },
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
+const WITH_SCORE = { other: true, score: true };
 
 /** Fixture whose single annotation key is `only` (for the INV-10 re-default). */
 function makeSingleAnnotationData(n = 4): VisualizationData {
@@ -148,10 +77,6 @@ function makeSingleAnnotationData(n = 4): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-function makeScatter(): Internals {
-  return document.createElement('protspace-scatterplot') as Internals;
-}
-
 /** Build a changedProperties Map mirroring Lit's contract (key -> oldValue). */
 function changed(keys: string[]): Map<string, unknown> {
   const m = new Map<string, unknown>();
@@ -168,8 +93,8 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 describe('B6 F-60 _getMaterializedData single numeric read', () => {
   it('returns a stable reference on repeated calls with unchanged inputs (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
 
     // Prime: first call populates the cache + fast-path key fields.
@@ -186,8 +111,8 @@ describe('B6 F-60 _getMaterializedData single numeric read', () => {
   });
 
   it('fast-path miss: changing selectedAnnotation re-materializes (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
     const first = el._getMaterializedData();
 
@@ -201,9 +126,9 @@ describe('B6 F-60 _getMaterializedData single numeric read', () => {
 // F-40 — memoize the filtered display-data rebuild
 // ---------------------------------------------------------------------------
 describe('B6 F-40 filtered display-data memoization', () => {
-  function primed(): Internals {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+  function primed(): PlotInternals {
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
     el.filteredProteinIds = ['p1', 'p3'];
     el.filtersActive = true;
@@ -252,15 +177,15 @@ describe('B6 F-40 filtered display-data memoization', () => {
 // ---------------------------------------------------------------------------
 describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
   it('clears stale filters before reprocessing on a data swap (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
     el.filteredProteinIds = ['p1'];
     el.filtersActive = true;
     el._processData();
 
     // Swap to a new dataset whose ids do not overlap p*.
-    el.data = makeFamilyData({ n: 5, idPrefix: 'q' });
+    el.data = makeFamilyData({ ...WITH_SCORE, n: 5, idPrefix: 'q' });
     el.updated(changed(['data']));
 
     // The data-swap filter reset (INV) must fire BEFORE _processData, so the
@@ -271,8 +196,8 @@ describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
   });
 
   it('emits data-change exactly when an INV-11 geometry input changes (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
     el._processData();
 
@@ -292,8 +217,8 @@ describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
   });
 
   it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10, GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
+    const el = createPlot();
+    el.data = makeFamilyData(WITH_SCORE);
     el.selectedAnnotation = 'fam';
     el._processData();
 

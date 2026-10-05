@@ -7,19 +7,7 @@
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-type Internals = HTMLElement & { _createWebglRenderer(): void };
+import { createPlot } from './test-support/plot-fixture';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -31,7 +19,7 @@ describe('scatter-plot shader prewarm', () => {
       gl as unknown as { getShaderParameter: () => boolean },
       'getShaderParameter',
     );
-    const el = document.createElement('protspace-scatterplot') as Internals;
+    const el = createPlot();
     Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
 
     el._createWebglRenderer();
