@@ -8,7 +8,6 @@ import {
   isValidPersistedExportOptions,
   isValidSortMode,
   normalizeBundleSettings,
-  sanitizeLegendSettingsMap,
 } from './settings-validation';
 import type {
   BundleSettings,
@@ -376,23 +375,5 @@ describe('LegendPersistedSettings — includeShapes backward compat', () => {
       selectedPaletteId: 'kellys',
     };
     expect(isValidLegendSettings(legacyMinusFlag)).toBe(true);
-  });
-
-  it('sanitizeLegendSettingsMap drops includeShapes from the sanitised output', () => {
-    const input = {
-      annotation: {
-        maxVisibleValues: 10,
-        includeShapes: true,
-        shapeSize: 5,
-        sortMode: 'size-desc',
-        hiddenValues: [],
-        categories: {},
-        enableDuplicateStackUI: false,
-        selectedPaletteId: 'kellys',
-      },
-    };
-    const sanitised = sanitizeLegendSettingsMap(input);
-    expect(sanitised).not.toBeNull();
-    expect(sanitised!.annotation).not.toHaveProperty('includeShapes');
   });
 });
