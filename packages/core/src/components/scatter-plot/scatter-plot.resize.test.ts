@@ -6,42 +6,23 @@
  * positions through a uniform, so a step redraws what is already on the GPU. The
  * point grid is still rebuilt on the next frame (~30 ms at 573K).
  *
- * As in scatter-plot.render-coalescing.test.ts, the element stays unattached and
- * a real WebGLRenderer on the mock WebGL2 canvas is attached by hand; the last
- * test attaches one to run Lit's update cycle.
+ * As in scatter-plot.render-coalescing.test.ts, the element stays unattached, a
+ * real WebGLRenderer on the mock WebGL2 canvas is attached by hand, and the perf
+ * counters count the re-stages; the last test attaches one to run Lit's update cycle.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { PlotData, ScalePair, VisualizationData } from '@protspace/utils';
-import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
+import type { VisualizationData } from '@protspace/utils';
+import type * as PerfCounters from '../../utils/perf-counters';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
+vi.mock('../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
 });
 
-import './scatter-plot';
+import { createPerfCounters, perfCounters } from '../../utils/perf-counters';
+import { createPlot, fakeFrames, mountPlot } from './test-support/plot-fixture';
 
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  updateComplete: Promise<boolean>;
-  _plotData: PlotData;
-  _scales: ScalePair | null;
-  _webglRenderer: { populateBuffers(...a: unknown[]): void } | null;
-  _dupOverlay: { resetState(): void };
-  _processData(): void;
-  _buildPointGridIndex(): void;
-  _createWebglRenderer(): void;
-  _renderNow(): void;
-  _renderPlot(): void;
-  _updateSizeAndRender(): void;
-  pickInteractivePointAt(x: number, y: number): { id: string } | null;
-};
+const counters = perfCounters!;
 
 const XS = [1, 4, 6, 9];
 const YS = [2, 8, 3, 7];
@@ -58,12 +39,7 @@ function makeData(xs = XS): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-let frames: FrameRequestCallback[];
-const runFrame = () => {
-  const queued = frames;
-  frames = [];
-  queued.forEach((cb) => cb(performance.now()));
-};
+let frames: ReturnType<typeof fakeFrames>;
 
 function sizeTo(el: HTMLElement, width: number, height: number) {
   Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => width });
@@ -72,27 +48,18 @@ function sizeTo(el: HTMLElement, width: number, height: number) {
 
 /** An unattached 800x600 plot with data, a staged render and a built point index. */
 function makePlot() {
-  const el = document.createElement('protspace-scatterplot') as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
-  el._processData();
-  const { canvas } = createMockCanvas();
-  Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
+  const el = mountPlot({ data: makeData(), selectedAnnotation: 'fam' });
   sizeTo(el, 800, 600);
   el._updateSizeAndRender();
   el._buildPointGridIndex();
-  runFrame();
-  const populate = vi.spyOn(el._webglRenderer!, 'populateBuffers');
+  frames.run();
+  Object.assign(counters, createPerfCounters());
   const rebuild = vi.spyOn(el, '_buildPointGridIndex');
-  return { el, populate, rebuild };
+  return { el, rebuild };
 }
 
 beforeEach(() => {
-  frames = [];
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-    frames[id - 1] = () => {};
-  });
+  frames = fakeFrames();
 });
 
 afterEach(() => {
@@ -102,7 +69,7 @@ afterEach(() => {
 
 describe('scatter-plot resize', () => {
   it('redraws on the spot without re-staging', () => {
-    const { el, populate, rebuild } = makePlot();
+    const { el, rebuild } = makePlot();
     const render = vi.spyOn(el, '_renderPlot');
 
     for (const [w, h] of [
@@ -112,11 +79,11 @@ describe('scatter-plot resize', () => {
     ]) {
       sizeTo(el, w, h);
       el._updateSizeAndRender();
-      runFrame();
+      frames.run();
     }
 
     expect(render).toHaveBeenCalledTimes(3);
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
     expect(rebuild).toHaveBeenCalledTimes(3);
   });
 
@@ -125,7 +92,7 @@ describe('scatter-plot resize', () => {
     const before = el._scales!;
     sizeTo(el, 1440, 500);
     el._updateSizeAndRender();
-    runFrame();
+    frames.run();
     const after = el._scales!;
 
     XS.forEach((x, i) => {
@@ -141,7 +108,7 @@ describe('scatter-plot resize', () => {
     sizeTo(el, 1000, 700);
     el._updateSizeAndRender();
     expect(reset).not.toHaveBeenCalled();
-    runFrame();
+    frames.run();
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
@@ -150,29 +117,29 @@ describe('scatter-plot resize', () => {
     el.data = makeData([0, 3, 5, 20]);
     el._processData();
     // What updated() schedules for a geometry change.
-    (el as unknown as { _schedulePointGridIndexRebuild(): void })._schedulePointGridIndexRebuild();
+    el._schedulePointGridIndexRebuild();
     sizeTo(el, 1000, 700);
     el._updateSizeAndRender();
-    runFrame();
+    frames.run();
     expect(rebuild).toHaveBeenCalledTimes(1);
     expect(el.pickInteractivePointAt(el._scales!.x(20), el._scales!.y(YS[3]))?.id).toBe('p3');
   });
 
   it('draws once per step: the update the new size triggers does not draw again', async () => {
-    const el = document.createElement('protspace-scatterplot') as Internals;
+    const el = createPlot();
     document.body.appendChild(el);
     el.data = makeData();
     el.selectedAnnotation = 'fam';
     await el.updateComplete;
-    runFrame();
+    frames.run();
     await el.updateComplete;
-    runFrame();
+    frames.run();
 
     const render = vi.spyOn(el, '_renderPlot');
     sizeTo(el, 1000, 700);
     el._updateSizeAndRender();
     await el.updateComplete;
-    runFrame();
+    frames.run();
     expect(render).toHaveBeenCalledTimes(1);
     el.remove();
   });

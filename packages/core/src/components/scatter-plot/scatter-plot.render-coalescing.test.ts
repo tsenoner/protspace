@@ -8,47 +8,24 @@
  * is ~460 ms.
  *
  * The element is never appended, so Lit's lifecycle never runs. A real
- * WebGLRenderer on the mock WebGL2 canvas is attached by hand, which is what
- * makes `populateBuffers` the observable: it runs once per re-stage and takes
- * the merged (updatePositions, updateStyles) flags as arguments.
+ * WebGLRenderer on the mock WebGL2 canvas is attached by hand, and the perf
+ * counters are the observable: `restage` counts the re-stages, `restagePos`
+ * and `restageStyle` the ones that rewrote positions and styles.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { PlotData, VisualizationData } from '@protspace/utils';
-import { createMockCanvas } from './webgl/renderer/test-support/mock-webgl2';
+import type { VisualizationData } from '@protspace/utils';
+import type * as PerfCounters from '../../utils/perf-counters';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
+vi.mock('../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
 });
 
-import './scatter-plot';
+import { createPerfCounters, perfCounters } from '../../utils/perf-counters';
+import { fakeFrames, mountPlot } from './test-support/plot-fixture';
 
-type Renderer = {
-  invalidatePositionCache(): void;
-  renderToCanvas(...a: unknown[]): HTMLCanvasElement;
-  populateBuffers(pd: PlotData, scales: unknown, positions: boolean, styles: boolean): void;
-};
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  _plotData: PlotData;
-  _webglRenderer: Renderer | null;
-  _processData(): void;
-  _createWebglRenderer(): void;
-  _requestRender(): void;
-  _flushRender(): void;
-  _renderPlot(): void;
-  _handleZOrderChange(event: Event): void;
-  _handleColorMappingChange(event: Event): void;
-  captureAtResolution(width: number, height: number): HTMLCanvasElement;
-  getDataExtent(): { xMin: number; xMax: number; yMin: number; yMax: number } | null;
-};
+const counters = perfCounters!;
+const resetCounters = () => Object.assign(counters, createPerfCounters());
 
 function makeData(): VisualizationData {
   return {
@@ -66,28 +43,13 @@ function makeData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-let frames: FrameRequestCallback[];
-const runFrame = () => {
-  const queued = frames;
-  frames = [];
-  queued.forEach((cb) => cb(performance.now()));
-};
+let frames: ReturnType<typeof fakeFrames>;
 
 /** An unattached plot with data, a real renderer, and one render already staged. */
 function makePlot() {
-  const el = document.createElement('protspace-scatterplot') as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
-  el._processData();
-  const { canvas } = createMockCanvas();
-  Object.defineProperty(el, '_canvas', { configurable: true, get: () => canvas });
-  el._createWebglRenderer();
-  const renderer = el._webglRenderer!;
-  const populate = vi.spyOn(renderer, 'populateBuffers');
-  el._requestRender();
-  el._flushRender();
-  populate.mockClear();
-  return { el, renderer, populate };
+  const el = mountPlot({ data: makeData(), selectedAnnotation: 'fam' });
+  resetCounters();
+  return { el, renderer: el._webglRenderer! };
 }
 
 const zOrder = (m: Record<string, number>) =>
@@ -102,11 +64,7 @@ const colors = (colorOnly: boolean) =>
   });
 
 beforeEach(() => {
-  frames = [];
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-    frames[id - 1] = () => {};
-  });
+  frames = fakeFrames();
 });
 
 afterEach(() => {
@@ -116,70 +74,68 @@ afterEach(() => {
 
 describe('render coalescing', () => {
   it('requests made before a frame re-stage once, on that frame', () => {
-    const { el, populate } = makePlot();
+    const { el } = makePlot();
 
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     el._handleColorMappingChange(colors(false));
     el._requestRender();
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
 
-    runFrame();
-    expect(populate).toHaveBeenCalledTimes(1);
+    frames.run();
+    expect(counters.restage).toBe(1);
 
-    runFrame();
-    expect(populate).toHaveBeenCalledTimes(1);
+    frames.run();
+    expect(counters.restage).toBe(1);
   });
 
   it('the one re-stage carries the union of the requests’ invalidations', () => {
-    const { el, renderer, populate } = makePlot();
+    const { el, renderer } = makePlot();
 
     // Alone, each is a partial re-stage: positions only, then styles only.
     renderer.invalidatePositionCache();
     el._requestRender();
     el._handleColorMappingChange(colors(true));
 
-    runFrame();
-    expect(populate).toHaveBeenCalledTimes(1);
-    const [, , positions, styles] = populate.mock.calls[0];
-    expect([positions, styles]).toEqual([true, true]);
+    frames.run();
+    expect([counters.restage, counters.restagePos, counters.restageStyle]).toEqual([1, 1, 1]);
   });
 
   it('a flush renders a waiting request now, and the frame then finds nothing to do', () => {
-    const { el, populate } = makePlot();
+    const { el } = makePlot();
 
     el._handleColorMappingChange(colors(false));
     el._flushRender();
-    expect(populate).toHaveBeenCalledTimes(1);
+    expect(counters.restage).toBe(1);
 
-    runFrame();
-    expect(populate).toHaveBeenCalledTimes(1);
+    frames.run();
+    expect(counters.restage).toBe(1);
   });
 
   it('a legend mapping equal to the current one does not re-stage', () => {
-    const { el, populate } = makePlot();
+    const { el } = makePlot();
     el._handleZOrderChange(zOrder({ A: 1, B: 0 }));
     el._handleColorMappingChange(colors(false));
-    runFrame();
-    populate.mockClear();
+    frames.run();
+    resetCounters();
 
     // A legend rebuild re-sends the same maps as new objects.
     el._handleZOrderChange(zOrder({ B: 0, A: 1 }));
     el._handleColorMappingChange(colors(false));
-    runFrame();
-    expect(populate).not.toHaveBeenCalled();
+    frames.run();
+    expect(counters.restage).toBe(0);
 
     el._handleZOrderChange(zOrder({ A: 0, B: 1 }));
-    runFrame();
-    expect(populate).toHaveBeenCalledTimes(1);
+    frames.run();
+    expect(counters.restage).toBe(1);
   });
 
   it('a colour-only change restyles the categories on the next frame, without a re-stage', () => {
-    const { el, renderer, populate } = makePlot();
-    const render = vi.spyOn(renderer as unknown as { render(pd: PlotData): void }, 'render');
+    const { el, renderer } = makePlot();
+    const render = vi.spyOn(renderer, 'render');
     el._handleColorMappingChange(colors(true));
-    runFrame();
+    frames.run();
     expect(render).toHaveBeenCalledTimes(1);
-    expect(populate).not.toHaveBeenCalled();
+    expect(counters.restage).toBe(0);
   });
 
   it('a flush with nothing requested does not render', () => {
@@ -190,29 +146,28 @@ describe('render coalescing', () => {
   });
 
   it('without requestAnimationFrame a request renders immediately', () => {
-    const { el, populate } = makePlot();
+    const { el } = makePlot();
     vi.stubGlobal('requestAnimationFrame', undefined);
 
     el._handleColorMappingChange(colors(false));
-    expect(populate).toHaveBeenCalledTimes(1);
+    expect(counters.restage).toBe(1);
   });
 
   it('export and the data extent see a render that was only requested', () => {
-    const { el, renderer, populate } = makePlot();
-    const order: string[] = [];
-    populate.mockImplementation(() => order.push('stage'));
+    const { el, renderer } = makePlot();
+    const stagedAtExport: number[] = [];
     vi.spyOn(renderer, 'renderToCanvas').mockImplementation(() => {
-      order.push('export');
+      stagedAtExport.push(counters.restage);
       return document.createElement('canvas');
     });
 
     el._handleColorMappingChange(colors(false));
     el.captureAtResolution(100, 100);
-    expect(order).toEqual(['stage', 'export']);
+    expect(stagedAtExport).toEqual([1]);
 
     renderer.invalidatePositionCache();
     el._requestRender();
     expect(el.getDataExtent()).not.toBeNull();
-    expect(order).toEqual(['stage', 'export', 'stage']);
+    expect(counters.restage).toBe(2);
   });
 });
