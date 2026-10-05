@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { sortIndicesByDepthDescending } from './depth-sort';
+import { seededRandom } from '../../../../test-support/seeded-random';
 
 describe('sortIndicesByDepthDescending', () => {
   it('basic: descending depth, ties break by ascending original index', () => {
@@ -77,18 +78,9 @@ function referenceOrder(depths: Float32Array, count: number): number[] {
   return idx;
 }
 
-/** Deterministic PRNG so a failure is reproducible. */
-function makeRng(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
 describe('sortIndicesByDepthDescending parity with the comparator', () => {
   it('matches the comparator for few distinct depths (counting-sort path)', () => {
-    const rng = makeRng(12345);
+    const rng = seededRandom(12345);
     for (const distinctCount of [1, 2, 7, 50]) {
       const palette = Array.from({ length: distinctCount }, () => Math.fround(rng()));
       const n = 5000;
@@ -110,7 +102,7 @@ describe('sortIndicesByDepthDescending parity with the comparator', () => {
         }
       }
     }
-    const rng = makeRng(999);
+    const rng = seededRandom(999);
     const n = 20000;
     const depths = new Float32Array(n);
     for (let i = 0; i < n; i++) depths[i] = palette[Math.floor(rng() * palette.length)];
@@ -142,7 +134,7 @@ describe('sortIndicesByDepthDescending parity with the comparator', () => {
   // slot per opacity, so a high-cardinality categorical column (thousands of categories)
   // exceeds 4096 and takes this path in production, not just in tests.
   it('matches the comparator above the distinct-value cap (fallback path)', () => {
-    const rng = makeRng(777);
+    const rng = seededRandom(777);
     const n = 20000;
     const depths = new Float32Array(n);
     for (let i = 0; i < n; i++) depths[i] = rng(); // ~20000 distinct >> 4096 cap
@@ -153,7 +145,7 @@ describe('sortIndicesByDepthDescending parity with the comparator', () => {
   });
 
   it('matches the comparator just under the distinct-value cap', () => {
-    const rng = makeRng(4242);
+    const rng = seededRandom(4242);
     const distinctCount = 4000;
     const palette = Array.from({ length: distinctCount }, (_, i) => Math.fround(i / distinctCount));
     const n = 12000;
@@ -195,11 +187,7 @@ describe('sortIndicesByDepthDescending with a radix scratch buffer', () => {
   }
 
   function randomDepths(n: number, pick: (r: number) => number): Float32Array {
-    let s = 12345;
-    const next = () => {
-      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-      return s / 2 ** 32;
-    };
+    const next = seededRandom(12345);
     return Float32Array.from({ length: n }, () => pick(next()));
   }
 

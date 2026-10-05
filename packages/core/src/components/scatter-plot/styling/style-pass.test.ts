@@ -20,6 +20,7 @@ import {
   legacyStage,
   stageArrays,
 } from '../webgl/renderer/test-support/legacy-staging';
+import { seededRandom } from '../../../test-support/seeded-random';
 
 // jsdom has no 2D canvas, so the real resolveColor maps every colour to white
 // and could not tell two colours apart. Parse hex by hand instead.
@@ -40,15 +41,6 @@ const scales: ScalePair = {
   y: d3.scaleLinear().domain([0, 100]).range([600, 0]),
 };
 
-/** Deterministic pseudo-random sequence in [0, 1). */
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 2 ** 32;
-  };
-}
-
 const VALUES = ['alpha', 'beta', 'gamma', 'delta', null, 'epsilon'];
 const COLORS = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628'];
 
@@ -60,7 +52,7 @@ type Storage = 'int32' | 'dense' | 'sparse' | 'csr';
  * colours.
  */
 function makeData(n: number, storage: Storage, seed = 1): VisualizationData {
-  const next = rng(seed);
+  const next = seededRandom(seed);
   const code = () => {
     const r = next();
     if (r < 0.04) return -1;
@@ -117,7 +109,7 @@ function makePlotData(data: VisualizationData, subset = false): PlotData {
   const n = data.protein_ids.length;
   const keep = subset ? Array.from({ length: n }, (_, i) => i).filter((i) => i % 3 !== 1) : null;
   const length = keep ? keep.length : n;
-  const next = rng(99);
+  const next = seededRandom(99);
   return {
     length,
     xs: Float32Array.from({ length }, () => next() * 100),
@@ -303,7 +295,7 @@ describe('category style pass', () => {
 
   it('stages a binned numeric annotation', () => {
     const n = 2600;
-    const next = rng(6);
+    const next = seededRandom(6);
     const source: VisualizationData = {
       protein_ids: Array.from({ length: n }, (_, i) => `P${i}`),
       projections: [{ name: 'p', data: new Float32Array(n * 2), dimension: 2 }],
