@@ -1,29 +1,39 @@
 import { rememberDatasetHash } from '@protspace/utils';
 import DecodeWorker from './decode.worker?worker&inline';
-import type { DecodedParquetBundle } from './utils/bundle';
-
-export type WorkerDecodeResult = DecodedParquetBundle;
+import { decodeParquetBundle, type DecodedParquetBundle } from './utils/bundle';
 
 /** What decode.worker.ts posts back: the decoded bundle and its dataset hash, or the error. */
 type WorkerDecodeMessage =
   | ({ ok: true; datasetHash: string } & DecodedParquetBundle)
   | { ok: false; error?: string };
 
-export function isWorkerDecodeSupported(): boolean {
-  return typeof Worker !== 'undefined';
+/**
+ * Decode+convert a parquetbundle in a worker, or on the main thread where workers are
+ * unsupported or the worker fails. The worker takes `bytes` (they are transferred, not
+ * cloned), so the main-thread fallback decodes a fresh copy from `reread` instead.
+ */
+export async function decodeBundle(
+  bytes: ArrayBuffer,
+  reread: () => Promise<ArrayBuffer>,
+): Promise<DecodedParquetBundle> {
+  if (typeof Worker === 'undefined') {
+    return decodeParquetBundle(bytes);
+  }
+  try {
+    return await decodeInWorker(bytes);
+  } catch (workerError) {
+    console.warn('Worker decode failed, falling back to main thread:', workerError);
+    return decodeParquetBundle(await reread());
+  }
 }
 
 /**
- * Decode+convert a parquetbundle in a worker. The input `arrayBuffer` is transferred, not
- * cloned, so it is detached once this returns: a caller that falls back to the main thread
- * must read the bytes again.
- *
  * The result Float32/Int32 typed arrays are transferred back zero-copy. The worker also
  * hashes the dataset, and that hash is remembered for the received data, so the main
  * thread's `generateDatasetHash` of it is a lookup.
- * Rejects on worker spawn or runtime error (caller falls back to the main-thread path).
+ * Rejects on worker spawn or runtime error.
  */
-export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDecodeResult> {
+function decodeInWorker(bytes: ArrayBuffer): Promise<DecodedParquetBundle> {
   return new Promise((resolve, reject) => {
     let worker: Worker;
     try {
@@ -47,6 +57,6 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
       cleanup();
       reject(new Error(`decode worker error: ${event.message || 'unknown'}`));
     };
-    worker.postMessage({ type: 'decode-bundle', arrayBuffer }, [arrayBuffer]);
+    worker.postMessage({ type: 'decode-bundle', arrayBuffer: bytes }, [bytes]);
   });
 }

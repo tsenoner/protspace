@@ -303,8 +303,8 @@ export interface DecodedParquetBundle {
 /**
  * Read a parquetbundle into visualization data, whichever format version it carries.
  *
- * The one entry point every bundle load goes through — the decode worker and both of
- * `data-loader.ts`'s bundle branches — so the version sniff lives in exactly one place.
+ * The one entry point every bundle load goes through — the decode worker and the
+ * main-thread paths of `bundle-decoder.ts` — so the version sniff lives in exactly one place.
  * A part 1 carrying `protspace_container_version` takes the columnar reader in
  * `bundle-v3.ts`; one without it takes the legacy row-object path unchanged. The part count
  * has to agree: six parts without the container key is neither layout.

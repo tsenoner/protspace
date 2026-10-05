@@ -7,14 +7,9 @@ import type { VisualizationData, BundleSettings } from '@protspace/utils';
 import { dataLoaderStyles } from './data-loader.styles';
 import { createDataErrorEventDetail, type DataErrorEventDetail } from './data-loader.events';
 import { readFileOptimized } from './utils/file-io';
-import { decodeParquetBundle } from './utils/bundle';
 import { convertParquetToVisualizationDataOptimized } from './utils/conversion';
 import { assertValidFileExtension, assertWithinFileSizeLimit } from './utils/validation';
-import {
-  decodeBundleInWorker,
-  isWorkerDecodeSupported,
-  type WorkerDecodeResult,
-} from './decode-worker-client';
+import { decodeBundle } from './bundle-decoder';
 
 /** Whether data was loaded by user action or automatically (e.g. page reload) */
 export type DataLoadSource = 'user' | 'auto';
@@ -217,19 +212,7 @@ export class DataLoader extends LitElement {
       // 3) Decode+convert in worker (or main-thread fallback). Only a .parquetbundle
       // gets this far: assertValidFileExtension turned anything else away.
       this.addSteps(1);
-      let decoded: WorkerDecodeResult;
-      if (isWorkerDecodeSupported()) {
-        try {
-          decoded = await decodeBundleInWorker(arrayBuffer);
-        } catch (workerError) {
-          // Fallback: main-thread decode (worker unsupported / runtime failure). The
-          // worker may have taken the bytes (they are transferred), so read them again.
-          console.warn('Worker decode failed, falling back to main thread:', workerError);
-          decoded = await decodeParquetBundle(await file.arrayBuffer());
-        }
-      } else {
-        decoded = await decodeParquetBundle(arrayBuffer);
-      }
+      const decoded = await decodeBundle(arrayBuffer, () => file.arrayBuffer());
       this.completeStep();
       this.dispatchDataLoaded({
         data: decoded.data,
