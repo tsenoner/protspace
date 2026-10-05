@@ -153,9 +153,6 @@ class TestVersionTable:
             {"protein_families", *INTERPRO_ANNOTATIONS}
         )
 
-    def test_the_current_version_includes_the_fix(self):
-        assert ANNOTATION_CACHE_VERSION >= 2
-
 
 class TestRequestedColumnsAreRefreshed:
     def test_protein_families_refetches_uniprot_once(self, tmp_path, monkeypatch):

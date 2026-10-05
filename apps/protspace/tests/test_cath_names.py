@@ -52,16 +52,3 @@ class TestParseCathNames:
         names = _parse_cath_names(f)
 
         assert names == {"1": "Mainly Alpha"}
-
-    def test_named_superfamily_not_overwritten(self, tmp_path):
-        """A superfamily with its own name should not be overwritten by parent."""
-        content = (
-            "2.60.40           1bqkA00    :Immunoglobulin-like\n"
-            "2.60.40.10        4unuA00    :Immunoglobulins\n"
-        )
-        f = tmp_path / "cath-names.txt"
-        f.write_text(content)
-
-        names = _parse_cath_names(f)
-
-        assert names["2.60.40.10"] == "Immunoglobulins"

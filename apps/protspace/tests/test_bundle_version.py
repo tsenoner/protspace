@@ -1,25 +1,25 @@
-"""Tests for Task E1: format_version=2 stamped into the annotations parquet.
+"""The ``protspace_format_version=2`` cell-grammar stamp and where it is read.
 
-Covers both production write paths:
-- BaseProcessor._create_protein_annotations_table (used by `protspace prepare`,
-  both bundled and separate-file output).
-- The standalone `protspace bundle` subcommand, which reads a pre-existing
-  annotations parquet and decides its cell grammar from the stamp (read before
-  the id-column rename drops it; none means plain v1 text) before handing it to
-  write_bundle.
+A v3 bundle part carries no grammar stamp (the reader stamps v2 on what it
+decodes), so the stamp is checked where it still means something: on the
+tables the writers hand to ``write_bundle`` and on standalone parquet outputs
+(``annotate``, ``ArrowReader.save_data``). The standalone ``protspace bundle``
+subcommand reads a pre-existing annotations parquet and decides its cell
+grammar from the stamp (read before the id-column rename drops it; none means
+plain v1 text) before handing it to write_bundle.
 """
 
 import io
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import FORMAT_VERSION_KEY
-from protspace.data.io.bundle import read_bundle, read_tables
+from protspace.data.io.bundle import read_tables
 from protspace.data.processors.base_processor import BaseProcessor
-from tests.test_config import sample_data  # noqa: F401 (pytest fixture)
 
 
 def test_create_protein_annotations_table_stamps_format_version():
@@ -38,9 +38,9 @@ def test_create_protein_annotations_table_stamps_format_version():
     assert footer_meta[FORMAT_VERSION_KEY] == b"2"
 
 
-def test_prepare_pipeline_bundle_carries_format_version(sample_data):
-    """End-to-end: create_output -> save_output (bundled) -> read_bundle ->
-    the annotations part's parquet footer carries the stamp.
+def test_prepare_pipeline_bundle_round_trips_annotations(sample_data):
+    """End-to-end: create_output -> save_output (bundled) -> read_tables gives
+    back the proteins, their annotation cells and their coordinates.
     """
     from protspace.utils import get_reducers as _get_reducers
 
@@ -64,11 +64,16 @@ def test_prepare_pipeline_bundle_carries_format_version(sample_data):
         bundle_path = temp_path / "test.parquetbundle"
         processor.save_output(output_data, bundle_path, bundled=True)
 
-        core_parts, _settings = read_bundle(bundle_path)
-        annotations_bytes = core_parts[0]  # protein_annotations is written first
+        annotations, _metadata, projections = read_tables(bundle_path)
 
-        footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
-        assert footer_meta[FORMAT_VERSION_KEY] == b"2"
+    assert annotations.column("protein_id").to_pylist() == sample_data["headers"]
+    assert annotations.column("length").to_pylist() == ["100", "150", "200"]
+    assert annotations.column("organism").to_pylist() == ["Homo sapiens"] * 3
+    assert projections.column("identifier").to_pylist() == sample_data["headers"]
+    coords = np.column_stack(
+        [projections.column("x").to_numpy(), projections.column("y").to_numpy()]
+    )
+    np.testing.assert_allclose(coords, sample_data["embeddings"][:, :2], rtol=1e-6)
 
 
 def _bundle_via_cli(tmp_path, annotations_table):
@@ -133,22 +138,6 @@ def _bundle_via_cli(tmp_path, annotations_table):
     )
     assert result.exit_code == 0, result.output
     return output_path
-
-
-def test_cli_bundle_command_stamps_format_version(tmp_path):
-    """The standalone `protspace bundle` subcommand reads a pre-existing
-    annotations parquet; the tables read back from its bundle are v2 cells.
-    """
-    import pyarrow as pa
-
-    output_path = _bundle_via_cli(
-        tmp_path, pa.table({"identifier": ["P1", "P2"], "cath": ["a", "b"]})
-    )
-
-    core_parts, _settings = read_bundle(output_path)
-    annotations_bytes = core_parts[0]
-    footer_meta = pq.read_metadata(io.BytesIO(annotations_bytes)).metadata
-    assert footer_meta[FORMAT_VERSION_KEY] == b"2"
 
 
 def test_cli_bundle_passes_annotate_output_through(tmp_path):

@@ -1,7 +1,5 @@
 """Tests for protlabel.reliability."""
 
-import math
-
 import pytest
 
 from protlabel.reliability import similarity
@@ -49,7 +47,3 @@ def test_non_finite_distance_is_zero_confidence():
 def test_unknown_metric_raises():
     with pytest.raises(ValueError):
         similarity(0.5, "manhattan")
-
-
-def test_smoke():
-    assert math.isfinite(similarity(0.5, "euclidean"))

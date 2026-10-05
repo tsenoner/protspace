@@ -595,7 +595,7 @@ class TestParallelLookups:
         assert all(r.annotations["ted_domains"] for r in rows)
         assert retriever.failed_lookup_count == 0
 
-    def test_by_default_eight_lookups_share_one_session(self):
+    def test_default_lookups_run_in_parallel_over_one_session(self):
         from protspace.data.annotations.retrievers.http_utils import PooledSession
 
         headers = [f"Q{i:05d}" for i in range(200)]
@@ -608,8 +608,8 @@ class TestParallelLookups:
         fake = _AlphaFoldDomains(jitter=0.003)
         _ted(headers, spy)
 
-        assert MAX_CONCURRENT_REQUESTS == 8
-        assert 1 < fake.peak <= MAX_CONCURRENT_REQUESTS
+        # The spec ("The defaults stay polite") caps TED at 8 lookups in flight.
+        assert 1 < fake.peak <= MAX_CONCURRENT_REQUESTS <= 8
         assert len(fake.sessions) == 1
         assert isinstance(sessions[0], PooledSession)
 

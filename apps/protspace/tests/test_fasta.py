@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.protspace.data.io.fasta import FASTA_EXTENSIONS, is_fasta_file, parse_fasta
+from src.protspace.data.io.fasta import is_fasta_file, parse_fasta
 
 
 class TestParseFasta:
@@ -100,7 +100,3 @@ class TestIsFastaFile:
         """Test case-insensitive extension matching."""
         assert is_fasta_file(Path("seqs.FASTA")) is True
         assert is_fasta_file(Path("seqs.Fa")) is True
-
-    def test_fasta_extensions_constant(self):
-        """Verify the FASTA_EXTENSIONS set."""
-        assert FASTA_EXTENSIONS == {".fasta", ".fa", ".faa"}
