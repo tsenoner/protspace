@@ -8,7 +8,11 @@ import {
   findBundleDelimiterPositions,
   type BundleSettings,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import {
+  decodeParquetBundle,
+  decodeParquetBundleWithRowCap,
+  extractRowsFromParquetBundle,
+} from './bundle';
 
 // Helper to create a mock parquet-like buffer with PAR1 magic bytes
 function createMockParquetBuffer(content: string = 'test'): ArrayBuffer {
@@ -321,7 +325,7 @@ describe('legacy bundle validation', () => {
       { name: 'y', data: coordinates },
     ]);
 
-    const error = await decodeParquetBundle(bundle, rows - 1).then(
+    const error = await decodeParquetBundleWithRowCap(bundle, rows - 1).then(
       () => null,
       (reason: Error) => reason,
     );

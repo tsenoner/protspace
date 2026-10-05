@@ -309,11 +309,16 @@ export interface DecodedParquetBundle {
  * A part 1 carrying `protspace_container_version` takes the columnar reader in
  * `bundle-v3.ts`; one without it takes the legacy row-object path unchanged. The part count
  * has to agree: six parts without the container key is neither layout.
- *
- * `maxLegacyRows` lowers the v1/v2 row cap checked on part 3's footer, so tests reach it
- * without encoding millions of rows. v3 has no row cap.
  */
-export async function decodeParquetBundle(
+export function decodeParquetBundle(arrayBuffer: ArrayBuffer): Promise<DecodedParquetBundle> {
+  return decodeParquetBundleWithRowCap(arrayBuffer);
+}
+
+/**
+ * {@link decodeParquetBundle} with the v1/v2 row cap, checked on part 3's footer, lowered to
+ * `maxLegacyRows`, so tests reach it without encoding millions of rows. v3 has no row cap.
+ */
+export async function decodeParquetBundleWithRowCap(
   arrayBuffer: ArrayBuffer,
   maxLegacyRows?: number,
 ): Promise<DecodedParquetBundle> {

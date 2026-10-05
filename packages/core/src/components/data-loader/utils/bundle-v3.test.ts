@@ -14,7 +14,11 @@ import {
   type CsrAnnotationData,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import {
+  decodeParquetBundle,
+  decodeParquetBundleWithRowCap,
+  extractRowsFromParquetBundle,
+} from './bundle';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
 import { collectTransferables } from '../decode-transferables';
@@ -675,7 +679,7 @@ describe('parquetbundle format v3', () => {
     ]);
 
     // A v1/v2 bundle this size is refused under this cap (see bundle.test.ts).
-    const { data, unplacedProteinCount } = await decodeParquetBundle(large, proteins - 1);
+    const { data, unplacedProteinCount } = await decodeParquetBundleWithRowCap(large, proteins - 1);
 
     expect(data.protein_ids).toHaveLength(proteins);
     expect(data.protein_ids.at(-1)).toBe(`P${proteins - 1}`);
