@@ -2520,7 +2520,7 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
+      const cb = document.querySelector('protspace-control-bar') as unknown as
         | (Element & { filterActive?: boolean })
         | null;
       return cb?.filterActive ?? false;
@@ -2542,7 +2542,7 @@ test('loading a new dataset clears active filters before rendering the replaceme
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
-    const cb = document.querySelector('protspace-control-bar') as
+    const cb = document.querySelector('protspace-control-bar') as unknown as
       | (Element & { filterActive?: boolean })
       | null;
     return {

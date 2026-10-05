@@ -49,7 +49,7 @@ async function loadDemoDataset(page: Page): Promise<void> {
  * gestures over a WebGL canvas while still exercising the real isolation pipeline. */
 async function engageIsolation(page: Page, sampleSize = 100): Promise<void> {
   await page.evaluate((n) => {
-    const sp = document.querySelector('protspace-scatterplot') as
+    const sp = document.querySelector('protspace-scatterplot') as unknown as
       | (HTMLElement & {
           // _plotData is a columnar PlotData ({ length, proteinIds, originalIndices, ... }),
           // not an array of point objects.

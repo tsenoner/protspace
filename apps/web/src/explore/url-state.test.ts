@@ -699,7 +699,7 @@ describe('explore url state', () => {
     });
 
     it('keeps the default out of the URL and writes every other mode', () => {
-      const base = { annotation: 'pfam', projection: 'PCA', tooltip: [] };
+      const base = { annotation: 'pfam', projection: 'PCA', tooltip: [] as string[] };
 
       const off = buildSearchParamsWithExploreView(
         new URLSearchParams('density=on'),

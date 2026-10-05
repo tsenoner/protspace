@@ -119,7 +119,7 @@ test.describe('large bundle load (Swiss-Prot, 573k proteins)', () => {
       // path renders non-empty content into the tooltip element.
       if (annotation === 'gene_name') {
         const tooltipText = await page.evaluate(() => {
-          const plot = document.querySelector('protspace-scatterplot') as
+          const plot = document.querySelector('protspace-scatterplot') as unknown as
             | (HTMLElement & {
                 // _plotData is a columnar PlotData; build a boxed PlotDataPoint for slot 0.
                 _plotData?: {

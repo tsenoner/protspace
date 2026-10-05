@@ -27,7 +27,7 @@ vi.mock('./opfs-dataset-store', () => ({
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
-  readTooltipAnnotations: () => [],
+  readTooltipAnnotations: (): string[] => [],
   writeTooltipAnnotations: vi.fn(),
 }));
 

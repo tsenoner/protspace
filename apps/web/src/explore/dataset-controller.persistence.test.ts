@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildControllerOptions,
   dataErrorEvent,
@@ -48,7 +48,7 @@ vi.mock('./opfs-dataset-store', () => ({
 }));
 
 vi.mock('./tooltip-annotations-store', () => ({
-  readTooltipAnnotations: () => [],
+  readTooltipAnnotations: (): string[] => [],
   writeTooltipAnnotations: vi.fn(),
 }));
 
@@ -168,7 +168,7 @@ describe('dataset controller load failures and the stored import', () => {
       .enqueueLoadFromFile(fasta, undefined, () => Promise.reject(prepError))
       .catch(async (error: Error) => {
         runningLoadAtError = loadQueue.getRunningLoadMeta();
-        await controller.handleDataError(dataErrorEvent(error.message, error));
+        await controller.handleDataError(dataErrorEvent(error.message, { originalError: error }));
       });
 
     expect(runningLoadAtError).toBeNull();
@@ -266,5 +266,28 @@ describe('dataset controller legacy bundle notice', () => {
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.info).not.toHaveBeenCalled();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
+  });
+});
+
+describe('dataset controller load errors', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  // Restore even when an assertion fails, so a red row cannot silence later tests' console.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['an aborted load as a cancellation', new DOMException('Aborted', 'AbortError'), false],
+    ['any other error as a failure', new Error('boom'), true],
+    ['a missing original error as a failure', undefined, true],
+  ])('treats %s', async (_label, originalError: Error | undefined, notified) => {
+    const { controller } = buildController();
+    await controller.handleDataError(dataErrorEvent('load failed', { originalError }));
+
+    expect(mocks.error).toHaveBeenCalledTimes(notified ? 1 : 0);
   });
 });

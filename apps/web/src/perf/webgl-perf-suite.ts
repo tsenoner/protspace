@@ -179,7 +179,7 @@ async function readDatasetList(): Promise<string[]> {
       `perf: /data/datasets.json answered ${res.status}; run the suite through \`pnpm perf\`, which serves it`,
     );
   }
-  const payload = (await res.json().catch(() => null)) as unknown;
+  const payload = (await res.json().catch((): null => null)) as unknown;
   const ids = Array.isArray(payload)
     ? payload.filter((v): v is string => typeof v === 'string' && v.length > 0)
     : [];

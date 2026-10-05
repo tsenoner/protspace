@@ -100,7 +100,7 @@ async function readEcEatConfidences(
 async function readRenderedProteinIds(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const plotData = (
-      document.querySelector('protspace-scatterplot') as
+      document.querySelector('protspace-scatterplot') as unknown as
         | (Element & {
             _plotData?: {
               length: number;
@@ -152,7 +152,7 @@ async function sampleEncodedExportMarkers(
 }> {
   return page.evaluate(
     async ({ pointSize, backgroundColor }) => {
-      const plot = document.querySelector('protspace-scatterplot') as
+      const plot = document.querySelector('protspace-scatterplot') as unknown as
         | (HTMLElement & {
             _plotData?: {
               length: number;
@@ -321,7 +321,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const predictedVisibleCount = () =>
     page.evaluate(() => {
       const renderer = (
-        document.querySelector('protspace-scatterplot') as
+        document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
               _webglRenderer?: { predicted?: Float32Array; currentPointCount?: number };
             })
@@ -391,7 +391,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
 
   const noAnnotationExample = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];
@@ -425,7 +425,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const scatterplot = document.querySelector('protspace-scatterplot') as
+        const scatterplot = document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
               _plotData?: {
                 length: number;
@@ -460,7 +460,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .poll(() =>
       page.evaluate(() => {
         const renderer = (
-          document.querySelector('protspace-scatterplot') as
+          document.querySelector('protspace-scatterplot') as unknown as
             | (Element & {
                 _webglRenderer?: {
                   predicted?: Float32Array;
@@ -485,7 +485,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toBeEnabled();
 
   const exactMultiValueTransfer = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];
@@ -553,7 +553,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   });
 
   const transfer = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];

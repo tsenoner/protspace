@@ -118,7 +118,7 @@ export function createLoadQueue({ isDisposed, skipLoad }: LoadQueueOptions): Loa
       await pendingFinalization.promise;
     });
 
-    queuedLoad = nextLoad.catch(() => undefined);
+    queuedLoad = nextLoad.catch(() => {});
 
     return nextLoad.finally(() => {
       if (runningLoadMeta?.sequence === loadMeta.sequence) {
