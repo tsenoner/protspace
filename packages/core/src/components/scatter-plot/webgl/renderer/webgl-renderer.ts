@@ -128,6 +128,19 @@ interface PendingPrograms {
   gamma: PendingProgram | null;
 }
 
+/** What a render asks `populateBuffers` to stage. */
+interface StageRequest {
+  /** The positions changed: re-sort, whatever the sampled depths say. */
+  positions: boolean;
+  /** The styles changed. Only counted: a stage that does not re-sort restyles. */
+  styles: boolean;
+  /** Glide from where the points are drawn (see `morphNextPositionChange`). */
+  glide: boolean;
+}
+
+/** How a stage writes the points: re-sorted into a new paint order, or restyled in the old one. */
+type StagePlan = 'resort' | 'restyle';
+
 /** What the scatter plot hands its renderer. */
 interface WebGLRendererOptions {
   getScales: () => ScalePair | null;
@@ -236,7 +249,7 @@ export class WebGLRenderer {
   private stylesDirty = true;
   // Depth-order dirtiness is tracked separately from positionsDirty so callers
   // can signal "re-sort by depth on next render" without lying about positions.
-  // Cleared inside populateBuffers once the re-sort runs.
+  // Cleared by planStage, which re-sorts on it.
   private depthOrderDirty = false;
   private buffersInitialized = false;
 
@@ -677,11 +690,16 @@ export class WebGLRenderer {
         this.restyleRecords(pd);
       if (!restyled) {
         const refused = this.markTexture.refused;
-        this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate, morphRequested);
+        this.populateBuffers(pd, scales, {
+          positions: needsPositionUpdate,
+          styles: needsStyleUpdate,
+          glide: morphRequested,
+        });
         // The device refused a new mark texture, or took one after refusing: the
         // marks were staged for the other, so stage them as the live view now does.
+        // Without a glide: the first stage started any this render asked for.
         if (this.markTexture.refused !== refused) {
-          this.populateBuffers(pd, scales, false, true, false);
+          this.populateBuffers(pd, scales, { positions: false, styles: true, glide: false });
           styleSignature = this.computeStyleSignature(pd);
         }
       }
@@ -691,7 +709,7 @@ export class WebGLRenderer {
       this.positionsDirty = false;
       this.stylesDirty = false;
       this.categoryStylesDirty = false;
-      // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
+      // planStage clears depthOrderDirty, as it re-sorts on it.
     }
     // After staging, which lays out the draw order the marks are written in.
     const marks = this.style.getPointMarks?.(pd) ?? null;
@@ -1380,20 +1398,15 @@ export class WebGLRenderer {
       .join('|');
   }
 
-  private populateBuffers(
-    pd: PlotData,
-    scales: ScalePair,
-    updatePositions: boolean,
-    updateStyles: boolean,
-    morphRequested: boolean,
-  ) {
-    if (!this.gl) return;
+  /** Plan how to stage `pd` (see `planStage`), stage it that way, and upload what staging wrote. */
+  private populateBuffers(pd: PlotData, scales: ScalePair, request: StageRequest) {
     const gl = this.gl;
+    if (!gl) return;
     this.drawnStateChanged();
     if (perfCounters) {
       perfCounters.restage++;
-      if (updatePositions) perfCounters.restagePos++;
-      if (updateStyles) perfCounters.restageStyle++;
+      if (request.positions) perfCounters.restagePos++;
+      if (request.styles) perfCounters.restageStyle++;
     }
 
     // Past the drawable limit, whatever part of the data could be drawn would
@@ -1410,15 +1423,25 @@ export class WebGLRenderer {
       return;
     }
 
+    const plan = this.planStage(pd, request.positions);
+    let glideMoved = false;
+    if (plan === 'resort') glideMoved = this.resortPoints(pd, scales, request.glide);
+    else this.restylePoints(pd);
+    this.uploadStaged(gl, plan, glideMoved);
+  }
+
+  /**
+   * Fit the staging arrays and the atlas to `pd`, then decide how to stage it:
+   * re-sort it into a fresh paint order, or restyle it in the staged one.
+   */
+  private planStage(pd: PlotData, positions: boolean): StagePlan {
     // Grow to fit, and release a footprint that has become absurd for the data on
     // screen. Grow-only capacity would hold a 2M load's footprint through the 5K
     // demo opened after it, for the rest of the session. The planner owns both
     // rules, so reallocating is simply "the plan changed".
     const plannedCapacity = this.planCapacity(pd.length);
-    if (plannedCapacity !== this.capacity) {
-      this.resizeCapacity(plannedCapacity);
-      updatePositions = true;
-    }
+    const resized = plannedCapacity !== this.capacity;
+    if (resized) this.resizeCapacity(plannedCapacity);
 
     // Plan/allocate the atlas for the current capacity before anything stages into
     // it — staging reads its stride and its backing array through
@@ -1432,124 +1455,138 @@ export class WebGLRenderer {
     // the staged order, skipping the re-sort and the position upload.
     // A dirty depth order means the caller changed the depth mapping — re-sort regardless of
     // the sample-based check (which can't reliably detect category-level swaps).
-    let resort = updatePositions || this.depthOrderDirty;
+    const depthOrderDirty = this.depthOrderDirty;
     this.depthOrderDirty = false;
+    if (positions || resized || depthOrderDirty) return 'resort';
 
+    // Check if depths have actually changed by sampling first few slots
+    // If depths are the same, we can skip re-sorting (color-only update optimization)
     const sp = this.scratchPoint;
     const oi = pd.originalIndices;
     const { xs, ys } = pd;
-
-    if (!resort) {
-      // Check if depths have actually changed by sampling first few slots
-      // If depths are the same, we can skip re-sorting (color-only update optimization)
-      const sampleSize = Math.min(100, pd.length);
-      let depthsChanged = false;
-      for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[i];
-        sp.y = ys[i];
-        sp.originalIndex = origIdx;
-        const opacity = this.style.getOpacity(sp);
-        if (opacity === 0) continue;
-        const newDepth = composePaintDepth(
-          this.style.getDepth(sp),
-          opacity,
-          this.style.isPredicted(sp),
-        );
-        // Compare with stored depth (note: depths array is in sorted order after last render)
-        if (Math.abs(newDepth - this.stageArrays.depths[i]) > 1e-6) {
-          depthsChanged = true;
-          break;
-        }
-      }
-      if (depthsChanged) resort = true;
-    }
-
-    let idx = 0;
-    let morphChanged = false;
-
-    if (resort) {
-      this.visibleCount = 0;
-      const count = pd.length;
-      // The re-sort below permutes every buffer, so a glide crosses it by slot: a
-      // new one starts where the points are drawn, and one in flight keeps its
-      // start and its clock. Read from the staged copies, never from `pd`, whose
-      // coordinates a projection switch may already have overwritten.
-      const glideStart =
-        this.buffersInitialized && count === this.currentPointCount
-          ? this.glide.capture(
-              morphRequested,
-              this.stageArrays.dataPositions,
-              this.positionRescale,
-              this.sortOrder,
-              count,
-            )
-          : null;
-      // Hidden points (opacity=0) are staged too, so sort order is preserved across
-      // visibility toggles, enabling the fast color-only update path instead of a
-      // full rebuild + re-sort. Shared with the export path, which stages the same
-      // painter order and selection cut.
-      const pass = this.style.createStylePass();
-      const table = this.recordTable.prepare(
-        pass,
-        this.stageArrays,
-        this.labelAtlasActive,
-        this.maxTextureSize,
+    const sampleSize = Math.min(100, pd.length);
+    for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
+      const origIdx = oi ? oi[i] : i;
+      sp.id = pd.proteinIds[origIdx];
+      sp.x = xs[i];
+      sp.y = ys[i];
+      sp.originalIndex = origIdx;
+      const opacity = this.style.getOpacity(sp);
+      if (opacity === 0) continue;
+      const newDepth = composePaintDepth(
+        this.style.getDepth(sp),
+        opacity,
+        this.style.isPredicted(sp),
       );
-      const staged = stageInPaintOrder(
-        this.stageArrays,
-        pass,
-        this.passScratch,
-        this.sortOrder,
-        pd,
-        scales,
-        count,
-        this.selectionActive,
-        (_slot, opacity) => this.countStagedSlot(opacity),
-      );
-      this.selectedStartIndex = staged.selectedStartIndex;
-
-      morphChanged = this.glide.afterResort(glideStart, morphRequested, this.sortOrder, count);
-
-      idx = count;
-      // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
-      this.sortedDataRef = pd;
-      this.stagedOrderStale = false;
-      this.recordTable.keep(pass, table, staged.packed, this.stageArrays.colors, idx);
-    } else {
-      this.visibleCount = 0;
-      // Color-only update: no reordering needed, just update color/shape buffers.
-      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last
-      // rebuild. Positions and depths are unchanged from that rebuild.
-      const src = this.sortedDataRef;
-      if (src) {
-        idx = Math.min(this.currentPointCount, pd.length);
-        const pass = this.style.createStylePass();
-        const table = this.recordTable.prepare(
-          pass,
-          this.stageArrays,
-          this.labelAtlasActive,
-          this.maxTextureSize,
-        );
-        const packed = restageStyles(
-          this.stageArrays,
-          pass,
-          this.passScratch,
-          this.sortOrder,
-          src,
-          // The count that rebuild staged, so every slot sortOrder holds is resolved.
-          src.length,
-          idx,
-          (_slot, opacity) => this.countStagedSlot(opacity),
-        );
-        this.stagedOrderStale = this.orderOutOfDate(idx);
-        this.recordTable.keep(pass, table, packed, this.stageArrays.colors, idx);
-      }
+      // Compare with stored depth (note: depths array is in sorted order after last render)
+      if (Math.abs(newDepth - this.stageArrays.depths[i]) > 1e-6) return 'resort';
     }
+    return 'restyle';
+  }
 
-    this.currentPointCount = idx;
+  /**
+   * Stage every point of `pd` in paint order, through `scales`, and glide there
+   * if `glide` asks it to or a glide is in flight. True when the glide's start
+   * positions changed.
+   */
+  private resortPoints(pd: PlotData, scales: ScalePair, glide: boolean): boolean {
+    this.visibleCount = 0;
+    const count = pd.length;
+    // The re-sort below permutes every buffer, so a glide crosses it by slot: a
+    // new one starts where the points are drawn, and one in flight keeps its
+    // start and its clock. Read from the staged copies, never from `pd`, whose
+    // coordinates a projection switch may already have overwritten.
+    const glideStart =
+      this.buffersInitialized && count === this.currentPointCount
+        ? this.glide.capture(
+            glide,
+            this.stageArrays.dataPositions,
+            this.positionRescale,
+            this.sortOrder,
+            count,
+          )
+        : null;
+    // Hidden points (opacity=0) are staged too, so sort order is preserved across
+    // visibility toggles, enabling the fast color-only update path instead of a
+    // full rebuild + re-sort. Shared with the export path, which stages the same
+    // painter order and selection cut.
+    const pass = this.style.createStylePass();
+    const table = this.recordTable.prepare(
+      pass,
+      this.stageArrays,
+      this.labelAtlasActive,
+      this.maxTextureSize,
+    );
+    const staged = stageInPaintOrder(
+      this.stageArrays,
+      pass,
+      this.passScratch,
+      this.sortOrder,
+      pd,
+      scales,
+      count,
+      this.selectionActive,
+      (_slot, opacity) => this.countStagedSlot(opacity),
+    );
+    this.selectedStartIndex = staged.selectedStartIndex;
 
+    const glideMoved = this.glide.afterResort(glideStart, glide, this.sortOrder, count);
+
+    // Cache the PlotData reference so a restyle can index it via sortOrder.
+    this.sortedDataRef = pd;
+    this.stagedOrderStale = false;
+    this.recordTable.keep(pass, table, staged.packed, this.stageArrays.colors, count);
+    this.currentPointCount = count;
+    // Staged through these scales, so drawn as they are: a glide carried by the
+    // second stage a render may run (see render()) reads this.
+    this.stagedScales = snapshotScales(scales);
+    this.positionRescale = IDENTITY_RESCALE;
+    return glideMoved;
+  }
+
+  /**
+   * Color-only update: no reordering needed, just update color/shape buffers.
+   * Iterate via sortOrder into sortedDataRef to match the buffer order from the last
+   * rebuild. Positions and depths are unchanged from that rebuild.
+   */
+  private restylePoints(pd: PlotData): void {
+    this.visibleCount = 0;
+    const src = this.sortedDataRef;
+    if (!src) {
+      this.currentPointCount = 0;
+      return;
+    }
+    const count = Math.min(this.currentPointCount, pd.length);
+    const pass = this.style.createStylePass();
+    const table = this.recordTable.prepare(
+      pass,
+      this.stageArrays,
+      this.labelAtlasActive,
+      this.maxTextureSize,
+    );
+    const packed = restageStyles(
+      this.stageArrays,
+      pass,
+      this.passScratch,
+      this.sortOrder,
+      src,
+      // The count that rebuild staged, so every slot sortOrder holds is resolved.
+      src.length,
+      count,
+      (_slot, opacity) => this.countStagedSlot(opacity),
+    );
+    this.stagedOrderStale = this.orderOutOfDate(count);
+    this.recordTable.keep(pass, table, packed, this.stageArrays.colors, count);
+    this.currentPointCount = count;
+  }
+
+  /**
+   * Upload what staging wrote: the positions after a re-sort, and every style
+   * array, the record table and the atlas after either. The first upload of a
+   * capacity allocates the buffers and the mark texture.
+   */
+  private uploadStaged(gl: WebGL2RenderingContext, plan: StagePlan, glideMoved: boolean) {
+    const count = this.currentPointCount;
     // `updateBuffer` takes the allocating bufferData branch while this is false.
     // Captured before the uploads, which set it.
     const allocating = !this.buffersInitialized;
@@ -1562,29 +1599,25 @@ export class WebGLRenderer {
 
     const { dataPositions, sizes, colors, depths, labelCounts, shapes, predicted } =
       this.stageArrays;
-    if (resort) {
-      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, idx * 2);
-      this.stagedScales = snapshotScales(scales);
-      // Staged through these scales, so drawn as they are: a glide carried by the
-      // second stage a render may run (see render()) reads this.
-      this.positionRescale = IDENTITY_RESCALE;
+    if (plan === 'resort') {
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, count * 2);
     }
-    if (morphChanged) this.syncMorphAttribute(gl);
+    if (glideMoved) this.syncMorphAttribute(gl);
 
-    // Both branches rewrite every style array AND the atlas: a re-sort into the new
+    // Both plans rewrite every style array AND the atlas: a re-sort into the new
     // slot order, a restyle in place.
     // Before the colours: if the table cannot be uploaded, they take the hiding back.
-    this.uploadedBytes += this.recordTable.upload(gl, colors, idx);
+    this.uploadedBytes += this.recordTable.upload(gl, colors, count);
     // Only read through a table, but the attribute needs its storage regardless.
     if (allocating || this.recordTable.staged) {
-      this.updateBuffer(gl, this.resources.recordBuffer, this.recordTable.ids, idx);
+      this.updateBuffer(gl, this.resources.recordBuffer, this.recordTable.ids, count);
     }
-    this.updateBuffer(gl, this.resources.sizeBuffer, sizes, idx);
-    this.updateBuffer(gl, this.resources.colorBuffer, colors, idx * 4);
-    this.updateBuffer(gl, this.resources.depthBuffer, depths, idx);
-    this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, idx);
-    this.updateBuffer(gl, this.resources.shapeBuffer, shapes, idx);
-    this.updateBuffer(gl, this.resources.predictedBuffer, predicted, idx);
+    this.updateBuffer(gl, this.resources.sizeBuffer, sizes, count);
+    this.updateBuffer(gl, this.resources.colorBuffer, colors, count * 4);
+    this.updateBuffer(gl, this.resources.depthBuffer, depths, count);
+    this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, count);
+    this.updateBuffer(gl, this.resources.shapeBuffer, shapes, count);
+    this.updateBuffer(gl, this.resources.predictedBuffer, predicted, count);
 
     // One error check per capacity change, on the allocating (bufferData) path
     // only — never on bufferSubData, so never per frame. It runs BEFORE any
