@@ -158,8 +158,9 @@ reported as `density-unavailable` when contours are requested.
 
 - **WHEN** a context without `EXT_color_buffer_float` or `EXT_float_blend`, such as iPhone or iPad
   WebKit, renders points with contours off
-- **THEN** the renderer draws directly and emits no `gamma-pipeline-unavailable` and no other
-  renderer-degraded message
+- **THEN** the renderer draws directly and emits neither a `gamma-pipeline-unavailable` nor a
+  `density-unavailable` notice; notices unrelated to the float extensions, such as reduced
+  label detail, are unaffected
 
 #### Scenario: The missing extensions surface through the feature that needs them
 
