@@ -26,6 +26,8 @@ from protspace.utils.add_annotation_style import (
     add_annotation_styles_bundle,
     add_annotation_styles_parquet,
     generate_template,
+    resolve_style_key,
+    style_keys,
 )
 
 
@@ -249,3 +251,20 @@ def test_numeric_style_key_resolves_across_the_int_float_spelling():
 def test_unknown_style_key_still_raises():
     with pytest.raises(ValueError, match="does not exist for annotation"):
         _resolve_style_value("Alien", {"Human", "Mouse"}, "organism")
+
+
+def test_resolve_style_key_answers_what_style_would_accept():
+    # The resolver `protspace style` raises on, for a caller that drops the keys
+    # it would refuse before styling (the showcase build filters its styles).
+    assert resolve_style_key("Human", {"Human", "None"}) == "Human"
+    assert resolve_style_key("__NA__", {"None", "Human"}) == "None"
+    assert resolve_style_key("100.0", {"100"}) == "100"
+    assert resolve_style_key("Alien", {"Human", "Mouse"}) is None
+    # Only the NA spellings `style` folds: "none" (TMbed) is a value of its own.
+    assert resolve_style_key("__NA__", {"none", "Human"}) is None
+
+
+def test_style_keys_are_the_display_values_of_every_cell():
+    cells = ["A|IC;B%3Bc|1.0", None, "A", 7]
+    assert style_keys(cells) == {"A", "B;c", "None", "7"}
+    assert style_keys(["B%3Bc"], decode=False) == {"B%3Bc"}

@@ -243,15 +243,27 @@ Projection, annotation, contours, selection, filter and export controls.
 | `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
 | `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
 | `exampleDatasets`       | `ExampleDatasetSummary[]` | Example catalog, listed in the Import menu's "Examples" section |
+| `examplesDocsUrl`       | `string`                  | Page linked as "About these examples ↗"; no link when empty     |
 | `currentExampleId`      | `string \| null`          | id of the example currently loaded, `null` for a user import    |
 
 ### HTML attributes
 
 `selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`, `density-layer`,
 `selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `current-example-id`, `scatterplot-selector`, `auto-sync`.
-`exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary` type
-(`{ id, label, description }`) is exported from `@protspace/core`.
+`current-dataset-name`, `current-example-id`, `examples-docs-url`, `scatterplot-selector`,
+`auto-sync`. `exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary`
+type is exported from `@protspace/core`:
+
+| Field         | Type      | Shown as                                                    |
+| ------------- | --------- | ----------------------------------------------------------- |
+| `id`          | `string`  | The `load-example-dataset` event's `detail.id`              |
+| `label`       | `string`  | The item's text                                             |
+| `description` | `string`  | The first paragraph of the item's info popover              |
+| `insight?`    | `string`  | The popover's second paragraph: what the curated view shows |
+| `docsUrl?`    | `string`  | The popover's "Learn more ↗" link                           |
+| `large?`      | `boolean` | A "Large" badge on the item                                 |
+
+When `currentExampleId` names an entry, the same info popover sits next to the current dataset name.
 
 ### Events
 
@@ -362,7 +374,7 @@ Exported from `@protspace/core` unless noted.
 
 ### readFileOptimized
 
-Read a file into an `ArrayBuffer`, chunking large files.
+Read a file into an `ArrayBuffer` (`File.arrayBuffer()`, which reads off the main thread).
 
 ```typescript
 function readFileOptimized(file: File): Promise<ArrayBuffer>;

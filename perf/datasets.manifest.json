@@ -1,0 +1,109 @@
+{
+  "release": "perf-datasets",
+  "datasets": [
+    {
+      "id": "venom_eat_stats",
+      "file": "venom_eat_stats.parquetbundle",
+      "bytes": 201687,
+      "sha256": "75124338953565bdb394f110be54b6f29e35099536cafc15d9d359aad51bfb31",
+      "default": true,
+      "source": "git blob 248577935716fdb678a02ed4f13fa3ca79b8b42c (apps/web/public/data/venom_eat_stats.parquetbundle)"
+    },
+    {
+      "id": "5K",
+      "file": "5K.parquetbundle",
+      "bytes": 244359,
+      "sha256": "324d3d50db8ed94d4b414da971c9c944620ac1a4fbe45a192e5f6031ef0b2078",
+      "default": true,
+      "source": "git blob f5939dec86b5cacf140728a67543f4cb337aa7e7 (apps/web/public/data/5K.parquetbundle)"
+    },
+    {
+      "id": "40K",
+      "file": "40K.parquetbundle",
+      "bytes": 1843827,
+      "sha256": "4c280676974d01d28f7c1d2d5c9369630a3e7f4255b6d0b200bc21d0c7ac0ef4",
+      "default": true,
+      "source": "git blob 694c555903bd2ccbd4f203f9889811b53b634b12 (apps/web/public/data/40K.parquetbundle)"
+    },
+    {
+      "id": "7K_toxprot",
+      "file": "7K_toxprot.parquetbundle",
+      "bytes": 576771,
+      "sha256": "1f577a89475c86187c842ff4b2ca0ab54bef0d1afd7b436e334f0930d8a9a9d7",
+      "default": true,
+      "source": "git blob b5db479a7ca7d827fc4f345568c715eb9f249bce (apps/web/public/data/7K_toxprot.parquetbundle)"
+    },
+    {
+      "id": "35K_ec_brenda",
+      "file": "35K_ec_brenda.parquetbundle",
+      "bytes": 4487626,
+      "sha256": "abdd5a71a3613a5ef644c25a39a98ca32ee1fabc15d6c27f99f59dee21662109",
+      "default": true,
+      "source": "git blob 7c5c8818e9dd85a479e0a66b94f484079294b048 (apps/web/public/data/35K_ec_brenda.parquetbundle)"
+    },
+    {
+      "id": "105K_homoSapiens_drosophilaMelanogaster",
+      "file": "105K_homoSapiens_drosophilaMelanogaster.parquetbundle",
+      "bytes": 10109361,
+      "sha256": "506383a0576f8dc7085f527f951209cfc365896be7b5c6bff7f51c160e66205b",
+      "default": true,
+      "source": "git blob 2ac5fd185ba0c94af76e865a9905acf3b0e75607 (apps/web/public/data/105K_homoSapiens_drosophilaMelanogaster.parquetbundle)"
+    },
+    {
+      "id": "127K_beta_lactamase",
+      "file": "127K_beta_lactamase.parquetbundle",
+      "bytes": 8717148,
+      "sha256": "8f95df5bc645da631015819dce4822ff81d2f7c29bf3b3d320905ac23c23264f",
+      "default": true,
+      "source": "git blob ca7e52ac7bd9053a82aa71b98fa83513992034be (apps/web/public/data/127K_beta_lactamase.parquetbundle)"
+    },
+    {
+      "id": "beta_lactamase_ec",
+      "file": "beta_lactamase_ec.parquetbundle",
+      "bytes": 2084334,
+      "sha256": "737f185f68b809c75767877bbe438a9f43f60bea5340f46295c6ff99e70a700f",
+      "default": true,
+      "source": "git blob 7b0ca5a560eff29b88a146694e695eb1ae150b34 (apps/web/public/data/beta_lactamase_ec.parquetbundle)"
+    },
+    {
+      "id": "beta_lactamase_pn",
+      "file": "beta_lactamase_pn.parquetbundle",
+      "bytes": 12210217,
+      "sha256": "fbb6a096ecc979ece5bccd1284797d662e18c81d96fca4f27e12ad98f7ef02a9",
+      "default": true,
+      "source": "git blob b034774911713af2f21025d90f03c8869ab57949 (apps/web/public/data/beta_lactamase_pn.parquetbundle)"
+    },
+    {
+      "id": "phosphatase",
+      "file": "phosphatase.parquetbundle",
+      "bytes": 434341,
+      "sha256": "b10d2d625ec2bffedc7b49674179a0c5d01a9da4c70762eb8ae78deb13b2f13c",
+      "default": true,
+      "source": "git blob 8f27860d1f18b2eb4312935e7fef07f3f500f477 (apps/web/public/data/phosphatase.parquetbundle)"
+    },
+    {
+      "id": "573K_swissprot",
+      "file": "573K_swissprot.parquetbundle",
+      "bytes": 44899797,
+      "sha256": "75bade01617dd582dc32dc5242f6cb135a49c25277ecc98be09fd541ba7cca64",
+      "default": false,
+      "source": "git blob 217cf859982302e59404935fa2907c19799b9d31 (apps/web/public/data/573K_swissprot.parquetbundle)"
+    },
+    {
+      "id": "beta_lactamase_2026_stats",
+      "file": "beta_lactamase_2026_stats.parquetbundle",
+      "bytes": 12408200,
+      "sha256": "58c60e6074d6afcdeff400d13e383e07d4d59bd082404c851925352417cef6b0",
+      "default": false,
+      "source": "protspace_publication/nm_2026/data/beta_lactamase_2026_stats/data.parquetbundle"
+    },
+    {
+      "id": "phosphatase_eat",
+      "file": "phosphatase_eat.parquetbundle",
+      "bytes": 153329,
+      "sha256": "06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33",
+      "default": false,
+      "source": "git blob f13e1c9026aad1e1919138ed8e10c0018ca74e86 (apps/web/tests/fixtures/phosphatase_eat.parquetbundle)"
+    }
+  ]
+}

@@ -39,6 +39,7 @@ import {
 import './search';
 import './annotation-select';
 import './query-builder';
+import '../common/info-popover';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
 import { evaluateQuery, hasConfiguredCondition } from './query-evaluate';
@@ -103,6 +104,11 @@ export class ProtspaceControlBar extends LitElement {
   currentExampleId: string | null = null;
   /** The host app's example-dataset catalog, listed in the Import menu's "Examples" section. */
   @property({ attribute: false }) exampleDatasets: readonly ExampleDatasetSummary[] = [];
+  /**
+   * The host's page about its examples, linked as "About these examples ↗" from the "Examples"
+   * heading; no link when empty.
+   */
+  @property({ type: String, attribute: 'examples-docs-url' }) examplesDocsUrl = '';
   @state() private _eatAnnotationKeys: string[] = [];
   /** Full annotation key list (includes synthesized `__eat_confidence` keys) for the query-filter column picker. */
   @state() private _filterableAnnotations: string[] = [];
@@ -657,7 +663,29 @@ export class ProtspaceControlBar extends LitElement {
     );
   }
 
+  /**
+   * An example's "ⓘ": its description, insight and docs link. A sibling of the item's button, never
+   * inside it: interactive content inside a `<button>` is invalid, and a click on it would load
+   * the example.
+   */
+  private renderExampleInfo(example: ExampleDatasetSummary | undefined) {
+    if (!example) return '';
+    return html`<protspace-info-popover
+      class="import-example-info"
+      placement="side"
+      data-example-info=${example.id}
+      .description=${example.description}
+      .detail=${example.insight ?? ''}
+      docs-url=${example.docsUrl ?? ''}
+      label=${example.label}
+    ></protspace-info-popover>`;
+  }
+
   render() {
+    const currentExample =
+      this.currentExampleId === null
+        ? undefined
+        : this.exampleDatasets.find((example) => example.id === this.currentExampleId);
     // `density-layer` is a plain attribute: show an unknown token as-is rather than throw.
     const densityLabel = DENSITY_MODE_LABELS[this.densityLayer]?.label ?? this.densityLayer;
     return html`
@@ -1165,12 +1193,15 @@ export class ProtspaceControlBar extends LitElement {
                     <div class="dropdown-menu align-right import-menu" role="menu">
                       <div class="import-current-dataset">
                         <span class="import-current-dataset-label">Current dataset</span>
-                        <span
-                          class="import-current-dataset-name"
-                          title=${this.currentDatasetName || 'No dataset loaded'}
-                        >
-                          ${this.currentDatasetName || 'No dataset loaded'}
-                        </span>
+                        <div class="import-current-dataset-row">
+                          <span
+                            class="import-current-dataset-name"
+                            title=${this.currentDatasetName || 'No dataset loaded'}
+                          >
+                            ${this.currentDatasetName || 'No dataset loaded'}
+                          </span>
+                          ${this.renderExampleInfo(currentExample)}
+                        </div>
                       </div>
                       <div class="import-actions">
                         <button
@@ -1184,20 +1215,41 @@ export class ProtspaceControlBar extends LitElement {
                       ${this.exampleDatasets.length > 0
                         ? html`
                             <div class="import-examples">
-                              <span class="import-examples-label">Examples</span>
+                              <div class="import-examples-header">
+                                <span class="import-examples-label">Examples</span>
+                                ${this.examplesDocsUrl
+                                  ? html`<a
+                                      class="import-examples-docs"
+                                      href=${this.examplesDocsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      >About these examples ↗</a
+                                    >`
+                                  : ''}
+                              </div>
+                              <p class="import-examples-hint">
+                                Examples open in a curated view; your changes aren't kept.
+                              </p>
                               <div class="import-actions">
                                 ${this.exampleDatasets.map(
                                   (example) => html`
-                                    <button
-                                      class="btn-secondary"
-                                      @click=${() => this.handleLoadExampleDataset(example.id)}
-                                      data-driver-id="import-example-dataset"
-                                      data-example-id=${example.id}
-                                      title=${example.description}
-                                      ?disabled=${example.id === this.currentExampleId}
-                                    >
-                                      ${example.label}
-                                    </button>
+                                    <div class="import-example-row">
+                                      <button
+                                        class="btn-secondary import-example-button"
+                                        @click=${() => this.handleLoadExampleDataset(example.id)}
+                                        data-driver-id="import-example-dataset"
+                                        data-example-id=${example.id}
+                                        ?disabled=${example.id === this.currentExampleId}
+                                      >
+                                        <span class="import-example-label">${example.label}</span>
+                                        ${example.large
+                                          ? html`<span class="menu-badge import-example-badge"
+                                              >Large</span
+                                            >`
+                                          : ''}
+                                      </button>
+                                      ${this.renderExampleInfo(example)}
+                                    </div>
                                   `,
                                 )}
                               </div>

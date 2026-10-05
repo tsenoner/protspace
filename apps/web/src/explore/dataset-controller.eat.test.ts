@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_EAT_CONFIDENCE_THRESHOLD, type VisualizationData } from '@protspace/utils';
-import { createEmptyExploreViewRequest } from './url-state';
+import { DEFAULT_EAT_CONFIDENCE_THRESHOLD } from '@protspace/utils';
+import { buildControllerOptions, dataLoadedEvent } from './dataset-controller.fixtures';
 
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
-  resolvePendingLoadFinalization: vi.fn(),
 }));
 
 vi.mock('./data-renderer', () => ({
@@ -14,7 +13,6 @@ vi.mock('./data-renderer', () => ({
 
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
-    loadDefaultDatasetAndClearPersistedFile: vi.fn(),
     loadExampleDatasetAndClearPersistedFile: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
@@ -35,21 +33,6 @@ vi.mock('./tooltip-annotations-store', () => ({
 
 import { createDatasetController } from './dataset-controller';
 
-const data: VisualizationData = {
-  protein_ids: ['P1'],
-  projections: [
-    {
-      name: 'umap',
-      dimension: 2,
-      data: new Float32Array([0, 0]),
-    },
-  ],
-  annotations: {
-    ec: { kind: 'categorical', values: ['1.1.1.1'], colors: ['#000'], shapes: ['circle'] },
-  },
-  annotation_data: { ec: new Int32Array([0]) },
-};
-
 describe('dataset controller EAT settings restore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -67,69 +50,44 @@ describe('dataset controller EAT settings restore', () => {
       setFileSettings: vi.fn(),
       applyEatSettings: vi.fn(),
     };
-    const plotElement = {
-      eatOverlayEnabled: true,
-    };
-    const viewController = {
-      subscribeToViewChanges: vi.fn(() => () => {}),
-      resolveLatestView: vi.fn(),
-      getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
-      applyLatestViewForDatasetLoad: vi.fn(),
-      setRequestedView: vi.fn(),
-    };
-    const options = {
+    const options = buildControllerOptions({
       controlBar,
-      dataLoader: {},
-      getIsDisposed: () => false,
-      interactionController: {},
       legendElement,
+      plotElement: { eatOverlayEnabled: true },
       loadQueue: {
-        registerFileLoad: vi.fn(),
-        getLoadMetaForFile: vi.fn(),
-        getRunningLoadMeta: () => ({ sequence: 7, kind: 'opfs' as const }),
+        getRunningLoadMeta: () => ({ sequence: 7, kind: 'opfs' }),
         getLatestSequence: () => 7,
-        resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
       },
-      overlayController: { update: vi.fn() },
-      plotElement,
-      setCurrentExampleId: vi.fn(),
-      setCurrentDatasetName: vi.fn(),
-      structureViewer: {},
-      viewController,
-    } as unknown as Parameters<typeof createDatasetController>[0];
+    });
     const controller = createDatasetController(options);
 
-    await controller.handleDataLoaded({
-      detail: {
-        data,
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
         settings: {
           legendSettings: { ec: { categories: {} } },
           exportOptions: {},
           eatOverlayEnabled: false,
           eatConfidenceThreshold: 0.75,
         },
-        source: 'auto',
-      },
-    } as unknown as Event);
+      }),
+    );
 
     expect(controlBar.clearForNewDataset).toHaveBeenCalledOnce();
     expect(legendElement.applyEatSettings).toHaveBeenCalledWith(false, 0.75);
     expect(controlBar.hasFileSettings).toBe(true);
     expect(legendElement.setFileSettings).not.toHaveBeenCalled();
     expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
-    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(7, true);
+    expect(options.loadQueue.resolvePendingLoadFinalization).toHaveBeenCalledWith(7, true);
 
-    await controller.handleDataLoaded({
-      detail: {
-        data,
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
         settings: {
           legendSettings: {},
           exportOptions: {},
           eatOverlayEnabled: true,
         },
-        source: 'auto',
-      },
-    } as unknown as Event);
+      }),
+    );
     expect(legendElement.applyEatSettings).toHaveBeenLastCalledWith(
       true,
       DEFAULT_EAT_CONFIDENCE_THRESHOLD,
@@ -147,40 +105,24 @@ describe('dataset controller EAT settings restore', () => {
       ),
       applyEatSettings: vi.fn(),
     };
-    const controller = createDatasetController({
-      controlBar,
-      dataLoader: {},
-      getIsDisposed: () => false,
-      interactionController: {},
-      legendElement,
-      loadQueue: {
-        registerFileLoad: vi.fn(),
-        getLoadMetaForFile: vi.fn(),
-        getRunningLoadMeta: () => ({ sequence: 3, kind: 'user' as const }),
-        getLatestSequence: () => 3,
-        resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
-      },
-      overlayController: { update: vi.fn() },
-      plotElement: { eatOverlayEnabled: true },
-      setCurrentExampleId: vi.fn(),
-      setCurrentDatasetName: vi.fn(),
-      structureViewer: {},
-      viewController: {
-        subscribeToViewChanges: vi.fn(() => () => {}),
-        resolveLatestView: vi.fn(),
-        getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
-        applyLatestViewForDatasetLoad: vi.fn(),
-        setRequestedView: vi.fn(),
-      },
-    } as unknown as Parameters<typeof createDatasetController>[0]);
+    const controller = createDatasetController(
+      buildControllerOptions({
+        controlBar,
+        legendElement,
+        plotElement: { eatOverlayEnabled: true },
+        loadQueue: {
+          getRunningLoadMeta: () => ({ sequence: 3, kind: 'user' }),
+          getLatestSequence: () => 3,
+        },
+      }),
+    );
 
-    await controller.handleDataLoaded({
-      detail: {
-        data,
+    await controller.handleDataLoaded(
+      dataLoadedEvent({
         settings: { legendSettings: {}, exportOptions: {}, shapeSize: 12 },
         source: 'user',
-      },
-    } as unknown as Event);
+      }),
+    );
 
     expect(calls).toEqual(['setFileSettings', 'applyShapeSize:12:string']);
     expect(controlBar.hasFileSettings).toBe(true);

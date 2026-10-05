@@ -24,10 +24,14 @@ import {
   MIN_SEQUENCES,
   PIPELINE_TIMEOUT_SECONDS,
 } from './fasta-prep-limits';
-import { EXAMPLE_DATASETS } from './example-datasets';
+import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
-import { loadRequestedDatasetOrFallback, startInitialExploreLoad } from './startup';
+import {
+  handleCancelledExampleLoad,
+  loadDatasetAfterNavigation,
+  startInitialExploreLoad,
+} from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
 
@@ -53,7 +57,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
   const lifecycle = createLifecycle();
 
-  controlBar.exampleDatasets = EXAMPLE_DATASETS;
+  controlBar.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
+  controlBar.examplesDocsUrl = EXAMPLES_DOCS_URL;
 
   const setCurrentDatasetName = (name: string) => {
     controlBar.currentDatasetName = name;
@@ -68,13 +73,21 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
   const loadQueue = createLoadQueue({
     isDisposed: lifecycle.isDisposed,
+    // `datasetController` is declared below; the queue asks only once a load
+    // comes off it, after this synchronous setup has finished.
+    skipLoad: (meta) => datasetController.isSkippableQueuedLoad(meta),
   });
   dataLoader.loadFromFileHandler = (file, options, next) => {
-    // A non-'auto' load is a user import, which supersedes any example fetch
-    // still in flight. `datasetController` is declared below; this handler
-    // only runs on a later load, after this synchronous setup has finished.
+    // A non-'auto' load is a user import: a user request, which supersedes
+    // any load still in flight and any startup load not yet started. Its load
+    // is tagged with the epoch it took, so a newer user request made while it
+    // prepares or decodes supersedes it in turn (`handleDataLoaded`).
+    // `datasetController` is declared below; this handler only runs on a
+    // later load, after this synchronous setup has finished.
+    let epoch = datasetController.currentRequestEpoch();
     if (options?.source !== 'auto') {
-      datasetController.supersedePendingExampleFetch();
+      epoch = datasetController.beginUserRequest();
+      loadQueue.registerFileLoad(file, 'user', undefined, epoch);
     }
     return loadQueue.enqueueLoadFromFile(file, options, async (queuedFile, queuedOptions) => {
       if (!isFastaFile(queuedFile)) {
@@ -120,9 +133,31 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
             }
           : undefined;
 
-      const abortController = new AbortController();
+      // The upload's Cancel aborts it, and so does a newer user request (a
+      // Back/Forward, say), which owns the screen from then on: a superseded
+      // preparation settles its queue slot as failed and touches neither the
+      // overlay nor the queue again.
+      const preparation = datasetController.beginImportPreparation(epoch);
+      const abandonIfSuperseded = (): boolean => {
+        if (preparation.isCurrent()) {
+          return false;
+        }
+        preparation.settle();
+        const meta = loadQueue.getLoadMetaForFile(queuedFile);
+        if (meta) {
+          loadQueue.resolvePendingLoadFinalization(meta.sequence, false);
+        }
+        return true;
+      };
+      if (abandonIfSuperseded()) {
+        return;
+      }
+      const showProgress = (progress: number, subMessage: string) => {
+        if (preparation.isCurrent()) {
+          overlayController.update(true, progress, 'Preparing FASTA…', subMessage);
+        }
+      };
       overlayController.update(true, 5, 'Preparing FASTA…', 'Uploading…', colabNote);
-      overlayController.setCancelHandler(() => abortController.abort());
       let lastProgress = 5;
       let creep = 0;
 
@@ -154,7 +189,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
           const subMessage = overdue
             ? 'Still working — large jobs can take a few minutes…'
             : embeddingLabel;
-          overlayController.update(true, lastProgress, 'Preparing FASTA…', subMessage);
+          showProgress(lastProgress, subMessage);
         }, 250);
       };
 
@@ -165,50 +200,53 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         }
       };
 
+      let bundleFile: File;
       try {
-        const bundleFile = await prepareFastaBundle(queuedFile, {
+        bundleFile = await prepareFastaBundle(queuedFile, {
           baseUrl: import.meta.env.VITE_PREP_API_BASE ?? '',
-          signal: abortController.signal,
+          signal: preparation.signal,
           onProgress: (stage, payload) => {
             if (stage === 'queued') {
               const queuePos =
                 typeof payload.queue_position === 'number' ? payload.queue_position : 0;
               if (queuePos > 0) {
                 lastProgress = 5;
-                overlayController.update(
-                  true,
-                  lastProgress,
-                  'Preparing FASTA…',
-                  `Position ${queuePos} in queue…`,
-                );
+                showProgress(lastProgress, `Position ${queuePos} in queue…`);
               } else {
                 lastProgress = 12;
-                overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
+                showProgress(lastProgress, embeddingLabel);
                 startCreep();
               }
             } else if (stage === 'embedding' || stage === 'annotating') {
               lastProgress = Math.max(lastProgress, 12);
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', embeddingLabel);
+              showProgress(lastProgress, embeddingLabel);
               startCreep();
             } else if (stage === 'projecting') {
               stopCreep();
               lastProgress = 70;
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Projecting…');
+              showProgress(lastProgress, 'Projecting…');
             } else if (stage === 'bundling') {
               lastProgress = 90;
-              overlayController.update(true, lastProgress, 'Preparing FASTA…', 'Bundling…');
+              showProgress(lastProgress, 'Bundling…');
             }
           },
         });
-        stopCreep();
-        overlayController.setCancelHandler(null);
-        return next(bundleFile, queuedOptions);
       } catch (error) {
-        stopCreep();
-        overlayController.setCancelHandler(null);
+        // Aborted by the newer request, which owns the overlay: no toast.
+        if (abandonIfSuperseded()) {
+          return;
+        }
+        preparation.settle();
         overlayController.update(false, 0, '', '');
         throw error;
+      } finally {
+        stopCreep();
       }
+      if (abandonIfSuperseded()) {
+        return;
+      }
+      preparation.settle();
+      return next(bundleFile, queuedOptions);
     });
   };
   lifecycle.addCleanup(() => {
@@ -241,13 +279,25 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     setCurrentExampleId,
     setCurrentDatasetName,
     viewController,
+    onExampleLoadCancelled(cancel) {
+      if (lifecycle.isDisposed()) {
+        return;
+      }
+      handleCancelledExampleLoad(datasetController, viewController, cancel).catch(
+        (error: unknown) => {
+          console.error('Startup load after a cancelled download failed:', error);
+        },
+      );
+    },
   });
   // An example fetch/decode still in flight when the page is torn down (a
   // route change, a remount) would otherwise resolve on a disposed runtime:
   // superseding it here means it recognizes itself as stale and does
   // nothing once it does resolve, rather than trying to render onto
   // elements that are gone.
-  lifecycle.addCleanup(() => datasetController.supersedePendingExampleFetch());
+  lifecycle.addCleanup(() => {
+    datasetController.beginUserRequest();
+  });
 
   const handleExport = createExportHandler({
     controlBar,
@@ -424,24 +474,39 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
     setRequestedDataset(exampleId) {
       if (lifecycle.isDisposed()) {
-        return;
+        return Promise.resolve();
       }
 
+      let request: Promise<void>;
       if (!hasStartedInitialDatasetLoad) {
         hasStartedInitialDatasetLoad = true;
-        void startInitialExploreLoad({
+        request = startInitialExploreLoad({
           dataLoader,
           datasetController,
           plotElement,
           requestedExampleId: exampleId,
         });
-        return;
+      } else {
+        request = loadDatasetAfterNavigation(datasetController, viewController, exampleId);
+      }
+      // The URL sync hook only waits for this to settle; a failure has
+      // already been reported to the user by the load itself.
+      return request.catch((error: unknown) => {
+        console.error('Dataset request failed:', error);
+      });
+    },
+    cancelPendingMenuLoad() {
+      if (lifecycle.isDisposed()) {
+        return 'none';
       }
 
-      void loadRequestedDatasetOrFallback(datasetController, exampleId);
+      return datasetController.cancelPendingExampleLoad({ source: 'menu' });
     },
     subscribeToDatasetChanges(callback) {
       return datasetController.subscribeToDatasetChanges(callback);
+    },
+    subscribeToExampleRetries(callback) {
+      return datasetController.subscribeToExampleRetries(callback);
     },
     dispose() {
       lifecycle.dispose();

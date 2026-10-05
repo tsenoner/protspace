@@ -36,9 +36,11 @@ Calinski–Harabasz is a single global variance ratio with no accepted per-categ
 
 ## The "Embedding" Column
 
-Beside each score in the panel is its value on the original high-dimensional embedding. That is the ceiling: how much separation genuinely exists before any projection, so you can tell "this annotation does not separate" from "this 2D layout lost the separation that was there".
+Beside each score in the panel is its value on the original high-dimensional embedding. That is the reference to read the projection against: how much separation exists before any projection, so you can tell "this annotation does not separate" from "this 2D layout lost the separation that was there".
 
-A silhouette of 0.30 against an embedding value of 0.35 means the projection kept almost everything. The same 0.30 against 0.80 means the layout is hiding real structure, and another projection may show it better. Per-category ceilings appear in the strip tooltips.
+A silhouette of 0.30 against an embedding value of 0.35 means the projection kept almost everything. The same 0.30 against 0.80 means the layout is hiding real structure, and another projection may show it better. Per-category embedding values appear in the strip tooltips.
+
+The embedding value is a reference, not a ceiling. A projection can score higher than its embedding when flattening happens to pull an annotation's categories apart: in the [β-lactamase example](/explore/example-datasets#beta-lactamase), the silhouette of `signal_peptide` is about 0.2 on the PCA and under 0.1 on the embedding. A projection that beats its embedding describes the layout, not a separation the proteins have.
 
 ## Categories With A Single Member
 

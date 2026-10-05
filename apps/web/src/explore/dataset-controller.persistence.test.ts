@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { buildControllerOptions, dataLoadedEvent } from './dataset-controller.fixtures';
 import { EXAMPLE_DATASETS } from './example-datasets';
 import type { LoadMeta } from './types';
-import { createEmptyExploreViewRequest } from './url-state';
 
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
@@ -20,15 +19,18 @@ vi.mock('./data-renderer', () => ({
 
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
-    loadDefaultDatasetAndClearPersistedFile: vi.fn(),
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    beginUserRequest: vi.fn(() => 1),
+    beginImportPreparation: vi.fn(),
+    cancelPendingExampleLoad: vi.fn(() => 'none'),
+    clearCorruptedPersistedDataset: vi.fn(),
+    commitExampleLoad: vi.fn(),
+    currentRequestEpoch: vi.fn(() => 0),
+    isCurrentRequest: () => true,
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
-    tryLoadPersistedAgain: vi.fn(),
-    clearCorruptedPersistedDataset: vi.fn(),
+    loadExampleDatasetAndClearPersistedFile: vi.fn(),
     recoverFromCorruptedPersistedDataset: vi.fn(),
-    supersedePendingExampleFetch: vi.fn(),
-    isCurrentExampleRequest: () => true,
+    tryLoadPersistedAgain: vi.fn(),
   }),
 }));
 
@@ -49,64 +51,31 @@ vi.mock('../lib/notify', () => ({
 
 import { createDatasetController } from './dataset-controller';
 
-const data: VisualizationData = {
-  protein_ids: ['P1'],
-  projections: [{ name: 'umap', dimension: 2, data: new Float32Array([0, 0]) }],
-  annotations: {
-    ec: { kind: 'categorical', values: ['1.1.1.1'], colors: ['#000'], shapes: ['circle'] },
-  },
-  annotation_data: { ec: new Int32Array([0]) },
-};
-
 const file = new File(['bundle'], 'import.parquetbundle');
 
 function buildController(loadMeta: LoadMeta = { sequence: 3, kind: 'user' }) {
-  const options = {
-    controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
-    dataLoader: {},
-    getIsDisposed: () => false,
-    interactionController: {},
-    legendElement: {
-      clearForNewDataset: vi.fn(),
-      setFileSettings: vi.fn(),
-      applyEatSettings: vi.fn(),
-    },
+  const options = buildControllerOptions({
     loadQueue: {
-      registerFileLoad: vi.fn(),
       getLoadMetaForFile: () => loadMeta,
       getRunningLoadMeta: () => loadMeta,
       getLatestSequence: () => 3,
       resolvePendingLoadFinalization: mocks.resolvePendingLoadFinalization,
     },
-    overlayController: { update: vi.fn() },
-    plotElement: {},
-    setCurrentExampleId: vi.fn(),
-    setCurrentDatasetName: vi.fn(),
-    structureViewer: {},
-    viewController: {
-      subscribeToViewChanges: vi.fn(() => () => {}),
-      resolveLatestView: vi.fn(),
-      getLatestViewRequest: vi.fn(() => createEmptyExploreViewRequest()),
-      applyLatestViewForDatasetLoad: vi.fn(),
-      setRequestedView: vi.fn(),
-    },
-  } as unknown as Parameters<typeof createDatasetController>[0];
+  });
 
   return { controller: createDatasetController(options) };
 }
 
-const loadedEvent = {
-  detail: { data, settings: null, source: 'user', file },
-} as unknown as Event;
+const loadedEvent = dataLoadedEvent({ settings: null, source: 'user', file });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.markLastLoadStatus.mockResolvedValue(undefined);
+  mocks.saveLastImportedFile.mockResolvedValue(undefined);
+  mocks.loadData.mockResolvedValue(undefined);
+});
 
 describe('dataset controller OPFS persistence', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.markLastLoadStatus.mockResolvedValue(undefined);
-    mocks.saveLastImportedFile.mockResolvedValue(undefined);
-    mocks.loadData.mockResolvedValue(undefined);
-  });
-
   /** Drain the microtask queue so every already-resolved await has run. */
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -151,24 +120,14 @@ describe('dataset controller OPFS persistence', () => {
 });
 
 describe('dataset controller legacy bundle notice', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.markLastLoadStatus.mockResolvedValue(undefined);
-    mocks.saveLastImportedFile.mockResolvedValue(undefined);
-    mocks.loadData.mockResolvedValue(undefined);
-  });
-
   const eventFor = (bundleFormatVersion: number | undefined, unplacedProteinCount?: number) =>
-    ({
-      detail: {
-        data,
-        settings: null,
-        source: 'user',
-        file,
-        bundleFormatVersion,
-        unplacedProteinCount,
-      },
-    }) as unknown as Event;
+    dataLoadedEvent({
+      settings: null,
+      source: 'user',
+      file,
+      bundleFormatVersion,
+      unplacedProteinCount,
+    });
 
   it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
     const { controller } = buildController();
@@ -227,12 +186,8 @@ describe('dataset controller legacy bundle notice', () => {
     const { controller } = buildController({
       sequence: 3,
       kind: 'default',
-      example: {
-        entry: EXAMPLE_DATASETS[1],
-        source: 'menu',
-        requestId: 1,
-        replacesStoredImport: true,
-      },
+      epoch: 1,
+      example: { entry: EXAMPLE_DATASETS[1], source: 'menu', replacesStoredImport: true },
     });
     await controller.handleDataLoaded(eventFor(2));
 

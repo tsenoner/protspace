@@ -8,6 +8,7 @@ from protspace.data.io.settings_converter import (
     _hex_to_rgba,
     _rgba_to_hex,
     _sort_values_for_zorder,
+    is_frontend_envelope,
     settings_to_visualization_state,
     visualization_state_to_settings,
 )
@@ -408,3 +409,18 @@ class TestFrontendSettingsShape:
         }
         colors = settings_to_visualization_state(nested)["annotation_colors"]
         assert colors == {"legendSettings": {"a": "rgba(255, 0, 0, 0.8)"}}
+
+
+def test_is_frontend_envelope_needs_the_nested_shape_and_a_sibling():
+    legends = {"organism": {"categories": {}}}
+    assert is_frontend_envelope({"legendSettings": legends, "exportOptions": {}})
+    assert is_frontend_envelope(
+        {"legendSettings": legends, "eatConfidenceThreshold": 0.5}
+    )
+    assert not is_frontend_envelope(legends)  # the flat Python shape
+    assert not is_frontend_envelope({"legendSettings": legends})  # no sibling
+    # A flat map whose columns are called legendSettings and exportOptions.
+    assert not is_frontend_envelope(
+        {"legendSettings": {"categories": {}}, "exportOptions": {"categories": {}}}
+    )
+    assert not is_frontend_envelope(None)

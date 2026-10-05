@@ -8,6 +8,13 @@ interface PendingLoadFinalization {
 
 interface LoadQueueOptions {
   isDisposed: () => boolean;
+  /**
+   * Whether a load that has waited for its turn can be skipped without
+   * decoding (an example load a newer user request has superseded meanwhile).
+   * A skipped load never reaches `loadFromFile`, and its outcome settles as a
+   * failure.
+   */
+  skipLoad?: (meta: LoadMeta) => boolean;
 }
 
 export interface LoadQueue {
@@ -16,7 +23,12 @@ export interface LoadQueue {
     options: DataLoaderLoadOptions | undefined,
     loadFromFile: (file: File, options?: DataLoaderLoadOptions) => Promise<void>,
   ): Promise<void>;
-  registerFileLoad(file: File, kind: DatasetLoadKind, example?: ExampleLoadContext): LoadMeta;
+  registerFileLoad(
+    file: File,
+    kind: DatasetLoadKind,
+    example?: ExampleLoadContext,
+    epoch?: number,
+  ): LoadMeta;
   getLoadMetaForFile(file: File): LoadMeta | undefined;
   getRunningLoadMeta(): LoadMeta | null;
   getLatestSequence(): number;
@@ -26,7 +38,7 @@ export interface LoadQueue {
   dispose(): void;
 }
 
-export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
+export function createLoadQueue({ isDisposed, skipLoad }: LoadQueueOptions): LoadQueue {
   let nextLoadSequence = 0;
   let runningLoadMeta: LoadMeta | null = null;
   let queuedLoad: Promise<void> = Promise.resolve();
@@ -48,11 +60,17 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
     return pending;
   };
 
-  const registerFileLoad = (file: File, kind: DatasetLoadKind, example?: ExampleLoadContext) => {
+  const registerFileLoad = (
+    file: File,
+    kind: DatasetLoadKind,
+    example?: ExampleLoadContext,
+    epoch?: number,
+  ) => {
     const nextMeta: LoadMeta = {
       sequence: nextLoadSequence + 1,
       kind,
       example,
+      ...(epoch !== undefined && { epoch }),
     };
     nextLoadSequence = nextMeta.sequence;
     loadMetaByFile.set(file, nextMeta);
@@ -84,6 +102,10 @@ export function createLoadQueue({ isDisposed }: LoadQueueOptions): LoadQueue {
 
     const nextLoad = queuedLoad.then(async () => {
       if (isDisposed()) {
+        return;
+      }
+      if (skipLoad?.(loadMeta)) {
+        resolvePendingLoadFinalization(loadMeta.sequence, false);
         return;
       }
 
