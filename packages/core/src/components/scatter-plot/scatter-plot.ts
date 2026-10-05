@@ -2076,17 +2076,19 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * The size of `_getInteractableProteinIds()`, counted without building the set:
-   * each slot is a distinct protein, so the interactive slots are its members.
-   * A legend toggle changes it, and at 573K points the set took ~25 ms.
+   * The size of `_getInteractableProteinIds()`. Each slot is a distinct protein,
+   * so while no protein id repeats that is the interactive slot count, read
+   * without building the set: a legend toggle changes it, and at 573K points the
+   * set took ~25 ms.
    */
   private _getVisiblePointCount(): number {
     const key = this._interactableKey();
     if (
-      this._interactableProteinIdsCache !== null &&
-      sameInteractableKey(this._visiblePointCountKey, key)
+      (this._interactableProteinIdsCache !== null &&
+        sameInteractableKey(this._visiblePointCountKey, key)) ||
+      !this._getVisibilityModel().idsUnique()
     ) {
-      return this._interactableProteinIdsCache.size;
+      return this._getInteractableProteinIds().size;
     }
     return this._interactableSlots(key).count;
   }

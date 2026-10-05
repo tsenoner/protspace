@@ -287,6 +287,22 @@ describe('scatter-plot visible point count', () => {
     }
   });
 
+  it('counts a repeated protein id once, whether or not the id set is built', () => {
+    const data = (): VisualizationData => {
+      const d = makeFamilyData({ n: 2 });
+      return { ...d, protein_ids: ['dup', 'dup'] };
+    };
+    const cold = createPlot({ data: data(), selectedAnnotation: 'fam' });
+    cold._processData();
+    expect(cold._plotData.length).toBe(2);
+    expect(cold._getVisiblePointCount()).toBe(1);
+
+    const warm = createPlot({ data: data(), selectedAnnotation: 'fam' });
+    warm._processData();
+    expect(warm.getInteractableProteinIds().size).toBe(1);
+    expect(warm._getVisiblePointCount()).toBe(1);
+  });
+
   it('recounts after the hidden set changes (memo invalidation)', () => {
     const sp = makeScatter();
     sp._processData();
