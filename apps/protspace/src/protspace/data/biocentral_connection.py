@@ -8,15 +8,14 @@ Biocentral moved to v2 under a pinned 1.x client, every embedding and prediction
 with those words and the hosted app told users the service was down.
 
 :func:`wait_for_server` keeps the client's wait and, when it fails, looks at the server
-once to say which of the two it was. It lives outside ``data/embedding`` so annotation
-can use it without importing the embedder shortcut tables, which resolve the client's
-``CommonEmbedder`` members at import.
+once to say which of the two it was. It imports nothing from the client and sits outside
+``data/embedding``, so annotation can use it without the embedder shortcut tables and
+nothing about the client can break its import.
 """
 
 import importlib.metadata
 
 import requests
-from biocentral_api import BiocentralAPI
 
 BIOCENTRAL_URL = "https://biocentral.rostlab.org"
 
@@ -28,9 +27,6 @@ _HEALTH_TIMEOUT_SECONDS = 5
 # and the Colab hint, and a server this client cannot use is unavailable to it.
 _LEAD = "No healthy Biocentral service became available in time"
 
-# Read once, at import, so tests that swap `BiocentralAPI` for a fake leave the
-# messages alone.
-_CLIENT_WINDOW = (BiocentralAPI.MIN_API_VERSION, BiocentralAPI.MAX_API_VERSION)
 try:
     _CLIENT_VERSION = importlib.metadata.version("biocentral-api")
 except importlib.metadata.PackageNotFoundError:
@@ -50,60 +46,57 @@ def wait_for_server(api):
     """Return *api* once its server is healthy; otherwise say why it never was.
 
     Takes the client already built, so each caller keeps constructing it where its own
-    tests replace it. A successful wait costs nothing extra: ``/health`` is looked at
-    only after the client's wait has failed.
+    tests replace it, and reads the versions it supports off that client. A successful
+    wait costs nothing extra: ``/health`` is looked at only after the client's wait has
+    failed.
     """
     try:
         return api.wait_until_healthy(max_wait_seconds=_WAIT_SECONDS)
     except TimeoutError as exc:
-        raise BiocentralUnavailableError(_explain_unavailable()) from exc
+        why = _why_unusable(api.MIN_API_VERSION, api.MAX_API_VERSION)
+        raise BiocentralUnavailableError(f"{_LEAD}: {BIOCENTRAL_URL} {why}") from exc
 
 
-def _explain_unavailable() -> str:
-    """Why no server was usable, from one look at the server's ``/health``."""
+def _major(version: str) -> int:
+    return int(version.split(".")[0])
+
+
+def _why_unusable(lowest: str, highest: str) -> str:
+    """Why no server was usable, from one look at ``/health``.
+
+    Returns the clause that follows the address. The client accepts servers from
+    *lowest* up to, not including, *highest*.
+    """
     try:
         response = requests.get(
             f"{BIOCENTRAL_URL}/health", timeout=_HEALTH_TIMEOUT_SECONDS
         )
+        response.raise_for_status()
     except requests.RequestException as exc:
-        return f"{_LEAD}: {BIOCENTRAL_URL} did not answer its health check ({exc})."
-
-    if response.status_code != 200:
-        return (
-            f"{_LEAD}: {BIOCENTRAL_URL} answered its health check with "
-            f"HTTP {response.status_code} {response.reason}."
-        )
+        return f"did not answer its health check ({exc})."
 
     try:
         version = str(response.json()["version"])
-        major = int(version.split(".")[0])
+        major = _major(version)
     except (ValueError, KeyError, TypeError):
-        return (
-            f"{_LEAD}: {BIOCENTRAL_URL} answered its health check without a "
-            "readable version."
-        )
+        return "answered its health check without a readable version."
 
-    # As numbers: the client compares the same majors as strings, which puts "10"
-    # between "2" and "3".
-    lowest, highest = (int(v.split(".")[0]) for v in _CLIENT_WINDOW)
-    supported = f"v{_CLIENT_WINDOW[0]} up to (not including) v{_CLIENT_WINDOW[1]}"
+    supported = f"v{lowest} up to (not including) v{highest}"
     client = f"biocentral-api {_CLIENT_VERSION}"
 
-    if lowest <= major < highest:
+    # Majors as numbers: the client compares them as strings, where "10" sorts before
+    # "2".
+    if major >= _major(highest):
         return (
-            f"{_LEAD}: {BIOCENTRAL_URL} reports v{version}, which {client} supports, "
-            "but it did not pass the client's health check in time."
+            f"runs Biocentral v{version}, but the installed {client} only supports "
+            f"servers {supported}. Upgrade with `pip install -U protspace`."
         )
-    if major >= highest:
-        # The Python floor is spelled out because on an older Python pip does not
-        # fail: it keeps the old release. test_biocentral_connection pins it to
-        # `requires-python`.
+    if major < _major(lowest):
         return (
-            f"{_LEAD}: {BIOCENTRAL_URL} runs Biocentral v{version}, but the "
-            f"installed {client} only supports servers {supported}. Upgrade with "
-            "`pip install -U protspace` (needs Python 3.12 or newer)."
+            f"runs Biocentral v{version}, which is older than the servers {supported} "
+            f"that the installed {client} supports."
         )
     return (
-        f"{_LEAD}: {BIOCENTRAL_URL} runs Biocentral v{version}, which is older than "
-        f"the servers {supported} that the installed {client} supports."
+        f"reports v{version}, which {client} supports, but it did not pass the "
+        "client's health check in time."
     )

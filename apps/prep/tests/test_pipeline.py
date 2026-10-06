@@ -348,9 +348,6 @@ async def test_embed_failure_with_no_healthy_service_timeout_is_classified_as_bi
     assert "Biocentral embedding service is unavailable" in str(exc_info.value)
 
 
-# biotrainer_core (a dependency of the Biocentral client, imported here for the first
-# time in this suite) warns about a deprecated pydantic config on import.
-@pytest.mark.filterwarnings("ignore::DeprecationWarning:biotrainer_core.*")
 async def test_a_biocentral_version_mismatch_is_classified_as_unavailable(
     ctx, monkeypatch, caplog
 ):
@@ -364,20 +361,19 @@ async def test_a_biocentral_version_mismatch_is_classified_as_unavailable(
         wait_for_server,
     )
 
-    class Health:
-        status_code = 200
-        reason = "OK"
-
-        def json(self):
-            return {"status": "healthy", "version": "9.0.0"}
-
-    class TimedOut:
-        def wait_until_healthy(self, max_wait_seconds):
-            raise TimeoutError("No healthy biocentral service became available in time")
-
-    monkeypatch.setattr(requests, "get", lambda url, **kwargs: Health())
+    health = MagicMock(status_code=200, json=lambda: {"version": "9.0.0"})
+    timed_out = MagicMock(
+        MIN_API_VERSION="2.0.0",
+        MAX_API_VERSION="3.0.0",
+        wait_until_healthy=MagicMock(
+            side_effect=TimeoutError(
+                "No healthy biocentral service became available in time"
+            )
+        ),
+    )
+    monkeypatch.setattr(requests, "get", lambda url, **kwargs: health)
     with pytest.raises(BiocentralUnavailableError) as raised:
-        wait_for_server(TimedOut())
+        wait_for_server(timed_out)
 
     fake = _make_step_router(
         ctx, fail_step="embed", fail_stderr=[f"ERROR: {raised.value}\n".encode()]

@@ -7,6 +7,7 @@ import warnings
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.biocentral_connection import BIOCENTRAL_URL, wait_for_server
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +115,6 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
             accepts a sequence-hash key.
         """
         from biocentral_api import BiocentralAPI, BiocentralPredictionModel
-
-        from protspace.data.biocentral_connection import (
-            BIOCENTRAL_URL,
-            wait_for_server,
-        )
 
         try:
             api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))

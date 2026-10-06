@@ -519,7 +519,11 @@ class TestFailedBatch:
 
 class _RefusedByTheClient(_FakeBiocentral):
     """The wait ends the way the real client's does when it will not talk to the
-    server it finds: ``TimeoutError``, with nothing to say why."""
+    server it finds: ``TimeoutError``, with nothing to say why. The window is a 2.x
+    client's, which the failure message reports."""
+
+    MIN_API_VERSION = "2.0.0"
+    MAX_API_VERSION = "3.0.0"
 
     def wait_until_healthy(self, *args, **kwargs):
         raise TimeoutError("No healthy biocentral service became available in time")
@@ -533,14 +537,8 @@ class TestNoUsableServer:
         warning said nothing a user could act on. Empty predictions must stay
         out of the cache, so the source is failed, not left blank."""
 
-        class Health:
-            status_code = 200
-            reason = "OK"
-
-            def json(self):
-                return {"status": "healthy", "version": "3.0.0"}
-
-        monkeypatch.setattr(requests, "get", lambda url, **kwargs: Health())
+        health = MagicMock(status_code=200, json=lambda: {"version": "3.0.0"})
+        monkeypatch.setattr(requests, "get", lambda url, **kwargs: health)
 
         with caplog.at_level("WARNING"):
             retriever, values = _predict({"P1": _seq(1)}, _RefusedByTheClient())
@@ -548,5 +546,5 @@ class TestNoUsableServer:
         assert retriever.prediction_failed
         assert values == {"P1": ""}
         warning = " ".join(r.getMessage() for r in caplog.records)
-        assert "No healthy Biocentral service became available in time" in warning
+        assert any(p in warning.lower() for p in _BIOCENTRAL_DOWN_PATTERNS)
         assert "v3.0.0" in warning
