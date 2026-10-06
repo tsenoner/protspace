@@ -256,11 +256,11 @@ About 12 s of every swissprot run is the 5th-neighbour search on the source.
 
 How far Explore scales with the number of points N, for papers and capacity planning. Per
 dataset it imports the bundle cold several times, then times each interaction, counts its work,
-and samples the browser's memory. Run it through the lock, wrapped in caffeinate, with nothing
-else using the GPU:
+and samples the browser's memory. Wrap it in caffeinate, and run nothing else on the GPU
+meanwhile:
 
 ```sh
-caffeinate -dims node ../protspace-perf/perf/lab/with-lock.mjs pnpm perf:scale \
+caffeinate -dims pnpm perf:scale \
   --datasets 573K=perf/datasets/573K_swissprot.parquetbundle,5M=/abs/synth-5M.parquetbundle
 pnpm perf:scale --datasets 573K_swissprot --cold 2 --reps 5        # a quick check, about 3 min
 pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an already served build

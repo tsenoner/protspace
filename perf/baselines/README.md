@@ -291,8 +291,8 @@ took.
 
 That split also kills the premise the scenario was written on. k = 0.1 is the MOST expensive point
 frame, not the cheapest: `gl_PointSize` is a per-vertex attribute and does not scale with k
-(`export-shaders.ts`), so zooming out packs all 573K sprites into about 1% of the screen and
-same-pixel overdraw serialises the alpha blending. It is still the right scenario to watch, for the
+(`webgl/renderer/point-shaders.ts`), so zooming out packs all 573K sprites into about 1% of the
+screen and same-pixel overdraw serialises the alpha blending. It is still the right scenario to watch, for the
 opposite reason: it is both the worst `off` frame and where a density accumulate saturates.
 `zoomInOut` shows the same signature (k = 3 median 13.60 ms against k = 1 median 18.25 ms).
 
