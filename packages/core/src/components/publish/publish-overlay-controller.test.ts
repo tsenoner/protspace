@@ -286,9 +286,17 @@ describe('PublishOverlayController', () => {
       // Drag from bottom-right to top-left
       canvas.dispatchEvent(pointerEvent('pointerdown', 400, 400));
       canvas.dispatchEvent(pointerEvent('pointerup', 100, 100));
-
-      // Should have valid rect with positive w/h
       expect(controller.tool).toBe('inset-target');
+
+      // The source rect is only readable once the target phase adds the inset.
+      canvas.dispatchEvent(pointerEvent('pointerdown', 600, 50));
+      canvas.dispatchEvent(pointerEvent('pointerup', 900, 350));
+
+      const { sourceRect } = callbacks.onInsetAdded.mock.calls[0][0];
+      expect(sourceRect.x).toBeCloseTo(0.1);
+      expect(sourceRect.y).toBeCloseTo(0.2);
+      expect(sourceRect.w).toBeCloseTo(0.3);
+      expect(sourceRect.h).toBeCloseTo(0.6);
     });
   });
 
@@ -489,9 +497,13 @@ describe('PublishOverlayController', () => {
       canvas.dispatchEvent(pointerEvent('pointermove', 700, 300));
       canvas.dispatchEvent(pointerEvent('pointerup', 700, 300));
 
+      // Grabbed 0.1 right of the centre, so the centre lands at (0.7 - 0.1, 0.6).
       expect(callbacks.onOverlayUpdated).toHaveBeenCalled();
-      const updated = callbacks.onOverlayUpdated.mock.calls[0][1];
+      const [index, updated] = callbacks.onOverlayUpdated.mock.lastCall!;
+      expect(index).toBe(0);
       expect(updated.type).toBe('circle');
+      expect(updated.cx).toBeCloseTo(0.6);
+      expect(updated.cy).toBeCloseTo(0.6);
     });
 
     it('moves a label overlay when dragging', () => {
@@ -512,6 +524,9 @@ describe('PublishOverlayController', () => {
       canvas.dispatchEvent(pointerEvent('pointerup', 600, 300));
 
       expect(callbacks.onOverlayUpdated).toHaveBeenCalled();
+      const updated = callbacks.onOverlayUpdated.mock.lastCall![1];
+      expect(updated.x).toBeCloseTo(0.6);
+      expect(updated.y).toBeCloseTo(0.6);
     });
   });
 
