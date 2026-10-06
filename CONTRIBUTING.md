@@ -146,7 +146,8 @@ packages/
 └── utils/         # Color, data-processing, export utilities
 config/            # Shared URLs, ports, and navigation config
 docs/              # Documentation site (VitePress)
-scripts/           # Repo tooling (documentation screenshot capture)
+perf/              # Benchmarks: harness, datasets.manifest.json, scale/generate.py, baselines/
+scripts/           # Repo tooling: docs screenshots, examples/ (perf:fetch, examples:fetch), landing-data/
 ```
 
 ### Technology Stack
@@ -256,7 +257,14 @@ pnpm test          # Run tests in watch mode
 pnpm test:ci       # Run the non-watch CI test suite
 pnpm test:e2e      # Run Playwright browser coverage
 pnpm test:contract # Bundle format contract: Python producer vs TypeScript reader
+pnpm perf:counts   # Work counts per interaction (CI gate); needs a free port (PLAYWRIGHT_PORT, default 8310)
+pnpm perf          # Timings per interaction, headed Chromium on a real GPU
+pnpm perf:scale    # Timings and memory over the number of points
+pnpm perf:webgl    # Cross-browser WebGL render passes
 ```
+
+The perf commands read their datasets from `perf/datasets/`, so run `pnpm perf:fetch` first. See
+[perf/README.md](perf/README.md) for each command and its flags.
 
 `pnpm test:contract` shells out to the real `protspace bundle` CLI, so it needs `uv` on your
 PATH and a synced Python workspace. Without them it fails rather than skipping (deliberately, a
