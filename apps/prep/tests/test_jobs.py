@@ -81,11 +81,14 @@ async def test_pipeline_runs_with_job_id_bound_in_contextvars(tmp_job_root):
         max_concurrent=1,
         pipeline=_capture_context_pipeline,
     )
-    job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
+    # The job task copies the submitting request's context; it must not keep it.
+    with structlog.contextvars.bound_contextvars(request_id="submitting-request"):
+        job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
     async for _ in registry.subscribe(job_id):
         pass
-    # Every log line emitted during the job carries this job_id automatically.
-    assert seen.get("job_id") == job_id
+    # Every log line emitted during the job carries this job_id automatically,
+    # and nothing inherited from the request that submitted it.
+    assert seen == {"job_id": job_id}
 
 
 async def test_semaphore_caps_active_jobs(tmp_job_root):
