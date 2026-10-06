@@ -17,6 +17,14 @@ describe('control-bar events', () => {
       },
     });
   });
+
+  it.each([
+    ['insufficient-data', 0, 'Selection mode disabled: Only 0 points remaining'],
+    ['insufficient-data', 2, 'Selection mode disabled: Only 2 points remaining'],
+    ['other-reason', 10, 'Selection mode disabled'],
+  ])('words the %s toast for %i points', (reason, dataSize, message) => {
+    expect(createSelectionDisabledNotificationDetail(reason, dataSize).message).toBe(message);
+  });
 });
 
 type ControlBar = HTMLElement & {
