@@ -60,6 +60,17 @@ async def test_post_prepare_rejects_malformed(app_factory):
     assert r.json()["code"] == "MALFORMED_FASTA"
 
 
+async def test_post_prepare_rejects_non_utf8(app_factory):
+    # The invalid bytes sit in the header, where the alphabet gate cannot catch
+    # them, so only the UTF-8 decode check can reject this upload.
+    app = app_factory()
+    async with await _client(app) as c:
+        files = {"file": ("seq.fasta", b">a\xff\xfe\nMKT\n", "text/plain")}
+        r = await c.post("/api/prepare", files=files)
+    assert r.status_code == 400
+    assert r.json() == {"error": "FASTA must be UTF-8 text.", "code": "MALFORMED_FASTA"}
+
+
 async def test_post_prepare_returns_job_id_and_sse_drives_to_done(app_factory):
     app = app_factory()
     async with await _client(app) as c:
