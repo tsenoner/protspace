@@ -12,7 +12,9 @@ import type { LoadMeta } from './types';
 const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   markLastLoadStatus: vi.fn(),
-  saveLastImportedFile: vi.fn(),
+  beginSaveImportedFile: vi.fn(),
+  commitSave: vi.fn(),
+  abortSave: vi.fn(),
   clearLastImportedFile: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   clearCorruptedPersistedDataset: vi.fn(),
@@ -46,7 +48,7 @@ vi.mock('./persisted-dataset', () => ({
 
 vi.mock('./opfs-dataset-store', () => ({
   markLastLoadStatus: mocks.markLastLoadStatus,
-  saveLastImportedFile: mocks.saveLastImportedFile,
+  beginSaveImportedFile: mocks.beginSaveImportedFile,
   clearLastImportedFile: mocks.clearLastImportedFile,
 }));
 
@@ -96,7 +98,12 @@ const loadedEvent = dataLoadedEvent({ settings: null, source: 'user', file });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.markLastLoadStatus.mockResolvedValue(undefined);
-  mocks.saveLastImportedFile.mockResolvedValue(undefined);
+  mocks.commitSave.mockResolvedValue(undefined);
+  mocks.abortSave.mockResolvedValue(undefined);
+  mocks.beginSaveImportedFile.mockReturnValue({
+    commit: mocks.commitSave,
+    abort: mocks.abortSave,
+  });
   mocks.loadData.mockResolvedValue(undefined);
   // `clearAllMocks` keeps implementations, and a test may leave this returning false.
   mocks.isCurrentRequest.mockReturnValue(true);
@@ -108,7 +115,7 @@ describe('dataset controller OPFS persistence', () => {
 
   it('stores the imported bytes before the render starts', async () => {
     let finishSave = () => {};
-    mocks.saveLastImportedFile.mockImplementation(
+    mocks.commitSave.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
           finishSave = () => resolve();
@@ -121,7 +128,8 @@ describe('dataset controller OPFS persistence', () => {
 
     // The recovery banner offers the file again after a crash during the render, so the
     // bytes must already be in OPFS when the render begins.
-    expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.commitSave).toHaveBeenCalledOnce();
     expect(mocks.loadData).not.toHaveBeenCalled();
 
     finishSave();
@@ -134,7 +142,7 @@ describe('dataset controller OPFS persistence', () => {
 
   it('warns and still renders when the bytes cannot be stored', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.saveLastImportedFile.mockRejectedValue(new Error('quota exceeded'));
+    mocks.commitSave.mockRejectedValue(new Error('quota exceeded'));
 
     const { controller } = buildController();
     await controller.handleDataLoaded(loadedEvent);
@@ -143,6 +151,81 @@ describe('dataset controller OPFS persistence', () => {
     expect(mocks.loadData).toHaveBeenCalledOnce();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
     consoleError.mockRestore();
+  });
+});
+
+describe('dataset controller OPFS copy during the load', () => {
+  it('starts the copy with the load and keeps it once the file loads', async () => {
+    const { controller } = buildController();
+    let loaded: Promise<void> = Promise.resolve();
+    await controller.saveWhileLoading(file, async () => {
+      expect(mocks.beginSaveImportedFile).toHaveBeenCalledWith(file);
+      loaded = controller.handleDataLoaded(loadedEvent);
+    });
+    await loaded;
+
+    expect(mocks.beginSaveImportedFile).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).toHaveBeenCalledOnce();
+    expect(mocks.abortSave).not.toHaveBeenCalled();
+  });
+
+  it('drops the copy when the file fails to load', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { controller } = buildController();
+    await controller.saveWhileLoading(file, async () => {
+      void controller.handleDataError(dataErrorEvent('bad bundle'));
+    });
+
+    expect(mocks.abortSave).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('drops the copy of a load whose result is stale', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // The queue has since registered the file for a newer load.
+    const { controller } = buildController(
+      { sequence: 4, kind: 'user' },
+      { runningLoadMeta: { sequence: 3, kind: 'user' } },
+    );
+    let loaded: Promise<void> = Promise.resolve();
+    await controller.saveWhileLoading(file, async () => {
+      loaded = controller.handleDataLoaded(loadedEvent);
+    });
+    await loaded;
+
+    expect(mocks.abortSave).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).not.toHaveBeenCalled();
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    consoleLog.mockRestore();
+  });
+
+  it('drops a copy that no load result took', async () => {
+    const { controller } = buildController();
+    await controller.saveWhileLoading(file, async () => {});
+
+    expect(mocks.abortSave).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).not.toHaveBeenCalled();
+  });
+
+  it('drops the copy of an import a newer request superseded', async () => {
+    mocks.isCurrentRequest.mockReturnValue(false);
+    const { controller } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+    let loaded: Promise<void> = Promise.resolve();
+    await controller.saveWhileLoading(file, async () => {
+      loaded = controller.handleDataLoaded(loadedEvent);
+    });
+    await loaded;
+
+    expect(mocks.abortSave).toHaveBeenCalledOnce();
+    expect(mocks.commitSave).not.toHaveBeenCalled();
+  });
+
+  it('copies nothing for a load that is not a user import', async () => {
+    const { controller } = buildController({ sequence: 3, kind: 'default' });
+    await controller.saveWhileLoading(file, async () => {});
+
+    expect(mocks.beginSaveImportedFile).not.toHaveBeenCalled();
   });
 });
 
@@ -205,7 +288,8 @@ describe('dataset controller load failures and the stored import', () => {
 
     await controller.handleDataLoaded(loadedEvent);
 
-    expect(mocks.saveLastImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.beginSaveImportedFile).toHaveBeenCalledWith(file);
+    expect(mocks.commitSave).toHaveBeenCalledOnce();
     expect(mocks.markLastLoadStatus).not.toHaveBeenCalled();
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, false);
   });

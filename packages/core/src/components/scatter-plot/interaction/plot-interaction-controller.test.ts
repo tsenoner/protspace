@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * F-07: PlotInteractionController owns the d3 zoom/brush/lasso lifecycle and the
+ * PlotInteractionController owns the d3 zoom/brush/lasso lifecycle and the
  * zoom/lasso RAF loops, signalling the host via callbacks (event dispatch
- * stays on the host — INV-03/INV-05). These unit tests drive the controller with
+ * stays on the host). These unit tests drive the controller with
  * a real SVG element + injected callbacks and a synchronous RAF.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -55,6 +55,8 @@ describe('PlotInteractionController', () => {
   beforeEach(() => {
     syncRaf();
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    // As on the host's SVG: d3's zoom gestures read their extent from it.
+    svg.setAttribute('viewBox', '0 0 800 600');
     document.body.appendChild(svg);
   });
   afterEach(() => {
@@ -108,7 +110,7 @@ describe('PlotInteractionController', () => {
     expect(svg.querySelector('path.lasso-path')).toBeNull();
   });
 
-  // F-12: resetZoom() runs a 750ms d3 transition on the SVG selection. teardown()
+  // resetZoom() runs a 750ms d3 transition on the SVG selection. teardown()
   // (called from the host's disconnectedCallback) must interrupt that transition so
   // it cannot keep re-arming the zoom RAF / writing the transform after disconnect.
   // d3 stores the pending transition schedule on node.__transition synchronously when
@@ -123,5 +125,16 @@ describe('PlotInteractionController', () => {
     expect((svg as NodeWithTransition).__transition).not.toBeUndefined(); // scheduled
     c.teardown();
     expect((svg as NodeWithTransition).__transition).toBeUndefined(); // interrupt() cleared it
+  });
+
+  it('teardown() keeps a zoom that interrupted the reset', () => {
+    const { bridge, calls } = makeHostBridge(svg);
+    const c = new PlotInteractionController(bridge);
+    c.initialize();
+    c.resetZoom();
+    // A wheel or drag interrupts the reset, as d3's zoom gestures do.
+    c.setTransform(d3.zoomIdentity.scale(3));
+    c.teardown();
+    expect(calls.transforms.at(-1)?.k).toBe(3);
   });
 });

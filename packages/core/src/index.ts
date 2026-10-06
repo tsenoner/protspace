@@ -48,13 +48,12 @@ export type { PresetId, JournalPreset } from './components/publish/journal-prese
 export { pxToMm } from './components/publish/dimension-utils';
 
 // Utilities for data loading
-export { readFileOptimized } from './components/data-loader/utils/file-io';
+export { decodeParquetBundle } from './components/data-loader/utils/bundle';
+export type { DecodedParquetBundle } from './components/data-loader/utils/bundle';
+// Deprecated: v1/v2 bundles and plain parquet, whose support ends in protspace 5.0.0.
 export {
-  decodeParquetBundle,
+  convertParquetToVisualizationDataOptimized,
   extractRowsFromParquetBundle,
-} from './components/data-loader/utils/bundle';
-export type {
-  BundleExtractionResult,
-  DecodedParquetBundle,
-} from './components/data-loader/utils/bundle';
-export { convertParquetToVisualizationDataOptimized } from './components/data-loader/utils/conversion';
+  readFileOptimized,
+} from './components/data-loader/legacy';
+export type { BundleExtractionResult } from './components/data-loader/legacy';

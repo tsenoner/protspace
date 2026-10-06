@@ -1,4 +1,4 @@
-import { parquetReadObjects } from 'hyparquet';
+import { parquetMetadata, parquetReadObjects, type FileMetaData } from 'hyparquet';
 import {
   BUNDLE_DELIMITER_BYTES,
   PROJECTION_STATISTIC_COLUMNS,
@@ -148,6 +148,29 @@ export async function extractSettings(settingsBuffer: ArrayBuffer): Promise<Bund
     return normalized;
   } catch (error) {
     console.warn('Failed to parse settings from bundle, using defaults:', error);
+    return null;
+  }
+}
+
+/** The value stored under `key` in a parsed parquet footer, or undefined. */
+export function readFooterValue(metadata: FileMetaData, key: string): string | undefined {
+  return (metadata.key_value_metadata ?? []).find((k) => k.key === key)?.value ?? undefined;
+}
+
+/**
+ * Parse the annotations part's footer, or null when it is not readable parquet.
+ *
+ * Callers reuse the result both to read the format version and as the `metadata`
+ * option of the subsequent read — hyparquet re-derives metadata from the buffer when
+ * `metadata` is omitted, so passing it explicitly avoids parsing the same footer twice.
+ * A parse failure is swallowed here so the legacy reader keeps behaving exactly as it
+ * did: `formatVersion = 1`, and `parquetReadObjects` re-attempts the parse itself and
+ * surfaces the real error.
+ */
+export function readPart1Metadata(part1: ArrayBuffer): FileMetaData | null {
+  try {
+    return parquetMetadata(part1);
+  } catch {
     return null;
   }
 }

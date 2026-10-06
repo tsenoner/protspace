@@ -6,34 +6,10 @@ import './legend';
 import type { ProtspaceLegend } from './legend';
 import type { ScoreStripPoint } from './category-score-strip';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import { createLocalStorageMock } from './test-support/local-storage-mock';
 
-// The persistence controller keys real `localStorage` by a hash of the dataset, and every test
-// here shares one jsdom environment, so saved sort modes and z-orders leak between tests whose
-// fixtures hash the same. Stub an in-memory store rather than using the runtime's: it scopes that
-// state to this file, and Node does not hand jsdom a usable `localStorage` without
-// `--localstorage-file`, which made the `clear()` calls below throw outright. Same shape as the
-// mock in `packages/utils/src/storage/storage-service.test.ts`.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+// Saved sort modes and z-orders would otherwise leak between tests whose fixtures hash the same.
+vi.stubGlobal('localStorage', createLocalStorageMock());
 
 const STAT_BASE = {
   space_kind: 'projection' as const,

@@ -1,11 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * B2 lifecycle hardening (scatter-plot-part2 audit). These tests pin the
+ * Lifecycle hardening. These tests pin the
  * post-disconnect / post-context-loss behaviour of the host's lifecycle paths.
  * Every assertion targets a DETACHED node or a null-renderer state; the
  * connected render / zoom / selection / numeric flow is untouched and stays
- * byte-identical (INV-03 / INV-05: we only SUPPRESS spurious dispatches from a
+ * byte-identical (event dispatch and detail shapes are unchanged: we only SUPPRESS spurious dispatches from a
  * detached node, never alter a dispatch the user observes while connected).
  *
  * Construct the element via createElement WITHOUT appending it (so isConnected
@@ -13,61 +13,62 @@
  * approach as scatter-plot.test.ts / scatter-plot.isolation.test.ts). We drive
  * the private lifecycle methods directly.
  *
- * Findings:
- *   - F-35 + F-11: firstUpdated constructs EXACTLY ONE WebGLRenderer and never
+ * Covered:
+ *   - firstUpdated constructs EXACTLY ONE WebGLRenderer and never
  *     orphans one (currently RED — firstUpdated double-constructs via
  *     _updateSizeAndRender then again inline).
- *   - F-05: a numeric recompute does not complete after disconnect — the busy
+ *   - a numeric recompute does not complete after disconnect — the busy
  *     state is cleared and a superseded RAF body bails (ALREADY SATISFIED by
- *     B6/F-04 NumericRecomputeRunner.cancel(); this is a characterization lock).
- *     (F-46 removed the old `numeric-recompute-end` event; re-characterized via
+ *     NumericRecomputeRunner.cancel(); this is a characterization lock).
+ *     (The old `numeric-recompute-end` event was removed; re-characterized via
  *     the kept `_numericRecomputeRunning` mirror.)
- *   - F-12: the 750ms resetZoom transition is interrupted on disconnect
- *     (ALREADY SATISFIED by B8 PlotInteractionController.teardown(); this is a
+ *   - the 750ms resetZoom transition is interrupted on disconnect
+ *     (ALREADY SATISFIED by PlotInteractionController.teardown(); this is a
  *     characterization lock asserted via the controller teardown path).
- *   - F-16: a selection committed then disconnected before its deferred RAF
+ *   - a selection committed then disconnected before its deferred RAF
  *     fires dispatches nothing — disconnectedCallback cancels the tracked
  *     _commitSelectionRafId (currently RED — the RAF id is not cancelled). The
  *     suppression is via cancellation, NOT an isConnected body-guard, so the
- *     connected dispatch (scatter-plot.test.ts B7 locks) stays byte-identical.
- *   - F-21: `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
+ *     connected dispatch (scatter-plot.test.ts selection locks) stays byte-identical.
+ *   - `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
  *     null (currently RED — uses a non-null assertion).
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
-
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as d3 from 'd3';
 
 // Count WebGLRenderer constructions without a real GL context. We preserve the
-// real module's other exports (MAX_RENDERABLE_POINTS) and replace only the
-// renderer with an instrumented stub that records each construction + destroy.
+// real module's other exports (computeSizeScaleFactor, pointRadiusCss) and
+// replace only the renderer with an instrumented stub that records each
+// construction + destroy.
 // The class + registry live in vi.hoisted so the hoisted vi.mock factory can
 // close over them (a top-level const would be a TDZ ReferenceError at mock time).
 const { webglConstructions, FakeWebGLRenderer } = vi.hoisted(() => {
   const constructions: FakeWebGLRenderer[] = [];
   class FakeWebGLRenderer {
     destroyed = false;
+    renders = 0;
+    resizes = 0;
     constructor(..._args: unknown[]) {
       constructions.push(this);
     }
-    setStyleSignature() {}
+    prewarm() {}
     setSelectionActive() {}
     invalidatePositionCache() {}
     invalidateStyleCache() {}
+    invalidateCategoryStyles() {}
     invalidateDepthOrder() {}
-    setTrackRenderedPointIds() {}
-    render() {}
+    render() {
+      this.renders++;
+    }
     clear() {}
-    resize() {}
+    resize() {
+      this.resizes++;
+    }
     releaseDataReferences() {}
+    pointScale() {
+      return 1;
+    }
+    cancelMorph() {}
     destroy() {
       this.destroyed = true;
     }
@@ -80,62 +81,23 @@ vi.mock('./webgl', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer };
 });
 
-type FakeWebGLRenderer = InstanceType<typeof FakeWebGLRenderer>;
+import {
+  createPlot,
+  fakeFrames,
+  fakeIdle,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
-import './scatter-plot';
+function makeHost() {
+  return createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+}
 
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? '#ff0000' : '#00ff00');
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
+/** jsdom's MouseEvent refuses the test window as its view, which d3's brush listens on. */
+const mouse = (type: string, x: number, y: number) =>
+  Object.defineProperty(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }), 'view', {
+    value: window,
   });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-    numeric_annotation_data: {
-      score: Float64Array.from(families, (_, i) => i),
-    },
-  } as unknown as VisualizationData;
-}
-
-type Host = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProteinIds: string[];
-  _canvas?: HTMLCanvasElement;
-  firstUpdated(): void;
-  disconnectedCallback(): void;
-  _scheduleNumericAnnotationRefresh(): void;
-  _commitSelection(ids: string[], clearVisual: () => void): void;
-  _renderWebGL(trigger?: string): void;
-  _numericRecomputeRunning: boolean;
-  _webglRenderer: FakeWebGLRenderer | null;
-  _interaction: {
-    teardown(): void;
-    resetZoom(): void;
-    initialize(): void;
-  } | null;
-};
-
-function makeHost(): Host {
-  const sp = document.createElement('protspace-scatterplot') as Host;
-  sp.data = makeFamilyData();
-  sp.selectedAnnotation = 'fam';
-  return sp;
-}
 
 afterEach(() => {
   webglConstructions.length = 0;
@@ -143,7 +105,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () => {
+describe('firstUpdated constructs exactly one WebGLRenderer', () => {
   it('constructs exactly ONE WebGLRenderer and orphans none', () => {
     const sp = makeHost();
     // @query('canvas') resolves only after a render; supply a stub canvas so the
@@ -166,13 +128,10 @@ describe('F-35 + F-11: firstUpdated constructs exactly one WebGLRenderer', () =>
   });
 });
 
-describe('F-05: numeric recompute does not complete after disconnect', () => {
+describe('numeric recompute does not complete after disconnect', () => {
   it('a numeric recompute scheduled then disconnected leaves no job running', () => {
-    const rafQueue: FrameRequestCallback[] = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      rafQueue.push(cb);
-      return rafQueue.length;
-    });
+    const frames = fakeFrames();
+    // A cancel that does nothing, so the superseded body still runs and must bail.
     vi.stubGlobal('cancelAnimationFrame', () => {});
 
     const sp = makeHost();
@@ -186,25 +145,25 @@ describe('F-05: numeric recompute does not complete after disconnect', () => {
 
     // Drain whatever RAF bodies are still queued: the superseded job must bail
     // (the cancel bumped the job id), so it neither runs the body nor re-enters
-    // the running state. (F-46: the removed -end event is now re-characterized via
+    // the running state. (The removed -end event is now re-characterized via
     // the kept busy-state mirror.)
-    rafQueue.forEach((cb) => cb(0));
+    frames.run();
 
     expect(sp._numericRecomputeRunning).toBe(false);
   });
 });
 
-describe('F-12: resetZoom transition interrupted on disconnect', () => {
+describe('resetZoom transition interrupted on disconnect', () => {
   it('disconnectedCallback tears down the interaction controller (interrupts the 750ms transition)', () => {
     const sp = makeHost();
     const teardown = vi.fn();
-    // Stand in for the B8 PlotInteractionController. Its real teardown() calls
+    // Stand in for the PlotInteractionController. Its real teardown() calls
     // _svgSelection.interrupt(), which aborts the resetZoom .transition(750).
     sp._interaction = {
       teardown,
       resetZoom: () => {},
       initialize: () => {},
-    };
+    } as never;
 
     sp.disconnectedCallback();
 
@@ -212,20 +171,10 @@ describe('F-12: resetZoom transition interrupted on disconnect', () => {
   });
 });
 
-describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
+describe('_commitSelection RAF cancelled on disconnect', () => {
   it('a selection committed then disconnected before the RAF fires dispatches nothing', () => {
-    // Map id -> callback so cancelAnimationFrame can actually remove a pending
-    // RAF body (mirrors the browser: the disconnect cancel must un-queue it).
-    const rafQueue = new Map<number, FrameRequestCallback>();
-    let nextId = 1;
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      const id = nextId++;
-      rafQueue.set(id, cb);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      rafQueue.delete(id);
-    });
+    // The disconnect cancel must un-queue the pending RAF body, as in the browser.
+    const frames = fakeFrames();
 
     const sp = makeHost();
     const brushEvents: unknown[] = [];
@@ -237,14 +186,14 @@ describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
     sp.disconnectedCallback();
 
     // Drain whatever survives: the cancelled commit RAF is gone, so nothing fires.
-    rafQueue.forEach((cb) => cb(0));
+    frames.run();
 
     expect(brushEvents).toHaveLength(0);
     expect(sp.selectedProteinIds).not.toEqual(['p0', 'p1']);
   });
 });
 
-describe('F-21: _renderWebGL is a no-op when the renderer is null', () => {
+describe('_renderWebGL is a no-op when the renderer is null', () => {
   it('does not throw when _webglRenderer is null', () => {
     const sp = makeHost();
     // No firstUpdated ran, so the renderer was never constructed (null). The
@@ -255,5 +204,180 @@ describe('F-21: _renderWebGL is a no-op when the renderer is null', () => {
     sp._webglRenderer = null;
 
     expect(() => sp._renderWebGL('plot')).not.toThrow();
+  });
+});
+
+describe('reconnect after disconnect', () => {
+  it('draws with a fresh renderer and never resizes or draws the destroyed one', async () => {
+    const frames = fakeFrames();
+    const sp = makeHost();
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const dead = sp._webglRenderer as unknown as InstanceType<typeof FakeWebGLRenderer>;
+
+    sp.remove();
+    expect(dead.destroyed).toBe(true);
+    const { renders, resizes } = dead;
+
+    document.body.appendChild(sp);
+    // What the ResizeObserver runs once the plot is back in the page.
+    sp._updateSizeAndRender();
+
+    expect(dead.resizes).toBe(resizes);
+    expect(dead.renders).toBe(renders);
+    const fresh = sp._webglRenderer as unknown as InstanceType<typeof FakeWebGLRenderer>;
+    expect(fresh).not.toBe(dead);
+    expect(fresh.destroyed).toBe(false);
+    expect(fresh.resizes).toBe(1);
+    expect(fresh.renders).toBe(1);
+
+    await sp.updateComplete;
+    sp.remove();
+  });
+
+  /** A plot appended, removed and appended again, with its point grid built. */
+  async function reconnectedPlot(
+    frames: ReturnType<typeof fakeFrames>,
+    inputs: Partial<PlotInternals> = {},
+  ) {
+    const sp = createPlot({
+      data: makeFamilyData({ score: true }),
+      selectedAnnotation: 'fam',
+      ...inputs,
+    });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    sp.remove();
+    document.body.appendChild(sp);
+    // What the ResizeObserver runs once the plot is back in the page.
+    sp._updateSizeAndRender();
+    frames.run();
+    return sp;
+  }
+
+  it('selects with the brush again', async () => {
+    const frames = fakeFrames();
+    const sp = await reconnectedPlot(frames, { selectionMode: true });
+
+    // A drag over the whole plot, as d3's brush hears it.
+    sp._svg!.querySelector('.brush-container .overlay')!.dispatchEvent(mouse('mousedown', 1, 1));
+    window.dispatchEvent(mouse('mousemove', 799, 599));
+    window.dispatchEvent(mouse('mouseup', 799, 599));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    sp.remove();
+  });
+
+  it('selects with the lasso again', async () => {
+    const frames = fakeFrames();
+    const sp = await reconnectedPlot(frames, { selectionMode: true, selectionTool: 'lasso' });
+
+    const svg = sp._svg!;
+    svg.dispatchEvent(mouse('pointerdown', 0, 0));
+    for (const [x, y] of [
+      [800, 0],
+      [800, 600],
+      [0, 600],
+    ]) {
+      svg.dispatchEvent(mouse('pointermove', x, y));
+    }
+    svg.dispatchEvent(mouse('pointerup', 0, 600));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    sp.remove();
+  });
+
+  it('builds the protein id index whose idle build the disconnect cancelled', async () => {
+    const frames = fakeFrames();
+    const idle = fakeIdle();
+    const data = { ...makeFamilyData(), protein_ids: ['a', 'a', 'b', 'b', 'c', 'c'] };
+    const sp = await reconnectedPlot(frames, { data });
+    idle.run();
+
+    // Three proteins in six slots: the point count is of proteins once the index says so.
+    expect(sp._getVisiblePointCount()).toBe(3);
+    sp.remove();
+  });
+
+  it('drops the tooltip of the point hovered before the disconnect', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const { x, y } = sp._scales!;
+    sp._svg!.dispatchEvent(mouse('mousemove', x(0), y(0)));
+    frames.run();
+    expect(sp._tooltipData).not.toBeNull();
+
+    sp.remove();
+    document.body.appendChild(sp);
+    sp._updateSizeAndRender();
+
+    expect(sp._tooltipData).toBeNull();
+    sp.remove();
+  });
+
+  it('runs the numeric recompute the disconnect dropped', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+    const changes: Event[] = [];
+    sp.addEventListener('data-change', (e) => changes.push(e));
+
+    // A numeric settings change, then a disconnect before its frame.
+    sp._scheduleNumericAnnotationRefresh();
+    sp.remove();
+    document.body.appendChild(sp);
+    frames.run();
+
+    expect(changes).toHaveLength(1);
+    sp.remove();
+  });
+
+  it('lands the reset zoom its disconnect cut short', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ data: makeFamilyData({ score: true }), selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    frames.run();
+
+    // Zoomed in, then a reset (a double-click or a data load) and a disconnect before it ends.
+    sp._interaction!.setTransform(d3.zoomIdentity.scale(2));
+    sp.resetZoom();
+    sp.remove();
+    document.body.appendChild(sp);
+
+    expect(sp._transform).toEqual(d3.zoomIdentity);
+    // d3's own copy, which the next wheel or drag starts from.
+    expect(d3.zoomTransform(sp._svg!)).toEqual(d3.zoomIdentity);
+    sp.remove();
+  });
+});
+
+describe('selection mode turned on before the data', () => {
+  it('selects with the brush once the data arrives', async () => {
+    const frames = fakeFrames();
+    const sp = createPlot({ selectionMode: true, selectedAnnotation: 'fam' });
+    document.body.appendChild(sp);
+    await sp.updateComplete;
+    sp.data = makeFamilyData();
+    await sp.updateComplete;
+    frames.run();
+
+    // A drag over the whole plot, as d3's brush hears it.
+    sp._svg!.querySelector('.brush-container .overlay')?.dispatchEvent(mouse('mousedown', 1, 1));
+    window.dispatchEvent(mouse('mousemove', 799, 599));
+    window.dispatchEvent(mouse('mouseup', 799, 599));
+    frames.flush();
+
+    expect([...sp.selectedProteinIds].sort()).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5']);
+    sp.remove();
   });
 });

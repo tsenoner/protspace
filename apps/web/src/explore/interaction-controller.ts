@@ -6,7 +6,7 @@ import type {
   StructureErrorEventDetail,
   StructureLoadEvent,
 } from '@protspace/core';
-import { getProteinAnnotationIndices, type VisualizationData } from '@protspace/utils';
+import type { VisualizationData } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
 import { EatProvenanceResolver } from './eat-provenance';
@@ -63,33 +63,19 @@ export function createInteractionController({
   };
 
   const updateLegend = () => {
+    // Auto-sync is off only while a dataset loads (`data-renderer.ts`). The legend's own
+    // sync controller follows the plot meanwhile, so there is nothing to push.
+    if (!legendElement.autoSync) {
+      return;
+    }
+
     const currentAnnotation = plotElement.selectedAnnotation;
     const currentData = plotElement.getCurrentData();
-    const annotationRows = currentData?.annotation_data?.[currentAnnotation];
     if (!currentAnnotation || !currentData || !currentData.annotations[currentAnnotation]) {
       return;
     }
 
-    if (legendElement.autoSync && 'forceSync' in legendElement) {
-      legendElement.forceSync();
-      return;
-    }
-
-    if (legendElement.autoSync) {
-      return;
-    }
-
-    legendElement.data = { annotations: currentData.annotations };
-    legendElement.selectedAnnotation = currentAnnotation;
-    legendElement.annotationValues = currentData.protein_ids.flatMap((_, index) => {
-      const annotationIdxArray = annotationRows
-        ? getProteinAnnotationIndices(annotationRows, index)
-        : [];
-      return annotationIdxArray.map((annotationIdx) => {
-        return currentData.annotations[currentAnnotation].values[annotationIdx];
-      });
-    });
-    legendElement.proteinIds = currentData.protein_ids;
+    legendElement.forceSync();
   };
 
   return {

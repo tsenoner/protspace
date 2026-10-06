@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import {
   POINT_FRAGMENT_SHADER as frag,
   POINT_VERTEX_SHADER as vert,
-} from '../../../packages/core/src/components/scatter-plot/webgl/renderer/export-shaders';
+} from '../../../packages/core/src/components/scatter-plot/webgl/renderer/point-shaders';
 
 const SCREENSHOT = fileURLToPath(new URL('./__screens__/glyphs.png', import.meta.url));
 
@@ -74,7 +74,7 @@ test('glyph outline appearance across point sizes', async ({ page }) => {
 
       const loc = (n: string) => gl.getUniformLocation(program, n);
       gl.uniform2f(loc('u_resolution'), 900, 960);
-      gl.uniform3f(loc('u_transform'), 0, 0, 1);
+      gl.uniform4f(loc('u_transform'), 0, 0, 1, 1);
       gl.uniform1f(loc('u_dpr'), 1);
       gl.uniform1f(loc('u_pointScale'), 1);
       gl.uniform1f(loc('u_gamma'), 2.2);

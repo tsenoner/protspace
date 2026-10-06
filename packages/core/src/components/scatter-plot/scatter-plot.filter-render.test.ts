@@ -17,20 +17,21 @@
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import type { PlotData, PlotDataPoint, VisualizationData } from '@protspace/utils';
-import { plotDataId, materializePlotDataPoint, clonePlotData } from '@protspace/utils';
+import {
+  plotDataId,
+  materializePlotDataPoint,
+  clonePlotData,
+  DataProcessor,
+} from '@protspace/utils';
 import { LegendDataProcessor } from '../legend/legend-data-processor';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
+import {
+  createPlot,
+  fakeFrames,
+  fakeIdle,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 const RED = '#ff0000';
 const GREEN = '#00ff00';
@@ -45,100 +46,8 @@ function plotPoints(pd: PlotData): PlotDataPoint[] {
   return Array.from({ length: pd.length }, (_, s) => materializePlotDataPoint(pd, s));
 }
 
-type ScatterplotInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProjectionIndex: number;
-  filteredProteinIds: string[];
-  filtersActive: boolean;
-  hiddenAnnotationValues: string[];
-  selectedProteinIds: string[];
-  highlightedProteinIds: string[];
-  _plotData: PlotData;
-  _mergedConfig: {
-    baseOpacity: number;
-    selectedOpacity: number;
-    fadedOpacity: number;
-    [k: string]: unknown;
-  };
-  _processData(): void;
-  _getVisiblePointCount(): number;
-  getInteractableProteinIds(): ReadonlySet<string>;
-  _scheduleNumericAnnotationRefresh(): void;
-  _getCurrentDisplayData(options?: {
-    includeFilteredProteinIds?: boolean;
-  }): VisualizationData | null;
-  getCurrentData(options?: { includeFilteredProteinIds?: boolean }): VisualizationData | null;
-  _buildStyleGetters(): {
-    getColors(point: PlotDataPoint): string[];
-    getOpacity(point: PlotDataPoint): number;
-  };
-  updated(changedProperties: Map<string, unknown>): void;
-};
-
-/**
- * Six proteins. p0–p2 are family "A" (red), p3–p5 are family "B" (green).
- * annotation_data rows hold an index into `annotations.fam.values`, and
- * valueToColor is derived from values↔colors positionally, so A→red, B→green.
- */
-function makeFamilyData(): VisualizationData {
-  const families = ['A', 'A', 'A', 'B', 'B', 'B'];
-  const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: families.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map(colorFor),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      // each row points at the first index of its family value in `values`
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-  } as unknown as VisualizationData;
-}
-
-function makeScatter(): ScatterplotInternals {
-  const sp = document.createElement('protspace-scatterplot') as ScatterplotInternals;
-  sp.data = makeFamilyData();
-  sp.selectedAnnotation = 'fam';
-  return sp;
-}
-
-/**
- * Dataset 2 for swap tests. Protein ids are 'q*' so they cannot overlap a
- * stale filter that references 'p1' / 'p3'. The 'fam' annotation is preserved
- * so selectedAnnotation stays valid across the swap.
- */
-function makeDataset2(): VisualizationData {
-  const families = ['C', 'C', 'C', 'D', 'D', 'D'];
-  const coords = new Float32Array(families.length * 2);
-  families.forEach((_, i) => {
-    coords[i * 2] = i * 2;
-    coords[i * 2 + 1] = i * 2;
-  });
-  return {
-    protein_ids: families.map((_, i) => `q${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: families,
-        colors: families.map((v) => (v === 'C' ? '#0000ff' : '#ffff00')),
-        shapes: families.map(() => 'circle'),
-      },
-    },
-    annotation_data: {
-      fam: families.map((v) => [families.indexOf(v)]),
-    },
-  } as unknown as VisualizationData;
+function makeScatter(): PlotInternals {
+  return createPlot({ data: makeFamilyData(), selectedAnnotation: 'fam' });
 }
 
 describe('scatter-plot query-filter rendering integrity', () => {
@@ -149,7 +58,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     sp.filtersActive = true;
 
     sp._processData();
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
 
     expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
@@ -167,7 +76,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     prefix.filteredProteinIds = ['p0', 'p1', 'p2'];
     prefix.filtersActive = true;
     prefix._processData();
-    const prefixGetters = prefix._buildStyleGetters();
+    const prefixGetters = prefix._style.getters();
     for (const point of plotPoints(prefix._plotData)) {
       expect(prefixGetters.getColors(point)).toEqual([RED]);
     }
@@ -175,7 +84,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
     // No filter at all — full plot, both families correct.
     const full = makeScatter();
     full._processData();
-    const fullGetters = full._buildStyleGetters();
+    const fullGetters = full._style.getters();
     const colorById = new Map(
       plotPoints(full._plotData).map((p) => [p.id, fullGetters.getColors(p)]),
     );
@@ -188,7 +97,7 @@ describe('scatter-plot query-filter rendering integrity', () => {
 // Task 1.7 — Order-independence of query filter × legend hide
 //
 // The filter channel (_processData / filteredProteinIds) and the legend hide
-// channel (hiddenAnnotationValues / _buildStyleGetters) are orthogonal:
+// channel (hiddenAnnotationValues / the style getters) are orthogonal:
 //   • filter determines which points land in _plotData
 //   • hide sets opacity to 0 for matching points but never culls them
 //
@@ -219,7 +128,7 @@ describe('scatter-plot filter × hide order-independence', () => {
       sp.filtersActive = true;
       sp._processData();
     }
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
     return { sp, getters };
   }
 
@@ -360,6 +269,84 @@ describe('scatter-plot visible point count', () => {
     expect(sp._getVisiblePointCount()).toBe(6);
   });
 
+  it('counts the interactable set without building it', () => {
+    const sp = makeScatter();
+    sp._mergedConfig = { ...sp._mergedConfig, fadedOpacity: 0 };
+    sp._processData();
+    const states: [string[], string[]][] = [
+      [[], []],
+      [['B'], []],
+      [['A'], ['p0', 'p4']],
+      [[], ['p4']],
+      [['A', 'B'], []],
+    ];
+    for (const [hidden, selected] of states) {
+      sp.hiddenAnnotationValues = hidden;
+      sp.selectedProteinIds = selected;
+      const ids = vi.spyOn(sp._style.interactable(sp._plotData), 'ids');
+      const count = sp._getVisiblePointCount();
+      expect(ids).not.toHaveBeenCalled();
+      expect(count).toBe(sp.getInteractableProteinIds().size);
+    }
+  });
+
+  it('keeps the interactable id set across a projection switch', () => {
+    const data = makeFamilyData();
+    data.projections.push({ ...data.projections[0], name: 'pca' });
+    const sp = createPlot({ data, selectedAnnotation: 'fam' });
+    sp._processData();
+    const ids = sp.getInteractableProteinIds();
+    sp.selectedProjectionIndex = 1;
+    sp._processData();
+    expect(sp._plotDataBuild?.projection).toBe(data.projections[1]);
+    expect(sp.getInteractableProteinIds()).toBe(ids);
+  });
+
+  describe('after a load', () => {
+    afterEach(() => {
+      // Disconnecting cancels the idle build through the stub, so before unstubbing.
+      document.body.replaceChildren();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    /** A connected plot given `data`, its updates and frames run, its idle build held back. */
+    async function load(data: VisualizationData) {
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null);
+      const frames = fakeFrames();
+      const idle = fakeIdle();
+      const sp = createPlot({ data, selectedAnnotation: 'fam' });
+      document.body.appendChild(sp);
+      while (!(await sp.updateComplete)) {
+        // Lit reports false while an update the previous one triggered is pending.
+      }
+      frames.flush();
+      const label = () => sp.shadowRoot!.querySelector('[role="status"]')!.textContent!.trim();
+      return { sp, idle, label };
+    }
+
+    it('builds no id table for the first point count', async () => {
+      const { sp, idle, label } = await load(makeFamilyData());
+      expect(label()).toBe('6 points');
+      expect(sp._style.model().idsUniqueIfIndexed()).toBeNull();
+      // With every id once, the idle build leaves the label alone.
+      idle.run();
+      expect(sp._style.model().idsUniqueIfIndexed()).toBe(true);
+      expect(sp.isUpdatePending).toBe(false);
+      expect(label()).toBe('6 points');
+    });
+
+    it('counts a repeated protein id once from the idle build of the id table on', async () => {
+      const d = makeFamilyData({ n: 2 });
+      const { sp, idle, label } = await load({ ...d, protein_ids: ['dup', 'dup'] });
+      // Each slot counts until the idle build finds the repeat.
+      expect(label()).toBe('2 points');
+      idle.run();
+      await sp.updateComplete;
+      expect(label()).toBe('1 points');
+    });
+  });
+
   it('recounts after the hidden set changes (memo invalidation)', () => {
     const sp = makeScatter();
     sp._processData();
@@ -451,7 +438,11 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
 
     // Swap to dataset 2 (q0–q5). None of its ids overlap the stale filter.
     const oldData = sp.data;
-    const dataset2 = makeDataset2();
+    const dataset2 = makeFamilyData({
+      idPrefix: 'q',
+      families: { C: '#0000ff', D: '#ffff00' },
+      spacing: 2,
+    });
     sp.data = dataset2;
 
     // Simulate the Lit updated() lifecycle pass with 'data' in changedProperties.
@@ -465,6 +456,48 @@ describe('scatter-plot dataset-swap clears stale query filter', () => {
 
     // All dataset-2 proteins must appear — stale filter must not blank the plot.
     expect(plotIds(sp._plotData).sort()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5']);
+  });
+});
+
+describe('scatter-plot dataset swap releases the style state', () => {
+  it('holds nothing of the old dataset when the new plot data is allocated', () => {
+    const sp = makeScatter();
+    sp._processData();
+    const oldData = sp.getMaterializedData();
+    // What a session builds over a dataset: a lasso, the id index, marks, getters.
+    sp.selectedProteinIds = sp._style.selectSlots(sp._plotData, [1, 2]);
+    expect(sp._style.model().idsUnique()).toBe(true);
+    sp._style.stageGetters();
+    sp._style.pointMarks(sp._plotData);
+    sp._style.scheduleIdIndex();
+
+    const previous = sp.data;
+    sp.data = makeFamilyData({ idPrefix: 'q' });
+    sp.selectedProteinIds = [];
+    // The swap's render counts the points over the old plot data first.
+    sp._getVisiblePointCount();
+
+    const process = DataProcessor.processVisualizationData;
+    let held: unknown[] = [];
+    const spy = vi
+      .spyOn(DataProcessor, 'processVisualizationData')
+      .mockImplementation((...args: Parameters<typeof process>) => {
+        const style = sp._style;
+        held = [
+          style._styleGetters,
+          style._unmarkedGetters,
+          style._pointMarks,
+          style._slotSelection,
+          style._interactable,
+          style._cancelIdIndex,
+          style._visibilityModelKey?.data === oldData,
+        ];
+        return process.apply(DataProcessor, args);
+      });
+    sp.updated(new Map([['data', previous]]));
+    spy.mockRestore();
+
+    expect(held).toEqual([null, null, null, null, null, null, false]);
   });
 });
 
@@ -526,7 +559,7 @@ describe('scatter-plot data-change dispatch reflects the filtered view', () => {
       ys: new Float32Array([1, 3]),
       zs: null,
       originalIndices: new Int32Array([1, 3]),
-      proteinIds: sp.data.protein_ids,
+      proteinIds: sp.data!.protein_ids,
     } as unknown as PlotData;
 
     let captured: VisualizationData | null = null;
@@ -553,40 +586,33 @@ describe('scatter-plot data-change dispatch reflects the filtered view', () => {
 // ---------------------------------------------------------------------------
 // Numeric recompute uses reference-stable display data under an active filter.
 //
-// _scheduleNumericAnnotationRefresh's rAF resolves `displayData` via
-// _getCurrentDisplayData({ includeFilteredProteinIds: false }) — returning the
-// cached materialized object by reference rather than building a full deep-slice
-// of the filtered subset (which the only consumer,
-// _refreshSelectedAnnotationValues, never reads). The data-change payload (built
-// from getCurrentData() with no options) still carries the filtered subset.
+// _scheduleNumericAnnotationRefresh's rAF hands _refreshSelectedAnnotationValues
+// the cached materialized object by reference rather than a full deep-slice of the
+// filtered subset, which it never reads. The data-change payload (built from
+// getCurrentData() with no options) still carries the filtered subset.
 // ---------------------------------------------------------------------------
 describe('scatter-plot numeric recompute display data', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('resolves displayData with includeFilteredProteinIds:false (no filtered deep-slice)', () => {
+  it('refreshes with the materialized object, not a filtered deep-slice', () => {
     const sp = makeScatter();
     sp.filteredProteinIds = ['p3', 'p4', 'p5'];
     sp.filtersActive = true;
     sp._processData(); // prime _plotData so the recompute takes the refresh branch
+    // A build from other data, so the recompute does not skip as unchanged.
+    sp._plotDataBuild = null;
 
-    // Run the recompute's rAF synchronously.
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    // The recompute runs on the next frame.
+    const frames = fakeFrames();
 
-    const spy = vi.spyOn(sp, '_getCurrentDisplayData');
+    const spy = vi.spyOn(sp, '_refreshSelectedAnnotationValues');
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
-    // The FIRST _getCurrentDisplayData call in the rAF body is the `displayData`
-    // resolution — it must use { includeFilteredProteinIds: false } (under the
-    // old code it was called with no args, which deep-slices the filtered subset).
-    // (Later calls from getCurrentData() for the data-change payload deliberately
-    // pass no options; those are the event-payload path, not the displayData path.)
-    expect(spy.mock.calls.length).toBeGreaterThan(0);
-    expect(spy.mock.calls[0][0]).toEqual({ includeFilteredProteinIds: false });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe(sp.getMaterializedData());
   });
 
   it('annotation values still resolve correctly after recompute under a non-prefix filter', () => {
@@ -595,13 +621,11 @@ describe('scatter-plot numeric recompute display data', () => {
     sp.filtersActive = true;
     sp._processData();
 
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    const frames = fakeFrames();
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
-    const getters = sp._buildStyleGetters();
+    const getters = sp._style.getters();
     for (const point of plotPoints(sp._plotData)) {
       expect(getters.getColors(point)).toEqual([GREEN]);
       expect(getters.getOpacity(point)).toBeGreaterThan(0);
@@ -619,11 +643,9 @@ describe('scatter-plot numeric recompute display data', () => {
       captured = (e as CustomEvent).detail.data as VisualizationData;
     });
 
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
+    const frames = fakeFrames();
     sp._scheduleNumericAnnotationRefresh();
+    frames.run();
 
     expect(captured).not.toBeNull();
     const payload = captured as unknown as VisualizationData;

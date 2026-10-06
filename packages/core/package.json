@@ -42,6 +42,7 @@
     "@protspace/utils": "workspace:*",
     "d3": "^7.9.0",
     "hyparquet": "^1.31.1",
+    "hysnappy": "^1.1.1",
     "lit": "^3.3.3",
     "sortablejs": "^1.15.7"
   },

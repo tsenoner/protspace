@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// F-22 characterization lock for the `_scales` cache.
+// Characterization lock for the `_scales` cache.
 //
 // `_scales` (a getter) recomputes ONLY when plotDataLength / width / height /
 // margin change. A same-length coordinate swap (switching projection or
@@ -11,31 +11,13 @@
 // connectedCallback / WebGL init never runs) and asserts that a same-length
 // projection swap yields a fresh ScalePair whose x-domain reflects the new,
 // wider coordinate extent.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
-import type { ScalePair } from './webgl/types';
 
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-import './scatter-plot';
-
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  selectedProjectionIndex: number;
-  _processData(): void;
-  readonly _scales: ScalePair | null;
-};
+import { createPlot } from './test-support/plot-fixture';
 
 // Two projections, SAME length (3 points), DIFFERENT coordinate extents.
-// Fixture shape mirrors makeFamilyData in scatter-plot.materialize-cache.test.ts:
+// Fixture shape mirrors makeFamilyData in test-support/plot-fixture.ts:
 // projections[].data + dimension, annotations + annotation_data (NOT the
 // features/feature_data / metadata.dimensions names from the plan sketch).
 function twoProjectionData(): VisualizationData {
@@ -59,9 +41,9 @@ function twoProjectionData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-describe('_scales cache invalidation (F-22 characterization lock)', () => {
+describe('_scales cache invalidation (characterization lock)', () => {
   it('switching projection (same length, new coords) yields a fresh ScalePair with the new domain', () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
+    const sp = createPlot();
     sp.data = twoProjectionData();
     sp.selectedAnnotation = 'fam';
     sp.selectedProjectionIndex = 0;

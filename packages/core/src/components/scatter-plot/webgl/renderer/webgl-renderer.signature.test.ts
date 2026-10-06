@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer as makeBaseRenderer } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
+import { createPerfCounters, perfCounters } from '../../../../utils/perf-counters';
+import type * as PerfCounters from '../../../../utils/perf-counters';
+
+vi.mock('../../../../utils/perf-counters', async (importOriginal) => {
+  const actual = await importOriginal<typeof PerfCounters>();
+  return { ...actual, perfCounters: actual.createPerfCounters() };
+});
+
+// A re-stage is the buffer rebuild render() runs iff a signature changed.
+const counters = perfCounters!;
 
 function pd(xs: number[], ys: number[]): PlotData {
   return {
@@ -21,99 +30,78 @@ const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 10]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 10]).range([0, 600]),
 });
-function makeRenderer() {
-  const { canvas } = createMockCanvas();
-  return new WebGLRenderer(
-    canvas,
-    scales,
-    () => d3.zoomIdentity,
-    () => ({ width: 800, height: 600 }),
-    styleGetters(['#ff0000']),
-  );
-}
+const makeRenderer = () => makeBaseRenderer({ getScales: scales, colors: ['#ff0000'] }).renderer;
 
-describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', () => {
-  let populateSpy: ReturnType<typeof vi.spyOn>;
+describe('WebGLRenderer sampled-slot signatures (characterization lock)', () => {
   let renderer: ReturnType<typeof makeRenderer>;
   beforeEach(() => {
     renderer = makeRenderer();
-    // populateBuffers is the buffer-rebuild gate render() runs iff a signature changed.
-    populateSpy = vi
-      .spyOn(
-        renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
-        'populateBuffers',
-      )
-      .mockImplementation(() => {});
-    // Stub the gamma draw pass: this lock characterizes the signature/populateBuffers gate
+    // Stub the gamma draw pass: this lock characterizes the signature/re-stage gate
     // only, not pixel output, so neutralizing the draw pass keeps render() cheap and leaves
     // every assertion intact.
-    vi.spyOn(
-      renderer as unknown as { renderWithGammaCorrection: (...a: unknown[]) => void },
-      'renderWithGammaCorrection',
-    ).mockImplementation(() => {});
+    vi.spyOn(internalsOf(renderer), 'renderWithGammaCorrection').mockImplementation(() => {});
   });
   afterEach(() => vi.restoreAllMocks());
 
   it('a coordinate change at a SAMPLED slot (0, len/2, len-1) triggers a rebuild', () => {
     const a = pd([0, 1, 2], [0, 1, 2]);
     renderer.render(a);
-    populateSpy.mockClear();
+    Object.assign(counters, createPerfCounters());
     renderer.render(pd([0, 1, 9], [0, 1, 2])); // slot 2 (= len-1) x changed
-    expect(populateSpy).toHaveBeenCalled();
+    expect(counters.restage).toBe(1);
   });
 
-  it('LOCK (documents the lossy gap, INV-12/INV-09): a change at an UNSAMPLED slot is MISSED by the signature', () => {
+  it('LOCK (documents the lossy gap): a change at an UNSAMPLED slot is MISSED by the signature', () => {
     // Length 5 → sampled slots for data sig are {0, 2, 4}; slot 1 and 3 are NOT sampled.
     const a = pd([0, 1, 2, 3, 4], [0, 1, 2, 3, 4]);
     renderer.render(a);
-    populateSpy.mockClear();
+    Object.assign(counters, createPerfCounters());
     // Mutate only slot 1 (unsampled): same length, identical at 0/2/4 → signature collides.
     renderer.render(pd([0, 99, 2, 3, 4], [0, 1, 2, 3, 4]));
     // Current behavior is INTENTIONALLY lossy; explicit invalidate*() covers real mutation paths.
-    // B6 MUST keep an explicit invalidate on same-shape in-place coordinate swaps (INV-12/INV-09).
-    expect(populateSpy).not.toHaveBeenCalled();
+    // Callers MUST keep an explicit invalidate on same-shape in-place coordinate swaps.
+    expect(counters.restage).toBe(0);
   });
 
   it('positionsDirty (explicit invalidate) forces a rebuild even when signatures collide', () => {
     const a = pd([0, 1, 2, 3, 4], [0, 1, 2, 3, 4]);
     renderer.render(a);
-    populateSpy.mockClear();
+    Object.assign(counters, createPerfCounters());
     renderer.invalidatePositionCache(); // the explicit path that backstops the lossy signature
     renderer.render(pd([0, 99, 2, 3, 4], [0, 1, 2, 3, 4]));
-    expect(populateSpy).toHaveBeenCalled();
+    expect(counters.restage).toBe(1);
   });
 });
 
-// ── F-55 / F-56 removal guards on a live WebGLRenderer instance ─────────────
-// F-55: the unused public getGamma/setGamma accessors are removed; the gamma
-//       field and its effective-gamma resolver (getEffectiveGamma) stay.
-// F-56: the @deprecated no-op setSelectedAnnotation is removed; the live
-//       signature methods (setStyleSignature) survive.
-describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
+// ── Removal guards on a live WebGLRenderer instance ─────────────
+// - The unused public getGamma/setGamma accessors are removed; the gamma
+//   field and its effective-gamma resolver (getEffectiveGamma) stay.
+// - The @deprecated no-op setSelectedAnnotation is removed; the live
+//   invalidation methods survive.
+describe('WebGLRenderer dead-accessor removal guards', () => {
   let renderer: ReturnType<typeof makeRenderer>;
   beforeEach(() => {
     renderer = makeRenderer();
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('F-55: getGamma / setGamma are gone; getEffectiveGamma survives', () => {
+  it('getGamma / setGamma are gone; getEffectiveGamma survives', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.getGamma).toBeUndefined();
     expect(surface.setGamma).toBeUndefined();
-    // getEffectiveGamma is private; reach it through the same indexed view used
-    // by the context-loss lock.
+    // getEffectiveGamma is private, which the indexed view reaches all the same.
     expect(typeof surface.getEffectiveGamma).toBe('function');
   });
 
-  it('F-56: setSelectedAnnotation is gone; setStyleSignature survives', () => {
+  it('setSelectedAnnotation is gone; invalidateStyleCache survives', () => {
     const surface = renderer as unknown as Record<string, unknown>;
     expect(surface.setSelectedAnnotation).toBeUndefined();
-    expect(typeof surface.setStyleSignature).toBe('function');
+    expect(typeof surface.invalidateStyleCache).toBe('function');
   });
 });
 
 describe('WebGLRenderer data signature — why re-materialisation was catastrophic (#456)', () => {
-  it('a length change rebuilds even when every sampled coordinate is identical', () => {
+  it('a length change rebuilds even when every sampled slot is identical', () => {
     // This is the mechanism behind the 1M cliff. The viewport cull returned a
     // freshly materialised PlotData per camera move; its CONTENT at the sampled
     // slots was often unchanged, but its LENGTH moved as points entered and left
@@ -125,25 +113,26 @@ describe('WebGLRenderer data signature — why re-materialisation was catastroph
     // handed the same object, so the signature cannot move. The check itself is
     // correct and stays.
     const renderer = makeRenderer();
-    const populateSpy = vi
-      .spyOn(
-        renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
-        'populateBuffers',
-      )
-      .mockImplementation(() => {});
-    vi.spyOn(
-      renderer as unknown as { renderWithGammaCorrection: (...a: unknown[]) => void },
-      'renderWithGammaCorrection',
-    ).mockImplementation(() => {});
+    vi.spyOn(internalsOf(renderer), 'renderWithGammaCorrection').mockImplementation(() => {});
 
-    // Same first, middle and last coordinates; one fewer point in between.
-    const full = pd([0, 5, 5, 9], [0, 5, 5, 9]);
-    const subset = pd([0, 5, 9], [0, 5, 9]);
+    // Slot 6 leaves the viewport. The data signature samples slots 0, len/2 and
+    // len-1, the style signature 0, len/4, len/2 and len-1: points p0, p2, p4
+    // and p8 in both arrays, so only the length term tells them apart.
+    const xs = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const full = pd(xs, xs);
+    const kept = (_: unknown, i: number) => i !== 6;
+    const subset: PlotData = {
+      ...full,
+      length: xs.length - 1,
+      xs: full.xs.filter(kept),
+      ys: full.ys.filter(kept),
+      proteinIds: full.proteinIds.filter(kept),
+    };
 
     renderer.render(full);
-    populateSpy.mockClear();
+    Object.assign(counters, createPerfCounters());
     renderer.render(subset);
-    expect(populateSpy).toHaveBeenCalled();
+    expect(counters.restage).toBe(1);
 
     vi.restoreAllMocks();
   });

@@ -42,8 +42,12 @@ interface NumericSummary {
   nonNullCount: number;
   min: number;
   max: number;
+  /** Distinct values, counted only up to `distinctCountLimit`: binning compares it with bin counts below that. */
   distinctCount: number;
-  sortedValues?: number[];
+  distinctCountLimit: number;
+  /** Finite values for the quantile edges, sorted in place by their first `getSortedValues`. */
+  finiteValues?: number[];
+  finiteValuesSorted: boolean;
   logSupported: boolean;
   allIntegers: boolean;
 }
@@ -120,12 +124,20 @@ export function resolveNumericAnnotationDisplaySettings({
 
 function createSummary(
   values: NumericValues,
-  options: { includeSortedValues?: boolean } = {},
+  options: { includeSortedValues?: boolean; distinctCountLimit: number },
 ): NumericSummary {
-  const includeSortedValues = options.includeSortedValues === true;
+  const { distinctCountLimit } = options;
   const cached = numericSummaryCache.get(values);
+  // A recount keeps the finite values: the quantile fallback of `logarithmic` reads them.
+  const includeSortedValues =
+    options.includeSortedValues === true || cached?.finiteValues !== undefined;
 
-  if (cached && (!includeSortedValues || cached.sortedValues)) {
+  if (
+    cached &&
+    (!includeSortedValues || cached.finiteValues) &&
+    (cached.distinctCount < cached.distinctCountLimit ||
+      cached.distinctCountLimit >= distinctCountLimit)
+  ) {
     return cached;
   }
 
@@ -148,7 +160,7 @@ function createSummary(
     if (value > max) max = value;
     if (value <= 0) logSupported = false;
     if (!Number.isInteger(value)) allIntegers = false;
-    distinctValues.add(value);
+    if (distinctValues.size < distinctCountLimit) distinctValues.add(value);
     finiteValues?.push(value);
   }
 
@@ -157,9 +169,9 @@ function createSummary(
     min: nonNullCount > 0 ? min : 0,
     max: nonNullCount > 0 ? max : 0,
     distinctCount: distinctValues.size,
-    sortedValues: includeSortedValues
-      ? finiteValues!.sort((left, right) => left - right)
-      : undefined,
+    distinctCountLimit,
+    finiteValues: finiteValues ?? undefined,
+    finiteValuesSorted: false,
     logSupported: nonNullCount > 0 ? logSupported : false,
     allIntegers: nonNullCount > 0 ? allIntegers : true,
   };
@@ -237,6 +249,32 @@ function formatRangeLabel(min: number, max: number, formatter: (value: number) =
   return min === max ? formatter(min) : `${formatter(min)} - ${formatter(max)}`;
 }
 
+/**
+ * Sorts finite values ascending, in the order of the stable `(left, right) => left - right` sort.
+ * A Float64Array sort is native and gives that order too, but it puts -0 before +0 where the
+ * comparator keeps their input order, so values holding a -0 keep the comparator.
+ */
+function sortFiniteValues(values: number[]): void {
+  const sorted = new Float64Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    if (Object.is(values[i], -0)) {
+      values.sort((left, right) => left - right);
+      return;
+    }
+    sorted[i] = values[i];
+  }
+  sorted.sort();
+  for (let i = 0; i < values.length; i++) values[i] = sorted[i];
+}
+
+function getSortedValues(summary: NumericSummary): number[] {
+  if (summary.finiteValues && !summary.finiteValuesSorted) {
+    sortFiniteValues(summary.finiteValues);
+    summary.finiteValuesSorted = true;
+  }
+  return summary.finiteValues ?? [];
+}
+
 function quantile(sortedValues: number[], q: number): number {
   if (sortedValues.length === 0) return 0;
   if (sortedValues.length === 1) return sortedValues[0];
@@ -263,7 +301,7 @@ function createLinearEdges(summary: NumericSummary, binCount: number): number[] 
 function createQuantileEdges(summary: NumericSummary, binCount: number): number[] {
   if (summary.nonNullCount === 0) return [];
   if (summary.min === summary.max) return [summary.min, summary.max];
-  const sortedValues = summary.sortedValues ?? [];
+  const sortedValues = getSortedValues(summary);
 
   return Array.from({ length: binCount + 1 }, (_, index) =>
     index === binCount ? summary.max : quantile(sortedValues, index / binCount),
@@ -280,9 +318,12 @@ function createLogEdges(summary: NumericSummary, binCount: number): number[] {
   const maxLog = Math.log10(summary.max);
   const step = (maxLog - minLog) / binCount;
 
-  return Array.from({ length: binCount + 1 }, (_, index) =>
+  const edges = Array.from({ length: binCount + 1 }, (_, index) =>
     index === binCount ? summary.max : 10 ** (minLog + step * index),
   );
+  // 10 ** log10(min) can round above min, which would leave min outside every bin.
+  edges[0] = Math.min(edges[0], summary.min);
+  return edges;
 }
 
 function dedupeEdges(edges: number[]): number[] {
@@ -594,8 +635,11 @@ export function materializeNumericAnnotation(
   annotation: Annotation;
   annotationData: Int32Array;
 } {
-  const summary = createSummary(values, {
+  // Binning compares the distinct count only with bin counts of at most max(1, binCount).
+  const distinctCountLimit = Math.max(1, settings.binCount) + 1;
+  let summary = createSummary(values, {
     includeSortedValues: settings.strategy === 'quantile',
+    distinctCountLimit,
   });
   const resolvedNumericType = numericType ?? (summary.allIntegers ? 'int' : 'float');
   // Reserve one slot for N/A when missing values exist, so the total
@@ -642,6 +686,10 @@ export function materializeNumericAnnotation(
     };
   }
 
+  // `logarithmic` on values <= 0 falls back to quantile edges, which read the sorted values.
+  if (effectiveSettings.strategy === 'quantile' && !summary.finiteValues) {
+    summary = createSummary(values, { includeSortedValues: true, distinctCountLimit });
+  }
   const edges = createEdges(summary, effectiveSettings);
   const counts = new Array(Math.max(0, edges.length - 1)).fill(0);
   // A preallocated loop with per-bin min/max in typed arrays: one pass, no per-row object

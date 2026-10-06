@@ -4,8 +4,7 @@
  * and paint_density_map.ts at ccd4eee^.
  */
 
-import { CAMERA_TO_CLIP_GLSL } from './export-shaders';
-import { LABEL_ATLAS_TEXTURE_UNIT } from './render-target';
+import { CAMERA_TO_CLIP_GLSL, MORPH_GLSL, RECORD_STYLE_GLSL } from './point-shaders';
 
 export function gaussianWeights(sigma: number, radius: number): number[] {
   const w: number[] = [];
@@ -53,10 +52,6 @@ ${taps}
 }
 
 export const DENSITY_CATEGORY_CAP = 16;
-// Skips the label-atlas unit so the composite never unbinds the point draw's atlas.
-export const DENSITY_FIELD_UNITS = Array.from({ length: DENSITY_CATEGORY_CAP / 4 }, (_, g) =>
-  g < LABEL_ATLAS_TEXTURE_UNIT ? g : g + 1,
-);
 
 // In cells of the density grid, which spans the plot: about 6.4 CSS px on an 1100 px plot.
 export const DENSITY_CONTOUR_SIGMA_GRID_PX = 3;
@@ -92,12 +87,14 @@ in vec2 a_dataPosition;
 in vec4 a_color;
 
 uniform vec2 u_resolution;
-uniform vec3 u_transform;
+uniform vec4 u_transform;
 uniform float u_dpr;
 uniform vec3 u_slotKeys[${DENSITY_CATEGORY_CAP}];
 uniform int u_slotCount;
 uniform int u_tailSlot;
 uniform int u_group;
+${MORPH_GLSL}
+${RECORD_STYLE_GLSL}
 
 out vec4 v_accum;
 
@@ -110,7 +107,8 @@ int slotOf(vec3 c) {
 }
 
 void main() {
-  int slot = a_color.a > 0.0 ? slotOf(a_color.rgb) : -1;
+  vec4 color = pointColor();
+  int slot = color.a > 0.0 ? slotOf(color.rgb) : -1;
   int local = slot - 4 * u_group;
   if (slot < 0 || local < 0 || local > 3) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);

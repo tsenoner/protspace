@@ -8,7 +8,7 @@ import { computeVisibilityModel } from './visibility-model';
  * Unit contract for the pure visibility model.
  *
  * Each `describe` block maps to a row of the design D5 semantics table
- * (openspec/changes/unified-visibility-model/design.md). The model must be
+ * (openspec/changes/archive/2026-08-12-unified-visibility-model/design.md). The model must be
  * bit-for-bit identical to `createStyleGetters`' opacity semantics, so the
  * assertions below are exact (`toBe`), and the opacity tiers are deliberately
  * distinct so a tier can never silently alias another.
@@ -456,12 +456,12 @@ describe('computeVisibilityModel', () => {
     });
   });
 
-  // ── F-45 removal guard: tierOf / DisplayTier are gone ─────────────────────
+  // ── Removal guard: tierOf / DisplayTier are gone ─────────────────────
   // tierOf was a convenience view with no live readers; the opacity/depth
   // contract carriers (opacityOf / baseOpacityOf / isInteractive) carry all
   // behavior. This guard locks tierOf's removal while proving those carriers
   // — and the full hidden/selected/faded/base distinctions they encode — remain.
-  describe('F-45: model exposes no tierOf, distinctions live in opacity carriers', () => {
+  describe('model exposes no tierOf, distinctions live in opacity carriers', () => {
     it('the model surface has no tierOf member', () => {
       const data = makeData(['A'], Int32Array.of(0));
       const model = computeVisibilityModel(baseInputs({ data }));
@@ -581,6 +581,365 @@ describe('computeVisibilityModel', () => {
     expect(typeof model.allHidden).toBe('boolean');
   });
 
+  // ── Index forms: what the staging pass calls, with no point object ─────────
+  describe('opacityAt / baseOpacityAt / isHiddenAt', () => {
+    const data = makeData(['A', 'B', 'C', null], [[0], [1], [0, 2], [], [3], [9]]);
+    const cases: [string, Partial<VisibilityInputs>][] = [
+      ['nothing marked', {}],
+      ['hidden values', { hiddenAnnotationValues: ['A', NA_VALUE] }],
+      ['selection', { hiddenAnnotationValues: ['C'], selectedProteinIds: ['p1', 'p2'] }],
+      ['highlight only', { highlightedProteinIds: ['p0', 'p5'] }],
+      ['focus', { focusedValues: ['B'] }],
+      ['all hidden', { hiddenAnnotationValues: ['A', 'B', 'C', NA_VALUE] }],
+      ['missing annotation', { selectedAnnotation: 'other' }],
+    ];
+    for (const [name, inputs] of cases) {
+      it(`match the point forms: ${name}`, () => {
+        const model = computeVisibilityModel(baseInputs({ data, ...inputs }));
+        // Index 6 is past the end of the data: hidden by the mask, like the point form.
+        for (let i = 0; i <= 6; i++) {
+          const p = point(`p${i}`, i);
+          expect(model.opacityAt(i, p.id)).toBe(model.opacityOf(p));
+          expect(model.baseOpacityAt(i, p.id)).toBe(model.baseOpacityOf(p));
+          expect(model.isHiddenAt(i)).toBe(model.opacityOf(p) === 0);
+        }
+      });
+    }
+  });
+
+  // ── Values form: what a per-category style table asks, once per category ───
+  describe('hidesValues', () => {
+    const values = ['A', 'B', 'C', null];
+    // Index 6 reads past `values` (N/A); index 5 has no value.
+    const rowLists = [[0], [1], [0, 2], [], [3], [6], [1, 6]];
+    const storages: [string, AnnotationData][] = [
+      ['int32', Int32Array.of(0, 1, 2, -1, 3, 6, 1)],
+      ['dense', rowLists],
+      [
+        'sparse',
+        {
+          kind: 'sparse-multi',
+          base: Int32Array.of(0, 1, -1, -1, 3, 6, -1),
+          overrides: new Map([
+            [2, [0, 2]],
+            [6, [1, 6]],
+          ]),
+          length: 7,
+        },
+      ],
+    ];
+    const valuesOf = (rows: AnnotationData, i: number): string[] => {
+      const codes =
+        rows instanceof Int32Array
+          ? rows[i] < 0
+            ? []
+            : [rows[i]]
+          : Array.isArray(rows)
+            ? rows[i]
+            : ((rows as { overrides: Map<number, number[]> }).overrides.get(i) ??
+              ((rows as { base: Int32Array }).base[i] < 0
+                ? []
+                : [(rows as { base: Int32Array }).base[i]]));
+      return codes.map((c) => values[c] ?? NA_VALUE);
+    };
+    const hiddenSets = [[], ['A'], ['B', NA_VALUE], ['A', 'B', 'C'], ['A', 'B', 'C', NA_VALUE]];
+    for (const [name, rows] of storages) {
+      for (const hidden of hiddenSets) {
+        it(`matches isHiddenAt: ${name} storage, hidden [${hidden.join(', ')}]`, () => {
+          const data = makeData(values, rows);
+          const model = computeVisibilityModel(
+            baseInputs({ data, hiddenAnnotationValues: hidden }),
+          );
+          for (let i = 0; i < 7; i++) {
+            expect(model.hidesValues(valuesOf(rows, i))).toBe(model.isHiddenAt(i));
+          }
+        });
+      }
+    }
+
+    it('hides every category when the annotation is missing, none without data', () => {
+      const data = makeData(values, Int32Array.of(0, 1));
+      const missing = computeVisibilityModel(baseInputs({ data, selectedAnnotation: 'other' }));
+      expect(missing.hidesValues(['A'])).toBe(true);
+      expect(missing.isHiddenAt(0)).toBe(true);
+      const empty = computeVisibilityModel(baseInputs({ hiddenAnnotationValues: ['A'] }));
+      expect(empty.hidesValues(['A'])).toBe(false);
+    });
+  });
+
+  // ── Marks by protein index agree with lookups by id ─────────────────────
+  describe('marks by index', () => {
+    const values = ['A', 'B', 'C'];
+    const n = 300;
+    const data = makeData(
+      values,
+      Int32Array.from({ length: n }, (_, i) => i % 3),
+    );
+    const ids = data.protein_ids;
+    let seed = 7;
+    const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const pick = <T>(items: readonly T[], p: number) => items.filter(() => random() < p);
+
+    // Marked slots and interactive slots as per-id set lookups decide them.
+    function expected(inputs: VisibilityInputs, oi: Int32Array | null, count: number) {
+      const marked = new Set([...inputs.selectedProteinIds, ...inputs.highlightedProteinIds]);
+      const hasSelection = inputs.selectedProteinIds.length > 0;
+      const { base, selected, faded } = inputs.opacities;
+      const slots: number[] = [];
+      const interactive: number[] = [];
+      for (let s = 0; s < count; s++) {
+        const i = oi ? oi[s] : s;
+        const isMarked = marked.has(ids[i]);
+        const hidden = inputs.hiddenAnnotationValues.includes(values[i % 3]);
+        const opacity = hidden ? 0 : isMarked ? selected : hasSelection ? faded : base;
+        slots.push(isMarked ? 1 : 0);
+        interactive.push(opacity > 0 ? 1 : 0);
+      }
+      return { slots, interactive };
+    }
+
+    it('matches over random selections, highlights, isolations and a faded tier of 0', () => {
+      let model: VisibilityModel | undefined;
+      for (let trial = 0; trial < 40; trial++) {
+        const inputs = baseInputs({
+          data,
+          selectedProteinIds: [...pick(ids, [0, 0.01, 0.3, 1][trial % 4]), 'missing'].slice(
+            trial % 8 === 0 ? 1 : 0,
+          ),
+          highlightedProteinIds: pick(ids, trial % 3 === 0 ? 0.05 : 0),
+          hiddenAnnotationValues: pick(values, 0.3).slice(0, 2),
+          opacities: { ...OPACITIES, faded: trial % 2 ? 0 : OPACITIES.faded },
+        });
+        // Isolation keeps a shuffled subset of the slots.
+        const kept = trial % 5 < 2 ? null : Int32Array.from(pick([...ids.keys()], 0.4));
+        if (kept) kept.sort(() => random() - 0.5);
+        const count = kept ? kept.length : n;
+        // Chained like the plot does, so the id index carries over between models.
+        model = computeVisibilityModel(inputs, model);
+        const want = expected(inputs, kept, count);
+        expect(Array.from(model.markedSlots(ids, kept, count))).toEqual(want.slots);
+        const interactive = Array.from({ length: count }, (_, s) => {
+          const i = kept ? kept[s] : s;
+          return model!.opacityAt(i, ids[i]) > 0 ? 1 : 0;
+        });
+        expect(interactive).toEqual(want.interactive);
+      }
+    });
+
+    it('falls back to the ids for a repeated id or an index that does not hold the id', () => {
+      const repeated = makeData(values, Int32Array.of(0, 1, 2));
+      repeated.protein_ids[2] = 'p0';
+      const model = computeVisibilityModel(
+        baseInputs({ data: repeated, selectedProteinIds: ['p0'] }),
+      );
+      expect(Array.from(model.markedSlots(repeated.protein_ids, null, 3))).toEqual([1, 0, 1]);
+      const other = computeVisibilityModel(baseInputs({ data, selectedProteinIds: ['p5'] }));
+      expect(other.baseOpacityOf(point('p5', 0))).toBe(OPACITIES.selected);
+      expect(other.baseOpacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+    });
+
+    it('marks a lassoed selection like its ids, under isolation, highlights and merges', () => {
+      let model: VisibilityModel | undefined;
+      for (let trial = 0; trial < 30; trial++) {
+        const kept = trial % 3 ? Int32Array.from(pick([...ids.keys()], 0.5)) : null;
+        if (kept) kept.sort(() => random() - 0.5);
+        const count = kept ? kept.length : n;
+        // The lasso's ids and mask, as the plot builds them from the slots.
+        const mask = new Uint8Array(n);
+        const lassoed = pick([...Array(count).keys()], [0.02, 0.4, 1][trial % 3]).map((s) => {
+          const i = kept ? kept[s] : s;
+          mask[i] = 1;
+          return ids[i];
+        });
+        const unchanged = mask.slice();
+        // The ids come back as a copy, or merged into an earlier selection.
+        const selected = trial % 4 === 3 ? [...pick(ids, 0.1), ...lassoed] : [...lassoed];
+        const inputs = baseInputs({
+          data,
+          selectedProteinIds: selected,
+          highlightedProteinIds: pick(ids, trial % 2 ? 0.05 : 0),
+          hiddenAnnotationValues: pick(values, 0.3).slice(0, 2),
+        });
+        model = computeVisibilityModel(
+          { ...inputs, selectionMask: { ids: lassoed, proteinIds: ids, mask } },
+          model,
+        );
+        const want = expected(inputs, kept, count);
+        expect(Array.from(model.markedSlots(ids, kept, count))).toEqual(want.slots);
+        const interactive = Array.from({ length: count }, (_, s) => {
+          const i = kept ? kept[s] : s;
+          return model!.opacityAt(i, ids[i]) > 0 ? 1 : 0;
+        });
+        expect(interactive).toEqual(want.interactive);
+        expect(mask).toEqual(unchanged);
+      }
+    });
+
+    it('takes a given mask only for the same ids over the same, unrepeated protein ids', () => {
+      // The mask claims p2 as well, to show when it stands in for the lookups.
+      const mask = Uint8Array.from({ length: n }, (_, i) => (i === 1 || i === 2 ? 1 : 0));
+      const selectionMask = { ids: ['p1'], proteinIds: ids, mask };
+      const marked = (overrides: Partial<VisibilityInputs>, over = data) =>
+        Array.from(
+          computeVisibilityModel(
+            baseInputs({ data: over, selectionMask, ...overrides }),
+          ).markedSlots(over.protein_ids, null, 4),
+        );
+      expect(marked({ selectedProteinIds: ['p1'] })).toEqual([0, 1, 1, 0]);
+      expect(marked({ selectedProteinIds: ['p1'], highlightedProteinIds: ['p0'] })).toEqual([
+        1, 1, 1, 0,
+      ]);
+      expect(marked({ selectedProteinIds: ['p1', 'p3'] })).toEqual([0, 1, 0, 1]);
+      expect(
+        marked({
+          selectedProteinIds: ['p1'],
+          selectionMask: { ...selectionMask, proteinIds: [...ids] },
+        }),
+      ).toEqual([0, 1, 0, 0]);
+      const repeated = makeData(values, Int32Array.of(0, 1, 2, 0));
+      repeated.protein_ids[3] = 'p1';
+      expect(
+        marked(
+          {
+            selectedProteinIds: ['p1'],
+            selectionMask: { ...selectionMask, proteinIds: repeated.protein_ids },
+          },
+          repeated,
+        ),
+      ).toEqual([0, 1, 0, 1]);
+      expect(mask.subarray(0, 4)).toEqual(Uint8Array.of(0, 1, 1, 0));
+    });
+
+    it('builds the id index on idsUnique or the first mark, and keeps it for the same ids', () => {
+      // An id repeated in place afterwards shows whether the index was built before.
+      const marksAfterRepeat = (indexAhead: boolean) => {
+        const fresh = makeData(values, Int32Array.of(0, 1, 2));
+        const plain = computeVisibilityModel(baseInputs({ data: fresh }));
+        if (indexAhead) plain.idsUnique();
+        fresh.protein_ids[2] = 'p0';
+        const model = computeVisibilityModel(
+          baseInputs({ data: fresh, selectedProteinIds: ['p0'] }),
+          plain,
+        );
+        return Array.from(model.markedSlots(fresh.protein_ids, null, 3));
+      };
+      expect(marksAfterRepeat(true)).toEqual([1, 0, 0]);
+      expect(marksAfterRepeat(false)).toEqual([1, 0, 1]);
+    });
+
+    it('tells whether the ids are unique without building the id index', () => {
+      const unique = makeData(values, Int32Array.of(0, 1, 2));
+      const repeated = makeData(values, Int32Array.of(0, 1, 2));
+      repeated.protein_ids[2] = 'p0';
+      for (const [data, want] of [
+        [unique, true],
+        [repeated, false],
+      ] as const) {
+        const model = computeVisibilityModel(baseInputs({ data }));
+        expect(model.idsUniqueIfIndexed()).toBeNull();
+        expect(model.idsUniqueIfIndexed()).toBeNull();
+        expect(model.idsUnique()).toBe(want);
+        expect(model.idsUniqueIfIndexed()).toBe(want);
+        expect(computeVisibilityModel(baseInputs({ data }), model).idsUniqueIfIndexed()).toBe(want);
+      }
+      expect(computeVisibilityModel(baseInputs()).idsUniqueIfIndexed()).toBeNull();
+    });
+
+    it('finds ids that share hash slots, and none it does not hold', () => {
+      const count = 3000;
+      const many = makeData(values, new Int32Array(count));
+      // Prefixes of each other, non-ASCII and empty ids, in a table about half full.
+      many.protein_ids = many.protein_ids.map((_, i) =>
+        i === 0 ? '' : i % 7 ? `${'A'.repeat(i % 4)}${i}` : `Ω${i}é`,
+      );
+      const absent = ['A', 'Ω', 'p1', 'AA', 'A1é', '1 ', `A${count}`];
+      let model: VisibilityModel | undefined;
+      for (const p of [0.001, 0.2, 0.9]) {
+        const selected = [...pick(many.protein_ids, p), ...absent];
+        model = computeVisibilityModel(
+          baseInputs({ data: many, selectedProteinIds: selected }),
+          model,
+        );
+        const chosen = new Set(selected);
+        const want = many.protein_ids.map((id) => (chosen.has(id) ? 1 : 0));
+        expect(Array.from(model.markedSlots(many.protein_ids, null, count))).toEqual(want);
+      }
+    });
+  });
+
+  // ── The selection and highlight as one mark, for the renderer to draw ──────
+  describe('marks', () => {
+    const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2, 0));
+    const ids = ['p0', 'p1', 'p2', 'p3'];
+
+    it('gives every point the marked or unmarked opacity, as baseOpacityAt does', () => {
+      const cases: Partial<VisibilityInputs>[] = [
+        { selectedProteinIds: ['p1'] },
+        { selectedProteinIds: ['p1'], highlightedProteinIds: ['p3'] },
+        { highlightedProteinIds: ['p3'] },
+        { selectedProteinIds: ['missing'], hiddenAnnotationValues: ['A'] },
+      ];
+      for (const overrides of cases) {
+        const model = computeVisibilityModel(baseInputs({ data, ...overrides }));
+        const { marks } = model;
+        expect(marks).not.toBeNull();
+        const marked = model.markedSlots(ids, null, ids.length);
+        ids.forEach((id, i) =>
+          expect(model.baseOpacityAt(i, id)).toBe(marked[i] ? marks!.marked : marks!.unmarked),
+        );
+      }
+    });
+
+    it('marks the slots of the selected and highlighted ids only', () => {
+      const model = computeVisibilityModel(
+        baseInputs({ data, selectedProteinIds: ['p1'], highlightedProteinIds: ['p3'] }),
+      );
+      expect(Array.from(model.markedSlots(ids, null, 4))).toEqual([0, 1, 0, 1]);
+      // Slots of a culled view name their proteins through originalIndices.
+      expect(Array.from(model.markedSlots(ids, Int32Array.of(3, 2, 1), 3))).toEqual([1, 0, 1]);
+      const none = computeVisibilityModel(baseInputs({ data }));
+      expect(Array.from(none.markedSlots(ids, null, 4))).toEqual([0, 0, 0, 0]);
+    });
+
+    it('has none with nothing marked, or with focus deciding the rest', () => {
+      expect(computeVisibilityModel(baseInputs({ data })).marks).toBeNull();
+      const focused = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(focused.marks).toBeNull();
+      // A selection fades every unmarked point whatever the focus.
+      const selected = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], selectedProteinIds: ['p1'] }),
+      );
+      expect(selected.marks).toEqual({ marked: OPACITIES.selected, unmarked: OPACITIES.faded });
+    });
+
+    it('unmarked: the same hiding at base opacity, sharing the hidden mask', () => {
+      const rows = Int32Array.of(0, 1, 2, 0);
+      const live = makeData(['A', 'B', 'C'], rows);
+      const model = computeVisibilityModel(
+        baseInputs({
+          data: live,
+          hiddenAnnotationValues: ['B'],
+          selectedProteinIds: ['p0'],
+          focusedValues: ['C'],
+        }),
+      );
+      // A rebuilt mask would see this; the shared one does not.
+      rows[1] = 0;
+      const { unmarked } = model;
+      expect(unmarked.marks).toBeNull();
+      expect(ids.map((id, i) => unmarked.opacityAt(i, id))).toEqual([
+        OPACITIES.base,
+        0,
+        OPACITIES.base,
+        OPACITIES.base,
+      ]);
+      expect(model.unmarked).toBe(unmarked);
+      expect(unmarked.unmarked).toBe(unmarked);
+    });
+  });
+
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──
   // when the mask-relevant inputs (data, selectedAnnotation, hidden ref) are
   // reference-equal, so a selection-only change never redoes the pass.
@@ -637,5 +996,46 @@ describe('computeVisibilityModel', () => {
       expect(second.opacityOf(point('p0', 0))).toBe(OPACITIES.base); // p0 → 'B'
       expect(second.opacityOf(point('p1', 1))).toBe(0); // p1 → 'A' (hidden)
     });
+  });
+});
+
+describe('interactivityKey', () => {
+  const data = makeData(['A', 'B'], Int32Array.of(0, 1, 0));
+  // The host hands the model the same hidden array until it changes.
+  const hiddenAnnotationValues: string[] = [];
+
+  it('holds across selection and opacity changes while every tier is above 0', () => {
+    const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues }));
+    const selected = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues, selectedProteinIds: ['p0'] }),
+      first,
+    );
+    const dimmer = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues, opacities: { ...OPACITIES, faded: 0.05 } }),
+      selected,
+    );
+    expect(selected.interactivityKey).toBe(first.interactivityKey);
+    expect(dimmer.interactivityKey).toBe(first.interactivityKey);
+  });
+
+  it('changes with the hidden values', () => {
+    const first = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues }));
+    const hidden = computeVisibilityModel(
+      baseInputs({ data, hiddenAnnotationValues: ['A'] }),
+      first,
+    );
+    expect(hidden.interactivityKey).not.toBe(first.interactivityKey);
+  });
+
+  it('is the model itself while a tier is 0', () => {
+    const inputs = baseInputs({
+      data,
+      hiddenAnnotationValues,
+      opacities: { ...OPACITIES, faded: 0 },
+    });
+    const first = computeVisibilityModel(inputs);
+    const selected = computeVisibilityModel({ ...inputs, selectedProteinIds: ['p0'] }, first);
+    expect(first.interactivityKey).toBe(first);
+    expect(selected.interactivityKey).toBe(selected);
   });
 });

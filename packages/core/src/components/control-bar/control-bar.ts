@@ -15,6 +15,7 @@ import {
   isAnyDropdownOpen,
   scrollHighlightedIntoView,
 } from '../../utils/dropdown-helpers';
+import { AfterPaintCommit } from '../../utils/after-paint-commit';
 import {
   DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
@@ -36,6 +37,7 @@ import {
   type DensityLayerChangeDetail,
   type SelectionDisabledNotificationDetail,
 } from './control-bar.events';
+import type { BrushSelectionDetail, ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
 import './search';
 import './annotation-select';
 import './query-builder';
@@ -154,6 +156,19 @@ export class ProtspaceControlBar extends LitElement {
   @state() private allProteinIds: string[] = [];
   @state() private selectedIdsChips: string[] = [];
 
+  // A pick from the annotation, projection or contour menu, the search box or the
+  // Clear button re-stages every point. The menu closes and the pick shows in the
+  // frame of the input; the change itself runs after that frame is painted. One
+  // commit per control, so a newer pick replaces one still waiting, and a
+  // programmatic apply drops it.
+  private readonly _annotationCommit = new AfterPaintCommit();
+  private readonly _projectionCommit = new AfterPaintCommit();
+  private readonly _densityCommit = new AfterPaintCommit();
+  private readonly _selectionCommit = new AfterPaintCommit();
+  /** The menu pick waiting for its commit; the trigger shows it until then. */
+  @state() private _pendingAnnotation: string | null = null;
+  @state() private _pendingProjection: string | null = null;
+
   // Stable listeners for proper add/remove
   private _onDocumentClick = (event: Event) => this.handleDocumentClick(event);
   private _onDocumentKeydown = (event: KeyboardEvent) => this.handleDocumentKeydown(event);
@@ -222,7 +237,16 @@ export class ProtspaceControlBar extends LitElement {
     }
   }
 
+  private selectProjectionFromMenu(projection: string) {
+    this.showProjectionMenu = false;
+    this.projectionHighlightIndex = -1;
+    this._pendingProjection = projection;
+    this._projectionCommit.schedule(() => this.applyProjectionSelection(projection));
+  }
+
   applyProjectionSelection(projection: string) {
+    this._projectionCommit.cancel();
+    this._pendingProjection = null;
     this.selectedProjection = projection;
     this.showProjectionMenu = false;
     this.projectionHighlightIndex = -1;
@@ -261,7 +285,7 @@ export class ProtspaceControlBar extends LitElement {
         this.projectionHighlightIndex = index;
       },
       onSelect: (index) => {
-        this.applyProjectionSelection(this.projections[index]);
+        this.selectProjectionFromMenu(this.projections[index]);
       },
       onClose: () => {
         this.showProjectionMenu = false;
@@ -351,6 +375,8 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   applyAnnotationSelection(annotation: string) {
+    this._annotationCommit.cancel();
+    this._pendingAnnotation = null;
     this.selectedAnnotation = annotation;
 
     // If auto-sync is enabled, directly update the scatterplot
@@ -377,7 +403,9 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private handleAnnotationSelected(event: CustomEvent<{ annotation: string }>) {
-    this.applyAnnotationSelection(event.detail.annotation);
+    const { annotation } = event.detail;
+    this._pendingAnnotation = annotation;
+    this._annotationCommit.schedule(() => this.applyAnnotationSelection(annotation));
   }
 
   applyTooltipAnnotationsSelection(tooltipAnnotations: string[]) {
@@ -488,20 +516,28 @@ export class ProtspaceControlBar extends LitElement {
     this.showDensityMenu = false;
     this.densityHighlightIndex = -1;
     this.densityLayer = mode;
-    if (this.autoSync && this._scatterplotElement) {
-      const scatterplot = this._scatterplotElement as ScatterplotElementLike;
-      scatterplot.config = {
-        ...(scatterplot.config ?? {}),
-        densityLayer: mode,
-      };
-    }
-    this.dispatchEvent(
-      new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
-        detail: { densityLayer: mode },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._densityCommit.schedule(() => {
+      if (this.autoSync && this._scatterplotElement) {
+        const scatterplot = this._scatterplotElement as ScatterplotElementLike;
+        scatterplot.config = {
+          ...(scatterplot.config ?? {}),
+          densityLayer: mode,
+        };
+      }
+      this.dispatchEvent(
+        new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
+          detail: { densityLayer: mode },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    });
+  }
+
+  /** Set the contours mode from outside the menu: at once, dropping a pick still waiting. */
+  applyDensityLayerSelection(mode: DensityLayerMode) {
+    this._densityCommit.cancel();
+    this.densityLayer = mode;
   }
 
   private handleClearSelections() {
@@ -516,10 +552,12 @@ export class ProtspaceControlBar extends LitElement {
     // clearing while `autoSync` was false (as `data-renderer.ts` sets it during a data
     // swap) emptied the chips but left the count stale — keeping the Clear button live
     // and Escape firing against an empty selection.
-    this._commitSelection([]);
+    this._commitSelection([], { afterPaint: true });
   }
 
   private handleSplitData() {
+    // Isolation reads the scatterplot's selection: land a search pick still waiting first.
+    this._selectionCommit.flush();
     const customEvent = new CustomEvent('isolate-data', {
       detail: {},
       bubbles: true,
@@ -640,6 +678,7 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   public clearForNewDataset(_datasetHash: string, _clearPersistedState: boolean = true): void {
+    this._cancelPendingCommits();
     this.exportFormat = EXPORT_DEFAULTS.FORMAT;
     // A new dataset has different protein ids, so any active filter is stale. Clear
     // the badge/query here (the canonical per-dataset reset hook); the scatter plot's
@@ -711,7 +750,7 @@ export class ProtspaceControlBar extends LitElement {
                 aria-expanded=${this.showProjectionMenu}
               >
                 <span class="dropdown-trigger-text">
-                  ${this.selectedProjection || 'Select projection'}
+                  ${(this._pendingProjection ?? this.selectedProjection) || 'Select projection'}
                 </span>
                 <svg class="chevron-down" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -736,7 +775,7 @@ export class ProtspaceControlBar extends LitElement {
                                 : ''}"
                               role="option"
                               aria-selected=${projection === this.selectedProjection}
-                              @click=${() => this.applyProjectionSelection(projection)}
+                              @click=${() => this.selectProjectionFromMenu(projection)}
                               @mouseenter=${() => {
                                 this.projectionHighlightIndex = index;
                               }}
@@ -760,7 +799,7 @@ export class ProtspaceControlBar extends LitElement {
               .annotations=${this.annotations}
               .annotationDefinitions=${this._currentData?.annotations ?? {}}
               .eatAnnotations=${this._eatAnnotationKeys}
-              .selectedAnnotation=${this.selectedAnnotation}
+              .selectedAnnotation=${this._pendingAnnotation ?? this.selectedAnnotation}
               .selectedProjection=${this.selectedProjection}
               .statisticsRows=${this._currentData?.statisticsRows ?? NO_STATISTICS}
               .tooltipAnnotations=${this.tooltipAnnotations}
@@ -1316,6 +1355,7 @@ export class ProtspaceControlBar extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._cancelPendingCommits();
     document.removeEventListener('click', this._onDocumentClick);
     document.removeEventListener('keydown', this._onDocumentKeydown);
     this.removeEventListener('annotation-opened', this._onAnnotationOpened);
@@ -1336,6 +1376,16 @@ export class ProtspaceControlBar extends LitElement {
         this._onAutoDisableSelection,
       );
     }
+  }
+
+  /** A pick made on a dataset or element that is going away must not land later. */
+  private _cancelPendingCommits() {
+    this._annotationCommit.cancel();
+    this._projectionCommit.cancel();
+    this._densityCommit.cancel();
+    this._selectionCommit.cancel();
+    this._pendingAnnotation = null;
+    this._pendingProjection = null;
   }
 
   protected updated(changed: Map<string, unknown>): void {
@@ -1536,24 +1586,42 @@ export class ProtspaceControlBar extends LitElement {
    * state, into the scatterplot when auto-syncing, and out on `protein-selection-change`.
    * Each caller only derives `newSelection`; keeping the commit here stops the four steps
    * from drifting apart across the handlers that share them.
+   *
+   * `afterPaint` (search box picks, Clear) also sets the chips and count now, so the next
+   * pick builds on this one, and runs the commit after the cleared box is painted.
+   * `showProteinId` then loads into the structure viewers with that commit.
    */
-  private _commitSelection(newSelection: string[]) {
-    this.selectedIdsChips = newSelection;
-    this.selectedProteinsCount = newSelection.length;
-    if (
-      this.autoSync &&
-      this._scatterplotElement &&
-      'selectedProteinIds' in this._scatterplotElement
-    ) {
-      (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
+  private _commitSelection(
+    newSelection: string[],
+    { afterPaint = false, showProteinId }: { afterPaint?: boolean; showProteinId?: string } = {},
+  ) {
+    const commit = () => {
+      this.selectedIdsChips = newSelection;
+      this.selectedProteinsCount = newSelection.length;
+      if (
+        this.autoSync &&
+        this._scatterplotElement &&
+        'selectedProteinIds' in this._scatterplotElement
+      ) {
+        (this._scatterplotElement as ScatterplotElementLike).selectedProteinIds = [...newSelection];
+      }
+      this.dispatchEvent(
+        new CustomEvent('protein-selection-change', {
+          detail: { proteinIds: newSelection.slice() },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      if (showProteinId) this._loadIntoStructureViewers(showProteinId);
+    };
+    if (afterPaint) {
+      this.selectedIdsChips = newSelection;
+      this.selectedProteinsCount = newSelection.length;
+      this._selectionCommit.schedule(commit);
+    } else {
+      this._selectionCommit.cancel();
+      commit();
     }
-    this.dispatchEvent(
-      new CustomEvent('protein-selection-change', {
-        detail: { proteinIds: newSelection.slice() },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   /** Load a protein into every mounted structure viewer. */
@@ -1565,17 +1633,13 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _handleProteinSelection(event: Event) {
-    const customEvent = event as CustomEvent<{
-      proteinId: string;
-      modifierKeys: { ctrl: boolean; meta: boolean; shift: boolean };
-    }>;
-    const { proteinId, modifierKeys } = customEvent.detail;
+    const { proteinId, modifierKeys } = (event as CustomEvent<ProteinClickDetail>).detail;
     if (!proteinId) return;
 
     let newSelection: string[];
 
     // Toggle mode: When selectionMode is active OR modifier keys are pressed
-    if (this.selectionMode || modifierKeys.ctrl || modifierKeys.meta) {
+    if (this.selectionMode || modifierKeys?.ctrl || modifierKeys?.meta) {
       newSelection = toggleProteinSelection(proteinId, this.selectedIdsChips);
     }
     // Replace mode: No modifier keys and selectionMode inactive
@@ -1737,8 +1801,10 @@ export class ProtspaceControlBar extends LitElement {
     const { proteinId } = event.detail;
     if (!proteinId || this.selectedIdsChips.includes(proteinId)) return;
 
-    this._commitSelection([...this.selectedIdsChips, proteinId]);
-    this._loadIntoStructureViewers(proteinId);
+    this._commitSelection([...this.selectedIdsChips, proteinId], {
+      afterPaint: true,
+      showProteinId: proteinId,
+    });
   }
 
   private _handleSearchSelectionRemove(event: CustomEvent<{ proteinId: string }>) {
@@ -1748,7 +1814,10 @@ export class ProtspaceControlBar extends LitElement {
     // No structure-viewer call here: removal has no "the protein you just picked" to show.
     // The app-level `protein-selection-change` listener still re-points the viewer at the
     // new last-remaining protein (or leaves it alone once the selection empties).
-    this._commitSelection(this.selectedIdsChips.filter((id) => id !== proteinId));
+    this._commitSelection(
+      this.selectedIdsChips.filter((id) => id !== proteinId),
+      { afterPaint: true },
+    );
   }
 
   private _handleSearchSelectionAddMultiple(event: CustomEvent<{ proteinIds: string[] }>) {
@@ -1760,17 +1829,22 @@ export class ProtspaceControlBar extends LitElement {
 
     if (newUniqueIds.length === 0) return;
 
-    this._commitSelection([...this.selectedIdsChips, ...newUniqueIds]);
-    this._loadIntoStructureViewers(newUniqueIds[newUniqueIds.length - 1]);
+    this._commitSelection([...this.selectedIdsChips, ...newUniqueIds], {
+      afterPaint: true,
+      showProteinId: newUniqueIds[newUniqueIds.length - 1],
+    });
   }
 
   private _handleBrushSelection(event: Event) {
-    const customEvent = event as CustomEvent<{ proteinIds: string[]; isMultiple: boolean }>;
+    const customEvent = event as CustomEvent<BrushSelectionDetail>;
     const ids = Array.isArray(customEvent.detail?.proteinIds) ? customEvent.detail.proteinIds : [];
+    const distinct = customEvent.detail?.idsUnique === true;
 
     // When selectionMode is active, merge with existing; otherwise replace
     this._commitSelection(
-      this.selectionMode ? mergeProteinSelections(this.selectedIdsChips, ids) : ids.slice(),
+      this.selectionMode
+        ? mergeProteinSelections(this.selectedIdsChips, ids, distinct)
+        : ids.slice(),
     );
   }
 
@@ -1835,7 +1909,7 @@ export class ProtspaceControlBar extends LitElement {
     }
 
     // A query that matches nothing used to be pushed as an ACTIVE filter, which
-    // blanked the canvas: `_getVisibleProteinIdsSet()` reads an empty
+    // blanked the canvas: `DataViews.filterSet()` reads an empty
     // `filteredProteinIds` as "nothing is visible". Reaching that state was easy —
     // a self-contradicting pair of conditions — and there was no way back, because
     // Apply is disabled and Cancel does not revert. Leave the plot as it is

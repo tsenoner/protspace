@@ -17,7 +17,7 @@ describe('POINT_ATTRIBUTE_LAYOUT', () => {
 });
 
 describe('setupAttributes', () => {
-  it('binds each buffer then enables + points its attribute with FLOAT, stride 0, offset 0', () => {
+  function wire(live?: Record<'record' | 'prevPosition', { name: string }>): string[] {
     const calls: string[] = [];
     const gl = {
       ARRAY_BUFFER: 34962,
@@ -50,32 +50,50 @@ describe('setupAttributes', () => {
       labelCount: 4,
       shape: 5,
       predicted: 6,
+      record: 7,
+      prevPosition: 8,
     };
 
-    setupAttributes(gl, buffers as never, locations);
+    setupAttributes(gl, buffers as never, locations, live as never);
+    return calls;
+  }
 
-    expect(calls).toEqual([
-      'bind:pos',
-      'enable:0',
-      'ptr:0:2:5126:0:0',
-      'bind:sz',
-      'enable:1',
-      'ptr:1:1:5126:0:0',
-      'bind:col',
-      'enable:2',
-      'ptr:2:4:5126:0:0',
-      'bind:dep',
-      'enable:3',
-      'ptr:3:1:5126:0:0',
-      'bind:lc',
-      'enable:4',
-      'ptr:4:1:5126:0:0',
-      'bind:sh',
-      'enable:5',
-      'ptr:5:1:5126:0:0',
-      'bind:pred',
-      'enable:6',
-      'ptr:6:1:5126:0:0',
+  const SHARED = [
+    'bind:pos',
+    'enable:0',
+    'ptr:0:2:5126:0:0',
+    'bind:sz',
+    'enable:1',
+    'ptr:1:1:5126:0:0',
+    'bind:col',
+    'enable:2',
+    'ptr:2:4:5126:0:0',
+    'bind:dep',
+    'enable:3',
+    'ptr:3:1:5126:0:0',
+    'bind:lc',
+    'enable:4',
+    'ptr:4:1:5126:0:0',
+    'bind:sh',
+    'enable:5',
+    'ptr:5:1:5126:0:0',
+    'bind:pred',
+    'enable:6',
+    'ptr:6:1:5126:0:0',
+  ];
+
+  it('binds each buffer then enables + points its attribute with FLOAT, stride 0, offset 0', () => {
+    expect(wire()).toEqual(SHARED);
+  });
+
+  it('wires the live record id after them, and points the glide attribute without enabling it', () => {
+    expect(wire({ record: { name: 'rec' }, prevPosition: { name: 'prev' } })).toEqual([
+      ...SHARED,
+      'bind:rec',
+      'enable:7',
+      'ptr:7:1:5126:0:0',
+      'bind:prev',
+      'ptr:8:2:5126:0:0',
     ]);
   });
 });

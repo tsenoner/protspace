@@ -9,7 +9,7 @@
  * `style-getters.ts` delegates to it (`getBaseOpacity = visibility.baseOpacityOf`,
  * `getOpacity = visibility.opacityOf`), so there is no second implementation to
  * keep in lockstep. The authoritative contract is the design D5 table in
- * `openspec/changes/unified-visibility-model/design.md`. Subtleties preserved on
+ * `openspec/changes/archive/2026-08-12-unified-visibility-model/design.md`. Subtleties preserved on
  * purpose:
  *
  *   - Hidden ⇒ opacity exactly `0` (consumers agree only at exact 0).
@@ -30,8 +30,8 @@
  * `annotation_data` into a `Uint8Array` indexed by GLOBAL `originalIndex`, using
  * a precomputed per-bin lookup over `annotation.values`. No
  * `getProteinAnnotationValues` calls, no per-point string/array allocation.
- * Selection/fade is answered by `Set` membership per call — no O(N) selection
- * array.
+ * Selection/highlight is one `Uint8Array` mark per protein index, filled from
+ * the ids through an id index built once per dataset (`IdIndex`).
  */
 
 import type {
@@ -58,6 +58,17 @@ export interface VisibilityInputs {
   opacities: { base: number; selected: number; faded: number };
   /** Internal values to keep in focus (Shift+hover); every other point fades. */
   focusedValues?: string[] | null;
+  /**
+   * A mark per index into `proteinIds` for exactly the proteins of `ids`, as a
+   * lasso builds it from its slots. It stands in for looking the selection up
+   * while `selectedProteinIds` holds the same ids in the same order and
+   * `proteinIds` is `data.protein_ids`. Never written.
+   */
+  selectionMask?: {
+    ids: readonly string[];
+    proteinIds: readonly string[];
+    mask: Uint8Array;
+  } | null;
 }
 
 export interface VisibilityModel {
@@ -69,6 +80,55 @@ export interface VisibilityModel {
   baseOpacityOf(point: PlotDataPoint): number;
   /** Interactivity ≡ `opacityOf(point) > 0` (numeric, not tier-based). */
   isInteractive(point: PlotDataPoint): boolean;
+  /**
+   * `opacityOf` for the protein at global `originalIndex` with id `id`: 0 when
+   * `isHiddenAt`, otherwise `baseOpacityAt`. The staging loops call these index
+   * forms so they need no point object.
+   */
+  opacityAt(originalIndex: number, id: string): number;
+  /** `baseOpacityOf` by index; see {@link opacityAt}. */
+  baseOpacityAt(originalIndex: number, id: string): number;
+  /** Whether the legend hides the protein at `originalIndex` (opacity exactly 0). */
+  isHiddenAt(originalIndex: number): boolean;
+  /**
+   * `isHiddenAt` for any protein whose selected-annotation values are `values`,
+   * normalized with `toInternalValue` (`[]` for no value, `'__NA__'` for a code
+   * that names no value). Lets a caller hide a whole category at once.
+   */
+  hidesValues(values: readonly string[]): boolean;
+  /**
+   * Whether every protein id occurs once, read off the protein id index. Builds
+   * the index now if not yet (an O(N) pass, once per dataset; the first mark
+   * builds it anyway), e.g. while idle after a load. Models computed from this
+   * one over the same ids keep it. False without data.
+   */
+  idsUnique(): boolean;
+  /** `idsUnique()` once the protein id index is built, else null: never builds it. */
+  idsUniqueIfIndexed(): boolean | null;
+  /**
+   * For each of the first `count` slots of plot data with these `proteinIds` and
+   * `originalIndices`, 1 when its protein is selected or highlighted, else 0.
+   */
+  markedSlots(
+    proteinIds: readonly string[],
+    originalIndices: Int32Array | null,
+    count: number,
+  ): Uint8Array;
+  /**
+   * The selection and highlight as one mark: a protein in `markedSlots` has base
+   * opacity `marked`, every other one `unmarked`. Null while nothing is marked,
+   * and while focus gives the unmarked proteins their opacity by category.
+   */
+  readonly marks: { readonly marked: number; readonly unmarked: number } | null;
+  /** This model with nothing selected, highlighted or focused. */
+  readonly unmarked: VisibilityModel;
+  /**
+   * Changes whenever which points are interactive can: with every opacity tier
+   * above 0 only hiding decides it, and this is the hidden mask's stash, the same
+   * object while (data, selectedAnnotation, hiddenAnnotationValues) are. With a
+   * tier at 0 it is this model.
+   */
+  readonly interactivityKey: object;
 }
 
 /**
@@ -216,6 +276,61 @@ interface MaskCache {
   allHidden: boolean;
   hiddenMode: 'none' | 'all' | 'mask';
   hiddenMask: Uint8Array | null;
+  idIndex: IdIndex | null;
+}
+
+/**
+ * Each protein's index in `proteinIds`: an open-addressing table over the ids'
+ * FNV-1a hashes, at most 2/3 full, holding `index + 1` per slot (0 is empty).
+ * 4 MB at 573K proteins, where a `Map` held 14 MB of heap. `table` is built on
+ * first use (`idTable`), and null when an id repeats.
+ */
+interface IdIndex {
+  proteinIds: readonly string[];
+  table?: Int32Array | null;
+}
+
+function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let k = 0; k < id.length; k++) h = Math.imul(h ^ id.charCodeAt(k), 0x01000193);
+  return h;
+}
+
+function buildIdTable(proteinIds: readonly string[]): Int32Array | null {
+  let size = 1;
+  while (size < proteinIds.length * 1.5) size *= 2;
+  const table = new Int32Array(size);
+  for (let i = 0; i < proteinIds.length; i++) {
+    const id = proteinIds[i];
+    let slot = hashId(id) & (size - 1);
+    for (let at = table[slot]; at !== 0; at = table[slot]) {
+      if (proteinIds[at - 1] === id) return null;
+      slot = (slot + 1) & (size - 1);
+    }
+    table[slot] = i + 1;
+  }
+  return table;
+}
+
+function idTable(index: IdIndex): Int32Array | null {
+  if (index.table === undefined) index.table = buildIdTable(index.proteinIds);
+  return index.table;
+}
+
+/** The index of `id` in the `proteinIds` that `table` was built over, or -1. */
+function findId(table: Int32Array, proteinIds: readonly string[], id: string): number {
+  let slot = hashId(id) & (table.length - 1);
+  for (let at = table[slot]; at !== 0; at = table[slot]) {
+    if (proteinIds[at - 1] === id) return at - 1;
+    slot = (slot + 1) & (table.length - 1);
+  }
+  return -1;
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 interface InternalVisibilityModel extends VisibilityModel {
@@ -235,9 +350,8 @@ export function computeVisibilityModel(
     opacities,
   } = inputs;
 
-  const selectedIdsSet = new Set(selectedProteinIds);
-  const highlightedIdsSet = new Set(highlightedProteinIds);
   const hasSelection = selectedProteinIds.length > 0;
+  const anyMarked = hasSelection || highlightedProteinIds.length > 0;
   const focusedValues = inputs.focusedValues ?? null;
 
   // Reuse the prior hidden mask iff the mask-relevant inputs are reference-equal.
@@ -279,14 +393,23 @@ export function computeVisibilityModel(
     }
   }
 
-  const isHidden = (point: PlotDataPoint): boolean => {
+  const isHiddenAt = (idx: number): boolean => {
     if (hiddenMode === 'none') return false;
     if (hiddenMode === 'all') return true;
-    const idx = point.originalIndex;
     // Out-of-range index → accessor returns [] → vacuously hidden.
     // The mask is sized to protein_ids.length, which equals annotationRows.length under the materialized-data invariant.
     if (idx < 0 || idx >= hiddenMask!.length) return true; // hiddenMode === 'mask' guarantees non-null
     return hiddenMask![idx] === 1; // hiddenMode === 'mask' guarantees non-null
+  };
+
+  // The mask's per-bin test, applied to values instead of codes.
+  let hiddenKeys: Set<string> | null = null;
+  const hidesValues = (values: readonly string[]): boolean => {
+    if (hiddenMode === 'none') return false;
+    if (hiddenMode === 'all') return true;
+    hiddenKeys ??= new Set(hiddenAnnotationValues.map((v) => toInternalValue(v)));
+    for (const v of values) if (!hiddenKeys.has(v)) return false;
+    return true; // every value hidden, vacuously for none
   };
 
   // Out-of-focus mask: the hidden-mask pass with every value except the focused
@@ -301,43 +424,142 @@ export function computeVisibilityModel(
     unfocusedMask = buildHiddenMask(data, annotation, annotationRows, others);
   }
 
-  const baseOpacityOf = (point: PlotDataPoint): number => {
-    const isSelected = selectedIdsSet.has(point.id);
-    const isHighlighted = highlightedIdsSet.has(point.id);
-    if (isSelected || isHighlighted) return opacities.selected;
-    if (hasSelection && !isSelected) return opacities.faded;
+  // The id index, kept from `previous` while the ids are the same array. Its
+  // table is built the first time something is marked, or ahead by `idsUnique`
+  // (an O(N) pass, once per dataset).
+  const proteinIds = data?.protein_ids ?? null;
+  const prevIndex = prevCache?.idIndex ?? null;
+  const idIndex: IdIndex | null =
+    prevIndex?.proteinIds === proteinIds ? prevIndex : proteinIds ? { proteinIds } : null;
+
+  // The selected and highlighted proteins by index into `proteinIds`, so a point
+  // costs a byte read rather than set lookups.
+  let markedMask: Uint8Array | null = null;
+  const table = anyMarked && idIndex ? idTable(idIndex) : null;
+  if (table && proteinIds) {
+    // With every id once (a table), a mask of the selected ids is the selection's.
+    const given = inputs.selectionMask;
+    const fromSlots = given?.proteinIds === proteinIds && sameIds(given.ids, selectedProteinIds);
+    let lookups = [selectedProteinIds, highlightedProteinIds];
+    if (!fromSlots) markedMask = new Uint8Array(proteinIds.length);
+    else {
+      markedMask = highlightedProteinIds.length ? given.mask.slice() : given.mask;
+      lookups = [highlightedProteinIds];
+    }
+    for (const ids of lookups) {
+      for (const id of ids) {
+        const i = findId(table, proteinIds, id);
+        if (i >= 0) markedMask[i] = 1;
+      }
+    }
+  }
+  // For the points the mask cannot answer: no data, a repeated id, or an index
+  // that does not hold the point's id.
+  let markedIds: Set<string> | null = null;
+  const isMarked = (originalIndex: number, id: string): boolean => {
+    if (markedMask && proteinIds![originalIndex] === id) return markedMask[originalIndex] === 1;
+    markedIds ??= new Set([...selectedProteinIds, ...highlightedProteinIds]);
+    return markedIds.has(id);
+  };
+
+  const baseOpacityAt = (originalIndex: number, id: string): number => {
+    if (anyMarked) {
+      if (isMarked(originalIndex, id)) return opacities.selected;
+      if (hasSelection) return opacities.faded;
+    }
     // Focus renders like a selection: focused points on top, the rest flat-faded.
     if (unfocusedMask) {
-      return unfocusedMask[point.originalIndex] === 1 ? opacities.faded : opacities.selected;
+      return unfocusedMask[originalIndex] === 1 ? opacities.faded : opacities.selected;
     }
     return opacities.base;
   };
 
-  const opacityOf = (point: PlotDataPoint): number => {
-    if (isHidden(point)) return 0;
-    return baseOpacityOf(point);
+  const opacityAt = (originalIndex: number, id: string): number => {
+    if (isHiddenAt(originalIndex)) return 0;
+    return baseOpacityAt(originalIndex, id);
   };
 
+  const baseOpacityOf = (point: PlotDataPoint): number =>
+    baseOpacityAt(point.originalIndex, point.id);
+  const opacityOf = (point: PlotDataPoint): number => opacityAt(point.originalIndex, point.id);
   const isInteractive = (point: PlotDataPoint): boolean => opacityOf(point) > 0;
+
+  const markedSlots = (
+    slotIds: readonly string[],
+    originalIndices: Int32Array | null,
+    count: number,
+  ): Uint8Array => {
+    const slots = new Uint8Array(count);
+    if (!anyMarked) return slots;
+    if (markedMask && slotIds === proteinIds) {
+      for (let s = 0; s < count; s++)
+        slots[s] = markedMask[originalIndices ? originalIndices[s] : s];
+      return slots;
+    }
+    for (let s = 0; s < count; s++) {
+      const i = originalIndices ? originalIndices[s] : s;
+      if (isMarked(i, slotIds[i])) slots[s] = 1;
+    }
+    return slots;
+  };
+
+  // A selection fades the rest whatever the focus; a highlight alone leaves it to focus.
+  const marks =
+    anyMarked && (hasSelection || !unfocusedMask)
+      ? { marked: opacities.selected, unmarked: hasSelection ? opacities.faded : opacities.base }
+      : null;
+  let unmarked: VisibilityModel | null = null;
+
+  // Mask-relevant inputs + the mask, which a later call reuses on a
+  // selection/highlight/opacity-only change; `previous`'s own while they hold.
+  const maskCache: MaskCache =
+    canReuse && prevCache.idIndex === idIndex
+      ? prevCache
+      : {
+          data,
+          selectedAnnotation,
+          hiddenAnnotationValues,
+          allHidden,
+          hiddenMode,
+          hiddenMask,
+          idIndex,
+        };
+  const tiersInteractive = opacities.base > 0 && opacities.selected > 0 && opacities.faded > 0;
 
   const model: VisibilityModel = {
     allHidden,
     opacityOf,
     baseOpacityOf,
     isInteractive,
+    opacityAt,
+    baseOpacityAt,
+    isHiddenAt,
+    hidesValues,
+    idsUnique: () => idIndex !== null && idTable(idIndex) !== null,
+    idsUniqueIfIndexed: () => {
+      const table = idIndex?.table;
+      return table === undefined ? null : table !== null;
+    },
+    markedSlots,
+    marks,
+    get unmarked() {
+      unmarked ??=
+        anyMarked || focusedValues
+          ? computeVisibilityModel(
+              { ...inputs, selectedProteinIds: [], highlightedProteinIds: [], focusedValues: null },
+              model,
+            )
+          : model;
+      return unmarked;
+    },
+    get interactivityKey() {
+      return tiersInteractive ? maskCache : model;
+    },
   };
 
-  // Stash mask-relevant inputs + the mask non-enumerably so a later call can
-  // reuse the O(N) pass on selection/highlight/opacity-only changes.
+  // Stashed non-enumerably so a later call can reuse the O(N) pass.
   Object.defineProperty(model, MASK_CACHE, {
-    value: {
-      data,
-      selectedAnnotation,
-      hiddenAnnotationValues,
-      allHidden,
-      hiddenMode,
-      hiddenMask,
-    } satisfies MaskCache,
+    value: maskCache,
     enumerable: false,
     writable: false,
     configurable: false,

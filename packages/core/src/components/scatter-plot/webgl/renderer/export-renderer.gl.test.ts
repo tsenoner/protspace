@@ -9,6 +9,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import { ExportRenderer } from './export-renderer';
 import { createMockCanvas, type MockGLOptions } from './test-support/mock-webgl2';
+import { referenceStylePass } from './test-support/reference-staging';
 
 /**
  * `renderToCanvas` creates its own throwaway canvas, so the stub goes on the
@@ -39,6 +40,9 @@ const style = {
   isPredicted: () => false,
   getDepth: () => 0,
   getOpacity: () => 1,
+  createStylePass() {
+    return referenceStylePass(this);
+  },
 } as never;
 const baseOptions = {
   selectionActive: false,
@@ -82,32 +86,44 @@ describe('ExportRenderer offscreen buffer allocation', () => {
   });
 });
 
+/**
+ * Export on a mock context that records the float uniforms it pushes, by name,
+ * and the attributes it enables.
+ */
+function exportRecorded(transform: { x: number; y: number; k: number }) {
+  const { gl } = createMockCanvas({});
+  const pushed: Record<string, number> = {};
+  const attribs: string[] = [];
+  const enabled: string[] = [];
+  Object.assign(gl!, {
+    getAttribLocation: (_p: unknown, name: string) =>
+      attribs.includes(name) ? attribs.indexOf(name) : attribs.push(name) - 1,
+    enableVertexAttribArray: (index: number) => enabled.push(attribs[index]),
+    getUniformLocation: (_p: unknown, name: string) => ({ name }),
+    uniform1f: (loc: { name: string }, v: number) => {
+      pushed[loc.name] = v;
+    },
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) =>
+    id === 'webgl2' ? gl : null) as HTMLCanvasElement['getContext']);
+  try {
+    new ExportRenderer().renderToCanvas(plotData(10), config, style, {
+      width: 400,
+      height: 300,
+      ...(baseOptions as object),
+      transform,
+    } as never);
+  } catch {
+    // jsdom has no 2D context for the final copy; the draw has already happened.
+  }
+  return { pushed, enabled };
+}
+
 describe('ExportRenderer dot size', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  function exportedPointScale(transform: { x: number; y: number; k: number }) {
-    const { gl } = createMockCanvas({});
-    const pushed: Record<string, number> = {};
-    Object.assign(gl!, {
-      getUniformLocation: (_p: unknown, name: string) => ({ name }),
-      uniform1f: (loc: { name: string }, v: number) => {
-        pushed[loc.name] = v;
-      },
-    });
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) =>
-      id === 'webgl2' ? gl : null) as HTMLCanvasElement['getContext']);
-    try {
-      new ExportRenderer().renderToCanvas(plotData(10), config, style, {
-        width: 400,
-        height: 300,
-        ...(baseOptions as object),
-        transform,
-      } as never);
-    } catch {
-      // jsdom has no 2D context for the final copy; the draw has already happened.
-    }
-    return pushed.u_pointScale;
-  }
+  const exportedPointScale = (transform: { x: number; y: number; k: number }) =>
+    exportRecorded(transform).pushed.u_pointScale;
 
   it('draws the live 800x600 dot size scaled to a 400x300 output', () => {
     expect(exportedPointScale({ x: 0, y: 0, k: 1 })).toBeCloseTo(0.455, 3);
@@ -115,5 +131,16 @@ describe('ExportRenderer dot size', () => {
 
   it('keeps the zoom-in growth of the live view', () => {
     expect(exportedPointScale({ x: 0, y: 0, k: 4 })).toBeCloseTo(0.64346, 4);
+  });
+});
+
+describe('ExportRenderer projection morph', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('draws the staged positions: u_morph 0, a_prevPosition never enabled', () => {
+    const { pushed, enabled } = exportRecorded({ x: 0, y: 0, k: 1 });
+    expect(pushed.u_morph).toBe(0);
+    expect(enabled).toContain('a_dataPosition');
+    expect(enabled).not.toContain('a_prevPosition');
   });
 });

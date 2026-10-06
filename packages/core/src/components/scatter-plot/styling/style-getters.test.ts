@@ -636,12 +636,12 @@ describe('style-getters', () => {
     });
   });
 
-  // ── F-44 removal guard: dead stroke getters are gone, live getters survive ──
+  // ── Removal guard: dead stroke getters are gone, live getters survive ──
   // The GPU draws strokes from a hardcoded fragment-shader constant
   // (strokeWidth = 0.15 in webgl-renderer.ts), so createStyleGetters' stroke
   // getters were never consumed. This guard locks their removal and proves the
   // five live keys remain present.
-  describe('F-44: createStyleGetters does not expose stroke getters', () => {
+  describe('createStyleGetters does not expose stroke getters', () => {
     const createMockData = (annotationValues: string[]): VisualizationData => ({
       protein_ids: annotationValues.map((_, i) => `protein_${i}`),
       projections: [
@@ -763,6 +763,54 @@ describe('style-getters', () => {
       expect(getters.getColors(point)).toHaveLength(1);
       // ...storage-shaped still says multi.
       expect(getters.isMultilabel()).toBe(true);
+    });
+  });
+
+  describe('canMarkOnGpu', () => {
+    const data: VisualizationData = {
+      protein_ids: ['p0'],
+      projections: [{ name: 'test', data: new Float32Array(3), dimension: 3 }],
+      annotations: { family: { values: ['A'], colors: ['#ff0000'], shapes: ['circle'] } },
+      annotation_data: { family: new Int32Array([0]) },
+    };
+    const config = (overrides: Partial<StyleConfig> = {}): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'family',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: { A: 0, B: 1, Other: 2 },
+      sizes: { base: 10 },
+      opacities: { base: 0.9, selected: 1, faded: 0.15 },
+      ...overrides,
+    });
+    const canMark = (overrides: Partial<StyleConfig>) =>
+      createStyleGetters(data, config(overrides)).canMarkOnGpu();
+    /** A z-order of `n` ranks. */
+    const ranks = (n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`c${i}`, i]));
+
+    it('holds for the default opacities, with or without a z-order', () => {
+      expect(canMark({})).toBe(true);
+      expect(canMark({ zOrderMapping: null })).toBe(true);
+      expect(canMark({ zOrderMapping: ranks(1000) })).toBe(true);
+    });
+
+    it('needs the selected opacity in the selected paint tier and the others below it', () => {
+      expect(canMark({ opacities: { base: 0.9, selected: 0.95, faded: 0.15 } })).toBe(false);
+      expect(canMark({ opacities: { base: 1, selected: 1, faded: 0.15 } })).toBe(false);
+      expect(canMark({ opacities: { base: 0.9, selected: 1, faded: 0.99 } })).toBe(false);
+    });
+
+    it('needs every opacity above 0, which changes what draws', () => {
+      expect(canMark({ opacities: { base: 0.9, selected: 1, faded: 0 } })).toBe(false);
+      expect(canMark({ opacities: { base: 0, selected: 1, faded: 0.15 } })).toBe(false);
+    });
+
+    it('fails when float32 depth ties z-order ranks at one opacity and not another', () => {
+      // Ranks 1/5000 of an offset apart: the depth's float32 step at faded
+      // opacity is wider than that, and the selected tier's is not.
+      expect(canMark({ zOrderMapping: ranks(5000) })).toBe(false);
     });
   });
 });

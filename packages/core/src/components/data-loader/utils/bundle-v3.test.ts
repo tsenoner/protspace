@@ -14,9 +14,11 @@ import {
   type CsrAnnotationData,
   type VisualizationData,
 } from '@protspace/utils';
-import { decodeParquetBundle, extractRowsFromParquetBundle } from './bundle';
+import { decodeParquetBundle, decodeParquetBundleWithRowCap } from './bundle';
+import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
+import { MAX_DRAWABLE_POINTS } from '../../scatter-plot/webgl/renderer/device-limits';
 import { collectTransferables } from '../decode-transferables';
 import { bulkViews } from '../bulk-views.test-support';
 
@@ -648,11 +650,45 @@ describe('parquetbundle format v3', () => {
     });
   });
 
+  it('reads more proteins than a v1/v2 bundle may hold', async () => {
+    const proteins = 101;
+    const coordinates = Float32Array.from({ length: proteins }, (_, i) => i);
+    const large = bundle([
+      part([{ name: 'protein_id', data: Array.from({ length: proteins }, (_, i) => `P${i}`) }], {
+        protspace_container_version: '3',
+        protspace_v3_manifest: JSON.stringify({
+          idColumn: 'protein_id',
+          columns: {},
+          projections: [{ name: 'pca2', dimension: 2 }],
+        }),
+      }),
+      part([
+        { name: 'projection_name', data: ['pca2'] },
+        { name: 'dimensions', data: new Int32Array([2]) },
+        { name: 'info_json', data: ['{}'] },
+      ]),
+      part([
+        { name: 'pca2__x', data: coordinates },
+        { name: 'pca2__y', data: coordinates },
+      ]),
+      EMPTY,
+      EMPTY,
+      payloadPart({}),
+    ]);
+
+    // A v1/v2 bundle this size is refused under this cap (see bundle.test.ts).
+    const { data, unplacedProteinCount } = await decodeParquetBundleWithRowCap(large, proteins - 1);
+
+    expect(data.protein_ids).toHaveLength(proteins);
+    expect(data.protein_ids.at(-1)).toBe(`P${proteins - 1}`);
+    expect(data.projections[0].data).toHaveLength(2 * proteins);
+    expect(unplacedProteinCount).toBe(0);
+  });
+
   // `parquetWriteBuffer` always stamps a truthful `num_rows`, so the lying footer is
   // built by handing `readV3Bundle` a doctored `FileMetaData` — the same object
   // `decodeParquetBundle` reads out of part 1.
   it.each([
-    ['above the row cap', 2_000_001n],
     ['negative', -1n],
     ['past the safe-integer range', 9_007_199_254_740_993n],
     ['absent', undefined],
@@ -661,7 +697,7 @@ describe('parquetbundle format v3', () => {
     const metadata = parquetMetadata(parts[0]);
 
     await expect(readV3Bundle(parts, { ...metadata, num_rows: rows as bigint })).rejects.toThrow(
-      /rows, outside 0\.\.2000000/,
+      /rows, not a row count/,
     );
   });
 
@@ -809,8 +845,8 @@ describe('parquetbundle format v3', () => {
     );
 
     it('caps the bytes a footer can make the reader preallocate by the part size', async () => {
-      // 2M rows of 100 float64 columns is well within the cell cap, but a few-KB part
-      // cannot hold the 1.6 GB they would preallocate: snappy compresses by ~21x at most.
+      // A few-KB part cannot hold the 1.6 GB that 2M rows of 100 float64 columns would
+      // preallocate: snappy compresses by ~21x at most.
       const names = Array.from({ length: 100 }, (_, i) => `n${i}`);
       const wide = part(
         [
@@ -831,28 +867,22 @@ describe('parquetbundle format v3', () => {
       ).rejects.toThrow(/part 1 declares 2000000 rows, 1616000000 bytes to preallocate/);
     });
 
-    it('caps the cells a footer can make the reader preallocate', async () => {
-      // A few KB claiming 2M rows of 500 float64 columns would preallocate 8 GB before
-      // a single row is read.
-      const names = Array.from({ length: 500 }, (_, i) => `n${i}`);
-      const wide = part(
-        [
-          { name: 'protein_id', data: PROTEIN_IDS },
-          ...names.map((name) => ({ name, data: new Float64Array(8) })),
-        ],
-        {
-          protspace_container_version: '3',
-          protspace_v3_manifest: JSON.stringify({
-            idColumn: 'protein_id',
-            columns: Object.fromEntries(names.map((name) => [name, { kind: 'numeric' }])),
-            projections: MANIFEST.projections,
-          }),
-        },
-      );
-      const rows = 2_000_000;
+    it('refuses a footer claiming 2^40 rows before allocating on it', async () => {
+      // A safe integer, so only the drawable-point limit stands between it and the
+      // allocation.
       await expect(
-        decodeParquetBundle(v3Bundle({ 0: declaring(wide, rows, true) })),
-      ).rejects.toThrow(/past the 1000000000 cell limit/);
+        decodeParquetBundle(v3Bundle({ 0: declaring(annotationsPart(), 2 ** 40, true) })),
+      ).rejects.toThrow(/Dataset too large: 1,099,511,627,776 proteins/);
+    });
+
+    it('refuses one protein past the drawable limit, naming the limit', async () => {
+      // Decoding 2^26 + 1 proteins ran the tab out of memory before the renderer's own
+      // check could refuse them.
+      await expect(
+        decodeParquetBundle(
+          v3Bundle({ 0: declaring(annotationsPart(), MAX_DRAWABLE_POINTS + 1, true) }),
+        ),
+      ).rejects.toThrow(/can draw at most 67,108,864 points/);
     });
   });
 

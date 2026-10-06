@@ -3,9 +3,10 @@ import {
   materializeNumericAnnotation,
   materializeVisualizationData,
   resolveNumericAnnotationDisplaySettings,
+  type NumericAnnotationDisplaySettings,
 } from './numeric-binning';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
-import type { Annotation, VisualizationData } from '../types';
+import type { Annotation, NumericBinningStrategy, VisualizationData } from '../types';
 
 describe('numeric-binning', () => {
   it('creates linear bins with distribution-aware gradient colors', () => {
@@ -679,5 +680,445 @@ describe('materializeVisualizationData null-selection gate', () => {
     expect(out.annotations.a.sourceKind).toBe('numeric');
     // 'b' should remain numeric.
     expect(out.annotations.b.kind).toBe('numeric');
+  });
+});
+
+describe('numeric-binning distinct count limit', () => {
+  const quantileSettings = (binCount: number) => ({
+    binCount,
+    strategy: 'quantile' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  it('falls back to linear bins exactly when the distinct values fit the bin count', () => {
+    const fourDistinct = materializeNumericAnnotation([1, 2, 3, 10, 10, 10], quantileSettings(3));
+    const threeDistinct = materializeNumericAnnotation([1, 2, 10, 10, 10, 10], quantileSettings(3));
+
+    expect(fourDistinct.annotation.numericMetadata?.strategy).toBe('quantile');
+    expect(threeDistinct.annotation.numericMetadata?.strategy).toBe('linear');
+  });
+
+  it('matches an uncached column after a smaller bin count capped the distinct count', () => {
+    for (const withMissing of [false, true]) {
+      for (let distinct = 1; distinct <= 14; distinct += 1) {
+        for (let binCount = 1; binCount <= 12; binCount += 1) {
+          const values: (number | null)[] = Array.from(
+            { length: 40 },
+            (_, i) => (i % distinct) * 1.5,
+          );
+          if (withMissing) values.push(null);
+          materializeNumericAnnotation(values, quantileSettings(1));
+
+          expect(materializeNumericAnnotation(values, quantileSettings(binCount))).toEqual(
+            materializeNumericAnnotation([...values], quantileSettings(binCount)),
+          );
+        }
+      }
+    }
+  });
+});
+
+describe('numeric-binning sorted values', () => {
+  it('sorts the kept values when a later call first needs quantile edges', () => {
+    const values = [9, 1, 7, 3, 5, 3, 8, 2, 6, 4, 0, 7];
+    const quantile = (binCount: number) => ({
+      binCount,
+      strategy: 'quantile' as const,
+      paletteId: 'batlow',
+      reverseGradient: false,
+    });
+    // Ten distinct values in 12 bins fall back to linear edges, which never read the values.
+    materializeNumericAnnotation(values, quantile(12));
+
+    expect(materializeNumericAnnotation(values, quantile(4))).toEqual(
+      materializeNumericAnnotation([...values], quantile(4)),
+    );
+    expect(
+      materializeNumericAnnotation(values, quantile(4)).annotation.numericMetadata?.strategy,
+    ).toBe('quantile');
+  });
+});
+
+describe('numeric-binning logarithmic fallback', () => {
+  const settings = (strategy: NumericBinningStrategy, binCount: number) => ({
+    binCount,
+    strategy,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+  // A zero and a negative value rule out log edges; eleven distinct values keep quantile edges.
+  const mixedSign = [5, -2, 9, 0, 3, 7, 1, 8, 3, 6, 4, 2, 0];
+
+  it('gives a fresh column the bins of an explicit quantile call', () => {
+    const fallback = materializeNumericAnnotation([...mixedSign], settings('logarithmic', 4));
+
+    expect(fallback).toEqual(materializeNumericAnnotation([...mixedSign], settings('quantile', 4)));
+    expect(fallback.annotation.numericMetadata?.strategy).toBe('quantile');
+    expect(fallback.annotation.numericMetadata?.bins).toHaveLength(4);
+  });
+
+  it('gives the quantile bins whatever ran on the column before', () => {
+    const earlier = (['linear', 'quantile', 'logarithmic'] as const).flatMap((strategy) =>
+      [2, 4, 8].map((binCount) => settings(strategy, binCount)),
+    );
+    const expected = materializeNumericAnnotation([...mixedSign], settings('quantile', 4));
+    for (const first of earlier) {
+      for (const second of earlier) {
+        const column = [...mixedSign];
+        materializeNumericAnnotation(column, first);
+        materializeNumericAnnotation(column, second);
+
+        expect(materializeNumericAnnotation(column, settings('logarithmic', 4))).toEqual(expected);
+        expect(materializeNumericAnnotation(column, settings('quantile', 4))).toEqual(expected);
+      }
+    }
+  });
+
+  it('keeps log edges on positive values, cached or not', () => {
+    const integers = [2, 5, 20, 50, 200, 500, 2000, 5000];
+    const fresh = materializeNumericAnnotation([...integers], settings('logarithmic', 3));
+    materializeNumericAnnotation(integers, settings('quantile', 3));
+
+    expect(materializeNumericAnnotation(integers, settings('logarithmic', 3))).toEqual(fresh);
+    expect(fresh.annotation.numericMetadata?.strategy).toBe('logarithmic');
+    expect(fresh.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '2 - 20',
+      '50 - 200',
+      '500 - 5000',
+    ]);
+    expect(fresh.annotation.numericMetadata?.bins.map((bin) => bin.colorPosition)).toEqual([
+      0, 0.5, 1,
+    ]);
+    expect(Array.from(fresh.annotationData)).toEqual([0, 0, 0, 1, 1, 2, 2, 2]);
+
+    const floats = materializeNumericAnnotation(
+      [0.5, 1.5, 4, 12, 40, null, 150],
+      settings('logarithmic', 4),
+    );
+    expect(floats.annotation.numericMetadata?.strategy).toBe('logarithmic');
+    expect(floats.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '0.5 - 1.5',
+      '4.0 - 12.0',
+      '40.0 - 150.0',
+    ]);
+    expect(floats.annotation.numericMetadata?.bins.map((bin) => bin.upperBound)).toEqual([
+      3.3471647504108475, 22.407023732785827, 150,
+    ]);
+    expect(Array.from(floats.annotationData)).toEqual([0, 0, 1, 1, 2, 3, 2]);
+  });
+});
+
+describe('numeric-binning logarithmic minimum', () => {
+  const logarithmic = (binCount: number) => ({
+    binCount,
+    strategy: 'logarithmic' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  it('keeps a minimum whose log round trip rounds up in the first bin', () => {
+    // 10 ** Math.log10(5) is 5.000000000000001.
+    const result = materializeNumericAnnotation([5, 6, 50, 500, 5000], logarithmic(3));
+
+    expect(Array.from(result.annotationData)).toEqual([0, 0, 1, 2, 2]);
+    expect(result.annotation.numericMetadata?.bins.map((bin) => bin.label)).toEqual([
+      '5 - 6',
+      '50',
+      '500 - 5000',
+    ]);
+    expect(result.annotation.numericMetadata?.bins[0].lowerBound).toBe(5);
+  });
+
+  it('puts every value in a bin that contains it, for integer minimums 1 to 10000', () => {
+    const misplaced: string[] = [];
+    for (let min = 1; min <= 10000; min++) {
+      const column = [min, min + 1, 3 * min, 10 * min, 100 * min];
+      const { annotation, annotationData } = materializeNumericAnnotation(column, logarithmic(4));
+      const bins = annotation.numericMetadata?.bins ?? [];
+      if (annotationData[0] !== 0) misplaced.push(`minimum ${min} in bin ${annotationData[0]}`);
+      column.forEach((value, row) => {
+        const bin = bins[annotationData[row]];
+        const isLast = annotationData[row] === bins.length - 1;
+        const inBin =
+          value >= bin.lowerBound && (isLast ? value <= bin.upperBound : value < bin.upperBound);
+        if (!inBin) misplaced.push(`${value} in ${bin.id}`);
+      });
+    }
+
+    expect(misplaced).toEqual([]);
+  });
+
+  it('keeps the bins of a minimum whose log round trip is exact or rounds down', () => {
+    const roundsDown = materializeNumericAnnotation([8, 9, 80, 800, 8000], logarithmic(3));
+    const exact = materializeNumericAnnotation([10, 11, 100, 1000, 10000], logarithmic(3));
+
+    expect(roundsDown.annotation.values).toEqual([
+      'num:logarithmic:7.9999999999999991:79.999999999999986',
+      'num:logarithmic:79.999999999999986:800.00000000000034',
+      'num:logarithmic:800.00000000000034:8000',
+    ]);
+    expect(Array.from(roundsDown.annotationData)).toEqual([0, 0, 1, 1, 2]);
+    expect(exact.annotation.values).toEqual([
+      'num:logarithmic:10:100',
+      'num:logarithmic:100:1000',
+      'num:logarithmic:1000:10000',
+    ]);
+    expect(Array.from(exact.annotationData)).toEqual([0, 0, 1, 2, 2]);
+  });
+});
+
+describe('numeric-binning properties', () => {
+  type Column = Array<number | null | undefined> | Float64Array;
+  interface Run {
+    name: string;
+    column: Column;
+    settings: NumericAnnotationDisplaySettings;
+    result: ReturnType<typeof materializeNumericAnnotation>;
+  }
+
+  const strategies: NumericBinningStrategy[] = ['linear', 'quantile', 'logarithmic'];
+  const quantile = (binCount: number) => ({
+    binCount,
+    strategy: 'quantile' as const,
+    paletteId: 'batlow',
+    reverseGradient: false,
+  });
+
+  /** mulberry32: a seeded generator, so the columns are the same on every run. */
+  function seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** Ties, -0, NaN, ±Infinity and missing values, at magnitudes from 1e-18 to 1e308. */
+  function randomColumn(next: () => number): Column {
+    const pick = <T>(options: readonly T[]) => options[Math.floor(next() * options.length)];
+    const levels = pick([2, 10, 200, 1e6]);
+    const scale = pick([1, 1e-18, 1e6, 1e306]);
+    const integers = next() < 0.5;
+    const positive = next() < 0.4;
+    const specials = positive ? [NaN, Infinity, -Infinity, null, undefined] : [NaN, -0, 0, null];
+    const column = Array.from({ length: Math.floor(next() * 600) }, () => {
+      if (next() < 0.08) return pick(specials);
+      const level = positive ? 1 + next() * levels : (next() - 0.3) * levels;
+      return (integers ? Math.round(level) : level) * scale;
+    });
+    return next() < 0.5 ? Float64Array.from(column, (value) => value ?? NaN) : column;
+  }
+
+  /** 48 random columns, each binned twice: the second call reads the summary the first cached. */
+  function randomRuns(): Run[] {
+    const next = seededRandom(20261005);
+    const randomSettings = (): NumericAnnotationDisplaySettings => ({
+      binCount: [1, 2, 3, 5, 7, 10, 12, 20, 50][Math.floor(next() * 9)],
+      strategy: strategies[Math.floor(next() * 3)],
+      paletteId: 'batlow',
+      reverseGradient: next() < 0.5,
+    });
+    return Array.from({ length: 48 }, (_, index) => {
+      const column = randomColumn(next);
+      return [randomSettings(), randomSettings()].map((settings, call) => ({
+        name: `column ${index} call ${call + 1} (${settings.strategy}, ${settings.binCount} bins)`,
+        column,
+        settings,
+        result: materializeNumericAnnotation(column, settings),
+      }));
+    }).flat();
+  }
+
+  /** The binning reads null, undefined, NaN and ±Infinity as missing. */
+  const isPresent = (value: number | null | undefined): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+  const rowsOf = (column: Column) => Array.from<number | null | undefined>(column);
+  const finiteValues = (column: Column) => rowsOf(column).filter(isPresent);
+  const copyOf = (column: Column): Column =>
+    column instanceof Float64Array ? column.slice() : [...column];
+  const show = (value: unknown) => (Object.is(value, -0) ? '-0' : String(value));
+
+  /** The bins left for numbers once N/A takes its slot. */
+  function numberBinCount({ column, settings }: Run): number {
+    const hasMissing = finiteValues(column).length < column.length;
+    return hasMissing && settings.binCount > 1 ? settings.binCount - 1 : settings.binCount;
+  }
+
+  /**
+   * Log bins need positive values, else they are quantile bins; quantile bins need more distinct
+   * values than bins, else they are linear.
+   */
+  function expectedStrategy(run: Run): NumericBinningStrategy {
+    const finite = finiteValues(run.column);
+    const positive = finite.length > 0 && finite.every((value) => value > 0);
+    const strategy =
+      run.settings.strategy === 'logarithmic' && !positive ? 'quantile' : run.settings.strategy;
+    return strategy === 'quantile' && new Set(finite).size <= numberBinCount(run)
+      ? 'linear'
+      : strategy;
+  }
+
+  /**
+   * Quantile edges read from a stable `a - b` sort, which keeps -0 and +0 in input order, closed
+   * by the first maximum in input order.
+   */
+  function stableQuantileEdges(finite: number[], binCount: number): number[] {
+    const sorted = [...finite].sort((left, right) => left - right);
+    const edges = Array.from({ length: binCount }, (_, index) => {
+      const position = (sorted.length - 1) * (index / binCount);
+      const lower = sorted[Math.floor(position)];
+      if (Number.isInteger(position)) return lower;
+      return lower + (sorted[Math.ceil(position)] - lower) * (position - Math.floor(position));
+    });
+    return [...edges, finite.reduce((max, value) => (value > max ? value : max))];
+  }
+
+  /** Whether `items` occur in `list` in order, telling -0 from +0. */
+  function occursInOrder(items: number[], list: number[]): boolean {
+    let at = 0;
+    for (const item of items) {
+      while (at < list.length && !Object.is(list[at], item)) at += 1;
+      if (at === list.length) return false;
+      at += 1;
+    }
+    return true;
+  }
+
+  it('puts every value in a bin that contains it and every missing value in a trailing N/A', () => {
+    const violations: string[] = [];
+    for (const { name, column, result } of randomRuns()) {
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      if (result.annotationData.length !== column.length) {
+        violations.push(`${name}: ${result.annotationData.length} slots for ${column.length} rows`);
+      }
+      rowsOf(column).forEach((value, row) => {
+        const slot = result.annotationData[row];
+        const bin = bins[slot];
+        const fits = isPresent(value)
+          ? bin !== undefined &&
+            bin.lowerBound <= value &&
+            (value < bin.upperBound || (slot === bins.length - 1 && value === bin.upperBound))
+          : slot === bins.length && result.annotation.values[slot] === NA_VALUE;
+        if (!fits) {
+          const where = bin ? `[${show(bin.lowerBound)}, ${show(bin.upperBound)}]` : `slot ${slot}`;
+          violations.push(`${name}: ${show(value)} in ${where}`);
+        }
+      });
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('lists ordered bins that count their rows, with unique labels, then N/A', () => {
+    const violations: string[] = [];
+    for (const { name, column, result } of randomRuns()) {
+      const { values, colors } = result.annotation;
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      const hasMissing = finiteValues(column).length < column.length;
+      const ids = [...bins.map((bin) => bin.id), ...(hasMissing ? [NA_VALUE] : [])];
+      if (values.join(' ') !== ids.join(' ') || colors.length !== values.length) {
+        violations.push(`${name}: values ${values.join(' ')}`);
+      }
+      if (hasMissing && colors[bins.length] !== NA_DEFAULT_COLOR) {
+        violations.push(`${name}: N/A colour ${colors[bins.length]}`);
+      }
+      bins.forEach((bin, index) => {
+        const rows = result.annotationData.filter((slot) => slot === index).length;
+        const next = bins[index + 1];
+        if (bin.count === 0 || bin.count !== rows) {
+          violations.push(`${name}: bin ${index} counts ${bin.count} of ${rows} rows`);
+        }
+        if (bin.lowerBound > bin.upperBound || (next && bin.upperBound > next.lowerBound)) {
+          violations.push(`${name}: bin ${index} out of order`);
+        }
+      });
+      if (new Set(bins.map((bin) => bin.label)).size !== bins.length) {
+        violations.push(`${name}: repeated labels`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('rises from colour position 0 to 1 across the bins', () => {
+    const violations: string[] = [];
+    for (const { name, result } of randomRuns()) {
+      const bins = result.annotation.numericMetadata?.bins ?? [];
+      const positions = bins.map((bin) => bin.colorPosition ?? NaN);
+      const [first, last] = positions.length === 1 ? [0.5, 0.5] : [0, 1];
+      const rising = positions.every(
+        (position, index) => index === 0 || positions[index - 1] <= position,
+      );
+      if (
+        positions.length > 0 &&
+        (positions[0] !== first || positions[positions.length - 1] !== last || !rising)
+      ) {
+        violations.push(`${name}: colour positions ${positions.join(' ')}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('falls back from log and sparse quantile bins to the bins an explicit call gives', () => {
+    let fallbacks = 0;
+    for (const run of randomRuns()) {
+      const strategy = expectedStrategy(run);
+      expect(run.result.annotation.numericMetadata?.strategy, run.name).toBe(strategy);
+      if (strategy === run.settings.strategy) continue;
+      fallbacks += 1;
+      expect(run.result, run.name).toEqual(
+        materializeNumericAnnotation(copyOf(run.column), { ...run.settings, strategy }),
+      );
+    }
+    expect(fallbacks).toBeGreaterThan(0);
+  });
+
+  it('keeps the minimum of a logarithmic column in the first bin', () => {
+    let logColumns = 0;
+    for (const { name, column, result } of randomRuns()) {
+      if (result.annotation.numericMetadata?.strategy !== 'logarithmic') continue;
+      logColumns += 1;
+      const min = Math.min(...finiteValues(column));
+      const slots = rowsOf(column).flatMap((value, row) =>
+        value === min ? [result.annotationData[row]] : [],
+      );
+      expect(slots, name).toEqual(slots.map(() => 0));
+    }
+    expect(logColumns).toBeGreaterThan(0);
+  });
+
+  it('reads quantile edges from a stable sort, so -0 and +0 keep their input order', () => {
+    const violations: string[] = [];
+    for (const run of randomRuns()) {
+      const metadata = run.result.annotation.numericMetadata;
+      if (metadata?.strategy !== 'quantile') continue;
+      const edges = stableQuantileEdges(finiteValues(run.column), numberBinCount(run));
+      // Adjacent bins share an edge.
+      const bounds = metadata.bins
+        .flatMap((bin) => [bin.lowerBound, bin.upperBound])
+        .filter((bound, index, all) => index === 0 || !Object.is(bound, all[index - 1]));
+      if (!occursInOrder(bounds, edges)) {
+        violations.push(`${run.name}: bounds ${bounds.map(show).join(' ')}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('bins a column the same whatever ran on it before', () => {
+    for (const run of randomRuns()) {
+      expect(run.result, run.name).toEqual(
+        materializeNumericAnnotation(copyOf(run.column), run.settings),
+      );
+    }
+  });
+
+  it('keeps the input order of -0 and +0 in quantile edges', () => {
+    const firstEdge = (values: number[]) =>
+      materializeNumericAnnotation(values, quantile(2)).annotation.numericMetadata?.bins[0]
+        .lowerBound;
+
+    expect(firstEdge([0, -0, 1, 2, 3])).toBe(0);
+    expect(firstEdge([-0, 0, 1, 2, 3])).toBe(-0);
   });
 });

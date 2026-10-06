@@ -16,9 +16,9 @@ import {
   getLegacyBundleFormatNotification,
 } from './notifications';
 import {
+  beginSaveImportedFile,
   clearLastImportedFile,
   markLastLoadStatus,
-  saveLastImportedFile,
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
@@ -127,6 +127,11 @@ export interface DatasetController {
    * records its stored status and the import its outcome.
    */
   isSkippableQueuedLoad(meta: LoadMeta): boolean;
+  /**
+   * Runs `load` for `file`, copying a user import into OPFS meanwhile. The copy is kept
+   * only when `file` loads (handleDataLoaded); a failed, stale or abandoned load drops it.
+   */
+  saveWhileLoading(file: File, load: () => Promise<void>): Promise<void>;
   /** Proteins the loaded file holds that the dataset leaves out (no projection places them). */
   getUnplacedProteinCount(): number;
 }
@@ -367,7 +372,13 @@ export function createDatasetController({
       // leaves the view request and the URL, which that request owns, alone
       // (`isSuperseded()` below).
 
-      if (loadMeta.kind === 'user' && file) {
+      // Taken before the first await, so saveWhileLoading finds the copy settled. A
+      // superseded or stale load returned above and leaves its copy to be dropped there.
+      const pendingSave =
+        loadMeta.pendingSave ??
+        (loadMeta.kind === 'user' && file ? beginSaveImportedFile(file) : undefined);
+      loadMeta.pendingSave = undefined;
+      if (pendingSave) {
         overlayController.update(
           true,
           20,
@@ -375,7 +386,7 @@ export function createDatasetController({
           'Preparing reload support...',
         );
         try {
-          await saveLastImportedFile(file);
+          await pendingSave.commit();
         } catch (error) {
           console.error('Failed to persist imported dataset in OPFS:', error);
           notify.warning(getDatasetPersistenceFailureNotification(error));
@@ -726,6 +737,21 @@ export function createDatasetController({
     handleDataLoaded,
     handleDataError,
     isSkippableQueuedLoad: (meta) => meta.example !== undefined && isLoadSuperseded(meta),
+    async saveWhileLoading(file, load) {
+      const loadMeta = loadQueue.getRunningLoadMeta();
+      if (loadMeta?.kind !== 'user') {
+        return load();
+      }
+      loadMeta.pendingSave = beginSaveImportedFile(file);
+      try {
+        await load();
+      } finally {
+        // data-loaded has taken the copy by now if the file loaded; after an error, a
+        // stale or superseded result or no result at all it is still here, and is dropped.
+        void loadMeta.pendingSave?.abort();
+        loadMeta.pendingSave = undefined;
+      }
+    },
     getUnplacedProteinCount: () => currentUnplacedProteinCount,
   };
 }

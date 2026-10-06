@@ -19,11 +19,14 @@ export function resolvePointLocations(
       labelCount: gl.getAttribLocation(program, 'a_labelCount'),
       shape: gl.getAttribLocation(program, 'a_shape'),
       predicted: gl.getAttribLocation(program, 'a_predicted'),
+      record: gl.getAttribLocation(program, 'a_record'),
+      prevPosition: gl.getAttribLocation(program, 'a_prevPosition'),
     },
     uniforms: {
       resolution: gl.getUniformLocation(program, 'u_resolution'),
       transform: gl.getUniformLocation(program, 'u_transform'),
       dpr: gl.getUniformLocation(program, 'u_dpr'),
+      morph: gl.getUniformLocation(program, 'u_morph'),
       pointScale: gl.getUniformLocation(program, 'u_pointScale'),
       gamma: gl.getUniformLocation(program, 'u_gamma'),
       knockoutColor: gl.getUniformLocation(program, 'u_knockoutColor'),
@@ -31,6 +34,13 @@ export function resolvePointLocations(
       labelTextureSize: gl.getUniformLocation(program, 'u_labelTextureSize'),
       maxLabels: gl.getUniformLocation(program, 'u_maxLabels'),
       labelAtlasCapacity: gl.getUniformLocation(program, 'u_labelAtlasCapacity'),
+      recordStyle: gl.getUniformLocation(program, 'u_recordStyle'),
+      recordStyleOn: gl.getUniformLocation(program, 'u_recordStyleOn'),
+      marks: gl.getUniformLocation(program, 'u_marks'),
+      marksOn: gl.getUniformLocation(program, 'u_marksOn'),
+      markPass: gl.getUniformLocation(program, 'u_markPass'),
+      markedOpacity: gl.getUniformLocation(program, 'u_markedOpacity'),
+      unmarkedOpacity: gl.getUniformLocation(program, 'u_unmarkedOpacity'),
     },
   };
 }

@@ -2,37 +2,14 @@
  * @vitest-environment jsdom
  *
  * Issue #343: the plot's existing point-count chip exposes whether the active
- * D3 view is zoomed in. The full transform remains non-reactive (F-48); only
+ * D3 view is zoomed in. The full transform remains non-reactive; only
  * crossings between identity and k > 1 schedule a Lit update for the marker.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as d3 from 'd3';
 import type { VisualizationData } from '@protspace/utils';
-import type { PlotInteractionHost } from './interaction/plot-interaction-controller';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null);
-});
-
-import './scatter-plot';
-
-type ZoomIndicatorInternals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  isUpdatePending: boolean;
-  updateComplete: Promise<boolean>;
-  firstUpdated(): void;
-  _interactionHost(): PlotInteractionHost;
-  _renderPlot(): void;
-  _updateSelectionOverlays(): void;
-};
+import { createPlot, type PlotInternals } from './test-support/plot-fixture';
 
 function makeData(): VisualizationData {
   return {
@@ -49,8 +26,8 @@ function makeData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-async function makePlot(): Promise<ZoomIndicatorInternals> {
-  const plot = document.createElement('protspace-scatterplot') as ZoomIndicatorInternals;
+async function makePlot(): Promise<PlotInternals> {
+  const plot = createPlot();
   // Avoid WebGL/controller startup; these tests drive the real host bridge directly.
   plot.firstUpdated = () => {};
   plot.data = makeData();
@@ -62,7 +39,7 @@ async function makePlot(): Promise<ZoomIndicatorInternals> {
   return plot;
 }
 
-function statusChip(plot: ZoomIndicatorInternals): Element | null | undefined {
+function statusChip(plot: PlotInternals): Element | null | undefined {
   return plot.shadowRoot?.querySelector('[role="status"]');
 }
 

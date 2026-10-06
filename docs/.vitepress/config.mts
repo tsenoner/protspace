@@ -116,7 +116,10 @@ export default defineConfig({
       },
       {
         text: 'Help',
-        items: [{ text: 'FAQ', link: '/guide/faq' }],
+        items: [
+          { text: 'FAQ', link: '/guide/faq' },
+          { text: 'Performance', link: '/guide/performance' },
+        ],
       },
       // Developer docs hidden until npm package is published
       // {

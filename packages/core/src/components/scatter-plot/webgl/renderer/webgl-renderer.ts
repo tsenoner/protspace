@@ -1,32 +1,50 @@
 /**
- * WebGL2 Renderer with Gamma-Correct Rendering Pipeline
+ * The scatter plot's live WebGL2 point renderer.
  *
- * This renderer implements a two-pass gamma-correct rendering pipeline:
- * 1. Render points to a linear RGB framebuffer
- * 2. Apply gamma correction to convert to sRGB for display
- *
- * Falls back to direct rendering if gamma pipeline is unavailable.
+ * A render stages only what changed (see `populateBuffers`): the points re-sorted
+ * far -> near into a new paint order, or restyled in the staged one, then
+ * uploaded. A category restyle rewrites just the per-record style table, marks
+ * go to the mark texture, and a projection switch glides the points on the GPU.
+ * Points draw into a linear-light float framebuffer, with the density layer
+ * composited between the unselected and the selected ones, and a gamma pass
+ * converts that to sRGB on the canvas. Without float targets they draw directly.
+ * A lost context latches the renderer for good; the host builds a new one.
  */
 
 import * as d3 from 'd3';
 import {
   DENSITY_DEFAULT,
+  plotDataOriginalIndex,
   type PlotData,
   type PlotDataPoint,
   type ScatterplotConfig,
 } from '@protspace/utils';
 import {
+  type PointMarks,
   type WebGLStyleGetters,
   type ScalePair,
   type PointAttribLocations,
   type PointUniformLocations,
-  MAX_RENDERABLE_POINTS,
   DEFAULT_GAMMA,
 } from '../types';
-import { createProgramFromSources } from '../shader-utils';
+import {
+  beginProgramFromSources,
+  discardProgram,
+  finishProgram,
+  type PendingProgram,
+} from '../shader-utils';
+import {
+  IDENTITY_RESCALE,
+  rescaleBetween,
+  snapshotScales,
+  type Rescale,
+  type ScaleSnapshot,
+} from './rescale';
 import { resolvePointLocations } from './point-locations';
 import { setupAttributes } from './point-attributes';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
+import { composePaintDepth } from '../../paint-depth';
+import { createPassScratch, restageStyles, stageInPaintOrder } from './pass-staging';
+import { RecordStyleTable, markedFirstDrawn, shownSlotCount } from './record-style-table';
 import { planRendererCapacity, shouldReplanCapacityResource } from './capacity-planner';
 import { createLinearFramebuffer, destroyFramebuffer } from './framebuffer';
 import { GLResources } from './gl-resources';
@@ -34,36 +52,43 @@ import {
   bindAndClearTarget,
   setPointBlendState,
   drawPoints,
+  drawMarkedPoints,
   bindPointDrawState,
+  type CameraParams,
 } from './render-target';
+import { MarkTexture } from './mark-texture';
 import { QUAD_VERTICES, drawGammaQuad } from './gamma-quad';
 import {
   createDensityResources,
   resizeDensityTargets,
   accumulateAndBlurDensity,
   compositeDensity,
+  densityFieldsKey,
   buildSlotPalette,
+  buildRecordSlotPalette,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
 } from './density-pass';
 import { densityFrameAlpha } from './density-crossfade';
+import { PositionGlide } from './position-glide';
 import { DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT } from './viewport-defaults';
-import { stagePoint, stagePointStyle, type StagePointArrays } from './stage-point';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
+import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
 import {
-  planLabelAtlas,
-  MAX_LABELS,
-  MIN_MAX_TEXTURE_SIZE,
-  type LabelAtlasPlan,
-} from './label-atlas-plan';
-import {
-  readMaxTextureSize,
-  drainGlErrors,
   allocateLabelAtlas,
   refreshLabelAtlas,
   uploadPlaceholderAtlas,
 } from './label-atlas-texture';
+import {
+  MAX_DRAWABLE_POINTS,
+  MIN_CAPACITY,
+  MIN_MAX_TEXTURE_SIZE,
+  drainGlErrors,
+  maxMarkedPoints,
+  readMaxTextureSize,
+} from './device-limits';
 import {
   createRendererDegradedDetail,
   type RendererDegradedDetail,
@@ -71,15 +96,15 @@ import {
 } from '../../scatter-plot.events';
 import { ContextLossController } from './context-loss-controller';
 import { ExportRenderer } from './export-renderer';
+import { perfCounters } from '../../../../utils/perf-counters';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
-} from './export-shaders';
+} from './point-shaders';
 
 // Constants
-const MIN_CAPACITY = 1024;
 /**
  * Allocation granularity for the SoA staging arrays. 256 is the point count that
  * fills one row of the narrowest supported atlas (2048 texels / 8 slices), so a
@@ -89,12 +114,65 @@ const MIN_CAPACITY = 1024;
  */
 const CAPACITY_GRANULARITY = 256;
 
+/**
+ * The context attributes are fixed by the first `getContext` call, so every caller passes these.
+ * No MSAA: points go to a single-sample float FBO with shader-side edge AA, and the canvas only
+ * receives the full-screen gamma quad.
+ */
+const CONTEXT_OPTIONS: WebGLContextAttributes = {
+  antialias: false,
+  preserveDrawingBuffer: true,
+  premultipliedAlpha: false,
+  alpha: true,
+  powerPreference: 'high-performance',
+};
+
+/** Both programs the first draw needs, compiling but not yet read back. */
+interface PendingPrograms {
+  gl: WebGL2RenderingContext;
+  point: PendingProgram | null;
+  gamma: PendingProgram | null;
+}
+
+/** What a render asks `populateBuffers` to stage. */
+interface StageRequest {
+  /** The positions changed: re-sort, whatever the sampled depths say. */
+  positions: boolean;
+  /** The styles changed. Only counted: a stage that does not re-sort restyles. */
+  styles: boolean;
+  /** Glide from where the points are drawn (see `morphNextPositionChange`). */
+  glide: boolean;
+}
+
+/** How a stage writes the points: re-sorted into a new paint order, or restyled in the old one. */
+type StagePlan = 'resort' | 'restyle';
+
+/** What the scatter plot hands its renderer. */
+interface WebGLRendererOptions {
+  getScales: () => ScalePair | null;
+  getTransform: () => d3.ZoomTransform;
+  getConfig: () => ScatterplotConfig;
+  /**
+   * What the live view stages. With marks (`getPointMarks`) it styles every
+   * point as if none were marked.
+   */
+  style: WebGLStyleGetters;
+  /** What an export stages, marks included: `style` unless the live view marks points on the GPU. */
+  exportStyle?: WebGLStyleGetters;
+  /** White unless given. */
+  getKnockoutColor?: () => readonly [number, number, number];
+  onContextLost?: () => void;
+  onDegraded?: (detail: RendererDegradedDetail) => void;
+}
+
 // ============================================================================
 // WebGL2 Renderer Implementation
 // ============================================================================
 
 export class WebGLRenderer {
   private gl: WebGL2RenderingContext | null = null;
+  /** Programs started by {@link prewarm} (or the first `ensureGL`) and not yet read back. */
+  private pendingPrograms: PendingPrograms | null = null;
 
   // Owned GPU handles (programs, VAO, buffers, quad, label texture, framebuffer).
   // Resource inventory (create/validate/delete/reset) lives in GLResources; the
@@ -113,18 +191,8 @@ export class WebGLRenderer {
 
   private gamma = DEFAULT_GAMMA;
 
-  // CPU arrays
-  private dataPositions = new Float32Array(0);
-  private sizes = new Float32Array(0);
-  private colors = new Float32Array(0);
-  private depths = new Float32Array(0);
-  private labelCounts = new Float32Array(0);
-  private shapes = new Float32Array(0);
-  private predicted = new Float32Array(0);
-
-  // Zero-copy view over the parallel staging arrays above, passed to `stagePoint`.
-  // Re-pointed in `refreshStageArrays()` whenever capacity is reallocated.
-  private stageArrays: StagePointArrays = this.buildStageArrays();
+  // CPU arrays: what the staging passes write and the buffers upload.
+  private stageArrays: StagePointArrays = createStageArrays(0, MAX_LABELS, null);
 
   // State
   private capacity = 0;
@@ -150,11 +218,23 @@ export class WebGLRenderer {
   private densityDisabled = false;
   private contourPalette: SlotPalette | null = null;
   /**
-   * Bumped by every `populateBuffers`, the only writer of the position and
-   * colour buffers and the only place `contourPalette` is invalidated, so it
-   * keys the density fields built from them.
+   * Bumped by `drawnStateChanged`, which every writer of the position buffer and
+   * of the colours and order points draw with calls, so it keys the density
+   * fields built from them.
    */
   private bufferGeneration = 0;
+  /** The per-record style table the staged points draw through, if the last stage kept one. */
+  private readonly recordTable = new RecordStyleTable();
+  private categoryStylesDirty = false;
+  /**
+   * Set when a colour-only restage left slots whose paint depth moved in their
+   * old order. A restyle must not keep that order: the next style update's
+   * re-sort decision is staging's to make.
+   */
+  private stagedOrderStale = false;
+  /** The marks the GPU draws over the staged points (see `PointMarks`), or null. */
+  private marks: PointMarks | null = null;
+  private readonly markTexture = new MarkTexture();
   /**
    * The multi-label answer this render pass is staging against, refreshed once
    * per `render()` from {@link WebGLStyleGetters.isMultilabel}. Single source of
@@ -175,27 +255,38 @@ export class WebGLRenderer {
   private stylesDirty = true;
   // Depth-order dirtiness is tracked separately from positionsDirty so callers
   // can signal "re-sort by depth on next render" without lying about positions.
-  // Cleared inside populateBuffers once the re-sort runs.
+  // Cleared by planStage, which re-sorts on it.
   private depthOrderDirty = false;
   private buffersInitialized = false;
 
   // Store last rendered data for off-screen export rendering
   private lastRenderedData: PlotData | null = null;
 
+  // Positions are staged in CSS pixels, through the scales of the pass that
+  // staged them. New scales move every point, but while only their ranges
+  // changed (a resize) `positionRescale` moves them on the GPU, folded into
+  // u_transform, instead of a re-stage: a full style pass and depth sort,
+  // ~500 ms at 573K points.
+  private stagedScales: ScaleSnapshot | null = null;
+  private positionRescale: Rescale = IDENTITY_RESCALE;
+
   // Reusable index-sort scratch (avoids per-render object staging + a retained mapped array).
   // `sortOrder[0..currentPointCount)` holds slot indices in far->near draw order; it indexes
-  // into `sortedDataRef` (the PlotData from the last full rebuild). `sortDepths` is the
-  // per-slot depth scratch, indexed by ORIGINAL slot index.
+  // into `sortedDataRef` (the PlotData from the last full rebuild). `passScratch` holds what
+  // a style pass resolves per slot (opacity, depth, style record), indexed by ORIGINAL slot.
   private sortOrder = new Uint32Array(0);
-  private sortDepths = new Float32Array(0);
+  private passScratch = createPassScratch(0);
   private sortedDataRef: PlotData | null = null;
 
-  // Single reused scratch point for the hot loop — populated per slot, passed to style getters.
-  private scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
+  // The one point the sampled style reads reuse; see `pointAt`.
+  private readonly scratchPoint: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
 
   // Selection-aware two-pass rendering
   private selectionActive = false;
   private selectedStartIndex = 0;
+
+  // Projection glide (see position-glide.ts).
+  private readonly glide = new PositionGlide();
 
   // Caching
   private lastDataSignature: string | null = null;
@@ -204,13 +295,8 @@ export class WebGLRenderer {
   // Bytes pushed to the GPU since construction; see uploadedBytesTotal.
   private uploadedBytes = 0;
 
-  // Track rendered point IDs for hover detection
-  private trackRenderedPointIds = false;
-  private renderedPointIds = new Set<string>();
-
   // Config
   private dpr = window.devicePixelRatio || 1;
-  private styleSignature: string | null = null;
   private gammaPipelineAvailable = true;
   private warnedGammaFallback = false;
   /** The float extension this context lacks, which is why the gamma pipeline never ran. */
@@ -225,16 +311,27 @@ export class WebGLRenderer {
   // config, style getters, transform, gamma, and selection state.
   private readonly exportRenderer = new ExportRenderer();
 
+  private readonly getScales: () => ScalePair | null;
+  private readonly getTransform: () => d3.ZoomTransform;
+  private readonly getConfig: () => ScatterplotConfig;
+  private readonly style: WebGLStyleGetters;
+  private readonly exportStyle: WebGLStyleGetters;
+  private readonly getKnockoutColor: () => readonly [number, number, number];
+  private readonly onContextLost?: () => void;
+  private readonly onDegraded?: (detail: RendererDegradedDetail) => void;
+
   constructor(
     private canvas: HTMLCanvasElement,
-    private getScales: () => ScalePair | null,
-    private getTransform: () => d3.ZoomTransform,
-    private getConfig: () => ScatterplotConfig,
-    private style: WebGLStyleGetters,
-    private onContextLost?: () => void,
-    private getKnockoutColor: () => readonly [number, number, number] = () => [1, 1, 1],
-    private onDegraded?: (detail: RendererDegradedDetail) => void,
+    options: WebGLRendererOptions,
   ) {
+    this.getScales = options.getScales;
+    this.getTransform = options.getTransform;
+    this.getConfig = options.getConfig;
+    this.style = options.style;
+    this.exportStyle = options.exportStyle ?? options.style;
+    this.getKnockoutColor = options.getKnockoutColor ?? (() => [1, 1, 1]);
+    this.onContextLost = options.onContextLost;
+    this.onDegraded = options.onDegraded;
     this.lossController = new ContextLossController(this.canvas, () => {
       this.resetRendererState();
       this.onContextLost?.();
@@ -250,13 +347,6 @@ export class WebGLRenderer {
   // Public API
   // ============================================================================
 
-  setStyleSignature(signature: string | null) {
-    if (this.styleSignature !== signature) {
-      this.styleSignature = signature;
-      this.stylesDirty = true;
-    }
-  }
-
   setSelectionActive(active: boolean) {
     this.selectionActive = active;
   }
@@ -266,33 +356,18 @@ export class WebGLRenderer {
   }
 
   /**
-   * Enable/disable tracking of the exact set of rendered point IDs.
-   *
-   * This exists to guard hover/click behavior when the renderer truncates the
-   * number of points (e.g. datasets > MAX_RENDERABLE_POINTS).
-   *
-   * For typical datasets (<= MAX_RENDERABLE_POINTS), tracking is unnecessary
-   * and expensive (it adds/clears ~N string IDs on every buffer rebuild), so it
-   * should be kept disabled.
+   * The style of whole categories changed (legend hide, show, colour or shape)
+   * and nothing per point did. The next render rewrites the per-record table
+   * when the staged points draw through one, and re-stages them otherwise.
    */
-  setTrackRenderedPointIds(enabled: boolean) {
-    this.trackRenderedPointIds = enabled;
-    if (!enabled) {
-      this.renderedPointIds.clear();
-    }
-  }
-
-  isPointRendered(pointId: string): boolean {
-    if (!this.trackRenderedPointIds) return true;
-    return this.renderedPointIds.has(pointId);
+  invalidateCategoryStyles() {
+    this.categoryStylesDirty = true;
   }
 
   /**
-   * Points the last completed stage actually drew. Zero before the first stage.
-   *
-   * Distinct from the count handed to `render()`: they differ exactly when the
-   * staging clamp truncates, which is the state that used to be invisible. The
-   * perf harness records both, so a run reports its own truncation.
+   * Points the last completed stage drew. Zero before the first stage, and for
+   * data past the drawable limit (see `populateBuffers`). The perf harness checks
+   * it against the points loaded, so a run reports any it drew short.
    */
   get drawnPointCount(): number {
     return this.currentPointCount;
@@ -316,6 +391,16 @@ export class WebGLRenderer {
   }
 
   /**
+   * Whether `getPointMarks` can be drawn: the mark texture holds a texel per
+   * point of the capacity (see `maxMarkedPoints`), and the device did not
+   * refuse it. Otherwise the live view stages the marks with every other
+   * style. Known once the capacity is planned, before anything is staged.
+   */
+  get canDrawMarks(): boolean {
+    return this.markTexture.fits(this.capacity, this.maxTextureSize);
+  }
+
+  /**
    * `readPixels` cannot return until the commands ahead of it have executed,
    * which makes it the portable WebGL way to wait for the GPU.
    */
@@ -332,6 +417,26 @@ export class WebGLRenderer {
   }
 
   /**
+   * Glide the points from where they are drawn to the positions the next render
+   * stages, instead of jumping there. Meant for a change that keeps every point
+   * in its slot (a projection or plane switch); dropped when that render stages
+   * no positions or the point count changes.
+   */
+  morphNextPositionChange() {
+    this.glide.request();
+  }
+
+  /** Drop a glide request, and end a glide, so the next frame draws the staged positions. */
+  cancelMorph() {
+    if (this.glide.cancel()) this.glideEnded();
+  }
+
+  /** True while the points glide; the host keeps rendering frames until it is false. */
+  get isMorphing(): boolean {
+    return this.glide.active;
+  }
+
+  /**
    * Force a depth-order re-sort on the next render without invalidating the
    * position cache. Use when only the depth mapping changes (e.g. z-order
    * remap) and coordinates are unchanged.
@@ -340,7 +445,7 @@ export class WebGLRenderer {
    * once by depth, then position/style buffers are written in sorted order. A
    * pure depth change (same points, same coords, new depth values) leaves the
    * sample-based depth-changed detection unable to compare like-for-like
-   * (sampled point[i] is read from the input order; this.depths[i] is from the
+   * (sampled point[i] is read from the input order; staged depths[i] is from the
    * sorted order). Without an explicit signal, the renderer can keep the stale
    * sort. This API is that signal.
    */
@@ -424,7 +529,9 @@ export class WebGLRenderer {
 
       this.resources.density = createDensityResources(gl, this.resources.quadBuffer, {
         dataPosition: this.pointAttribLocations.dataPosition,
+        prevPosition: this.pointAttribLocations.prevPosition,
         color: this.pointAttribLocations.color,
+        record: this.pointAttribLocations.record,
       });
       if (!this.resources.density) {
         this.disableDensity('density shaders failed to compile');
@@ -514,7 +621,11 @@ export class WebGLRenderer {
   }
 
   clear() {
-    const gl = this.ensureGL();
+    // Before the first draw the plot clears an empty canvas on every size change. That needs a
+    // context but no program, so a prewarmed renderer clears on its prewarm context and leaves
+    // the programs compiling: reading their status here would block on the compile a frame after
+    // it started. The first `render()` with points finishes them.
+    const gl = this.pendingPrograms?.gl ?? this.ensureGL();
     if (!gl) return;
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -523,8 +634,17 @@ export class WebGLRenderer {
   }
 
   render(pd: PlotData) {
+    if (perfCounters) perfCounters.render++;
+    const morphRequested = this.glide.takeRequest();
     // Store PlotData for potential off-screen export rendering
     this.lastRenderedData = pd;
+
+    // The zoom handler also renders the still-empty plot at startup. With nothing to draw and the
+    // programs still compiling that is a clear, not a reason to wait for them.
+    if (pd.length === 0 && this.pendingPrograms) {
+      this.clear();
+      return;
+    }
 
     const gl = this.ensureGL();
     const scales = this.getScales();
@@ -552,23 +672,79 @@ export class WebGLRenderer {
     }
 
     const dataSignature = this.computeDataSignature(pd);
-    const styleSignature = this.computeStyleSignature(pd);
+    let styleSignature = this.computeStyleSignature(pd);
 
-    const needsPositionUpdate = this.positionsDirty || dataSignature !== this.lastDataSignature;
-    const needsStyleUpdate = this.stylesDirty || styleSignature !== this.lastStyleSignature;
+    const needsPositionUpdate =
+      this.positionsDirty ||
+      dataSignature !== this.lastDataSignature ||
+      !this.rescaleStagedTo(scales);
+    const needsStyleUpdate =
+      this.stylesDirty || this.categoryStylesDirty || styleSignature !== this.lastStyleSignature;
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
     if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
-      this.populateBuffers(pd, scales, needsPositionUpdate, needsStyleUpdate);
+      // A category restyle explains the sampled points' new opacity and colour,
+      // so the style signature may change without anything per point changing.
+      const restyled =
+        this.categoryStylesDirty &&
+        !this.stylesDirty &&
+        !needsPositionUpdate &&
+        !needsDepthOrderUpdate &&
+        this.restyleRecords(pd);
+      if (!restyled) {
+        const stageStart = perfCounters ? performance.now() : 0;
+        const refused = this.markTexture.refused;
+        this.populateBuffers(pd, scales, {
+          positions: needsPositionUpdate,
+          styles: needsStyleUpdate,
+          glide: morphRequested,
+        });
+        // The device refused a new mark texture, or took one after refusing: the
+        // marks were staged for the other, so stage them as the live view now does.
+        // Without a glide: the first stage started any this render asked for.
+        if (this.markTexture.refused !== refused) {
+          this.populateBuffers(pd, scales, { positions: false, styles: true, glide: false });
+          styleSignature = this.computeStyleSignature(pd);
+        }
+        if (perfCounters) perfCounters.restageMs += performance.now() - stageStart;
+      }
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
       this.stylesDirty = false;
-      // depthOrderDirty is cleared inside populateBuffers once the re-sort runs.
+      this.categoryStylesDirty = false;
+      // planStage clears depthOrderDirty, as it re-sorts on it.
     }
+    // After staging, which lays out the draw order the marks are written in.
+    const marks = this.style.getPointMarks?.(pd) ?? null;
+    if (marks !== this.marks || this.markTexture.stale) this.applyMarks(marks);
+    // Asked after staging, which may have laid the positions out afresh.
+    this.positionRescale = this.rescaleStagedTo(scales) ?? IDENTITY_RESCALE;
+    if (this.glide.advance()) this.glideEnded();
 
     // Render with gamma-correct pipeline
-    this.renderWithGammaCorrection(transform);
+    this.renderWithGammaCorrection(this.cameraParams(transform));
+    if (perfCounters) {
+      perfCounters.drawn = this.drawnPointCount;
+      if (this.glide.weight > 0) perfCounters.morphFrame++;
+    }
+  }
+
+  /** Map from the staged positions to `scales`' pixels; null when there is none. */
+  private rescaleStagedTo(scales: ScalePair): Rescale | null {
+    return this.stagedScales && rescaleBetween(this.stagedScales, scales);
+  }
+
+  /** The frame's camera, built once for its point and density draws. */
+  private cameraParams(transform: d3.ZoomTransform): CameraParams {
+    return {
+      width: this.canvas.width,
+      height: this.canvas.height,
+      transform: { x: transform.x, y: transform.y, k: transform.k },
+      dpr: this.dpr,
+      rescale: this.positionRescale,
+      morph: this.glide.weight,
+    };
   }
 
   /**
@@ -577,7 +753,7 @@ export class WebGLRenderer {
    * 2. Apply gamma correction pass to convert to sRGB for display
    * Falls back to direct rendering if pipeline is unavailable.
    */
-  private renderWithGammaCorrection(transform: d3.ZoomTransform) {
+  private renderWithGammaCorrection(camera: CameraParams) {
     if (!this.gl) return;
 
     if (!this.shouldUseGammaPipeline()) {
@@ -589,34 +765,26 @@ export class WebGLRenderer {
       this.reportDensityUnavailable(
         missing ? `${missing} missing` : 'linear-light pipeline unavailable',
       );
-      this.renderDirect(transform);
+      this.renderDirect(camera);
       return;
     }
 
     const framebuffer = this.resources.linearFramebuffer;
     if (!framebuffer) {
-      this.renderDirect(transform);
+      this.renderDirect(camera);
       return;
     }
 
     const gl = this.gl;
 
-    const density = this.densityFrame(transform);
+    const density = this.densityFrame(camera);
     if (density) {
       // The fields persist between frames, so a re-render that changes none of
-      // their inputs (hover, tooltip) only composites them.
-      const { width, height, dpr, transform: t } = density.camera;
-      const key = [
-        this.bufferGeneration,
-        this.currentPointCount,
-        width,
-        height,
-        dpr,
-        t.x,
-        t.y,
-        t.k,
-      ].join();
+      // their inputs (hover, tooltip) only composites them. A glide moves the
+      // points every frame, so it re-accumulates them every frame.
+      const key = densityFieldsKey(this.bufferGeneration, this.currentPointCount, camera);
       if (density.res.fieldsKey !== key) {
+        this.recordTable.bind(gl);
         accumulateAndBlurDensity(gl, density, this.resources.pointVao, this.currentPointCount);
         density.res.fieldsKey = key;
       }
@@ -625,7 +793,7 @@ export class WebGLRenderer {
     // Pass 1: Render to linear RGB framebuffer.
     bindAndClearTarget(gl, framebuffer.framebuffer, framebuffer.width, framebuffer.height);
 
-    this.renderPoints(transform, density ? () => compositeDensity(gl, density) : undefined);
+    this.renderPoints(camera, density ? () => compositeDensity(gl, density) : undefined);
 
     // Pass 2: Gamma correction to canvas
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
@@ -633,7 +801,7 @@ export class WebGLRenderer {
     this.renderGammaCorrection();
   }
 
-  private densityFrame(transform: d3.ZoomTransform): DensityFrame | null {
+  private densityFrame(camera: CameraParams): DensityFrame | null {
     const config = this.getConfig();
     // Missing means Off here too, as in reportDensityUnavailable and the menu.
     const mode = config.densityLayer ?? DENSITY_DEFAULT;
@@ -647,13 +815,25 @@ export class WebGLRenderer {
     );
     const alpha = densityFrameAlpha(
       this.visibleCount,
-      transform.k,
+      camera.transform.k,
       viewDimensionCss,
       mode === 'on',
     );
     if (alpha <= 0) return null;
 
-    this.contourPalette ??= buildSlotPalette(this.colors, this.currentPointCount, this.gamma);
+    // Points drawn through the record table have their staged alpha unhidden.
+    // Drawn marked points come after every other point, as staging puts a selection.
+    const marked = this.markTexture.range ? this.markTexture.staged : null;
+    const count = this.currentPointCount;
+    const { colors } = this.stageArrays;
+    const { staged, ids } = this.recordTable;
+    this.contourPalette ??= staged
+      ? buildRecordSlotPalette(
+          staged,
+          this.gamma,
+          marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
+        )
+      : buildSlotPalette(colors, count, this.gamma, marked);
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();
@@ -661,14 +841,10 @@ export class WebGLRenderer {
 
     return {
       res,
-      camera: {
-        width: this.canvas.width,
-        height: this.canvas.height,
-        transform: { x: transform.x, y: transform.y, k: transform.k },
-        dpr: this.dpr,
-      },
+      camera,
       alpha,
       palette: this.contourPalette,
+      recordStyleOn: !!staged,
     };
   }
 
@@ -696,20 +872,24 @@ export class WebGLRenderer {
     );
   }
 
-  private renderDirect(transform: d3.ZoomTransform) {
+  private renderDirect(camera: CameraParams) {
     if (!this.gl) return;
     const gl = this.gl;
 
     bindAndClearTarget(gl, null, this.canvas.width, this.canvas.height);
 
-    this.renderPoints(transform);
+    this.renderPoints(camera);
   }
 
-  dispose() {
+  private dispose() {
+    this.discardPrograms(this.pendingPrograms);
+    this.pendingPrograms = null;
     if (!this.gl) return;
     const gl = this.gl;
 
     this.resources.deleteAll(gl);
+    this.recordTable.delete(gl);
+    this.markTexture.delete(gl);
 
     this.gl = null;
   }
@@ -723,9 +903,10 @@ export class WebGLRenderer {
    * Creates a temporary WebGL context, renders at requested size, returns 2D canvas.
    *
    * Thin delegate over {@link ExportRenderer.renderToCanvas}: the facade supplies
-   * the last-rendered data, the live config + style getters, and the live render
-   * state (selection, transform, gamma) so the export equals the on-screen render
-   * (incl. the F-15 two-pass selection blend).
+   * the last-rendered data, the live config + export style getters (which stage
+   * the marks the live view draws on the GPU), and the live render state
+   * (selection, transform, gamma) so the export equals the on-screen render
+   * (incl. the two-pass selection blend).
    *
    * @param width Target width in CSS pixels (will be multiplied by DPR)
    * @param height Target height in CSS pixels
@@ -745,20 +926,25 @@ export class WebGLRenderer {
     resetView: boolean = false,
     knockoutColor: readonly [number, number, number] = this.getKnockoutColor(),
   ): HTMLCanvasElement {
-    return this.exportRenderer.renderToCanvas(this.lastRenderedData, this.getConfig(), this.style, {
-      width,
-      height,
-      dpr,
-      dataDomain,
-      pointSizeReference,
-      selectionActive: this.selectionActive,
-      transform: resetView ? d3.zoomIdentity : this.getTransform(),
-      gamma: this.gamma,
-      knockoutColor,
-      // See `exportLabelStride` for what the export inherits and why.
-      labelStride: this.exportLabelStride(),
-      deviceMaxTextureSize: this.maxTextureSize,
-    });
+    return this.exportRenderer.renderToCanvas(
+      this.lastRenderedData,
+      this.getConfig(),
+      this.exportStyle,
+      {
+        width,
+        height,
+        dpr,
+        dataDomain,
+        pointSizeReference,
+        selectionActive: this.selectionActive,
+        transform: resetView ? d3.zoomIdentity : this.getTransform(),
+        gamma: this.gamma,
+        knockoutColor,
+        // See `exportLabelStride` for what the export inherits and why.
+        labelStride: this.exportLabelStride(),
+        deviceMaxTextureSize: this.maxTextureSize,
+      },
+    );
   }
 
   /**
@@ -837,14 +1023,14 @@ export class WebGLRenderer {
 
   private ensureGL(): WebGL2RenderingContext | null {
     if (this.lossController.isLost) return null;
-    if (this.gl) {
-      if (this.gl.isContextLost && this.gl.isContextLost()) {
-        this.markContextLost();
-        return null;
-      }
-      if (!this.isRendererStateValid(this.gl)) {
-        this.resetRendererState();
-      }
+    // Runs every frame, so it asks only what the browser answers on its own: the
+    // `is*` handle queries each wait for the GPU process. Handles go stale only
+    // when the context is lost. That latches the controller, and the owner then
+    // rebuilds the renderer on a fresh canvas, so a restored context is never
+    // drawn with the old handles.
+    if (this.gl && this.gl.isContextLost && this.gl.isContextLost()) {
+      this.markContextLost();
+      return null;
     }
     if (
       this.gl &&
@@ -855,15 +1041,7 @@ export class WebGLRenderer {
       return this.gl;
     }
 
-    const contextOptions: WebGLContextAttributes = {
-      antialias: true,
-      preserveDrawingBuffer: true,
-      premultipliedAlpha: false,
-      alpha: true,
-      powerPreference: 'high-performance',
-    };
-
-    const gl = this.canvas.getContext('webgl2', contextOptions);
+    const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
     if (!gl) {
       console.error('WebGL2 not available');
       return null;
@@ -890,15 +1068,24 @@ export class WebGLRenderer {
       this.handleGammaFallback('required extensions missing');
     }
 
-    if (!this.initializePointShaders(gl)) return null;
+    // Both programs compile at once (and, when prewarmed, already have); only now is the result read.
+    const pending = this.takePendingPrograms(gl) ?? this.beginPrograms(gl);
+    if (!this.initializePointShaders(gl, pending.point)) {
+      if (pending.gamma) discardProgram(gl, pending.gamma);
+      return null;
+    }
 
     if (this.gammaPipelineAvailable) {
-      if (!this.initializeGammaCorrectionShaders(gl)) {
+      if (!this.initializeGammaCorrectionShaders(gl, pending.gamma)) {
         this.handleGammaFallback('gamma shader init failed');
       }
+    } else if (pending.gamma) {
+      discardProgram(gl, pending.gamma);
     }
 
     this.resources.createAll(gl);
+    this.recordTable.create(gl);
+    this.markTexture.create(gl);
     this.labelTextureInitialized = false;
 
     this.createPointVAO();
@@ -919,10 +1106,6 @@ export class WebGLRenderer {
     return gl;
   }
 
-  private isRendererStateValid(gl: WebGL2RenderingContext): boolean {
-    return this.resources.validate(gl);
-  }
-
   private isContextLost(): boolean {
     if (this.lossController.isLost) return true;
     const gl = this.gl;
@@ -939,38 +1122,71 @@ export class WebGLRenderer {
     this.lossController.markLost();
   }
 
+  /**
+   * Drop what the lost context owned, and the data staged for it. The loss
+   * latches this renderer for good (the host builds a new one), so state only a
+   * draw reads stays as it is. An export still reads the atlas fields (see
+   * `exportLabelStride`).
+   */
   private resetRendererState() {
+    this.discardPrograms(this.pendingPrograms);
+    this.pendingPrograms = null;
     this.gl = null;
     this.resources.reset();
-    this.pointAttribLocations = null;
-    this.pointUniformLocations = null;
-    this.gammaCorrectionUniformLocations = null;
-    this.labelTextureInitialized = false;
     this.atlas = null;
     this.labelAtlasDisabled = false;
-    this.labelAtlasActive = false;
-    this.densityDisabled = false;
-    this.degradeReported.clear();
-    this.gammaPipelineAvailable = true;
-    this.warnedGammaFallback = false;
-    this.missingFloatExtension = null;
-    this.buffersInitialized = false;
-    this.currentPointCount = 0;
-    this.visibleCount = 0;
-    this.positionsDirty = true;
-    this.stylesDirty = true;
-    this.lastDataSignature = null;
-    this.lastStyleSignature = null;
-    this.renderedPointIds.clear();
     this.sortedDataRef = null;
+    // Drops its start positions, and `isMorphing` stops asking for frames.
+    this.glide.end();
+    this.recordTable.reset();
+    this.markTexture.reset();
   }
 
-  private initializePointShaders(gl: WebGL2RenderingContext): boolean {
-    this.resources.pointProgram = createProgramFromSources(
+  /**
+   * Create the context and start compiling both programs without waiting for them, so the compile
+   * overlaps whatever the page does before its first draw (loading data) instead of stalling it.
+   * The first `render()` reads the results (`clear()` does not need them). Optional, idempotent,
+   * and silent when WebGL2 is unavailable: `ensureGL` reports that when a draw is attempted.
+   * A lost context latches the renderer, so it starts nothing after that.
+   */
+  prewarm(): void {
+    if (this.lossController.isLost || this.gl || this.pendingPrograms) return;
+    const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
+    if (!gl) return;
+    this.pendingPrograms = this.beginPrograms(gl);
+  }
+
+  private beginPrograms(gl: WebGL2RenderingContext): PendingPrograms {
+    // Without this the driver compiles on first use, so the overlap above would not exist.
+    gl.getExtension('KHR_parallel_shader_compile');
+    return {
       gl,
-      POINT_VERTEX_SHADER,
-      POINT_FRAGMENT_SHADER,
-    );
+      point: beginProgramFromSources(gl, POINT_VERTEX_SHADER, POINT_FRAGMENT_SHADER),
+      gamma: beginProgramFromSources(gl, GAMMA_VERTEX_SHADER, GAMMA_FRAGMENT_SHADER),
+    };
+  }
+
+  /** The prewarmed programs if they belong to `gl`; programs of any other context are dropped. */
+  private takePendingPrograms(gl: WebGL2RenderingContext): PendingPrograms | null {
+    const pending = this.pendingPrograms;
+    this.pendingPrograms = null;
+    if (!pending) return null;
+    if (pending.gl === gl) return pending;
+    this.discardPrograms(pending);
+    return null;
+  }
+
+  private discardPrograms(pending: PendingPrograms | null): void {
+    if (!pending) return;
+    if (pending.point) discardProgram(pending.gl, pending.point);
+    if (pending.gamma) discardProgram(pending.gl, pending.gamma);
+  }
+
+  private initializePointShaders(
+    gl: WebGL2RenderingContext,
+    pending: PendingProgram | null,
+  ): boolean {
+    this.resources.pointProgram = pending && finishProgram(gl, pending);
     if (!this.resources.pointProgram) return false;
 
     const { attribs, uniforms } = resolvePointLocations(gl, this.resources.pointProgram);
@@ -980,12 +1196,11 @@ export class WebGLRenderer {
     return true;
   }
 
-  private initializeGammaCorrectionShaders(gl: WebGL2RenderingContext): boolean {
-    this.resources.gammaCorrectionProgram = createProgramFromSources(
-      gl,
-      GAMMA_VERTEX_SHADER,
-      GAMMA_FRAGMENT_SHADER,
-    );
+  private initializeGammaCorrectionShaders(
+    gl: WebGL2RenderingContext,
+    pending: PendingProgram | null,
+  ): boolean {
+    this.resources.gammaCorrectionProgram = pending && finishProgram(gl, pending);
     if (!this.resources.gammaCorrectionProgram) return false;
 
     this.gammaCorrectionUniformLocations = {
@@ -1023,6 +1238,7 @@ export class WebGLRenderer {
         predicted: this.resources.predictedBuffer,
       },
       this.pointAttribLocations,
+      { record: this.resources.recordBuffer, prevPosition: this.resources.prevPositionBuffer },
     );
 
     gl.bindVertexArray(null);
@@ -1040,7 +1256,7 @@ export class WebGLRenderer {
   // Rendering
   // ============================================================================
 
-  private renderPoints(transform: d3.ZoomTransform, afterBasePass?: () => void) {
+  private renderPoints(camera: CameraParams, afterBasePass?: () => void) {
     if (
       !this.gl ||
       this.currentPointCount === 0 ||
@@ -1051,6 +1267,7 @@ export class WebGLRenderer {
     }
 
     const gl = this.gl;
+    const marks = this.marks;
 
     bindPointDrawState(
       gl,
@@ -1059,31 +1276,45 @@ export class WebGLRenderer {
       this.resources.pointVao,
       this.resources.labelColorTexture,
       {
-        width: this.canvas.width,
-        height: this.canvas.height,
-        transform: { x: transform.x, y: transform.y, k: transform.k },
-        dpr: this.dpr,
+        ...camera,
         pointScale: this.pointScale(),
         gamma: this.getEffectiveGamma(),
         knockoutColor: this.getKnockoutColor(),
         // Null when no atlas is allocated, which makes the shader's pie branch
         // unreachable and every marker fall through to its dominant colour.
         labelAtlas: this.atlas?.plan ?? null,
+        recordStyle: this.recordTable.texture,
+        marks: marks && {
+          texture: this.markTexture.texture,
+          marked: marks.marked,
+          unmarked: marks.unmarked,
+        },
       },
     );
 
-    drawPoints(
-      gl,
-      this.currentPointCount,
-      this.selectionActive,
-      this.selectedStartIndex,
-      afterBasePass && {
-        run: afterBasePass,
-        program: this.resources.pointProgram,
-        vao: this.resources.pointVao,
-        labelTexture: this.resources.labelColorTexture,
-      },
-    );
+    const between = afterBasePass && {
+      run: afterBasePass,
+      program: this.resources.pointProgram,
+      vao: this.resources.pointVao,
+      labelTexture: this.resources.labelColorTexture,
+    };
+    if (marks) {
+      drawMarkedPoints(
+        gl,
+        this.pointUniformLocations.markPass,
+        this.currentPointCount,
+        this.markTexture.range,
+        between,
+      );
+    } else {
+      drawPoints(
+        gl,
+        this.currentPointCount,
+        this.selectionActive,
+        this.selectedStartIndex,
+        between,
+      );
+    }
 
     gl.bindVertexArray(null);
   }
@@ -1110,245 +1341,200 @@ export class WebGLRenderer {
 
     const len = pd.length;
     const indices = [0, Math.floor(len / 4), Math.floor(len / 2), len - 1];
-    const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
-    const parts = indices
+    return indices
       .filter((i) => i < len)
       .map((i) => {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = pd.xs[i];
-        sp.y = pd.ys[i];
-        sp.originalIndex = origIdx;
+        const sp = this.pointAt(pd, i);
         // Include depth to avoid missing z-order-only updates when we render via painter's algorithm.
         return `${sp.id}:${this.style.getOpacity(sp).toFixed(2)}:${this.style
           .getDepth(sp)
           .toFixed(4)}:${this.style.getColors(sp)[0]}`;
-      });
-
-    return `${this.styleSignature}|${parts.join('|')}`;
+      })
+      .join('|');
   }
 
-  private populateBuffers(
-    pd: PlotData,
-    scales: ScalePair,
-    updatePositions: boolean,
-    updateStyles: boolean,
-  ) {
-    if (!this.gl) return;
+  /** Plan how to stage `pd` (see `planStage`), stage it that way, and upload what staging wrote. */
+  private populateBuffers(pd: PlotData, scales: ScalePair, request: StageRequest) {
     const gl = this.gl;
-    this.bufferGeneration++;
-
-    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
-
-    // Grow to fit, and release a footprint that has become absurd for the data on
-    // screen. Capacity used to be grow-only, which the old 1,000,000 clamp made
-    // harmless; at a 2,000,000 cap, loading 2M and then a 5K demo would hold the
-    // larger footprint for the rest of the session. The planner owns both rules,
-    // so reallocating is simply "the plan changed".
-    const plannedCapacity = this.planCapacity(maxPoints);
-    if (plannedCapacity !== this.capacity) {
-      this.resizeCapacity(plannedCapacity);
-      updatePositions = true;
-      updateStyles = true;
+    if (!gl) return;
+    this.drawnStateChanged();
+    if (perfCounters) {
+      perfCounters.restage++;
+      if (request.positions) perfCounters.restagePos++;
+      if (request.styles) perfCounters.restageStyle++;
     }
 
+    // Past the drawable limit, whatever part of the data could be drawn would
+    // pass for all of it: draw none and say why. Nothing is allocated, so nothing
+    // retries either, and the next dataset that fits stages as usual.
+    if (pd.length > MAX_DRAWABLE_POINTS) {
+      this.currentPointCount = 0;
+      this.visibleCount = 0;
+      this.sortedDataRef = null;
+      this.reportDegraded(
+        'point-limit-exceeded',
+        `${pd.length.toLocaleString()} points, at most ${MAX_DRAWABLE_POINTS.toLocaleString()}`,
+      );
+      return;
+    }
+
+    const plan = this.planStage(pd, request.positions);
+    let glideMoved = false;
+    if (plan === 'resort') glideMoved = this.resortPoints(pd, scales, request.glide);
+    else this.restylePoints(pd);
+    this.uploadStaged(gl, plan, glideMoved);
+  }
+
+  /**
+   * Fit the staging arrays and the atlas to `pd`, then decide how to stage it:
+   * re-sort it into a fresh paint order, or restyle it in the staged one.
+   */
+  private planStage(pd: PlotData, positions: boolean): StagePlan {
+    // Grow to fit, and release a footprint that has become absurd for the data on
+    // screen. Grow-only capacity would hold a 2M load's footprint through the 5K
+    // demo opened after it, for the rest of the session. The planner owns both
+    // rules, so reallocating is simply "the plan changed".
+    const plannedCapacity = this.planCapacity(pd.length);
+    const resized = plannedCapacity !== this.capacity;
+    if (resized) this.resizeCapacity(plannedCapacity);
+
     // Plan/allocate the atlas for the current capacity before anything stages into
-    // it — stagePointStyle reads its stride and its backing array through
+    // it — staging reads its stride and its backing array through
     // `this.stageArrays`.
     this.syncLabelAtlas();
 
-    if (this.trackRenderedPointIds) {
-      this.renderedPointIds.clear();
-    }
-
     // With depth testing disabled (to ensure overlaps are drawn), we preserve z-order using
-    // the painter's algorithm: draw far -> near. This requires reordering the slots, so
-    // whenever styles update we must also update positions to keep all parallel buffers aligned.
-    // However, if only colors changed (not depths), we can skip re-sorting and position updates.
-    let needsReorder = updatePositions;
-    if (this.depthOrderDirty) {
-      // Caller signalled the depth mapping changed — re-sort regardless of the
-      // sample-based check (which can't reliably detect category-level swaps).
-      needsReorder = true;
-      updatePositions = true;
-      this.depthOrderDirty = false;
-    }
+    // the painter's algorithm: draw far -> near. A re-sort reorders the slots, so it stages
+    // positions and styles alike to keep all parallel buffers aligned. Callers stage only on a
+    // change, so a call that does not re-sort changed colors only (not depths): it restyles in
+    // the staged order, skipping the re-sort and the position upload.
+    // A dirty depth order means the caller changed the depth mapping — re-sort regardless of
+    // the sample-based check (which can't reliably detect category-level swaps).
+    const depthOrderDirty = this.depthOrderDirty;
+    this.depthOrderDirty = false;
+    if (positions || resized || depthOrderDirty) return 'resort';
 
-    const sp = this.scratchPoint;
-    const oi = pd.originalIndices;
-    const { xs, ys } = pd;
-
-    if (updateStyles && !updatePositions) {
-      // Check if depths have actually changed by sampling first few slots
-      // If depths are the same, we can skip re-sorting (color-only update optimization)
-      const sampleSize = Math.min(100, pd.length);
-      let depthsChanged = false;
-      for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[i];
-        sp.y = ys[i];
-        sp.originalIndex = origIdx;
-        const opacity = this.style.getOpacity(sp);
-        if (opacity === 0) continue;
-        const newDepth = composePaintDepth(
-          this.style.getDepth(sp),
-          opacity,
-          this.style.isPredicted(sp),
-        );
-        // Compare with stored depth (note: depths array is in sorted order after last render)
-        if (Math.abs(newDepth - this.depths[i]) > 1e-6) {
-          depthsChanged = true;
-          break;
-        }
-      }
-      if (depthsChanged) {
-        needsReorder = true;
-        updatePositions = true;
-      }
-    } else if (updateStyles) {
-      needsReorder = true;
-      updatePositions = true;
-    }
-
-    let idx = 0;
-
-    if (needsReorder) {
-      this.visibleCount = 0;
-      const count = maxPoints;
-      const order = this.sortOrder;
-      const depthScratch = this.sortDepths;
-
-      // Build depth scratch indexed by original slot index, then sort indices far -> near.
-      // Include hidden points (opacity=0) so sort order is preserved across visibility toggles,
-      // enabling the fast color-only update path instead of a full rebuild + re-sort.
-      for (let i = 0; i < count; i++) {
-        const origIdx = oi ? oi[i] : i;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[i];
-        sp.y = ys[i];
-        sp.originalIndex = origIdx;
-        depthScratch[i] = composePaintDepth(
-          this.style.getDepth(sp),
-          this.style.getOpacity(sp),
-          this.style.isPredicted(sp),
-        );
-      }
-      // Canonical painter-order plan (shared with the export path via
-      // buildPaintOrder): sort far->near, then locate the two-pass selection cut
-      // from the first sorted slot with opacity >= 0.99. The per-slot callback
-      // also performs the live side effects (ID tracking + staging) so every slot
-      // — including opacity-0 — is staged exactly as before.
-      const { selectedStartIndex } = buildPaintOrder(
-        order,
-        depthScratch,
-        count,
-        this.selectionActive,
-        (k, srcSlot) => {
-          const origIdx = oi ? oi[srcSlot] : srcSlot;
-          sp.id = pd.proteinIds[origIdx];
-          sp.x = xs[srcSlot];
-          sp.y = ys[srcSlot];
-          sp.originalIndex = origIdx;
-          const opacity = this.style.getOpacity(sp);
-          if (opacity > 0) this.visibleCount++;
-
-          if (this.trackRenderedPointIds && opacity > 0) {
-            this.renderedPointIds.add(sp.id);
-          }
-
-          // updatePositions is always true here (see above). Positions are
-          // pre-scaled by the caller; depth uses depthScratch[srcSlot] (indexed by
-          // original slot), NOT depthScratch[k].
-          stagePoint(
-            this.stageArrays,
-            k,
-            sp,
-            scales.x(xs[srcSlot]),
-            scales.y(ys[srcSlot]),
-            opacity,
-            depthScratch[srcSlot],
-            this.style,
-          );
-
-          return opacity;
-        },
+    // Check if depths have actually changed by sampling first few slots
+    // If depths are the same, we can skip re-sorting (color-only update optimization)
+    const sampleSize = Math.min(100, pd.length);
+    for (let i = 0; i < sampleSize && i < this.currentPointCount; i++) {
+      const sp = this.pointAt(pd, i);
+      const opacity = this.style.getOpacity(sp);
+      if (opacity === 0) continue;
+      const newDepth = composePaintDepth(
+        this.style.getDepth(sp),
+        opacity,
+        this.style.isPredicted(sp),
       );
-
-      idx = count;
-      this.selectedStartIndex = selectedStartIndex;
-      // Cache the PlotData reference so color-only / positions-only paths can index via sortOrder.
-      this.sortedDataRef = pd;
-    } else if (updateStyles) {
-      this.visibleCount = 0;
-      // Color-only update: no reordering needed, just update color/shape buffers.
-      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
-      const order = this.sortOrder;
-      const src = this.sortedDataRef;
-      if (src) {
-        const srcOi = src.originalIndices;
-        const srcXs = src.xs;
-        const srcYs = src.ys;
-        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
-          const slot = order[i];
-          const origIdx = srcOi ? srcOi[slot] : slot;
-          sp.id = src.proteinIds[origIdx];
-          sp.x = srcXs[slot];
-          sp.y = srcYs[slot];
-          sp.originalIndex = origIdx;
-          const opacity = this.style.getOpacity(sp);
-          if (opacity > 0) this.visibleCount++;
-
-          if (this.trackRenderedPointIds && opacity > 0) {
-            this.renderedPointIds.add(sp.id);
-          }
-
-          // Update only style channels (color/alpha/size/shape/label texels) —
-          // positions and depths are unchanged from the last rebuild. Shares the
-          // exact packing the full-rebuild path uses via stagePoint (stageArrays
-          // aliases this.colors/this.sizes/... so this writes the same buffers).
-          stagePointStyle(this.stageArrays, idx, sp, opacity, this.style);
-
-          idx++;
-        }
-      }
-    } else {
-      // No reordering and no style updates: only update positions if needed.
-      // Iterate via sortOrder into sortedDataRef to match the buffer order from the last rebuild.
-      const order = this.sortOrder;
-      const src = this.sortedDataRef;
-      if (src) {
-        const srcOi = src.originalIndices;
-        const srcXs = src.xs;
-        const srcYs = src.ys;
-        for (let i = 0; i < this.currentPointCount && idx < maxPoints; i++) {
-          const slot = order[i];
-          const origIdx = srcOi ? srcOi[slot] : slot;
-          sp.id = src.proteinIds[origIdx];
-          sp.x = srcXs[slot];
-          sp.y = srcYs[slot];
-          sp.originalIndex = origIdx;
-
-          if (this.trackRenderedPointIds) {
-            const opacity = this.style.getOpacity(sp);
-            if (opacity > 0) {
-              this.renderedPointIds.add(sp.id);
-            }
-          }
-
-          if (updatePositions) {
-            this.dataPositions[idx * 2] = scales.x(srcXs[slot]);
-            this.dataPositions[idx * 2 + 1] = scales.y(srcYs[slot]);
-          }
-
-          idx++;
-        }
-      }
+      // Compare with stored depth (note: depths array is in sorted order after last render)
+      if (Math.abs(newDepth - this.stageArrays.depths[i]) > 1e-6) return 'resort';
     }
+    return 'restyle';
+  }
 
-    this.currentPointCount = idx;
+  /**
+   * Stage every point of `pd` in paint order, through `scales`, and glide there
+   * if `glide` asks it to or a glide is in flight. True when the glide's start
+   * positions changed.
+   */
+  private resortPoints(pd: PlotData, scales: ScalePair, glide: boolean): boolean {
+    this.visibleCount = 0;
+    const count = pd.length;
+    // The re-sort below permutes every buffer, so a glide crosses it by slot: a
+    // new one starts where the points are drawn, and one in flight keeps its
+    // start and its clock. Read from the staged copies, never from `pd`, whose
+    // coordinates a projection switch may already have overwritten.
+    const glideStart =
+      this.buffersInitialized && count === this.currentPointCount
+        ? this.glide.capture(
+            glide,
+            this.stageArrays.dataPositions,
+            this.positionRescale,
+            this.sortOrder,
+            count,
+          )
+        : null;
+    // Hidden points (opacity=0) are staged too, so sort order is preserved across
+    // visibility toggles, enabling the fast color-only update path instead of a
+    // full rebuild + re-sort. Shared with the export path, which stages the same
+    // painter order and selection cut.
+    const pass = this.style.createStylePass();
+    const table = this.recordTable.prepare(
+      pass,
+      this.stageArrays,
+      this.labelAtlasActive,
+      this.maxTextureSize,
+    );
+    const staged = stageInPaintOrder(
+      this.stageArrays,
+      pass,
+      this.passScratch,
+      this.sortOrder,
+      pd,
+      scales,
+      count,
+      this.selectionActive,
+      (_slot, opacity) => this.countStagedSlot(opacity),
+    );
+    this.selectedStartIndex = staged.selectedStartIndex;
 
+    const glideMoved = this.glide.afterResort(glideStart, glide, this.sortOrder, count);
+
+    // Cache the PlotData reference so a restyle can index it via sortOrder.
+    this.sortedDataRef = pd;
+    this.stagedOrderStale = false;
+    this.recordTable.keep(pass, table, staged.packed, this.stageArrays.colors, count);
+    this.currentPointCount = count;
+    // Staged through these scales, so drawn as they are: a glide carried by the
+    // second stage a render may run (see render()) reads this.
+    this.stagedScales = snapshotScales(scales);
+    this.positionRescale = IDENTITY_RESCALE;
+    return glideMoved;
+  }
+
+  /**
+   * Color-only update: no reordering needed, just update color/shape buffers.
+   * Iterate via sortOrder into sortedDataRef to match the buffer order from the last
+   * rebuild. Positions and depths are unchanged from that rebuild.
+   */
+  private restylePoints(pd: PlotData): void {
+    this.visibleCount = 0;
+    const src = this.sortedDataRef;
+    if (!src) {
+      this.currentPointCount = 0;
+      return;
+    }
+    const count = Math.min(this.currentPointCount, pd.length);
+    const pass = this.style.createStylePass();
+    const table = this.recordTable.prepare(
+      pass,
+      this.stageArrays,
+      this.labelAtlasActive,
+      this.maxTextureSize,
+    );
+    const packed = restageStyles(
+      this.stageArrays,
+      pass,
+      this.passScratch,
+      this.sortOrder,
+      src,
+      // The count that rebuild staged, so every slot sortOrder holds is resolved.
+      src.length,
+      count,
+      (_slot, opacity) => this.countStagedSlot(opacity),
+    );
+    this.stagedOrderStale = this.orderOutOfDate(count);
+    this.recordTable.keep(pass, table, packed, this.stageArrays.colors, count);
+    this.currentPointCount = count;
+  }
+
+  /**
+   * Upload what staging wrote: the positions after a re-sort, and every style
+   * array, the record table and the atlas after either. The first upload of a
+   * capacity allocates the buffers and the mark texture.
+   */
+  private uploadStaged(gl: WebGL2RenderingContext, plan: StagePlan, glideMoved: boolean) {
+    const count = this.currentPointCount;
     // `updateBuffer` takes the allocating bufferData branch while this is false.
     // Captured before the uploads, which set it.
     const allocating = !this.buffersInitialized;
@@ -1359,53 +1545,177 @@ export class WebGLRenderer {
 
     gl.bindVertexArray(this.resources.pointVao);
 
-    if (updatePositions) {
-      this.updateBuffer(gl, this.resources.dataPositionBuffer, this.dataPositions, idx * 2);
+    const { dataPositions, sizes, colors, depths, labelCounts, shapes, predicted } =
+      this.stageArrays;
+    if (plan === 'resort') {
+      this.updateBuffer(gl, this.resources.dataPositionBuffer, dataPositions, count * 2);
     }
+    if (glideMoved) this.syncMorphAttribute(gl);
 
-    // Hoisted from `updateStyles` alone: the reorder branch above rewrites every
-    // style array AND the atlas into the new slot order, so gating the upload on
-    // updateStyles leaves the GPU holding the previous permutation. Reachable via
-    // updatePositions and via depthOrderDirty, neither of which sets updateStyles.
-    if (updateStyles || needsReorder) {
-      this.updateBuffer(gl, this.resources.sizeBuffer, this.sizes, idx);
-      this.updateBuffer(gl, this.resources.colorBuffer, this.colors, idx * 4);
-      this.contourPalette = null;
-      this.updateBuffer(gl, this.resources.depthBuffer, this.depths, idx);
-      this.updateBuffer(gl, this.resources.labelCountBuffer, this.labelCounts, idx);
-      this.updateBuffer(gl, this.resources.shapeBuffer, this.shapes, idx);
-      this.updateBuffer(gl, this.resources.predictedBuffer, this.predicted, idx);
+    // Both plans rewrite every style array AND the atlas: a re-sort into the new
+    // slot order, a restyle in place.
+    // Before the colours: if the table cannot be uploaded, they take the hiding back.
+    this.uploadedBytes += this.recordTable.upload(gl, colors, count);
+    // Only read through a table, but the attribute needs its storage regardless.
+    if (allocating || this.recordTable.staged) {
+      this.updateBuffer(gl, this.resources.recordBuffer, this.recordTable.ids, count);
+    }
+    this.updateBuffer(gl, this.resources.sizeBuffer, sizes, count);
+    this.updateBuffer(gl, this.resources.colorBuffer, colors, count * 4);
+    this.updateBuffer(gl, this.resources.depthBuffer, depths, count);
+    this.updateBuffer(gl, this.resources.labelCountBuffer, labelCounts, count);
+    this.updateBuffer(gl, this.resources.shapeBuffer, shapes, count);
+    this.updateBuffer(gl, this.resources.predictedBuffer, predicted, count);
 
-      // One error check per capacity change, on the allocating (bufferData) path
-      // only — never on bufferSubData, so never per frame. It runs BEFORE any
-      // texture call so a failed buffer allocation is neither masked by nor
-      // misattributed to the atlas upload, and against a queue drained just above
-      // so it cannot inherit an unrelated error. gl.isBuffer cannot see this: it
-      // reports handle validity, not whether storage was allocated.
-      if (allocating && gl.getError() !== gl.NO_ERROR) {
-        this.reportDegraded('point-buffer-allocation-failed');
-        // Give the atlas back so the retry has a chance. No second reason is
-        // reported: the atlas allocation was never attempted, so claiming it ran
-        // out of memory would be a fabricated second toast.
-        this.disableLabelAtlas(null);
-        // `disableLabelAtlas` only drops the CPU-side texels. This is what hands
-        // the GPU storage back — the memory the retry actually needs — by
-        // replacing a previously allocated atlas with the 1x1 placeholder. It has
-        // to happen here, because every later populate takes this same early
-        // return (`buffersInitialized` stays false) and never reaches the upload.
-        this.uploadLabelAtlas(gl);
-        gl.bindVertexArray(null);
-        // buffersInitialized stays false: the retry must reallocate with
-        // bufferData, because bufferSubData against a zero-sized store is
-        // INVALID_VALUE forever.
-        return;
-      }
-
+    // One error check per capacity change, on the allocating (bufferData) path
+    // only — never on bufferSubData, so never per frame. It runs BEFORE any
+    // texture call so a failed buffer allocation is neither masked by nor
+    // misattributed to the atlas upload, and against a queue drained just above
+    // so it cannot inherit an unrelated error. gl.isBuffer cannot see this: it
+    // reports handle validity, not whether storage was allocated.
+    if (allocating && gl.getError() !== gl.NO_ERROR) {
+      this.reportDegraded('point-buffer-allocation-failed');
+      // Give the atlas back so the retry has a chance. No second reason is
+      // reported: the atlas allocation was never attempted, so claiming it ran
+      // out of memory would be a fabricated second toast.
+      this.disableLabelAtlas(null);
+      // `disableLabelAtlas` only drops the CPU-side texels. This is what hands
+      // the GPU storage back — the memory the retry actually needs — by
+      // replacing a previously allocated atlas with the 1x1 placeholder. It has
+      // to happen here, because every later populate takes this same early
+      // return (`buffersInitialized` stays false) and never reaches the upload.
       this.uploadLabelAtlas(gl);
+      gl.bindVertexArray(null);
+      // buffersInitialized stays false: the retry must reallocate with
+      // bufferData, because bufferSubData against a zero-sized store is
+      // INVALID_VALUE forever.
+      return;
     }
+
+    if (allocating) this.markTexture.allocate(gl, this.capacity, this.maxTextureSize);
+    this.uploadLabelAtlas(gl);
 
     gl.bindVertexArray(null);
     this.buffersInitialized = true;
+  }
+
+  /**
+   * Upload the glide's start positions and switch their attribute on, or, with
+   * no glide, switch it off and hand its storage back. Expects the point VAO bound.
+   */
+  private syncMorphAttribute(gl: WebGL2RenderingContext) {
+    if (!this.pointAttribLocations) return;
+    const location = this.pointAttribLocations.prevPosition;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.resources.prevPositionBuffer);
+    const from = this.glide.from;
+    if (from) {
+      this.uploadedBytes += from.byteLength;
+      gl.bufferData(gl.ARRAY_BUFFER, from, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(location);
+    } else {
+      gl.disableVertexAttribArray(location);
+      gl.bufferData(gl.ARRAY_BUFFER, 0, gl.STATIC_DRAW);
+    }
+  }
+
+  /** Switch the glide's attribute off once the glide ended. */
+  private glideEnded() {
+    const gl = this.gl;
+    if (!gl) return;
+    gl.bindVertexArray(this.resources.pointVao);
+    this.syncMorphAttribute(gl);
+    gl.bindVertexArray(null);
+  }
+
+  /**
+   * Rewrite the per-record table for the current category styles, leaving every
+   * staged buffer as it is. False when the staged points cannot be restyled that
+   * way (see `RecordStyleTable.restyle`); the caller then re-stages them.
+   */
+  private restyleRecords(pd: PlotData): boolean {
+    const gl = this.gl;
+    if (!this.recordTable.staged || !gl || pd !== this.sortedDataRef) return false;
+    // A style update re-sorts when it samples moved depths. Only a re-sort fixes
+    // an order that is already out of date, and staging decides when to re-sort.
+    if (this.stagedOrderStale || this.stagedDepthsMoved(pd)) return false;
+    const bytes = this.recordTable.restyle(gl, this.style.createStylePass(), this.stageArrays);
+    if (!bytes) return false;
+    this.uploadedBytes += bytes;
+    this.visibleCount = shownSlotCount(this.recordTable.staged);
+    this.drawnStateChanged();
+    return true;
+  }
+
+  /**
+   * The points drawn, their colours or their draw order changed: rebuild what is
+   * built from them, the density fields and the contour palette, and re-apply
+   * the marks.
+   */
+  private drawnStateChanged(): void {
+    this.bufferGeneration++;
+    this.contourPalette = null;
+    this.markTexture.stale = true;
+  }
+
+  /** Write `marks` over the staged points and upload them; see `MarkTexture.apply`. */
+  private applyMarks(marks: PointMarks | null) {
+    this.marks = marks;
+    // The contour palette ranks colours by draw position, which marks change.
+    // Applying them clears the staleness this sets.
+    this.drawnStateChanged();
+    this.uploadedBytes += this.markTexture.apply(this.gl, marks, {
+      order: this.sortOrder,
+      count: this.currentPointCount,
+      colors: this.stageArrays.colors,
+      recordIds: this.recordTable.ids,
+      hidden: this.recordTable.staged?.hidden,
+    });
+  }
+
+  /**
+   * After a colour-only restage of `count` slots: whether any slot's paint depth
+   * is no longer the one it was sorted by. The restage resolved them all.
+   */
+  private orderOutOfDate(count: number): boolean {
+    const { depth } = this.passScratch;
+    const { depths } = this.stageArrays;
+    for (let k = 0; k < count; k++) {
+      if (depth[this.sortOrder[k]] !== depths[k]) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether the first staged slots no longer have the paint depth the style
+   * getters give them: a per-point change nothing reported, which a restyle
+   * would leave on screen.
+   */
+  private stagedDepthsMoved(pd: PlotData): boolean {
+    const n = Math.min(100, this.currentPointCount);
+    for (let k = 0; k < n; k++) {
+      const sp = this.pointAt(pd, this.sortOrder[k]);
+      const opacity = this.style.getOpacity(sp);
+      if (opacity === 0) continue;
+      const depth = composePaintDepth(this.style.getDepth(sp), opacity, this.style.isPredicted(sp));
+      if (Math.abs(depth - this.stageArrays.depths[k]) > 1e-6) return true;
+    }
+    return false;
+  }
+
+  /** Slot `slot` of `pd` as the style getters see it, written into the scratch point. */
+  private pointAt(pd: PlotData, slot: number): PlotDataPoint {
+    const sp = this.scratchPoint;
+    const origIdx = plotDataOriginalIndex(pd, slot);
+    sp.id = pd.proteinIds[origIdx];
+    sp.x = pd.xs[slot];
+    sp.y = pd.ys[slot];
+    sp.originalIndex = origIdx;
+    return sp;
+  }
+
+  /** Count a staged slot that will be drawn. */
+  private countStagedSlot(opacity: number): void {
+    if (opacity > 0) this.visibleCount++;
   }
 
   /**
@@ -1473,28 +1783,8 @@ export class WebGLRenderer {
   }
 
   /**
-   * Build a fresh {@link StagePointArrays} view bound to the current parallel
-   * staging arrays. Call after any reallocation so `stagePoint` writes into the
-   * live buffers (zero copy — the struct only holds references).
-   */
-  private buildStageArrays(): StagePointArrays {
-    return {
-      dataPositions: this.dataPositions,
-      sizes: this.sizes,
-      colors: this.colors,
-      depths: this.depths,
-      labelCounts: this.labelCounts,
-      shapes: this.shapes,
-      predicted: this.predicted,
-      labelColorData: this.atlas?.texels ?? null,
-      maxLabels: this.atlas?.plan.stride ?? MAX_LABELS,
-    };
-  }
-
-  /**
    * Report a capability reduction to the host, at most once per reason per
-   * renderer instance. `resetRendererState` clears the latch, so a context loss
-   * and rebuild can report again.
+   * renderer instance. A context loss gets a new instance, which reports afresh.
    */
   private reportDegraded(reason: RendererDegradedReason, detail?: string) {
     if (this.degradeReported.has(reason)) return;
@@ -1525,7 +1815,7 @@ export class WebGLRenderer {
 
   /**
    * Hand the atlas back: drop the plan and its texels, and re-point the staging
-   * view so `stagePoint` writes no label texels.
+   * view so staging writes no label texels.
    *
    * Clearing `labelTextureInitialized` is what carries the release to the GPU —
    * the next `uploadLabelAtlas` takes the placeholder branch, which is the call
@@ -1536,7 +1826,17 @@ export class WebGLRenderer {
   private releaseLabelAtlas(): void {
     this.atlas = null;
     this.labelTextureInitialized = false;
-    this.stageArrays = this.buildStageArrays();
+    this.stageIntoAtlas();
+  }
+
+  /** Point staging at the current atlas: its texels and stride, or none. */
+  private stageIntoAtlas(): void {
+    this.stageArrays = {
+      ...this.stageArrays,
+      labelColorData: this.atlas?.texels ?? null,
+      maxLabels: this.atlas?.plan.stride ?? MAX_LABELS,
+      recordIds: null,
+    };
   }
 
   /**
@@ -1586,7 +1886,7 @@ export class WebGLRenderer {
 
     this.atlas = { plan, texels: new Uint8Array(plan.byteLength) };
     this.labelTextureInitialized = false;
-    this.stageArrays = this.buildStageArrays();
+    this.stageIntoAtlas();
     if (plan.stride < MAX_LABELS) this.reportDegraded('reduced-label-detail');
   }
 
@@ -1603,36 +1903,35 @@ export class WebGLRenderer {
     return this.style.isMultilabel?.() ?? true;
   }
 
+  /**
+   * Plan within the device: the drawable limit, and a mark texel per point, so
+   * growth across reloads never takes the marks off the GPU while the points
+   * themselves would have fit (see `canDrawMarks`).
+   */
   private planCapacity(minCapacity: number): number {
     return planRendererCapacity(
       minCapacity,
       this.capacity,
       MIN_CAPACITY,
       CAPACITY_GRANULARITY,
-      MAX_RENDERABLE_POINTS,
+      Math.min(MAX_DRAWABLE_POINTS, maxMarkedPoints(this.maxTextureSize)),
     );
   }
 
   private resizeCapacity(nextCapacity: number) {
     this.capacity = nextCapacity;
-    this.dataPositions = new Float32Array(nextCapacity * 2);
-    this.colors = new Float32Array(nextCapacity * 4);
-    this.sizes = new Float32Array(nextCapacity);
-    this.depths = new Float32Array(nextCapacity);
-    this.labelCounts = new Float32Array(nextCapacity);
-    this.shapes = new Float32Array(nextCapacity);
-    this.predicted = new Float32Array(nextCapacity);
+    this.stageArrays = createStageArrays(
+      nextCapacity,
+      this.atlas?.plan.stride ?? MAX_LABELS,
+      this.atlas?.texels ?? null,
+    );
+    this.recordTable.resize(nextCapacity);
     this.sortOrder = new Uint32Array(nextCapacity);
-    this.sortDepths = new Float32Array(nextCapacity);
+    this.passScratch = createPassScratch(nextCapacity);
     // The atlas is NOT touched here: its geometry depends on the device texture
     // limit, so `syncLabelAtlas` owns it and decides on this same populate pass
     // whether the existing plan still fits — which, since capacity can now shrink
     // as well as grow, it sometimes does.
-
-    // Re-point the staging view at the freshly reallocated arrays (zero copy).
-    // Still needed even though `syncLabelAtlas` also rebuilds it — that call
-    // returns early once the atlas is disabled, and these arrays are new.
-    this.stageArrays = this.buildStageArrays();
 
     this.buffersInitialized = false;
   }

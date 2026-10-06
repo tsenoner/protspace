@@ -4,14 +4,14 @@
  * This is a behavior-preserving extraction of the off-screen subsystem that
  * previously lived inline on `WebGLRenderer`. It owns the export pipeline:
  * create a throwaway WebGL2 context sized to the requested export dimensions,
- * stage the points (painter's-algorithm depth sort + F-15 two-pass selection
+ * stage the points (painter's-algorithm depth sort + two-pass selection
  * blend), render through the gamma-correct pipeline when the float extensions
  * are available (falling back to direct rendering otherwise), and copy the
  * result into a 2D canvas for safe export.
  *
- * It consumes the B3 substrate (`resolvePointLocations`, `setupAttributes`,
+ * It consumes the shared renderer primitives (`resolvePointLocations`, `setupAttributes`,
  * `createLinearFramebuffer`, `destroyFramebuffer`, `bindAndClearTarget`,
- * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stagePoint`,
+ * `setPointBlendState`, `drawGammaQuad`, `QUAD_VERTICES`, `stageInPaintOrder`,
  * `drawPoints`) and the live point/gamma shader sources, so it shares no
  * resource state with the live render pipeline.
  *
@@ -23,13 +23,12 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, PlotDataPoint, ScatterplotConfig } from '@protspace/utils';
+import type { PlotData, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
   type FramebufferResources,
   type PointUniformLocations,
-  MAX_RENDERABLE_POINTS,
 } from '../types';
 import { createProgramFromSources } from '../shader-utils';
 import { resolvePointLocations } from './point-locations';
@@ -48,25 +47,18 @@ import {
   DEFAULT_VIEWPORT_WIDTH,
   DEFAULT_VIEWPORT_HEIGHT,
 } from './viewport-defaults';
-import { stagePoint, type StagePointArrays } from './stage-point';
+import { createStageArrays, type StagePointArrays } from './stage-point';
 import { computePointScale } from './point-scale';
 import { planLabelAtlas, MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
-import {
-  readMaxTextureSize,
-  drainGlErrors,
-  allocateLabelAtlas,
-  uploadPlaceholderAtlas,
-} from './label-atlas-texture';
-import { buildPaintOrder, composePaintDepth } from './point-staging';
+import { allocateLabelAtlas, uploadPlaceholderAtlas } from './label-atlas-texture';
+import { MIN_CAPACITY, drainGlErrors, readMaxTextureSize } from './device-limits';
+import { createPassScratch, stageInPaintOrder } from './pass-staging';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
   GAMMA_VERTEX_SHADER,
   GAMMA_FRAGMENT_SHADER,
-} from './export-shaders';
-
-// Constants (moved verbatim from webgl-renderer.ts).
-const MIN_CAPACITY = 1024;
+} from './point-shaders';
 
 // Stable reference dimensions for margin scaling at export time. Tying margin
 // scaling to the live display canvas (via `config.width/height`, which track
@@ -95,7 +87,7 @@ interface ExportRenderOptions {
   dpr?: number;
   dataDomain?: DataDomain;
   pointSizeReference?: { width: number; height: number };
-  /** Live selection state, forwarded to preserve the F-15 two-pass blend. */
+  /** Live selection state, forwarded to preserve the two-pass selection blend. */
   selectionActive: boolean;
   /** Current live transform; scaled to the export dimensions internally. */
   transform: d3.ZoomTransform;
@@ -402,13 +394,11 @@ export class ExportRenderer {
     // Get attribute and uniform locations
     const { attribs, uniforms } = resolvePointLocations(gl, pointProgram);
 
-    const maxPoints = Math.min(pd.length, MAX_RENDERABLE_POINTS);
-
     // This context is not the live one, so it must be asked its own limit — but
     // the stride is inherited, so the exported figure segments its markers exactly
     // the way the screen did. A null stride is the live view saying it has no atlas.
     const labelAtlas = planLabelAtlas(
-      Math.max(MIN_CAPACITY, maxPoints),
+      Math.max(MIN_CAPACITY, pd.length),
       readMaxTextureSize(gl),
       options.labelStride === undefined ? MAX_LABELS : options.labelStride,
     );
@@ -425,14 +415,7 @@ export class ExportRenderer {
       labelColorData,
       pointCount,
       selectedStartIndex,
-    } = this.prepareOffscreenBufferData(
-      pd,
-      scales,
-      maxPoints,
-      style,
-      options.selectionActive,
-      labelAtlas,
-    );
+    } = this.prepareOffscreenBufferData(pd, scales, style, options.selectionActive, labelAtlas);
 
     // Create and upload buffers. The flag has to start clean for the check after
     // them to mean "these uploads failed": this context is fresh, but program
@@ -627,116 +610,40 @@ export class ExportRenderer {
   private prepareOffscreenBufferData(
     pd: PlotData,
     scales: ScalePair,
-    maxPoints: number,
     style: WebGLStyleGetters,
     selectionActive: boolean,
     labelAtlas: LabelAtlasPlan | null = null,
-  ): {
-    dataPositions: Float32Array;
-    sizes: Float32Array;
-    colors: Float32Array;
-    depths: Float32Array;
-    labelCounts: Float32Array;
-    shapes: Float32Array;
-    predicted: Float32Array;
-    labelColorData: Uint8Array | null;
-    pointCount: number;
-    selectedStartIndex: number;
-  } {
-    const capacity = Math.max(MIN_CAPACITY, maxPoints);
-    const dataPositions = new Float32Array(capacity * 2);
-    const sizes = new Float32Array(capacity);
-    const colors = new Float32Array(capacity * 4);
-    const depths = new Float32Array(capacity);
-    const labelCounts = new Float32Array(capacity);
-    const shapes = new Float32Array(capacity);
-    const predicted = new Float32Array(capacity);
-    // Sized from the plan, which already accounts for the device limit and the
-    // stride inherited from the live view. Null when no atlas is in play — the
-    // export then costs nothing for a feature it is not using.
-    const labelColorData = labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null;
-
-    // Stage slots by depth using the SAME canonical painter-order plan as the
-    // live path (buildPaintOrder): the live path is canonical, so the export
-    // includes opacity-0 slots (invisible — F-15 pixels unchanged) and uses the
-    // identical stable far->near sort and the same sorted-k selectedStartIndex.
-    const { xs, ys } = pd;
-    const oi = pd.originalIndices;
-    const sp: PlotDataPoint = { id: '', x: 0, y: 0, originalIndex: 0 };
-    const count = maxPoints;
-
-    const target: StagePointArrays = {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      maxLabels: labelAtlas?.stride ?? MAX_LABELS,
-    };
-
-    // Per-slot depth scratch indexed by ORIGINAL slot index, then the index order
-    // sorted far->near in place. Sized to the staged count (export has no persistent
-    // scratch, so allocate locally per call).
-    const order = new Uint32Array(count);
-    const depthScratch = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const origIdx = oi ? oi[i] : i;
-      sp.id = pd.proteinIds[origIdx];
-      sp.x = xs[i];
-      sp.y = ys[i];
-      sp.originalIndex = origIdx;
-      depthScratch[i] = composePaintDepth(
-        style.getDepth(sp),
-        style.getOpacity(sp),
-        style.isPredicted(sp),
-      );
-    }
-
-    const { selectedStartIndex } = buildPaintOrder(
-      order,
-      depthScratch,
-      count,
-      selectionActive,
-      (k, srcSlot) => {
-        const origIdx = oi ? oi[srcSlot] : srcSlot;
-        sp.id = pd.proteinIds[origIdx];
-        sp.x = xs[srcSlot];
-        sp.y = ys[srcSlot];
-        sp.originalIndex = origIdx;
-        const opacity = style.getOpacity(sp);
-
-        // Depth uses depthScratch[srcSlot] (indexed by original slot), NOT
-        // depthScratch[k], matching the live path.
-        stagePoint(
-          target,
-          k,
-          sp,
-          scales.x(xs[srcSlot]),
-          scales.y(ys[srcSlot]),
-          opacity,
-          depthScratch[srcSlot],
-          style,
-        );
-
-        return opacity;
-      },
+  ): StagePointArrays & { pointCount: number; selectedStartIndex: number } {
+    const target = createStageArrays(
+      Math.max(MIN_CAPACITY, pd.length),
+      labelAtlas?.stride ?? MAX_LABELS,
+      // Sized from the plan, which already accounts for the device limit and the
+      // stride inherited from the live view. Null when no atlas is in play — the
+      // export then costs nothing for a feature it is not using.
+      labelAtlas ? new Uint8Array(labelAtlas.byteLength) : null,
     );
 
-    return {
-      dataPositions,
-      sizes,
-      colors,
-      depths,
-      labelCounts,
-      shapes,
-      predicted,
-      labelColorData,
-      pointCount: count,
-      selectedStartIndex,
-    };
+    // Stage slots by depth through the SAME staging as the live path
+    // (stageInPaintOrder): the live path is canonical, so the export includes
+    // opacity-0 slots (invisible — two-pass selection pixels unchanged) and uses the identical
+    // stable far->near sort and the same sorted-k selectedStartIndex.
+    const count = pd.length;
+
+    // The index order and the per-slot pass scratch, sized to the staged count
+    // (export has no persistent scratch, so allocate locally per call).
+    const order = new Uint32Array(count);
+    const { selectedStartIndex } = stageInPaintOrder(
+      target,
+      style.createStylePass(),
+      createPassScratch(count),
+      order,
+      pd,
+      scales,
+      count,
+      selectionActive,
+    );
+
+    return { ...target, pointCount: count, selectedStartIndex };
   }
 
   /**

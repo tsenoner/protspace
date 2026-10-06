@@ -118,8 +118,28 @@ score strips above the legend and a Separation section in the projection metadat
 property of the file, not a setting you toggle.
 
 ::: info Loading Time
-Small datasets (< 10K proteins) load instantly. Larger datasets may take a few seconds to process and render.
+Small datasets (< 10K proteins) load instantly. Larger ones take a few seconds: on an Apple M4
+laptop, Swiss-Prot (573K proteins) is ready in about 1.5 s, and a synthetic bundle of 5M proteins in
+about 4 s. The [FAQ](/guide/faq#what-is-the-recommended-dataset-size) lists what to expect at each
+size.
 :::
+
+## Dataset size limits
+
+A current (format v3) `.parquetbundle` has no limit on the number of proteins, and every point is
+drawn. Three limits remain:
+
+- A file larger than 2 GiB is refused with a `File too large: … MB exceeds the 2048 MB limit`
+  message.
+- The plot draws at most 67,108,864 (2^26) points. A larger dataset is not drawn at all, and a
+  `Too many points to draw.` notice says so.
+- An older v1 or v2 bundle is refused when it holds more than 2,000,000 rows of projection data,
+  counted as proteins × projections. The message asks you to run
+  [`protspace convert`](/guide/python-cli#protspace-convert) on the file, which upgrades it to the
+  current format.
+
+Smaller v1 and v2 bundles still load, with a notice that these formats stop opening in ProtSpace
+5.0.0. See [Legacy formats](/guide/data-format#legacy-formats-v1-and-v2) for how to convert them.
 
 ## Data & Settings Persistence
 

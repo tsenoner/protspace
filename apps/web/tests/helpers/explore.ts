@@ -249,6 +249,99 @@ export async function importUserFile(
   await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(file);
 }
 
+type ViewHost = Element & { selectedAnnotation?: string; selectedProjectionIndex?: number };
+
+/** Wait until every element in `selectors` reports `value` for `key`. */
+async function waitForViewState(
+  page: Page,
+  key: 'selectedAnnotation' | 'selectedProjectionIndex',
+  value: string | number,
+  selectors: string[],
+): Promise<void> {
+  try {
+    await page.waitForFunction(
+      ({ key, value, selectors }) =>
+        selectors.every(
+          (selector) => (document.querySelector(selector) as ViewHost | null)?.[key] === value,
+        ),
+      { key, value, selectors },
+      { timeout: 10_000 },
+    );
+  } catch (error) {
+    const actual = await page
+      .evaluate(
+        ({ key, selectors }) =>
+          selectors
+            .map((s) => `${s} ${String((document.querySelector(s) as ViewHost | null)?.[key])}`)
+            .join(', '),
+        { key, selectors },
+      )
+      .catch(() => 'unreadable');
+    throw new Error(`${key} never became ${JSON.stringify(value)} (still ${actual})`, {
+      cause: error,
+    });
+  }
+}
+
+/**
+ * Click a control-bar menu item and wait until the control bar applies the pick. It does
+ * that after the next paint and then dispatches `event`, also when the pick re-selects the
+ * current value and so changes no state a test could wait for.
+ */
+async function pickFromMenu(
+  page: Page,
+  item: Locator,
+  event: 'annotation-change' | 'projection-change',
+): Promise<void> {
+  const applied = await page.locator('protspace-control-bar').evaluateHandle((bar, type) => {
+    const state = { done: false };
+    bar.addEventListener(
+      type,
+      () => {
+        state.done = true;
+      },
+      { once: true },
+    );
+    return state;
+  }, event);
+  await item.click();
+  await page.waitForFunction((state) => state.done, applied, { timeout: 10_000 });
+  await applied.dispose();
+}
+
+export async function selectAnnotation(page: Page, annotation: string): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const select = page.locator('protspace-control-bar protspace-annotation-select');
+  // Items show the display label but carry the raw key on data-annotation.
+  const item = select.locator(`.dropdown-item[data-annotation="${annotation}"]`).first();
+  // The trigger toggles, so only click it when the menu is closed.
+  if (!(await item.isVisible())) await select.locator('.dropdown-trigger').click();
+  await expect(item, `annotation menu item "${annotation}" not shown`).toBeVisible({
+    timeout: 5_000,
+  });
+  await pickFromMenu(page, item, 'annotation-change');
+  await waitForViewState(page, 'selectedAnnotation', annotation, [
+    '#myPlot',
+    'protspace-control-bar',
+    'protspace-legend',
+  ]);
+}
+
+/** Pick a projection by its position in the menu, or by its label. */
+export async function selectProjection(page: Page, projection: number | string): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const controlBar = page.locator('protspace-control-bar');
+  await controlBar.locator('#projection-trigger').click();
+  const item =
+    typeof projection === 'number'
+      ? controlBar.locator('.projection-container .dropdown-item').nth(projection)
+      : controlBar.getByRole('option', { name: projection, exact: true });
+  await pickFromMenu(page, item, 'projection-change');
+  if (typeof projection === 'number') {
+    await waitForViewState(page, 'selectedProjectionIndex', projection, ['#myPlot']);
+  }
+}
+
 export async function getFirstLegendItemValue(page: Page): Promise<string> {
   const value = await page.evaluate(() => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {

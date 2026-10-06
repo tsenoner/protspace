@@ -11,6 +11,7 @@
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
+import { DataProcessor } from '@protspace/utils';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -156,7 +157,7 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     el.data = data;
     el.selectedProjectionIndex = 0;
 
-    // Active view filter excludes p4, so _getCurrentDisplayData returns a strict
+    // Active view filter excludes p4, so the filtered view is a strict
     // subset (length 4 != full length 5). That defeats the originalIndices fast-path
     // length guard and forces the membership-scan fallback.
     el.filtersActive = true;
@@ -184,6 +185,91 @@ describe('scatter-plot getCurrentData (isolation slicing)', () => {
     expect(r.numeric_annotation_data?.num).toEqual(new Float64Array([101, 103]));
     expect(Array.from(r.projections[0].data)).toEqual([10, 11, 30, 33]);
   });
+
+  it('hands back the same view until the isolation or the filter changes', () => {
+    const el = document.createElement('protspace-scatterplot') as SlicingInternals;
+    el.data = buildData();
+    el._isolationMode = true;
+    el._isolationHistory = [['p1', 'p3', 'p4']];
+
+    const first = el.getCurrentData();
+    expect(el.getCurrentData()).toBe(first);
+
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0', 'p3', 'p4'];
+    const filtered = el.getCurrentData();
+    expect(filtered).not.toBe(first);
+    expect(filtered?.protein_ids).toEqual(['p3', 'p4']);
+
+    el._isolationHistory.push(['p4']);
+    expect(el.getCurrentData()?.protein_ids).toEqual(['p4']);
+  });
+});
+
+describe('scatter-plot isolateSelection (layers)', () => {
+  type LayerInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedProteinIds: string[];
+    filtersActive: boolean;
+    filteredProteinIds: string[];
+    _isolationHistory: string[][];
+    _plotData: PlotData;
+    _processData(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
+    isolateSelection(): void;
+    getCurrentData(): VisualizationData | null;
+  };
+
+  function makeEl(): LayerInternals {
+    const ids = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'];
+    const el = document.createElement('protspace-scatterplot') as LayerInternals;
+    el.data = {
+      protein_ids: ids,
+      projections: [{ name: 'proj', dimension: 2, data: new Float32Array(12) }],
+      annotations: {
+        cat: { kind: 'categorical', values: ['A'], colors: ['#000000'], shapes: ['circle'] },
+      },
+      annotation_data: { cat: new Int32Array(6) },
+    };
+    el._plotData = {
+      length: 6,
+      xs: new Float32Array(6),
+      ys: new Float32Array(6),
+      zs: null,
+      originalIndices: null,
+      proteinIds: ids,
+    };
+    vi.spyOn(el, '_processData').mockImplementation(() => {});
+    vi.spyOn(el._pointGrid, 'rebuildNow').mockImplementation(() => {});
+    return el;
+  }
+
+  it('keeps only selected ids in the current view, in selection order', () => {
+    const el = makeEl();
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0', 'p1', 'p2', 'p3', 'p4'];
+    el.selectedProteinIds = ['p4', 'unknown', 'p1', 'p5', 'p2'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([['p4', 'p1', 'p2']]);
+
+    // Nested: p2 and p4 are in the isolation, p0 is not.
+    el.selectedProteinIds = ['p0', 'p4', 'p2'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([
+      ['p4', 'p1', 'p2'],
+      ['p4', 'p2'],
+    ]);
+    expect(el.getCurrentData()?.protein_ids).toEqual(['p2', 'p4']);
+  });
+
+  it('adds no layer when no selected id is in the current view', () => {
+    const el = makeEl();
+    el.selectedProteinIds = ['p1'];
+    el.isolateSelection();
+    el.selectedProteinIds = ['p0', 'unknown'];
+    el.isolateSelection();
+    expect(el._isolationHistory).toEqual([['p1']]);
+  });
 });
 
 describe('scatter-plot isolation render-refresh sequence', () => {
@@ -195,16 +281,14 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     _isolationHistory: string[][];
     _plotData: PlotData;
     _lastDataRef: unknown;
-    _styleSig: string | null;
     _webglRenderer?: {
       invalidatePositionCache(): void;
       invalidateStyleCache(): void;
-      setStyleSignature(sig: string | null): void;
     };
     _processData(): void;
-    _buildPointGridIndex(): void;
-    _updateStyleSignature(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
     _renderPlot(): void;
+    _renderLoop: { flush(): void };
     isolateSelection(): void;
     resetIsolation(): void;
     resetZoom(): void;
@@ -258,12 +342,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
   function instrument(el: RefreshInternals) {
     const calls: string[] = [];
     vi.spyOn(el, '_processData').mockImplementation(() => calls.push('processData'));
-    vi.spyOn(el, '_buildPointGridIndex').mockImplementation(() =>
-      calls.push('buildPointGridIndex'),
-    );
-    vi.spyOn(el, '_updateStyleSignature').mockImplementation(() =>
-      calls.push('updateStyleSignature'),
-    );
+    vi.spyOn(el._pointGrid, 'rebuildNow').mockImplementation(() => calls.push('rebuildGrid'));
     vi.spyOn(el, '_renderPlot').mockImplementation(() => calls.push('renderPlot'));
     // jsdom element is not connected, so updateComplete is an already-resolved promise.
     Object.defineProperty(el, 'updateComplete', {
@@ -274,7 +353,7 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     return { calls, requestUpdate };
   }
 
-  it('isolateSelection runs processData → buildPointGridIndex → requestUpdate, then defers renderPlot', async () => {
+  it('isolateSelection runs processData → rebuildGrid → requestUpdate, then requests renderPlot', async () => {
     const el = makeEl();
     el.selectedProteinIds = ['p1', 'p3'];
     const { calls, requestUpdate } = instrument(el);
@@ -282,37 +361,41 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     el.isolateSelection();
 
     // Synchronous portion: process + point index happen before requestUpdate; render is deferred.
-    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
+    expect(calls).toEqual(['processData', 'rebuildGrid']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
+    el._renderLoop.flush();
+    expect(calls).toEqual(['processData', 'rebuildGrid', 'renderPlot']);
   });
 
-  it('resetIsolation nulls _lastDataRef BEFORE reprocess, then runs the same refresh sequence', async () => {
+  it('resetIsolation nulls _plotDataBuild BEFORE reprocess, then runs the same refresh sequence', async () => {
     const el = makeEl();
     el._isolationMode = true;
     el._isolationHistory = [['p1', 'p3']];
-    el._lastDataRef = { stale: true };
+    el._plotDataBuild = { stale: true };
     const { calls, requestUpdate } = instrument(el);
-    // Capture _lastDataRef at the moment _processData is (re)invoked.
-    let lastDataRefAtProcess: unknown = 'unset';
+    // Capture _plotDataBuild at the moment _processData is (re)invoked.
+    let buildAtProcess: unknown = 'unset';
     (
       el._processData as unknown as { mockImplementation: (f: () => void) => void }
     ).mockImplementation(() => {
-      lastDataRefAtProcess = el._lastDataRef;
+      buildAtProcess = el._plotDataBuild;
       calls.push('processData');
     });
 
     el.resetIsolation();
 
     // Divergence preserved: cleared before the shared refresh block runs.
-    expect(lastDataRefAtProcess).toBeNull();
-    expect(calls).toEqual(['processData', 'buildPointGridIndex']);
+    expect(buildAtProcess).toBeNull();
+    expect(calls).toEqual(['processData', 'rebuildGrid']);
     expect(requestUpdate).toHaveBeenCalled();
 
+    // The settled update requests the render; flushing draws it without a frame.
     await el.updateComplete;
-    expect(calls).toEqual(['processData', 'buildPointGridIndex', 'renderPlot']);
+    el._renderLoop.flush();
+    expect(calls).toEqual(['processData', 'rebuildGrid', 'renderPlot']);
   });
 
   it.each([
@@ -331,38 +414,28 @@ describe('scatter-plot isolation render-refresh sequence', () => {
         el.resetIsolation();
       },
     ],
-  ])(
-    '%s invalidates the WebGL caches and pushes the fresh style signature before the deferred render',
-    async (_name, act) => {
-      const el = makeEl();
-      const { calls } = instrument(el);
-      el._webglRenderer = {
-        invalidatePositionCache: vi.fn(() => calls.push('invalidatePositionCache')),
-        invalidateStyleCache: vi.fn(() => calls.push('invalidateStyleCache')),
-        setStyleSignature: vi.fn((sig) => calls.push(`setStyleSignature:${sig}`)),
-      };
-      (
-        el._updateStyleSignature as unknown as { mockImplementation: (f: () => void) => void }
-      ).mockImplementation(() => {
-        el._styleSig = 'sig-after-refresh';
-        calls.push('updateStyleSignature');
-      });
+  ])('%s invalidates the WebGL caches before the deferred render', async (_name, act) => {
+    const el = makeEl();
+    const { calls } = instrument(el);
+    el._webglRenderer = {
+      invalidatePositionCache: vi.fn(() => calls.push('invalidatePositionCache')),
+      invalidateStyleCache: vi.fn(() => calls.push('invalidateStyleCache')),
+    };
 
-      act(el);
+    act(el);
 
-      const refresh = [
-        'processData',
-        'buildPointGridIndex',
-        'invalidatePositionCache',
-        'invalidateStyleCache',
-        'updateStyleSignature',
-        'setStyleSignature:sig-after-refresh',
-      ];
-      expect(calls).toEqual(refresh);
-      await el.updateComplete;
-      expect(calls).toEqual([...refresh, 'renderPlot']);
-    },
-  );
+    const refresh = [
+      'processData',
+      'rebuildGrid',
+      'invalidatePositionCache',
+      'invalidateStyleCache',
+    ];
+    expect(calls).toEqual(refresh);
+    await el.updateComplete;
+    // The render waits for the next frame.
+    el._renderLoop.flush();
+    expect(calls).toEqual([...refresh, 'renderPlot']);
+  });
 
   // #297: zooming into a region and then isolating should snap back to the full
   // view of the isolated subset, not keep the stale pre-isolation zoom transform.
@@ -397,5 +470,96 @@ describe('scatter-plot isolation render-refresh sequence', () => {
     el.resetIsolation();
 
     expect(resetZoom).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('scatter-plot full view kept across a cull', () => {
+  type FullViewInternals = HTMLElement & {
+    data: VisualizationData;
+    selectedAnnotation: string;
+    selectedProjectionIndex: number;
+    selectedProteinIds: string[];
+    filtersActive: boolean;
+    filteredProteinIds: string[];
+    _plotData: PlotData;
+    _pointGridIndex: unknown;
+    _processData(): void;
+    _pointGrid: { rebuildNow(): void; grid: unknown };
+    isolateSelection(): void;
+    resetIsolation(): void;
+    resetZoom(): void;
+  };
+
+  function makeEl(): FullViewInternals {
+    const el = document.createElement('protspace-scatterplot') as FullViewInternals;
+    el.data = {
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [
+        { name: 'a', dimension: 2, data: new Float32Array([0, 0, 1, 1, 2, 2, 3, 3]) },
+        { name: 'b', dimension: 2, data: new Float32Array([3, 3, 2, 2, 1, 1, 0, 0]) },
+      ],
+      annotations: {
+        cat: { kind: 'categorical', values: ['A'], colors: ['#000000'], shapes: ['circle'] },
+      },
+      annotation_data: { cat: new Int32Array(4) },
+    };
+    el.selectedAnnotation = 'cat';
+    el.selectedProjectionIndex = 0;
+    vi.spyOn(el, 'resetZoom').mockImplementation(() => {});
+    el._processData();
+    el._pointGrid.rebuildNow();
+    return el;
+  }
+
+  function isolate(el: FullViewInternals, ids: string[]) {
+    el.selectedProteinIds = ids;
+    el.isolateSelection();
+  }
+
+  it('swaps the full plot data and point grid back on reset, through nested isolation', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    const grid = el._pointGrid.grid;
+    const rebuild = vi.spyOn(DataProcessor, 'processVisualizationData');
+
+    isolate(el, ['p1', 'p2', 'p3']);
+    isolate(el, ['p2']);
+    expect(el._plotData.length).toBe(1);
+    expect(el._pointGrid.grid).not.toBe(grid);
+    rebuild.mockClear();
+    const reindex = vi.spyOn(grid as { rebuild(): void }, 'rebuild');
+
+    el.resetIsolation();
+    expect(el._plotData).toBe(full);
+    expect(el._pointGrid.grid).toBe(grid);
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(reindex).not.toHaveBeenCalled();
+    rebuild.mockRestore();
+  });
+
+  it('swaps the full view back when a query filter clears', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    el.filtersActive = true;
+    el.filteredProteinIds = ['p0'];
+    el._processData();
+    expect(el._plotData.length).toBe(1);
+
+    el.filtersActive = false;
+    el.filteredProteinIds = [];
+    el._processData();
+    expect(el._plotData).toBe(full);
+  });
+
+  it('rebuilds when the projection changed during the isolation', () => {
+    const el = makeEl();
+    const full = el._plotData;
+    isolate(el, ['p1', 'p2']);
+    el.selectedProjectionIndex = 1;
+    el._processData();
+
+    el.resetIsolation();
+    expect(el._plotData).not.toBe(full);
+    expect(Array.from(el._plotData.xs)).toEqual([3, 2, 1, 0]);
   });
 });

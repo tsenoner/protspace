@@ -21,6 +21,12 @@ The shared event contract uses these minimum fields:
 
 See [Messaging Conventions](./messaging.md) for the full ownership model and host integration guidance.
 
+## Scatter plot rendering
+
+The scatter plot draws its points with WebGL2. [Render pipeline](./render-pipeline.md) describes how
+a frame is drawn: staging, the per-category style table, the selection marks, the projection glide,
+the render loop and the device limits. It also lists the checks that keep the pipeline fast.
+
 ## Legend Component
 
 The legend component uses a controller-based architecture for separation of concerns.

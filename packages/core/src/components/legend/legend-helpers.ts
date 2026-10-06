@@ -269,3 +269,45 @@ export function isolateItem(
 
   return { items: updatedItems, hiddenValues };
 }
+
+/** The mouse click that toggled an item: the legend before it and as it left it. */
+export interface FirstClick {
+  valueKey: string;
+  itemsBefore: LegendItem[];
+  itemsAfter: LegendItem[];
+}
+
+/**
+ * A mouse double-click arrives as click (detail 1), click (detail 2), dblclick, the last two in
+ * one task. True for that second click: toggling on it only to isolate right after would hand the
+ * plot the item's hide, show and isolate as separate states, so it is left to the dblclick. Touch
+ * and pen clicks keep toggling: not every engine sends a dblclick for a double tap.
+ */
+export function isSecondClickOfDouble(
+  firstClick: FirstClick | null,
+  valueKey: string,
+  click: { detail: number; pointerType?: string },
+): boolean {
+  return (
+    click.detail === 2 &&
+    firstClick?.valueKey === valueKey &&
+    click.pointerType !== 'touch' &&
+    click.pointerType !== 'pen'
+  );
+}
+
+/**
+ * The items a dblclick isolates from: the legend as it stood before the first click, so that
+ * click's hide or show does not leak into the result and double-clicking the isolated item
+ * restores the full set, as `isolateItem` intends. The current items when the first click was
+ * on another item or something else has moved the legend since.
+ */
+export function isolationBase(
+  firstClick: FirstClick | null,
+  valueKey: string,
+  items: LegendItem[],
+): LegendItem[] {
+  return firstClick?.valueKey === valueKey && firstClick.itemsAfter === items
+    ? firstClick.itemsBefore
+    : items;
+}

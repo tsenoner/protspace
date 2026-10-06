@@ -53,13 +53,22 @@ Yes. ProtSpace is open source under the MIT license.
 
 ### What is the recommended dataset size?
 
-| Size           | Performance                       |
-| -------------- | --------------------------------- |
-| < 10K proteins | Optimal - smooth experience       |
-| 10K - 500K     | Good - may slow on older devices  |
-| > 500K         | Challenging - consider subsetting |
+Any size up to the limits in the last two rows works; larger datasets load and respond more
+slowly. Measured on an Apple M4 laptop in Chromium:
 
-Browser performance varies by device and GPU capabilities.
+| Proteins                                                       | What to expect                                                                                                                                                                                        |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Up to 573K ([Swiss-Prot](/explore/example-datasets#swissprot)) | Loads in about 1.5 s, not counting the download. Switching the annotation or the projection, isolating legend values and selecting points each take tens of milliseconds. Pan and zoom run at 60 fps. |
+| 2.5M                                                           | Loads in about 2.5 s. Pan, zoom and the projection glide stay at 60 fps. Switching the annotation holds the plot for about 0.5 s, and switching projections for about 0.3 s.                          |
+| 5M                                                             | Loads in about 4 s. Pan and zoom drop to about 30 fps. Switching the annotation holds the plot for about 0.9 s, switching projections or exporting an image for about 0.5 s.                          |
+| More than 67,108,864 (2^26)                                    | Not drawn. A "Too many points to draw" notice says so.                                                                                                                                                |
+| v1 or v2 bundle over 2,000,000 rows                            | Refused, with a message to run [`protspace convert`](/guide/python-cli#protspace-convert) on the file. Rows are counted as proteins x projections.                                                    |
+
+The 2.5M and 5M rows come from synthetic bundles with two annotations and short IDs, so a real
+dataset of that size takes longer. A slower device or GPU takes longer too.
+
+[Performance](/guide/performance) has measurements up to 21 million proteins, with real annotations,
+plus memory needs and how to run the benchmark on your own computer.
 
 ### Can I add custom annotations?
 
@@ -108,23 +117,21 @@ Annotations with multiple values per protein (e.g., multiple EC numbers). Displa
 
 ### How many proteins can I visualize?
 
-Up to 2,000,000 per projection. Points are staged once and the camera is a shader uniform, so
-panning and zooming cost the same at a million points as at a hundred thousand.
+Every point is drawn, up to 67,108,864 (2^26) per projection. That bound comes from the size of
+the GPU buffers, not from the file format. A dataset past it is not drawn at all, and a "Too many
+points to draw" notice says so; nothing is dropped silently. Files up to 2 GiB are accepted. On
+GPUs with a small texture limit, multi-value points in a very large dataset may be drawn with
+fewer colour slices, and a notice says so.
 
-**Loading is the slow part.** On a modern laptop expect roughly 25 seconds at 1M proteins and 40
-seconds at 2M. The [Swiss-Prot example](/explore/example-datasets#swissprot), 573K proteins in two
-projections with every annotation (87.8 MB), loads in about 10 seconds on a fast laptop (an Apple
-M4 Pro), not counting the download, and needs at least 0.4 GB of browser memory. Memory is the real
-ceiling — a 2M bundle peaks around 2.6 GB of browser heap — which is why the limit sits where it
-does.
+For load and interaction times at 573K, 2.5M and 5M proteins, see
+[What is the recommended dataset size?](#what-is-the-recommended-dataset-size).
+[Performance](/guide/performance) goes up to 21 million proteins and covers memory.
 
-Bundles above the limit are refused at load with a message naming it. Nothing is ever dropped
-silently.
-
-::: tip
-A bundle's rows are counted as proteins x projections, so a 1.2M-protein bundle carrying two
-projections is 2.4M rows and will be refused. Split the projections into separate bundles if you
-need both.
+::: tip Older bundles
+Bundles from before format v3 are decoded row by row, at about 1.3 GB of browser memory per
+million rows. They are refused above 2,000,000 rows, counted as proteins x projections, with a
+message that says so. Run [`protspace convert`](/guide/python-cli#protspace-convert) to upgrade
+the file; the current format has no row limit.
 :::
 
 ## Technical

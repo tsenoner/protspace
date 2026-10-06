@@ -86,7 +86,7 @@ nothing.
 
 ```bash
 gh workflow run e2e.yml --ref <branch>   # in CI, any branch
-pnpm test:e2e                            # locally
+pnpm test:e2e && pnpm perf:counts        # locally
 ```
 
 **Never dismiss a red run as flaky on the strength of local passes.** The regression behind

@@ -1,5 +1,10 @@
 import type { AnnotationData } from '@protspace/utils';
-import { isCsrAnnotationData, isSparseMultiValueAnnotationData } from '@protspace/utils';
+import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
+  isSparseMultiValueAnnotationData,
+} from '@protspace/utils';
 import type { LegendItem, OtherItem, LegendSortMode, PersistedCategoryData } from './types';
 import { getVisualEncoding, SlotTracker } from './visual-encoding';
 import {
@@ -29,6 +34,38 @@ export function createProcessorContext(): LegendProcessorContext {
     slotTracker: new SlotTracker(),
     currentAnnotation: null,
   };
+}
+
+/**
+ * The filled bins of a {@link LegendDataProcessor.countFromStorage} count, in the order a walk
+ * over the proteins first hits them. A second walk rather than bookkeeping in the count, which
+ * would slow every count down; it stops once it has met every filled bin.
+ */
+function binsInProteinOrder(
+  colData: AnnotationData,
+  bins: Int32Array,
+  proteinCount: number,
+  filteredIndices: ReadonlySet<number> | null,
+): number[] {
+  const naBin = bins.length - 1;
+  let left = 0;
+  for (let bin = 0; bin <= naBin; bin++) if (bins[bin] > 0) left++;
+  const seen = new Uint8Array(bins.length);
+  const order: number[] = [];
+  for (let i = 0; i < proteinCount && left > 0; i++) {
+    if (filteredIndices !== null && !filteredIndices.has(i)) continue;
+    const hits = getProteinAnnotationCount(colData, i);
+    for (let k = 0; k < hits; k++) {
+      const code = getProteinAnnotationIndexAt(colData, i, k);
+      const bin = code >= 0 && code < naBin ? code : naBin;
+      if (seen[bin] === 0) {
+        seen[bin] = 1;
+        order.push(bin);
+        left--;
+      }
+    }
+  }
+  return order;
 }
 
 /**
@@ -92,6 +129,10 @@ export class LegendDataProcessor {
    * means "no annotation" and contributes nothing, while any code outside
    * `[0, values.length)` inside a hit list resolves to `undefined` and lands in
    * the `__NA__` bucket, exactly as `toInternalValue(values[code])` did.
+   *
+   * Keys come in storage order, `__NA__` last. With `proteinOrder` they come in the
+   * order the proteins first meet them, the order a per-protein list gives
+   * {@link countAnnotationFrequencies}. Sorting by count keeps ties in this order.
    */
   static countFromStorage(
     colData: AnnotationData,
@@ -99,6 +140,7 @@ export class LegendDataProcessor {
     proteinCount: number,
     filteredIndices: ReadonlySet<number> | null,
     knownValues: string[] = [],
+    proteinOrder = false,
   ): Map<string, number> {
     const valueCount = values.length;
     // One extra slot for every code that does not address a real value.
@@ -152,12 +194,17 @@ export class LegendDataProcessor {
     }
 
     const freq = new Map<string, number>(knownValues.map((value) => [value, 0] as const));
-    for (let i = 0; i < valueCount; i++) {
-      if (bins[i] === 0) continue;
-      const key = toInternalValue(values[i]);
-      freq.set(key, (freq.get(key) ?? 0) + bins[i]);
+    const add = (bin: number) => {
+      const key = bin === naBin ? NA_VALUE : toInternalValue(values[bin]);
+      freq.set(key, (freq.get(key) ?? 0) + bins[bin]);
+    };
+    if (proteinOrder) {
+      binsInProteinOrder(colData, bins, proteinCount, filteredIndices).forEach(add);
+    } else {
+      for (let bin = 0; bin <= naBin; bin++) {
+        if (bins[bin] > 0) add(bin);
+      }
     }
-    if (bins[naBin] > 0) freq.set(NA_VALUE, (freq.get(NA_VALUE) ?? 0) + bins[naBin]);
     return freq;
   }
 

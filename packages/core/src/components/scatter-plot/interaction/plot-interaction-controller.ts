@@ -16,7 +16,7 @@ export interface PlotInteractionHost {
   // Readiness: whether the host's scales (and thus data) exist yet. Mirrors main's
   // `!this._scales` guard so updateSelectionMode is a no-op before data arrives.
   hasScales(): boolean;
-  // host owns _transform (F-48): the controller reads it back through this getter
+  // host owns _transform as a plain, non-reactive field: the controller reads it back through this getter
   // rather than keeping a parallel copy. applyZoom funnels new transforms through
   // onTransform first, so reads here always see the latest value.
   getTransform(): d3.ZoomTransform;
@@ -24,7 +24,7 @@ export interface PlotInteractionHost {
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
   resolveSlotsToIds(slots: number[]): string[];
-  // callbacks — dispatch stays on the host (INV-03/INV-05)
+  // callbacks — event dispatch stays on the host
   onTransform(t: d3.ZoomTransform): void;
   onSelect(ids: string[], clearVisual: () => void): void;
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
@@ -36,9 +36,9 @@ export interface PlotInteractionHost {
 
 /**
  * Owns the d3 zoom/brush/lasso interaction layer, the three SVG groups, and the
- * zoom/lasso RAF loops, lifted out of the scatter-plot god component (F-07). It
+ * zoom/lasso RAF loops, lifted out of the scatter-plot god component. It
  * signals the host via callbacks; the host keeps event dispatch and owns the
- * transform value (written back via onTransform — F-48). Hover throttling and
+ * transform value (written back via onTransform). Hover throttling and
  * picking stay on the host (host-only point index/visibility access).
  */
 export class PlotInteractionController {
@@ -52,9 +52,13 @@ export class PlotInteractionController {
   private _lassoVertices: Array<[number, number]> = [];
   private _lassoPath: SVGPathElement | null = null;
   private _isLassoing = false;
+  // Selection mode turned on before the host had scales: its tool is not set up yet.
+  private _selectionAwaitsScales = false;
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
+  // Reset transitions not yet over. d3 ends, interrupts or cancels each exactly once.
+  private _resetsInFlight = 0;
 
   constructor(private readonly host: PlotInteractionHost) {}
 
@@ -66,6 +70,9 @@ export class PlotInteractionController {
   }
   get isBrushing() {
     return this._isBrushing;
+  }
+  get selectionAwaitsScales() {
+    return this._selectionAwaitsScales;
   }
 
   /**
@@ -108,7 +115,7 @@ export class PlotInteractionController {
 
   /** Apply a transform (from the d3 zoom handler or programmatic reset). */
   applyZoom(t: d3.ZoomTransform): void {
-    // Host owns the transform (F-48): write it back first so the brush-extent sync
+    // Host owns the transform: write it back first so the brush-extent sync
     // below (and any other host.getTransform() read) sees the new value.
     this.host.onTransform(t);
     if (this._mainGroup) {
@@ -146,7 +153,14 @@ export class PlotInteractionController {
 
   resetZoom(): void {
     if (this._zoom && this._svgSelection) {
-      this._svgSelection.transition().duration(750).call(this._zoom.transform, d3.zoomIdentity);
+      this._resetsInFlight++;
+      this._svgSelection
+        .transition()
+        .duration(750)
+        .call(this._zoom.transform, d3.zoomIdentity)
+        .on('end.reset interrupt.reset cancel.reset', () => {
+          this._resetsInFlight--;
+        });
     }
   }
 
@@ -209,7 +223,10 @@ export class PlotInteractionController {
   }
 
   updateSelectionMode(): void {
-    if (!this._svgSelection || !this._brushGroup || !this.host.hasScales()) return;
+    if (!this._svgSelection || !this._brushGroup) return;
+    const hasScales = this.host.hasScales();
+    this._selectionAwaitsScales = !hasScales && this.host.getSelectionMode();
+    if (!hasScales) return;
 
     // Clean up both selection tools
     this._brushGroup.selectAll('*').remove();
@@ -396,13 +413,15 @@ export class PlotInteractionController {
     this._isLassoing = false;
   }
 
-  /** Cancel the zoom/lasso RAFs, interrupt the reset transition, tear down brush + lasso. */
+  /** Land a reset cut short at its target, cancel the zoom/lasso RAFs, tear down brush + lasso. */
   teardown(): void {
+    // A reset cut short jumps to its target (setTransform interrupts it first), so the plot
+    // reconnects unzoomed rather than partway. Before the RAF cancel, which drops its render.
+    if (this._resetsInFlight > 0) this.setTransform(d3.zoomIdentity);
     if (this._zoomRafId !== null) {
       cancelAnimationFrame(this._zoomRafId);
       this._zoomRafId = null;
     }
-    this._svgSelection?.interrupt();
     if (this._brush) {
       this._brush.on('start', null).on('end', null);
       this._brush = null;

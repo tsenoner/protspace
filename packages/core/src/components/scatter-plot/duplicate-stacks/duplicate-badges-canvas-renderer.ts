@@ -1,7 +1,7 @@
 /**
  * Canvas2D badge engine for the duplicate-stack overlay, extracted byte-faithfully
- * from `scatter-plot.ts` (`_clearDuplicateBadgesCanvas` + `_renderDuplicateBadgesCanvas`,
- * report F-30) plus the viewport cull + top-N cap (`cullAndCapStacks`, report F-52,
+ * from `scatter-plot.ts` (`_clearDuplicateBadgesCanvas` + `_renderDuplicateBadgesCanvas`)
+ * plus the viewport cull + top-N cap (`cullAndCapStacks`,
  * replacing the inline filter + `_capDuplicateStacksForRendering`).
  *
  * Pure/decoupled: this module does NOT import `scatter-plot.ts`. The host wires its

@@ -63,9 +63,43 @@ describe('control-bar remove-selection wiring', () => {
     await controlBar.updateComplete;
 
     expect(controlBar.selectedIdsChips).toEqual(['P00596']);
+    // The selection goes out after the paint (control-bar.after-paint.test.ts).
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
     expect(changeHandler).toHaveBeenCalledTimes(1);
     expect((changeHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
       proteinIds: ['P00596'],
     });
+  });
+});
+
+/**
+ * `modifierKeys` is part of the documented `protein-click` detail, but an embedder can
+ * dispatch the event without it. That must read as a plain click, not throw.
+ */
+describe('control-bar protein-click without modifierKeys', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('replaces the selection as an unmodified click would', async () => {
+    const controlBar = document.createElement('protspace-control-bar') as HTMLElement & {
+      autoSync?: boolean;
+      selectedIdsChips: string[];
+      updateComplete: Promise<unknown>;
+      _handleProteinSelection(event: Event): void;
+    };
+    controlBar.autoSync = false;
+    document.body.appendChild(controlBar);
+    await controlBar.updateComplete;
+
+    const click = (proteinId: string) =>
+      controlBar._handleProteinSelection(
+        new CustomEvent('protein-click', { detail: { proteinId } }),
+      );
+
+    click('P00595');
+    expect(controlBar.selectedIdsChips).toEqual(['P00595']);
+    click('P00596');
+    expect(controlBar.selectedIdsChips).toEqual(['P00596']);
   });
 });

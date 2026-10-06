@@ -1,17 +1,16 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import type { PlotData } from '@protspace/utils';
-import type { ScalePair } from '../types';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
-import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
-import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { GAMMA_FRAGMENT_SHADER } from './point-shaders';
+import type { WebGLRenderer } from './webgl-renderer';
+import { makeRenderer, plotData } from './test-support/renderer-fixture';
+import { internalsOf } from './test-support/renderer-internals';
 
 // The shared mock-webgl2 harness provides the full gl.* surface the render path needs
 // (incl. uniform3f / disableVertexAttribArray), so render()-driven tests below can
-// exercise the real path via createMockCanvas directly.
+// exercise the real path through makeRenderer.
 const pd: PlotData = {
   length: 2,
   xs: new Float32Array([0, 1]),
@@ -20,11 +19,7 @@ const pd: PlotData = {
   originalIndices: null,
   proteinIds: ['p0', 'p1'],
 };
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
-describe('WebGLRenderer context loss + restore (F-09 characterization lock)', () => {
+describe('WebGLRenderer context loss + restore (characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -44,16 +39,8 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
   };
 
   it('webglcontextlost fires onContextLost and preventDefaults', () => {
-    const { canvas } = createMockCanvas();
     const onLost = vi.fn();
-    new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-      onLost,
-    );
+    const { canvas } = makeRenderer({ onContextLost: onLost });
     const ev = new Event('webglcontextlost', { cancelable: true });
     const prevented = !canvas.dispatchEvent(ev);
     expect(onLost).toHaveBeenCalledTimes(1);
@@ -61,37 +48,22 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
   });
 
   it('destroy() removes both listeners (post-destroy loss does not fire onContextLost)', () => {
-    const { canvas } = createMockCanvas();
     const onLost = vi.fn();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-      onLost,
-    );
+    const { renderer: r, canvas } = makeRenderer({ onContextLost: onLost });
     r.destroy();
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     expect(onLost).not.toHaveBeenCalled();
   });
 
-  // F-39: the internal webglcontextrestored recovery handler was deleted. It was
+  // The internal webglcontextrestored recovery handler was deleted. It was
   // unreachable in production (real loss → onContextLost → scatter-plot destroy()s
   // the renderer, which removes the webglcontextlost listener and disposes; the
   // restore listener never survived to fire). Recovery now flows solely through the
   // scatter-plot rebuild-on-loss path. These two cases used to characterize the dead
   // internal handler (they only "passed" because they synthesized the restore event
   // directly); they now pin its absence.
-  it('F-39: no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
-    const { canvas } = createMockCanvas();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-    );
+  it('no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
+    const { renderer: r, canvas } = makeRenderer();
     r.render(pd); // sets lastRenderedData
     const renderSpy = vi.spyOn(r, 'render');
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
@@ -100,15 +72,9 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     expect(renderSpy).not.toHaveBeenCalled();
   });
 
-  it('F-39: constructor registers no webglcontextrestored listener', () => {
+  it('constructor registers no webglcontextrestored listener', () => {
     const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
-    const r = new WebGLRenderer(
-      createMockCanvas().canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-    );
+    const { renderer: r } = makeRenderer();
     const types = addSpy.mock.calls.map((c) => c[0]);
     expect(types).toContain('webglcontextlost');
     expect(types).not.toContain('webglcontextrestored');
@@ -130,8 +96,7 @@ describe('WebGLRenderer gamma fallback reporting', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  const gammaOf = (r: WebGLRenderer) =>
-    (r as unknown as { getEffectiveGamma(): number }).getEffectiveGamma();
+  const gammaOf = (r: WebGLRenderer) => internalsOf(r).getEffectiveGamma();
   const gammaNotices = (degraded: RendererDegradedDetail[]) =>
     degraded.filter((d) => d.context.reason === 'gamma-pipeline-unavailable');
 
@@ -186,5 +151,81 @@ describe('WebGLRenderer gamma fallback reporting', () => {
     expect(gammaNotices(degraded)).toHaveLength(1);
     expect(gammaNotices(degraded)[0].context.detail).toBe('gamma shader init failed');
     renderer.destroy();
+  });
+});
+
+// Every query below returns only once the GPU process has caught up, so a call per
+// frame puts CPU and GPU in lockstep. The renderer asks them at (re)creation only.
+const SYNC_QUERIES = [
+  'isProgram',
+  'isVertexArray',
+  'isBuffer',
+  'isTexture',
+  'isFramebuffer',
+  'isRenderbuffer',
+  'getError',
+  'getParameter',
+  'checkFramebufferStatus',
+  'getShaderParameter',
+  'getProgramParameter',
+  'getExtension',
+] as const;
+
+describe('WebGLRenderer per-frame GPU queries', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ['contours off', undefined],
+    ['contours on', 'on' as const],
+  ])('a camera move with %s waits on no GPU query', (_label, densityLayer) => {
+    let transform = d3.zoomIdentity;
+    const { renderer, gl } = makeRenderer({
+      getConfig: () => ({ width: 800, height: 600, densityLayer }),
+      getTransform: () => transform,
+    });
+    renderer.render(plotData(50));
+
+    const glRecord = gl as unknown as Record<string, () => unknown>;
+    // Some mock methods are already recording; clear what creation put in them.
+    const spies = SYNC_QUERIES.map((name) => [name, vi.spyOn(glRecord, name).mockClear()] as const);
+
+    for (let i = 1; i <= 5; i++) {
+      transform = d3.zoomIdentity.translate(i * 10, i * 5).scale(1 + i / 10);
+      renderer.render(plotData(50));
+    }
+
+    const called = spies.filter(([, spy]) => spy.mock.calls.length > 0).map(([name]) => name);
+    expect(called).toEqual([]);
+    renderer.destroy();
+  });
+});
+
+describe('WebGLRenderer context loss without a per-frame handle check', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('never draws on a restored context: its handles belong to the lost one', () => {
+    const onLost = vi.fn();
+    const { renderer: r, canvas, gl, setContextLost } = makeRenderer({ onContextLost: onLost });
+    r.render(pd);
+    const drawArrays = vi.spyOn(gl, 'drawArrays');
+    r.render(pd);
+    expect(drawArrays).toHaveBeenCalled();
+    drawArrays.mockClear();
+
+    // WEBGL_lose_context.loseContext(): the flag flips before the event is dispatched.
+    setContextLost(true);
+    r.render(pd);
+    expect(onLost).toHaveBeenCalledTimes(1);
+
+    // restoreContext(): isContextLost() reads false again, with no live handles.
+    setContextLost(false);
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    r.render(pd);
+    r.render(pd);
+
+    expect(drawArrays).not.toHaveBeenCalled();
+    expect(onLost).toHaveBeenCalledTimes(1);
+    r.destroy();
   });
 });

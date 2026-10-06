@@ -55,8 +55,10 @@ import {
   v3PhysicalColumn,
   type VisualizationData,
 } from '@protspace/utils';
-import { assertValidParquetMagic, DEFAULT_VALIDATION_LIMITS } from './validation';
+import { assertValidParquetMagic } from './validation';
+import { MAX_DRAWABLE_POINTS } from '../../scatter-plot/webgl/renderer/device-limits';
 import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
+import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 import {
   appendSyntheticNACategoryToCodes,
   buildProjectionsMetadataMap,
@@ -65,7 +67,7 @@ import {
   dropUnplacedProteins,
   generateColorsAndShapes,
   normalizeEatCompanionColumns,
-} from './conversion';
+} from './dataset-build';
 import type { Rows } from './types';
 
 // ignoreBOM keeps a leading U+FEFF as a character: it is part of a label, not an
@@ -285,6 +287,8 @@ async function readColumnChunks(
     file,
     metadata,
     columns,
+    compressors: V3_COMPRESSORS,
+    parsers: V3_PARSERS,
     onChunk: (chunk) => {
       if (failure !== null) return;
       try {
@@ -405,15 +409,14 @@ const MIN_PREALLOCATION_BUDGET = 64 * 1024 * 1024;
  * `num_rows` is only a claim: hyparquet decodes whatever row groups there are, so a
  * footer claiming more rows than its row groups hold would leave the difference as
  * phantom proteins at the zeros a fresh typed array holds. And every column is
- * preallocated from it, so the cells it implies are capped as the legacy path caps them,
- * and so are the bytes (`bytesPerRow`, summed over the columns) against the part's own
- * size: a few-KB footer claiming 2M rows of 499 float64 columns would otherwise have the
- * reader allocate 8 GB before it reads a single page.
+ * preallocated from it, so the bytes it implies (`bytesPerRow`, summed over the columns)
+ * are capped against the part's own size: a few-KB footer claiming 2M rows of 499
+ * float64 columns would otherwise have the reader allocate 8 GB before it reads a single
+ * page.
  */
 function assertFooterRows(
   metadata: FileMetaData,
   part: string,
-  columns: number,
   bytesPerRow: number,
   partBytes: number,
 ): void {
@@ -422,13 +425,6 @@ function assertFooterRows(
     throw new Error(
       `v3 ${part} footer declares ${String(metadata.num_rows)} rows but its row groups ` +
         `hold ${String(inRowGroups)}`,
-    );
-  }
-  const cells = Number(metadata.num_rows) * columns;
-  if (cells > DEFAULT_VALIDATION_LIMITS.maxTotalCells) {
-    throw new Error(
-      `v3 ${part} declares ${String(metadata.num_rows)} rows of ${columns} columns, ` +
-        `past the ${DEFAULT_VALIDATION_LIMITS.maxTotalCells} cell limit`,
     );
   }
   const bytes = Number(metadata.num_rows) * bytesPerRow;
@@ -504,7 +500,6 @@ async function readAnnotationColumns(
   assertFooterRows(
     metadata,
     'part 1',
-    1 + columns.length,
     // An id slot, then a Float64Array or an Int32Array per column.
     8 + columns.reduce((sum, { kind }) => sum + (kind === 'numeric' ? 8 : 4), 0),
     part.byteLength,
@@ -552,7 +547,7 @@ async function readProjections(
     );
   }
   const axes = manifest.projections.reduce((sum, { dimension }) => sum + dimension, 0);
-  assertFooterRows(metadata, 'part 3', axes, 4 * axes, part.byteLength);
+  assertFooterRows(metadata, 'part 3', 4 * axes, part.byteLength);
 
   const axisTargets = new Map<string, { data: Float32Array; dimension: number; axis: number }>();
   const projections: Projection[] = [];
@@ -602,7 +597,7 @@ async function readPayloads(part: ArrayBuffer): Promise<Map<string, Uint8Array>>
   assertValidParquetMagic(part);
   // utf8: false keeps the `data` column as raw bytes. The `name` column carries a
   // STRING logical type, which hyparquet decodes regardless of this flag.
-  const rows = await parquetReadObjects({ file: part, utf8: false });
+  const rows = await parquetReadObjects({ file: part, utf8: false, compressors: V3_COMPRESSORS });
   const payloads = new Map<string, Uint8Array>();
   for (const row of rows) {
     const name = typeof row.name === 'string' ? row.name : DECODER.decode(row.name as Uint8Array);
@@ -995,17 +990,18 @@ export async function readV3Bundle(
   }
 
   const manifest = readManifest(metadata);
-  // Everything below preallocates on this footer field before a single row is read, so
-  // it is bounded here. The v3 path never reaches `validateRowsBasic`, which is what
-  // caps the legacy path.
+  // Everything below preallocates on this footer field before a single row is read.
+  // `assertFooterRows` bounds what each part may preallocate by the part's own size.
   const numRows = Number(metadata.num_rows);
-  if (
-    !Number.isSafeInteger(numRows) ||
-    numRows < 0 ||
-    numRows > DEFAULT_VALIDATION_LIMITS.maxRows
-  ) {
+  if (!Number.isSafeInteger(numRows) || numRows < 0) {
+    throw new Error(`v3 bundle declares ${String(metadata.num_rows)} rows, not a row count`);
+  }
+  // The renderer would refuse it anyway, but only after decoding, which at this size
+  // runs the tab out of memory first: refuse it here, before anything is allocated.
+  if (numRows > MAX_DRAWABLE_POINTS) {
     throw new Error(
-      `v3 bundle declares ${String(metadata.num_rows)} rows, outside 0..${DEFAULT_VALIDATION_LIMITS.maxRows}`,
+      `Dataset too large: ${numRows.toLocaleString()} proteins, but ProtSpace can draw at ` +
+        `most ${MAX_DRAWABLE_POINTS.toLocaleString()} points.`,
     );
   }
 

@@ -51,6 +51,8 @@ export class PointGridIndex {
   /** `cellStart[c] .. cellStart[c + 1]` indexes `cellItems`, which holds point indices ascending. */
   private cellStart = new Int32Array(1);
   private cellItems = new Int32Array(0);
+  /** Queries skip slot `s` unless `visible[s] === 1`; null answers for every indexed slot. */
+  private visible: Uint8Array | null = null;
 
   setScales(
     scales: {
@@ -61,7 +63,17 @@ export class PointGridIndex {
     this.scales = scales;
   }
 
+  /**
+   * Answer queries for the slots `visible` marks (indexed by slot) and skip the rest, as an
+   * index rebuilt with only those slots would. Lets a caller index every slot once and change
+   * which are visible without a rebuild. `rebuild` and `clear` drop it.
+   */
+  setVisible(visible: Uint8Array | null) {
+    this.visible = visible;
+  }
+
   rebuild(pd: PlotData, slots: ArrayLike<number>) {
+    this.visible = null;
     if (!this.scales || slots.length === 0) {
       this.clear();
       return;
@@ -147,7 +159,7 @@ export class PointGridIndex {
 
   findNearest(screenX: number, screenY: number, radius: number): number {
     if (!this.built || this.n === 0) return -1;
-    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf } = this;
+    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf, visible } = this;
 
     const r2 = radius * radius;
     let best = Infinity;
@@ -182,6 +194,7 @@ export class PointGridIndex {
           const end = cellStart[c + 1];
           for (let t = cellStart[c]; t < end; t++) {
             const i = cellItems[t];
+            if (visible && visible[slotOf[i]] !== 1) continue;
             const dx = screenX - px[i];
             const dy = screenY - py[i];
             const d2 = dx * dx + dy * dy;
@@ -205,6 +218,7 @@ export class PointGridIndex {
 
   clear() {
     this.built = false;
+    this.visible = null;
     this.n = 0;
     this.px = new Float32Array(0);
     this.py = new Float32Array(0);
@@ -216,7 +230,7 @@ export class PointGridIndex {
   }
 
   queryByPixels(minX: number, minY: number, maxX: number, maxY: number): number[] {
-    return this.collectInBox(minX, minY, maxX, maxY, null);
+    return this.collectInBox(minX, minY, maxX, maxY);
   }
 
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[] {
@@ -234,20 +248,99 @@ export class PointGridIndex {
       if (y > maxY) maxY = y;
     }
 
-    return this.collectInBox(minX, minY, maxX, maxY, vertices);
+    return this.collectInPolygon(minX, minY, maxX, maxY, vertices);
   }
 
-  /** Slots inside the inclusive AABB, optionally also inside `polygon`. */
-  private collectInBox(
+  /**
+   * Same result (and order) as testing every point in the polygon's AABB with `pointInPolygon`,
+   * but each cell is classified first: only cells an edge passes through test their points.
+   * A cell no edge touches lies wholly on one side of the boundary, so every point in it gets
+   * the answer its centre gets. Adjacent untouched cells in a row share that answer, so the
+   * centre is tested once per run of them. Points in crossed cells are tested only against
+   * the edges whose y-range reaches the cell row; no other edge can flip their result.
+   */
+  private collectInPolygon(
     minX: number,
     minY: number,
     maxX: number,
     maxY: number,
-    polygon: ReadonlyArray<[number, number]> | null,
+    polygon: ReadonlyArray<[number, number]>,
   ): number[] {
     const results: number[] = [];
     if (!this.built || this.n === 0) return results;
-    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf } = this;
+    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf, visible } = this;
+
+    const gx0 = clampIndex((minX - this.originX) / cell, gridW);
+    const gx1 = clampIndex((maxX - this.originX) / cell, gridW);
+    const gy0 = clampIndex((minY - this.originY) / cell, gridH);
+    const gy1 = clampIndex((maxY - this.originY) / cell, gridH);
+    const cols = gx1 - gx0 + 1;
+    const rows = gy1 - gy0 + 1;
+    if (!(cols > 0 && rows > 0)) return results;
+
+    const left = this.originX + gx0 * cell;
+    const top = this.originY + gy0 * cell;
+    const pad = cellMargin(polygon, left, top, cell);
+    const crossed =
+      pad === null ? null : markCrossedCells(polygon, left, top, cell, cols, rows, pad);
+    // Edges of the current row as (xi, yi, xj, yj), in `pointInPolygon`'s operand order.
+    const rowEdges = new Float64Array(polygon.length * 4);
+
+    for (let r = 0; r < rows; r++) {
+      const row = (gy0 + r) * gridW + gx0;
+      let runInside: boolean | null = null;
+      let edgeCount = -1;
+      for (let k = 0; k < cols; k++) {
+        const c = row + k;
+        const end = cellStart[c + 1];
+        if (crossed === null || crossed[r * cols + k] === 1) {
+          runInside = null;
+          if (edgeCount < 0 && pad !== null) {
+            edgeCount = collectRowEdges(
+              polygon,
+              top + r * cell - pad,
+              top + (r + 1) * cell + pad,
+              rowEdges,
+            );
+          }
+          for (let t = cellStart[c]; t < end; t++) {
+            const i = cellItems[t];
+            const x = px[i];
+            const y = py[i];
+            if (x < minX || x > maxX || y < minY || y > maxY) continue;
+            if (
+              pad === null
+                ? !pointInPolygon(x, y, polygon)
+                : !pointInEdges(x, y, rowEdges, edgeCount)
+            ) {
+              continue;
+            }
+            const slot = slotOf[i];
+            if (visible && visible[slot] !== 1) continue;
+            results.push(slot);
+          }
+          continue;
+        }
+        if (runInside === null) {
+          runInside = pointInPolygon(left + (k + 0.5) * cell, top + (r + 0.5) * cell, polygon);
+        }
+        if (!runInside) continue;
+        for (let t = cellStart[c]; t < end; t++) {
+          const slot = slotOf[cellItems[t]];
+          if (visible && visible[slot] !== 1) continue;
+          results.push(slot);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /** Slots inside the inclusive AABB. */
+  private collectInBox(minX: number, minY: number, maxX: number, maxY: number): number[] {
+    const results: number[] = [];
+    if (!this.built || this.n === 0) return results;
+    const { px, py, cell, gridW, gridH, cellStart, cellItems, slotOf, visible } = this;
 
     // NaN bounds collapse to an empty cell range, which matches the old code returning nothing.
     const gx0 = clampIndex((minX - this.originX) / cell, gridW);
@@ -265,8 +358,9 @@ export class PointGridIndex {
           const x = px[i];
           const y = py[i];
           if (x < minX || x > maxX || y < minY || y > maxY) continue;
-          if (polygon && !pointInPolygon(x, y, polygon)) continue;
-          results.push(slotOf[i]);
+          const slot = slotOf[i];
+          if (visible && visible[slot] !== 1) continue;
+          results.push(slot);
         }
       }
     }
@@ -281,6 +375,110 @@ function clampIndex(v: number, size: number): number {
   if (i < 0) return 0;
   if (i >= size) return size - 1;
   return i;
+}
+
+/**
+ * How far to grow each cell before classifying it: far more than the rounding in
+ * `pointInPolygon` and in the cell assignment. Null when a vertex is non-finite, which leaves
+ * every point to the plain per-point test.
+ */
+function cellMargin(
+  vertices: ReadonlyArray<[number, number]>,
+  left: number,
+  top: number,
+  cell: number,
+): number | null {
+  let magnitude = Math.max(Math.abs(left), Math.abs(top));
+  for (const [x, y] of vertices) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    magnitude = Math.max(magnitude, Math.abs(x), Math.abs(y));
+  }
+  return cell / 64 + magnitude * 1e-9;
+}
+
+/**
+ * Flag (1) every cell of the `cols` x `rows` block at (`left`, `top`) that a polygon edge may
+ * touch. The test is conservative: each cell is grown by `pad`, and an edge spares a cell only
+ * when all four grown corners lie strictly on one side of its line. So an unflagged cell holds
+ * no point that sits on, or within rounding of, an edge.
+ */
+function markCrossedCells(
+  vertices: ReadonlyArray<[number, number]>,
+  left: number,
+  top: number,
+  cell: number,
+  cols: number,
+  rows: number,
+  pad: number,
+): Uint8Array {
+  const crossed = new Uint8Array(cols * rows);
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const [ax, ay] = vertices[j];
+    const [bx, by] = vertices[i];
+    const k0 = Math.max(0, Math.floor((Math.min(ax, bx) - pad - left) / cell));
+    const k1 = Math.min(cols - 1, Math.floor((Math.max(ax, bx) + pad - left) / cell));
+    const r0 = Math.max(0, Math.floor((Math.min(ay, by) - pad - top) / cell));
+    const r1 = Math.min(rows - 1, Math.floor((Math.max(ay, by) + pad - top) / cell));
+    const dx = bx - ax;
+    const dy = by - ay;
+    for (let r = r0; r <= r1; r++) {
+      // Corner offsets from `a`, grown by `pad`.
+      const y0 = top + r * cell - pad - ay;
+      const y1 = top + (r + 1) * cell + pad - ay;
+      for (let k = k0; k <= k1; k++) {
+        const x0 = left + k * cell - pad - ax;
+        const x1 = left + (k + 1) * cell + pad - ax;
+        const s0 = dx * y0 - dy * x0;
+        const s1 = dx * y0 - dy * x1;
+        const s2 = dx * y1 - dy * x0;
+        const s3 = dx * y1 - dy * x1;
+        const allPos = s0 > 0 && s1 > 0 && s2 > 0 && s3 > 0;
+        const allNeg = s0 < 0 && s1 < 0 && s2 < 0 && s3 < 0;
+        if (!allPos && !allNeg) crossed[r * cols + k] = 1;
+      }
+    }
+  }
+  return crossed;
+}
+
+/**
+ * Copy into `out` the edges whose y-range meets `[y0, y1]` and return their count. An edge
+ * entirely above or below that band has both ends on the same side of any `py` inside it, so
+ * it never toggles `pointInPolygon` there.
+ */
+function collectRowEdges(
+  vertices: ReadonlyArray<[number, number]>,
+  y0: number,
+  y1: number,
+  out: Float64Array,
+): number {
+  let count = 0;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const [xi, yi] = vertices[i];
+    const [xj, yj] = vertices[j];
+    if (Math.max(yi, yj) < y0 || Math.min(yi, yj) > y1) continue;
+    out[count * 4] = xi;
+    out[count * 4 + 1] = yi;
+    out[count * 4 + 2] = xj;
+    out[count * 4 + 3] = yj;
+    count++;
+  }
+  return count;
+}
+
+/** `pointInPolygon` over the first `count` edges of `edges`, with the same arithmetic. */
+function pointInEdges(px: number, py: number, edges: Float64Array, count: number): boolean {
+  let inside = false;
+  for (let e = 0; e < count * 4; e += 4) {
+    const xi = edges[e];
+    const yi = edges[e + 1];
+    const xj = edges[e + 2];
+    const yj = edges[e + 3];
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 /** Ray-casting point-in-polygon test. */

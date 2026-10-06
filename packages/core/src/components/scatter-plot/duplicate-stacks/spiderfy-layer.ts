@@ -39,7 +39,7 @@ export function isClickGesture(
 
 interface SpiderfyLayerDeps {
   getColor: (p: PlotDataPoint) => string;
-  onActivate: (event: MouseEvent, p: PlotDataPoint) => void; // → host _handleClick (INV-05)
+  onActivate: (event: MouseEvent, p: PlotDataPoint) => void; // → host _handleClick (dispatch stays on the host)
   onHover: (event: MouseEvent, p: PlotDataPoint) => void; // → host _handleMouseOver
   onHoverEnd: () => void; // → host _clearHoverState
 }

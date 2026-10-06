@@ -7,6 +7,7 @@ import {
   resizeDensityTargets,
   accumulateAndBlurDensity,
   compositeDensity,
+  densityFieldsKey,
   type ColorTarget,
   type DensityFrame,
   type DensityResources,
@@ -76,6 +77,8 @@ function mockGL(opts: { framebufferComplete?: boolean } = {}) {
     uniform2f: (loc: { n: string }, a: number, b: number) => calls.push(`u2f:${loc?.n}:${a},${b}`),
     uniform3f: (loc: { n: string }, a: number, b: number, c: number) =>
       calls.push(`u3f:${loc?.n}:${a},${b},${c}`),
+    uniform4f: (loc: { n: string }, a: number, b: number, c: number, d: number) =>
+      calls.push(`u4f:${loc?.n}:${a},${b},${c},${d}`),
     uniform3fv: (loc: { n: string }, v: unknown) => {
       calls.push(`u3fv:${loc?.n}`);
       uploads3fv.push(v);
@@ -120,6 +123,7 @@ function resources(fieldCount = 4): DensityResources {
       resolution: named('resolution'),
       transform: named('transform'),
       dpr: named('dpr'),
+      morph: named('morph'),
       slotKeys: named('slotKeys'),
       slotCount: named('slotCount'),
       tailSlot: named('tailSlot'),
@@ -195,6 +199,17 @@ describe('buildSlotPalette', () => {
     expect(Array.from(p.colors.slice(0, 6))).toEqual([
       1, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 0.15000000596046448, 1,
     ]);
+  });
+
+  it('orders marked points after every other point', () => {
+    const staged = stagedReds([
+      [1, 2],
+      [2, 1],
+      [3, 2],
+    ]);
+    const marked = Uint8Array.of(1, 0, 1, 1, 0);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2, marked))).toEqual([1, 3, 2]);
+    expect(redBytes(buildSlotPalette(staged, 5, 2.2))).toEqual([1, 2, 3]);
   });
 
   it('has no slot when nothing is visible', () => {
@@ -309,6 +324,31 @@ describe('resizeDensityTargets', () => {
   });
 });
 
+describe('densityFieldsKey', () => {
+  const camera = { width: 800, height: 600, dpr: 2, transform: { x: 1, y: 2, k: 3 } };
+  const rescale = { x: { scale: 1, offset: 0 }, y: { scale: 1, offset: 0 } };
+
+  it('takes an omitted rescale and glide as the identity and 0', () => {
+    expect(densityFieldsKey(4, 10, camera)).toBe(
+      densityFieldsKey(4, 10, { ...camera, rescale, morph: 0 }),
+    );
+  });
+
+  it('changes with the points, the camera, its rescale and the glide', () => {
+    const base = densityFieldsKey(4, 10, camera);
+    const changed = [
+      densityFieldsKey(5, 10, camera),
+      densityFieldsKey(4, 11, camera),
+      densityFieldsKey(4, 10, { ...camera, width: 801 }),
+      densityFieldsKey(4, 10, { ...camera, dpr: 1 }),
+      densityFieldsKey(4, 10, { ...camera, transform: { x: 1, y: 2, k: 4 } }),
+      densityFieldsKey(4, 10, { ...camera, rescale: { ...rescale, y: { scale: 2, offset: 0 } } }),
+      densityFieldsKey(4, 10, { ...camera, morph: 0.5 }),
+    ];
+    for (const key of changed) expect(key).not.toBe(base);
+  });
+});
+
 describe('accumulateAndBlurDensity', () => {
   const pointVao = { k: 'pointVao' } as unknown as WebGLVertexArrayObject;
 
@@ -323,6 +363,8 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).toContain('viewport:0,0,400,300');
     expect(calls).toContain('u2f:resolution:800,600');
+    expect(calls.indexOf('u1f:morph:0')).toBeGreaterThan(-1);
+    expect(calls.indexOf('u1f:morph:0')).toBeLessThan(firstPointDraw);
 
     expect(calls.filter((c) => c === 'drawArrays:4,0,6')).toHaveLength(2);
     expect(calls).toContain('u2f:direction:0.0025,0');
@@ -331,6 +373,13 @@ describe('accumulateAndBlurDensity', () => {
 
     expect(calls).not.toContain('getError');
     expect(calls).not.toContain('checkFramebufferStatus');
+  });
+
+  it('accumulates at the morph weight the camera carries', () => {
+    const { gl, calls } = mockGL();
+    const frame = contourFrame(paletteOf(1));
+    accumulateAndBlurDensity(gl, { ...frame, camera: { ...camera, morph: 0.5 } }, pointVao, 1000);
+    expect(calls.filter((c) => c.startsWith('u1f:morph'))).toEqual(['u1f:morph:0.5']);
   });
 
   it('runs one accumulate and blur per group of four slots', () => {

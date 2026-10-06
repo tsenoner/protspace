@@ -1,6 +1,7 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import {
   buildStorageKey,
+  generateLegacyDatasetHash,
   getStorageItem,
   setStorageItem,
   removeStorageItem,
@@ -66,6 +67,8 @@ export class PersistenceController
   protected readonly storageKeyPrefix = 'legend';
   private callbacks: PersistenceCallbacks;
   private _pendingCategories: Record<string, PersistedCategoryData> = {};
+  /** The hash the last `clearForNewDataset` cleared, if it cleared. */
+  private _clearedDatasetHash = '';
 
   constructor(host: ReactiveControllerHost, callbacks: PersistenceCallbacks) {
     super();
@@ -89,13 +92,47 @@ export class PersistenceController
     this._pendingCategories = {};
   }
 
-  /** Also migrates the legacy shape size key when the hash changes, before any settings load. */
+  override clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
+    super.clearForNewDataset(datasetHash, clearPersistedState);
+    this._clearedDatasetHash = clearPersistedState ? datasetHash : '';
+  }
+
+  /** Also migrates the legacy keys when the hash changes, before any settings load. */
   override updateDatasetHash(data: DatasetHashData): boolean {
     const changed = super.updateDatasetHash(data);
     if (changed) {
-      this._migrateLegacyShapeSize(Array.isArray(data) ? [] : Object.keys(data.annotations ?? {}));
+      const annotationNames = Array.isArray(data) ? [] : Object.keys(data.annotations ?? {});
+      this._moveLegacyHashState(generateLegacyDatasetHash(data), annotationNames);
+      this._migrateLegacyShapeSize(annotationNames);
     }
     return changed;
+  }
+
+  /**
+   * Move the legend's state off the dataset's hash without predictions, which keyed it until
+   * the legend took the full hash, once: each old key is removed. An old value replaces the
+   * new one: a bundle import writes its settings under the full hash, but every edit since
+   * was saved under the old one, and a bundle can be imported again where an edit cannot.
+   * After a clearing load the old state is dropped. Without predictions the hashes are equal
+   * and nothing is read.
+   */
+  private _moveLegacyHashState(legacyHash: string, annotationNames: string[]): void {
+    if (legacyHash === this._datasetHash) return;
+    const drop = this._clearedDatasetHash === this._datasetHash;
+    const keys: Array<[component: string, annotation?: string]> = [
+      [SHAPE_SIZE_KEY],
+      [LEGACY_SHAPE_SIZE_KEY],
+      ...annotationNames.map((annotation): [string, string] => [this.storageKeyPrefix, annotation]),
+    ];
+    for (const [component, annotation] of keys) {
+      const legacyKey = buildStorageKey(component, legacyHash, annotation);
+      if (!hasStorageItem(legacyKey)) continue;
+      const value = getStorageItem<unknown>(legacyKey, null);
+      if (!drop && value !== null) {
+        setStorageItem(buildStorageKey(component, this._datasetHash, annotation), value);
+      }
+      removeStorageItem(legacyKey);
+    }
   }
 
   /**

@@ -316,13 +316,17 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       const renderer = (
         document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
-              _webglRenderer?: { predicted?: Float32Array; currentPointCount?: number };
+              _webglRenderer?: {
+                stageArrays?: { predicted: Float32Array };
+                currentPointCount?: number;
+              };
             })
           | null
       )?._webglRenderer;
       const count = renderer?.currentPointCount ?? 0;
-      return renderer?.predicted
-        ? Array.from(renderer.predicted.subarray(0, count)).filter((value) => value === 1).length
+      const predicted = renderer?.stageArrays?.predicted;
+      return predicted
+        ? Array.from(predicted.subarray(0, count)).filter((value) => value === 1).length
         : -1;
     });
 
@@ -449,26 +453,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
 
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const renderer = (
-          document.querySelector('protspace-scatterplot') as unknown as
-            | (Element & {
-                _webglRenderer?: {
-                  predicted?: Float32Array;
-                  currentPointCount?: number;
-                };
-              })
-            | null
-        )?._webglRenderer;
-        const count = renderer?.currentPointCount ?? 0;
-        return renderer?.predicted
-          ? Array.from(renderer.predicted.subarray(0, count)).filter((value) => value === 1).length
-          : -1;
-      }),
-    )
-    .toBe(213);
+  await expect.poll(predictedVisibleCount).toBe(213);
 
   await eatToggle.uncheck();
   await expect(threshold).toBeDisabled();
@@ -583,6 +568,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
         detail: {
           proteinId,
           point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+          modifierKeys: { ctrl: false, meta: false, shift: false, alt: false },
         },
         bubbles: true,
         composed: true,
@@ -600,6 +586,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
         detail: {
           proteinId,
           point: { originalIndex: plotElement.data?.protein_ids.indexOf(proteinId) },
+          modifierKeys: { ctrl: false, meta: false, shift: false, alt: false },
         },
         bubbles: true,
         composed: true,
@@ -659,6 +646,10 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     position: { x: clearClickBounds!.width - 12, y: clearClickBounds!.height - 12 },
   });
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
+  // The point clicks above also selected a protein, as a real click does. Clear it so the
+  // export markers below are sampled without the selection dimming the other points.
+  await controlBar.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(controlBar.getByRole('button', { name: 'Clear', exact: true })).toBeDisabled();
 
   await page.setViewportSize({ width: 601, height: 844 });
   const compactControlBar = await controlBar.evaluate((element) => {

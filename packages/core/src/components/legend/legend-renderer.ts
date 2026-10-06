@@ -283,7 +283,7 @@ export class LegendRenderer {
     itemClasses: string,
     isItemSelected: boolean,
     eventHandlers: {
-      onClick: () => void;
+      onClick: (e: MouseEvent) => void;
       onDoubleClick: () => void;
       onViewOther: (e: Event) => void;
       onKeyDown?: (e: KeyboardEvent) => void;

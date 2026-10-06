@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
+import { perfCounters } from '../../utils/perf-counters';
 import {
   COLOR_SCHEMES,
   DEFAULT_NUMERIC_PALETTE_ID,
@@ -77,6 +78,9 @@ import {
   createItemActionEvent,
   updateItemsVisibility,
   isolateItem,
+  isSecondClickOfDouble,
+  isolationBase,
+  type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
 import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
@@ -230,6 +234,12 @@ export class ProtspaceLegend extends LitElement {
   @property({ type: String, attribute: 'scatterplot-selector' })
   scatterplotSelector: string = LEGEND_DEFAULTS.scatterplotSelector;
 
+  /**
+   * Off while the host drives the legend, as the app does during a dataset load. The legend
+   * follows the scatterplot either way: its sync controller subscribes on connect. While off,
+   * it counts in protein order, the order a host's per-protein `annotationValues` feed has, and
+   * leaves the EAT overlay switch for the host to apply to the plot.
+   */
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
 
@@ -295,9 +305,8 @@ export class ProtspaceLegend extends LitElement {
    * The annotation storage the legend counts from, captured on every scatterplot
    * data change. Counting straight out of it (`countFromStorage`) replaces the
    * flat `annotationValues` array, which cost one interned string per protein
-   * and misaligned isolation filtering. `null` means "no synced storage": the
-   * `autoSync === false` embedding path, which still feeds the public
-   * `annotationValues` property instead.
+   * and misaligned isolation filtering. `null` means "no synced storage": a host
+   * that feeds the public `annotationValues` property instead.
    */
   private _countSource: {
     colData: AnnotationData;
@@ -332,6 +341,9 @@ export class ProtspaceLegend extends LitElement {
    * size nor the computed default is ever stored or exported as the annotation's own.
    */
   private _annotationShapeSize: number | null = null;
+
+  // Kept until its dblclick arrives, which isolates from `isolationBase`.
+  private _firstClick: FirstClick | null = null;
 
   // Settings dialog temporary state (consolidated into single object)
   @state() private _dialogSettings: {
@@ -388,6 +400,7 @@ export class ProtspaceLegend extends LitElement {
     getOtherItems: () => this._otherItems,
     getLegendItems: () => this._legendItems,
     getOtherConcreteValues: () => computeOtherConcreteValues(this._otherItems),
+    getAutoHide: () => this.autoHide,
     getNumericAnnotationSettings: () => this._numericSettingsByAnnotation,
     getAnnotationSortModes: () => this._annotationSortModes,
     getNumericManualOrderIds: () => this._numericManualOrderIdsByAnnotation,
@@ -824,6 +837,11 @@ export class ProtspaceLegend extends LitElement {
     );
   }
 
+  /** `autoSync` is off; its doc lists what that changes. */
+  private get _hostDriven(): boolean {
+    return !this.autoSync;
+  }
+
   /**
    * Display order for the legend list. Every mode but `silhouette-desc` has already been
    * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
@@ -901,8 +919,6 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
-    this._scatterplotController.autoSync = this.autoSync;
-    this._scatterplotController.autoHide = this.autoHide;
   }
 
   disconnectedCallback(): void {
@@ -1018,24 +1034,23 @@ export class ProtspaceLegend extends LitElement {
       const sourceDataMatchesCurrentLegend =
         sourceData?.protein_ids !== undefined &&
         this._hasSameProteinIds(sourceData.protein_ids, this.proteinIds);
+      // Predictions included, as the app and the decode worker hash it.
       const unfilteredData = sourceDataMatchesCurrentLegend
         ? {
             protein_ids: sourceData.protein_ids,
             annotations: sourceData.annotations,
             numeric_annotation_data: sourceData.numeric_annotation_data,
+            annotation_predicted: sourceData.annotation_predicted,
           }
         : {
             protein_ids: this.proteinIds,
             annotations: this.data?.annotations,
             numeric_annotation_data: this.data?.numeric_annotation_data,
+            annotation_predicted: this.data?.annotation_predicted,
           };
 
       this._datasetProteinCount = unfilteredData.protein_ids.length;
-      this._persistenceController.updateDatasetHash({
-        protein_ids: unfilteredData.protein_ids,
-        annotations: unfilteredData.annotations,
-        numeric_annotation_data: unfilteredData.numeric_annotation_data,
-      });
+      this._persistenceController.updateDatasetHash(unfilteredData);
     }
 
     // Handle data or annotation changes
@@ -1057,12 +1072,11 @@ export class ProtspaceLegend extends LitElement {
       this._syncNumericSettingsFromPersistence();
     }
 
-    // An externally fed annotationValues array (the autoSync === false embedding
-    // path) is the source of truth while it is being fed, so it drops any storage
-    // captured by an earlier sync. Only a non-empty assignment counts: Lit reports
-    // the declared `= []` initializer as a change on the very first update, which
-    // would otherwise discard the storage the sync just captured. Clearing is
-    // `clearAllState`'s job.
+    // An externally fed annotationValues array is the source of truth while it is
+    // being fed, so it drops any storage captured by an earlier sync. Only a
+    // non-empty assignment counts: Lit reports the declared `= []` initializer as a
+    // change on the very first update, which would otherwise discard the storage the
+    // sync just captured. Clearing is `clearAllState`'s job.
     if (changedProperties.has('annotationValues') && this.annotationValues.length > 0) {
       this._countSource = null;
     }
@@ -1305,7 +1319,7 @@ export class ProtspaceLegend extends LitElement {
   private _applyEatOverlayEnabled(enabled: boolean): void {
     this._eatOverlayEnabled = enabled;
     const scatterplot = this._scatterplotController.scatterplot;
-    if (this.autoSync && scatterplot) {
+    if (!this._hostDriven && scatterplot) {
       scatterplot.eatOverlayEnabled = enabled;
     }
     this._emitEatOverlayChange();
@@ -1636,7 +1650,7 @@ export class ProtspaceLegend extends LitElement {
     this._updateAnnotationValues(data, selectedAnnotation);
     this._eatCounts = computeEatPopulationCounts(data, selectedAnnotation, this._eatOverlayEnabled);
     // Taken from the unsliced element, not from the incoming payload.
-    // `sliceVisualizationDataByIndices` strips `statisticsRows` from a filtered or isolated
+    // `sliceWith` in utils strips `statisticsRows` from a filtered or isolated
     // view on purpose (a slice must not carry scores that describe the whole dataset), so
     // reading them off `data` made every filter look identical to "this annotation was never
     // scored" -- which is why this used to need a sticky per-annotation memory to tell the two
@@ -1725,12 +1739,16 @@ export class ProtspaceLegend extends LitElement {
         knownValues,
       );
     }
+    // Protein order while host-driven, the order a per-protein `annotationValues` feed
+    // gives, so the legend comes out the same whether its host feeds it or it counts the
+    // synced storage. Tied counts keep this order, which settles their rows and colours.
     return LegendDataProcessor.countFromStorage(
       source.colData,
       source.values,
       source.proteinCount,
       filteredIndices,
       knownValues,
+      this._hostDriven,
     );
   }
 
@@ -1780,6 +1798,7 @@ export class ProtspaceLegend extends LitElement {
    * Use when forcing a full rebuild outside the updated() lifecycle.
    */
   private _rebuildLegendItems(): void {
+    if (perfCounters) perfCounters.legendRebuild++;
     this._updateLegendItems();
 
     if (!this._isNumericAnnotation() && this._persistenceController.hasPendingCategories()) {
@@ -1869,6 +1888,7 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _updateLegendItems(): void {
+    if (perfCounters) perfCounters.legendUpdate++;
     // Aligned with PersistenceController's isNumericAnnotation callback so the
     // processor and the persistence layer agree on numeric-ness in transient states.
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
@@ -2174,6 +2194,23 @@ export class ProtspaceLegend extends LitElement {
   // Item Interactions
   // ─────────────────────────────────────────────────────────────────
 
+  /** Toggles, except on the second click of a double-click (`isSecondClickOfDouble`). */
+  private _handleItemMouseClick(value: string, event: MouseEvent): void {
+    const valueKey = valueToKey(value);
+    if (isSecondClickOfDouble(this._firstClick, valueKey, event)) return;
+
+    const itemsBefore = this._legendItems;
+    this._handleItemClick(value);
+    this._firstClick =
+      event.detail === 1 ? { valueKey, itemsBefore, itemsAfter: this._legendItems } : null;
+  }
+
+  private _handleItemMouseDoubleClick(value: string): void {
+    const first = this._firstClick;
+    this._firstClick = null;
+    this._handleItemDoubleClick(value, isolationBase(first, valueToKey(value), this._legendItems));
+  }
+
   private _handleItemClick(value: string): void {
     const valueKey = valueToKey(value);
     const result = updateItemsVisibility(this._legendItems, this._hiddenValues, valueKey);
@@ -2190,8 +2227,8 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _handleItemDoubleClick(value: string): void {
-    const result = isolateItem(this._legendItems, value);
+  private _handleItemDoubleClick(value: string, items: LegendItem[] = this._legendItems): void {
+    const result = isolateItem(items, value);
 
     this._legendItems = result.items;
     this._hiddenValues = result.hiddenValues;
@@ -2988,8 +3025,8 @@ export class ProtspaceLegend extends LitElement {
       classes,
       selected,
       {
-        onClick: () => this._handleItemClick(item.value),
-        onDoubleClick: () => this._handleItemDoubleClick(item.value),
+        onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
+        onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
         onViewOther: (e: Event) => {
           e.stopPropagation();
           this._showOtherDialog = true;

@@ -1,31 +1,31 @@
 /**
  * @vitest-environment jsdom
  *
- * Legend reactivity (B11: F-19 / F-31 / F-57 / F-46). The legend → scatter-plot
- * mapping transport (INV-06/07) is consumed by two handlers
+ * Legend reactivity. The legend → scatter-plot mapping transport (the color/shape
+ * and z-order CustomEvents) is consumed by two handlers
  * (`_handleZOrderChange` / `_handleColorMappingChange`). This file LOCKS their
  * pre-change behavior:
  *
- *   - F-31 single render path: a legend mapping change must render EXACTLY ONCE.
+ *   - Single render path: a legend mapping change must render EXACTLY ONCE.
  *     Today the imperative handler calls `_renderPlot()` once AND the three
  *     mapping fields are `@state`, so the write calls `requestUpdate(...)`,
  *     enqueues a Lit update, and `updated()`'s catch-all (scatter-plot.ts
  *     L774-777, `!onlySelectionChanged`) fires a SECOND `_renderPlot()`. The
- *     load-bearing signal — identical to F-48/_transform — is whether the field
+ *     load-bearing signal — identical to the `_transform` case — is whether the field
  *     write calls `requestUpdate`: a reactive `@state` setter calls it
  *     synchronously on write (RED: a second render is scheduled); a plain field
- *     does not (GREEN after F-31). This is observable without connecting and
+ *     does not (GREEN once the fields are plain). This is observable without connecting and
  *     without any `updateComplete` await (which hangs on an un-appended element).
  *
- *   - INV-08 colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`;
+ *   - colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`;
  *     colorOnly=false forces it. Must stay GREEN across the batch.
  *
- *   - F-19 key-validation: a malformed/partial detail must NOT overwrite the
+ *   - Key validation: a malformed/partial detail must NOT overwrite the
  *     mapping fields with `undefined`. Today the handlers blind-cast
  *     `event as CustomEvent` and assign `.detail.shapeMapping` (= undefined) —
  *     RED until the runtime guards are added.
  *
- *   - F-57 (post-B6 reality): the numeric recompute lifecycle is owned by
+ *   - Redundant requestUpdate: the numeric recompute lifecycle is owned by
  *     `NumericRecomputeRunner`; the host exposes `_numericRecomputeRunning`
  *     (`@state` mirror, driven by the runner's `setRunning` host callback) —
  *     there is NO `_numericRecomputeState` object. The runner's `setRunning`
@@ -33,11 +33,11 @@
  *     explicit `host.requestUpdate()` in the start path is redundant. Signal:
  *     spy the host `requestUpdate` across a synchronous `schedule()` start.
  *
- *   - F-46: the public `numeric-recompute-start` / `-end` CustomEvents have ZERO
- *     consumers (confirmed by repo-wide search; absent from INV-05). They must
+ *   - Removed events: the public `numeric-recompute-start` / `-end` CustomEvents have ZERO
+ *     consumers (confirmed by repo-wide search; not in the documented event contract). They must
  *     be removed while the `_numericRecomputeRunning` busy mirror is preserved.
  *     Today the runner dispatches them via the host `dispatch` callback — RED for
- *     "not dispatched" until F-46.
+ *     "not dispatched" until they are removed.
  *
  * Construct the element via createElement WITHOUT appending (so Lit's
  * connectedCallback / WebGL init never runs — same no-append pattern as
@@ -47,84 +47,35 @@
  * private handlers directly.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
 
-vi.hoisted(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-  }
-});
-
-import './scatter-plot';
-
-function makeData(): VisualizationData {
-  const fams = ['A', 'A', 'B'];
-  const coords = new Float32Array(fams.length * 2);
-  fams.forEach((_, i) => {
-    coords[i * 2] = i;
-    coords[i * 2 + 1] = i;
-  });
-  return {
-    protein_ids: fams.map((_, i) => `p${i}`),
-    projections: [{ name: 'umap', data: coords, dimension: 2 }],
-    annotations: {
-      fam: {
-        values: fams,
-        colors: ['#f00', '#f00', '#0f0'],
-        shapes: fams.map(() => 'circle'),
-      },
-    },
-    annotation_data: { fam: fams.map((v) => [fams.indexOf(v)]) },
-  } as unknown as VisualizationData;
-}
+import {
+  createPlot,
+  fakeFrames,
+  makeFamilyData,
+  type PlotInternals,
+} from './test-support/plot-fixture';
 
 type WebglStub = {
   invalidateDepthOrder: ReturnType<typeof vi.fn>;
   invalidateStyleCache: ReturnType<typeof vi.fn>;
-  /**
-   * Not asserted on, but required: `_scheduleNumericAnnotationRefresh` queues a
-   * requestAnimationFrame whose callback reaches `setStyleSignature`. That fires
-   * after the test that scheduled it has finished, so a missing method throws
-   * from inside jsdom's frame callback — outside any test's scope, where it
-   * becomes an unhandled error that fails `vitest --run` while every assertion
-   * still passes. Whether the frame lands before teardown is a timing race, so
-   * the stub has to cover the whole path, not just the calls under test.
-   */
-  setStyleSignature: ReturnType<typeof vi.fn>;
+  invalidateCategoryStyles: ReturnType<typeof vi.fn>;
 };
 
-type Internals = HTMLElement & {
-  data: VisualizationData;
-  selectedAnnotation: string;
-  _plotData: { length: number };
-  _zOrderMapping: Record<string, number> | null;
-  _colorMapping: Record<string, string> | null;
-  _shapeMapping: Record<string, string> | null;
-  _styleGettersCache: unknown;
-  _renderPlot(): void;
-  _webglRenderer: WebglStub;
-  _numericRecomputeRunning: boolean;
-  _handleZOrderChange(event: Event): void;
-  _handleColorMappingChange(event: Event): void;
-  _scheduleNumericAnnotationRefresh(): void;
-  requestUpdate(name?: PropertyKey, oldValue?: unknown): void;
-};
+/** The plot, with the stub renderer `makeEl` gives it. */
+type Plot = Omit<PlotInternals, '_webglRenderer'> & { _webglRenderer: WebglStub };
 
-function makeEl(): Internals {
-  const el = document.createElement('protspace-scatterplot') as unknown as Internals;
-  el.data = makeData();
-  el.selectedAnnotation = 'fam';
+function makeEl(): Plot {
+  const el = createPlot({
+    data: makeFamilyData({ n: 3, families: { A: '#f00', B: '#0f0' } }),
+    selectedAnnotation: 'fam',
+  }) as unknown as Plot;
   // Simulate post-process state: non-empty plot so the handler render branch runs.
   (el as unknown as { _plotData: unknown })._plotData = { length: 3 };
   // Stub the renderer so invalidate* calls are no-ops and observable.
-  (el as unknown as { _webglRenderer: WebglStub })._webglRenderer = {
+  el._webglRenderer = {
     invalidateDepthOrder: vi.fn(),
     invalidateStyleCache: vi.fn(),
-    setStyleSignature: vi.fn(),
+    invalidateCategoryStyles: vi.fn(),
   };
   return el;
 }
@@ -145,11 +96,10 @@ function zOrderEvent(detail: unknown): Event {
 // lands before teardown is a timing race, so it surfaced as an intermittent CI
 // failure rather than a consistent one.
 //
-// Holding the callbacks unrun keeps the file to the synchronous, never-connected
-// contract its header describes.
+// Holding the callbacks unrun (fakeFrames queues them, and no test runs a frame)
+// keeps the file to the synchronous, never-connected contract its header describes.
 beforeEach(() => {
-  vi.stubGlobal('requestAnimationFrame', () => 1);
-  vi.stubGlobal('cancelAnimationFrame', () => {});
+  fakeFrames();
 });
 
 afterEach(() => {
@@ -157,8 +107,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('legend mapping handlers — single render path (F-31)', () => {
-  it('z-order change renders once imperatively and schedules NO second (Lit) render', () => {
+describe('legend mapping handlers — single render path', () => {
+  it('z-order change renders once and schedules NO second (Lit) render', () => {
     const el = makeEl();
     const renderSpy = vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
     // requestUpdate is the Lit scheduling hook: a reactive @state write calls it
@@ -167,14 +117,16 @@ describe('legend mapping handlers — single render path (F-31)', () => {
 
     el._handleZOrderChange(zOrderEvent({ zOrderMapping: { A: 1, B: 0 } }));
 
-    expect(renderSpy).toHaveBeenCalledTimes(1); // the imperative render
+    expect(renderSpy).not.toHaveBeenCalled(); // requested for the next frame
+    el._renderLoop.flush();
+    expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._zOrderMapping).toEqual({ A: 1, B: 0 });
-    // F-31: while _zOrderMapping is @state, the write schedules the second render.
+    // While _zOrderMapping is @state, the write schedules the second render.
     // RED on the current tree (requestUpdate called); GREEN once demoted to a plain field.
     expect(reqSpy).not.toHaveBeenCalled();
   });
 
-  it('color-mapping change renders once imperatively and schedules NO second (Lit) render', () => {
+  it('color-mapping change renders once and schedules NO second (Lit) render', () => {
     const el = makeEl();
     const renderSpy = vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
     const reqSpy = vi.spyOn(el, 'requestUpdate');
@@ -187,16 +139,17 @@ describe('legend mapping handlers — single render path (F-31)', () => {
       }),
     );
 
+    el._renderLoop.flush();
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._colorMapping).toEqual({ A: '#111111', B: '#222222' });
     expect(el._shapeMapping).toEqual({ A: 'circle', B: 'square' });
-    // F-31: _colorMapping/_shapeMapping are @state today → requestUpdate is
+    // _colorMapping/_shapeMapping are @state today → requestUpdate is
     // called → updated() catch-all renders a SECOND time. RED until demoted.
     expect(reqSpy).not.toHaveBeenCalled();
   });
 });
 
-describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stays GREEN)', () => {
+describe('legend mapping handlers — colorOnly contract (guardrail, stays GREEN)', () => {
   it('colorOnly=true does NOT call invalidateDepthOrder', () => {
     const el = makeEl();
     vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
@@ -210,6 +163,9 @@ describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stay
     );
 
     expect(el._webglRenderer.invalidateDepthOrder).not.toHaveBeenCalled();
+    // Whole categories restyle: the renderer rewrites its per-record table.
+    expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
+    expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
   });
 
   it('colorOnly=false DOES call invalidateDepthOrder', () => {
@@ -228,7 +184,7 @@ describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stay
   });
 });
 
-describe('legend mapping handlers — malformed detail key-validation (F-19)', () => {
+describe('legend mapping handlers — malformed detail key-validation', () => {
   it('a partial color-mapping detail does NOT overwrite state with undefined', () => {
     const el = makeEl();
     el._colorMapping = { A: '#existing' };
@@ -256,17 +212,17 @@ describe('legend mapping handlers — malformed detail key-validation (F-19)', (
   });
 });
 
-describe('numeric-recompute scheduling — no redundant requestUpdate (F-57, post-B6)', () => {
+describe('numeric-recompute scheduling — no redundant requestUpdate', () => {
   it('schedules exactly ONE Lit update on start — the @state mirror, not a duplicate explicit call', () => {
     const el = makeEl();
-    // POST-B6: busy state is the _numericRecomputeRunning @state mirror, driven
+    // Busy state is the _numericRecomputeRunning @state mirror, driven
     // by the runner's setRunning host callback. Writing that @state field already
     // routes through the element's requestUpdate() (Lit's reactive setter) and
     // schedules the update. The runner's SEPARATE explicit host.requestUpdate()
-    // call was the redundant one F-57 drops.
+    // call was the redundant one that was dropped.
     //
-    // RED on the pre-F-57 tree: schedule() triggers TWO requestUpdate calls (the
-    // @state setter's own + the explicit host.requestUpdate()). GREEN after F-57:
+    // RED on the pre-change tree: schedule() triggers TWO requestUpdate calls (the
+    // @state setter's own + the explicit host.requestUpdate()). GREEN after the change:
     // exactly ONE — the legitimate @state-driven schedule, with the redundant
     // explicit call removed.
     const reqSpy = vi.spyOn(el, 'requestUpdate');
@@ -278,7 +234,7 @@ describe('numeric-recompute scheduling — no redundant requestUpdate (F-57, pos
   });
 });
 
-describe('numeric-recompute events removed (F-46)', () => {
+describe('numeric-recompute events removed', () => {
   it('does not dispatch numeric-recompute-start on schedule', () => {
     const el = makeEl();
     const startSpy = vi.fn();
@@ -294,5 +250,26 @@ describe('numeric-recompute events removed (F-46)', () => {
     const el = makeEl();
     el._scheduleNumericAnnotationRefresh();
     expect(el._numericRecomputeRunning).toBe(true);
+  });
+});
+
+describe('legend visibility — restyle categories, not points', () => {
+  const changed = (...keys: string[]) => new Map(keys.map((k) => [k, undefined]));
+
+  it('a hide or show alone restyles the categories', () => {
+    const el = makeEl();
+    el._rebuildStyle(changed('hiddenAnnotationValues'));
+    expect(el._webglRenderer.invalidateCategoryStyles).toHaveBeenCalledTimes(1);
+    expect(el._webglRenderer.invalidateStyleCache).not.toHaveBeenCalled();
+  });
+
+  it('a hide that comes with an annotation, Other or EAT change re-stages', () => {
+    for (const other of ['selectedAnnotation', 'otherAnnotationValues', 'eatOverlayEnabled']) {
+      const el = makeEl();
+      Object.assign(el._webglRenderer, { invalidatePositionCache: vi.fn() });
+      el._rebuildStyle(changed('hiddenAnnotationValues', other));
+      expect(el._webglRenderer.invalidateStyleCache).toHaveBeenCalledTimes(1);
+      expect(el._webglRenderer.invalidateCategoryStyles).not.toHaveBeenCalled();
+    }
   });
 });

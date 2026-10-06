@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { djb2Hash, generateDatasetHash } from './data-hash';
+import {
+  djb2Hash,
+  generateDatasetHash,
+  generateLegacyDatasetHash,
+  rememberDatasetHash,
+} from './data-hash';
 
 describe('djb2Hash', () => {
   // Pinned outputs, not just shape checks: djb2Hash seeds the numeric-binning `signature`
@@ -507,6 +512,30 @@ describe('generateDatasetHash value stability', () => {
       );
     }
   });
+
+  it('keeps the stored values of a dataset with annotations, numeric data and predictions', () => {
+    const dataset = {
+      protein_ids: ['P2', 'P1', 'P3'],
+      annotations: {
+        family: { kind: 'categorical' as const, values: ['a', 'b', null] },
+        length: { kind: 'numeric' as const, values: [] },
+      },
+      numeric_annotation_data: { length: new Float64Array([30, 10, 20]) },
+    };
+    const predictions = {
+      family: [null, null, { value: 'a', confidence: 0.8, source: 'P1' }],
+    };
+
+    expect(generateDatasetHash(dataset)).toBe('5d5799bb4909e07d');
+    expect(generateDatasetHash({ ...dataset, annotation_predicted: predictions })).toBe(
+      'b74f5a0a2861ab1f',
+    );
+    // The legend's storage key before predictions joined its hash.
+    expect(generateLegacyDatasetHash({ ...dataset, annotation_predicted: predictions })).toBe(
+      '5d5799bb4909e07d',
+    );
+    expect(generateLegacyDatasetHash(dataset)).toBe('5d5799bb4909e07d');
+  });
 });
 
 describe('generateDatasetHash memoization', () => {
@@ -556,5 +585,28 @@ describe('generateDatasetHash memoization', () => {
 
     // The original references still resolve to the original hash.
     expect(generateDatasetHash(dataset)).toBe(baseline);
+  });
+});
+
+describe('rememberDatasetHash', () => {
+  const dataset = () => ({
+    protein_ids: ['P2', 'P1'],
+    annotations: { ec: { kind: 'categorical' as const, values: ['1.1.1.1', null] } },
+    numeric_annotation_data: { length: new Float64Array([10, 20]) },
+  });
+
+  it('serves the remembered hashes for the same payloads', () => {
+    const data = dataset();
+    rememberDatasetHash(data, 'remembered', 'remembered-legacy');
+    expect(generateDatasetHash(data)).toBe('remembered');
+    expect(generateDatasetHash({ ...data })).toBe('remembered');
+    expect(generateLegacyDatasetHash({ ...data })).toBe('remembered-legacy');
+  });
+
+  it('recomputes once a payload is replaced', () => {
+    const data = dataset();
+    const computed = generateDatasetHash(dataset());
+    rememberDatasetHash(data, 'remembered', 'remembered-legacy');
+    expect(generateDatasetHash({ ...data, annotations: { ...data.annotations } })).toBe(computed);
   });
 });

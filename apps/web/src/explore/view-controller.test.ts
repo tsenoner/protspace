@@ -43,6 +43,9 @@ function createMockElements() {
       controlBar.tooltipAnnotations = [...tooltip];
       plotElement.tooltipAnnotations = [...tooltip];
     }),
+    applyDensityLayerSelection: vi.fn((density: DensityLayerMode) => {
+      controlBar.densityLayer = density;
+    }),
   };
 
   return { plotElement, controlBar };
@@ -377,6 +380,7 @@ describe('createViewController', () => {
     );
 
     expect(effective?.density).toBe('auto');
+    expect(controlBar.applyDensityLayerSelection).toHaveBeenCalledWith('auto');
     expect(controlBar.densityLayer).toBe('auto');
     expect(plotElement.config).toEqual({
       pointSize: 240,

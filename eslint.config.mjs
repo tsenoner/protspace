@@ -88,6 +88,7 @@ export default [
       'scripts/**/*.{ts,mts}',
       'apps/web/tests/**/*.ts',
       'perf/**/*.ts',
+      'perf/**/*.mjs',
       'tests/**/*.ts',
       'docs/**/*.{ts,mts}',
     ],
