@@ -22,7 +22,7 @@ connection costs nothing extra.
 #### Scenario: The server does not answer
 
 - **WHEN** the health request fails with a connection error or a timeout, or the server
-  answers with a status other than 200
+  answers with an error status (4xx or 5xx)
 - **THEN** the message says the server did not answer its health check
 - **AND** it carries the underlying error text, so `connection refused`, a name-resolution
   failure or a `503` stays visible
@@ -35,7 +35,7 @@ connection costs nothing extra.
 - **THEN** the message names the server's version, the installed client's version and the
   window the client supports
 - **AND** when the server is newer than the window it tells the user to run
-  `pip install -U protspace` and says that needs Python 3.12 or newer
+  `pip install -U protspace`
 - **AND** when the server is older than the window it says so and does not advise upgrading
 
 #### Scenario: Majors are compared as numbers
@@ -76,6 +76,12 @@ stage failures print `ERROR: <message>` and exit 1 instead of a raw traceback.
 - **AND** it marks the source as failed, so the empty columns are not cached as negative
   predictions
 
+#### Scenario: A multi-model embed meets an unusable server
+
+- **WHEN** `protspace embed` is given several models and no usable server is found
+- **THEN** it waits for the server once, reports the failure once and exits 1
+- **AND** it does not try the remaining models, which go to the same server
+
 ### Requirement: Every Biocentral call site SHALL connect through one address and one helper
 
 Embedding, the embedder probe and the annotation predictor SHALL take the server address
@@ -87,3 +93,27 @@ the same wherever it happens.
 - **WHEN** no usable server is found while embedding, while probing an embedder, and while
   predicting annotations
 - **THEN** each reports the same `BiocentralUnavailableError` message for the same server state
+
+#### Scenario: The helper does not depend on the client at import
+
+- **WHEN** the helper is imported while the client library is absent or has been replaced
+  by a test double
+- **THEN** the import succeeds, and a failure message reads the versions the client
+  supports off the client it was handed
+
+### Requirement: Embedder shortcuts SHALL resolve without the client's enum member names
+
+Every shortcut in `MODEL_SHORT_KEYS` SHALL resolve to a model id that protspace holds
+itself, so that a renamed or removed member of the client's `CommonEmbedder` does not break
+importing the embedding package, the offline backend included, and a test SHALL fail when an
+id is no longer one the client lists.
+
+#### Scenario: A client release renames a member
+
+- **WHEN** the client's `CommonEmbedder` has no member under the name protspace once used
+- **THEN** every shortcut still resolves to the same model id, and the package still imports
+
+#### Scenario: The client stops listing an id
+
+- **WHEN** an id in `MODEL_SHORT_KEYS` is not among the ids the client's `CommonEmbedder` lists
+- **THEN** the shortcut test fails and names the missing ids

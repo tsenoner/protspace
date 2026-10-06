@@ -12,9 +12,10 @@ fail the same way, and just as misleadingly.
 
 - Require `biocentral-api>=2.0.0,<3` (the client for v2 servers) and relock. The cap holds
   `pip` users on the major we tested: the client's major tracks the server's, and a major is
-  where its API changes. This one renames `CommonEmbedder.ESM_8M` to `ESM2_8M`, so the
-  `esm2_8m` shortcut is repointed; left alone, the rename would crash
-  `import protspace.data.embedding.biocentral`.
+  where its API changes. This one renames `CommonEmbedder.ESM_8M` to `ESM2_8M`, which would
+  crash `import protspace.data.embedding.biocentral` and with it the offline backend that
+  imports the package. The shortcut table now holds the model ids themselves instead of enum
+  member names, so no later rename can.
 - Add one shared wait-for-server helper, in a module of its own, for the three places that
   connect (embedding, the embedder probe, annotation predictions). When no healthy server
   turns up it looks at the server's `/health` once and says why: unreachable, or reachable
@@ -23,7 +24,10 @@ fail the same way, and just as misleadingly.
 - Keep the words `No healthy Biocentral service` in every such message, so the prep
   service keeps routing the failure to `BIOCENTRAL_UNAVAILABLE` and the Colab hint.
 - Raise the failure as a `ValueError` subclass, so `protspace embed` and `protspace prepare`
-  print `ERROR: <message>` and exit 1 instead of a Rich traceback.
+  print `ERROR: <message>` and exit 1 instead of a Rich traceback, and make a multi-model
+  `embed` stop at the first such failure instead of waiting 30 s per model.
+- Run the prep CI on `apps/protspace/**` and the root `pyproject.toml` too, so the test that
+  pins the routing words runs on edits to either side.
 - Document the failure, its fix, and the Python 3.14 + `pip` caveat in the CLI guide, and
   correct the stale Python badge (it says 3.10+; the package has required 3.12 for a while).
 
@@ -51,7 +55,8 @@ it means a self-hosted v1 server is out of reach of the pinned client.
 - Code: new `apps/protspace/src/protspace/data/biocentral_connection.py` (address, error
   class, helper); `.../data/embedding/biocentral.py` (use it, shortcut rename);
   `.../annotations/retrievers/biocentral_retriever.py` (use it).
-  No CLI change: `cli/embed.py` and `cli/prepare.py` already catch `ValueError`.
+  `cli/embed.py` stops at the first connection failure; `cli/prepare.py` already catches
+  `ValueError`. `.github/workflows/prep-ci.yml` (path filter).
 - Dependencies: `biocentral-api>=2.0.0,<3` pulls in `biotrainer-core` (numpy `>=2.4.1`, which the
   lock already satisfies at 2.4.6) and `ruamel.yaml`; the root `uv.lock` is regenerated.
 - Release: a `fix:` under `apps/protspace/` makes semantic-release cut a patch version for

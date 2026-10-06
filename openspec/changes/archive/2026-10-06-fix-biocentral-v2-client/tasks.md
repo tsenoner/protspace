@@ -37,3 +37,12 @@
 ## 6. Archive
 
 - [x] 6.1 Tick this file, reread `proposal.md` and `design.md` against the final diff, and run `/opsx:archive` as the last commit on the branch
+
+## 7. Review follow-ups (/simplify)
+
+- [x] 7.1 Read the client's window off the client handed to `wait_for_server` and stop importing the client at module level; the retriever tests pass when run on their own
+- [x] 7.2 `raise_for_status` for HTTP errors, the message prefix composed once, the Python-floor remedy and its pin test dropped, the wrong comment about string comparison corrected
+- [x] 7.3 `protspace embed` stops at the first connection failure, so a multi-model run waits once
+- [x] 7.4 Shortcut table holds model ids; tests that a renamed member cannot break resolution and that the ids are ones the client lists
+- [x] 7.5 `prep-ci.yml` runs on `apps/protspace/**` and the root `pyproject.toml`
+- [x] 7.6 Tests use real `requests.Response` objects and one-line fakes

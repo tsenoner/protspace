@@ -29,7 +29,8 @@ the client's own major-version check compares the numbers as strings.
   both versions and the remedy, so the next major bump costs one read of the error.
 - Keep the failure routed as `BIOCENTRAL_UNAVAILABLE` in the prep service, and out of
   traceback territory in the CLI.
-- Keep a future client release from reaching users untested (the `<3` cap).
+- Keep a future client release from reaching users untested (the `<3` cap), and a renamed
+  client enum member from breaking an import.
 
 **Non-Goals:**
 
@@ -65,45 +66,55 @@ condition.
 
 **3. The message keeps the old words and adds the reason.** It begins `No healthy Biocentral
 service became available in time` — the pattern `_BIOCENTRAL_DOWN_PATTERNS` and the
-`prep-failure-routing` spec already match — followed by the reason. The server did not answer
-(the underlying error, which also carries the `connection refused` / `name resolution` text the
-other patterns look for), answered with an HTTP error status, or answered without a readable
-version. Or it runs a major outside the client's window (server version, client version,
-window, remedy). Or it reports a supported version but did not pass the health check in time.
-The remedy depends on direction: a newer server needs `pip install -U protspace`, and the
-message says that needs Python 3.12 or newer, because on 3.11 pip resolves to an old release
-without complaint (a test pins that number to `requires-python`); an older server gets no
-upgrade advice, since upgrading cannot help. Majors are compared as integers; the client's own
-string comparison would call `10` inside `[2, 3)`.
-The client's window comes from `BiocentralAPI.MIN_API_VERSION` / `MAX_API_VERSION` read at
-import, and its version from `importlib.metadata`, so tests that swap `BiocentralAPI` for a
-fake do not change what the message says.
+`prep-failure-routing` spec already match — followed by the reason. The server did not answer,
+or answered with an HTTP error status (the underlying error, which also carries the
+`connection refused` / `name resolution` / `503 Server Error` text the other patterns look
+for), or answered without a readable version. Or it runs a major outside the client's window
+(server version, client version, window, remedy). Or it reports a supported version but did
+not pass the health check in time. The remedy depends on direction: a newer server needs
+`pip install -U protspace`; an older one gets no upgrade advice, since upgrading cannot help.
+The message carries no Python-version caveat: only a release that already requires 3.12 can
+print it, so its reader is compliant by construction, and the installer caveats live in the
+CLI guide, where they can be edited. Majors are compared as integers; the client's own string
+comparison puts `10` before `2`. The window comes from `MIN_API_VERSION` / `MAX_API_VERSION`
+on the client the helper is handed, and the client's version from `importlib.metadata`. (The
+first version read the window from the client module at import. The retriever's tests import
+the helper lazily while `biocentral_api.BiocentralAPI` is swapped for a fake, so 15 of them
+failed whenever that file ran on its own, and only a full run hid it.)
 
 **4. `BiocentralUnavailableError(ValueError)`, and the helper takes the client.** The
 `embed-completeness` spec already settles that a stage failure is a `ValueError`, which
 `cli/embed.py` and `cli/prepare.py` catch to print `ERROR: <message>` and exit 1; a
-`RuntimeError` or `TimeoutError` would escape as a traceback. No CLI change follows. The
-helper takes the already-built client instead of building it, because the existing tests
-replace `biocentral.BiocentralAPI` (embedding) and `biocentral_api.BiocentralAPI`
-(retriever) and both seams must keep working. The server address becomes one constant,
-`BIOCENTRAL_URL`, used by all three sites.
+`RuntimeError` or `TimeoutError` would escape as a traceback. `embed` carries on after a
+per-model `ValueError`, which is right for per-model failures and wrong here: every model goes
+to the same server, so a multi-model run waited out the same 30 s once per model, six minutes
+for the documented 12, against one wait before this change. `embed` therefore catches
+`BiocentralUnavailableError` first, reports it once and exits 1; `prepare` already stops at the
+first failure. The helper takes the already-built client instead of building it, because the
+existing tests replace `biocentral.BiocentralAPI` (embedding) and
+`biocentral_api.BiocentralAPI` (retriever) and both seams must keep working. The server
+address becomes one constant, `BIOCENTRAL_URL`, used by all three sites.
 
 **5. The helper gets a module of its own, outside `data/embedding/`.** Putting it in
-`embedding/biocentral.py` would make annotation import the embedder shortcut tables, which
-resolve `CommonEmbedder` members at import, so an enum change meant for embedding could take
-annotation down with it. `data/embedding/__init__.py` also imports that module eagerly, so
-nothing placed beside it is light. `data/biocentral_connection.py` depends only on
-`biocentral_api`, `requests` and the standard library. The retriever imports it inside
-`_run_predictions`, as it imports `biocentral_api` today; the embedder imports it at module
-level, beside its own `biocentral_api` import, and is itself only imported when embedding.
+`embedding/biocentral.py` would make annotation import the embedding package just to reach a
+connection helper, and `data/embedding/__init__.py` imports that module eagerly, so nothing
+placed beside it is light. `data/biocentral_connection.py` depends only on `requests` and the
+standard library and imports nothing from the client, so a change to the client cannot break
+its import. Both sides import it at module level.
 
-**6. The shortcut is repointed, with no new test.** `MODEL_SHORT_KEYS` maps to
-`CommonEmbedder` member names and `resolve_embedder` also accepts a member name as typed
-(`-e ProtT5`), so decoupling from member names would remove a user-visible input. `esm2_8m`
-now names `ESM2_8M`. The existing test that `esm2_8m` resolves to
-`facebook/esm2_t6_8M_UR50D` already covers it, and any later rename fails the import, and so
-the whole suite, on the PR that moves the cap. A separate "every shortcut is a member" test
-could never reach its assertion: the import it needs would fail first.
+**6. The shortcut table holds model ids, not enum member names.** `MODEL_SHORT_KEYS` named
+`CommonEmbedder` members and resolved them at import. 2.0 renamed one (`ESM_8M`), and since
+`data/embedding/__init__.py` imports `biocentral.py` eagerly, a renamed member would also have
+broken importing the offline backend, which has nothing to do with Biocentral. The client's
+enum is generated from the server's spec, so the `<3` cap does not promise its names. The five
+entries now hold the ids directly, as `EXTRA_SHORT_KEYS` already did for seven models through
+the same `embed(embedder_name=<str>)` call. The ids are the values the members held, so
+resolved ids, cache paths and the HDF5 identity stamp are unchanged. A typed member name
+(`-e ProtT5`) was never served by this table but by `resolve_embedder`'s own call-time
+branch, so that input is unaffected. One test pins the ids to the ones the client lists, a
+check that can now fail on its own, and another that a renamed member cannot break
+resolution. `MODEL_SHORT_KEYS` is re-exported from `protspace.data.embedding`, so its values
+changing from member names to ids is visible to out-of-repo callers; none is known.
 
 **7. `requires-python` stays `>=3.12`.** `biocentral-api` 2.x declares `<3.14`, but it
 imports and reports the live server healthy on Python 3.14.8. `uv` ignores that upper
@@ -128,6 +139,11 @@ stays, the CLI guide says what 3.14 `pip` users see, and upstream is asked to wi
   ahead of users until the canary exists.
 - [`biotrainer-core` raises the numpy floor to 2.4.1] → the lock already holds numpy 2.4.6,
   and the Colab notebook already tells users to restart after the install upgrades numpy.
+- [Importing the 2.x client costs about 0.65 s where torch is installed, against 0.2 s] →
+  `biotrainer-core` imports torch when it is present, and `prepare` and `embed` pay it through
+  `data/embedding`'s eager imports. Measured in review and not fixed here: the fix is lazy
+  imports in the embedding package, a structural change of its own. A plain
+  `pip install protspace` and the prep image have no torch and pay about 10 ms.
 - [The v2 server rate-limits] → not caused or fixed here. Large annotation runs send
   sequential batches, so one that hits the limit is slower, not broken.
 
