@@ -1,8 +1,9 @@
 """Tests for scripts/generate_examples/build_showcase.py (the showcase bundle build).
 
-Offline: the pure helpers run on synthetic tables, and the two ``slow`` end-to-end
-tests replace the network (UniProt, annotate) with fakes while running the real
-``protspace bundle`` / ``style`` / ``stats``.
+Offline: the pure helpers run on synthetic tables, and the end-to-end EAT build
+(three-finger toxins) replaces the network (UniProt, embed, prepare) with fakes
+while running the real ``protspace bundle`` / ``transfer`` / ``stats`` / ``style``.
+It takes a few seconds and runs in CI with the rest.
 """
 
 from __future__ import annotations
@@ -2892,7 +2893,6 @@ class EmbedBuildCli(bs.Cli):
         return bs.MIN_CLI_VERSION
 
 
-@pytest.mark.slow
 def test_the_eat_example_builds_offline_and_passes_its_gates(
     config, tmp_path, monkeypatch
 ):
