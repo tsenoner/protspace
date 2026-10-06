@@ -991,16 +991,6 @@ describe('the startup restore and the requests that supersede it', () => {
     vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
     vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
   });
-
-  it('reports a failed startup demo as default-failed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse(500)));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { controller } = createController();
-
-    expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'default-failed' });
-    errorSpy.mockRestore();
-    expect(notifyMock.error).toHaveBeenCalledTimes(1);
-  });
 });
 
 // Ported from main's (#478) `loadDefaultDataset` test: the startup demo is now
