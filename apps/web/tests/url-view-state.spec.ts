@@ -632,7 +632,7 @@ test.describe('URL-backed explore view state', () => {
       (projection) => projection !== initialView.projection,
     );
 
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
+    expect(nextProjection).toBeTruthy();
 
     const initialHistoryLength = await page.evaluate(() => history.length);
     await selectProjection(page, nextProjection!);
@@ -732,7 +732,7 @@ test.describe('URL-backed explore view state', () => {
     );
 
     expect(nextAnnotation).toBeTruthy();
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
+    expect(nextProjection).toBeTruthy();
 
     const postInteraction = await captureExploreViewStability(page, async () => {
       await selectAnnotation(page, nextAnnotation!);

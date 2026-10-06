@@ -49,12 +49,9 @@ test.describe('Multi-annotation hover tooltip', () => {
       return cb?.annotations ?? [];
     });
     const otherAnnotation = annotations.find((name) => name !== 'ec');
-    if (!otherAnnotation) {
-      test.skip(true, 'demo dataset has only a single annotation');
-      return;
-    }
+    expect(otherAnnotation, 'the pinned demo has a second annotation').toBeTruthy();
 
-    const otherRow = await getRowForAnnotation(page, otherAnnotation);
+    const otherRow = await getRowForAnnotation(page, otherAnnotation!);
     await otherRow.locator('.tooltip-toggle-btn').click();
 
     await expect(page).toHaveURL(new RegExp(`tooltip=${otherAnnotation}`));
@@ -89,12 +86,9 @@ test.describe('Multi-annotation hover tooltip', () => {
       return cb?.annotations ?? [];
     });
     const otherAnnotation = available.find((name) => name !== 'ec');
-    if (!otherAnnotation) {
-      test.skip(true, 'demo dataset has only a single annotation');
-      return;
-    }
+    expect(otherAnnotation, 'the pinned demo has a second annotation').toBeTruthy();
 
-    const row = await getRowForAnnotation(page, otherAnnotation);
+    const row = await getRowForAnnotation(page, otherAnnotation!);
     await row.locator('.tooltip-toggle-btn').click();
     await expect(page).toHaveURL(new RegExp(`tooltip=${otherAnnotation}`));
     await row.locator('.tooltip-toggle-btn').click();
