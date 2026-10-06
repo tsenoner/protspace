@@ -683,7 +683,6 @@ export class WebGLRenderer {
     const needsDepthOrderUpdate = this.depthOrderDirty;
 
     if (needsPositionUpdate || needsStyleUpdate || needsDepthOrderUpdate) {
-      const stageStart = perfCounters ? performance.now() : 0;
       // A category restyle explains the sampled points' new opacity and colour,
       // so the style signature may change without anything per point changing.
       const restyled =
@@ -693,6 +692,7 @@ export class WebGLRenderer {
         !needsDepthOrderUpdate &&
         this.restyleRecords(pd);
       if (!restyled) {
+        const stageStart = perfCounters ? performance.now() : 0;
         const refused = this.markTexture.refused;
         this.populateBuffers(pd, scales, {
           positions: needsPositionUpdate,
@@ -706,8 +706,8 @@ export class WebGLRenderer {
           this.populateBuffers(pd, scales, { positions: false, styles: true, glide: false });
           styleSignature = this.computeStyleSignature(pd);
         }
+        if (perfCounters) perfCounters.restageMs += performance.now() - stageStart;
       }
-      if (perfCounters) perfCounters.restageMs += performance.now() - stageStart;
       this.lastDataSignature = dataSignature;
       this.lastStyleSignature = styleSignature;
       this.positionsDirty = false;
