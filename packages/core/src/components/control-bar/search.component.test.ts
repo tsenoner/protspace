@@ -53,6 +53,28 @@ const captureIds = (element: ProteinSearchElement, type: string): string[] => {
   return seen;
 };
 
+/**
+ * Paste `text` into the real input and return the event. jsdom has no DataTransfer, so
+ * the event carries a stub exposing only the `getData('text/plain')` the handler reads.
+ */
+const paste = (element: ProteinSearchElement, text: string): Event => {
+  const event = new Event('paste', { bubbles: true, cancelable: true, composed: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { getData: (type: string) => (type === 'text/plain' ? text : '') },
+  });
+  inputOf(element).dispatchEvent(event);
+  return event;
+};
+
+/** Record the `proteinIds` of every `add-selection-multiple` the element emits. */
+const captureBulk = (element: ProteinSearchElement): string[][] => {
+  const seen: string[][] = [];
+  element.addEventListener('add-selection-multiple', (event) => {
+    seen.push((event as CustomEvent<{ proteinIds: string[] }>).detail.proteinIds);
+  });
+  return seen;
+};
+
 const rowsOf = (element: ProteinSearchElement): HTMLElement[] =>
   Array.from(element.shadowRoot!.querySelectorAll('.search-suggestion'));
 
@@ -447,5 +469,75 @@ describe('protspace-protein-search feedback', () => {
     await element.updateComplete;
 
     expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
+});
+
+describe('protspace-protein-search paste', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  it('bulk-adds a pasted list split on any whitespace, in the dataset spelling', async () => {
+    const element = await setupSearch([...FIVE, 'Q12345'], []);
+    const bulk = captureBulk(element);
+
+    const event = paste(element, '  p00596\tQ12345\r\n\nP00597   p00599\n');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(bulk).toEqual([['P00596', 'Q12345', 'P00597', 'P00599']]);
+  });
+
+  it('drops repeated, already-selected and unknown IDs from the bulk add', async () => {
+    const element = await setupSearch([...FIVE, 'Q12345'], ['P00595']);
+    const bulk = captureBulk(element);
+
+    // P00596 twice in different casings, P00595 already selected, NOPE not in the dataset.
+    paste(element, 'P00595 p00596 NOPE P00596 q12345');
+
+    expect(bulk).toEqual([['P00596', 'Q12345']]);
+  });
+
+  it('emits nothing when no new valid ID was pasted, but still clears the search', async () => {
+    const element = await setupSearch([...FIVE, 'Q12345'], ['P00595']);
+    await typeQuery(element, 'P0059');
+    expect(rowsOf(element)).not.toHaveLength(0);
+    const bulk = captureBulk(element);
+
+    const event = paste(element, 'P00595 NOPE');
+    await element.updateComplete;
+
+    // Still a bulk paste, so the raw text must not land in the box either.
+    expect(event.defaultPrevented).toBe(true);
+    expect(bulk).toEqual([]);
+    expect(inputOf(element).value).toBe('');
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
+
+  it('leaves a single-token paste to the browser as ordinary typing', async () => {
+    const element = await setupSearch([...FIVE, 'Q12345'], []);
+    const bulk = captureBulk(element);
+    const added = captureIds(element, 'add-selection');
+
+    const event = paste(element, ' P00596 ');
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(bulk).toEqual([]);
+    expect(added).toEqual([]);
+  });
+
+  it('takes the bulk path for a single ID copied with its line break', async () => {
+    const element = await setupSearch([...FIVE, 'Q12345'], []);
+    const bulk = captureBulk(element);
+
+    // A row copied out of a spreadsheet or FASTA header list ends in a newline.
+    const event = paste(element, 'P00596\n');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(bulk).toEqual([['P00596']]);
   });
 });
