@@ -232,3 +232,15 @@ class TestCallSites:
         # An escaped exception is what typer renders as a traceback; a handled
         # failure leaves the runner a plain SystemExit.
         assert isinstance(result.exception, SystemExit), repr(result.exception)
+
+    def test_a_multi_model_run_waits_for_the_server_once(self, monkeypatch, tmp_path):
+        """One server serves every model, so the rest would only wait out the same
+        failure: 30 s and a health request each, 12 models over six minutes."""
+        _, client = self._unusable_server(monkeypatch)
+
+        result = self._embed(tmp_path, "prot_t5", "esm2_8m", "esm2_3b")
+
+        output = plain(result.output)
+        assert result.exit_code == 1, output
+        assert client.waits == [30]
+        assert output.count(f"ERROR: {_LEAD}") == 1
