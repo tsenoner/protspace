@@ -67,9 +67,10 @@ project is opt-in (`PERF_COUNTS=1`, which the script sets) and refuses a run wit
 server or `PLAYWRIGHT_BASE_URL`.
 
 It runs `apps/web/tests/perf-counts.spec.ts` on the demo bundle
-(`apps/web/public/data.parquetbundle`), then imports `apps/web/public/data/phosphatase.parquetbundle`,
-which has no legend settings (`import-no-settings`). The e2e CI workflow runs it as its own step,
-after the parallel suite. It prints one table, value/budget per cell, with `!` on a cell over
+(`apps/web/public/data.parquetbundle`), then imports `perf/datasets/phosphatase.parquetbundle`,
+which has no legend settings (`import-no-settings`); fetch it first with
+`pnpm perf:fetch --only phosphatase`. The e2e CI workflow fetches it and runs the counts as their
+own step on its first shard, after the parallel suite. It prints one table, value/budget per cell, with `!` on a cell over
 budget:
 
 ```
@@ -123,7 +124,7 @@ pnpm perf --scenarios annotation,camera --cpu 4
 
 | Flag                | Default    | Meaning                                                                            |
 | ------------------- | ---------- | ---------------------------------------------------------------------------------- |
-| `--datasets a,b`    | `default`  | `default` (the demo bundle), a name in `apps/web/public/data/`, or a path          |
+| `--datasets a,b`    | `default`  | `default` (the demo bundle), a fetched perf dataset id, or a path                  |
 | `--scenarios a,b`   | all        | `annotation`, `projection` (both switches), `legend`, `camera`, `resize`, `search` |
 | `--runs N`          | 5          | runs per segment; the first is a warm-up and is dropped                            |
 | `--cpu N`           | 1          | CPU throttling; 4 makes the demo bundle cost about what a 100K one does            |
@@ -213,7 +214,7 @@ needs only [uv](https://docs.astral.sh/uv/); its dependencies (pyarrow, numpy) a
 inline. `DATA` is an absolute directory outside the repo:
 
 ```sh
-uv run perf/scale/generate.py swissprot --source apps/web/public/data/573K_swissprot.parquetbundle \
+uv run perf/scale/generate.py swissprot --source perf/datasets/573K_swissprot.parquetbundle \
   --n 5000000 --out $DATA/swissprot-5M.parquetbundle
 uv run perf/scale/generate.py lean --n 67108864 --out $DATA/lean-67108864.parquetbundle
 pnpm perf --datasets "$DATA/swissprot-5M.parquetbundle" --runs 2
@@ -260,14 +261,14 @@ else using the GPU:
 
 ```sh
 caffeinate -dims node ../protspace-perf/perf/lab/with-lock.mjs pnpm perf:scale \
-  --datasets 573K=apps/web/public/data/573K_swissprot.parquetbundle,5M=/abs/synth-5M.parquetbundle
+  --datasets 573K=perf/datasets/573K_swissprot.parquetbundle,5M=/abs/synth-5M.parquetbundle
 pnpm perf:scale --datasets 573K_swissprot --cold 2 --reps 5        # a quick check, about 3 min
 pnpm perf:scale --url http://localhost:8302 --datasets 40K           # an already served build
 ```
 
 | Flag                  | Default                       | Meaning                                                                    |
 | --------------------- | ----------------------------- | -------------------------------------------------------------------------- |
-| `--datasets a=path,…` | required                      | `name=path`, a path, or a name in `apps/web/public/data/`                  |
+| `--datasets a=path,…` | required                      | `name=path`, a path, or a fetched perf dataset id                          |
 | `--cold N`            | 10                            | cold imports per dataset, each in a fresh context                          |
 | `--reps N`            | 20                            | measured reps per interaction, after 2 warm-ups; 0 measures loads only     |
 | `--rounds N`          | 1                             | repeat all datasets N times, interleaved                                   |
