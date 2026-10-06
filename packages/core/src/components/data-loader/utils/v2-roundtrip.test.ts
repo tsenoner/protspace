@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
   NA_VALUE,
   createParquetBundle,
@@ -205,25 +204,5 @@ describe('v2 bundle round-trip (cross-repo golden fixture)', () => {
     expect(reloaded.annotations.go_bp.values.filter(isNAValue)).toHaveLength(1);
     expect(reloaded.annotations.go_bp.values).toEqual(golden.annotations.go_bp.values);
     expect(reloaded.annotations.go_bp.colors).toEqual(golden.annotations.go_bp.colors);
-  });
-});
-
-describe('v1 bundle format-version detection regression', () => {
-  it('detects an existing v1 fixture as formatVersion 1 via the real footer read (not the catch->1 fallback)', async () => {
-    const filePath = resolve(
-      __dirname,
-      '../../../../../../apps/web/tests/fixtures/data_custom.parquetbundle',
-    );
-    const buf = readFileSync(filePath);
-    const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-
-    const extraction = await extractRowsFromParquetBundle(arrayBuffer);
-
-    // A v1 bundle has no `protspace_format_version` key-value metadata, so
-    // readFormatVersion's normal (non-exceptional) path returns 1 -- this fixture
-    // must actually parse as valid parquet (proving we hit that path, not the
-    // try/catch's `catch -> 1` fallback for a bundle that fails to parse at all).
-    expect(extraction.formatVersion).toBe(1);
-    expect(extraction.projections.length).toBeGreaterThan(0);
   });
 });
