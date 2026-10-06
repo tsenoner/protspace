@@ -1,0 +1,46 @@
+name: protspace slow tests
+
+# The tests protspace-ci.yml deselects with -m "not slow": the local embedder's
+# esm2_8m end-to-end run (the only test of the real setup_model/_embed_batch
+# glue against transformers; it needs the [local] extra and downloads ~30 MB
+# from the Hugging Face hub) and the taxonomy retriever's calls to the live
+# UniProt API. Both depend on outside services, so they stay out of the PR
+# path and run here on a schedule instead of nowhere.
+#
+# A red run means one of those broke: a transformers release, a model on the
+# hub, or the UniProt API. GitHub emails the workflow's last editor.
+
+on:
+  schedule:
+    # Weekly (Monday, 05:00 UTC): often enough to catch a transformers release
+    # before a user does, rare enough not to lean on the external services.
+    - cron: '0 5 * * 1'
+  workflow_dispatch: # run on demand; also re-arms the schedule after repo-inactivity auto-disable
+
+defaults:
+  run:
+    working-directory: apps/protspace
+
+jobs:
+  slow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+          # Pinned through uv, like protspace-ci.yml, at the requires-python floor.
+          python-version: '3.12'
+
+      - name: Install dependencies (with the local embedding extra)
+        run: uv sync --locked --group dev --extra local
+
+      - name: Assert the extra installed what the embedder test needs
+        # The test importorskips torch and transformers; without them it would
+        # skip and this job would end green having tested nothing.
+        run: uv run python -c "import torch, transformers; print('transformers', transformers.__version__)"
+
+      - name: Run slow tests
+        run: uv run pytest -m slow -q -rs
