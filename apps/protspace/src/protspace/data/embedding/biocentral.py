@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 MODEL_SHORT_KEYS: dict[str, str] = {
     "prot_t5": "ProtT5",
     "prost_t5": "ProstT5",
-    "esm2_8m": "ESM_8M",
+    "esm2_8m": "ESM2_8M",
     "esm2_650m": "ESM2_650M",
     "esm2_3b": "ESM2_3B",
 }
