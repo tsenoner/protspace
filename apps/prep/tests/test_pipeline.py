@@ -247,7 +247,10 @@ async def test_annotate_failure_raises_pipeline_failure(ctx):
 async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc = MagicMock()
     proc.returncode = None
-    proc.kill = MagicMock()
+    # The process exits once killed, as a real one does; otherwise _run_step
+    # waits out its 5s post-kill grace period.
+    killed = asyncio.Event()
+    proc.kill = MagicMock(side_effect=killed.set)
     proc.stderr = MagicMock()
 
     async def _readline():
@@ -257,8 +260,8 @@ async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc.stderr.readline = _readline
 
     async def _wait():
-        await asyncio.sleep(60)
-        return 0
+        await killed.wait()
+        return -9
 
     proc.wait = _wait
 
