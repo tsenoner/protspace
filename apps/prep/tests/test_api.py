@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -224,12 +225,13 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
         assert r.status_code == 200
 
         cd = r.headers.get("content-disposition", "")
-        assert (
-            '"' not in cd.split("filename=", 1)[-1].lstrip('"').rstrip('"')
-            or cd.count('"') == 2
+        # A plain, sanitised filename. Starlette RFC 5987-encodes an unsafe name
+        # as `filename*=` instead, so CR/LF never reach the header raw even if
+        # the endpoint skipped _safe_download_name; only the shape tells. The
+        # exact stem depends on how httpx encodes the multipart filename.
+        assert re.fullmatch(
+            r'attachment; filename="[A-Za-z0-9._-]+\.parquetbundle"', cd
         )
-        assert "\r" not in cd
-        assert "\n" not in cd
         assert "X-Injected" not in r.headers
 
 
