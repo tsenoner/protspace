@@ -388,8 +388,6 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 test.describe('Persisted dataset failure handling', () => {
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-
       const originalDefine = customElements.define.bind(customElements);
       customElements.define = (name, constructor, options) => {
         if (name === 'protspace-data-loader') {
@@ -466,7 +464,6 @@ test.describe('Persisted dataset failure handling', () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: async () => {
@@ -495,7 +492,6 @@ test.describe('Persisted dataset failure handling', () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: undefined,

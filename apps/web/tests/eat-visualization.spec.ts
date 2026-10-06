@@ -10,12 +10,6 @@ const EAT_FIXTURE = fileURLToPath(
 // Exact asset from issue #277 comment 4902936797. Bundle SHA-256:
 // 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('driver.overviewTour', 'true');
-  });
-});
-
 async function loadEatFixture(page: Page): Promise<void> {
   await page.route(STARTUP_URL_GLOB, (route) => route.abort());
   await page.goto('/explore');

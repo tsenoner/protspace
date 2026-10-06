@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 import { waitForExploreDataLoad } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
@@ -221,7 +222,7 @@ test.describe('Product Tour', () => {
     await waitForTourDismissed(page);
 
     // Verify localStorage was set
-    const storageValue = await page.evaluate(() => localStorage.getItem('driver.overviewTour'));
+    const storageValue = await page.evaluate((key) => localStorage.getItem(key), TOUR_STORAGE_KEY);
     expect(storageValue).toBe('true');
 
     // Navigate away and back
