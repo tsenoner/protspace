@@ -102,11 +102,12 @@ near:
 3. selected, observed;
 4. selected, predicted.
 
-A point counts as selected when its opacity is at least `SELECTED_OPACITY_THRESHOLD` (0.99). Inside a
-tier, the legend's z-order and the base opacity order the points. `buildPaintOrder`
-(`point-staging.ts`) sorts with `sortIndicesByDepthDescending` (`depth-sort.ts`), a stable radix sort
-on the float bits that breaks ties by slot. With a selection active, `selectedStartIndex` is the
-first slot at 0.99 or above. That index is the cut between the two draw passes.
+A point counts as selected when its opacity is at least `SELECTED_OPACITY_THRESHOLD` (0.99). Inside
+a tier, the legend's z-order and the base opacity order the points. `buildPaintOrder`
+(`webgl/renderer/point-staging.ts`) sorts with `sortIndicesByDepthDescending`
+(`webgl/renderer/depth-sort.ts`), a stable radix sort on the float bits that breaks ties by slot.
+With a selection active, `selectedStartIndex` is the first slot at 0.99 or above. That index is the
+cut between the two draw passes.
 
 ### Resize
 
@@ -178,11 +179,11 @@ positions.
 
 ## Projection glide
 
-`webgl/renderer/position-glide.ts` holds `PositionGlide`; the math is in `position-morph.ts`. On a
-projection switch the points move from where they are drawn to their new positions over
-`MORPH_MS` (800 ms), eased in and out. The clock reads `document.timeline.currentTime` and advances
-at most `MAX_FRAME_STEP_MS` (1000 / 30 ms) per frame, so a stall pauses the glide instead of
-skipping part of it.
+`webgl/renderer/position-glide.ts` holds `PositionGlide`; the math is in
+`webgl/renderer/position-morph.ts`. On a projection switch the points move from where they are drawn
+to their new positions over `MORPH_MS` (800 ms), eased in and out. The clock reads
+`document.timeline.currentTime` and advances at most `MAX_FRAME_STEP_MS` (1000 / 30 ms) per frame,
+so a stall pauses the glide instead of skipping part of it.
 
 The shader mixes the staged position with `a_prevPosition` by the `u_morph` weight. That attribute
 is enabled, and its buffer filled, only during a glide (`syncMorphAttribute`). When the glide ends
