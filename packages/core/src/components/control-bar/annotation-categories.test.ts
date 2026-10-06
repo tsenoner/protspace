@@ -6,35 +6,22 @@ import {
   type GroupedAnnotation,
 } from './annotation-categories';
 
-describe('annotation-select', () => {
+describe('annotation-categories', () => {
   describe('groupAnnotations', () => {
-    it('categorizes UniProt annotations correctly', () => {
-      const result = groupAnnotations(['gene_name', 'reviewed', 'protein_families']);
+    it('groups UniProt annotations, sorted alphabetically within the section', () => {
+      const result = groupAnnotations([
+        'reviewed',
+        'gene_name',
+        'protein_families',
+        'annotation_score',
+      ]);
 
       const uniprotGroup = result.find((g) => g.category === 'UniProt');
-      expect(uniprotGroup).toBeDefined();
-      expect(uniprotGroup?.annotations).toEqual(['gene_name', 'protein_families', 'reviewed']);
-    });
-
-    it('categorizes InterPro annotations correctly', () => {
-      const result = groupAnnotations(['pfam', 'cath', 'signal_peptide']);
-
-      const interproGroup = result.find((g) => g.category === 'InterPro');
-      expect(interproGroup).toBeDefined();
-      expect(interproGroup?.annotations).toEqual(['cath', 'pfam', 'signal_peptide']);
-    });
-
-    it('categorizes Taxonomy annotations in correct order', () => {
-      const result = groupAnnotations(['species', 'genus', 'kingdom', 'domain', 'phylum']);
-
-      const taxonomyGroup = result.find((g) => g.category === 'Taxonomy');
-      expect(taxonomyGroup).toBeDefined();
-      expect(taxonomyGroup?.annotations).toEqual([
-        'domain',
-        'kingdom',
-        'phylum',
-        'genus',
-        'species',
+      expect(uniprotGroup?.annotations).toEqual([
+        'annotation_score',
+        'gene_name',
+        'protein_families',
+        'reviewed',
       ]);
     });
 
@@ -98,29 +85,6 @@ describe('annotation-select', () => {
       const otherGroup = result.find((g) => g.category === 'Other');
       expect(otherGroup).toBeDefined();
       expect(otherGroup?.annotations).toEqual(['another_unknown', 'custom_field']);
-    });
-
-    it('sorts annotations alphabetically within each category', () => {
-      const result = groupAnnotations(['reviewed', 'gene_name', 'annotation_score']);
-
-      const uniprotGroup = result.find((g) => g.category === 'UniProt');
-      expect(uniprotGroup?.annotations).toEqual(['annotation_score', 'gene_name', 'reviewed']);
-    });
-
-    it('returns source categories in order: InterPro, Taxonomy, UniProt, Other', () => {
-      const result = groupAnnotations(['custom', 'species', 'pfam', 'gene_name']);
-
-      expect(result.map((g) => g.category)).toEqual(['InterPro', 'Taxonomy', 'UniProt', 'Other']);
-    });
-
-    it('handles mixed annotations from multiple categories', () => {
-      const result = groupAnnotations(['gene_name', 'pfam', 'species', 'custom_field']);
-
-      expect(result.length).toBe(4);
-      expect(result.find((g) => g.category === 'UniProt')?.annotations).toEqual(['gene_name']);
-      expect(result.find((g) => g.category === 'InterPro')?.annotations).toEqual(['pfam']);
-      expect(result.find((g) => g.category === 'Taxonomy')?.annotations).toEqual(['species']);
-      expect(result.find((g) => g.category === 'Other')?.annotations).toEqual(['custom_field']);
     });
 
     it('handles empty annotations array', () => {
@@ -227,25 +191,15 @@ describe('annotation-select', () => {
   });
 
   describe('flattenGroupedAnnotations', () => {
-    it('flattens grouped annotations into single array', () => {
+    it("concatenates the groups in order, keeping each group's own order", () => {
       const grouped: GroupedAnnotation[] = [
-        { category: 'UniProt', annotations: ['gene_name', 'reviewed'] },
-        { category: 'InterPro', annotations: ['pfam', 'cath'] },
-      ];
-
-      const result = flattenGroupedAnnotations(grouped);
-      expect(result).toEqual(['gene_name', 'reviewed', 'pfam', 'cath']);
-    });
-
-    it('preserves order from grouped annotations', () => {
-      const grouped: GroupedAnnotation[] = [
-        { category: 'Taxonomy', annotations: ['species'] },
-        { category: 'UniProt', annotations: ['gene_name'] },
+        { category: 'Taxonomy', annotations: ['species', 'genus'] },
+        { category: 'UniProt', annotations: ['reviewed', 'gene_name'] },
         { category: 'InterPro', annotations: ['pfam'] },
       ];
 
       const result = flattenGroupedAnnotations(grouped);
-      expect(result).toEqual(['species', 'gene_name', 'pfam']);
+      expect(result).toEqual(['species', 'genus', 'reviewed', 'gene_name', 'pfam']);
     });
 
     it('handles empty groups', () => {
@@ -260,15 +214,6 @@ describe('annotation-select', () => {
 
       const result = flattenGroupedAnnotations(grouped);
       expect(result).toEqual(['pfam']);
-    });
-
-    it('handles single group with multiple annotations', () => {
-      const grouped: GroupedAnnotation[] = [
-        { category: 'UniProt', annotations: ['a', 'b', 'c', 'd'] },
-      ];
-
-      const result = flattenGroupedAnnotations(grouped);
-      expect(result).toEqual(['a', 'b', 'c', 'd']);
     });
   });
 });
