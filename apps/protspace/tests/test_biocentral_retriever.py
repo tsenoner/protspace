@@ -12,6 +12,7 @@ from src.protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
 )
+from tests.prep_source import biocentral_down_patterns
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WEB_MISSING_VALUES = (
@@ -185,21 +186,6 @@ class TestBiocentralRetrieverNoSequences:
         assert all(v == "" for v in result[0].annotations.values())
 
 
-# The substrings the prep service matches (apps/prep/.../pipeline.py) to
-# classify a failure as BIOCENTRAL_UNAVAILABLE and send the user to Colab.
-# Copied, not imported: protspace must not depend on protspace_prep.
-_BIOCENTRAL_DOWN_PATTERNS = (
-    "connection refused",
-    "cannot connect to host",
-    "connectionerror",
-    "temporary failure in name resolution",
-    "name or service not known",
-    "503 service unavailable",
-    "503 server error",
-    "no healthy biocentral",
-)
-
-
 def _seq(i: int, length: int = 30) -> str:
     """A distinct protein sequence for index *i*."""
     alphabet = "ACDEFGHIKLMNPQRSTVWY"
@@ -351,7 +337,7 @@ class TestSequenceLengthLimits:
         assert notes[0].levelname == "WARNING"
         assert "3 of 5 proteins" in notes[0].getMessage()
         text = notes[0].getMessage().lower()
-        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+        assert not [p for p in biocentral_down_patterns() if p in text]
 
     def test_a_batch_refused_for_a_named_sequence_is_resent_without_it(self):
         """Should the server's limits differ from ours, the 422 names the
@@ -504,7 +490,7 @@ class TestFailedBatch:
         summary = [r for r in caplog.records if "missing for" in r.getMessage()]
         assert len(summary) == 1
         text = summary[0].getMessage().lower()
-        assert not [p for p in _BIOCENTRAL_DOWN_PATTERNS if p in text]
+        assert not [p for p in biocentral_down_patterns() if p in text]
 
     def test_every_batch_failing_marks_the_source_failed(self):
         sequences = {f"P{i}": _seq(i) for i in range(3)}
