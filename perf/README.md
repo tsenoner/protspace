@@ -375,7 +375,12 @@ From the **repo root**, run the Playwright-based WebGL performance suite:
 ```sh
 pnpm perf:webgl                        # 10 iterations per scenario (default)
 PERF_ITERATIONS=5 pnpm perf:webgl      # override iteration count
+PERF_WEBGL_PORT=8713 pnpm perf:webgl   # serve on another port than 8080
 ```
+
+The suite starts its own `pnpm dev:app` and never reuses a running server: when the port is
+taken, the run stops. Its default port is 8080, the usual dev port, so set `PERF_WEBGL_PORT` while
+another checkout's dev server runs there.
 
 This launches Chrome, Firefox and Safari headless, so no window takes focus
 while it runs; each still renders on the hardware GPU (Chrome through its
