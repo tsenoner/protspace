@@ -56,6 +56,7 @@ import {
   type VisualizationData,
 } from '@protspace/utils';
 import { assertValidParquetMagic } from './validation';
+import { MAX_DRAWABLE_POINTS } from '../../scatter-plot/webgl/renderer/device-limits';
 import { extractSettings, extractStatistics, type BundleParts } from './bundle-parts';
 import { V3_COMPRESSORS, V3_PARSERS } from './fast-decoders';
 import {
@@ -990,11 +991,18 @@ export async function readV3Bundle(
 
   const manifest = readManifest(metadata);
   // Everything below preallocates on this footer field before a single row is read.
-  // There is no point cap: `assertFooterRows` bounds what each part may preallocate by
-  // the part's own size, so here the field only has to be a row count.
+  // `assertFooterRows` bounds what each part may preallocate by the part's own size.
   const numRows = Number(metadata.num_rows);
   if (!Number.isSafeInteger(numRows) || numRows < 0) {
     throw new Error(`v3 bundle declares ${String(metadata.num_rows)} rows, not a row count`);
+  }
+  // The renderer would refuse it anyway, but only after decoding, which at this size
+  // runs the tab out of memory first: refuse it here, before anything is allocated.
+  if (numRows > MAX_DRAWABLE_POINTS) {
+    throw new Error(
+      `Dataset too large: ${numRows.toLocaleString()} proteins, but ProtSpace can draw at ` +
+        `most ${MAX_DRAWABLE_POINTS.toLocaleString()} points.`,
+    );
   }
 
   const columns = await readAnnotationColumns(part1, metadata, manifest, numRows);

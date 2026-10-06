@@ -18,6 +18,7 @@ import { decodeParquetBundle, decodeParquetBundleWithRowCap } from './bundle';
 import { extractRowsFromParquetBundle } from '../legacy/bundle';
 import { findRepeatedId, readV3Bundle } from './bundle-v3';
 import { splitBundleParts } from './bundle-parts';
+import { MAX_DRAWABLE_POINTS } from '../../scatter-plot/webgl/renderer/device-limits';
 import { collectTransferables } from '../decode-transferables';
 import { bulkViews } from '../bulk-views.test-support';
 
@@ -866,12 +867,22 @@ describe('parquetbundle format v3', () => {
       ).rejects.toThrow(/part 1 declares 2000000 rows, 1616000000 bytes to preallocate/);
     });
 
-    it('refuses a footer claiming 2^40 rows by the bytes they would preallocate', async () => {
-      // A safe integer, so only the part's byte budget stands between it and the
-      // allocation: an id slot and 4 or 8 bytes per column, 36 bytes a row.
+    it('refuses a footer claiming 2^40 rows before allocating on it', async () => {
+      // A safe integer, so only the drawable-point limit stands between it and the
+      // allocation.
       await expect(
         decodeParquetBundle(v3Bundle({ 0: declaring(annotationsPart(), 2 ** 40, true) })),
-      ).rejects.toThrow(/part 1 declares 1099511627776 rows, 39582418599936 bytes to preallocate/);
+      ).rejects.toThrow(/Dataset too large: 1,099,511,627,776 proteins/);
+    });
+
+    it('refuses one protein past the drawable limit, naming the limit', async () => {
+      // Decoding 2^26 + 1 proteins ran the tab out of memory before the renderer's own
+      // check could refuse them.
+      await expect(
+        decodeParquetBundle(
+          v3Bundle({ 0: declaring(annotationsPart(), MAX_DRAWABLE_POINTS + 1, true) }),
+        ),
+      ).rejects.toThrow(/can draw at most 67,108,864 points/);
     });
   });
 
