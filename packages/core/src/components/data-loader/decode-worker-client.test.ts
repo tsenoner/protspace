@@ -1,31 +1,57 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the inline worker module — vitest (node env) cannot resolve '?worker&inline'.
-// The mock factory returns a class so `new DecodeWorker()` works as a constructor.
-vi.mock('./decode.worker?worker&inline', () => {
-  class FakeWorker {
-    onmessage: ((e: MessageEvent) => void) | null = null;
-    onerror: ((e: ErrorEvent) => void) | null = null;
-    postMessage(_msg: unknown): void {
-      // default no-op; tests override the instance directly
-    }
-    terminate(): void {
-      // no-op
-    }
-  }
-  return { default: FakeWorker };
-});
+// Each test installs its own FakeWorker subclass as the module's default export.
+vi.mock('./decode.worker?worker&inline', () => ({ default: class {} }));
 
+import * as workerModule from './decode.worker?worker&inline';
 import { isWorkerDecodeSupported, decodeBundleInWorker } from './decode-worker-client';
 
-describe('isWorkerDecodeSupported', () => {
-  it('returns false when Worker is undefined in the test environment', () => {
-    // vitest runs in node — no Worker global by default
-    const result = isWorkerDecodeSupported();
-    // We only assert the function returns a boolean; the actual value depends on env
-    expect(typeof result).toBe('boolean');
+const mod = workerModule as { default: unknown };
+const OriginalWorker = mod.default;
+
+/** A Worker stand-in that records what it is sent, then answers through `reply`. */
+class FakeWorker {
+  static instances: FakeWorker[] = [];
+  onmessage: ((e: MessageEvent) => void) | null = null;
+  onerror: ((e: ErrorEvent) => void) | null = null;
+  terminate = vi.fn();
+  postMessage = vi.fn((message: unknown, transfer?: Transferable[]) => {
+    // Clone like a real Worker does, so a transfer list detaches the caller's buffer.
+    structuredClone(message, { transfer });
+    setTimeout(() => this.reply(this), 0);
   });
 
+  constructor(private readonly reply: (worker: FakeWorker) => void) {
+    FakeWorker.instances.push(this);
+  }
+}
+
+function installWorker(reply: (worker: FakeWorker) => void): void {
+  mod.default = class extends FakeWorker {
+    constructor() {
+      super(reply);
+    }
+  };
+}
+
+/** The single worker the call spawned, sent the caller's buffer as a clone and then ended. */
+function expectOneClonedPostAndTerminate(buf: ArrayBuffer): void {
+  expect(FakeWorker.instances).toHaveLength(1);
+  const [worker] = FakeWorker.instances;
+  expect(worker.postMessage).toHaveBeenCalledTimes(1);
+  // Exactly one argument: no transfer list, so the main-thread fallback can reuse `buf`.
+  expect(buf.byteLength).toBe(8);
+  expect(worker.postMessage.mock.calls[0]).toHaveLength(1);
+  // toEqual treats any two ArrayBuffers as equal, so check the caller's buffer by identity.
+  const message = worker.postMessage.mock.calls[0][0] as { type: string; arrayBuffer: unknown };
+  expect(Object.keys(message).sort()).toEqual(['arrayBuffer', 'type']);
+  expect(message.type).toBe('decode-bundle');
+  expect(message.arrayBuffer).toBe(buf);
+  expect(worker.terminate).toHaveBeenCalledTimes(1);
+}
+
+describe('isWorkerDecodeSupported', () => {
   it('returns true when Worker is defined on globalThis', () => {
     const original = (globalThis as Record<string, unknown>)['Worker'];
     (globalThis as Record<string, unknown>)['Worker'] = class MockWorker {};
@@ -49,56 +75,35 @@ describe('isWorkerDecodeSupported', () => {
 
 describe('decodeBundleInWorker', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    FakeWorker.instances = [];
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    mod.default = OriginalWorker;
   });
 
   it('rejects when DecodeWorker constructor throws', async () => {
-    // Override the mock so the constructor throws
-    const mod = await import('./decode.worker?worker&inline');
-    const OriginalClass = mod.default;
-    vi.spyOn(mod, 'default').mockImplementationOnce(() => {
+    vi.spyOn(mod, 'default').mockImplementationOnce(function () {
       throw new Error('Worker spawn failed');
-    });
+    } as never);
 
     const buf = new ArrayBuffer(8);
     await expect(decodeBundleInWorker(buf)).rejects.toThrow('Worker spawn failed');
-
-    vi.spyOn(mod, 'default').mockRestore?.();
-    // Restore
-    mod.default = OriginalClass;
   });
 
   it('rejects when worker posts ok:false', async () => {
-    const mod = await import('./decode.worker?worker&inline');
-    // Replace the class with one that auto-fires an error response
-    const OrigClass = mod.default;
-    mod.default = class FakeFailWorker {
-      onmessage: ((e: MessageEvent) => void) | null = null;
-      onerror: ((e: ErrorEvent) => void) | null = null;
-      terminate(): void {
-        /* no-op */
-      }
-      postMessage(_msg: unknown): void {
-        const self = this;
-        setTimeout(() => {
-          if (self.onmessage) {
-            self.onmessage(
-              new MessageEvent('message', {
-                data: { type: 'decode-result', ok: false, error: 'decode failed in worker' },
-              }),
-            );
-          }
-        }, 0);
-      }
-    } as unknown as typeof mod.default;
+    installWorker((worker) =>
+      worker.onmessage?.(
+        new MessageEvent('message', {
+          data: { type: 'decode-result', ok: false, error: 'decode failed in worker' },
+        }),
+      ),
+    );
 
     const buf = new ArrayBuffer(8);
     await expect(decodeBundleInWorker(buf)).rejects.toThrow('decode failed in worker');
-    mod.default = OrigClass;
+    expectOneClonedPostAndTerminate(buf);
   });
 
   it('resolves with data and settings when worker posts ok:true', async () => {
@@ -109,66 +114,34 @@ describe('decodeBundleInWorker', () => {
       annotations: {},
       dimension: 2,
     };
-
-    const mod = await import('./decode.worker?worker&inline');
-    const OrigClass = mod.default;
-    mod.default = class FakeOkWorker {
-      onmessage: ((e: MessageEvent) => void) | null = null;
-      onerror: ((e: ErrorEvent) => void) | null = null;
-      terminate(): void {
-        /* no-op */
-      }
-      postMessage(_msg: unknown): void {
-        const self = this;
-        setTimeout(() => {
-          if (self.onmessage) {
-            self.onmessage(
-              new MessageEvent('message', {
-                data: {
-                  type: 'decode-result',
-                  ok: true,
-                  data: fakeData,
-                  settings: null,
-                  formatVersion: 2,
-                },
-              }),
-            );
-          }
-        }, 0);
-      }
-    } as unknown as typeof mod.default;
+    installWorker((worker) =>
+      worker.onmessage?.(
+        new MessageEvent('message', {
+          data: {
+            type: 'decode-result',
+            ok: true,
+            data: fakeData,
+            settings: null,
+            formatVersion: 2,
+          },
+        }),
+      ),
+    );
 
     const buf = new ArrayBuffer(8);
     const result = await decodeBundleInWorker(buf);
     expect(result.data).toBe(fakeData);
     expect(result.settings).toBeNull();
     expect(result.formatVersion).toBe(2);
-    mod.default = OrigClass;
+    expectOneClonedPostAndTerminate(buf);
   });
 
   it('rejects when worker fires onerror', async () => {
-    const mod = await import('./decode.worker?worker&inline');
-    const OrigClass = mod.default;
-    mod.default = class FakeErrWorker {
-      onmessage: ((e: MessageEvent) => void) | null = null;
-      onerror: ((e: ErrorEvent) => void) | null = null;
-      terminate(): void {
-        /* no-op */
-      }
-      postMessage(_msg: unknown): void {
-        const self = this;
-        setTimeout(() => {
-          if (self.onerror) {
-            // Use a plain object shaped like ErrorEvent (node env lacks ErrorEvent constructor)
-            const fakeEvent = { message: 'Script error' } as ErrorEvent;
-            self.onerror(fakeEvent);
-          }
-        }, 0);
-      }
-    } as unknown as typeof mod.default;
+    // A plain object shaped like ErrorEvent (node env lacks the ErrorEvent constructor).
+    installWorker((worker) => worker.onerror?.({ message: 'Script error' } as ErrorEvent));
 
     const buf = new ArrayBuffer(8);
     await expect(decodeBundleInWorker(buf)).rejects.toThrow('decode worker error: Script error');
-    mod.default = OrigClass;
+    expectOneClonedPostAndTerminate(buf);
   });
 });
