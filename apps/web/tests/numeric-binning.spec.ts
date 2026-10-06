@@ -903,12 +903,20 @@ async function readCategoricalPreviewRows(page: Page): Promise<{
   });
 }
 
-async function setSortMode(page: Page, annotation: string, mode: 'size' | 'alpha' | 'manual') {
-  const legend = page.locator('protspace-legend');
-  const inputs = legend.locator(`input[name="sort-type-${annotation}"][type="radio"]`);
-  const count = await inputs.count();
-  const index = mode === 'size' ? 0 : mode === 'alpha' ? 1 : count - 1;
-  await inputs.nth(index).click();
+/**
+ * Pick a sort mode in the open settings dialog by its label. Numeric and
+ * categorical annotations offer different options, so a position would pick
+ * a different mode for each.
+ */
+async function setSortMode(
+  page: Page,
+  label: 'By category size' | 'Alphabetical' | 'By numeric value' | 'Manual order',
+) {
+  const radio = page
+    .locator('protspace-legend #legend-settings-dialog')
+    .getByRole('radio', { name: label, exact: true });
+  await radio.check();
+  await expect(radio).toBeChecked();
 }
 
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
@@ -1835,7 +1843,7 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
 }) => {
   await loadDemoDataset(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'order', 'alpha');
+  await setSortMode(page, 'Alphabetical');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
   await clickLegendReverseButton(page);
@@ -2197,9 +2205,24 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
 
+  // The saved manual order belongs to the bins from before the rebin. Going
+  // back to those bins after the reload must give value order, not that
+  // stale manual order.
+  await openLegendSettings(page);
+  await updateLegendSettings(page, {
+    maxVisibleValues: 10,
+    paletteId: 'batlow',
+    strategy: 'quantile',
+  });
+  await clickDialogButton(page, 'Save');
+  await waitForDialogClosed(page);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+    .toEqual(initialLegend.items.map((item) => item.value));
+
   const reloadedLegend = await readLegendDisplay(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'length', 'alpha');
+  await setSortMode(page, 'By numeric value');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
