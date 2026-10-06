@@ -164,36 +164,41 @@ describe('EatProvenanceResolver', () => {
     const data = makeData(50_000);
     const resolver = new EatProvenanceResolver();
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
-    const sourceIndex = resolver.getSourceIndex(data, 'ec');
-    const sortCallsAfterIndexBuild = sortSpy.mock.calls.length;
-    const cachedCandidates = sourceIndex.get('source');
-    if (!cachedCandidates) throw new Error('large-fan-out source was not indexed');
+    // The spy wraps the shared Array.prototype.sort: restore it even if an assertion fails.
+    try {
+      const sourceIndex = resolver.getSourceIndex(data, 'ec');
+      const sortCallsAfterIndexBuild = sortSpy.mock.calls.length;
+      const cachedCandidates = sourceIndex.get('source');
+      if (!cachedCandidates) throw new Error('large-fan-out source was not indexed');
 
-    Object.defineProperties(cachedCandidates, {
-      filter: {
-        value: () => {
-          throw new Error('source resolution must not allocate a full filtered candidate array');
+      Object.defineProperties(cachedCandidates, {
+        filter: {
+          value: () => {
+            throw new Error('source resolution must not allocate a full filtered candidate array');
+          },
         },
-      },
-      slice: {
-        value: () => {
-          throw new Error('source resolution must not slice the full cached candidate list');
+        slice: {
+          value: () => {
+            throw new Error('source resolution must not slice the full cached candidate list');
+          },
         },
-      },
-      sort: {
-        value: () => {
-          throw new Error('source resolution must not re-sort cached candidates');
+        sort: {
+          value: () => {
+            throw new Error('source resolution must not re-sort cached candidates');
+          },
         },
-      },
-    });
+      });
 
-    for (let click = 0; click < 3; click++) {
-      const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
-      expect(request?.totalCandidates).toBe(50_000);
-      expect(request?.pairs).toHaveLength(20);
-      expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
+      for (let click = 0; click < 3; click++) {
+        const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
+        expect(request?.totalCandidates).toBe(50_000);
+        expect(request?.pairs).toHaveLength(20);
+        expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
+      }
+      expect(sortSpy).toHaveBeenCalledTimes(sortCallsAfterIndexBuild);
+    } finally {
+      sortSpy.mockRestore();
     }
-    expect(sortSpy).toHaveBeenCalledTimes(sortCallsAfterIndexBuild);
   });
 
   it('breaks equal-confidence ties by ascending protein id', () => {
