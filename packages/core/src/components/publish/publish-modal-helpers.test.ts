@@ -94,17 +94,13 @@ describe('publish-modal-helpers', () => {
       expect(patch.dpi).toBeUndefined();
     });
 
-    it('Resample=OFF: changes dpi, leaves widthPx fixed', () => {
-      const state = makeState({ widthPx: 1051, heightPx: 591, dpi: 300, resample: false });
-      const patch = computeWidthMmUpdate(state, 89);
-      expect(patch.widthPx).toBeUndefined();
-      expect(patch.dpi).toBe(300);
-    });
-
     it('Resample=OFF, halving mm doubles dpi', () => {
       const state = makeState({ widthPx: 1051, dpi: 300, resample: false });
       const patch = computeWidthMmUpdate(state, 44.5);
       expect(patch.dpi).toBe(600);
+      // Pixels stay locked.
+      expect(patch.widthPx).toBeUndefined();
+      expect(patch.heightPx).toBeUndefined();
     });
 
     it('Resample=ON aspectLocked=true: scales height proportionally', () => {
@@ -150,13 +146,6 @@ describe('publish-modal-helpers', () => {
   });
 
   describe('computeHeightMmUpdate', () => {
-    it('Resample=OFF: changes dpi (height-derived), widthPx untouched', () => {
-      const state = makeState({ widthPx: 1051, heightPx: 591, dpi: 300, resample: false });
-      const patch = computeHeightMmUpdate(state, 50);
-      expect(patch.heightPx).toBeUndefined();
-      expect(patch.dpi).toBeCloseTo(300, 0);
-    });
-
     it('Resample=ON: changes heightPx, leaves dpi fixed', () => {
       const state = makeState({ widthPx: 1051, heightPx: 591, dpi: 300, resample: true });
       const patch = computeHeightMmUpdate(state, 100);
@@ -168,6 +157,9 @@ describe('publish-modal-helpers', () => {
       const state = makeState({ widthPx: 1051, heightPx: 591, dpi: 300, resample: false });
       const patch = computeHeightMmUpdate(state, 25);
       expect(patch.dpi).toBe(600);
+      // Pixels stay locked.
+      expect(patch.heightPx).toBeUndefined();
+      expect(patch.widthPx).toBeUndefined();
     });
 
     it('Resample=ON aspectLocked=true: scales width proportionally', () => {
