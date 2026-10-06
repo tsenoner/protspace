@@ -78,12 +78,6 @@ describe('computeSearchSuggestions', () => {
       expect(idsOf(result)).toEqual(['P12345', 'P23456', 'P34567']);
     });
 
-    it('caps selectable results at the limit when there are many matches', () => {
-      const ids = Array.from({ length: 200 }, (_, i) => `P${String(i).padStart(5, '0')}`);
-      const result = computeSearchSuggestions(ids, [], 'p', true);
-      expect(result).toHaveLength(MAX_SEARCH_SUGGESTIONS);
-    });
-
     it('returns all matches when fewer than the limit', () => {
       const ids = ['P12345', 'P23456', 'Q99999'];
       const result = computeSearchSuggestions(ids, [], 'p', true);
@@ -204,19 +198,21 @@ describe('computeSearchSuggestions', () => {
   });
 
   describe('large input (early-exit proof)', () => {
-    it('returns exactly the selectable limit for a 100K array with empty query + focus', () => {
-      const ids = Array.from({ length: 100_000 }, (_, i) => `P${String(i).padStart(6, '0')}`);
-      const result = computeSearchSuggestions(ids, [], '', true);
-      expect(result).toHaveLength(MAX_SEARCH_SUGGESTIONS);
-      expect(idsOf(result)).toEqual(ids.slice(0, MAX_SEARCH_SUGGESTIONS));
-    });
-
     it('exits early once both budgets are full on a 100K array', () => {
-      const ids = Array.from({ length: 100_000 }, (_, i) => `P${String(i).padStart(6, '0')}`);
-      const selected = ids.slice(0, 500);
+      const { ids, reads } = countingIds(100_000);
+      // 500 matching selections spread every 100th entry, far past the selected budget:
+      // the scan has to stop at the 10th of them, not walk on towards the 500th.
+      const selected = Array.from(
+        { length: 500 },
+        (_, k) => `P${String(k * 100).padStart(6, '0')}`,
+      );
+
       const result = computeSearchSuggestions(ids, selected, 'p', true);
-      expect(selectedIdsOf(result)).toHaveLength(MAX_SELECTED_SUGGESTIONS);
+
+      expect(selectedIdsOf(result)).toEqual(selected.slice(0, MAX_SELECTED_SUGGESTIONS));
       expect(selectableIdsOf(result)).toHaveLength(MAX_SEARCH_SUGGESTIONS);
+      // The 10th selection sits at index 900.
+      expect(reads()).toBeLessThan(1_000);
     });
 
     it('stops scanning once the selectable budget is full and selections are exhausted', () => {
