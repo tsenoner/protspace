@@ -348,6 +348,54 @@ async def test_embed_failure_with_no_healthy_service_timeout_is_classified_as_bi
     assert "Biocentral embedding service is unavailable" in str(exc_info.value)
 
 
+# biotrainer_core (a dependency of the Biocentral client, imported here for the first
+# time in this suite) warns about a deprecated pydantic config on import.
+@pytest.mark.filterwarnings("ignore::DeprecationWarning:biotrainer_core.*")
+async def test_a_biocentral_version_mismatch_is_classified_as_unavailable(
+    ctx, monkeypatch, caplog
+):
+    """The embedder's real message, produced by the helper rather than retyped, so
+    rewording it cannot quietly drop the words this classification matches. The
+    user is told the service is down; the versions stay in the server-side log."""
+    import requests
+
+    from protspace.data.biocentral_connection import (
+        BiocentralUnavailableError,
+        wait_for_server,
+    )
+
+    class Health:
+        status_code = 200
+        reason = "OK"
+
+        def json(self):
+            return {"status": "healthy", "version": "9.0.0"}
+
+    class TimedOut:
+        def wait_until_healthy(self, max_wait_seconds):
+            raise TimeoutError("No healthy biocentral service became available in time")
+
+    monkeypatch.setattr(requests, "get", lambda url, **kwargs: Health())
+    with pytest.raises(BiocentralUnavailableError) as raised:
+        wait_for_server(TimedOut())
+
+    fake = _make_step_router(
+        ctx, fail_step="embed", fail_stderr=[f"ERROR: {raised.value}\n".encode()]
+    )
+    with (
+        caplog.at_level("ERROR", logger="protspace_prep.pipeline"),
+        patch("asyncio.create_subprocess_exec", new=fake),
+        pytest.raises(PipelineFailure) as exc_info,
+    ):
+        await run_protspace_prepare(ctx, AsyncMock(), settings=load_settings())
+
+    assert exc_info.value.code == "BIOCENTRAL_UNAVAILABLE"
+    assert "Biocentral embedding service is unavailable" in str(exc_info.value)
+    assert "v9.0.0" not in str(exc_info.value)
+    failed = [r for r in caplog.records if r.getMessage() == "pipeline step failed"]
+    assert failed and "v9.0.0" in failed[0].stderr_tail
+
+
 async def test_embed_failure_with_unrelated_error_passes_through(ctx):
     settings = load_settings()
     fake = _make_step_router(

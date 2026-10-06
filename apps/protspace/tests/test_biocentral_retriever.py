@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import requests
 
 from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
 from src.protspace.data.annotations.retrievers.biocentral_retriever import (
@@ -210,7 +211,7 @@ def _seq(i: int, length: int = 30) -> str:
 class _FakeBiocentral:
     """Stands in for ``BiocentralAPI``: records each ``predict`` request and
     answers with a membrane prediction per sequence, keyed like the live server
-    (v1.2.1) by the submitted identifier. Batches listed in *failing* raise."""
+    (v1.2.1 and v2.0.1) by the submitted identifier. Batches listed in *failing* raise."""
 
     def __init__(self, failing=(), error=None, rejects=(), failing_ids=()):
         self.failing = set(failing)
@@ -219,7 +220,7 @@ class _FakeBiocentral:
         self.failing_ids = set(failing_ids)
         self.error = error or RuntimeError("prediction task failed")
         # Identifiers the server refuses on length, failing the whole request
-        # the way biocentral.rostlab.org v1.2.1 answers with 422.
+        # the way biocentral.rostlab.org (v1.2.1 and v2.0.1) answers with 422.
         self.rejects = set(rejects)
         self.requests: list[dict[str, str]] = []
         self.health_checks = 0
@@ -514,3 +515,38 @@ class TestFailedBatch:
 
         assert retriever.prediction_failed
         assert set(values.values()) == {""}
+
+
+class _RefusedByTheClient(_FakeBiocentral):
+    """The wait ends the way the real client's does when it will not talk to the
+    server it finds: ``TimeoutError``, with nothing to say why."""
+
+    def wait_until_healthy(self, *args, **kwargs):
+        raise TimeoutError("No healthy biocentral service became available in time")
+
+
+class TestNoUsableServer:
+    def test_a_server_the_client_cannot_use_fails_the_source_and_says_why(
+        self, monkeypatch, caplog
+    ):
+        """Biocentral moved to v2 under a client that only knew v1, and this
+        warning said nothing a user could act on. Empty predictions must stay
+        out of the cache, so the source is failed, not left blank."""
+
+        class Health:
+            status_code = 200
+            reason = "OK"
+
+            def json(self):
+                return {"status": "healthy", "version": "3.0.0"}
+
+        monkeypatch.setattr(requests, "get", lambda url, **kwargs: Health())
+
+        with caplog.at_level("WARNING"):
+            retriever, values = _predict({"P1": _seq(1)}, _RefusedByTheClient())
+
+        assert retriever.prediction_failed
+        assert values == {"P1": ""}
+        warning = " ".join(r.getMessage() for r in caplog.records)
+        assert "No healthy Biocentral service became available in time" in warning
+        assert "v3.0.0" in warning

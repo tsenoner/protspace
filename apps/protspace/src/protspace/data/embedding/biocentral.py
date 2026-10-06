@@ -12,6 +12,8 @@ import numpy as np
 from biocentral_api import BiocentralAPI, CommonEmbedder, batched
 from tqdm import tqdm
 
+from protspace.data.biocentral_connection import BIOCENTRAL_URL, wait_for_server
+
 # Re-exported: the HDF5 layer moved to `store` so neither backend owns it. All
 # but `load_existing_ids` are used below; they stay importable from here for
 # out-of-repo callers that predate the move, which is the only reason
@@ -192,8 +194,7 @@ def embed_sequences(
 
     # Connect to Biocentral
     logger.info("Connecting to Biocentral server...")
-    api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
-    api = api.wait_until_healthy(max_wait_seconds=30)
+    api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))
     logger.info("Server is healthy")
 
     # Batch and embed
@@ -299,8 +300,7 @@ def probe_embedder(
     for pid, seq in probe_seqs.items():
         print(f"  {pid}: {seq[:40]}{'...' if len(seq) > 40 else ''} ({len(seq)} aa)")
 
-    api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
-    api = api.wait_until_healthy(max_wait_seconds=30)
+    api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))
 
     result = api.embed(
         embedder_name=embedder,
