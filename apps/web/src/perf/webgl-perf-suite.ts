@@ -464,9 +464,9 @@ async function loadDataset(args: Args, datasetId: string, budget: Budget): Promi
     //
     // `source: 'auto'` is what keeps the app's reload-support persistence out of
     // the window being timed. Without it load-queue.ts records the load as
-    // `kind: 'user'`, and dataset-controller then awaits `saveLastImportedFile`
-    // — a full copy of the bundle into OPFS — BEFORE it renders, i.e. strictly
-    // inside `loadDurationMs`. For the probe bundles this sweep exists to find
+    // `kind: 'user'`: dataset-controller then starts `beginSaveImportedFile` — a
+    // full copy of the bundle into OPFS — and awaits its `pendingSave.commit()`
+    // BEFORE it renders, i.e. strictly inside `loadDurationMs`. For the probe bundles this sweep exists to find
     // the ceiling with (72-145 MB) that is the dominant term in the number, and
     // on WebKit the write itself fails: eight `UnknownError: The operation
     // failed for an unknown transient reason (e.g. out of memory)` in one run.
