@@ -125,6 +125,31 @@ describe('prepareFastaBundle', () => {
     expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 
+  it('rejects with AbortError and closes the event stream when aborted while waiting', async () => {
+    const fetchMock = stubPrepServer();
+    const controller = new AbortController();
+
+    const file = new File([new Uint8Array([0])], 'seq.fasta');
+    const promise = prepareFastaBundle(file, { baseUrl: '', signal: controller.signal });
+    await flushPromises();
+    const es = MockEventSource.instances[0];
+
+    controller.abort();
+    // A cancel that never settles would hang the overlay: race it against a flush.
+    const outcome = await Promise.race([
+      promise.catch((e: unknown) => e),
+      flushPromises().then(() => 'still pending'),
+    ]);
+
+    expect(outcome).toBeInstanceOf(DOMException);
+    expect((outcome as DOMException).name).toBe('AbortError');
+    expect(es.closed).toBe(true);
+    // A late completion frame must not start the bundle download.
+    es.emit('done', { download_url: '/api/prepare/abc/bundle' });
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects when the server emits an error event', async () => {
     stubPrepServer();
     const file = new File([new Uint8Array([0])], 'seq.fasta');
