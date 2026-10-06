@@ -421,42 +421,41 @@ async def test_unexpected_exception_publishes_generic_error(tmp_job_root):
 # ---------------------------------------------------------------------------
 
 
-async def test_subscribe_after_instant_pipeline_receives_done(tmp_job_root):
-    """Submit with an instantly-terminating pipeline and subscribe immediately.
+async def test_subscriber_paused_after_queued_still_receives_done(tmp_job_root):
+    """The pipeline finishing while a consumer sits between events is not lost.
 
-    Should reliably receive [queued, done] without hanging regardless of the
-    race between pipeline completion and queue registration.
+    The SSE stream awaits between events, so the job can finish after the
+    synthetic ``queued`` was yielded but before the next ``queue.get()``. Two
+    guards cover that window: the subscriber queue is registered before the
+    yield, and ``terminal_event`` is re-checked after it. Either one alone is
+    enough, so this fails only when both are gone (``done`` is then published
+    to nobody and the stream hangs). A pipeline that finishes before
+    ``subscribe()`` takes the late-subscriber replay path instead, so this one
+    is gated to stay open until ``queued`` has been consumed.
     """
+    gate = asyncio.Event()
+
+    async def gated_pipeline(ctx, emit):
+        await gate.wait()
+        return await _fake_pipeline_success(ctx, emit)
+
     registry = JobRegistry(
-        job_root=tmp_job_root,
-        max_concurrent=4,
-        pipeline=_fake_pipeline_success,
+        job_root=tmp_job_root, max_concurrent=1, pipeline=gated_pipeline
     )
     job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
-    # Give the task a chance to run (may already be done by here)
-    await asyncio.sleep(0)
-    events = [e async for e in registry.subscribe(job_id)]
-    statuses = [e.event for e in events]
-    assert statuses[0] == "queued"
-    assert statuses[-1] in {"done", "error"}
-    assert "done" in statuses
+    events = registry.subscribe(job_id)
+    assert (await events.__anext__()).event == "queued"
 
-
-async def test_subscribe_race_repeated(tmp_job_root):
-    """Stress test: run the instant-pipeline subscribe race many times."""
-    for _ in range(20):
-        registry = JobRegistry(
-            job_root=tmp_job_root,
-            max_concurrent=4,
-            pipeline=_fake_pipeline_success,
-        )
-        job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
-        # Yield control so the pipeline task can run
+    gate.set()
+    for _ in range(5):
         await asyncio.sleep(0)
-        events = [e async for e in registry.subscribe(job_id)]
-        assert events[-1].event == "done", (
-            f"Expected done, got {[e.event for e in events]}"
-        )
+    assert registry.get(job_id).status is JobStatus.DONE
+
+    remaining = []
+    while not remaining or remaining[-1] not in {"done", "error"}:
+        remaining.append((await asyncio.wait_for(events.__anext__(), 1)).event)
+    await events.aclose()
+    assert remaining[-1] == "done"
 
 
 # ---------------------------------------------------------------------------
