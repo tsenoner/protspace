@@ -583,7 +583,13 @@ describe('legacy import, v3 export', () => {
         expect(exported.data.annotations[key]?.values, key).toEqual(annotation.values);
       }
       expect(exported.settings).toEqual(legacy.settings);
-      expect(exported.data.statistics).toEqual(legacy.data.statistics);
+      // toEqual sees any two ArrayBuffers as equal, so compare presence, then the bytes.
+      expect(exported.data.statistics == null).toBe(legacy.data.statistics == null);
+      if (legacy.data.statistics) {
+        expect(new Uint8Array(exported.data.statistics!)).toEqual(
+          new Uint8Array(legacy.data.statistics),
+        );
+      }
     },
   );
 
