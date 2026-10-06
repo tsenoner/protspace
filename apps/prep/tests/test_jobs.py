@@ -382,6 +382,37 @@ async def test_error_event_omits_code_when_pipeline_failure_has_no_code(tmp_job_
     assert "code" not in error_event.data
 
 
+async def test_unexpected_exception_publishes_generic_error(tmp_job_root):
+    """A non-PipelineFailure crash ends the job with a generic message.
+
+    prep-observability: the user gets "Internal server error." and a reference,
+    never the exception text, and subscribers still receive a terminal event.
+    """
+    secret = "secret internal detail /srv/prep/jobs"
+
+    async def crashing_pipeline(ctx, emit):
+        await emit("embedding", {})
+        raise RuntimeError(secret)
+
+    registry = JobRegistry(
+        job_root=tmp_job_root, max_concurrent=1, pipeline=crashing_pipeline
+    )
+    job_id = await registry.submit(b">id\nM\n", original_name="t.fasta")
+
+    async def drain():
+        return [e async for e in registry.subscribe(job_id)]
+
+    # Bounded: without a terminal event the subscriber would wait forever.
+    events = await asyncio.wait_for(drain(), timeout=5)
+    assert events[-1].event == "error"
+    assert events[-1].data == {"message": "Internal server error.", "job_id": job_id}
+    assert all(secret not in str(e.data) for e in events)
+    state = registry.get(job_id)
+    assert state.status is JobStatus.ERROR
+    assert state.error_message == "Internal server error."
+    assert registry.counts() == {"running": 0, "queued": 0}
+
+
 # ---------------------------------------------------------------------------
 # Fix 3 — subscribe() race between yield queued and queue registration
 # ---------------------------------------------------------------------------
