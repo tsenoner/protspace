@@ -65,14 +65,16 @@ condition.
 
 **3. The message keeps the old words and adds the reason.** It begins `No healthy Biocentral
 service became available in time` — the pattern `_BIOCENTRAL_DOWN_PATTERNS` and the
-`prep-failure-routing` spec already match — followed by one of three reasons: the server did
-not answer (with the underlying error, which also carries the `connection refused` / `name
-resolution` / `503` text the other patterns look for); the server runs a major outside the
-client's window (server version, client version, window, remedy); or the server reports a
-supported version but did not pass the health check in time. The remedy depends on direction:
-a newer server needs `pip install -U protspace`, and says that needs Python 3.12 or newer,
-because on 3.11 pip resolves to an old release without complaint. Majors are compared as
-integers; the client's own string comparison would call `10` inside `[2, 3)`.
+`prep-failure-routing` spec already match — followed by the reason. The server did not answer
+(the underlying error, which also carries the `connection refused` / `name resolution` text the
+other patterns look for), answered with an HTTP error status, or answered without a readable
+version. Or it runs a major outside the client's window (server version, client version,
+window, remedy). Or it reports a supported version but did not pass the health check in time.
+The remedy depends on direction: a newer server needs `pip install -U protspace`, and the
+message says that needs Python 3.12 or newer, because on 3.11 pip resolves to an old release
+without complaint (a test pins that number to `requires-python`); an older server gets no
+upgrade advice, since upgrading cannot help. Majors are compared as integers; the client's own
+string comparison would call `10` inside `[2, 3)`.
 The client's window comes from `BiocentralAPI.MIN_API_VERSION` / `MAX_API_VERSION` read at
 import, and its version from `importlib.metadata`, so tests that swap `BiocentralAPI` for a
 fake do not change what the message says.
@@ -91,8 +93,9 @@ replace `biocentral.BiocentralAPI` (embedding) and `biocentral_api.BiocentralAPI
 resolve `CommonEmbedder` members at import, so an enum change meant for embedding could take
 annotation down with it. `data/embedding/__init__.py` also imports that module eagerly, so
 nothing placed beside it is light. `data/biocentral_connection.py` depends only on
-`biocentral_api`, `requests` and the standard library, and both sides import it lazily, as
-they import `biocentral_api` today.
+`biocentral_api`, `requests` and the standard library. The retriever imports it inside
+`_run_predictions`, as it imports `biocentral_api` today; the embedder imports it at module
+level, beside its own `biocentral_api` import, and is itself only imported when embedding.
 
 **6. The shortcut is repointed, with no new test.** `MODEL_SHORT_KEYS` maps to
 `CommonEmbedder` member names and `resolve_embedder` also accepts a member name as typed
@@ -104,8 +107,9 @@ could never reach its assertion: the import it needs would fail first.
 
 **7. `requires-python` stays `>=3.12`.** `biocentral-api` 2.x declares `<3.14`, but it
 imports and reports the live server healthy on Python 3.14.8. `uv` ignores that upper
-bound: `uv lock` produces one `biocentral-api` entry for every interpreter and the CI 3.14
-leg installs it. Stock `pip` honours it, so on 3.14 `pip install protspace` cannot satisfy
+bound: `uv lock` produces one `biocentral-api` entry for every interpreter, and
+`uv sync --locked`, the command the CI 3.14 leg runs, installs it there (checked locally on
+3.14.8). Stock `pip` honours it, so on 3.14 `pip install protspace` cannot satisfy
 `biocentral-api>=2.0.0` and falls back to an older protspace. Capping our own
 `requires-python` would drop 3.14 from the supported range and break `uv`'s interpreter
 selection in that CI leg, while leaving `pip` users on the same old release. So the range
