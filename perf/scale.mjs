@@ -379,6 +379,20 @@ async function runDataset(opts, url, dataset, round) {
       // vm_stat failed once
     }
   }, 200);
+  // A crashed page can leave Playwright's teardown hanging: end the run 30 s after the crash.
+  let crashedAt = 0;
+  const crashWatch = setInterval(async () => {
+    try {
+      if (!JSON.parse(fs.readFileSync(specFile, 'utf8')).crashed) return;
+    } catch {
+      return; // not written yet, or mid-write
+    }
+    crashedAt ||= Date.now();
+    if (Date.now() - crashedAt < 30_000) return;
+    console.error(`perf:scale: ${dataset.name} page crashed; killing the browser`);
+    killTree(await processTable(), child.pid);
+    child.kill('SIGTERM');
+  }, 5_000);
   const timer = setTimeout(async () => {
     timedOut = true;
     console.error(`perf:scale: ${dataset.name} over ${timeoutMin} min; killing the browser`);
@@ -392,6 +406,7 @@ async function runDataset(opts, url, dataset, round) {
   clearInterval(sampler);
   clearInterval(footprintSampler);
   clearInterval(watchdog);
+  clearInterval(crashWatch);
   clearTimeout(timer);
 
   const spec = fs.existsSync(specFile) ? JSON.parse(fs.readFileSync(specFile, 'utf8')) : {};
@@ -408,10 +423,10 @@ async function runDataset(opts, url, dataset, round) {
     status: {
       result: guard
         ? 'oom-guard'
-        : timedOut
-          ? 'timeout'
-          : spec.crashed
-            ? 'crash'
+        : spec.crashed
+          ? 'crash'
+          : timedOut
+            ? 'timeout'
             : spec.refused
               ? 'refused'
               : spec.loadFailed
