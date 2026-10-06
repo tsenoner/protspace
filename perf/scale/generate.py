@@ -4,7 +4,7 @@
 # ///
 """Synthetic v3 parquetbundles of any size, for the scaling benchmark.
 
-    uv run perf/scale/generate.py swissprot --source apps/web/public/data/573K_swissprot.parquetbundle \\
+    uv run perf/scale/generate.py swissprot --source perf/datasets/573K_swissprot.parquetbundle \\
         --n 5000000 --out /path/swissprot-5M.parquetbundle
     uv run perf/scale/generate.py lean --n 67108864 --out /path/lean-2^26.parquetbundle
 

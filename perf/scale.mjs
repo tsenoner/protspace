@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { perfDatasetFile } from './datasets.mjs';
 import { promisify } from 'node:util';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -113,15 +114,19 @@ function parseArgs(argv) {
   return opts;
 }
 
-/** `name=path`, a path, or a name in apps/web/public/data/. */
+/** `name=path`, a path, or a dataset id of perf/datasets.manifest.json. */
 function resolveDataset(spec) {
   const eq = spec.indexOf('=');
   const named = eq > 0 ? spec.slice(eq + 1) : spec;
-  const file =
-    named.includes('/') || named.endsWith('.parquetbundle')
-      ? path.resolve(named)
-      : path.join(APP, 'public/data', `${named}.parquetbundle`);
-  if (!fs.existsSync(file)) usage(`no dataset file ${file}`);
+  let file;
+  if (named.includes('/') || named.endsWith('.parquetbundle')) {
+    file = path.resolve(named);
+    if (!fs.existsSync(file)) usage(`no dataset file ${file}`);
+  } else {
+    const found = perfDatasetFile(named);
+    if (found.error) usage(found.error);
+    file = found.file;
+  }
   const name = eq > 0 ? spec.slice(0, eq) : path.basename(file).replace(/\.parquetbundle$/, '');
   return { name, file };
 }

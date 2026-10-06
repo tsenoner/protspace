@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { perfDatasetFile } from './datasets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const APP = path.join(ROOT, 'apps/web');
@@ -94,18 +95,14 @@ function resolveDataset(spec) {
   if (spec === 'default') {
     return { name: 'default', file: path.join(APP, 'public/data.parquetbundle') };
   }
-  const file =
-    spec.includes('/') || spec.endsWith('.parquetbundle')
-      ? path.resolve(spec)
-      : path.join(APP, 'public/data', `${spec}.parquetbundle`);
-  if (!fs.existsSync(file)) {
-    const known = fs
-      .readdirSync(path.join(APP, 'public/data'))
-      .filter((f) => f.endsWith('.parquetbundle'))
-      .map((f) => f.replace(/\.parquetbundle$/, ''));
-    usage(`no dataset ${spec} (${file}); known: default, ${known.join(', ')}`);
+  if (spec.includes('/') || spec.endsWith('.parquetbundle')) {
+    const file = path.resolve(spec);
+    if (!fs.existsSync(file)) usage(`no dataset file ${file}`);
+    return { name: path.basename(file).replace(/\.parquetbundle$/, ''), file };
   }
-  return { name: path.basename(file).replace(/\.parquetbundle$/, ''), file };
+  const { file, error } = perfDatasetFile(spec);
+  if (error) usage(error);
+  return { name: spec, file };
 }
 
 const children = new Set();

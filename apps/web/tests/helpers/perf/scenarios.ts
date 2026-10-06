@@ -1,4 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -87,8 +88,20 @@ export const DEFAULT_BUNDLE = path.resolve(HERE, '../../../public/data.parquetbu
  * A bundle without legend settings. Imported after the demo bundle it keeps `protein_families`,
  * which has an "Other" bucket, and the legend's sync at the end of the load lists that bucket in
  * another order than its first count did. A reordering alone must not re-stage the plot.
+ * It is a dataset of the `perf-datasets` release, which `pnpm perf:fetch` downloads.
  */
-const NO_SETTINGS_BUNDLE = path.resolve(HERE, '../../../public/data/phosphatase.parquetbundle');
+const NO_SETTINGS_BUNDLE = path.resolve(
+  HERE,
+  '../../../../../perf/datasets/phosphatase.parquetbundle',
+);
+
+/** `file`, or a clear failure when the perf dataset `id` is not downloaded. */
+function perfDataset(file: string, id: string): string {
+  if (!fs.existsSync(file)) {
+    throw new Error(`${file} is missing; run pnpm perf:fetch --only ${id}`);
+  }
+  return file;
+}
 
 /** The annotation the switch segment goes to, when the dataset has it. */
 const PREFERRED_SWITCH_ANNOTATION = 'phylum';
@@ -328,7 +341,7 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
     {
       name: 'import-no-settings',
-      act: () => importBundle(page, NO_SETTINGS_BUNDLE),
+      act: () => importBundle(page, perfDataset(NO_SETTINGS_BUNDLE, 'phosphatase')),
     },
   );
   return segments;
