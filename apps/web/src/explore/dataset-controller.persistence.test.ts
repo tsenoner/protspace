@@ -221,17 +221,23 @@ describe('dataset controller legacy bundle notice', () => {
       unplacedProteinCount,
     });
 
-  it('points a user who imported a v2 bundle to re-export and protspace convert', async () => {
-    const { controller } = buildController();
-    await controller.handleDataLoaded(eventFor(2));
+  // The parquetbundle-v3 spec names both legacy formats; each must reach the notice.
+  it.each([1, 2])(
+    'points a user who imported a v%i bundle to re-export and protspace convert',
+    async (version) => {
+      const { controller } = buildController();
+      await controller.handleDataLoaded(eventFor(version));
 
-    expect(mocks.loadData).toHaveBeenCalledOnce();
-    expect(mocks.info).toHaveBeenCalledOnce();
-    const [notice] = mocks.info.mock.calls[0];
-    expect(notice.description).toMatch(/5\.0\.0/);
-    expect(notice.description).toMatch(/export it again/);
-    expect(notice.description).toMatch(/protspace convert/);
-  });
+      expect(mocks.loadData).toHaveBeenCalledOnce();
+      expect(mocks.info).toHaveBeenCalledOnce();
+      const [notice] = mocks.info.mock.calls[0];
+      expect(notice.description).toMatch(
+        new RegExp(`^Format v${version} bundles will stop opening in ProtSpace 5\\.0\\.0\\.`),
+      );
+      expect(notice.description).toMatch(/export it again/);
+      expect(notice.description).toMatch(/protspace convert/);
+    },
+  );
 
   it('sends a v2 bundle holding proteins without coordinates to protspace convert only', async () => {
     // An export from the app holds the proteins it shows, so it would drop these three.
