@@ -44,8 +44,9 @@ resampling Swiss-Prot.
   annotations) took 66.6 s to open and used 12.1 GiB of
   memory plus 5.2 GiB for graphics, so it is not usable for exploring.
 
-Switching projections plays a 0.8 s animation, which runs slower on large datasets. If your system
-is set to reduce motion, the switch is instant.
+The projection times above are for the instant switch. By default, switching projections plays a
+0.8 s animation, which runs slower on large datasets (5.4 s at 21 million). If your system is set to
+reduce motion, the switch is instant.
 
 ## Limits
 
