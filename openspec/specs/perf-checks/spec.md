@@ -4,8 +4,8 @@
 
 The Playwright perf checks that drive the real Explore UI: flag-gated work counters in core, a
 headless counts gate with committed budgets that runs with the e2e suite (`pnpm perf:counts`), and a
-headed timing mode on the real GPU that compares builds interleaved (`pnpm perf`). Replaces the
-removed `webgl-perf-harness`.
+headed timing mode on the real GPU that compares builds interleaved (`pnpm perf`). The
+cross-browser WebGL suite (`webgl-perf-harness`) stays beside it as `pnpm perf:webgl`.
 
 ## Requirements
 

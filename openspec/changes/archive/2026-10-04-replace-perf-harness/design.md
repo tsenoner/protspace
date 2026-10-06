@@ -65,5 +65,5 @@ in power state hits both. The first run is warm-up and dropped; medians are repo
   `restageMs` is reported alongside counts.
 - [SwiftShader in CI renders differently from a GPU] → counts are identical; pixel checks compare a
   page with itself, never with a stored image.
-- [Removing Firefox/Safari timing] → engine regressions were never caught by the old suite either
-  (no budgets); the e2e suite still exercises both engines functionally.
+- [Firefox/Safari timing] → the old suite stays as `pnpm perf:webgl` for that; the new checks
+  measure Chromium only.

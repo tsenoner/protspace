@@ -24,8 +24,10 @@
 
 ## 4. Removal
 
-- [x] 4.1 Delete the old suite, its config, the Python plotter and the app's perf hook.
-- [x] 4.2 Delete core's `WebglRenderPerfRunner` and `runWebGLRenderPerfMeasurements`.
+- [x] 4.1 ~~Delete the old suite, its config, the Python plotter and the app's perf hook.~~
+      Reverted on rebase: kept as `pnpm perf:webgl`.
+- [x] 4.2 ~~Delete core's `WebglRenderPerfRunner` and `runWebGLRenderPerfMeasurements`.~~
+      Reverted on rebase: ported to the refactored plot.
 
 ## 5. Docs
 

@@ -307,8 +307,6 @@ export class ProtspaceScatterplot extends LitElement {
     },
   });
 
-  private _webglRenderPerf = new WebglRenderPerfRunner(this);
-
   // Monotonically-increasing token used to invalidate a pending async tooltip-height
   // measurement when a newer hover or a tooltip-clear supersedes it before the child
   // LitElement has finished rendering.
@@ -340,6 +338,8 @@ export class ProtspaceScatterplot extends LitElement {
     },
     runRecompute: () => this._runNumericRecomputeBody(),
   });
+
+  private _webglRenderPerf = new WebglRenderPerfRunner(this);
 
   // Computed properties with caching
   private get _scales(): ScalePair | null {
@@ -1367,7 +1367,7 @@ export class ProtspaceScatterplot extends LitElement {
   private _getOpacity(point: PlotDataPoint): number {
     // Facade: two external consumers reach into this private member —
     // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
-    // apps/web/tests/brush-selection.spec.ts:323. Do not rename or remove this
+    // apps/web/tests/brush-selection.spec.ts. Do not rename or remove this
     // method without migrating those callers first.
     // Delegates to the shared visibility model, which is the single opacity
     // authority.

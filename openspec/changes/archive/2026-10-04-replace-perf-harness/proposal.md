@@ -31,10 +31,11 @@ which vanish silently after a rename, and one large import per scenario.
   prototype in an init script, so no rename in our code can hide them.
 - **`camera-no-restage.spec.ts` folds into `perf-counts`**: its camera segment gates zero uploaded
   bytes and zero re-stages on drag and wheel, and drawn points equal to the protein count.
-- **BREAKING (dev tooling)**: the old suite is removed: `perf/webgl-perf.spec.ts`, its config,
-  the Python plotter, `apps/web/src/perf/webgl-perf-suite.ts` and its startup hook, core's
-  `WebglRenderPerfRunner` and `runWebGLRenderPerfMeasurements`. Firefox and Safari timing goes:
-  long-animation-frame timing is Chromium-only, and these checks measure our code, not engines.
+- **The old suite stays, as `pnpm perf:webgl`**: `perf/webgl-perf.spec.ts`, its config, the
+  Python plotter, `apps/web/src/perf/webgl-perf-suite.ts` and its startup hook, core's
+  `WebglRenderPerfRunner` and `runWebGLRenderPerfMeasurements`. This change first removed it; the
+  author kept it on rebase, since it is the only Firefox and Safari timing and main kept
+  extending it. Its runner is ported to the refactored plot.
 
 ### Non-goals
 
@@ -53,15 +54,14 @@ which vanish silently after a rename, and one large import per scenario.
 
 ### Modified Capabilities
 
-- `webgl-perf-harness`: removed. Every requirement described the deleted suite.
+None. `webgl-perf-harness` is kept unchanged.
 
 ## Impact
 
 - `packages/core`: new internal `utils/perf-counters.ts`; one-line probes in `webgl-renderer.ts`,
-  `scatter-plot.ts` and `legend.ts`; `webgl-render-perf.ts` and its host-contract test deleted.
-  `PlotInteractionHost.renderWebGL()` drops its trigger argument, which only the runner read.
+  `scatter-plot.ts` and `legend.ts`; `webgl-render-perf.ts` and its host-contract test kept.
 - `apps/web`: new `tests/perf-*.spec.ts`, `tests/helpers/perf/`, `tests/perf/budgets.json`;
-  `src/perf/` deleted; `camera-no-restage.spec.ts` deleted.
-- Root: `perf` script repointed, `perf:counts` added; `perf/` holds only `perf.mjs` and docs;
+  `src/perf/` kept; `camera-no-restage.spec.ts` deleted.
+- Root: `perf` script repointed, the old command moves to `perf:webgl`, `perf:counts` added;
   `perf/results/` and `perf/baselines/*.local.json` gitignored. `knip.jsonc` and
-  `eslint.config.mjs` drop their `perf/**/*.ts` globs.
+  `eslint.config.mjs` keep their `perf/**/*.ts` globs.
