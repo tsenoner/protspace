@@ -1686,32 +1686,33 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
     strategy: 'linear',
   });
 
-  const startedAt = Date.now();
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              { numericMetadata?: { binCount?: number; strategy?: string } }
-            >;
-          };
-          selectedAnnotation?: string;
-        })
-      | null;
+  // A rebin that leaves the UI stuck fails at this watchdog. Elapsed time on a
+  // shared runner is not asserted; performance thresholds live in the perf suite.
+  await page.waitForFunction(
+    () => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            getCurrentData?: () => {
+              annotations?: Record<
+                string,
+                { numericMetadata?: { binCount?: number; strategy?: string } }
+              >;
+            };
+            selectedAnnotation?: string;
+          })
+        | null;
 
-    return (
-      plot?.selectedAnnotation === 'length' &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) > 0 &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) <= 5 &&
-      plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.strategy === 'linear'
-    );
-  });
-
-  expect(Date.now() - startedAt).toBeLessThan(5000);
+      if (plot?.selectedAnnotation !== 'length') return false;
+      const metadata = plot.getCurrentData?.()?.annotations?.length?.numericMetadata;
+      const binCount = metadata?.binCount ?? 0;
+      return binCount > 0 && binCount <= 5 && metadata?.strategy === 'linear';
+    },
+    undefined,
+    { timeout: 10_000, polling: 100 },
+  );
 
   const finalNumericState = await getNumericState(page);
   expect(finalNumericState.binCount).toBeGreaterThan(0);
