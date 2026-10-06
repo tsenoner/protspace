@@ -31,7 +31,9 @@ on:
     # pre-release the scientific wheels don't exist yet, so weekly would just be
     # recurring noise. Monthly catches readiness within ~30 days.
     - cron: '0 6 1 * *'
-  workflow_dispatch: # run on demand; also re-arms the schedule after repo-inactivity auto-disable
+  # Run on demand. After 60 days without repo activity GitHub disables scheduled workflows, and a
+  # disabled workflow cannot be dispatched: re-enable it first (`gh workflow enable <file>`).
+  workflow_dispatch:
 
 defaults:
   run:

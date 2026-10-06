@@ -15,7 +15,9 @@ on:
     # Weekly (Monday, 05:00 UTC): often enough to catch a transformers release
     # before a user does, rare enough not to lean on the external services.
     - cron: '0 5 * * 1'
-  workflow_dispatch: # run on demand; also re-arms the schedule after repo-inactivity auto-disable
+  # Run on demand. After 60 days without repo activity GitHub disables scheduled workflows, and a
+  # disabled workflow cannot be dispatched: re-enable it first (`gh workflow enable <file>`).
+  workflow_dispatch:
 
 defaults:
   run:
