@@ -47,6 +47,27 @@ class TestResolveEmbedder:
             assert isinstance(result, str)
             assert len(result) > 0
 
+    def test_a_shortcut_does_not_depend_on_the_clients_member_names(self, monkeypatch):
+        """biocentral-api 2.0 renamed ESM_8M to ESM2_8M, which crashed the import of
+        this module, and with it the offline backend that imports the package."""
+        from enum import Enum
+
+        from src.protspace.data.embedding import biocentral as bc
+
+        renamed = Enum("CommonEmbedder", {"Renamed": "facebook/esm2_t6_8M_UR50D"})
+        monkeypatch.setattr(bc, "CommonEmbedder", renamed)
+
+        assert bc.resolve_embedder("esm2_8m") == "facebook/esm2_t6_8M_UR50D"
+
+    def test_the_ids_are_ones_the_client_still_lists(self):
+        """protspace holds the ids itself; the client's list is what the server accepts,
+        so an id it no longer lists is the thing to notice."""
+        from biocentral_api import CommonEmbedder
+
+        unlisted = set(MODEL_SHORT_KEYS.values()) - {e.value for e in CommonEmbedder}
+
+        assert not unlisted, f"not in the client's CommonEmbedder: {sorted(unlisted)}"
+
     def test_extra_shortcut_ankh_base(self):
         result = resolve_embedder("ankh_base")
         assert result == "ElnaggarLab/ankh-base"
