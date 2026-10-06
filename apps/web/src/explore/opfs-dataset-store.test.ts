@@ -9,6 +9,7 @@ import {
   restoreLastLoadStatus,
   saveLastImportedFile,
 } from './opfs-dataset-store';
+import { getDatasetPersistenceFailureNotification } from './notifications';
 
 class MockWritableFileStream {
   private chunks: BlobPart[] = [];
@@ -183,6 +184,21 @@ describe('opfs-dataset-store', () => {
     await expect(saveLastImportedFile(new File(['x'], 'custom.parquetbundle'))).rejects.toThrow(
       /not supported/i,
     );
+  });
+
+  // The persistence toast recognises this error by its exact message, a copy of the
+  // store's literal: run the store's real rejection through the real classifier.
+  it('rejects a save with the error the persistence toast names as unsupported', async () => {
+    stubNavigator();
+
+    const error = await saveLastImportedFile(new File(['x'], 'custom.parquetbundle')).catch(
+      (e: unknown) => e,
+    );
+
+    expect(getDatasetPersistenceFailureNotification(error)).toMatchObject({
+      description: expect.stringMatching(/does not support the Origin Private File System/),
+      dedupeKey: 'dataset-persistence-unsupported',
+    });
   });
 });
 
