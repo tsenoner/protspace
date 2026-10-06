@@ -119,7 +119,7 @@ Annotations with multiple values per protein (e.g., multiple EC numbers). Displa
 
 Every point is drawn, up to 67,108,864 (2^26) per projection. That bound comes from the size of
 the GPU buffers, not from the file format. A dataset past it is not drawn at all, and a "Too many
-points to draw" notice says so; nothing is dropped silently. Files up to 2 GB are accepted. On
+points to draw" notice says so; nothing is dropped silently. Files up to 2 GiB are accepted. On
 GPUs with a small texture limit, multi-value points in a very large dataset may be drawn with
 fewer colour slices, and a notice says so.
 

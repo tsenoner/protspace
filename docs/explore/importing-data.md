@@ -127,8 +127,10 @@ size.
 ## Dataset size limits
 
 A current (format v3) `.parquetbundle` has no limit on the number of proteins, and every point is
-drawn. Two limits remain:
+drawn. Three limits remain:
 
+- A file larger than 2 GiB is refused with a `File too large: … MB exceeds the 2048 MB limit`
+  message.
 - The plot draws at most 67,108,864 (2^26) points. A larger dataset is not drawn at all, and a
   `Too many points to draw.` notice says so.
 - An older v1 or v2 bundle is refused when it holds more than 2,000,000 rows of projection data,
