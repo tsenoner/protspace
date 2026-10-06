@@ -120,7 +120,7 @@ const result: {
 
 /** Console errors of the current page; a failed import logs one and keeps the old data. */
 let consoleErrors: string[] = [];
-const LOAD_ERROR = /^Failed to (finalize|load|process)/;
+const LOAD_ERROR = /^Failed to finalize loaded dataset state/;
 
 const save = () => fs.writeFileSync(OUT, JSON.stringify(result, null, 1));
 /** Wall-clock marks, which perf/scale.mjs lines up with its memory samples. */
