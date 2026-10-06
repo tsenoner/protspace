@@ -67,6 +67,9 @@ slowly. Measured on an Apple M4 laptop in Chromium:
 The 2.5M and 5M rows come from synthetic bundles with two annotations and short IDs, so a real
 dataset of that size takes longer. A slower device or GPU takes longer too.
 
+[Performance](/guide/performance) has measurements up to 21 million proteins, with real annotations,
+plus memory needs and how to run the benchmark on your own computer.
+
 ### Can I add custom annotations?
 
 Yes. Add columns when generating the bundle. See [Data Format](/guide/data-format).
@@ -122,6 +125,7 @@ fewer colour slices, and a notice says so.
 
 For load and interaction times at 573K, 2.5M and 5M proteins, see
 [What is the recommended dataset size?](#what-is-the-recommended-dataset-size).
+[Performance](/guide/performance) goes up to 21 million proteins and covers memory.
 
 ::: tip Older bundles
 Bundles from before format v3 are decoded row by row, at about 1.3 GB of browser memory per
