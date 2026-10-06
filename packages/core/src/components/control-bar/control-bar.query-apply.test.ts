@@ -70,29 +70,14 @@ describe('control-bar filter query apply', () => {
   let scatter: StubScatterplot;
 
   beforeEach(async () => {
-    document.body.innerHTML = '';
-    controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
-    controlBar.autoSync = false;
-    document.body.appendChild(controlBar);
-    await controlBar.updateComplete;
-
-    scatter = {
-      // sentinel selection — must survive a filter apply untouched
-      selectedProteinIds: ['sentinel'],
-      isolateSelection: vi.fn(),
-      resetIsolation: vi.fn(),
-      // getCurrentData returns the *isolated subset*. The old buggy code used this
-      // to translate matched indices; the fix must never read it for translation.
-      getCurrentData: vi.fn(() => ({ protein_ids: ['p0', 'p1'] })),
-      getMaterializedData: vi.fn(() => makeFullData(100)),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    };
-
-    controlBar._scatterplotElement = scatter;
     // The query builder evaluates against the full materialized data, exposed as
-    // _currentData. Matched indices are positions in THIS array.
-    controlBar._currentData = makeFullData(100);
+    // _currentData. Matched indices are positions in THIS array. The stub's
+    // ['sentinel'] selection must survive a filter apply untouched.
+    ({ controlBar, scatter } = await mountControlBar(() => makeFullData(100)));
+    // getCurrentData returns the *isolated subset*. The old buggy code used this
+    // to translate matched indices; the fix must never read it for translation.
+    // Without this override it would equal the full data and hide that bug.
+    scatter.getCurrentData.mockImplementation(() => ({ protein_ids: ['p0', 'p1'] }));
   });
 
   it('applies a query via the filter channel without selecting or isolating', () => {
