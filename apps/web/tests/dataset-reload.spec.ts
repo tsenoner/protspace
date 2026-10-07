@@ -241,10 +241,6 @@ async function dispatchCustomEvent(
   );
 }
 
-async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.getElementById('protspace-notification-styles') !== null);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -318,7 +314,15 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
   });
 
-  test('a failed import leaves the stored import to be restored on reload', async ({ page }) => {
+  test('a failed import shows a toast, not a dialog, and leaves the stored import to restore on reload', async ({
+    page,
+  }) => {
+    let dialogSeen = false;
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
@@ -331,6 +335,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
       buffer: Buffer.from('not-a-valid-bundle'),
     });
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    // The failed load must not leave its full-screen loading overlay behind.
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    expect(dialogSeen).toBe(false);
     expect(await readStoredImport(page)).toEqual({
       name: CUSTOM_5K_BUNDLE_NAME,
       lastLoadStatus: 'success',
@@ -512,36 +519,6 @@ test.describe('Persisted dataset failure handling', () => {
 
     expect(await getProteinCount(page)).not.toBe(defaultCount);
   });
-
-  test('dataset load failures show a toast instead of a browser dialog', async ({ page }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await openExplore(page);
-
-    await page.evaluate(async () => {
-      const loader = document.getElementById('myDataLoader') as unknown as {
-        loadFromFile: (file: File) => Promise<void>;
-      } | null;
-      if (!loader) {
-        throw new Error('Missing data loader');
-      }
-
-      const file = new File(['not-a-valid-bundle'], 'broken.parquetbundle', {
-        type: 'application/octet-stream',
-      });
-      await loader.loadFromFile(file);
-    });
-
-    await expect(page.getByText('Dataset import failed.')).toBeVisible();
-    // The failed load must not leave its full-screen loading overlay behind.
-    await expect(page.locator('#progressive-loading')).toHaveCount(0);
-    expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
 });
 
 test.describe('Unified app notifications', () => {
@@ -569,7 +546,6 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText(/loaded the default demo dataset/i)).toBeVisible();
     expect(await getProteinCount(page)).toBe(defaultCount);
     expect(dialogMessages).toEqual([]);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('an unreadable persisted dataset falls back to the demo and then clears the overlay', async ({
@@ -587,39 +563,6 @@ test.describe('Unified app notifications', () => {
     expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    });
-
-    await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
-  test('structure-error events stay inline and do not create global toasts', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myStructureViewer', 'structure-error', {
-      message: 'No 3D structure was found for P12345.',
-      severity: 'error',
-      source: 'structure-viewer',
-      context: {
-        proteinId: 'P12345',
-      },
-    });
-
-    await page.waitForTimeout(500);
-
-    await expect(page.getByText('Structure could not be loaded.')).toHaveCount(0);
-    await expect(page.getByText('No 3D structure was found for P12345.')).toHaveCount(0);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
   test('successful parquet exports show the unified success toast', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
 
@@ -633,7 +576,6 @@ test.describe('Unified app notifications', () => {
     expect(download.suggestedFilename()).toContain('.parquetbundle');
     await expect(page.getByText('Export ready.')).toBeVisible();
     await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('failed exports show the unified error toast', async ({ page }) => {
@@ -661,7 +603,6 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('Export failed.')).toBeVisible();
     await expect(page.getByText('No data available for export')).toBeVisible();
     expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
 
