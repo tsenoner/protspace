@@ -33,7 +33,7 @@ jobs:
   # Playwright, so it is a job of its own.
   role-fixtures:
     name: Example role fixtures are derived
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -48,7 +48,7 @@ jobs:
         run: uv run apps/web/tests/fixtures/derive-example-role-fixtures.py --check
 
   # Every default project except the Firefox/WebKit compatibility projects below. No apt:
-  # every Chromium system library is already on the ubuntu-24.04 image. `--with-deps chromium
+  # every Chromium system library is already on the runner image. `--with-deps chromium
   # firefox webkit` used to pull ~180 packages (125 MB, nearly all WebKit's GStreamer/GTK4
   # stack) from azure.archive.ubuntu.com on every run, and when that mirror stalls the fetch
   # alone took 19 min (run 36728112695) and 31 min (run 34576016462) —
@@ -61,7 +61,7 @@ jobs:
   # test time. Add a shard when one runs past ~5 min.
   e2e-chromium:
     name: E2E Tests (Chromium ${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # A normal shard is 4-6 min. Without this the default is 360 min.
     timeout-minutes: 20
     strategy:
@@ -151,7 +151,7 @@ jobs:
   # drift.
   e2e-cross-browser:
     name: E2E Tests (Firefox, WebKit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     container:
       image: mcr.microsoft.com/playwright:v1.61.0-noble
