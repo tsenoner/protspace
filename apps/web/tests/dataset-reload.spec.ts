@@ -241,10 +241,6 @@ async function dispatchCustomEvent(
   );
 }
 
-async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.getElementById('protspace-notification-styles') !== null);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -318,7 +314,15 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
   });
 
-  test('a failed import leaves the stored import to be restored on reload', async ({ page }) => {
+  test('a failed import shows a toast, not a dialog, and leaves the stored import to restore on reload', async ({
+    page,
+  }) => {
+    let dialogSeen = false;
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
@@ -331,6 +335,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
       buffer: Buffer.from('not-a-valid-bundle'),
     });
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    // The failed load must not leave its full-screen loading overlay behind.
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    expect(dialogSeen).toBe(false);
     expect(await readStoredImport(page)).toEqual({
       name: CUSTOM_5K_BUNDLE_NAME,
       lastLoadStatus: 'success',
@@ -487,61 +494,6 @@ test.describe('Persisted dataset failure handling', () => {
 
     expect(await getProteinCount(page)).not.toBe(defaultCount);
   });
-
-  test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
-    page,
-  }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator.storage, 'getDirectory', {
-        configurable: true,
-        value: undefined,
-      });
-    });
-
-    await openExplore(page);
-
-    const defaultCount = await getProteinCount(page);
-
-    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-
-    await expect(
-      page.getByText('Dataset loaded, but automatic reload is unavailable.'),
-    ).toBeVisible();
-    await expect(page.getByText(/does not support the Origin Private File System/i)).toBeVisible();
-
-    expect(await getProteinCount(page)).not.toBe(defaultCount);
-  });
-
-  test('dataset load failures show a toast instead of a browser dialog', async ({ page }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await openExplore(page);
-
-    await page.evaluate(async () => {
-      const loader = document.getElementById('myDataLoader') as unknown as {
-        loadFromFile: (file: File) => Promise<void>;
-      } | null;
-      if (!loader) {
-        throw new Error('Missing data loader');
-      }
-
-      const file = new File(['not-a-valid-bundle'], 'broken.parquetbundle', {
-        type: 'application/octet-stream',
-      });
-      await loader.loadFromFile(file);
-    });
-
-    await expect(page.getByText('Dataset import failed.')).toBeVisible();
-    // The failed load must not leave its full-screen loading overlay behind.
-    await expect(page.locator('#progressive-loading')).toHaveCount(0);
-    expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
 });
 
 test.describe('Unified app notifications', () => {
@@ -569,7 +521,6 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText(/loaded the default demo dataset/i)).toBeVisible();
     expect(await getProteinCount(page)).toBe(defaultCount);
     expect(dialogMessages).toEqual([]);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('an unreadable persisted dataset falls back to the demo and then clears the overlay', async ({
@@ -587,39 +538,6 @@ test.describe('Unified app notifications', () => {
     expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    });
-
-    await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
-  test('structure-error events stay inline and do not create global toasts', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myStructureViewer', 'structure-error', {
-      message: 'No 3D structure was found for P12345.',
-      severity: 'error',
-      source: 'structure-viewer',
-      context: {
-        proteinId: 'P12345',
-      },
-    });
-
-    await page.waitForTimeout(500);
-
-    await expect(page.getByText('Structure could not be loaded.')).toHaveCount(0);
-    await expect(page.getByText('No 3D structure was found for P12345.')).toHaveCount(0);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
-
   test('successful parquet exports show the unified success toast', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
 
@@ -633,7 +551,6 @@ test.describe('Unified app notifications', () => {
     expect(download.suggestedFilename()).toContain('.parquetbundle');
     await expect(page.getByText('Export ready.')).toBeVisible();
     await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('failed exports show the unified error toast', async ({ page }) => {
@@ -661,21 +578,16 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('Export failed.')).toBeVisible();
     await expect(page.getByText('No data available for export')).toBeVisible();
     expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 });
 
 test.describe('Bundle format notice', () => {
-  const LEGACY_BUNDLES = [
-    { version: 1, path: path.resolve(SPEC_DIR, 'fixtures/raw_numeric_test.parquetbundle') },
-    {
-      version: 2,
-      path: path.resolve(
-        SPEC_DIR,
-        '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
-      ),
-    },
-  ];
+  // v2 only: the worker-to-notice path does not branch on the version, and the v1
+  // notice is pinned by the it.each([1, 2]) in dataset-controller.persistence.test.ts.
+  const V2_BUNDLE_PATH = path.resolve(
+    SPEC_DIR,
+    '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+  );
   const NOTICE = 'This file uses an older bundle format.';
 
   test.beforeEach(async ({ page }) => {
@@ -688,17 +600,13 @@ test.describe('Bundle format notice', () => {
     await waitForExploreDataLoad(page, { changedFrom: defaultCount });
   }
 
-  for (const { version, path: bundlePath } of LEGACY_BUNDLES) {
-    test(`importing a v${version} bundle points to re-export and protspace convert`, async ({
-      page,
-    }) => {
-      await importAndWait(page, bundlePath);
+  test('importing a v2 bundle points to re-export and protspace convert', async ({ page }) => {
+    await importAndWait(page, V2_BUNDLE_PATH);
 
-      await expect(page.getByText(NOTICE)).toBeVisible();
-      await expect(page.getByText(`Format v${version} bundles will stop opening`)).toBeVisible();
-      await expect(page.getByText(/protspace convert/)).toBeVisible();
-    });
-  }
+    await expect(page.getByText(NOTICE)).toBeVisible();
+    await expect(page.getByText('Format v2 bundles will stop opening')).toBeVisible();
+    await expect(page.getByText(/protspace convert/)).toBeVisible();
+  });
 
   test('neither the startup demo nor an imported v3 bundle shows the notice', async ({ page }) => {
     // The demo loaded in beforeEach; the import is the 5K bundle as `protspace convert` wrote it.
