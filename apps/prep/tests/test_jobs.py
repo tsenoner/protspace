@@ -203,9 +203,9 @@ async def test_late_subscriber_receives_queued_then_terminal(tmp_job_root):
     async for _ in registry.subscribe(job_id):
         pass
     events = [e async for e in registry.subscribe(job_id)]
-    assert len(events) == 2
-    assert events[0].event == "queued"
-    assert events[1].event in {"done", "error"}
+    assert [e.event for e in events] == ["queued", "done"]
+    # The replay is the job's real terminal event, not a stand-in.
+    assert events[1].data == {"download_url": f"/api/prepare/{job_id}/bundle"}
 
 
 async def test_peek_bundle_and_mark_consumed(tmp_job_root):
