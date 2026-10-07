@@ -5,6 +5,8 @@ import {
   DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER,
   DENSITY_CONTOUR_MIN_POINTS,
   DENSITY_CONTOUR_FLOOR,
+  DENSITY_CONTOUR_LEVELS,
+  DENSITY_CONTOUR_SPACING,
   DENSITY_CONTOUR_SIGMA_GRID_PX,
   DENSITY_CONTOUR_BLUR_RADIUS,
   DENSITY_CONTOUR_BLUR_FRAGMENT_SHADER,
@@ -100,11 +102,18 @@ describe('DENSITY_CONTOUR_FLOOR', () => {
     const w0 = gaussianWeights(DENSITY_CONTOUR_SIGMA_GRID_PX, DENSITY_CONTOUR_BLUR_RADIUS)[
       DENSITY_CONTOUR_BLUR_RADIUS
     ]!;
+    // The composite shader's level() and ring cut-off, built from the same
+    // constants, so a spacing or level change moves these counts.
+    const src = DENSITY_CATEGORY_COMPOSITE_FRAGMENT_SHADER;
+    expect(src).toContain(
+      `log2(max(n, 1e-8) / u_contourFloor) * ${DENSITY_CONTOUR_SPACING.toFixed(1)} - 0.5;`,
+    );
+    expect(src).toContain(`step(o, ${(DENSITY_CONTOUR_LEVELS + 0.5).toFixed(1)})`);
     const rings = (points: number) => {
       const n = points * w0 * w0;
       if (n < DENSITY_CONTOUR_FLOOR) return 0;
-      const o = Math.log2(n / DENSITY_CONTOUR_FLOOR) * 1.0 - 0.5;
-      return o < 0 ? 0 : Math.min(Math.floor(o), 4) + 1;
+      const o = Math.log2(n / DENSITY_CONTOUR_FLOOR) * DENSITY_CONTOUR_SPACING - 0.5;
+      return o < 0 ? 0 : Math.min(Math.floor(o), DENSITY_CONTOUR_LEVELS) + 1;
     };
     expect(rings(1)).toBe(0);
     expect(rings(4)).toBe(0);

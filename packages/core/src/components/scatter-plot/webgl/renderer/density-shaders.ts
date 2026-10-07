@@ -73,8 +73,8 @@ const DENSITY_ONE_POINT_PEAK =
   ] ** 2;
 export const DENSITY_CONTOUR_FLOOR = DENSITY_CONTOUR_MIN_POINTS * DENSITY_ONE_POINT_PEAK;
 
-const DENSITY_CONTOUR_LEVELS = 4;
-const DENSITY_CONTOUR_SPACING = 1.0;
+export const DENSITY_CONTOUR_LEVELS = 4;
+export const DENSITY_CONTOUR_SPACING = 1.0;
 // In CSS px, so a line is equally thick at every pixel density: u_lineRamp is this times dpr.
 export const DENSITY_CONTOUR_LINE_CSS_PX = 1;
 export const DENSITY_CONTOUR_LIGHTEN = 0.15;
