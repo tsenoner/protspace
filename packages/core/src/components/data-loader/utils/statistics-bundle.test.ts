@@ -246,20 +246,6 @@ describe('statistics part of a parquetbundle', () => {
     );
   });
 
-  it('round-trips settings alongside statistics', async () => {
-    const extraction = await extractRowsFromParquetBundle(bundleWith(SETTINGS, STATISTICS));
-    const data = convertParquetToVisualizationData(extraction);
-    const settings = { legendSettings: {}, exportOptions: {}, eatConfidenceThreshold: 0.75 };
-
-    const exported = await decodeParquetBundle(
-      createParquetBundle(data, { includeSettings: true, settings }),
-    );
-
-    expect(exported.settings).not.toBeNull();
-    expect(exported.settings!.eatConfidenceThreshold).toBe(0.75);
-    expect(new Uint8Array(exported.data.statistics!)).toEqual(STATISTICS);
-  });
-
   it('does not misparse the settings slot from a 3-part bundle (partAt range guard)', async () => {
     // Regression coverage for the `partAt` out-of-range guard in `bundle.ts`: on a plain 3-part
     // bundle, slots 3 and 4 (settings, statistics) must resolve to `null`, not a mis-sliced view

@@ -7,12 +7,14 @@ real emit path in `src/protspace/data/parsers/uniprot_parser.py` and will FAIL
 if the corresponding `encode_field` wrap is removed/reverted.
 """
 
+import pytest
+
 from protspace.data.annotations.encoding import decode_field, encode_field
 from src.protspace.data.parsers.uniprot_parser import UniProtEntry
 
 
 def test_keyword_name_with_semicolon_is_encoded():
-    """Keyword names containing ';' must be percent-encoded at emit (L272)."""
+    """Keyword names containing ';' must be percent-encoded at emit (`keyword`)."""
     raw_name = "Complete proteome; reference set"
     data = {
         "keywords": [
@@ -38,7 +40,8 @@ def test_keyword_name_with_semicolon_is_encoded():
 
 
 def test_cc_subcellular_location_with_semicolon_is_encoded():
-    """Subcellular location values containing ';' must be percent-encoded (L310-315)."""
+    """Subcellular location values containing ';' must be percent-encoded
+    (`cc_subcellular_location`)."""
     raw_value = "Cytoplasm; cytosol; perinuclear region"
     data = {
         "comments": [
@@ -72,110 +75,56 @@ def test_cc_subcellular_location_with_semicolon_is_encoded():
     assert decode_field(label) == raw_value
 
 
-def test_protein_families_with_semicolon_is_encoded():
-    """Protein family description containing ';' must be percent-encoded (L332-338)."""
-    raw_family = "Belongs to the Insulin; IGF family"
-    data = {
-        "comments": [
-            {
-                "commentType": "SIMILARITY",
-                "texts": [
-                    {
-                        "value": raw_family,
-                        "evidences": [{"evidenceCode": "ECO:0000250"}],  # ISS
-                    }
-                ],
-            }
-        ],
-    }
-    entry = UniProtEntry(data)
-    result = entry.protein_families
-
-    expected_raw = "Insulin; IGF family"  # "Belongs to the " prefix stripped
-    encoded_value = encode_field(expected_raw)
-    assert result == f"{encoded_value}|ISS"
-
-    label, _, ev = result.rpartition("|")
-    assert ev == "ISS"
-    assert ";" not in label
-    assert "%3B" in label
-    assert decode_field(label) == expected_raw
+# The protein_families emit site is covered by test_protein_families_parser.py
+# (test_semicolon_inside_a_name_is_percent_encoded).
 
 
-def test_go_bp_term_with_semicolon_is_encoded():
-    """GO BP terms containing ';' must be percent-encoded at emit (L370-375)."""
-    raw_term = "P:response to X; regulation of Y"
+@pytest.mark.parametrize(
+    "prop,go_id,raw_term,evidence_type,expected_code",
+    [
+        (
+            "go_bp",
+            "GO:0006915",
+            "P:response to X; regulation of Y",
+            "IDA:UniProtKB",
+            "IDA",
+        ),
+        (
+            "go_mf",
+            "GO:0005524",
+            "F:binding; catalytic activity",
+            "IEA:UniProtKB-EC",
+            "IEA",
+        ),
+        ("go_cc", "GO:0005737", "C:cytoplasm; cytosol", "IDA:UniProtKB", "IDA"),
+    ],
+    ids=["go_bp", "go_mf", "go_cc"],
+)
+def test_go_term_with_semicolon_is_encoded(
+    prop, go_id, raw_term, evidence_type, expected_code
+):
+    """GO terms containing ';' must be percent-encoded at emit (`_go_terms_encoded`,
+    shared by go_bp, go_mf and go_cc)."""
     data = {
         "uniProtKBCrossReferences": [
             {
                 "database": "GO",
-                "id": "GO:0006915",
+                "id": go_id,
                 "properties": [
                     {"key": "GoTerm", "value": raw_term},
-                    {"key": "GoEvidenceType", "value": "IDA:UniProtKB"},
+                    {"key": "GoEvidenceType", "value": evidence_type},
                 ],
             },
         ],
     }
-    entry = UniProtEntry(data)
-    terms = entry.go_bp
+    terms = getattr(UniProtEntry(data), prop)
 
     assert len(terms) == 1
     encoded_term = encode_field(raw_term)
-    assert terms[0] == f"{encoded_term}|IDA"
+    assert terms[0] == f"{encoded_term}|{expected_code}"
 
     label, _, ev = terms[0].rpartition("|")
-    assert ev == "IDA"
+    assert ev == expected_code
     assert ";" not in label
     assert "%3B" in label
     assert decode_field(label) == raw_term
-
-
-def test_go_mf_term_with_semicolon_is_encoded():
-    """GO MF terms containing ';' must be percent-encoded at emit (L382-387)."""
-    raw_term = "F:binding; catalytic activity"
-    data = {
-        "uniProtKBCrossReferences": [
-            {
-                "database": "GO",
-                "id": "GO:0005524",
-                "properties": [
-                    {"key": "GoTerm", "value": raw_term},
-                    {"key": "GoEvidenceType", "value": "IEA:UniProtKB-EC"},
-                ],
-            },
-        ],
-    }
-    entry = UniProtEntry(data)
-    terms = entry.go_mf
-
-    assert len(terms) == 1
-    encoded_term = encode_field(raw_term)
-    assert terms[0] == f"{encoded_term}|IEA"
-    assert ";" not in terms[0].rpartition("|")[0]
-    assert decode_field(terms[0].rpartition("|")[0]) == raw_term
-
-
-def test_go_cc_term_with_semicolon_is_encoded():
-    """GO CC terms containing ';' must be percent-encoded at emit (L394-398)."""
-    raw_term = "C:cytoplasm; cytosol"
-    data = {
-        "uniProtKBCrossReferences": [
-            {
-                "database": "GO",
-                "id": "GO:0005737",
-                "properties": [
-                    {"key": "GoTerm", "value": raw_term},
-                    {"key": "GoEvidenceType", "value": "IDA:UniProtKB"},
-                ],
-            },
-        ],
-    }
-    entry = UniProtEntry(data)
-    terms = entry.go_cc
-
-    assert len(terms) == 1
-    encoded_term = encode_field(raw_term)
-    assert terms[0] == f"{encoded_term}|IDA"
-    assert ";" not in terms[0].rpartition("|")[0]
-    assert decode_field(terms[0].rpartition("|")[0]) == raw_term

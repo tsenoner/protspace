@@ -120,6 +120,39 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
     q.forEach((cb) => cb(0));
   };
 
+  /**
+   * The one capture's badges cover all three stacks (#301), each on the REAL
+   * export projection of its coords at the output physical dims (#302
+   * alignment), scaled by dpr(1) × sqrt((w·h)/(800·600)) (#302 size rule).
+   */
+  function expectBadgesOnExportDots(
+    sp: Internals,
+    spy: { mock: { calls: unknown[][] } },
+    width: number,
+    height: number,
+  ) {
+    expect(spy.mock.calls).toHaveLength(1);
+    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
+    expect(stacks.map((s) => s.key).sort()).toEqual(['0|0', '100|100', '50|50']);
+
+    const exportScales = ExportRenderer.createExportScales(
+      sp._mergedConfig,
+      sp._plotData,
+      width,
+      height,
+    )!;
+    for (const [key, x, y] of [
+      ['0|0', 0, 0],
+      ['50|50', 50, 50],
+      ['100|100', 100, 100],
+    ] as const) {
+      const s = stacks.find((st) => st.key === key)!;
+      expect(s.px).toBeCloseTo(exportScales.x(x), 6);
+      expect(s.py).toBeCloseTo(exportScales.y(y), 6);
+    }
+    expect(spy.mock.calls[0][2]).toBeCloseTo(Math.sqrt((width * height) / (800 * 600)), 6);
+  }
+
   it('after zooming the live view onto one stack, a 1600×400 capture still badges all three stacks, each on its export-projected dot', () => {
     const sp = prime();
     const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
@@ -134,59 +167,14 @@ describe('captureAtResolution end-to-end badge geometry (#301/#302)', () => {
 
     const out = sp.captureAtResolution(1600, 400, { resetView: true });
     expect(out).toBeInstanceOf(HTMLCanvasElement);
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
-    // #301: all three stacks, not just the zoomed one.
-    expect(stacks.map((s) => s.key).sort()).toEqual(['0|0', '100|100', '50|50']);
-
-    // #302 alignment: badge px/py equal the REAL export projection of the
-    // stack coords at the output physical dims (1600×400, dpr 1).
-    const exportScales = ExportRenderer.createExportScales(
-      sp._mergedConfig,
-      sp._plotData,
-      1600,
-      400,
-    )!;
-    for (const [key, x, y] of [
-      ['0|0', 0, 0],
-      ['50|50', 50, 50],
-      ['100|100', 100, 100],
-    ] as const) {
-      const s = stacks.find((st) => st.key === key)!;
-      expect(s.px).toBeCloseTo(exportScales.x(x), 6);
-      expect(s.py).toBeCloseTo(exportScales.y(y), 6);
-    }
-
-    // #302 size rule: badgeScale = dpr(1) × sqrt((1600·400)/(800·600)).
-    expect(spy.mock.calls[0][2]).toBeCloseTo(Math.sqrt((1600 * 400) / (800 * 600)), 6);
+    expectBadgesOnExportDots(sp, spy, 1600, 400);
   });
 
-  it('alignment holds at a second output size (900×900) — spec requires ≥2 sizes', () => {
+  it('a square 900×900 capture keeps the badges on their dots at the matching size', () => {
     const sp = prime();
     const spy = vi.spyOn(DuplicateBadgesCanvasRenderer, 'renderExport');
 
     sp.captureAtResolution(900, 900, { resetView: true });
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    const stacks = spy.mock.calls[0][1] as Array<{ key: string; px: number; py: number }>;
-    expect(stacks.map((s) => s.key).sort()).toEqual(['0|0', '100|100', '50|50']);
-
-    const exportScales = ExportRenderer.createExportScales(
-      sp._mergedConfig,
-      sp._plotData,
-      900,
-      900,
-    )!;
-    for (const [key, x, y] of [
-      ['0|0', 0, 0],
-      ['50|50', 50, 50],
-      ['100|100', 100, 100],
-    ] as const) {
-      const s = stacks.find((st) => st.key === key)!;
-      expect(s.px).toBeCloseTo(exportScales.x(x), 6);
-      expect(s.py).toBeCloseTo(exportScales.y(y), 6);
-    }
-    expect(spy.mock.calls[0][2]).toBeCloseTo(Math.sqrt((900 * 900) / (800 * 600)), 6);
+    expectBadgesOnExportDots(sp, spy, 900, 900);
   });
 });

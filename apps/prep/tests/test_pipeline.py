@@ -1,9 +1,13 @@
 import asyncio
+import dataclasses
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import typer
 
+from protspace.cli.app import app as protspace_cli
 from protspace_prep.config import load_settings
 from protspace_prep.jobs import JobContext, PipelineFailure
 from protspace_prep.pipeline import (
@@ -56,11 +60,17 @@ def _make_step_router(
     fail_step: str | None = None,
     fail_returncode: int = 2,
     fail_stderr: list[bytes] | None = None,
+    calls: list[list[str]] | None = None,
+    on_call: Callable[[str], Awaitable[None]] | None = None,
+    skip_outputs: frozenset[str] = frozenset(),
 ):
     """Return a fake create_subprocess_exec that simulates each protspace step.
 
     Each successful step writes its expected output artifact so the next step
-    sees a populated filesystem (mirrors what the real CLI does).
+    sees a populated filesystem (mirrors what the real CLI does), unless the
+    step is in *skip_outputs*. When *calls* is given, every protspace argv is
+    appended to it. *on_call* is awaited with the step name before the step
+    finishes, so it runs while the step is in flight.
     """
     embed_dir = ctx.output_dir / "embed"
     project_dir = ctx.output_dir / "project"
@@ -72,11 +82,17 @@ def _make_step_router(
         if not cmd or cmd[0] != "protspace":
             return _mock_subprocess(returncode=0)
         step = cmd[1] if len(cmd) > 1 else ""
+        if calls is not None:
+            calls.append(list(cmd))
+        if on_call is not None:
+            await on_call(step)
         if step == fail_step:
             return _mock_subprocess(
                 returncode=fail_returncode,
                 stderr_lines=fail_stderr or [b"ERROR mock failure\n"],
             )
+        if step in skip_outputs:
+            return _mock_subprocess(returncode=0)
         if step == "embed":
             embed_dir.mkdir(parents=True, exist_ok=True)
             (embed_dir / "prot_t5.h5").write_bytes(b"H5")
@@ -113,37 +129,79 @@ async def test_success_path_writes_bundle_and_emits_stages(ctx):
     assert stages.index("projecting") < stages.index("bundling")
 
 
+async def test_pipeline_argv_parses_against_the_real_protspace_cli(ctx):
+    """Every subprocess argv must be accepted by the in-repo protspace CLI.
+
+    prep-source-coupling: renaming or removing a flag of a subcommand prep
+    invokes has to fail the prep suite in the same change, not in production.
+    This parses without executing, so it catches renamed, removed or retyped
+    options; value grammar (e.g. the ``-m`` method list) is interpreted inside
+    the command bodies and is not checked here. Parsing runs after the
+    pipeline, while the step router's files satisfy the ``exists=True`` checks.
+    """
+    settings = load_settings()
+    calls: list[list[str]] = []
+    with patch(
+        "asyncio.create_subprocess_exec", new=_make_step_router(ctx, calls=calls)
+    ):
+        await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+
+    assert sorted(cmd[1] for cmd in calls) == ["annotate", "bundle", "embed", "project"]
+    group = typer.main.get_command(protspace_cli)
+    parsed: dict[str, dict] = {}
+    for cmd in calls:
+        assert cmd[0] == "protspace"
+        group_ctx = group.make_context("protspace", cmd[1:2])
+        command = group.get_command(group_ctx, cmd[1])
+        assert command is not None, f"protspace has no {cmd[1]!r} subcommand"
+        parsed[cmd[1]] = command.make_context(cmd[1], cmd[2:], parent=group_ctx).params
+
+    # The values land on the parameters prep means them for (raw, pre-conversion).
+    # The step router writes to fixed paths whatever the argv says, so these
+    # are the only checks that catch a wrong or swapped input/output path.
+    out = ctx.output_dir
+    fasta = str(out / "input.normalized.fasta")
+    expected = {
+        "embed": {
+            "input": fasta,
+            "embedder": (settings.embedder,),
+            "output": str(out / "embed"),
+        },
+        "annotate": {
+            "input": fasta,
+            "annotations": (settings.annotations,),
+            "output": str(out / "annotations.parquet"),
+        },
+        "project": {
+            "input": (str(out / "embed" / "prot_t5.h5"),),
+            "methods": (settings.methods,),
+            "output": str(out / "project"),
+        },
+        "bundle": {
+            "projections": str(out / "project"),
+            "annotations": str(out / "annotations.parquet"),
+            "output": str(out / "data.parquetbundle"),
+        },
+    }
+    for step, params in expected.items():
+        assert {name: parsed[step][name] for name in params} == params, step
+
+
 async def test_embed_and_annotate_run_concurrently(ctx):
     """Both subprocess invocations must be in flight before either completes."""
     in_flight: set[str] = set()
     max_in_flight: list[int] = [0]
-    embed_dir = ctx.output_dir / "embed"
-    project_dir = ctx.output_dir / "project"
-    annotations_path = ctx.output_dir / "annotations.parquet"
-    bundle_path = ctx.output_dir / "data.parquetbundle"
 
-    async def fake_create(*args, **kwargs):
-        step = args[1]
+    async def track(step: str) -> None:
         if step in {"embed", "annotate"}:
             in_flight.add(step)
             max_in_flight[0] = max(max_in_flight[0], len(in_flight))
             await asyncio.sleep(0.01)  # yield so the sibling can start
-            if step == "embed":
-                embed_dir.mkdir(parents=True, exist_ok=True)
-                (embed_dir / "prot_t5.h5").write_bytes(b"H5")
-            else:
-                annotations_path.write_bytes(b"P")
             in_flight.discard(step)
-        elif step == "project":
-            project_dir.mkdir(parents=True, exist_ok=True)
-            (project_dir / "projections_metadata.parquet").write_bytes(b"M")
-            (project_dir / "projections_data.parquet").write_bytes(b"D")
-        elif step == "bundle":
-            bundle_path.write_bytes(b"BUNDLE")
-        return _mock_subprocess(returncode=0)
 
     settings = load_settings()
-    with patch("asyncio.create_subprocess_exec", new=fake_create):
+    fake = _make_step_router(ctx, on_call=track)
+    with patch("asyncio.create_subprocess_exec", new=fake):
         await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
     assert max_in_flight[0] == 2, "embed and annotate did not run concurrently"
 
@@ -183,7 +241,10 @@ async def test_annotate_failure_raises_pipeline_failure(ctx):
 async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc = MagicMock()
     proc.returncode = None
-    proc.kill = MagicMock()
+    # The process exits once killed, as a real one does; otherwise _run_step
+    # waits out its 5s post-kill grace period.
+    killed = asyncio.Event()
+    proc.kill = MagicMock(side_effect=killed.set)
     proc.stderr = MagicMock()
 
     async def _readline():
@@ -193,18 +254,15 @@ async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc.stderr.readline = _readline
 
     async def _wait():
-        await asyncio.sleep(60)
-        return 0
+        await killed.wait()
+        return -9
 
     proc.wait = _wait
 
     async def fake_create(*args, **kwargs):
         return proc
 
-    base = load_settings()
-    fields = {k: getattr(base, k) for k in base.__slots__}
-    fields["pipeline_timeout_seconds"] = 0
-    settings = type(base)(**fields)
+    settings = dataclasses.replace(load_settings(), pipeline_timeout_seconds=0)
     with patch("asyncio.create_subprocess_exec", new=fake_create):
         with pytest.raises(PipelineFailure) as exc:
             await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
@@ -214,22 +272,11 @@ async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
 
 async def test_missing_bundle_after_success_raises_pipeline_failure(ctx):
     """Every step exits 0 but the bundle file never appears on disk."""
-    embed_dir = ctx.output_dir / "embed"
-    annotations_path = ctx.output_dir / "annotations.parquet"
-
-    async def fake_create(*args, **kwargs):
-        step = args[1] if len(args) > 1 else ""
-        if step == "embed":
-            embed_dir.mkdir(parents=True, exist_ok=True)
-            (embed_dir / "prot_t5.h5").write_bytes(b"H5")
-        elif step == "annotate":
-            annotations_path.write_bytes(b"P")
-        # project and bundle "succeed" but write nothing.
-        return _mock_subprocess(returncode=0)
-
+    # project and bundle "succeed" but write nothing.
+    fake = _make_step_router(ctx, skip_outputs=frozenset({"project", "bundle"}))
     settings = load_settings()
-    with patch("asyncio.create_subprocess_exec", new=fake_create):
-        with pytest.raises(PipelineFailure):
+    with patch("asyncio.create_subprocess_exec", new=fake):
+        with pytest.raises(PipelineFailure, match="no .parquetbundle"):
             await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
 
 
@@ -277,35 +324,18 @@ async def test_pipeline_uses_normalized_fasta_for_embed_and_annotate(ctx):
     by ``P12345``, and the frontend bundle join produces no annotations.
     """
     ctx.fasta_path.write_text(">sp|P12345|TEST_HUMAN\nMAAAAAA\n")
-    seen_inputs: dict[str, str] = {}
-
-    embed_dir = ctx.output_dir / "embed"
-    project_dir = ctx.output_dir / "project"
-    annotations_path = ctx.output_dir / "annotations.parquet"
-    bundle_path = ctx.output_dir / "data.parquetbundle"
-
-    async def fake_create(*args, **kwargs):
-        cmd = list(args)
-        step = cmd[1]
-        if step in {"embed", "annotate"}:
-            seen_inputs[step] = cmd[cmd.index("-i") + 1]
-        if step == "embed":
-            embed_dir.mkdir(parents=True, exist_ok=True)
-            (embed_dir / "prot_t5.h5").write_bytes(b"H5")
-        elif step == "annotate":
-            annotations_path.write_bytes(b"P")
-        elif step == "project":
-            project_dir.mkdir(parents=True, exist_ok=True)
-            (project_dir / "projections_metadata.parquet").write_bytes(b"M")
-            (project_dir / "projections_data.parquet").write_bytes(b"D")
-        elif step == "bundle":
-            bundle_path.write_bytes(b"BUNDLE")
-        return _mock_subprocess(returncode=0)
+    calls: list[list[str]] = []
 
     settings = load_settings()
-    with patch("asyncio.create_subprocess_exec", new=fake_create):
+    fake = _make_step_router(ctx, calls=calls)
+    with patch("asyncio.create_subprocess_exec", new=fake):
         await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
 
+    seen_inputs = {
+        cmd[1]: cmd[cmd.index("-i") + 1]
+        for cmd in calls
+        if cmd[1] in {"embed", "annotate"}
+    }
     normalized = ctx.output_dir / "input.normalized.fasta"
     assert seen_inputs["embed"] == str(normalized)
     assert seen_inputs["annotate"] == str(normalized)

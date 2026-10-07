@@ -78,7 +78,6 @@ const EXPORT_MARGIN_REFERENCE_WIDTH = 800;
 const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
 
 const MAX_DIMENSION = 8192;
-const MAX_AREA = 268435456; // ~268M pixels
 
 /** A data-coordinate viewport rectangle. */
 interface DataDomain {
@@ -265,11 +264,6 @@ export class ExportRenderer {
     if (physicalWidth > effectiveMaxDimension || physicalHeight > effectiveMaxDimension) {
       throw new Error(
         `Export dimensions ${physicalWidth}×${physicalHeight} exceed this device's limit of ${effectiveMaxDimension}px`,
-      );
-    }
-    if (physicalWidth * physicalHeight > MAX_AREA) {
-      throw new Error(
-        `Export area ${(physicalWidth * physicalHeight).toLocaleString()} exceeds limit of ${MAX_AREA.toLocaleString()} pixels`,
       );
     }
 

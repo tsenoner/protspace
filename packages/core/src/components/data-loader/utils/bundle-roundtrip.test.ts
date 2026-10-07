@@ -556,6 +556,8 @@ describe('legacy import, v3 export', () => {
     );
 
   it.each([
+    // A v1 bundle has no format-version key, so it reads as 1 through the real footer read;
+    // a part that failed to parse would throw here rather than fall back to 1.
     ['v1', () => repoFile('apps/web/tests/fixtures/data_custom.parquetbundle'), 1],
     [
       'v1, raw numerics',
@@ -583,7 +585,13 @@ describe('legacy import, v3 export', () => {
         expect(exported.data.annotations[key]?.values, key).toEqual(annotation.values);
       }
       expect(exported.settings).toEqual(legacy.settings);
-      expect(exported.data.statistics).toEqual(legacy.data.statistics);
+      // toEqual sees any two ArrayBuffers as equal, so compare presence, then the bytes.
+      expect(exported.data.statistics == null).toBe(legacy.data.statistics == null);
+      if (legacy.data.statistics) {
+        expect(new Uint8Array(exported.data.statistics!)).toEqual(
+          new Uint8Array(legacy.data.statistics),
+        );
+      }
     },
   );
 
@@ -682,17 +690,6 @@ describe('legacy import, v3 export', () => {
     expect(meaning(exported.data)).toEqual(meaning(shipped.data));
     expect(exported.data.annotations).toEqual(shipped.data.annotations);
     expect(exported.settings).toEqual(shipped.settings);
-  });
-
-  it('re-exports the golden v3 fixture to an equal dataset', async () => {
-    const { data: original } = await decodeParquetBundle(
-      fixture('v3-sample.parquetbundle').slice().buffer as ArrayBuffer,
-    );
-
-    const { data } = await exportAndDecode(original);
-
-    expect(meaning(data)).toEqual(meaning(original));
-    expect(data.annotations).toEqual(original.annotations);
   });
 
   it('keeps the column type of every EAT companion Python wrote through a re-export', async () => {

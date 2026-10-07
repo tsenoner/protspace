@@ -17,10 +17,6 @@ describe('getDuplicateStackKey', () => {
     expect(getDuplicateStackKey({ x: 1, y: 2 })).not.toBe(base);
     expect(getDuplicateStackKey({ x: 2, y: 1 })).not.toBe(base);
   });
-
-  it('treats integer vs float representations as equal when numerically equal', () => {
-    expect(getDuplicateStackKey({ x: 1, y: 2 })).toBe(getDuplicateStackKey({ x: 1.0, y: 2.0 }));
-  });
 });
 
 describe('buildDuplicateStacks', () => {
@@ -44,6 +40,17 @@ describe('buildDuplicateStacks', () => {
     expect(result.stacks).toHaveLength(1);
     expect(result.stacks[0].points.map((p) => p.id).sort()).toEqual(['a', 'b']);
     expect(result.byKey.get(getDuplicateStackKey({ x: 1, y: 1 }))?.points).toHaveLength(2);
+  });
+
+  it('records the key byKey uses for every point id, so a click finds its stack', () => {
+    // The overlay controller spiderfies a clicked point via
+    // byKey.get(idToKey.get(point.id)), so the two maps must agree on the key.
+    const result = buildDuplicateStacks([point('a', 1, 2), point('b', 1, 2), point('c', 9, 8)]);
+    expect(result.idToKey.get('a')).toBe(getDuplicateStackKey({ x: 1, y: 2 }));
+    expect(result.idToKey.get('b')).toBe(getDuplicateStackKey({ x: 1, y: 2 }));
+    expect(result.idToKey.get('c')).toBe(getDuplicateStackKey({ x: 9, y: 8 }));
+    expect(result.byKey.get(result.idToKey.get('a')!)).toBe(result.stacks[0]);
+    expect(result.byKey.get(result.idToKey.get('c')!)).toBeUndefined();
   });
 
   it('exposes the data-space x/y of the stack so callers can re-project to pixels', () => {
@@ -80,64 +87,18 @@ describe('buildDuplicateStacks', () => {
     expect(result.idToKey.has('inf')).toBe(false);
   });
 
-  // #121 regression: hiding a legend value removes the corresponding points
-  // from the visible set, so the duplicate-stack pass must reflect that.
-  describe('legend-hide regression (#121)', () => {
-    const all = [
-      point('a', 1, 1),
-      point('b', 1, 1),
-      point('c', 1, 1),
-      point('d', 5, 5),
-      point('e', 5, 5),
-    ];
-
+  // #121 regression: the duplicate-stack pass runs on the visible points of the
+  // current projection, so a hidden member or a projection switch must change
+  // the grouping. Rebuilding after those events is the component's job (see the
+  // overlay controller's capture-badges tests); here we pin the two inputs that
+  // differ from the plain grouping cases above.
+  describe('#121 regression', () => {
     it('shrinks a 3-point stack to a 2-point stack when one member is hidden', () => {
+      const all = [point('a', 1, 1), point('b', 1, 1), point('c', 1, 1)];
       const visible = all.filter((p) => p.id !== 'c');
       const result = buildDuplicateStacks(visible);
       const stack = result.byKey.get(getDuplicateStackKey({ x: 1, y: 1 }));
       expect(stack?.points).toHaveLength(2);
-    });
-
-    it('drops a stack entirely when hiding leaves only one member', () => {
-      const visible = all.filter((p) => p.id !== 'd' && p.id !== 'e');
-      const result = buildDuplicateStacks(visible);
-      // Only one (1,1) stack remains. The (5,5) stack must be gone.
-      expect(result.stacks).toHaveLength(1);
-      expect(result.byKey.has(getDuplicateStackKey({ x: 5, y: 5 }))).toBe(false);
-    });
-
-    it('produces no stacks at all when hiding leaves every point alone', () => {
-      const visible = [all[0], all[3]]; // one from each group
-      const result = buildDuplicateStacks(visible);
-      expect(result.stacks).toEqual([]);
-    });
-  });
-
-  // #121 regression: switching projections gives the same proteins different
-  // coordinates. The duplicate-stack pass must rebuild against the new coords,
-  // not carry stale groupings from the previous projection.
-  describe('projection-switch regression (#121)', () => {
-    // Same three proteins, different projection coords.
-    const projectionA = [point('a', 1, 1), point('b', 1, 1), point('c', 9, 9)];
-    const projectionB = [point('a', 2, 2), point('b', 7, 7), point('c', 9, 9)];
-
-    it('finds the duplicate pair in projection A', () => {
-      const result = buildDuplicateStacks(projectionA);
-      expect(result.stacks).toHaveLength(1);
-      expect(result.stacks[0].points.map((p) => p.id).sort()).toEqual(['a', 'b']);
-    });
-
-    it('finds no duplicates in projection B where the same proteins separate', () => {
-      const result = buildDuplicateStacks(projectionB);
-      expect(result.stacks).toEqual([]);
-    });
-
-    it('rebuilds independently — projection A stacks do not leak into projection B', () => {
-      const a = buildDuplicateStacks(projectionA);
-      const b = buildDuplicateStacks(projectionB);
-      expect(a.stacks.length).toBe(1);
-      expect(b.stacks.length).toBe(0);
-      expect(a.byKey).not.toBe(b.byKey);
     });
 
     it('treats UMAP-style jitter (identical embedding, distinct projected coords) as separate points', () => {

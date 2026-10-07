@@ -92,74 +92,61 @@ describe('EatProvenanceResolver', () => {
     ]);
   });
 
-  it.each(['filtering', 'isolation'])(
-    'fills the visible fan-out cap and restores confidence order after %s expands',
-    () => {
-      const data = makeData();
-      const resolver = new EatProvenanceResolver();
-      let queryTwoVisible = false;
-      const isInCurrentView = (proteinIndex: number) => queryTwoVisible || proteinIndex !== 3;
+  it('fills the visible fan-out cap and restores confidence order after filtering or isolation expands', () => {
+    const data = makeData();
+    const resolver = new EatProvenanceResolver();
+    let queryTwoVisible = false;
+    const isInCurrentView = (proteinIndex: number) => queryTwoVisible || proteinIndex !== 3;
 
-      const constrained = resolver.resolve(
-        data,
-        'ec',
-        'source',
-        0,
-        allLegendEligible,
-        isInCurrentView,
-      );
-      expect(constrained).toMatchObject({
-        totalCandidates: 24,
-        unavailableCandidates: 1,
-      });
-      expect(constrained?.pairs).toHaveLength(20);
-      expect(constrained?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-2');
-      expect(constrained?.pairs.map((pair) => pair.targetProteinId)).toContain('query-20');
+    const constrained = resolver.resolve(
+      data,
+      'ec',
+      'source',
+      0,
+      allLegendEligible,
+      isInCurrentView,
+    );
+    expect(constrained).toMatchObject({
+      totalCandidates: 24,
+      unavailableCandidates: 1,
+    });
+    expect(constrained?.pairs).toHaveLength(20);
+    expect(constrained?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-2');
+    expect(constrained?.pairs.map((pair) => pair.targetProteinId)).toContain('query-20');
 
-      queryTwoVisible = true;
-      const expanded = resolver.resolve(
-        data,
-        'ec',
-        'source',
-        0,
-        allLegendEligible,
-        isInCurrentView,
-      );
-      expect(expanded).toMatchObject({
-        totalCandidates: 24,
-        unavailableCandidates: 0,
-      });
-      expect(expanded?.pairs).toHaveLength(20);
-      expect(expanded?.pairs.map((pair) => pair.targetProteinId)).toContain('query-2');
-      expect(expanded?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-20');
-    },
-  );
+    queryTwoVisible = true;
+    const expanded = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, isInCurrentView);
+    expect(expanded).toMatchObject({
+      totalCandidates: 24,
+      unavailableCandidates: 0,
+    });
+    expect(expanded?.pairs).toHaveLength(20);
+    expect(expanded?.pairs.map((pair) => pair.targetProteinId)).toContain('query-2');
+    expect(expanded?.pairs.map((pair) => pair.targetProteinId)).not.toContain('query-20');
+  });
 
-  it.each(['filtering', 'isolation'])(
-    'counts every semantic fan-out connection when the source leaves during %s',
-    () => {
-      const data = makeData();
-      const request = new EatProvenanceResolver().resolve(
-        data,
-        'ec',
-        'source',
-        0,
-        allLegendEligible,
-        (proteinIndex) => proteinIndex !== 0,
-      );
+  it('counts every semantic fan-out connection when the source leaves during filtering or isolation', () => {
+    const data = makeData();
+    const request = new EatProvenanceResolver().resolve(
+      data,
+      'ec',
+      'source',
+      0,
+      allLegendEligible,
+      (proteinIndex) => proteinIndex !== 0,
+    );
 
-      expect(request).toEqual({
-        pairs: [],
-        totalCandidates: 24,
-        unavailableCandidates: 24,
-      });
-      expect(getProvenanceConnectorStatus(request!, 0)).toEqual({
-        shown: 0,
-        total: 24,
-        missingEndpoints: 24,
-      });
-    },
-  );
+    expect(request).toEqual({
+      pairs: [],
+      totalCandidates: 24,
+      unavailableCandidates: 24,
+    });
+    expect(getProvenanceConnectorStatus(request!, 0)).toEqual({
+      shown: 0,
+      total: 24,
+      missingEndpoints: 24,
+    });
+  });
 
   it('reuses one source index for the same data reference and annotation', () => {
     const data = makeData();
@@ -177,36 +164,41 @@ describe('EatProvenanceResolver', () => {
     const data = makeData(50_000);
     const resolver = new EatProvenanceResolver();
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
-    const sourceIndex = resolver.getSourceIndex(data, 'ec');
-    const sortCallsAfterIndexBuild = sortSpy.mock.calls.length;
-    const cachedCandidates = sourceIndex.get('source');
-    if (!cachedCandidates) throw new Error('large-fan-out source was not indexed');
+    // The spy wraps the shared Array.prototype.sort: restore it even if an assertion fails.
+    try {
+      const sourceIndex = resolver.getSourceIndex(data, 'ec');
+      const sortCallsAfterIndexBuild = sortSpy.mock.calls.length;
+      const cachedCandidates = sourceIndex.get('source');
+      if (!cachedCandidates) throw new Error('large-fan-out source was not indexed');
 
-    Object.defineProperties(cachedCandidates, {
-      filter: {
-        value: () => {
-          throw new Error('source resolution must not allocate a full filtered candidate array');
+      Object.defineProperties(cachedCandidates, {
+        filter: {
+          value: () => {
+            throw new Error('source resolution must not allocate a full filtered candidate array');
+          },
         },
-      },
-      slice: {
-        value: () => {
-          throw new Error('source resolution must not slice the full cached candidate list');
+        slice: {
+          value: () => {
+            throw new Error('source resolution must not slice the full cached candidate list');
+          },
         },
-      },
-      sort: {
-        value: () => {
-          throw new Error('source resolution must not re-sort cached candidates');
+        sort: {
+          value: () => {
+            throw new Error('source resolution must not re-sort cached candidates');
+          },
         },
-      },
-    });
+      });
 
-    for (let click = 0; click < 3; click++) {
-      const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
-      expect(request?.totalCandidates).toBe(50_000);
-      expect(request?.pairs).toHaveLength(20);
-      expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
+      for (let click = 0; click < 3; click++) {
+        const request = resolver.resolve(data, 'ec', 'source', 0, allLegendEligible);
+        expect(request?.totalCandidates).toBe(50_000);
+        expect(request?.pairs).toHaveLength(20);
+        expect(request?.pairs[0]).toMatchObject({ targetProteinId: 'query-0', confidence: 1 });
+      }
+      expect(sortSpy).toHaveBeenCalledTimes(sortCallsAfterIndexBuild);
+    } finally {
+      sortSpy.mockRestore();
     }
-    expect(sortSpy).toHaveBeenCalledTimes(sortCallsAfterIndexBuild);
   });
 
   it('breaks equal-confidence ties by ascending protein id', () => {
@@ -237,68 +229,62 @@ describe('EatProvenanceResolver', () => {
     });
   });
 
-  it.each(['filtering', 'isolation'])(
-    're-resolves semantic clicks across %s expansion in both click directions',
-    () => {
-      const data = makeData(1);
-      const resolver = new EatProvenanceResolver();
-      const constrained = [
-        resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, (index) => index === 0),
-        resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible, (index) => index === 1),
-      ];
+  it('re-resolves semantic clicks across filtering or isolation expansion in both click directions', () => {
+    const data = makeData(1);
+    const resolver = new EatProvenanceResolver();
+    const constrained = [
+      resolver.resolve(data, 'ec', 'source', 0, allLegendEligible, (index) => index === 0),
+      resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible, (index) => index === 1),
+    ];
 
-      for (const request of constrained) {
-        expect(request).toEqual({
-          totalCandidates: 1,
-          unavailableCandidates: 1,
-          pairs: [],
-        });
-        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
-      }
+    for (const request of constrained) {
+      expect(request).toEqual({
+        totalCandidates: 1,
+        unavailableCandidates: 1,
+        pairs: [],
+      });
+      expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
+    }
 
-      const expanded = [
-        resolver.resolve(data, 'ec', 'source', 0, allLegendEligible),
-        resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible),
-      ];
-      for (const request of expanded) {
-        expect(request).toMatchObject({
-          totalCandidates: 1,
-          unavailableCandidates: 0,
-          pairs: [
-            {
-              sourceProteinId: 'source',
-              targetProteinId: 'query-0',
-            },
-          ],
-        });
-        expect(getProvenanceConnectorStatus(request!, 1).missingEndpoints).toBe(0);
-      }
-    },
-  );
+    const expanded = [
+      resolver.resolve(data, 'ec', 'source', 0, allLegendEligible),
+      resolver.resolve(data, 'ec', 'query-0', 1, allLegendEligible),
+    ];
+    for (const request of expanded) {
+      expect(request).toMatchObject({
+        totalCandidates: 1,
+        unavailableCandidates: 0,
+        pairs: [
+          {
+            sourceProteinId: 'source',
+            targetProteinId: 'query-0',
+          },
+        ],
+      });
+      expect(getProvenanceConnectorStatus(request!, 1).missingEndpoints).toBe(0);
+    }
+  });
 
-  it.each(['filtering', 'isolation'])(
-    'counts a predicted-query connection once when either endpoint leaves during %s',
-    () => {
-      const data = makeData(1);
-      const resolver = new EatProvenanceResolver();
-      for (const retainedIndex of [0, 1]) {
-        const request = resolver.resolve(
-          data,
-          'ec',
-          'query-0',
-          1,
-          allLegendEligible,
-          (index) => index === retainedIndex,
-        );
-        expect(request).toEqual({
-          pairs: [],
-          totalCandidates: 1,
-          unavailableCandidates: 1,
-        });
-        expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
-      }
-    },
-  );
+  it('counts a predicted-query connection once when either endpoint leaves during filtering or isolation', () => {
+    const data = makeData(1);
+    const resolver = new EatProvenanceResolver();
+    for (const retainedIndex of [0, 1]) {
+      const request = resolver.resolve(
+        data,
+        'ec',
+        'query-0',
+        1,
+        allLegendEligible,
+        (index) => index === retainedIndex,
+      );
+      expect(request).toEqual({
+        pairs: [],
+        totalCandidates: 1,
+        unavailableCandidates: 1,
+      });
+      expect(getProvenanceConnectorStatus(request!, 0).missingEndpoints).toBe(1);
+    }
+  });
 
   it('counts a filtered source once from resolver through accessible overlay status', () => {
     const data = makeData();

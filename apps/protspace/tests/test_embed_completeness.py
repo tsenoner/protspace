@@ -14,6 +14,7 @@ import pytest
 
 from protspace.data.embedding import store
 from protspace.data.loaders.fasta import check_fasta_coverage
+from tests.prep_source import biocentral_down_patterns
 
 
 def _write(h5_path: Path, ids) -> None:
@@ -101,16 +102,7 @@ class TestFinishRun:
         """The prep service substring-matches stderr to classify a failure as
         BIOCENTRAL_UNAVAILABLE and route the user to Colab. A coverage problem
         must not trip those patterns -- Colab would not fix it."""
-        patterns = (
-            "connection refused",
-            "cannot connect to host",
-            "connectionerror",
-            "temporary failure in name resolution",
-            "name or service not known",
-            "503 service unavailable",
-            "503 server error",
-            "no healthy biocentral",
-        )
+        patterns = biocentral_down_patterns()
         h5 = tmp_path / "o.h5"
         _write(h5, ["a"])
         with pytest.raises(ValueError) as exc:

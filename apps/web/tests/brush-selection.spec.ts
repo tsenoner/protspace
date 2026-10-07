@@ -1,15 +1,60 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent, getProteinCount, waitForExploreDataLoad } from './helpers/explore';
+import { openExplore } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Read the list of currently selected protein IDs from the scatter-plot. */
-async function getSelectedProteinIds(page: Page): Promise<string[]> {
+/**
+ * How the plot's current selection relates to the proteins it holds. Comparing
+ * IDs rather than counts means a selection of placeholder values cannot pass.
+ */
+async function readSelection(page: Page) {
   return page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    return Array.from(plot?.selectedProteinIds ?? []) as string[];
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { data?: { protein_ids?: string[] }; selectedProteinIds?: string[] })
+      | null;
+    const proteinIds = new Set(plot?.data?.protein_ids ?? []);
+    const selected = plot?.selectedProteinIds ?? [];
+    return {
+      selected: selected.length,
+      distinct: new Set(selected).size,
+      unknown: selected.filter((id) => !proteinIds.has(id)).length,
+    };
+  });
+}
+
+/** Wait until the plot's selection is exactly every protein it holds. */
+async function expectEveryProteinSelected(page: Page): Promise<void> {
+  const total = await page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { data?: { protein_ids?: string[] } })
+      | null;
+    return new Set(plot?.data?.protein_ids ?? []).size;
+  });
+  expect(total).toBeGreaterThan(0);
+  await expect
+    .poll(() => readSelection(page), { timeout: 5_000, intervals: [100] })
+    .toEqual({ selected: total, distinct: total, unknown: 0 });
+}
+
+async function clearSelection(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { selectedProteinIds?: string[] })
+      | null;
+    if (plot) plot.selectedProteinIds = [];
+  });
+  await expect
+    .poll(() => readSelection(page), { timeout: 5_000, intervals: [100] })
+    .toEqual({ selected: 0, distinct: 0, unknown: 0 });
+}
+
+/** The plot element's size in CSS pixels. */
+async function getPlotSize(page: Page): Promise<{ width: number; height: number }> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as HTMLElement;
+    return { width: plot.clientWidth, height: plot.clientHeight };
   });
 }
 
@@ -17,6 +62,10 @@ async function getSelectedProteinIds(page: Page): Promise<string[]> {
  * Programmatically invoke brush selection on the scatter-plot.
  * Coordinates are in CSS pixels relative to the plot element.
  * This bypasses mouse event delivery issues with shadow DOM.
+ *
+ * d3's `brush.move` does not clamp the selection to the brush extent, so a
+ * selection made this way cannot detect an extent regression; the extent test
+ * below reads the extent itself.
  */
 async function brushSelect(
   page: Page,
@@ -124,159 +173,72 @@ async function enableSelectionMode(page: Page): Promise<boolean> {
   });
 }
 
-/**
- * Wait for selectedProteinIds to reach a condition after a brush gesture.
- * The component uses requestAnimationFrame, so we poll until it settles.
- */
-async function waitForSelection(
-  page: Page,
-  condition: 'non-empty' | number,
-  timeout = 5_000,
-): Promise<string[]> {
-  await page.waitForFunction(
-    (cond) => {
-      const plot = document.querySelector('#myPlot') as any;
-      const ids = plot?.selectedProteinIds ?? [];
-      if (typeof cond === 'number') return ids.length === cond;
-      return ids.length > 0;
-    },
-    condition,
-    { timeout },
-  );
-  return getSelectedProteinIds(page);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test.describe('Brush selection works at all zoom levels (#189)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
-  test('full-canvas brush at default zoom selects all visible points', async ({ page }) => {
-    const totalProteins = await getProteinCount(page);
-    expect(totalProteins).toBeGreaterThan(0);
-
+  test('full-canvas brush selects every protein at default zoom and zoomed out', async ({
+    page,
+  }) => {
     const active = await enableSelectionMode(page);
     expect(active).toBe(true);
-
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
+    const dims = await getPlotSize(page);
 
     const result = await brushSelect(page, 0, 0, dims.width, dims.height);
     expect(result.brushCreated).toBe(true);
     expect(result.selectionMode).toBe(true);
+    await expectEveryProteinSelected(page);
 
-    const actual = await waitForSelection(page, totalProteins);
-    expect(actual.length).toBe(totalProteins);
-  });
-
-  test('full-canvas brush after zooming out selects all points', async ({ page }) => {
-    const totalProteins = await getProteinCount(page);
-
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
-
+    await clearSelection(page);
     // Zoom out: k=0.3 centered
     const k = 0.3;
     await setZoomTransform(page, k, ((1 - k) * dims.width) / 2, ((1 - k) * dims.height) / 2);
-
-    const active = await enableSelectionMode(page);
-    expect(active).toBe(true);
-
     await brushSelect(page, 0, 0, dims.width, dims.height);
-
-    const actual = await waitForSelection(page, totalProteins);
-    expect(actual.length).toBe(totalProteins);
+    await expectEveryProteinSelected(page);
   });
 
-  test('full-canvas brush after zooming in selects visible points', async ({ page }) => {
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
-
-    // Zoom in 3x centered
-    const k = 3;
-    await setZoomTransform(page, k, ((1 - k) * dims.width) / 2, ((1 - k) * dims.height) / 2);
-
+  // The #189 guard: the brush extent must be the whole viewport, in local
+  // coordinates, at every zoom level. The old extent stopped at the plot
+  // margins, leaving a dead zone of margin*k screen pixels at each edge.
+  test('brush extent covers the viewport at every zoom level', async ({ page }) => {
+    // Selection mode first, so every zoom below goes through the extent resync
+    // in applyZoom rather than the initial brush setup.
     const active = await enableSelectionMode(page);
     expect(active).toBe(true);
+    const dims = await getPlotSize(page);
 
-    await brushSelect(page, 0, 0, dims.width, dims.height);
+    const transforms: Array<{ name: string; k: number; x: number; y: number }> = [
+      { name: 'identity', k: 1, x: 0, y: 0 },
+      { name: 'zoomed out', k: 0.3, x: (0.7 * dims.width) / 2, y: (0.7 * dims.height) / 2 },
+      { name: 'zoomed in', k: 3, x: -dims.width, y: -dims.height },
+      // Zoomed in 2x and panned so the data centre sits at the top-left.
+      { name: 'zoomed in and panned', k: 2, x: -80, y: -80 },
+    ];
 
-    // When zoomed in to center, some (not all) points should be in view
-    const actual = await waitForSelection(page, 'non-empty');
-    expect(actual.length).toBeGreaterThan(0);
-  });
+    for (const { name, k, x, y } of transforms) {
+      await setZoomTransform(page, k, x, y);
+      const state = await page.evaluate(() => {
+        const plot = document.querySelector('#myPlot') as any;
+        const t = plot._transform;
+        return {
+          transform: { k: t.k, x: t.x, y: t.y },
+          extent: plot._interaction._brush.extent()() as [[number, number], [number, number]],
+          width: plot._mergedConfig.width as number,
+          height: plot._mergedConfig.height as number,
+        };
+      });
 
-  test('brush reaches full viewport when panned and zoomed in', async ({ page }) => {
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
-
-    // Zoom in 2x, panned so the data center is at screen top-left.
-    const k = 2;
-    const margin = 40;
-    await setZoomTransform(page, k, -margin * k, -margin * k);
-
-    const active = await enableSelectionMode(page);
-    expect(active).toBe(true);
-
-    // With the old margin-constrained extent, starting from CSS pixel (0,0)
-    // would be clamped — dead-zone of margin*k = 80 screen pixels on each side.
-    const result = await brushSelect(page, 0, 0, dims.width, dims.height);
-    expect(result.brushCreated).toBe(true);
-
-    const actual = await waitForSelection(page, 'non-empty');
-    expect(actual.length).toBeGreaterThan(0);
-  });
-
-  test('brush extent covers viewport not just margins', async ({ page }) => {
-    const active = await enableSelectionMode(page);
-    expect(active).toBe(true);
-
-    const extentInfo = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as any;
-      // B8/F-07: brush moved into PlotInteractionController.
-      if (!plot?._interaction?._brush) return null;
-
-      const config = plot._mergedConfig;
-      const t = plot._transform;
-      const extent = plot._interaction._brush.extent()();
-
-      return {
-        extentX0: extent[0][0],
-        extentY0: extent[0][1],
-        extentX1: extent[1][0],
-        extentY1: extent[1][1],
-        width: config.width,
-        height: config.height,
-        transformK: t.k,
-        transformX: t.x,
-      };
-    });
-
-    expect(extentInfo).not.toBeNull();
-    if (!extentInfo) return;
-
-    // At default zoom (identity transform), the extent should cover
-    // [0,0] to [width,height] — NOT [margin.left,margin.top] to
-    // [width-margin.right, height-margin.bottom]
-    if (extentInfo.transformK === 1 && extentInfo.transformX === 0) {
-      expect(extentInfo.extentX0).toBeLessThanOrEqual(0);
-      expect(extentInfo.extentY0).toBeLessThanOrEqual(0);
-      expect(extentInfo.extentX1).toBeGreaterThanOrEqual(extentInfo.width);
-      expect(extentInfo.extentY1).toBeGreaterThanOrEqual(extentInfo.height);
+      expect(state.transform, name).toEqual({ k, x, y });
+      const [[x0, y0], [x1, y1]] = state.extent;
+      expect(x0, `${name}: left`).toBeCloseTo(-x / k, 6);
+      expect(y0, `${name}: top`).toBeCloseTo(-y / k, 6);
+      expect(x1, `${name}: right`).toBeCloseTo((state.width - x) / k, 6);
+      expect(y1, `${name}: bottom`).toBeCloseTo((state.height - y) / k, 6);
     }
   });
 });
@@ -286,55 +248,19 @@ test.describe('Brush selection works at all zoom levels (#189)', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Programmatically invoke lasso selection with a polygon in CSS pixels.
- * Converts to local coords and triggers the component's lasso handlers directly.
+ * Draw a lasso with the real mouse, through the plot's own pointer handlers.
+ * Vertices are in CSS pixels relative to the plot element.
  */
-async function lassoSelect(
-  page: Page,
-  vertices: Array<[number, number]>,
-): Promise<{ selectionTool: string }> {
-  return page.evaluate((verts) => {
-    const plot = document.querySelector('#myPlot') as any;
-    if (!plot) return { selectionTool: '' };
-
-    const selectionTool = plot.selectionTool ?? '';
-    const svg = plot.shadowRoot?.querySelector('svg');
-    if (!svg) return { selectionTool };
-
-    const svgRect = svg.getBoundingClientRect();
-    const viewBox = svg.viewBox.baseVal;
-    const scaleX = viewBox.width / svgRect.width;
-    const scaleY = viewBox.height / svgRect.height;
-    const t = plot._transform;
-
-    // Convert CSS pixels → local (untransformed) coords
-    const localVerts: Array<[number, number]> = verts.map(([x, y]) => {
-      const svgX = x * scaleX;
-      const svgY = y * scaleY;
-      return [(svgX - t.x) / t.k, (svgY - t.y) / t.k] as [number, number];
-    });
-
-    // Query the point index directly with the polygon
-    const candidates = plot._pointGridIndex?.queryByPolygon(localVerts) ?? [];
-    const getOpacity = plot._getOpacity?.bind(plot);
-    const selectedIds = getOpacity
-      ? candidates.filter((d: any) => getOpacity(d) > 0).map((d: any) => d.id)
-      : candidates.map((d: any) => d.id);
-
-    if (selectedIds.length > 0) {
-      plot.selectedProteinIds = [...selectedIds];
-      plot.dispatchEvent(
-        new CustomEvent('brush-selection', {
-          detail: { proteinIds: selectedIds, isMultiple: true },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      plot.requestUpdate();
-    }
-
-    return { selectionTool };
-  }, vertices);
+async function drawLasso(page: Page, vertices: Array<[number, number]>): Promise<void> {
+  const box = await page.locator('#myPlot').boundingBox();
+  if (!box) throw new Error('#myPlot has no bounding box');
+  const [[startX, startY], ...rest] = vertices;
+  await page.mouse.move(box.x + startX, box.y + startY);
+  await page.mouse.down();
+  for (const [x, y] of rest) {
+    await page.mouse.move(box.x + x, box.y + y, { steps: 4 });
+  }
+  await page.mouse.up();
 }
 
 /** Switch the selection tool on the scatter-plot component. */
@@ -359,37 +285,27 @@ async function setSelectionTool(page: Page, tool: 'rectangle' | 'lasso'): Promis
 
 test.describe('Lasso selection (#208)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('lasso at default zoom selects all points with enclosing polygon', async ({ page }) => {
-    const totalProteins = await getProteinCount(page);
-    expect(totalProteins).toBeGreaterThan(0);
-
     const active = await enableSelectionMode(page);
     expect(active).toBe(true);
 
     const tool = await setSelectionTool(page, 'lasso');
     expect(tool).toBe('lasso');
 
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
+    const dims = await getPlotSize(page);
 
-    // Draw a polygon that encloses the entire canvas
-    const result = await lassoSelect(page, [
-      [0, 0],
-      [dims.width, 0],
-      [dims.width, dims.height],
-      [0, dims.height],
+    // A polygon just inside the plot's edges encloses every point.
+    await drawLasso(page, [
+      [2, 2],
+      [dims.width - 2, 2],
+      [dims.width - 2, dims.height - 2],
+      [2, dims.height - 2],
     ]);
-    expect(result.selectionTool).toBe('lasso');
 
-    const actual = await waitForSelection(page, totalProteins);
-    expect(actual.length).toBe(totalProteins);
+    await expectEveryProteinSelected(page);
   });
 
   test('switch between rectangle and lasso tools', async ({ page }) => {
@@ -412,41 +328,10 @@ test.describe('Lasso selection (#208)', () => {
     expect(tool).toBe('rectangle');
 
     // Rectangle brush still works after switching back
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
+    const dims = await getPlotSize(page);
     const result = await brushSelect(page, 0, 0, dims.width, dims.height);
     expect(result.brushCreated).toBe(true);
 
-    const actual = await waitForSelection(page, 'non-empty');
-    expect(actual.length).toBeGreaterThan(0);
-  });
-
-  test('lasso with fewer than 3 vertices does not change selection', async ({ page }) => {
-    const active = await enableSelectionMode(page);
-    expect(active).toBe(true);
-    await setSelectionTool(page, 'lasso');
-
-    // Make a brush selection first so there's an existing selection
-    await setSelectionTool(page, 'rectangle');
-    const dims = await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as HTMLElement;
-      return { width: plot.clientWidth, height: plot.clientHeight };
-    });
-    await brushSelect(page, 0, 0, dims.width, dims.height);
-    const beforeSelection = await waitForSelection(page, 'non-empty');
-    expect(beforeSelection.length).toBeGreaterThan(0);
-
-    // Switch to lasso and do a < 3 vertex selection (should be ignored)
-    await setSelectionTool(page, 'lasso');
-    await lassoSelect(page, [
-      [10, 10],
-      [20, 20],
-    ]);
-
-    // Selection should be unchanged
-    const afterSelection = await getSelectedProteinIds(page);
-    expect(afterSelection.length).toBe(beforeSelection.length);
+    await expectEveryProteinSelected(page);
   });
 });

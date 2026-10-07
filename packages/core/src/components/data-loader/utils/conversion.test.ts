@@ -80,168 +80,100 @@ function makeCollisionExtraction(
 }
 
 describe('parseAnnotationValue', () => {
-  it('parses label without pipe as full string with empty scores', () => {
-    const result = parseAnnotationValue('taxonomy_value');
-    expect(result.label).toBe('taxonomy_value');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses label|score with single numeric score', () => {
-    const result = parseAnnotationValue('PF00001 (7tm_1)|1.5e-10');
-    expect(result.label).toBe('PF00001 (7tm_1)');
-    expect(result.scores).toHaveLength(1);
-    expect(result.scores[0]).toBeCloseTo(1.5e-10);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses label|score1,score2 with multiple comma-separated scores', () => {
-    const result = parseAnnotationValue('PF00001|1.5e-10,2.3e-5');
-    expect(result.label).toBe('PF00001');
-    expect(result.scores).toHaveLength(2);
-    expect(result.scores[0]).toBeCloseTo(1.5e-10);
-    expect(result.scores[1]).toBeCloseTo(2.3e-5);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('keeps GO:0005524|ATP binding intact (non-numeric after pipe)', () => {
-    const result = parseAnnotationValue('GO:0005524|ATP binding');
-    expect(result.label).toBe('GO:0005524|ATP binding');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles empty string gracefully', () => {
-    const result = parseAnnotationValue('');
-    expect(result.label).toBe('');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles whitespace-only string gracefully', () => {
-    const result = parseAnnotationValue('   ');
-    expect(result.label).toBe('');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles pipe at end of string', () => {
-    const result = parseAnnotationValue('label|');
-    expect(result.label).toBe('label|');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles negative numeric scores', () => {
-    const result = parseAnnotationValue('domain|-3.5');
-    expect(result.label).toBe('domain');
-    expect(result.scores).toEqual([-3.5]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles zero score', () => {
-    const result = parseAnnotationValue('domain|0');
-    expect(result.label).toBe('domain');
-    expect(result.scores).toEqual([0]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles mixed valid and invalid comma-separated values after pipe', () => {
-    // If any part is non-numeric, the whole thing is kept as label
-    const result = parseAnnotationValue('label|1.5,abc');
-    expect(result.label).toBe('label|1.5,abc');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles multiple pipes — uses last pipe for score detection', () => {
-    const result = parseAnnotationValue('GO:123|description|1.5e-3');
-    expect(result.label).toBe('GO:123|description');
-    expect(result.scores).toEqual([1.5e-3]);
-    expect(result.evidence).toBeNull();
-  });
-
-  // Evidence code tests
-  it('parses Cytoplasm|EXP as label with EXP evidence', () => {
-    const result = parseAnnotationValue('Cytoplasm|EXP');
-    expect(result.label).toBe('Cytoplasm');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('EXP');
-  });
-
-  it('parses apoptotic process|IDA as label with IDA evidence', () => {
-    const result = parseAnnotationValue('apoptotic process|IDA');
-    expect(result.label).toBe('apoptotic process');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('IDA');
-  });
-
-  it('does not treat long unknown codes as evidence', () => {
-    const result = parseAnnotationValue('value|TOOLONG123');
-    expect(result.label).toBe('value|TOOLONG123');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('does not treat single uppercase letter as evidence', () => {
-    const result = parseAnnotationValue('value|A');
-    expect(result.label).toBe('value|A');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses all standard GO evidence codes', () => {
-    const codes = [
-      // Original 11
-      'EXP',
-      'HDA',
+  it.each([
+    [
+      'label without pipe is the full string with empty scores',
+      'taxonomy_value',
+      'taxonomy_value',
+      [],
+      null,
+    ],
+    [
+      'label|score with a single numeric score',
+      'PF00001 (7tm_1)|1.5e-10',
+      'PF00001 (7tm_1)',
+      [1.5e-10],
+      null,
+    ],
+    [
+      'label|score1,score2 with comma-separated scores',
+      'PF00001|1.5e-10,2.3e-5',
+      'PF00001',
+      [1.5e-10, 2.3e-5],
+      null,
+    ],
+    [
+      'non-numeric text after the pipe stays in the label',
+      'GO:0005524|ATP binding',
+      'GO:0005524|ATP binding',
+      [],
+      null,
+    ],
+    ['empty string', '', '', [], null],
+    ['whitespace-only string', '   ', '', [], null],
+    ['pipe at end of string', 'label|', 'label|', [], null],
+    ['negative numeric score', 'domain|-3.5', 'domain', [-3.5], null],
+    ['zero score', 'domain|0', 'domain', [0], null],
+    ['any non-numeric part keeps the whole label', 'label|1.5,abc', 'label|1.5,abc', [], null],
+    [
+      'multiple pipes: the last pipe wins',
+      'GO:123|description|1.5e-3',
+      'GO:123|description',
+      [1.5e-3],
+      null,
+    ],
+    ['Cytoplasm|EXP has EXP evidence', 'Cytoplasm|EXP', 'Cytoplasm', [], 'EXP'],
+    [
+      'apoptotic process|IDA has IDA evidence',
+      'apoptotic process|IDA',
+      'apoptotic process',
+      [],
       'IDA',
-      'TAS',
-      'NAS',
-      'IC',
-      'ISS',
-      'SAM',
-      'COMB',
-      'IMP',
-      'IEA',
-      // Additional GO evidence codes
-      'IPI',
-      'IGI',
-      'IEP',
-      'HTP',
-      'HMP',
-      'HGI',
-      'HEP',
-      'IBA',
-      'IBD',
-      'IKR',
-      'IRD',
-      'ISA',
-      'ISO',
-      'ISM',
-      'RCA',
-      'ND',
-    ];
-    for (const code of codes) {
-      const result = parseAnnotationValue(`some label|${code}`);
-      expect(result.label).toBe('some label');
-      expect(result.scores).toEqual([]);
-      expect(result.evidence).toBe(code);
-    }
+    ],
+    ['a long unknown code is not evidence', 'value|TOOLONG123', 'value|TOOLONG123', [], null],
+    ['a single uppercase letter is not evidence', 'value|A', 'value|A', [], null],
+    ['a raw ECO id is evidence', 'Cytoplasm|ECO:0000269', 'Cytoplasm', [], 'ECO:0000269'],
+    ['a numeric suffix is a score, not evidence', 'PF00001|162.3', 'PF00001', [162.3], null],
+  ] as const)('%s', (_, raw, label, scores, evidence) => {
+    expect(parseAnnotationValue(raw)).toEqual({ label, scores, evidence });
   });
 
-  it('parses raw ECO ID format as evidence', () => {
-    const result = parseAnnotationValue('Cytoplasm|ECO:0000269');
-    expect(result.label).toBe('Cytoplasm');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('ECO:0000269');
-  });
-
-  it('prefers numeric score over evidence code for numeric suffixes', () => {
-    const result = parseAnnotationValue('PF00001|162.3');
-    expect(result.label).toBe('PF00001');
-    expect(result.scores).toEqual([162.3]);
-    expect(result.evidence).toBeNull();
+  it.each([
+    // Original 11
+    'EXP',
+    'HDA',
+    'IDA',
+    'TAS',
+    'NAS',
+    'IC',
+    'ISS',
+    'SAM',
+    'COMB',
+    'IMP',
+    'IEA',
+    // Additional GO evidence codes
+    'IPI',
+    'IGI',
+    'IEP',
+    'HTP',
+    'HMP',
+    'HGI',
+    'HEP',
+    'IBA',
+    'IBD',
+    'IKR',
+    'IRD',
+    'ISA',
+    'ISO',
+    'ISM',
+    'RCA',
+    'ND',
+  ])('parses the GO evidence code %s', (code) => {
+    expect(parseAnnotationValue(`some label|${code}`)).toEqual({
+      label: 'some label',
+      scores: [],
+      evidence: code,
+    });
   });
 });
 

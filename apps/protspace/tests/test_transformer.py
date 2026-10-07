@@ -17,129 +17,84 @@ from src.protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
 
-# Test data
-SAMPLE_PROTEINS_WITH_LENGTH = [
-    ProteinAnnotations(
-        identifier="P01308",
-        annotations={
-            "length": "110",
-            "annotation_score": "5.0",
-            "protein_families": "Insulin family|IC;Growth factor family|IC",
-            "reviewed": "Swiss-Prot",
-            "xref_pdb": "1INS;2INS",
-            "fragment": "fragment",
-            "cc_subcellular_location": "Secreted;Extracellular",
-        },
+# One annotation in, the whole transformed annotations dict out: every field the
+# transformer maps, the empty and None values it must leave alone, and fields it
+# has no rule for, which pass through unchanged.
+FIELD_MAPPINGS = [
+    ("annotation_score", "5.0", "5"),
+    ("annotation_score", "", ""),
+    ("annotation_score", None, None),
+    # Every family of a multi-section entry survives, evidence included
+    (
+        "protein_families",
+        "Insulin family|IC;Growth factor family|IC",
+        "Insulin family|IC;Growth factor family|IC",
     ),
-    ProteinAnnotations(
-        identifier="P01315",
-        annotations={
-            "length": "142",
-            "annotation_score": "4.5",
-            "protein_families": "Insulin family",
-            "reviewed": "TrEMBL",
-            "xref_pdb": "",
-            "fragment": "",
-            "cc_subcellular_location": "Membrane",
-        },
-    ),
+    ("protein_families", None, None),
+    ("reviewed", "Swiss-Prot", "Swiss-Prot"),
+    ("reviewed", "TrEMBL", "TrEMBL"),
+    ("reviewed", None, None),
+    ("xref_pdb", "1INS;2INS", "True"),
+    # No uniprot_kb_id key at all (legacy rows): blank means "no PDB"
+    ("xref_pdb", "", "False"),
+    ("fragment", "fragment", "yes"),
+    ("fragment", "", ""),
+    ("cc_subcellular_location", "Secreted;Extracellular", "Secreted;Extracellular"),
+    # G3DSA: prefix stripped and the superfamilies sorted
+    ("cath", "G3DSA:2.40.50.140;G3DSA:1.10.10.10", "1.10.10.10;2.40.50.140"),
+    ("signal_peptide", "SIGNAL_PEPTIDE", "True"),
+    ("signal_peptide", "", "False"),
+    ("pfam", "PF00013;PF00014", "PF00013;PF00014"),
+    ("length", "110", "110"),  # preserved as-is, no binning
+    ("smart", "SM00220 (InsulinA)|35.7", "SM00220 (InsulinA)|35.7"),
+    ("cdd", "cd00205 (IGc2)", "cd00205 (IGc2)"),
+    ("prosite", "PS00009 (INSULIN)", "PS00009 (INSULIN)"),
+    ("prints", "PR00276 (INSULIN)", "PR00276 (INSULIN)"),
+    ("custom_field", "custom_value", "custom_value"),
+    ("custom_field", 123, 123),
 ]
-
-SAMPLE_PROTEINS_WITHOUT_LENGTH = [
-    ProteinAnnotations(
-        identifier="P01308",
-        annotations={
-            "annotation_score": "5.0",
-            "protein_families": "Insulin family",
-        },
-    ),
-]
-
-SAMPLE_PROTEINS_WITH_INTERPRO = [
-    ProteinAnnotations(
-        identifier="P01308",
-        annotations={
-            "cath": "G3DSA:1.10.10.10;G3DSA:2.40.50.140",
-            "signal_peptide": "SIGNAL_PEPTIDE",
-            "pfam": "PF00013;PF00014",
-        },
-    ),
-]
-
-
-class TestAnnotationTransformerInit:
-    """Test AnnotationTransformer initialization."""
-
-    def test_init_creates_sub_transformers(self):
-        """Test that initialization creates all sub-transformers."""
-        transformer = AnnotationTransformer()
-
-        # Verify sub-transformers are created and have expected methods
-        assert hasattr(transformer.uniprot_transformer, "transform_annotation_score")
-        assert hasattr(transformer.uniprot_transformer, "transform_protein_families")
-        assert hasattr(transformer.interpro_transformer, "transform_cath")
-        assert hasattr(transformer.interpro_transformer, "transform_pfam")
-        assert not hasattr(transformer, "length_binner")
 
 
 class TestAnnotationTransformerTransform:
     """Test the transform() method."""
 
-    def test_transform_with_length(self):
-        """Test transformation preserves length field."""
-        transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 2
-        # Length is preserved as-is (no binning)
-        assert result[0].annotations["length"] == "110"
-        assert "length_fixed" not in result[0].annotations
-        assert "length_quantile" not in result[0].annotations
-
-        # Should have transformed annotations
-        assert result[0].annotations["annotation_score"] == "5"
-        # Every family of a multi-section entry survives, evidence included
-        assert (
-            result[0].annotations["protein_families"]
-            == "Insulin family|IC;Growth factor family|IC"
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        FIELD_MAPPINGS,
+        ids=[f"{f}={v!r}" for f, v, _ in FIELD_MAPPINGS],
+    )
+    def test_transform_maps_each_field(self, field, value, expected):
+        result = AnnotationTransformer().transform(
+            [ProteinAnnotations(identifier="P1", annotations={field: value})]
         )
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-        assert result[0].annotations["xref_pdb"] == "True"
-        assert result[0].annotations["fragment"] == "yes"
 
-    def test_transform_without_length_field(self):
-        """Test transformation when length field is missing."""
+        assert result[0].annotations == {field: expected}
+
+    def test_transform_keeps_proteins_and_their_order(self):
         transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITHOUT_LENGTH.copy()
+        proteins = [
+            ProteinAnnotations(identifier="P01308", annotations={}),
+            ProteinAnnotations(identifier="P01315", annotations={}),
+        ]
 
-        result = transformer.transform(proteins)
+        assert transformer.transform([]) == []
+        assert [p.identifier for p in transformer.transform(proteins)] == [
+            "P01308",
+            "P01315",
+        ]
 
-        assert len(result) == 1
-        assert "length" not in result[0].annotations
+    def test_transform_does_not_modify_the_input(self):
+        annotations = {"annotation_score": "5.0", "custom_field": "value"}
 
-        # Should still transform other annotations
-        assert result[0].annotations["annotation_score"] == "5"
+        result = AnnotationTransformer().transform(
+            [ProteinAnnotations(identifier="P1", annotations=annotations)]
+        )
 
-    def test_transform_empty_list(self):
-        """Test transformation with empty protein list."""
-        transformer = AnnotationTransformer()
-
-        result = transformer.transform([])
-
-        assert result == []
-
-    def test_transform_preserves_identifiers(self):
-        """Test that transformation preserves protein identifiers."""
-        transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITH_LENGTH.copy()
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 2
-        assert result[0].identifier == "P01308"
-        assert result[1].identifier == "P01315"
+        assert annotations == {"annotation_score": "5.0", "custom_field": "value"}
+        assert result[0].annotations == {
+            "annotation_score": "5",
+            "custom_field": "value",
+        }
 
     @pytest.mark.parametrize(
         ("uniprot_kb_id", "xref_pdb", "expected"),
@@ -195,77 +150,6 @@ class TestAnnotationTransformerTransform:
 
         assert result[0].annotations["xref_pdb"] == expected
 
-    def test_transform_with_interpro_annotations(self):
-        """Test transformation with InterPro annotations."""
-        transformer = AnnotationTransformer()
-        proteins = SAMPLE_PROTEINS_WITH_INTERPRO.copy()
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 1
-        # CATH should be cleaned (G3DSA: prefix removed, sorted)
-        assert "1.10.10.10" in result[0].annotations["cath"]
-        assert "2.40.50.140" in result[0].annotations["cath"]
-        # Signal peptide should be converted to True
-        assert result[0].annotations["signal_peptide"] == "True"
-        # Pfam should be preserved
-        assert result[0].annotations["pfam"] == "PF00013;PF00014"
-
-    def test_transform_with_all_annotation_types(self):
-        """Test transformation with all annotation types combined."""
-        transformer = AnnotationTransformer()
-        proteins = [
-            ProteinAnnotations(
-                identifier="P1",
-                annotations={
-                    "length": "200",
-                    "annotation_score": "5.0",
-                    "protein_families": "Insulin family",
-                    "reviewed": "Swiss-Prot",
-                    "xref_pdb": "1ABC",
-                    "fragment": "",
-                    "cc_subcellular_location": "Nucleus",
-                    "cath": "G3DSA:1.20.20.20",
-                    "signal_peptide": "",
-                    "pfam": "PF12345",
-                },
-            ),
-        ]
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 1
-        # Check all transformations applied
-        assert result[0].annotations["length"] == "200"
-        assert result[0].annotations["annotation_score"] == "5"
-        assert result[0].annotations["protein_families"] == "Insulin family"
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-        assert result[0].annotations["xref_pdb"] == "True"
-        assert result[0].annotations["fragment"] == ""
-        assert result[0].annotations["cc_subcellular_location"] == "Nucleus"
-        assert result[0].annotations["cath"] == "1.20.20.20"
-        assert result[0].annotations["signal_peptide"] == "False"
-        assert result[0].annotations["pfam"] == "PF12345"
-
-    def test_transform_with_unknown_annotations(self):
-        """Test that unknown annotations are preserved unchanged."""
-        transformer = AnnotationTransformer()
-        proteins = [
-            ProteinAnnotations(
-                identifier="P1",
-                annotations={
-                    "custom_field": "custom_value",
-                    "another_field": "another_value",
-                },
-            ),
-        ]
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 1
-        assert result[0].annotations["custom_field"] == "custom_value"
-        assert result[0].annotations["another_field"] == "another_value"
-
 
 class TestAnnotationTransformerTransformRow:
     """Test the transform_row() method."""
@@ -284,71 +168,6 @@ class TestAnnotationTransformerTransformRow:
             result[2] == "Insulin family"
         )  # protein_families preserved (single value)
         assert result[3] == "Swiss-Prot"  # reviewed preserved
-
-    def test_transform_row_with_all_uniprot_annotations(self):
-        """Test row transformation with all UniProt annotations."""
-        transformer = AnnotationTransformer()
-        row = [
-            "P01308",
-            "5.0",  # annotation_score
-            "Insulin family;Growth factor family",  # protein_families
-            "TrEMBL",  # reviewed
-            "1INS;2INS",  # xref_pdb
-            "fragment",  # fragment
-            "Secreted;Extracellular",  # cc_subcellular_location
-        ]
-        headers = [
-            "identifier",
-            "annotation_score",
-            "protein_families",
-            "reviewed",
-            "xref_pdb",
-            "fragment",
-            "cc_subcellular_location",
-        ]
-
-        result = transformer.transform_row(row, headers)
-
-        assert result[0] == "P01308"
-        assert result[1] == "5"
-        assert result[2] == "Insulin family;Growth factor family"
-        assert result[3] == "TrEMBL"
-        assert result[4] == "True"
-        assert result[5] == "yes"
-        assert result[6] == "Secreted;Extracellular"
-
-    def test_transform_row_with_interpro_annotations(self):
-        """Test row transformation with InterPro annotations."""
-        transformer = AnnotationTransformer()
-        row = [
-            "P01308",
-            "G3DSA:1.10.10.10;G3DSA:2.40.50.140",  # cath
-            "SIGNAL_PEPTIDE",  # signal_peptide
-            "PF00013;PF00014",  # pfam
-        ]
-        headers = ["identifier", "cath", "signal_peptide", "pfam"]
-
-        result = transformer.transform_row(row, headers)
-
-        assert result[0] == "P01308"
-        # CATH should be cleaned and sorted
-        assert "1.10.10.10" in result[1]
-        assert "2.40.50.140" in result[1]
-        assert result[2] == "True"
-        assert result[3] == "PF00013;PF00014"
-
-    def test_transform_row_with_missing_values(self):
-        """Test row transformation with missing/empty values."""
-        transformer = AnnotationTransformer()
-        row = ["P01308", "", "", "TrEMBL"]
-        headers = ["identifier", "annotation_score", "xref_pdb", "reviewed"]
-
-        result = transformer.transform_row(row, headers)
-
-        assert result[0] == "P01308"
-        assert result[1] == ""  # Empty annotation_score preserved
-        assert result[2] == "False"  # Empty xref_pdb becomes "False"
-        assert result[3] == "TrEMBL"  # TrEMBL preserved
 
     def test_transform_row_with_unknown_columns(self):
         """Test row transformation with unknown annotation columns."""
@@ -385,137 +204,6 @@ class TestAnnotationTransformerTransformRow:
         with pytest.raises(ValueError, match="zip"):
             transformer.transform_row(row, headers)
 
-
-class TestAnnotationTransformerTransformAnnotations:
-    """Test the _transform_annotations() private method."""
-
-    def test_transform_annotations_uniprot_all_fields(self):
-        """Test transformation of all UniProt annotation fields."""
-        transformer = AnnotationTransformer()
-        annotations = {
-            "annotation_score": "5.0",
-            "protein_families": "Family1;Family2",
-            "reviewed": "Swiss-Prot",
-            "xref_pdb": "1ABC;2DEF",
-            "fragment": "fragment",
-            "cc_subcellular_location": "Nucleus;Membrane",
-        }
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["annotation_score"] == "5"
-        assert result["protein_families"] == "Family1;Family2"
-        assert result["reviewed"] == "Swiss-Prot"
-        assert result["xref_pdb"] == "True"
-        assert result["fragment"] == "yes"
-        assert result["cc_subcellular_location"] == "Nucleus;Membrane"
-
-    def test_transform_annotations_interpro_all_fields(self):
-        """Test transformation of all InterPro annotation fields."""
-        transformer = AnnotationTransformer()
-        annotations = {
-            "cath": "G3DSA:1.10.10.10;G3DSA:2.40.50.140",
-            "signal_peptide": "SIGNAL_PEPTIDE",
-            "pfam": "PF00013;PF00014",
-        }
-
-        result = transformer._transform_annotations(annotations)
-
-        # CATH should be cleaned and sorted
-        cath_parts = result["cath"].split(";")
-        assert len(cath_parts) == 2
-        assert "1.10.10.10" in cath_parts
-        assert "2.40.50.140" in cath_parts
-        assert cath_parts == sorted(cath_parts)
-
-        assert result["signal_peptide"] == "True"
-        assert result["pfam"] == "PF00013;PF00014"
-
-    def test_transform_annotations_empty_dict(self):
-        """Test transformation with empty annotations dictionary."""
-        transformer = AnnotationTransformer()
-
-        result = transformer._transform_annotations({})
-
-        assert result == {}
-
-    def test_transform_annotations_preserves_unknown_fields(self):
-        """Test that unknown annotation fields are preserved."""
-        transformer = AnnotationTransformer()
-        annotations = {
-            "custom_field": "custom_value",
-            "another_field": 123,
-            "annotation_score": "5.0",  # Known field
-        }
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["custom_field"] == "custom_value"
-        assert result["another_field"] == 123
-        assert result["annotation_score"] == "5"
-
-    def test_transform_annotations_creates_copy(self):
-        """Test that transformation creates a copy and doesn't modify original."""
-        transformer = AnnotationTransformer()
-        annotations = {"annotation_score": "5.0", "custom_field": "value"}
-
-        result = transformer._transform_annotations(annotations)
-
-        # Original should be unchanged
-        assert annotations["annotation_score"] == "5.0"
-        assert annotations["custom_field"] == "value"
-
-        # Result should be transformed
-        assert result["annotation_score"] == "5"
-        assert result["custom_field"] == "value"
-
-        # Should be different objects
-        assert result is not annotations
-
-
-class TestAnnotationTransformerEdgeCases:
-    """Test edge cases and error handling."""
-
-    def test_transform_with_none_values(self):
-        """Test transformation handles None values gracefully."""
-        transformer = AnnotationTransformer()
-        proteins = [
-            ProteinAnnotations(
-                identifier="P1",
-                annotations={
-                    "annotation_score": None,
-                    "protein_families": None,
-                    "reviewed": None,
-                },
-            ),
-        ]
-
-        result = transformer.transform(proteins)
-
-        # Should handle None values without crashing
-        assert len(result) == 1
-        assert result[0].identifier == "P1"
-
-    def test_transform_with_empty_strings(self):
-        """Test transformation with empty string values."""
-        transformer = AnnotationTransformer()
-        proteins = [
-            ProteinAnnotations(
-                identifier="P1",
-                annotations={
-                    "annotation_score": "",
-                    "xref_pdb": "",
-                    "signal_peptide": "",
-                },
-            ),
-        ]
-
-        result = transformer.transform(proteins)
-
-        assert len(result) == 1
-        assert result[0].annotations["xref_pdb"] == "False"
-        assert result[0].annotations["signal_peptide"] == "False"
-
     def test_transform_row_with_single_column(self):
         """Test transform_row with only identifier column."""
         transformer = AnnotationTransformer()
@@ -525,46 +213,6 @@ class TestAnnotationTransformerEdgeCases:
         result = transformer.transform_row(row, headers)
 
         assert result == ["P01308"]
-
-
-class TestNewDatabasesPassThrough:
-    """Test that new pass-through databases are preserved unchanged by the transformer."""
-
-    def test_smart_preserved(self):
-        """Test that SMART annotations pass through unchanged."""
-        transformer = AnnotationTransformer()
-        annotations = {"smart": "SM00220 (InsulinA)|35.7"}
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["smart"] == "SM00220 (InsulinA)|35.7"
-
-    def test_cdd_preserved(self):
-        """Test that CDD annotations pass through unchanged."""
-        transformer = AnnotationTransformer()
-        annotations = {"cdd": "cd00205 (IGc2)"}
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["cdd"] == "cd00205 (IGc2)"
-
-    def test_prosite_preserved(self):
-        """Test that PROSITE annotations pass through unchanged."""
-        transformer = AnnotationTransformer()
-        annotations = {"prosite": "PS00009 (INSULIN)"}
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["prosite"] == "PS00009 (INSULIN)"
-
-    def test_prints_preserved(self):
-        """Test that PRINTS annotations pass through unchanged."""
-        transformer = AnnotationTransformer()
-        annotations = {"prints": "PR00276 (INSULIN)"}
-
-        result = transformer._transform_annotations(annotations)
-
-        assert result["prints"] == "PR00276 (INSULIN)"
 
 
 class TestGoTermTransformations:

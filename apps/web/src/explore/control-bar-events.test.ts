@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { SelectionDisabledNotificationDetail } from '@protspace/core';
 import { bindControlBarEvents } from './control-bar-events';
 import { EXAMPLE_DATASETS } from './example-datasets';
+
+const notifyMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../lib/notify', () => ({ notify: notifyMock }));
 
 /** Binds the control-bar listeners to a plain event target, with a spied dataset controller. */
 function bind() {
@@ -56,5 +66,33 @@ describe("the Import menu's example choice", () => {
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Unknown example dataset id'));
     expect(datasetController.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('the selection-disabled notice', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // The core control bar only fires the event; this listener is what puts it on screen.
+  it("shows the control bar's selection-disabled event as a warning toast", () => {
+    const { controlBar } = bind();
+    const detail: SelectionDisabledNotificationDetail = {
+      message: 'Selection mode disabled: Only 1 point remaining',
+      severity: 'warning',
+      source: 'control-bar',
+      context: { reason: 'insufficient-data', dataSize: 1 },
+    };
+
+    controlBar.dispatchEvent(new CustomEvent('selection-disabled-notification', { detail }));
+
+    expect(notifyMock.warning).toHaveBeenCalledOnce();
+    expect(notifyMock.warning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Selection mode disabled.',
+        description: 'Selection mode disabled: Only 1 point remaining',
+      }),
+    );
+    expect(notifyMock.error).not.toHaveBeenCalled();
   });
 });

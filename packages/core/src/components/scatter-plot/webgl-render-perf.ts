@@ -105,7 +105,15 @@ type PerfMeasurementResult = {
 export type PerfRecorder = {
   runId: string;
   iterations: number;
+  /** Sequence number of the next RECORDED pass; becomes `PerfRenderPass.seq`. */
   passSeq: number;
+  /**
+   * Every render pass seen during the run, recorded or not. The settle waits
+   * poll this rather than `passSeq`, because the restores they wait on run
+   * between scenarios, where no pass is recorded.
+   */
+  renderCount: number;
+  /** End of the latest pass, recorded or not, for the same reason. */
   lastRenderEndTs: number;
   activeScenario: PerfScenarioRun | null;
   scenarios: PerfScenarioRun[];
@@ -123,8 +131,14 @@ export class WebglRenderPerfRunner {
 
   constructor(private readonly _host: unknown) {}
 
+  /**
+   * Returns a token for every pass during a run, not only inside a scenario. A
+   * restore between scenarios is still a pass the next settle wait has to see,
+   * and it is GPU-synced like any other so the next scenario starts on a
+   * drained GPU. `stop()` records only the passes of the active scenario.
+   */
   public start(trigger: RenderWebGLTrigger): PerfPassToken | null {
-    if (!this._recorder?.activeScenario) return null;
+    if (!this._recorder) return null;
     return { trigger, startTs: performance.now() };
   }
 
@@ -137,11 +151,13 @@ export class WebglRenderPerfRunner {
   ) {
     if (!token) return;
     const recorder = this._recorder;
-    const scenario = recorder?.activeScenario;
-    if (!recorder || !scenario) return;
+    if (!recorder) return;
 
     const endTs = performance.now();
+    recorder.renderCount++;
     recorder.lastRenderEndTs = endTs;
+    const scenario = recorder.activeScenario;
+    if (!scenario) return;
     scenario.passes.push({
       seq: recorder.passSeq++,
       trigger: token.trigger,
@@ -190,6 +206,7 @@ export class WebglRenderPerfRunner {
       runId: runId || `run-${Date.now()}`,
       iterations,
       passSeq: 0,
+      renderCount: 0,
       lastRenderEndTs: 0,
       activeScenario: null,
       scenarios: [],
@@ -342,14 +359,29 @@ export class WebglRenderPerfRunner {
     }
   }
 
-  private async _waitForNextRender(prevSeq: number, timeoutMs: number): Promise<boolean> {
+  /** Render passes so far this run; the baseline `_waitForNextRender` compares against. */
+  private _renderCount(): number {
+    return this._recorder?.renderCount ?? 0;
+  }
+
+  private async _waitForNextRender(prevCount: number, timeoutMs: number): Promise<boolean> {
     const startTs = performance.now();
     while (performance.now() - startTs < timeoutMs) {
       await this._sleep(16);
-      const current = this._recorder?.passSeq ?? 0;
-      if (current > prevSeq) return true;
+      if (this._renderCount() > prevCount) return true;
     }
     return false;
+  }
+
+  /**
+   * Runs `action`, then waits for the render it causes and for rendering to go
+   * quiet again. The baseline is taken before `action` runs, so its pass is
+   * seen even when it renders synchronously.
+   */
+  private async _settleAfter(action: () => unknown): Promise<void> {
+    const prevCount = this._renderCount();
+    await action();
+    if (await this._waitForNextRender(prevCount, 2000)) await this._waitForRenderIdle(10, 2000);
   }
 
   private async _waitForRenderIdle(quietWindowMs: number, timeoutMs: number): Promise<boolean> {
@@ -524,21 +556,19 @@ export class WebglRenderPerfRunner {
     let current = a0;
     for (let i = 0; i < iterations; i++) {
       const next = current === a0 ? a1 : a0;
-      const prevSeq = this._recorder?.passSeq ?? 0;
-      host.selectedAnnotation = next;
-      await host.updateComplete;
-      const rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
+      await this._settleAfter(async () => {
+        host.selectedAnnotation = next;
+        await host.updateComplete;
+      });
       current = next;
     }
 
     this._endScenario();
     if (host.selectedAnnotation !== a0) {
-      const prevSeq = this._recorder?.passSeq ?? 0;
-      host.selectedAnnotation = a0;
-      await host.updateComplete;
-      const rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
+      await this._settleAfter(async () => {
+        host.selectedAnnotation = a0;
+        await host.updateComplete;
+      });
     }
   }
 
@@ -576,10 +606,7 @@ export class WebglRenderPerfRunner {
     await body();
     this._endScenario();
 
-    const prevSeq = this._recorder?.passSeq ?? 0;
-    this._requireInteraction().setTransform(originalTransform);
-    const rendered = await this._waitForNextRender(prevSeq, 2000);
-    if (rendered) await this._waitForRenderIdle(10, 2000);
+    await this._settleAfter(() => this._requireInteraction().setTransform(originalTransform));
 
     if (prevSelectionMode !== !!host.selectionMode) {
       host.selectionMode = prevSelectionMode;
@@ -590,15 +617,8 @@ export class WebglRenderPerfRunner {
   private _runZoomCycleScenario(name: PerfScenarioName, factor: number, iterations: number) {
     return this._withCameraScenario(name, iterations, async () => {
       for (let i = 0; i < iterations; i++) {
-        let prevSeq = this._recorder?.passSeq ?? 0;
-        this._applyZoomScale(factor);
-        let rendered = await this._waitForNextRender(prevSeq, 2000);
-        if (rendered) await this._waitForRenderIdle(10, 2000);
-
-        prevSeq = this._recorder?.passSeq ?? 0;
-        this._applyZoomScale(1 / factor);
-        rendered = await this._waitForNextRender(prevSeq, 2000);
-        if (rendered) await this._waitForRenderIdle(10, 2000);
+        await this._settleAfter(() => this._applyZoomScale(factor));
+        await this._settleAfter(() => this._applyZoomScale(1 / factor));
       }
     });
   }
@@ -634,10 +654,10 @@ export class WebglRenderPerfRunner {
     host: { config: unknown; updateComplete: Promise<unknown> },
     config: unknown,
   ) {
-    const prevSeq = this._recorder?.passSeq ?? 0;
-    host.config = config;
-    await host.updateComplete;
-    if (await this._waitForNextRender(prevSeq, 2000)) await this._waitForRenderIdle(10, 2000);
+    await this._settleAfter(async () => {
+      host.config = config;
+      await host.updateComplete;
+    });
   }
 
   private _runDragContinuousScenario(
@@ -666,17 +686,11 @@ export class WebglRenderPerfRunner {
       const stepDy = stepDx * 0.6;
       for (let i = 0; i < iterations; i++) {
         for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
-          const prevSeq = this._recorder?.passSeq ?? 0;
-          this._applyZoomTranslate(stepDx, stepDy);
-          const rendered = await this._waitForNextRender(prevSeq, 2000);
-          if (rendered) await this._waitForRenderIdle(10, 2000);
+          await this._settleAfter(() => this._applyZoomTranslate(stepDx, stepDy));
         }
 
         for (let s = 0; s < PERF_MEASURE_PAN_STEPS; s++) {
-          const prevSeq = this._recorder?.passSeq ?? 0;
-          this._applyZoomTranslate(-stepDx, -stepDy);
-          const rendered = await this._waitForNextRender(prevSeq, 2000);
-          if (rendered) await this._waitForRenderIdle(10, 2000);
+          await this._settleAfter(() => this._applyZoomTranslate(-stepDx, -stepDy));
         }
       }
     });
@@ -735,19 +749,15 @@ export class WebglRenderPerfRunner {
       const py = scales.y(p.y);
       const sx = transform.x + transform.k * px;
       const sy = transform.y + transform.k * py;
-      const prevSeq = this._recorder?.passSeq ?? 0;
-      this._dispatchSvgClickAt(sx, sy);
-      const rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
+      await this._settleAfter(() => this._dispatchSvgClickAt(sx, sy));
     }
     this._endScenario();
 
     if (Array.isArray(host.selectedProteinIds) && host.selectedProteinIds.length > 0) {
-      const prevSeq = this._recorder?.passSeq ?? 0;
-      host.selectedProteinIds = [];
-      await host.updateComplete;
-      const rendered = await this._waitForNextRender(prevSeq, 2000);
-      if (rendered) await this._waitForRenderIdle(10, 2000);
+      await this._settleAfter(async () => {
+        host.selectedProteinIds = [];
+        await host.updateComplete;
+      });
     }
   }
 }

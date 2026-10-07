@@ -35,14 +35,8 @@ def rng():
 
 
 @pytest.fixture
-def data_2d(rng):
-    """Float32 data suitable for 2-component reduction."""
-    return rng.standard_normal((N_SAMPLES, N_FEATURES)).astype(np.float32)
-
-
-@pytest.fixture
-def data_3d(rng):
-    """Float32 data suitable for 3-component reduction."""
+def data(rng):
+    """Float32 embeddings shared by the 2- and 3-component tests."""
     return rng.standard_normal((N_SAMPLES, N_FEATURES)).astype(np.float32)
 
 
@@ -57,26 +51,18 @@ def config_3d():
 
 
 # ---------------------------------------------------------------------------
-# Per-method tests — 2D
+# Per-method tests
 # ---------------------------------------------------------------------------
 
 
 class TestPCAReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = PCAReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_output_shape_3d(self, data_3d, config_3d):
-        result = PCAReducer(config_3d).fit_transform(data_3d)
+    def test_output_shape_3d(self, data, config_3d):
+        result = PCAReducer(config_3d).fit_transform(data)
         assert result.shape == (N_SAMPLES, 3)
 
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = PCAReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
-
-    def test_deterministic(self, data_2d, config_2d):
-        r1 = PCAReducer(config_2d).fit_transform(data_2d)
-        r2 = PCAReducer(config_2d).fit_transform(data_2d)
+    def test_deterministic(self, data, config_2d):
+        r1 = PCAReducer(config_2d).fit_transform(data)
+        r2 = PCAReducer(config_2d).fit_transform(data)
         np.testing.assert_array_equal(r1, r2)
 
     def test_get_params(self, config_2d):
@@ -89,14 +75,6 @@ class TestPCAReducer:
 
 
 class TestTSNEReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = TSNEReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = TSNEReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
-
     def test_get_params(self, config_2d):
         params = TSNEReducer(config_2d).get_params()
         assert params["n_components"] == 2
@@ -104,17 +82,9 @@ class TestTSNEReducer:
 
 
 class TestUMAPReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = UMAPReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_output_shape_3d(self, data_3d, config_3d):
-        result = UMAPReducer(config_3d).fit_transform(data_3d)
+    def test_output_shape_3d(self, data, config_3d):
+        result = UMAPReducer(config_3d).fit_transform(data)
         assert result.shape == (N_SAMPLES, 3)
-
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = UMAPReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
 
     def test_get_params(self, config_2d):
         params = UMAPReducer(config_2d).get_params()
@@ -124,14 +94,6 @@ class TestUMAPReducer:
 
 
 class TestPaCMAPReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = PaCMAPReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = PaCMAPReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
-
     def test_get_params(self, config_2d):
         params = PaCMAPReducer(config_2d).get_params()
         assert params["n_components"] == 2
@@ -140,14 +102,6 @@ class TestPaCMAPReducer:
 
 
 class TestMDSReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = MDSReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = MDSReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
-
     def test_get_params(self, config_2d):
         params = MDSReducer(config_2d).get_params()
         assert params["n_components"] == 2
@@ -155,14 +109,6 @@ class TestMDSReducer:
 
 
 class TestLocalMAPReducer:
-    def test_output_shape_2d(self, data_2d, config_2d):
-        result = LocalMAPReducer(config_2d).fit_transform(data_2d)
-        assert result.shape == (N_SAMPLES, 2)
-
-    def test_no_nan_values(self, data_2d, config_2d):
-        result = LocalMAPReducer(config_2d).fit_transform(data_2d)
-        assert not np.isnan(result).any()
-
     def test_get_params(self, config_2d):
         params = LocalMAPReducer(config_2d).get_params()
         assert params["n_components"] == 2
@@ -188,31 +134,39 @@ ALL_REDUCERS = [
 class TestAllReducers:
     """Tests that apply to every reducer."""
 
-    def test_returns_float_array(self, name, cls, data_2d, config_2d):
-        result = cls(config_2d).fit_transform(data_2d)
+    def test_fit_returns_finite_float_coordinates(self, name, cls, data, config_2d):
+        """One fit per reducer: (n, 2) shape, a float dtype, no NaN or inf."""
+        result = cls(config_2d).fit_transform(data)
+        assert result.shape == (N_SAMPLES, 2)
         assert result.dtype in (np.float32, np.float64)
-
-    def test_no_inf_values(self, name, cls, data_2d, config_2d):
-        result = cls(config_2d).fit_transform(data_2d)
-        assert not np.isinf(result).any()
-
-    def test_output_finite(self, name, cls, data_2d, config_2d):
-        result = cls(config_2d).fit_transform(data_2d)
         assert np.isfinite(result).all()
 
 
 class TestFloat16Handling:
-    """Ensure float16 input doesn't cause overflow or NaN."""
+    """float16 embeddings are upcast by the processor before any reducer sees them."""
 
-    @pytest.mark.parametrize("name,cls", ALL_REDUCERS, ids=[r[0] for r in ALL_REDUCERS])
-    def test_float16_input_produces_finite_output(self, name, cls, rng):
+    @pytest.mark.parametrize("name,cls", [("pca", PCAReducer), ("umap", UMAPReducer)])
+    def test_processor_upcasts_float16_before_reducing(self, name, cls, rng):
+        from protspace.data.processors.base_processor import BaseProcessor
+
+        seen_dtypes = []
+
+        class Recording(cls):
+            def fit_transform(self, data):
+                seen_dtypes.append(data.dtype)
+                return super().fit_transform(data)
+
         # Small values typical of pLM embeddings stored in float16
         data = (rng.standard_normal((N_SAMPLES, N_FEATURES)) * 0.04).astype(np.float16)
-        config = DimensionReductionConfig(n_components=2, random_state=SEED)
-        # float16 is upcast in the processor, but reducers should still handle it
-        result = cls(config).fit_transform(data.astype(np.float32))
-        assert result.shape == (N_SAMPLES, 2)
-        assert np.isfinite(result).all()
+        processor = BaseProcessor({"random_state": SEED}, {name: Recording})
+
+        result = processor.process_reduction(data, name, 2)
+
+        # float16 overflows in the reducers' matrix operations (e.g. sklearn's
+        # randomized SVD), so the reducer must only ever see float32.
+        assert seen_dtypes == [np.float32]
+        assert result["data"].shape == (N_SAMPLES, 2)
+        assert np.isfinite(result["data"]).all()
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +210,7 @@ class TestDimensionReductionConfig:
 class TestProcessorReduction:
     """Test DR methods through the BaseProcessor.process_reduction pipeline."""
 
-    def test_all_methods_through_processor(self, data_2d):
+    def test_all_methods_through_processor(self, data):
         from protspace.data.processors.base_processor import BaseProcessor
         from protspace.utils import get_reducers
 
@@ -265,7 +219,7 @@ class TestProcessorReduction:
         processor = BaseProcessor({"random_state": SEED}, REDUCERS)
 
         for method in ["pca", "tsne", "umap", "pacmap", "mds", "localmap"]:
-            result = processor.process_reduction(data_2d, method, 2)
+            result = processor.process_reduction(data, method, 2)
             assert result["data"].shape == (N_SAMPLES, 2), f"{method} shape mismatch"
             assert np.isfinite(result["data"]).all(), f"{method} produced non-finite"
             assert result["dimensions"] == 2

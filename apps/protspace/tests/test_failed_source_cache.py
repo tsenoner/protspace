@@ -30,6 +30,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.processors.pipeline import PipelineConfig, ReductionPipeline
+from tests.prep_source import biocentral_down_patterns
 
 CACHE_NAME = "all_annotations.parquet"
 CACHED_PFAM = "PF00049 (Insulin)|1.0"
@@ -383,18 +384,8 @@ class TestSequencesLostWithAUniProtBatch:
 
         assert manager.incomplete_sources == {"uniprot", "biocentral"}
         # The prep service reads these substrings as a Biocentral outage; a
-        # coverage gap must not read as one. Copied from
-        # apps/prep/src/protspace_prep/pipeline.py.
-        down_patterns = (
-            "connection refused",
-            "cannot connect to host",
-            "connectionerror",
-            "temporary failure in name resolution",
-            "name or service not known",
-            "503 service unavailable",
-            "503 server error",
-            "no healthy biocentral",
-        )
+        # coverage gap must not read as one.
+        down_patterns = biocentral_down_patterns()
         report = [
             r.getMessage() for r in caplog.records if "no sequence" in r.getMessage()
         ]

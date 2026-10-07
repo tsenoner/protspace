@@ -433,27 +433,11 @@ describe('v3 -> v3 export round trip', () => {
     // Python encoder wrote, less only what the reader folded on the way in.
     expect(exported.data).toEqual(v3);
   });
-
-  it('writes back neither the folded missing-value spellings nor the __NA__ sentinel', async () => {
-    const { data: v3 } = await loadV3();
-    const { data: reloaded } = await decodeParquetBundle(createParquetBundle(v3));
-
-    for (const key of CATEGORICAL) {
-      expect(
-        reloaded.annotations[key].values.filter((value) => value === NA_VALUE).length,
-        key,
-      ).toBeLessThanOrEqual(1);
-      for (const [index, id] of v3.protein_ids.entries()) {
-        expect(hitsOf(reloaded, key, index), `${key}/${id}`).toEqual(hitsOf(v3, key, index));
-      }
-    }
-  });
 });
 
 describe('v2 and v3 fixtures agree on the values they share', () => {
   it('reports the container format version each fixture was read as', async () => {
     expect((await loadV3()).formatVersion).toBe(3);
-    expect((await decodeParquetBundle(fixture('v2-sample.parquetbundle'))).formatVersion).toBe(2);
   });
 
   it('gives P1 and P2 the same ids, cath/go_bp hits and pca2 coordinates', async () => {

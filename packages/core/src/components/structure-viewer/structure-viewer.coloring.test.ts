@@ -43,11 +43,15 @@ function structureData(tedDomains: TedDomain[]): StructureData {
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
+
+type StructureLoad = ReturnType<typeof deferred<void>>;
 
 function colorButton(element: ProtspaceStructureViewer, mode: StructureColorMode) {
   return element.shadowRoot?.querySelector<HTMLButtonElement>(`[data-color-mode="${mode}"]`);
@@ -107,6 +111,7 @@ describe('structure viewer color control', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('defaults to pLDDT and enables TED coloring when domains exist', async () => {
@@ -227,18 +232,24 @@ describe('structure viewer color control', () => {
     expect(element.shadowRoot?.querySelectorAll('.molstar-mount')).toHaveLength(1);
   });
 
-  it('does not report an error when a structure finishes after the viewer closes', async () => {
+  // A disposed Mol* viewer rejects its pending load, which reaches the catch-block guard.
+  it.each([
+    ['finishes', (load: StructureLoad) => load.resolve()],
+    ['fails', (load: StructureLoad) => load.reject(new Error('disposed'))],
+  ])('does not report an error when a structure %s after the viewer closes', async (_, settle) => {
     const structureLoad = deferred<void>();
     mocks.loadStructureFromUrl.mockReturnValueOnce(structureLoad.promise);
     const element = await renderViewer(domains);
     const handleError = vi.fn();
     element.addEventListener('structure-error', handleError);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     element.close();
-    structureLoad.resolve();
+    settle(structureLoad);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(handleError).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it('ignores a load that settles in the frame before its replacement starts', async () => {

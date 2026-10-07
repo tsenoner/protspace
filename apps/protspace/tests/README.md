@@ -45,5 +45,11 @@ uv run pytest tests/ --collect-only -q -m slow
 
 CI runs `uv run pytest -m "not slow" -q` by default, with no path argument —
 `testpaths` covers both workspace members, so this collects protspace and
-protlabel. Slow/integration tests are skipped in CI to avoid external service
-dependencies.
+protlabel. Slow tests stay out of the PR path because they depend on external
+services (the UniProt API, a Hugging Face model download). The scheduled
+`protspace-slow.yml` workflow runs them weekly with the `[local]` extra:
+
+```bash
+uv sync --group dev --extra local
+uv run pytest -m slow -rs
+```

@@ -203,8 +203,8 @@ def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
 
 
 def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
-    """`protspace stats -a annotations.parquet` merges per-protein cluster
-    membership + silhouette columns into the annotations file in place
+    """`protspace stats -a annotations.parquet` merges the per-protein
+    cluster_* membership columns into the annotations file in place
     (route-projection-statistics Phase 2A), so the prep `bundle -a` carries them."""
     from typer.testing import CliRunner
 
@@ -247,7 +247,7 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
 
 def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     """End-to-end prep path: `stats -a` then `bundle -a` ships a bundle whose
-    protein_annotations part carries the computed cluster_/silhouette_ columns."""
+    protein_annotations part carries the computed cluster_* membership columns."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app

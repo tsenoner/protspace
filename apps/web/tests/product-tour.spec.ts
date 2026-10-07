@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 import { waitForExploreDataLoad } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
@@ -62,55 +63,51 @@ async function getPopoverTitle(page: Page): Promise<string> {
     .then((t) => t?.trim() ?? '');
 }
 
-/** Click the "Next" button in the driver.js popover. */
-async function clickNext(page: Page): Promise<void> {
-  await page.locator('.driver-popover-next-btn').click();
-  // Small pause so driver.js can transition
-  await page.waitForTimeout(400);
-}
-
-/** Click the "Back" / "Previous" button in the driver.js popover. */
-async function clickPrev(page: Page): Promise<void> {
-  await page.locator('.driver-popover-prev-btn').click();
-  await page.waitForTimeout(400);
+/** Click a popover navigation button and wait for the step it leads to. */
+async function goToStep(page: Page, button: 'next' | 'prev', stepIndex: number): Promise<void> {
+  await page.locator(`.driver-popover-${button}-btn`).click();
+  await expect(page.locator('.driver-popover .driver-popover-title')).toHaveText(
+    STEP_TITLES[stepIndex],
+  );
 }
 
 /**
- * Assert that the correct element is highlighted for the given step target.
+ * Whether the step target carries driver.js's `driver-active-element` class.
  *
- * For regular DOM elements we check `document.querySelector('.driver-active-element')`.
- * For Shadow DOM elements `document.querySelectorAll` cannot pierce the shadow
- * boundary, so we query the host's shadow root directly.
+ * The check is positive — the target is active — rather than "the first active
+ * element is the target": driver.js only strips the class from the element of
+ * the last *finished* transition, so a Next click inside the 400 ms animation
+ * (which a test makes and a person rarely does) leaves the previous light-DOM
+ * target marked too until the tour ends.
+ *
+ * A centred step activates driver.js's invisible `#driver-dummy-element`, but the
+ * walk's fast first step leaves that class on the reused dummy for the whole tour,
+ * so a centred step must also show the popover placed "over" the dummy: driver.js
+ * rebuilds the arrow's classes on every render and adds `-side-over` only for the
+ * dummy. Shadow DOM targets are read through the host's shadow root, which
+ * `document.querySelector` cannot pierce.
  */
-async function assertHighlightedElement(page: Page, target: StepTarget): Promise<void> {
-  if (target === null) {
-    // Centred popover – no real element should be highlighted.
-    // driver.js creates an invisible `#driver-dummy-element` for centred steps,
-    // so we exclude it and verify no other element is active.
-    const count = await page.locator('.driver-active-element:not(#driver-dummy-element)').count();
-    expect(count).toBe(0);
-    return;
-  }
+async function isHighlighted(page: Page, target: StepTarget): Promise<boolean> {
+  return page.evaluate((stepTarget) => {
+    const isActive = (el: Element | null | undefined) =>
+      el?.classList.contains('driver-active-element') ?? false;
 
-  if ('driverId' in target) {
-    const highlightedId = await page.evaluate(() => {
-      const active = document.querySelector('.driver-active-element');
-      return active?.getAttribute('data-driver-id') ?? null;
-    });
-    expect(highlightedId).toBe(target.driverId);
-    return;
-  }
-
-  // Shadow DOM element
-  const hasShadowHighlight = await page.evaluate(
-    ({ shadowSelector, hostSelector }) => {
-      const host = document.querySelector(hostSelector);
-      const el = host?.shadowRoot?.querySelector(shadowSelector);
-      return el?.classList.contains('driver-active-element') ?? false;
-    },
-    { shadowSelector: target.shadow, hostSelector: target.host },
-  );
-  expect(hasShadowHighlight).toBe(true);
+    if (stepTarget === null) {
+      return (
+        isActive(document.getElementById('driver-dummy-element')) &&
+        (document
+          .querySelector('.driver-popover .driver-popover-arrow')
+          ?.classList.contains('driver-popover-arrow-side-over') ??
+          false)
+      );
+    }
+    if ('driverId' in stepTarget) {
+      return isActive(document.querySelector(`[data-driver-id="${stepTarget.driverId}"]`));
+    }
+    return isActive(
+      document.querySelector(stepTarget.host)?.shadowRoot?.querySelector(stepTarget.shadow),
+    );
+  }, target);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,50 +124,45 @@ test.describe('Product Tour', () => {
     await waitForTourPopover(page);
   });
 
-  // ── Basic lifecycle ─────────────────────────────────────────
+  // ── One full walk ───────────────────────────────────────────
 
-  test('auto-starts on first visit', async ({ page }) => {
+  test('auto-starts on first visit and walks every step to Finish', async ({ page }) => {
     const popover = page.locator('.driver-popover');
-    await expect(popover).toBeVisible();
+    const nextBtn = popover.locator('.driver-popover-next-btn');
 
-    const title = await getPopoverTitle(page);
-    expect(title).toBe(STEP_TITLES[0]);
-  });
+    for (let i = 0; i < TOTAL_STEPS; i++) {
+      await test.step(STEP_TITLES[i], async () => {
+        await expect(popover.locator('.driver-popover-title')).toHaveText(STEP_TITLES[i]);
+        await expect(popover.locator('.driver-popover-description')).toHaveText(/\S/);
+        // driver.js renders the progress as "N of 10".
+        await expect(popover.locator('.driver-popover-progress-text')).toHaveText(
+          `${i + 1} of ${TOTAL_STEPS}`,
+        );
+        await expect
+          .poll(() => isHighlighted(page, STEP_TARGETS[i]), {
+            message: `step ${i + 1} highlights ${JSON.stringify(STEP_TARGETS[i])}`,
+          })
+          .toBe(true);
+      });
 
-  test('shows correct number of steps via progress text', async ({ page }) => {
-    // driver.js renders progress text like "1 of 10"
-    const progressText = await page.locator('.driver-popover-progress-text').textContent();
-    expect(progressText).toContain(`${TOTAL_STEPS}`);
-  });
-
-  // ── Navigation forward ──────────────────────────────────────
-
-  test('can navigate forward through all steps', async ({ page }) => {
-    for (let i = 0; i < TOTAL_STEPS - 1; i++) {
-      const title = await getPopoverTitle(page);
-      expect(title).toBe(STEP_TITLES[i]);
-      await clickNext(page);
+      if (i < TOTAL_STEPS - 1) {
+        await nextBtn.click();
+      }
     }
 
-    // Last step
-    const lastTitle = await getPopoverTitle(page);
-    expect(lastTitle).toBe(STEP_TITLES[TOTAL_STEPS - 1]);
+    // The last step's next button is the "Finish" button, and it closes the tour.
+    await expect(nextBtn).toHaveText('Finish');
+    await nextBtn.click();
+    await waitForTourDismissed(page);
   });
 
   // ── Navigation backward ─────────────────────────────────────
 
   test('can navigate backward', async ({ page }) => {
-    // Go forward to step 3 (Projections & Annotations)
-    await clickNext(page);
-    await clickNext(page);
-
-    const thirdTitle = await getPopoverTitle(page);
-    expect(thirdTitle).toBe(STEP_TITLES[2]);
-
-    // Go back one step
-    await clickPrev(page);
-    const secondTitle = await getPopoverTitle(page);
-    expect(secondTitle).toBe(STEP_TITLES[1]);
+    // Go forward to step 3 (Projections & Annotations), then back one step.
+    await goToStep(page, 'next', 1);
+    await goToStep(page, 'next', 2);
+    await goToStep(page, 'prev', 1);
   });
 
   // ── Skip / dismiss ──────────────────────────────────────────
@@ -186,30 +178,9 @@ test.describe('Product Tour', () => {
 
   test('can be dismissed via close button', async ({ page }) => {
     // Move to step 2 so there's no skip button, then close
-    await clickNext(page);
+    await goToStep(page, 'next', 1);
     await page.locator('.driver-popover-close-btn').click();
 
-    await waitForTourDismissed(page);
-  });
-
-  // ── Finish button on last step ──────────────────────────────
-
-  test('last step has a Finish button that closes the tour', async ({ page }) => {
-    // Navigate to the last step
-    for (let i = 0; i < TOTAL_STEPS - 1; i++) {
-      await clickNext(page);
-    }
-
-    const lastTitle = await getPopoverTitle(page);
-    expect(lastTitle).toBe(STEP_TITLES[TOTAL_STEPS - 1]);
-
-    // The last step should have a "Finish" button (rendered as the next button)
-    const finishBtn = page.locator('.driver-popover-next-btn');
-    await expect(finishBtn).toBeVisible();
-    await expect(finishBtn).toHaveText('Finish');
-
-    // Click Finish and verify the tour closes
-    await finishBtn.click();
     await waitForTourDismissed(page);
   });
 
@@ -221,7 +192,7 @@ test.describe('Product Tour', () => {
     await waitForTourDismissed(page);
 
     // Verify localStorage was set
-    const storageValue = await page.evaluate(() => localStorage.getItem('driver.overviewTour'));
+    const storageValue = await page.evaluate((key) => localStorage.getItem(key), TOUR_STORAGE_KEY);
     expect(storageValue).toBe('true');
 
     // Navigate away and back
@@ -279,37 +250,5 @@ test.describe('Product Tour', () => {
     await waitForTourPopover(page);
     const title = await getPopoverTitle(page);
     expect(title).toBe(STEP_TITLES[0]);
-  });
-
-  // ── Step highlights correct element ─────────────────────────
-
-  test('each step highlights the correct element', async ({ page }) => {
-    for (let i = 0; i < TOTAL_STEPS; i++) {
-      await assertHighlightedElement(page, STEP_TARGETS[i]);
-
-      // Move to next step (except on the last step)
-      if (i < TOTAL_STEPS - 1) {
-        await clickNext(page);
-      }
-    }
-  });
-
-  // ── Popover content matches expected titles ─────────────────
-
-  test('popover content matches expected titles', async ({ page }) => {
-    for (let i = 0; i < TOTAL_STEPS; i++) {
-      const title = await getPopoverTitle(page);
-      expect(title).toBe(STEP_TITLES[i]);
-
-      // Also verify the description is non-empty
-      const description = await page
-        .locator('.driver-popover .driver-popover-description')
-        .textContent();
-      expect(description?.trim().length).toBeGreaterThan(0);
-
-      if (i < TOTAL_STEPS - 1) {
-        await clickNext(page);
-      }
-    }
   });
 });

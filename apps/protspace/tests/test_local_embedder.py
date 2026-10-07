@@ -194,34 +194,14 @@ def test_embed_sequences_esm2_8m_end_to_end(tmp_path):
         assert np.isfinite(vec).all()
 
 
-@pytest.mark.slow
-def test_embed_sequences_resumes_and_skips_existing(tmp_path):
-    pytest.importorskip("torch")
-    pytest.importorskip("transformers")
-    import h5py
-
-    sequences = {"prot1": "MKVLAAG"}
-    out = tmp_path / "emb.h5"
-
-    local.embed_sequences(sequences, "esm2_8m", out)
-    with h5py.File(out, "r") as f:
-        first = f["prot1"][:].copy()
-
-    # Second run must not fail and must not alter the existing embedding.
-    local.embed_sequences({"prot1": "MKVLAAG", "prot2": "MSEQWENCE"}, "esm2_8m", out)
-    with h5py.File(out, "r") as f:
-        assert set(f.keys()) == {"prot1", "prot2"}
-        np.testing.assert_array_equal(f["prot1"][:], first)
-
-
 # ---------------------------------------------------------------------------
 # Completeness contract: a capability limit is skipped, anything else fails
 # ---------------------------------------------------------------------------
 
 
-def _stub_model(monkeypatch, *, oom_ids=(), fill=0.0, loaded=None):
+def _stub_model(monkeypatch, *, oom_ids=(), fill=0.0, loaded=None, embedded=None):
     """Replace model loading and inference so the contract can be tested without
-    downloading a checkpoint."""
+    downloading a checkpoint. ``embedded`` collects every sequence the model sees."""
     import torch
 
     def setup(ckpt, mt):
@@ -234,6 +214,8 @@ def _stub_model(monkeypatch, *, oom_ids=(), fill=0.0, loaded=None):
     def fake_embed_batch(processed, mod_type, model, tokenizer, device, max_length):
         if len(processed) == 1 and processed[0] in oom_ids:
             raise torch.cuda.OutOfMemoryError("stub OOM")
+        if embedded is not None:
+            embedded.extend(processed)
         return [np.full(4, fill, dtype=np.float32) for _ in processed]
 
     monkeypatch.setattr(local, "_embed_batch", fake_embed_batch)
@@ -330,17 +312,23 @@ def test_local_run_refuses_a_biocentral_cache_before_loading_a_model(
 
 def test_local_run_re_embeds_a_changed_sequence(tmp_path, monkeypatch):
     """Resume matches on identifier alone, so an edited sequence otherwise keeps
-    the vector of the residues it used to have."""
+    the vector of the residues it used to have. A protein new to the file is
+    embedded alongside it, and the unchanged one never reaches the model."""
     out = tmp_path / "emb.h5"
     _stub_model(monkeypatch, fill=1.0)
     local.embed_sequences({"a": "MKVL", "b": "MKVA"}, "esm2_8m", out)
 
-    _stub_model(monkeypatch, fill=2.0)
-    local.embed_sequences({"a": "MKVL", "b": "EDITED"}, "esm2_8m", out)
+    embedded = []
+    _stub_model(monkeypatch, fill=2.0, embedded=embedded)
+    local.embed_sequences({"a": "MKVL", "b": "EDITED", "c": "MSEQ"}, "esm2_8m", out)
+
+    assert sorted(embedded) == ["EDITED", "MSEQ"]
 
     with h5py.File(out, "r") as f:
+        assert set(f.keys()) == {"a", "b", "c"}
         assert f["a"][:].tolist() == [1.0] * 4  # untouched
         assert f["b"][:].tolist() == [2.0] * 4  # re-embedded
+        assert f["c"][:].tolist() == [2.0] * 4  # added
 
 
 def test_shortfall_that_is_not_a_skip_still_fails(tmp_path, monkeypatch):

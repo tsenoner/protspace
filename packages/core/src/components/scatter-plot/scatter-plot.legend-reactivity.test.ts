@@ -1,29 +1,27 @@
 /**
  * @vitest-environment jsdom
  *
- * Legend reactivity (B11: F-19 / F-31 / F-57 / F-46). The legend → scatter-plot
+ * Legend reactivity (B11: F-19 / F-31 / F-57). The legend → scatter-plot
  * mapping transport (INV-06/07) is consumed by two handlers
- * (`_handleZOrderChange` / `_handleColorMappingChange`). This file LOCKS their
- * pre-change behavior:
+ * (`_handleZOrderChange` / `_handleColorMappingChange`). This file locks their
+ * behavior:
  *
  *   - F-31 single render path: a legend mapping change must render EXACTLY ONCE.
- *     Today the imperative handler calls `_renderPlot()` once AND the three
- *     mapping fields are `@state`, so the write calls `requestUpdate(...)`,
- *     enqueues a Lit update, and `updated()`'s catch-all (scatter-plot.ts
- *     L774-777, `!onlySelectionChanged`) fires a SECOND `_renderPlot()`. The
- *     load-bearing signal — identical to F-48/_transform — is whether the field
- *     write calls `requestUpdate`: a reactive `@state` setter calls it
- *     synchronously on write (RED: a second render is scheduled); a plain field
- *     does not (GREEN after F-31). This is observable without connecting and
- *     without any `updateComplete` await (which hangs on an un-appended element).
+ *     The handler calls `_renderPlot()` itself, and the three mapping fields are
+ *     plain fields, not `@state`. Were they reactive, the write would call
+ *     `requestUpdate(...)`, enqueue a Lit update, and the catch-all render in
+ *     `_reconcileSelectionOverlays` (any key outside NO_ADDITIONAL_RENDER_KEYS)
+ *     would fire a SECOND `_renderPlot()`. So the load-bearing signal, as for
+ *     F-48/_transform, is that the field write does not call `requestUpdate`.
+ *     This is observable without connecting and without any `updateComplete`
+ *     await (which hangs on an un-appended element).
  *
  *   - INV-08 colorOnly guardrail: colorOnly=true skips `invalidateDepthOrder()`;
- *     colorOnly=false forces it. Must stay GREEN across the batch.
+ *     colorOnly=false forces it.
  *
  *   - F-19 key-validation: a malformed/partial detail must NOT overwrite the
- *     mapping fields with `undefined`. Today the handlers blind-cast
- *     `event as CustomEvent` and assign `.detail.shapeMapping` (= undefined) —
- *     RED until the runtime guards are added.
+ *     mapping fields with `undefined`. The handlers check the detail with
+ *     `isLegendColorMappingDetail` / `isLegendZOrderDetail` before assigning.
  *
  *   - F-57 (post-B6 reality): the numeric recompute lifecycle is owned by
  *     `NumericRecomputeRunner`; the host exposes `_numericRecomputeRunning`
@@ -32,12 +30,6 @@
  *     write to the `@state` mirror schedules its own Lit update, so the runner's
  *     explicit `host.requestUpdate()` in the start path is redundant. Signal:
  *     spy the host `requestUpdate` across a synchronous `schedule()` start.
- *
- *   - F-46: the public `numeric-recompute-start` / `-end` CustomEvents have ZERO
- *     consumers (confirmed by repo-wide search; absent from INV-05). They must
- *     be removed while the `_numericRecomputeRunning` busy mirror is preserved.
- *     Today the runner dispatches them via the host `dispatch` callback — RED for
- *     "not dispatched" until F-46.
  *
  * Construct the element via createElement WITHOUT appending (so Lit's
  * connectedCallback / WebGL init never runs — same no-append pattern as
@@ -169,8 +161,8 @@ describe('legend mapping handlers — single render path (F-31)', () => {
 
     expect(renderSpy).toHaveBeenCalledTimes(1); // the imperative render
     expect(el._zOrderMapping).toEqual({ A: 1, B: 0 });
-    // F-31: while _zOrderMapping is @state, the write schedules the second render.
-    // RED on the current tree (requestUpdate called); GREEN once demoted to a plain field.
+    // F-31: a reactive (@state) _zOrderMapping would call requestUpdate here and
+    // schedule the second render; as a plain field it does not.
     expect(reqSpy).not.toHaveBeenCalled();
   });
 
@@ -190,13 +182,13 @@ describe('legend mapping handlers — single render path (F-31)', () => {
     expect(renderSpy).toHaveBeenCalledTimes(1);
     expect(el._colorMapping).toEqual({ A: '#111111', B: '#222222' });
     expect(el._shapeMapping).toEqual({ A: 'circle', B: 'square' });
-    // F-31: _colorMapping/_shapeMapping are @state today → requestUpdate is
-    // called → updated() catch-all renders a SECOND time. RED until demoted.
+    // F-31: reactive (@state) _colorMapping/_shapeMapping would call
+    // requestUpdate → the updated() catch-all would render a SECOND time.
     expect(reqSpy).not.toHaveBeenCalled();
   });
 });
 
-describe('legend mapping handlers — INV-08 colorOnly contract (guardrail, stays GREEN)', () => {
+describe('legend mapping handlers — INV-08 colorOnly contract', () => {
   it('colorOnly=true does NOT call invalidateDepthOrder', () => {
     const el = makeEl();
     vi.spyOn(el, '_renderPlot').mockImplementation(() => {});
@@ -238,7 +230,7 @@ describe('legend mapping handlers — malformed detail key-validation (F-19)', (
     // Missing shapeMapping → a guard must reject, leaving prior state intact.
     el._handleColorMappingChange(colorMappingEvent({ colorMapping: { B: '#new' } }));
 
-    // RED today: the handler blind-assigns _shapeMapping = detail.shapeMapping (undefined).
+    // Without the guard the handler would assign _shapeMapping = detail.shapeMapping (undefined).
     expect(el._colorMapping).toEqual({ A: '#existing' });
     expect(el._shapeMapping).toEqual({ A: 'circle' });
   });
@@ -251,7 +243,7 @@ describe('legend mapping handlers — malformed detail key-validation (F-19)', (
     // No zOrderMapping key → a guard must reject.
     el._handleZOrderChange(zOrderEvent({ wrongKey: { A: 9 } }));
 
-    // RED today: the handler assigns _zOrderMapping = detail.zOrderMapping (undefined).
+    // Without the guard the handler would assign _zOrderMapping = detail.zOrderMapping (undefined).
     expect(el._zOrderMapping).toEqual({ A: 0, B: 1 });
   });
 });
@@ -259,16 +251,11 @@ describe('legend mapping handlers — malformed detail key-validation (F-19)', (
 describe('numeric-recompute scheduling — no redundant requestUpdate (F-57, post-B6)', () => {
   it('schedules exactly ONE Lit update on start — the @state mirror, not a duplicate explicit call', () => {
     const el = makeEl();
-    // POST-B6: busy state is the _numericRecomputeRunning @state mirror, driven
-    // by the runner's setRunning host callback. Writing that @state field already
+    // Busy state is the _numericRecomputeRunning @state mirror, driven by the
+    // runner's setRunning host callback. Writing that @state field already
     // routes through the element's requestUpdate() (Lit's reactive setter) and
-    // schedules the update. The runner's SEPARATE explicit host.requestUpdate()
-    // call was the redundant one F-57 drops.
-    //
-    // RED on the pre-F-57 tree: schedule() triggers TWO requestUpdate calls (the
-    // @state setter's own + the explicit host.requestUpdate()). GREEN after F-57:
-    // exactly ONE — the legitimate @state-driven schedule, with the redundant
-    // explicit call removed.
+    // schedules the update, so a separate explicit host.requestUpdate() from the
+    // runner (what F-57 removed) would show up here as a second call.
     const reqSpy = vi.spyOn(el, 'requestUpdate');
     el._scheduleNumericAnnotationRefresh();
     expect(reqSpy).toHaveBeenCalledTimes(1);
@@ -278,18 +265,7 @@ describe('numeric-recompute scheduling — no redundant requestUpdate (F-57, pos
   });
 });
 
-describe('numeric-recompute events removed (F-46)', () => {
-  it('does not dispatch numeric-recompute-start on schedule', () => {
-    const el = makeEl();
-    const startSpy = vi.fn();
-    el.addEventListener('numeric-recompute-start', startSpy);
-    el._scheduleNumericAnnotationRefresh();
-    // RED today: the runner dispatches numeric-recompute-start via the host
-    // dispatch callback. The stale-job guard + busy state are characterized via
-    // the kept observables below + numeric-recompute-runner.test.ts.
-    expect(startSpy).not.toHaveBeenCalled();
-  });
-
+describe('numeric-recompute busy state', () => {
   it('still sets _numericRecomputeRunning so the busy UI is unaffected (guardrail)', () => {
     const el = makeEl();
     el._scheduleNumericAnnotationRefresh();

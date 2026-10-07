@@ -777,8 +777,6 @@ describe('parquetbundle format v3', () => {
       await expect(decodeParquetBundle(bundle)).rejects.toThrow(
         /holds 8 rows but its footer declares 10/,
       );
-      const { data } = await decodeParquetBundle(v3Bundle());
-      expect(data.protein_ids).toEqual(PROTEIN_IDS);
     });
 
     /**

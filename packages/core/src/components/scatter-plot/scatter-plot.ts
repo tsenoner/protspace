@@ -1410,7 +1410,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
     if (!this._webglRenderer) return;
-    // `start` returns null unless a benchmark scenario is recording, which is the
+    // `start` returns null unless a benchmark run is in progress, which is the
     // normal case — so the byte accounting stays behind the token rather than
     // running on every frame for a `stop` that discards it.
     const perfToken = this._webglRenderPerf.start(trigger);
@@ -1480,10 +1480,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _getOpacity(point: PlotDataPoint): number {
-    // Facade: two external consumers reach into this private member —
-    // webgl-render-perf.ts (via a privacy cast, acknowledged debt) and
-    // apps/web/tests/brush-selection.spec.ts:323. Do not rename or remove this
-    // method without migrating those callers first.
+    // Facade: besides the WebGL renderer's getOpacity getter, webgl-render-perf.ts
+    // reaches into this private member (via a privacy cast, acknowledged debt).
+    // Do not rename or remove this method without migrating that caller first.
     // Delegates to the shared visibility model, which is the single opacity
     // authority.
     return this._getVisibilityModel().opacityOf(point);

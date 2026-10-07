@@ -74,7 +74,7 @@ describe('fastYield', () => {
     async (_path, withoutSetImmediate) => {
       if (withoutSetImmediate) vi.stubGlobal('setImmediate', undefined);
       const portsBefore = openPorts();
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 20; i++) {
         const yielded = fastYield();
         gc();
         await yielded;

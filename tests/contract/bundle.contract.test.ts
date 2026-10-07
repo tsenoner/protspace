@@ -418,8 +418,9 @@ describe('proteins the annotations and projections disagree on', () => {
   it('shows an Arrow BOOLEAN column as true / false', async () => {
     const { data } = await decodeParquetBundle(loadBundle('coverage'));
     for (const [id, value] of Object.entries(manifest.booleanById)) {
+      if (id === manifest.annotationOnlyId) continue; // asserted absent above
       const row = data.protein_ids.indexOf(id);
-      if (row < 0) continue; // the annotation-only protein, asserted absent above
+      expect(row, id).toBeGreaterThanOrEqual(0);
       expect(getProteinAnnotationValues(data, row, 'reviewed')).toEqual([
         value == null ? NA_VALUE : String(value),
       ]);

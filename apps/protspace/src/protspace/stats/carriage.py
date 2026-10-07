@@ -79,9 +79,8 @@ def merge_annotation_columns(
     Each ``AnnotationColumn`` is joined onto ``frame`` by identifier (proteins
     absent from a column get no value, not a fabricated one). Mutates ``frame`` in
     place and returns the names of the columns added — membership values are
-    non-numeric ``cluster N`` strings (optionally carrying an attached
-    ``|silhouette`` confidence, like ECO / InterPro bit scores), so the downstream
-    ``.astype(str)`` writer keeps them categorical.
+    plain, non-numeric ``cluster N`` strings, so the downstream ``.astype(str)``
+    writer keeps them categorical.
     """
     if id_col not in getattr(frame, "columns", []):
         return []
@@ -119,8 +118,8 @@ def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
     Returns ``{column_name: LegendPersistedSettings}`` (the bundle's settings part
     format) with a full envelope per ``categorical`` ``AnnotationColumn`` — every
     field the frontend's ``sanitizeLegendSettingsEntry`` requires, categories keyed
-    by the bare ``cluster N`` label (any attached ``|silhouette`` confidence is
-    stripped) with a Kelly-palette ``color`` + ``zOrder`` + ``shape`` — so clusters
+    by the bare ``cluster N`` label (a ``|``-suffixed value is keyed by the part
+    before the ``|``) with a Kelly-palette ``color`` + ``zOrder`` + ``shape`` — so clusters
     are colored when selected without a manual styling step.
 
     ``columns`` optionally restricts styling to a set of column names (the columns
@@ -136,9 +135,9 @@ def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
             continue
         if allowed is not None and col.name not in allowed:
             continue
-        # Membership values may carry an attached ``|silhouette`` confidence
-        # (value|score) — strip it to recover the bare "cluster N" category, matching
-        # how the frontend splits score-bearing annotation values.
+        # Membership values are plain "cluster N" labels. A value carrying a
+        # ``value|score`` suffix is still keyed by its bare label, matching how the
+        # frontend splits score-bearing annotation values.
         labels = sorted(
             {str(v).split("|", 1)[0] for v in col.values.values()},
             key=_cluster_label_sort_key,

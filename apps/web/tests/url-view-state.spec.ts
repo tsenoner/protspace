@@ -22,10 +22,9 @@ const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
   'fixtures',
   'raw_numeric_test.parquetbundle',
 );
-// The default demo dataset (its annotation/projection names) changes over time,
-// and names can contain spaces/em-dashes (e.g. "ProtT5 — UMAP 2") that get
-// URL-encoded. Discover the demo's view at runtime and derive non-default
-// targets, so the tests don't hardcode names and survive demo swaps.
+// Annotation/projection names can contain spaces/em-dashes (e.g. "ProtT5 — UMAP 2")
+// that get URL-encoded. Discover the pinned startup fixture's view at runtime and
+// derive non-default targets, so the tests don't hardcode names.
 let demoAnnotations: string[] = [];
 let demoDefaultAnnotation = '';
 let demoDefaultProjection = '';
@@ -112,6 +111,18 @@ async function traverseHistory(page: Page, delta: -1 | 1, expectedUrl: string): 
   ]);
 
   expect(traversedUrl).toBe(expectedUrl);
+}
+
+/** The view changed in place: same plot and loader, no navigation, no loading splash. */
+function expectViewNotReloaded(
+  stability: Awaited<ReturnType<typeof captureExploreViewStability>>,
+): void {
+  expect(stability.samePlot).toBe(true);
+  expect(stability.sameLoader).toBe(true);
+  expect(stability.navigationEntries).toBe(stability.initialNavigationEntries);
+  expect(stability.loadStarts).toBe(0);
+  expect(stability.overlayShows).toBe(0);
+  expect(stability.overlayPresent).toBe(false);
 }
 
 async function selectAnnotation(page: Page, annotation: string): Promise<void> {
@@ -280,21 +291,14 @@ async function dropBundleOnScatterplot(
   );
 }
 
-// Discover the default demo's annotations/projections once per worker. Names can
-// contain spaces/em-dashes and change with demo swaps, so tests derive
-// non-default targets at runtime instead of hardcoding them.
-test.beforeAll(async ({ browser }) => {
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
-  const context = await browser.newContext({ baseURL });
+// Discover the startup fixture's annotations/projections once per worker, so tests
+// derive non-default targets at runtime instead of hardcoding them. The context
+// takes the project's baseURL and its tour-completed storage state, like `page`.
+test.beforeAll(async ({ browser }, testInfo) => {
+  const { baseURL, storageState } = testInfo.project.use;
+  const context = await browser.newContext({ baseURL, storageState });
   const page = await context.newPage();
   try {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem('driver.overviewTour', 'true');
-      } catch {
-        /* ignore */
-      }
-    });
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     // getCurrentView reads the control-bar's annotations/projections, which the
@@ -329,7 +333,7 @@ test.describe('URL-backed explore view state', () => {
 
     const currentView = await getCurrentView(page);
 
-    await expect(page).toHaveURL('http://localhost:8080/explore');
+    await expect(page).toHaveURL('/explore');
     expect(currentView.annotation).toBeTruthy();
     expect(currentView.projection).toBeTruthy();
     expect(currentView.annotations).toContain(currentView.annotation);
@@ -470,24 +474,6 @@ test.describe('URL-backed explore view state', () => {
     expect(assignments.projections).not.toContain(demoDefaultProjection);
   });
 
-  test('normalizes fully invalid params while preserving unrelated ones', async ({ page }) => {
-    await openExplore(page, '?seed=baseline');
-    const baselineHistoryLength = await page.evaluate(() => history.length);
-
-    await openExplore(page, '?annotation=bad_value&projection=bad_projection&foo=1');
-
-    const currentView = await getCurrentView(page);
-    expect(currentView.annotation).not.toBe('bad_value');
-    expect(currentView.projection).not.toBe('bad_projection');
-    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
-    await expectUrlParam(page, 'projection', currentView.projection ?? '');
-    await expect(page).toHaveURL(/foo=1/);
-    await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
-
-    await page.goBack();
-    await expect(page).toHaveURL('http://localhost:8080/explore?seed=baseline');
-  });
-
   test(
     'normalizes duplicate, empty, and partially invalid view params',
     { tag: '@cross-browser' },
@@ -576,7 +562,8 @@ test.describe('URL-backed explore view state', () => {
     'pushes one history entry for a user change and back/forward restores in one step',
     { tag: '@cross-browser' },
     async ({ page }) => {
-      await openExplore(page);
+      // `foo=1` is a param the app does not own: the push must carry it along.
+      await openExplore(page, '?foo=1');
       await waitForExploreInteractionReady(page);
 
       const initialView = await getCurrentView(page);
@@ -595,6 +582,7 @@ test.describe('URL-backed explore view state', () => {
         await waitForView(page, { annotation: nextAnnotation! });
         await expectUrlParam(page, 'annotation', nextAnnotation!);
         await expectUrlParam(page, 'projection', initialView.projection!);
+        await expectUrlParam(page, 'foo', '1');
 
         const afterChangeHistoryLength = await page.evaluate(() => history.length);
         expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
@@ -613,58 +601,41 @@ test.describe('URL-backed explore view state', () => {
         });
       });
 
-      expect(stability.samePlot).toBe(true);
-      expect(stability.sameLoader).toBe(true);
-      expect(stability.navigationEntries).toBe(stability.initialNavigationEntries);
-      expect(stability.loadStarts).toBe(0);
-      expect(stability.overlayShows).toBe(0);
-      expect(stability.overlayPresent).toBe(false);
+      expectViewNotReloaded(stability);
     },
   );
 
-  test('user-driven projection changes push URL state and restore on back/forward', async ({
+  test('user-driven projection changes push URL state, restore on back/forward, and never reload', async ({
     page,
   }) => {
     await openExplore(page);
+    await waitForExploreInteractionReady(page);
 
     const initialView = await getCurrentView(page);
     const nextProjection = initialView.projections.find(
       (projection) => projection !== initialView.projection,
     );
 
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
+    expect(nextProjection).toBeTruthy();
 
     const initialHistoryLength = await page.evaluate(() => history.length);
-    await selectProjection(page, nextProjection!);
-    await waitForView(page, { projection: nextProjection! });
-    await expectUrlParam(page, 'projection', nextProjection!);
-    const afterChangeHistoryLength = await page.evaluate(() => history.length);
-    expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
+    // The annotation counterpart of this stability check is the @cross-browser
+    // history test above; this is the projection's.
+    const stability = await captureExploreViewStability(page, async () => {
+      await selectProjection(page, nextProjection!);
+      await waitForView(page, { projection: nextProjection! });
+      await expectUrlParam(page, 'projection', nextProjection!);
+      const afterChangeHistoryLength = await page.evaluate(() => history.length);
+      expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
 
-    await page.goBack();
-    await waitForView(page, { projection: initialView.projection ?? undefined });
+      await page.goBack();
+      await waitForView(page, { projection: initialView.projection ?? undefined });
 
-    await page.goForward();
-    await waitForView(page, { projection: nextProjection! });
-  });
+      await page.goForward();
+      await waitForView(page, { projection: nextProjection! });
+    });
 
-  test('preserves unrelated params when a user-driven change updates the URL', async ({ page }) => {
-    await openExplore(page, '?foo=1');
-
-    const initialView = await getCurrentView(page);
-    const nextAnnotation = initialView.annotations.find(
-      (annotation) => annotation !== initialView.annotation,
-    );
-
-    expect(nextAnnotation).toBeTruthy();
-
-    await selectAnnotation(page, nextAnnotation!);
-    await waitForView(page, { annotation: nextAnnotation! });
-
-    const currentView = await getCurrentView(page);
-    await expect(page).toHaveURL(/foo=1/);
-    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
-    await expectUrlParam(page, 'projection', currentView.projection ?? '');
+    expectViewNotReloaded(stability);
   });
 
   test('applies ?density= and keeps it across an annotation change', async ({ page }) => {
@@ -689,61 +660,6 @@ test.describe('URL-backed explore view state', () => {
 
     await expectUrlParam(page, 'density', 'auto');
     await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Auto');
-  });
-
-  test('annotation changes update history without reloading the page instance', async ({
-    page,
-  }) => {
-    await openExplore(page);
-    await waitForExploreInteractionReady(page);
-
-    const initialView = await getCurrentView(page);
-    const nextAnnotation = initialView.annotations.find(
-      (annotation) => annotation !== initialView.annotation,
-    );
-
-    expect(nextAnnotation).toBeTruthy();
-
-    const after = await captureExploreViewStability(page, async () => {
-      await selectAnnotation(page, nextAnnotation!);
-      await waitForView(page, { annotation: nextAnnotation! });
-    });
-
-    expect(after.samePlot).toBe(true);
-    expect(after.sameLoader).toBe(true);
-    expect(after.navigationEntries).toBe(after.initialNavigationEntries);
-    expect(after.loadStarts).toBe(0);
-    expect(after.overlayShows).toBe(0);
-    expect(after.overlayPresent).toBe(false);
-  });
-
-  test('annotation and projection changes do not trigger the ProtSpace loading splash again', async ({
-    page,
-  }) => {
-    await openExplore(page);
-    await waitForExploreInteractionReady(page);
-
-    const initialView = await getCurrentView(page);
-    const nextAnnotation = initialView.annotations.find(
-      (annotation) => annotation !== initialView.annotation,
-    );
-    const nextProjection = initialView.projections.find(
-      (projection) => projection !== initialView.projection,
-    );
-
-    expect(nextAnnotation).toBeTruthy();
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
-
-    const postInteraction = await captureExploreViewStability(page, async () => {
-      await selectAnnotation(page, nextAnnotation!);
-      await waitForView(page, { annotation: nextAnnotation! });
-      await selectProjection(page, nextProjection!);
-      await waitForView(page, { projection: nextProjection! });
-    });
-
-    expect(postInteraction.loadStarts).toBe(0);
-    expect(postInteraction.overlayShows).toBe(0);
-    expect(postInteraction.overlayPresent).toBe(false);
   });
 
   test('normalizes stale params after switching to a dataset with different annotations', async ({

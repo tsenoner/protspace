@@ -71,7 +71,7 @@ function createCallbacks() {
     getPlotRect: vi.fn(() => ({ x: 0, y: 0, w: 1000, h: 500 })),
     getOverlays: vi.fn((): Overlay[] => []),
     getInsets: vi.fn((): Inset[] => []),
-    getLegendRect: vi.fn(() => null),
+    getLegendRect: vi.fn((): { x: number; y: number; w: number; h: number } | null => null),
     onOverlayAdded: vi.fn(),
     onOverlayUpdated: vi.fn(),
     onInsetAdded: vi.fn(),
@@ -286,9 +286,17 @@ describe('PublishOverlayController', () => {
       // Drag from bottom-right to top-left
       canvas.dispatchEvent(pointerEvent('pointerdown', 400, 400));
       canvas.dispatchEvent(pointerEvent('pointerup', 100, 100));
-
-      // Should have valid rect with positive w/h
       expect(controller.tool).toBe('inset-target');
+
+      // The source rect is only readable once the target phase adds the inset.
+      canvas.dispatchEvent(pointerEvent('pointerdown', 600, 50));
+      canvas.dispatchEvent(pointerEvent('pointerup', 900, 350));
+
+      const { sourceRect } = callbacks.onInsetAdded.mock.calls[0][0];
+      expect(sourceRect.x).toBeCloseTo(0.1);
+      expect(sourceRect.y).toBeCloseTo(0.2);
+      expect(sourceRect.w).toBeCloseTo(0.3);
+      expect(sourceRect.h).toBeCloseTo(0.6);
     });
   });
 
@@ -489,9 +497,13 @@ describe('PublishOverlayController', () => {
       canvas.dispatchEvent(pointerEvent('pointermove', 700, 300));
       canvas.dispatchEvent(pointerEvent('pointerup', 700, 300));
 
+      // Grabbed 0.1 right of the centre, so the centre lands at (0.7 - 0.1, 0.6).
       expect(callbacks.onOverlayUpdated).toHaveBeenCalled();
-      const updated = callbacks.onOverlayUpdated.mock.calls[0][1];
+      const [index, updated] = callbacks.onOverlayUpdated.mock.lastCall!;
+      expect(index).toBe(0);
       expect(updated.type).toBe('circle');
+      expect(updated.cx).toBeCloseTo(0.6);
+      expect(updated.cy).toBeCloseTo(0.6);
     });
 
     it('moves a label overlay when dragging', () => {
@@ -512,6 +524,74 @@ describe('PublishOverlayController', () => {
       canvas.dispatchEvent(pointerEvent('pointerup', 600, 300));
 
       expect(callbacks.onOverlayUpdated).toHaveBeenCalled();
+      const updated = callbacks.onOverlayUpdated.mock.lastCall![1];
+      expect(updated.x).toBeCloseTo(0.6);
+      expect(updated.y).toBeCloseTo(0.6);
+    });
+  });
+
+  describe('select mode — legend drag', () => {
+    // Canvas pixels; the 1000x500 canvas is shown at 1:1.
+    const legendRect = { x: 800, y: 50, w: 150, h: 100 };
+
+    beforeEach(() => {
+      callbacks.getLegendRect.mockReturnValue(legendRect);
+      controller.tool = 'select';
+    });
+
+    it('moves the legend by where it was grabbed, not to the cursor', () => {
+      // Grabbed 50px right of and 30px below the legend's top-left corner.
+      canvas.dispatchEvent(pointerEvent('pointerdown', 850, 80));
+      canvas.dispatchEvent(pointerEvent('pointermove', 650, 180));
+
+      expect(callbacks.onLegendMoved).toHaveBeenCalledTimes(1);
+      const [nx, ny] = callbacks.onLegendMoved.mock.calls[0];
+      expect(nx).toBeCloseTo(0.6);
+      expect(ny).toBeCloseTo(0.3);
+      expect(callbacks.requestRedraw).toHaveBeenCalled();
+      expect(callbacks.onSelectionChanged).not.toHaveBeenCalled();
+    });
+
+    it('maps a downscaled preview back to canvas pixels when grabbing and moving', () => {
+      // The preview usually shows the canvas smaller than its backing store.
+      canvas.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 500, height: 250, right: 500, bottom: 250 }) as DOMRect;
+
+      // Half-size CSS coordinates of the same grab and move as above.
+      canvas.dispatchEvent(pointerEvent('pointerdown', 425, 40));
+      canvas.dispatchEvent(pointerEvent('pointermove', 325, 90));
+
+      expect(callbacks.onLegendMoved).toHaveBeenCalledTimes(1);
+      const [nx, ny] = callbacks.onLegendMoved.mock.calls[0];
+      expect(nx).toBeCloseTo(0.6);
+      expect(ny).toBeCloseTo(0.3);
+    });
+
+    it('clamps the legend position to the canvas', () => {
+      canvas.dispatchEvent(pointerEvent('pointerdown', 850, 80));
+      canvas.dispatchEvent(pointerEvent('pointermove', 5000, -500));
+
+      expect(callbacks.onLegendMoved).toHaveBeenLastCalledWith(1, 0);
+    });
+
+    it('stops moving the legend once it is released', () => {
+      canvas.dispatchEvent(pointerEvent('pointerdown', 850, 80));
+      canvas.dispatchEvent(pointerEvent('pointermove', 650, 180));
+      canvas.dispatchEvent(pointerEvent('pointerup', 650, 180));
+
+      // A later drag on empty space must not carry the legend along.
+      canvas.dispatchEvent(pointerEvent('pointerdown', 100, 400));
+      canvas.dispatchEvent(pointerEvent('pointermove', 200, 450));
+
+      expect(callbacks.onLegendMoved).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not move the legend for a press outside it', () => {
+      canvas.dispatchEvent(pointerEvent('pointerdown', 700, 80));
+      canvas.dispatchEvent(pointerEvent('pointermove', 650, 180));
+
+      expect(callbacks.onLegendMoved).not.toHaveBeenCalled();
+      expect(callbacks.onSelectionChanged).toHaveBeenCalledWith(null, -1);
     });
   });
 

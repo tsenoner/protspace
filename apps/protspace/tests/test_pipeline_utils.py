@@ -36,36 +36,20 @@ from protspace.data.processors.pipeline import (
 
 
 class TestParseMethodSpec:
-    def test_pca2(self):
-        spec = parse_method_spec("pca2")
-        assert spec.method == "pca"
-        assert spec.dims == 2
-        assert spec.overrides == ()
-
-    def test_umap3(self):
-        spec = parse_method_spec("umap3")
-        assert spec.method == "umap"
-        assert spec.dims == 3
-
-    def test_tsne2(self):
-        spec = parse_method_spec("tsne2")
-        assert spec.method == "tsne"
-        assert spec.dims == 2
-
-    def test_pacmap2(self):
-        spec = parse_method_spec("pacmap2")
-        assert spec.method == "pacmap"
-        assert spec.dims == 2
-
-    def test_mds2(self):
-        spec = parse_method_spec("mds2")
-        assert spec.method == "mds"
-        assert spec.dims == 2
-
-    def test_localmap2(self):
-        spec = parse_method_spec("localmap2")
-        assert spec.method == "localmap"
-        assert spec.dims == 2
+    @pytest.mark.parametrize(
+        "text,method,dims",
+        [
+            ("pca2", "pca", 2),
+            ("umap3", "umap", 3),
+            ("tsne2", "tsne", 2),
+            ("pacmap2", "pacmap", 2),
+            ("mds2", "mds", 2),
+            ("localmap2", "localmap", 2),
+        ],
+    )
+    def test_method_and_dims(self, text, method, dims):
+        spec = parse_method_spec(text)
+        assert (spec.method, spec.dims, spec.overrides) == (method, dims, ())
 
     def test_invalid_no_digits(self):
         with pytest.raises(ValueError):
@@ -136,14 +120,11 @@ class TestMethodSpec:
         spec = MethodSpec("umap", 2, (("n_neighbors", 50),))
         assert spec.overrides_dict == {"n_neighbors": 50}
 
-    def test_equality(self):
+    def test_equal_specs_are_equal_and_hash_alike(self):
         a = parse_method_spec("umap2:n_neighbors=50")
         b = parse_method_spec("umap2:n_neighbors=50")
         assert a == b
-
-    def test_hashable(self):
-        spec = parse_method_spec("umap2:n_neighbors=50")
-        assert hash(spec) == hash(spec)
+        assert hash(a) == hash(b)
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +162,6 @@ class TestParseMethodsArg:
     def test_different_overrides_not_deduped(self):
         result = parse_methods_arg(["umap2:n_neighbors=50", "umap2:n_neighbors=100"])
         assert len(result) == 2
-
-    def test_backward_compatible(self):
-        result = parse_methods_arg(["pca2,umap2,tsne2"])
-        assert len(result) == 3
 
     def test_strips_whitespace(self):
         result = parse_methods_arg(["  pca2 , umap2  "])

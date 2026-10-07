@@ -396,27 +396,6 @@ describe('metadata sections', () => {
     expect(quality.textContent).not.toContain('N Neighbors');
   });
 
-  it('labels the embedding reference instead of abbreviating it', async () => {
-    const el = await setup(
-      { n_neighbors: 15 },
-      {
-        statistics: [
-          statRow(),
-          statRow({ space_kind: 'embedding', space_name: 'prot_t5', value: 0.095 }),
-        ],
-        selectedAnnotation: 'major_group',
-      },
-    );
-
-    const text = el.shadowRoot!.querySelector('.annotation-stats')!.textContent!;
-    // One word. The two headings sit in the grid's auto-sized columns, so a longer phrase
-    // ("Source embedding") set those widths from the heading rather than the number and
-    // starved the metric-name column — measured at 36px against a 120px need. The heading's
-    // own ⓘ carries the full explanation.
-    expect(text).toContain('Embedding');
-    expect(text).not.toContain('emb 0.10');
-  });
-
   it('omits the quality section entirely when there is no faithfulness', async () => {
     const el = await setup({ n_neighbors: 15 });
 
@@ -447,7 +426,16 @@ describe('metadata sections', () => {
         selectedAnnotation: 'major_group',
       },
     );
-    expect(statsBlock(withReference)!.querySelector('.stat-columns')).not.toBeNull();
+    // One word each. The headings sit in the grid's auto-sized columns, so a longer phrase
+    // ("Source embedding") set those widths from the heading rather than the number and
+    // starved the metric-name column — measured at 36px against a 120px need. The heading's
+    // own ⓘ carries the full explanation.
+    const header = statsBlock(withReference)!.querySelector('.stat-columns')!;
+    expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual([
+      '',
+      'Projection',
+      'Embedding',
+    ]);
   });
 
   it('expands a nested quality object inside a JSON field, keeping siblings as parameters', async () => {

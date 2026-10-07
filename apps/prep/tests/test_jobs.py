@@ -81,11 +81,14 @@ async def test_pipeline_runs_with_job_id_bound_in_contextvars(tmp_job_root):
         max_concurrent=1,
         pipeline=_capture_context_pipeline,
     )
-    job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
+    # The job task copies the submitting request's context; it must not keep it.
+    with structlog.contextvars.bound_contextvars(request_id="submitting-request"):
+        job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
     async for _ in registry.subscribe(job_id):
         pass
-    # Every log line emitted during the job carries this job_id automatically.
-    assert seen.get("job_id") == job_id
+    # Every log line emitted during the job carries this job_id automatically,
+    # and nothing inherited from the request that submitted it.
+    assert seen == {"job_id": job_id}
 
 
 async def test_semaphore_caps_active_jobs(tmp_job_root):
@@ -115,6 +118,7 @@ async def test_semaphore_caps_active_jobs(tmp_job_root):
         await registry.submit(b">i\nM\n", original_name="t.fasta") for _ in range(4)
     ]
     await started.wait()
+    # Not a start barrier: give the other jobs time to (wrongly) start too.
     await asyncio.sleep(0.05)
     assert peak == 2
     release.set()
@@ -124,29 +128,20 @@ async def test_semaphore_caps_active_jobs(tmp_job_root):
     assert peak == 2
 
 
-async def test_submit_rejects_when_pending_at_cap(tmp_job_root):
+async def test_submit_rejects_when_pending_at_cap(tmp_job_root, gated_pipeline):
     """Once queued + running reaches max_pending, submit() raises QueueFull
     before writing any bytes or creating in-memory state."""
-    release = asyncio.Event()
-
-    async def gated(ctx, emit):
-        await release.wait()
-        bundle = ctx.output_dir / "data.parquetbundle"
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(b"x")
-        return bundle
-
     # max_concurrent=1 so the second job stays queued; cap of 2 fills with
     # one running + one queued, and the third must be rejected.
     registry = JobRegistry(
         job_root=tmp_job_root,
         max_concurrent=1,
         max_pending=2,
-        pipeline=gated,
+        pipeline=gated_pipeline,
     )
     a = await registry.submit(b">a\nM\n", original_name="t.fasta")
     b = await registry.submit(b">b\nM\n", original_name="t.fasta")
-    await asyncio.sleep(0.05)
+    await gated_pipeline.started.wait()
     assert registry.counts() == {"running": 1, "queued": 1}
 
     with pytest.raises(QueueFull):
@@ -154,11 +149,13 @@ async def test_submit_rejects_when_pending_at_cap(tmp_job_root):
     # No job dir created for the rejected submission.
     assert len(list(tmp_job_root.iterdir())) == 2
 
-    release.set()
+    gated_pipeline.release.set()
     async for _ in registry.subscribe(a):
         pass
     async for _ in registry.subscribe(b):
         pass
+    # Finished jobs give their slots back; a leak would 503 every later upload.
+    assert registry.counts() == {"running": 0, "queued": 0}
 
 
 async def test_multiple_concurrent_subscribers_each_receive_full_stream(tmp_job_root):
@@ -186,6 +183,7 @@ async def test_multiple_concurrent_subscribers_each_receive_full_stream(tmp_job_
     await asyncio.sleep(0.05)
     a = asyncio.create_task(collect())
     b = asyncio.create_task(collect())
+    # Let both subscribers register before the job can finish.
     await asyncio.sleep(0.05)
     release.set()
     events_a, events_b = await asyncio.gather(a, b)
@@ -205,18 +203,9 @@ async def test_late_subscriber_receives_queued_then_terminal(tmp_job_root):
     async for _ in registry.subscribe(job_id):
         pass
     events = [e async for e in registry.subscribe(job_id)]
-    assert len(events) == 2
-    assert events[0].event == "queued"
-    assert events[1].event in {"done", "error"}
-
-
-async def test_get_returns_none_for_unknown_job(tmp_job_root):
-    registry = JobRegistry(
-        job_root=tmp_job_root,
-        max_concurrent=1,
-        pipeline=_fake_pipeline_success,
-    )
-    assert registry.get("does-not-exist") is None
+    assert [e.event for e in events] == ["queued", "done"]
+    # The replay is the job's real terminal event, not a stand-in.
+    assert events[1].data == {"download_url": f"/api/prepare/{job_id}/bundle"}
 
 
 async def test_peek_bundle_and_mark_consumed(tmp_job_root):
@@ -232,29 +221,6 @@ async def test_peek_bundle_and_mark_consumed(tmp_job_root):
     assert path is not None and path.exists()
     registry.mark_consumed(job_id)
     assert registry.peek_bundle(job_id) is None
-
-
-async def test_running_and_queued_counts(tmp_job_root):
-    release = asyncio.Event()
-
-    async def gated(ctx, emit):
-        await release.wait()
-        bundle = ctx.output_dir / "data.parquetbundle"
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(b"x")
-        return bundle
-
-    registry = JobRegistry(job_root=tmp_job_root, max_concurrent=1, pipeline=gated)
-    a = await registry.submit(b">a\nM\n", original_name="t.fasta")
-    b = await registry.submit(b">b\nM\n", original_name="t.fasta")
-    await asyncio.sleep(0.05)
-    assert registry.counts() == {"running": 1, "queued": 1}
-    release.set()
-    async for _ in registry.subscribe(a):
-        pass
-    async for _ in registry.subscribe(b):
-        pass
-    assert registry.counts() == {"running": 0, "queued": 0}
 
 
 async def test_sweep_removes_expired_directories(tmp_path):
@@ -309,23 +275,16 @@ async def test_sweep_evicts_consumed_jobs_without_waiting_for_ttl(tmp_job_root):
 # ---------------------------------------------------------------------------
 
 
-async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
-    gate = asyncio.Event()
-
-    async def blocking_pipeline(ctx, emit):
-        await gate.wait()
-        bundle = ctx.output_dir / "data.parquetbundle"
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(b"x")
-        return bundle
-
+async def test_queued_event_includes_queue_position_and_running(
+    tmp_job_root, gated_pipeline
+):
     registry = JobRegistry(
-        job_root=tmp_job_root, max_concurrent=1, pipeline=blocking_pipeline
+        job_root=tmp_job_root, max_concurrent=1, pipeline=gated_pipeline
     )
     job_id_a = await registry.submit(b">a\nM\n", original_name="a.fasta")
     job_id_b = await registry.submit(b">b\nM\n", original_name="b.fasta")
-    # Let the tasks start so the semaphore is acquired by job A
-    await asyncio.sleep(0.05)
+    # Job A holds the semaphore once it is inside the pipeline.
+    await gated_pipeline.started.wait()
 
     # Use direct state inspection — the queued event was published at submit time
     state_a = registry.get(job_id_a)
@@ -348,7 +307,7 @@ async def test_queued_event_includes_queue_position_and_running(tmp_job_root):
     assert queued_b.data["queue_position"] == 1
     assert "running" in queued_b.data
 
-    gate.set()
+    gated_pipeline.release.set()
     # Drain both jobs so tmp dirs are cleaned up
     async for _ in registry.subscribe(job_id_a):
         pass
@@ -382,47 +341,77 @@ async def test_error_event_omits_code_when_pipeline_failure_has_no_code(tmp_job_
     assert "code" not in error_event.data
 
 
+async def test_unexpected_exception_publishes_generic_error(tmp_job_root):
+    """A non-PipelineFailure crash ends the job with a generic message.
+
+    prep-observability: the user gets "Internal server error." and a reference,
+    never the exception text, and subscribers still receive a terminal event.
+    """
+    secret = "secret internal detail /srv/prep/jobs"
+
+    async def crashing_pipeline(ctx, emit):
+        await emit("embedding", {})
+        raise RuntimeError(secret)
+
+    registry = JobRegistry(
+        job_root=tmp_job_root, max_concurrent=1, pipeline=crashing_pipeline
+    )
+    job_id = await registry.submit(b">id\nM\n", original_name="t.fasta")
+
+    async def drain():
+        return [e async for e in registry.subscribe(job_id)]
+
+    # Bounded: without a terminal event the subscriber would wait forever.
+    events = await asyncio.wait_for(drain(), timeout=5)
+    assert events[-1].event == "error"
+    assert events[-1].data == {"message": "Internal server error.", "job_id": job_id}
+    assert all(secret not in str(e.data) for e in events)
+    state = registry.get(job_id)
+    assert state.status is JobStatus.ERROR
+    assert state.error_message == "Internal server error."
+    assert registry.counts() == {"running": 0, "queued": 0}
+
+
 # ---------------------------------------------------------------------------
 # Fix 3 — subscribe() race between yield queued and queue registration
 # ---------------------------------------------------------------------------
 
 
-async def test_subscribe_after_instant_pipeline_receives_done(tmp_job_root):
-    """Submit with an instantly-terminating pipeline and subscribe immediately.
+async def test_subscriber_paused_after_queued_still_receives_done(tmp_job_root):
+    """The pipeline finishing while a consumer sits between events is not lost.
 
-    Should reliably receive [queued, done] without hanging regardless of the
-    race between pipeline completion and queue registration.
+    The SSE stream awaits between events, so the job can finish after the
+    synthetic ``queued`` was yielded but before the next ``queue.get()``. Two
+    guards cover that window: the subscriber queue is registered before the
+    yield, and ``terminal_event`` is re-checked after it. Either one alone is
+    enough, so this fails only when both are gone (``done`` is then published
+    to nobody and the stream hangs). A pipeline that finishes before
+    ``subscribe()`` takes the late-subscriber replay path instead, so this one
+    is gated to stay open until ``queued`` has been consumed.
     """
+    gate = asyncio.Event()
+
+    async def gated_pipeline(ctx, emit):
+        await gate.wait()
+        return await _fake_pipeline_success(ctx, emit)
+
     registry = JobRegistry(
-        job_root=tmp_job_root,
-        max_concurrent=4,
-        pipeline=_fake_pipeline_success,
+        job_root=tmp_job_root, max_concurrent=1, pipeline=gated_pipeline
     )
     job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
-    # Give the task a chance to run (may already be done by here)
-    await asyncio.sleep(0)
-    events = [e async for e in registry.subscribe(job_id)]
-    statuses = [e.event for e in events]
-    assert statuses[0] == "queued"
-    assert statuses[-1] in {"done", "error"}
-    assert "done" in statuses
+    events = registry.subscribe(job_id)
+    assert (await events.__anext__()).event == "queued"
 
-
-async def test_subscribe_race_repeated(tmp_job_root):
-    """Stress test: run the instant-pipeline subscribe race many times."""
-    for _ in range(20):
-        registry = JobRegistry(
-            job_root=tmp_job_root,
-            max_concurrent=4,
-            pipeline=_fake_pipeline_success,
-        )
-        job_id = await registry.submit(b">id\nMKT\n", original_name="t.fasta")
-        # Yield control so the pipeline task can run
+    gate.set()
+    for _ in range(5):
         await asyncio.sleep(0)
-        events = [e async for e in registry.subscribe(job_id)]
-        assert events[-1].event == "done", (
-            f"Expected done, got {[e.event for e in events]}"
-        )
+    assert registry.get(job_id).status is JobStatus.DONE
+
+    remaining = []
+    while not remaining or remaining[-1] not in {"done", "error"}:
+        remaining.append((await asyncio.wait_for(events.__anext__(), 1)).event)
+    await events.aclose()
+    assert remaining[-1] == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -430,17 +419,8 @@ async def test_subscribe_race_repeated(tmp_job_root):
 # ---------------------------------------------------------------------------
 
 
-async def test_sweep_notifies_live_subscriber(tmp_job_root):
+async def test_sweep_notifies_live_subscriber(tmp_job_root, gated_pipeline):
     """A subscriber blocked on queue.get() must unblock when sweep_expired runs."""
-    gate = asyncio.Event()
-
-    async def gated_pipeline(ctx, emit):
-        await gate.wait()
-        bundle = ctx.output_dir / "data.parquetbundle"
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(b"x")
-        return bundle
-
     registry = JobRegistry(
         job_root=tmp_job_root,
         max_concurrent=1,
@@ -484,17 +464,8 @@ async def test_sweep_notifies_live_subscriber(tmp_job_root):
 # ---------------------------------------------------------------------------
 
 
-async def test_cancelled_job_publishes_error_event(tmp_job_root):
+async def test_cancelled_job_publishes_error_event(tmp_job_root, gated_pipeline):
     """Cancelling a running job task must publish an error event and set ERROR status."""
-    gate = asyncio.Event()
-
-    async def gated_pipeline(ctx, emit):
-        await gate.wait()
-        bundle = ctx.output_dir / "data.parquetbundle"
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(b"x")
-        return bundle
-
     registry = JobRegistry(
         job_root=tmp_job_root,
         max_concurrent=1,
@@ -509,8 +480,8 @@ async def test_cancelled_job_publishes_error_event(tmp_job_root):
             collected.append(event)
 
     consumer_task = asyncio.create_task(consume())
-    # Let the pipeline task start and block on gate
-    await asyncio.sleep(0.05)
+    # Cancel once the pipeline is running and blocked on its gate.
+    await gated_pipeline.started.wait()
 
     # Cancel the pipeline task
     pipeline_task = registry._tasks[job_id]

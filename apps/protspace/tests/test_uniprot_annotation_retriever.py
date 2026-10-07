@@ -1,5 +1,5 @@
 import json
-from unittest.mock import ANY, patch
+from unittest.mock import patch
 
 from src.protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
@@ -62,127 +62,76 @@ class TestFetchAnnotations:
     """Test the fetch_annotations method."""
 
     @patch(_FETCH_MANY_PATCH)
-    def test_fetch_annotations_success(self, mock_fetch_many):
-        """Test successful annotation fetching with new unipressed implementation."""
-        # Mock API response with minimal required fields
-        mock_records = [
-            {
-                "primaryAccession": "P01308",
-                "uniProtkbId": "INS_HUMAN",
-                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
-                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                "proteinDescription": {
-                    "recommendedName": {"fullName": {"value": "Insulin"}}
-                },
-                "genes": [{"geneName": {"value": "INS"}}],
-                "entryType": "UniProtKB reviewed (Swiss-Prot)",
-                "annotationScore": 5.0,
-                "proteinExistence": "1: Evidence at protein level",
-                "comments": [],
-                "uniProtKBCrossReferences": [],
-                "annotations": [],
-                "keywords": [],
-                "entryAudit": {},
-            },
-            {
-                "primaryAccession": "P01315",
-                "uniProtkbId": "INSL3_HUMAN",
-                "sequence": {"value": "MAPRLCLLLL", "length": 142, "molWeight": 15000},
-                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                "proteinDescription": {
-                    "recommendedName": {"fullName": {"value": "Insulin-like 3"}}
-                },
-                "genes": [{"geneName": {"value": "INSL3"}}],
-                "entryType": "UniProtKB reviewed (Swiss-Prot)",
-                "annotationScore": 4.0,
-                "proteinExistence": "1: Evidence at protein level",
-                "comments": [],
-                "uniProtKBCrossReferences": [],
-                "annotations": [],
-                "keywords": [],
-                "entryAudit": {},
-            },
+    def test_fetch_annotations_swiss_prot_and_trembl(self, mock_fetch_many):
+        """Each record becomes one row of every UNIPROT_ANNOTATIONS column, in
+        request order, with Swiss-Prot and TrEMBL entries told apart."""
+        mock_fetch_many.return_value = [
+            _make_mock_record(
+                "P01308", entry_name="INS_HUMAN", length=110, gene_name="INS"
+            ),
+            _make_mock_record(
+                "Q12345",
+                length=142,
+                organism_id=10090,
+                entry_type="UniProtKB unreviewed (TrEMBL)",
+                annotation_score=3.0,
+            ),
         ]
-
-        mock_fetch_many.return_value = mock_records
-
-        # Create retriever and test
-        headers = ["P01308", "P01315"]
-        annotations = ["entry", "length", "organism_id"]
-        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
+        retriever = UniProtAnnotationRetriever(
+            headers=["P01308", "Q12345"], annotations=["entry", "length"]
+        )
 
         result = retriever.fetch_annotations()
 
-        # Verify results
-        assert len(result) == 2
-        assert isinstance(result[0], ProteinAnnotations)
-        assert result[0].identifier == "P01308"
-        assert result[0].annotations["length"] == "110"
-        assert result[0].annotations["annotation_score"] == "5.0"
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-
-        assert result[1].identifier == "P01315"
-        assert result[1].annotations["length"] == "142"
-        assert result[1].annotations["annotation_score"] == "4.0"
-
-        # Verify API call
-        mock_fetch_many.assert_called_once_with(
-            ["P01308", "P01315"], on_response=retriever._record_release, session=ANY
-        )
+        assert [p.identifier for p in result] == ["P01308", "Q12345"]
+        for protein in result:
+            assert isinstance(protein, ProteinAnnotations)
+            assert set(protein.annotations) == set(UNIPROT_ANNOTATIONS)
+        checked = ("length", "annotation_score", "organism_id", "reviewed", "gene_name")
+        assert [{k: p.annotations[k] for k in checked} for p in result] == [
+            {
+                "length": "110",
+                "annotation_score": "5.0",
+                "organism_id": "9606",
+                "reviewed": "Swiss-Prot",
+                "gene_name": "INS",  # from genes[0].geneName
+            },
+            {
+                "length": "142",
+                "annotation_score": "3.0",
+                "organism_id": "10090",
+                "reviewed": "TrEMBL",
+                "gene_name": "TEST",
+            },
+        ]
 
     @patch(_FETCH_MANY_PATCH)
     def test_fetch_annotations_batching_logic(self, mock_fetch_many):
         """Test annotation fetching with batching behavior."""
-        # Create mock records for batching test
         headers = [f"P{i:05d}" for i in range(150)]  # More than batch size (100)
+        mock_fetch_many.side_effect = lambda batch, **kwargs: [
+            _make_mock_record(acc, length=100 + i) for i, acc in enumerate(batch)
+        ]
 
-        def mock_fetch_many_fn(batch):
-            """Mock fetch_many to return appropriate records for batch."""
-            return [
-                {
-                    "primaryAccession": acc,
-                    "uniProtkbId": f"{acc}_HUMAN",
-                    "sequence": {"value": "MAL", "length": 100 + i, "molWeight": 10000},
-                    "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                    "proteinDescription": {
-                        "recommendedName": {"fullName": {"value": f"Protein {i}"}}
-                    },
-                    "genes": [{"geneName": {"value": f"GENE{i}"}}],
-                    "entryType": "UniProtKB reviewed (Swiss-Prot)",
-                    "annotationScore": 5.0,
-                    "proteinExistence": "1: Evidence at protein level",
-                    "comments": [],
-                    "uniProtKBCrossReferences": [],
-                    "annotations": [],
-                    "keywords": [],
-                    "entryAudit": {},
-                }
-                for i, acc in enumerate(batch)
-            ]
-
-        mock_fetch_many.side_effect = mock_fetch_many_fn
-
-        # Create retriever and test
-        annotations = ["entry", "length"]
-        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
+        retriever = UniProtAnnotationRetriever(
+            headers=headers, annotations=["entry", "length"]
+        )
 
         result = retriever.fetch_annotations()
 
-        # Verify results
-        assert len(result) == 150
+        assert [p.identifier for p in result] == headers
+        assert retriever.failed_batch_count == 0
         # Verify API was called multiple times for batching
         assert mock_fetch_many.call_count == 2  # 100 + 50
 
     @patch(_FETCH_MANY_PATCH)
     def test_fetch_annotations_handles_errors(self, mock_fetch_many):
         """Test handling of API errors."""
-        # Mock API to raise an exception
         mock_fetch_many.side_effect = Exception("API Error")
 
-        # Create retriever and test
-        headers = ["P01308"]
-        annotations = ["entry", "length"]
-        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
+        retriever = UniProtAnnotationRetriever(
+            headers=["P01308"], annotations=["entry", "length"]
+        )
 
         result = retriever.fetch_annotations()
 
@@ -191,121 +140,7 @@ class TestFetchAnnotations:
         assert result[0].identifier == "P01308"
         # All annotations should be empty strings due to error
         assert all(v == "" for v in result[0].annotations.values())
-
-    @patch(_FETCH_MANY_PATCH)
-    def test_fetch_annotations_stores_uniprot_annotations(self, mock_fetch_many):
-        """Test that fetch_annotations stores UNIPROT_ANNOTATIONS including organism_id."""
-        mock_records = [
-            {
-                "primaryAccession": "P01308",
-                "uniProtkbId": "INS_HUMAN",
-                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
-                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                "proteinDescription": {
-                    "recommendedName": {"fullName": {"value": "Insulin"}}
-                },
-                "genes": [{"geneName": {"value": "INS"}}],
-                "entryType": "UniProtKB reviewed (Swiss-Prot)",
-                "annotationScore": 5.0,
-                "proteinExistence": "1: Evidence at protein level",
-                "comments": [],
-                "uniProtKBCrossReferences": [],
-                "annotations": [],
-                "keywords": [{"name": "Diabetes mellitus", "id": "KW-0001"}],
-                "entryAudit": {
-                    "firstPublicDate": "2020-01-01",
-                    "lastAnnotationUpdateDate": "2023-01-01",
-                },
-            }
-        ]
-
-        mock_fetch_many.return_value = mock_records
-
-        # Request annotations (actual storage is UNIPROT_ANNOTATIONS)
-        headers = ["P01308"]
-        annotations = ["entry", "length"]
-        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
-
-        result = retriever.fetch_annotations()
-
-        # Should return exactly UNIPROT_ANNOTATIONS
-        assert len(result) == 1
-        assert len(result[0].annotations) == len(UNIPROT_ANNOTATIONS)
-
-        # Check all UNIPROT_ANNOTATIONS are present
-        for annotation in UNIPROT_ANNOTATIONS:
-            assert annotation in result[0].annotations
-
-        # Verify specific raw values
-        assert result[0].annotations["length"] == "110"
-        assert result[0].annotations["annotation_score"] == "5.0"
-        assert result[0].annotations["organism_id"] == "9606"
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-        assert (
-            result[0].annotations["gene_name"] == "INS"
-        )  # Gene name from genes[0].geneName
-
-    @patch(_FETCH_MANY_PATCH)
-    def test_reviewed_field_parsing_swiss_prot_and_trembl(self, mock_fetch_many):
-        """End-to-end test: reviewed field correctly parsed for both Swiss-Prot and TrEMBL entries."""
-        # Mock API responses with both reviewed (Swiss-Prot) and unreviewed (TrEMBL) entries
-        mock_records = [
-            {
-                "primaryAccession": "P01308",
-                "uniProtkbId": "INS_HUMAN",
-                "sequence": {"value": "MALWMRLLPL", "length": 110, "molWeight": 11500},
-                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                "proteinDescription": {
-                    "recommendedName": {"fullName": {"value": "Insulin"}}
-                },
-                "genes": [{"geneName": {"value": "INS"}}],
-                "entryType": "UniProtKB reviewed (Swiss-Prot)",
-                "annotationScore": 5.0,
-                "proteinExistence": "1: Evidence at protein level",
-                "comments": [],
-                "uniProtKBCrossReferences": [],
-                "annotations": [],
-                "keywords": [],
-                "entryAudit": {},
-            },
-            {
-                "primaryAccession": "Q12345",
-                "uniProtkbId": "TEST_HUMAN",
-                "sequence": {"value": "MAPRLCLLLL", "length": 142, "molWeight": 15000},
-                "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
-                "proteinDescription": {
-                    "recommendedName": {"fullName": {"value": "Test protein"}}
-                },
-                "genes": [{"geneName": {"value": "TEST"}}],
-                "entryType": "UniProtKB unreviewed (TrEMBL)",
-                "annotationScore": 3.0,
-                "proteinExistence": "2: Evidence at transcript level",
-                "comments": [],
-                "uniProtKBCrossReferences": [],
-                "annotations": [],
-                "keywords": [],
-                "entryAudit": {},
-            },
-        ]
-
-        mock_fetch_many.return_value = mock_records
-
-        # Create retriever and fetch
-        headers = ["P01308", "Q12345"]
-        annotations = ["entry", "reviewed", "annotation_score"]
-        retriever = UniProtAnnotationRetriever(headers=headers, annotations=annotations)
-        result = retriever.fetch_annotations()
-
-        # Verify we have both entries
-        assert len(result) == 2
-
-        # Verify Swiss-Prot entry (reviewed) returns "Swiss-Prot"
-        assert result[0].identifier == "P01308"
-        assert result[0].annotations["reviewed"] == "Swiss-Prot"
-
-        # Verify TrEMBL entry (unreviewed) returns "TrEMBL"
-        assert result[1].identifier == "Q12345"
-        assert result[1].annotations["reviewed"] == "TrEMBL"
+        assert retriever.failed_batch_count == 1
 
 
 class TestConstants:
@@ -360,6 +195,7 @@ def _make_mock_record(
     protein_name="Test protein",
     entry_type="UniProtKB reviewed (Swiss-Prot)",
     annotation_score=5.0,
+    gene_name="TEST",
 ):
     """Helper to build a minimal mock UniProt JSON record."""
     return {
@@ -370,7 +206,7 @@ def _make_mock_record(
         "proteinDescription": {
             "recommendedName": {"fullName": {"value": protein_name}}
         },
-        "genes": [{"geneName": {"value": "TEST"}}],
+        "genes": [{"geneName": {"value": gene_name}}],
         "entryType": entry_type,
         "annotationScore": annotation_score,
         "proteinExistence": "1: Evidence at protein level",
