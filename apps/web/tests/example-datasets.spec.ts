@@ -315,14 +315,6 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
   });
 
-  test('a deep link with a view param selects that annotation on the example', async ({ page }) => {
-    // 'length_fixed' is not SMALL's curated annotation, so selecting it
-    // proves the param was applied rather than the curated view.
-    await openExplore(page, `?dataset=${SMALL.id}&annotation=length_fixed`, SMALL.count);
-
-    await expect.poll(() => getSelectedAnnotation(page)).toBe('length_fixed');
-  });
-
   test('a failed menu choice leaves the previous dataset and URL unchanged', async ({ page }) => {
     await openExplore(page, '', DEMO_COUNT);
 

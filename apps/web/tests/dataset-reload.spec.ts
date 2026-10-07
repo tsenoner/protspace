@@ -582,16 +582,12 @@ test.describe('Unified app notifications', () => {
 });
 
 test.describe('Bundle format notice', () => {
-  const LEGACY_BUNDLES = [
-    { version: 1, path: path.resolve(SPEC_DIR, 'fixtures/raw_numeric_test.parquetbundle') },
-    {
-      version: 2,
-      path: path.resolve(
-        SPEC_DIR,
-        '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
-      ),
-    },
-  ];
+  // v2 only: the worker-to-notice path does not branch on the version, and the v1
+  // notice is pinned by the it.each([1, 2]) in dataset-controller.persistence.test.ts.
+  const V2_BUNDLE_PATH = path.resolve(
+    SPEC_DIR,
+    '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+  );
   const NOTICE = 'This file uses an older bundle format.';
 
   test.beforeEach(async ({ page }) => {
@@ -604,17 +600,13 @@ test.describe('Bundle format notice', () => {
     await waitForExploreDataLoad(page, { changedFrom: defaultCount });
   }
 
-  for (const { version, path: bundlePath } of LEGACY_BUNDLES) {
-    test(`importing a v${version} bundle points to re-export and protspace convert`, async ({
-      page,
-    }) => {
-      await importAndWait(page, bundlePath);
+  test('importing a v2 bundle points to re-export and protspace convert', async ({ page }) => {
+    await importAndWait(page, V2_BUNDLE_PATH);
 
-      await expect(page.getByText(NOTICE)).toBeVisible();
-      await expect(page.getByText(`Format v${version} bundles will stop opening`)).toBeVisible();
-      await expect(page.getByText(/protspace convert/)).toBeVisible();
-    });
-  }
+    await expect(page.getByText(NOTICE)).toBeVisible();
+    await expect(page.getByText('Format v2 bundles will stop opening')).toBeVisible();
+    await expect(page.getByText(/protspace convert/)).toBeVisible();
+  });
 
   test('neither the startup demo nor an imported v3 bundle shows the notice', async ({ page }) => {
     // The demo loaded in beforeEach; the import is the 5K bundle as `protspace convert` wrote it.
