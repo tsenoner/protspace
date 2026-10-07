@@ -7,12 +7,10 @@ import type { ScalePair } from '../types';
 import { styleGetters } from './test-support/renderer-fixture';
 import { createMockCanvas } from './test-support/mock-webgl2';
 
-// B1 renderer lifecycle behavior-change tests (TDD): F-43, F-39, F-01.
-// These assert POST-change behavior, so on the unmodified tree:
-//   - F-43 (destroy disposes GPU resources)            -> RED
-//   - F-39 (no webglcontextrestored listener)          -> RED
-//   - F-01 programmatic loss routes to onContextLost    -> RED
-//   - F-01 DOM no-double-fire (invariant lock)          -> GREEN
+// B1 renderer lifecycle: destroy() disposes the GPU resources (F-43), a
+// programmatic context loss reaches onContextLost (F-01), and syncGpu's guards.
+// The DOM webglcontextlost path and the absent restore listener (F-39) are in
+// webgl-renderer.context-loss.test.ts and context-loss-controller.test.ts.
 //
 // The shared mock-webgl2 harness provides the full gl.* surface the render path
 // needs (incl. uniform3f / disableVertexAttribArray), so render()-driven tests
@@ -38,7 +36,7 @@ function makePlotData(n: number): PlotData {
   return { length: n, xs, ys, zs: null, originalIndices: null, proteinIds };
 }
 
-describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
+describe('WebGLRenderer lifecycle (B1: F-43 / F-01)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -74,17 +72,6 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     expect(del.program.mock.calls.length).toBeGreaterThanOrEqual(1); // pointProgram (+gamma if available)
   });
 
-  // F-39 — delete the unreachable internal handleContextRestored recovery.
-  it('F-39: constructor registers no webglcontextrestored listener', () => {
-    const { canvas } = createMockCanvas();
-    const add = vi.spyOn(canvas, 'addEventListener');
-    const r = new WebGLRenderer(canvas, scales, getTransform, getConfig, styleGetters(), vi.fn());
-    const types = add.mock.calls.map((c) => c[0]);
-    expect(types).toContain('webglcontextlost');
-    expect(types).not.toContain('webglcontextrestored');
-    r.destroy();
-  });
-
   // F-01 — route programmatic context loss to recovery (sanctioned visible change).
   it('F-01: programmatic loss (gl.isContextLost) routes to onContextLost once', () => {
     const { canvas, gl } = createMockCanvas();
@@ -101,23 +88,6 @@ describe('WebGLRenderer lifecycle (B1: F-43 / F-39 / F-01)', () => {
     // Simulate a driver reset with NO webglcontextlost DOM event:
     vi.spyOn(gl!, 'isContextLost').mockReturnValue(true);
     r.render(makePlotData(3)); // render -> ensureGL/isContextLost -> markContextLost
-    expect(onContextLost).toHaveBeenCalledTimes(1);
-    r.destroy();
-  });
-
-  it('F-01: DOM webglcontextlost still fires onContextLost exactly once (no double-fire)', () => {
-    const { canvas } = createMockCanvas();
-    const onContextLost = vi.fn();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      getTransform,
-      getConfig,
-      styleGetters(),
-      onContextLost,
-    );
-    r.render(makePlotData(3));
-    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     expect(onContextLost).toHaveBeenCalledTimes(1);
     r.destroy();
   });

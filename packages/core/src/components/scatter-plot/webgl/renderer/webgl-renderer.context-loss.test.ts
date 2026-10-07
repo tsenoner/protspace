@@ -24,7 +24,7 @@ const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
-describe('WebGLRenderer context loss + restore (F-09 characterization lock)', () => {
+describe('WebGLRenderer context loss (F-09 characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
     rafQueue = [];
@@ -43,10 +43,10 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
     q.forEach((cb) => cb(0));
   };
 
-  it('webglcontextlost fires onContextLost and preventDefaults', () => {
+  it('webglcontextlost on a rendering renderer preventDefaults and fires onContextLost once', () => {
     const { canvas } = createMockCanvas();
     const onLost = vi.fn();
-    new WebGLRenderer(
+    const r = new WebGLRenderer(
       canvas,
       scales,
       () => d3.zoomIdentity,
@@ -54,13 +54,15 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       styleGetters(),
       onLost,
     );
+    r.render(pd); // live GL resources, so the loss resets real renderer state
     const ev = new Event('webglcontextlost', { cancelable: true });
     const prevented = !canvas.dispatchEvent(ev);
     expect(onLost).toHaveBeenCalledTimes(1);
     expect(prevented).toBe(true); // preventDefault() was called
+    r.destroy();
   });
 
-  it('destroy() removes both listeners (post-destroy loss does not fire onContextLost)', () => {
+  it('destroy() removes the loss listener (a later loss does not fire onContextLost)', () => {
     const { canvas } = createMockCanvas();
     const onLost = vi.fn();
     const r = new WebGLRenderer(
@@ -80,10 +82,11 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
   // unreachable in production (real loss → onContextLost → scatter-plot destroy()s
   // the renderer, which removes the webglcontextlost listener and disposes; the
   // restore listener never survived to fire). Recovery now flows solely through the
-  // scatter-plot rebuild-on-loss path. These two cases used to characterize the dead
-  // internal handler (they only "passed" because they synthesized the restore event
-  // directly); they now pin its absence.
+  // scatter-plot rebuild-on-loss path. This pins that the renderer registers no
+  // restore listener (the controller test only counts its own listeners) and
+  // that a restore event does not re-render.
   it('F-39: no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
+    const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
     const { canvas } = createMockCanvas();
     const r = new WebGLRenderer(
       canvas,
@@ -92,26 +95,15 @@ describe('WebGLRenderer context loss + restore (F-09 characterization lock)', ()
       () => ({ width: 800, height: 600 }),
       styleGetters(),
     );
+    const types = addSpy.mock.calls.map((c) => c[0]);
+    expect(types).toContain('webglcontextlost');
+    expect(types).not.toContain('webglcontextrestored');
     r.render(pd); // sets lastRenderedData
     const renderSpy = vi.spyOn(r, 'render');
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     canvas.dispatchEvent(new Event('webglcontextrestored'));
     drain(); // no RAF was ever queued by the (now-deleted) restore handler
     expect(renderSpy).not.toHaveBeenCalled();
-  });
-
-  it('F-39: constructor registers no webglcontextrestored listener', () => {
-    const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
-    const r = new WebGLRenderer(
-      createMockCanvas().canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-    );
-    const types = addSpy.mock.calls.map((c) => c[0]);
-    expect(types).toContain('webglcontextlost');
-    expect(types).not.toContain('webglcontextrestored');
     r.destroy();
   });
 });
