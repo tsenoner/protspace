@@ -19,23 +19,22 @@ from protspace.data.io.settings_converter import (
 
 
 class TestHexToRgba:
-    def test_basic(self):
-        assert _hex_to_rgba("#FF0000") == "rgba(255, 0, 0, 0.8)"
-
-    def test_black(self):
-        assert _hex_to_rgba("#000000") == "rgba(0, 0, 0, 0.8)"
-
-    def test_white(self):
-        assert _hex_to_rgba("#FFFFFF") == "rgba(255, 255, 255, 0.8)"
+    @pytest.mark.parametrize(
+        "hex_color,expected",
+        [
+            ("#FF0000", "rgba(255, 0, 0, 0.8)"),
+            ("#000000", "rgba(0, 0, 0, 0.8)"),
+            ("#FFFFFF", "rgba(255, 255, 255, 0.8)"),
+            ("#ff8800", "rgba(255, 136, 0, 0.8)"),
+            ("FF0000", "rgba(255, 0, 0, 0.8)"),
+        ],
+        ids=["red", "black", "white", "lowercase", "no_hash_prefix"],
+    )
+    def test_default_alpha(self, hex_color, expected):
+        assert _hex_to_rgba(hex_color) == expected
 
     def test_custom_alpha(self):
         assert _hex_to_rgba("#00FF00", alpha=1.0) == "rgba(0, 255, 0, 1.0)"
-
-    def test_lowercase_hex(self):
-        assert _hex_to_rgba("#ff8800") == "rgba(255, 136, 0, 0.8)"
-
-    def test_no_hash_prefix(self):
-        assert _hex_to_rgba("FF0000") == "rgba(255, 0, 0, 0.8)"
 
 
 # ---------------------------------------------------------------------------
@@ -44,20 +43,19 @@ class TestHexToRgba:
 
 
 class TestRgbaToHex:
-    def test_basic(self):
-        assert _rgba_to_hex("rgba(255, 0, 0, 0.8)") == "#FF0000"
-
-    def test_black(self):
-        assert _rgba_to_hex("rgba(0, 0, 0, 1.0)") == "#000000"
-
-    def test_rgb_no_alpha(self):
-        assert _rgba_to_hex("rgb(128, 64, 32)") == "#804020"
-
-    def test_hex_passthrough(self):
-        assert _rgba_to_hex("#FF0000") == "#FF0000"
-
-    def test_unrecognized_passthrough(self):
-        assert _rgba_to_hex("not-a-color") == "not-a-color"
+    @pytest.mark.parametrize(
+        "color,expected",
+        [
+            ("rgba(255, 0, 0, 0.8)", "#FF0000"),
+            ("rgba(0, 0, 0, 1.0)", "#000000"),
+            ("rgb(128, 64, 32)", "#804020"),
+            ("#FF0000", "#FF0000"),
+            ("not-a-color", "not-a-color"),
+        ],
+        ids=["rgba", "black", "rgb_no_alpha", "hex_passthrough", "unrecognized"],
+    )
+    def test_conversion(self, color, expected):
+        assert _rgba_to_hex(color) == expected
 
     def test_roundtrip(self):
         original = "#A1CAF1"
@@ -136,16 +134,17 @@ class TestSettingsToVisualizationState:
         assert shapes["kinase"] == "circle"
         assert shapes["phosphatase"] == "square"
 
-    def test_empty_categories(self):
-        result = settings_to_visualization_state({"empty": {"categories": {}}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_no_categories_key(self):
-        result = settings_to_visualization_state({"other": {"sortMode": "alpha-asc"}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_empty_settings(self):
-        result = settings_to_visualization_state({})
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            {"empty": {"categories": {}}},
+            {"other": {"sortMode": "alpha-asc"}},
+            {},
+        ],
+        ids=["empty_categories", "no_categories_key", "empty_settings"],
+    )
+    def test_nothing_to_style_gives_empty_state(self, settings):
+        result = settings_to_visualization_state(settings)
         assert result == {"annotation_colors": {}, "marker_shapes": {}}
 
     def test_color_only_no_shape(self):

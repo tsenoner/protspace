@@ -4,6 +4,7 @@ import io
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from protlabel import Prediction
 from protspace.data.annotations.encoding import migrate_legacy_annotation_table
@@ -19,39 +20,21 @@ def _table():
     )
 
 
-def test_adds_value_confidence_and_source_overlay_columns():
-    preds = [
-        Prediction("Q0", "neurotoxin", "R0", 0.3, 0.62, 1, "euclidean"),
-    ]
-    out = add_overlay_columns(_table(), "protein_category", preds)
-    assert "protein_category__pred_value" in out.column_names
-    assert "protein_category__pred_confidence" in out.column_names
-    # The source column is emitted as PROVENANCE (the reference the label was
-    # transferred from) so the frontend can draw a connector line / show a
-    # "transferred from <neighbour>" tooltip. It is not a colour feature.
-    assert "protein_category__pred_source" in out.column_names
-
-
 def test_overlay_values_aligned_by_identifier():
     preds = [Prediction("Q1", "enzyme", "R9", 0.5, 0.5, 1, "euclidean")]
     out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
     by_id = {r["identifier"]: r for r in out}
     assert by_id["Q1"]["protein_category__pred_value"] == "enzyme"
     assert by_id["Q1"]["protein_category__pred_confidence"] == 0.5
+    # The source column is emitted as PROVENANCE: the id of the reference whose
+    # label was transferred (Prediction.source_id), not the query's own id, so
+    # the frontend can draw a connector line / show a "transferred from
+    # <neighbour>" tooltip. It is not a colour feature.
     assert by_id["Q1"]["protein_category__pred_source"] == "R9"
     # Non-predicted rows are null in the overlay columns.
     assert by_id["Q0"]["protein_category__pred_value"] is None
     assert by_id["R0"]["protein_category__pred_confidence"] is None
     assert by_id["R0"]["protein_category__pred_source"] is None
-
-
-def test_source_is_the_reference_id():
-    # The source column carries the id of the reference protein whose label was
-    # transferred (Prediction.source_id), not the query's own id.
-    preds = [Prediction("Q0", "neurotoxin", "R0", 0.3, 0.8, 1, "euclidean")]
-    out = add_overlay_columns(_table(), "protein_category", preds).to_pylist()
-    by_id = {r["identifier"]: r for r in out}
-    assert by_id["Q0"]["protein_category__pred_source"] == "R0"
 
 
 def test_source_reserved_characters_are_encoded_as_one_opaque_v2_field():
@@ -115,39 +98,41 @@ def test_prediction_for_unknown_identifier_is_ignored():
     assert all(r["protein_category__pred_source"] is None for r in out)
 
 
-def test_reapplying_overlay_replaces_not_duplicates():
+def _fully_overlaid():
+    """A table a previous transfer run already overlaid."""
+    preds = [Prediction("Q0", "old", "R0", 0.3, 0.6, 1, "euclidean")]
+    return add_overlay_columns(_table(), "protein_category", preds)
+
+
+def _seeded_with_source_only():
+    """A table carrying only the __pred_source column, as legacy tables do."""
+    return _table().append_column(
+        "protein_category__pred_source", pa.array(["OLD", None, None], pa.string())
+    )
+
+
+@pytest.mark.parametrize(
+    "starting_table",
+    [_fully_overlaid, _seeded_with_source_only],
+    ids=["fully_overlaid", "source_only"],
+)
+def test_reapplying_overlay_replaces_not_duplicates(starting_table):
     # Re-running transfer on an already-overlaid table must replace the overlay
-    # columns, not append duplicates (which produce an unreadable parquet table).
-    preds1 = [Prediction("Q0", "old", "R0", 0.3, 0.6, 1, "euclidean")]
-    once = add_overlay_columns(_table(), "protein_category", preds1)
-    preds2 = [Prediction("Q0", "new", "R1", 0.1, 0.9, 1, "euclidean")]
-    twice = add_overlay_columns(once, "protein_category", preds2)
+    # columns, not append duplicates (which produce an unreadable parquet
+    # table). Each stale column is dropped on its own, so a table holding only
+    # some of them must work too.
+    preds = [Prediction("Q0", "new", "R1", 0.1, 0.9, 1, "euclidean")]
+    out = add_overlay_columns(starting_table(), "protein_category", preds)
 
     for suffix in ("__pred_value", "__pred_confidence", "__pred_source"):
-        assert twice.column_names.count(f"protein_category{suffix}") == 1
+        assert out.column_names.count(f"protein_category{suffix}") == 1
 
-    by_id = {r["identifier"]: r for r in twice.to_pylist()}
+    by_id = {r["identifier"]: r for r in out.to_pylist()}
     assert by_id["Q0"]["protein_category__pred_value"] == "new"
     assert by_id["Q0"]["protein_category__pred_source"] == "R1"
 
     # Duplicate column names would make this round-trip raise ArrowInvalid.
     buf = io.BytesIO()
-    pq.write_table(twice, buf)
+    pq.write_table(out, buf)
     reread = pq.read_table(io.BytesIO(buf.getvalue()))
     assert reread.column("protein_category__pred_value").to_pylist()[0] == "new"
-
-
-def test_source_column_is_replaced_not_duplicated_on_rerun():
-    # A table already carrying a __pred_source column (e.g. from a prior run)
-    # must have it replaced with the new source, not duplicated or left stale.
-    seeded = _table().append_column(
-        "protein_category__pred_source", pa.array(["OLD", None, None], pa.string())
-    )
-    out = add_overlay_columns(
-        seeded,
-        "protein_category",
-        [Prediction("Q0", "neurotoxin", "R0", 0.1, 0.8, 1, "euclidean")],
-    )
-    assert out.column_names.count("protein_category__pred_source") == 1
-    by_id = {r["identifier"]: r for r in out.to_pylist()}
-    assert by_id["Q0"]["protein_category__pred_source"] == "R0"
