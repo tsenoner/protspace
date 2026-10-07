@@ -1,3 +1,4 @@
+import asyncio
 import re
 from pathlib import Path
 
@@ -143,21 +144,13 @@ async def test_healthz_reflects_running_jobs(app_factory):
         assert r.json()["jobs"] == {"running": 0, "queued": 0}
 
 
-async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch):
+async def test_post_prepare_returns_503_when_queue_full(
+    app_factory, monkeypatch, gated_pipeline
+):
     """When pending jobs hit the cap, the endpoint rejects with 503 + Retry-After."""
-    import asyncio
-
     monkeypatch.setenv("PREP_MAX_CONCURRENT_JOBS", "1")
     monkeypatch.setenv("PREP_MAX_PENDING_JOBS", "1")
-    gate = asyncio.Event()
-
-    async def gated(ctx, emit):
-        await gate.wait()
-        out = ctx.output_dir / "data.parquetbundle"
-        out.write_bytes(b"BUNDLE")
-        return out
-
-    app = app_factory(pipeline=gated)
+    app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
         files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
         r1 = await c.post("/api/prepare", files=files)
@@ -166,7 +159,7 @@ async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch
         r2 = await c.post("/api/prepare", files=files)
     assert r2.status_code == 503
     assert r2.headers.get("retry-after") == "30"
-    gate.set()
+    gated_pipeline.release.set()
 
 
 # ---------------------------------------------------------------------------
@@ -238,28 +231,18 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
 # ---------------------------------------------------------------------------
 
 
-async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeypatch):
+async def test_sse_keepalive_frame_emitted_on_slow_pipeline(
+    app_factory, monkeypatch, gated_pipeline
+):
     """When no event arrives within the keepalive interval, a comment frame
     is sent — and the stream must keep flowing afterwards (regression: a prior
     implementation cancelled the in-flight `__anext__()` on each keepalive,
     exhausting the subscriber generator so the stream truncated silently).
     """
-    import asyncio
-
     import protspace_prep.api as api_module
 
     # Speed up: use a very short keepalive interval so the test doesn't take 15s.
     monkeypatch.setattr(api_module, "_KEEPALIVE_INTERVAL_SECONDS", 0.05)
-
-    gate = asyncio.Event()
-
-    async def gated_pipeline(ctx, emit):
-        # Hold long enough for several keepalive intervals to fire before we
-        # produce a terminal event.
-        await gate.wait()
-        out = ctx.output_dir / "data.parquetbundle"
-        out.write_bytes(b"BUNDLE")
-        return out
 
     app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
@@ -272,7 +255,7 @@ async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeyp
         # to fire, so the stream is exercised across the keepalive boundary.
         async def release_gate():
             await asyncio.sleep(0.3)
-            gate.set()
+            gated_pipeline.release.set()
 
         release_task = asyncio.create_task(release_gate())
 
