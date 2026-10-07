@@ -85,89 +85,68 @@ SAMPLE_TAXONOMY_ANNOTATIONS = {
 class TestProteinAnnotationExtractorInit:
     """Test ProteinAnnotationExtractor initialization."""
 
-    def test_init_with_basic_parameters(self):
-        """Test initialization with basic parameters."""
-        headers = SAMPLE_HEADERS
-        annotations = ["length", "genus"]
-
-        extractor = ProteinAnnotationExtractor(headers=headers, annotations=annotations)
-
-        assert extractor.headers == headers
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "gene_name",
-            "protein_name",
-            "uniprot_kb_id",
-        ]
-        assert extractor.user_annotations == expected_annotations
-        assert extractor.output_path is None
-
-    def test_init_with_output_path(self):
-        """Test initialization with output path."""
-        headers = SAMPLE_HEADERS
+    def test_init_wires_arguments_and_configuration(self):
+        """The manager stores its arguments and takes the validated annotations
+        from its configuration (AnnotationConfiguration's tests pin the list)."""
         output_path = Path("test_output.parquet")
 
-        extractor = ProteinAnnotationExtractor(headers=headers, output_path=output_path)
+        default = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, annotations=["length", "genus"]
+        )
+        with_path = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, output_path=output_path
+        )
 
-        assert extractor.output_path == output_path
-
-    def test_init_with_invalid_annotations(self):
-        """Test initialization with invalid annotations raises ValueError."""
-        headers = SAMPLE_HEADERS
-        invalid_annotations = ["length", "invalid_annotation", "genus"]
-
-        with pytest.raises(ValueError, match="Unknown annotation 'invalid_annotation'"):
-            ProteinAnnotationExtractor(headers=headers, annotations=invalid_annotations)
-
-    def test_init_with_no_annotations(self):
-        """Test initialization without specifying annotations uses default group."""
-        headers = SAMPLE_HEADERS
-
-        extractor = ProteinAnnotationExtractor(headers=headers)
-
-        # When no annotations specified, should use the 'default' group
-        assert extractor.user_annotations is not None
-        for ann in ANNOTATION_GROUPS["default"]:
-            assert ann in extractor.user_annotations
-
-        # Configuration should be initialized with default group annotations
-        assert extractor.config is not None
-        assert extractor.config.uniprot_annotations is not None
-        assert len(extractor.config.uniprot_annotations) > 0
-        # Default group is UniProt-only, so no taxonomy/interpro
-        assert extractor.config.taxonomy_annotations is None
-        assert extractor.config.interpro_annotations is None
+        assert default.headers == SAMPLE_HEADERS
+        assert default.output_path is None
+        assert with_path.output_path == output_path
+        assert default.config.user_annotations[:2] == ["length", "genus"]
+        assert default.user_annotations == default.config.user_annotations
 
 
 class TestAnnotationConfiguration:
     """Test the AnnotationConfiguration module."""
 
-    def test_validate_valid_annotations(self):
-        """Test validation with valid annotations."""
-        valid_annotations = ["length", "genus", "species", "protein_families"]
-        config = AnnotationConfiguration(user_annotations=valid_annotations)
+    @pytest.mark.parametrize(
+        "requested,expected",
+        [
+            (
+                ["length", "genus"],
+                ["length", "genus", "gene_name", "protein_name", "uniprot_kb_id"],
+            ),
+            (
+                ["length", "genus", "species", "protein_families"],
+                [
+                    "length",
+                    "genus",
+                    "species",
+                    "protein_families",
+                    "gene_name",
+                    "protein_name",
+                    "uniprot_kb_id",
+                ],
+            ),
+        ],
+    )
+    def test_validate_appends_always_included_annotations_last(
+        self, requested, expected
+    ):
+        config = AnnotationConfiguration(user_annotations=requested)
 
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "species",
-            "protein_families",
+        assert config.user_annotations == expected
+
+    def test_validate_with_none_uses_default_group(self):
+        """No annotations means the UniProt-only 'default' group."""
+        config = AnnotationConfiguration(user_annotations=None)
+
+        assert config.user_annotations == ANNOTATION_GROUPS["default"] + [
             "gene_name",
             "protein_name",
             "uniprot_kb_id",
         ]
-        assert config.user_annotations == expected_annotations
-
-    def test_validate_with_none(self):
-        """Test validation with None uses default group."""
-        config = AnnotationConfiguration(user_annotations=None)
-
-        assert config.user_annotations is not None
-        for ann in ANNOTATION_GROUPS["default"]:
-            assert ann in config.user_annotations
+        assert config.uniprot_annotations
+        assert config.taxonomy_annotations is None
+        assert config.interpro_annotations is None
 
     def test_validate_invalid_annotation(self):
         """Test validation with invalid annotation raises ValueError."""
@@ -178,21 +157,6 @@ class TestAnnotationConfiguration:
             match="Unknown annotation 'nonexistent_annotation'",
         ):
             AnnotationConfiguration(user_annotations=invalid_annotations)
-
-    def test_validate_with_length(self):
-        """Test validation includes length annotation."""
-        annotations = ["length", "genus"]
-        config = AnnotationConfiguration(user_annotations=annotations)
-
-        # Always-included annotations are added automatically
-        expected_annotations = [
-            "length",
-            "genus",
-            "gene_name",
-            "protein_name",
-            "uniprot_kb_id",
-        ]
-        assert config.user_annotations == expected_annotations
 
     def test_split_by_source_with_user_annotations(self):
         """Test annotation splitting by source with user-specified annotations."""
@@ -220,18 +184,6 @@ class TestAnnotationConfiguration:
 
         # Should NOT include unrequested InterPro annotations
         assert "cath" not in config.interpro_annotations
-
-    def test_split_by_source_default_annotations(self):
-        """Test splitting with default annotations (None) uses default group."""
-        config = AnnotationConfiguration(user_annotations=None)
-
-        # Default group is UniProt-only
-        assert config.uniprot_annotations is not None
-        assert len(config.uniprot_annotations) > 0
-
-        # Default group has no taxonomy or interpro annotations
-        assert config.taxonomy_annotations is None
-        assert config.interpro_annotations is None
 
 
 class TestAnnotationMerger:
