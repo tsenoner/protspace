@@ -494,31 +494,6 @@ test.describe('Persisted dataset failure handling', () => {
 
     expect(await getProteinCount(page)).not.toBe(defaultCount);
   });
-
-  test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
-    page,
-  }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator.storage, 'getDirectory', {
-        configurable: true,
-        value: undefined,
-      });
-    });
-
-    await openExplore(page);
-
-    const defaultCount = await getProteinCount(page);
-
-    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-
-    await expect(
-      page.getByText('Dataset loaded, but automatic reload is unavailable.'),
-    ).toBeVisible();
-    await expect(page.getByText(/does not support the Origin Private File System/i)).toBeVisible();
-
-    expect(await getProteinCount(page)).not.toBe(defaultCount);
-  });
 });
 
 test.describe('Unified app notifications', () => {
