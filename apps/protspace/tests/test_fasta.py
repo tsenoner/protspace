@@ -1,6 +1,5 @@
 """Tests for FASTA parsing utilities."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -11,76 +10,52 @@ from src.protspace.data.io.fasta import is_fasta_file, parse_fasta
 class TestParseFasta:
     """Test parse_fasta function."""
 
-    def test_basic_parsing(self):
-        """Test basic FASTA parsing with two sequences."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">P01308 Insulin\nMKSGS\nLFVLL\n>P01315 IGF1\nMEKKAL\n")
-            f.flush()
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            pytest.param(
+                ">P01308 Insulin\nMKSGS\nLFVLL\n>P01315 IGF1\nMEKKAL\n",
+                {"P01308": "MKSGSLFVLL", "P01315": "MEKKAL"},
+                id="basic",
+            ),
+            pytest.param(
+                ">P01308\nAAAA\n>P01315\nBBBB\n>P01308\nCCCC\n",
+                {"P01308": "AAAA", "P01315": "BBBB"},
+                id="duplicate_header_keeps_first",
+            ),
+            pytest.param(
+                ">P01308\nAAAA\n>P01308\nCCCC\n>P01315\nBBBB\n",
+                {"P01308": "AAAA", "P01315": "BBBB"},
+                id="duplicate_header_mid_file_keeps_first",
+            ),
+            pytest.param(
+                ">P01308\nAAAA\n>EMPTY\n>P01315\nBBBB\n",
+                {"P01308": "AAAA", "P01315": "BBBB"},
+                id="empty_sequence_skipped",
+            ),
+            pytest.param(
+                ">P01308\nAAAA\nBBBB\nCCCC\n",
+                {"P01308": "AAAABBBBCCCC"},
+                id="multiline_concatenated",
+            ),
+            pytest.param("", {}, id="empty_file"),
+            pytest.param(
+                ">sp|P01308|INS_HUMAN Insulin OS=Homo sapiens\nMKSGS\n",
+                {"sp|P01308|INS_HUMAN": "MKSGS"},
+                id="header_is_first_word",
+            ),
+            pytest.param(
+                ">P01308\nAAAA   \nBBBB\t\n",
+                {"P01308": "AAAABBBB"},
+                id="trailing_whitespace_stripped",
+            ),
+        ],
+    )
+    def test_parse_fasta(self, tmp_path, text, expected):
+        fasta = tmp_path / "seqs.fasta"
+        fasta.write_text(text)
 
-            result = parse_fasta(Path(f.name))
-
-        assert result == {"P01308": "MKSGSLFVLL", "P01315": "MEKKAL"}
-
-    def test_duplicate_headers(self):
-        """Test that duplicate headers keep first occurrence."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">P01308\nAAAA\n>P01315\nBBBB\n>P01308\nCCCC\n")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert result == {"P01308": "AAAA", "P01315": "BBBB"}
-
-    def test_empty_sequences_skipped(self):
-        """Test that entries with empty sequences are skipped."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">P01308\nAAAA\n>EMPTY\n>P01315\nBBBB\n")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert result == {"P01308": "AAAA", "P01315": "BBBB"}
-
-    def test_multiline_sequences(self):
-        """Test multi-line sequences are concatenated."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">P01308\nAAAA\nBBBB\nCCCC\n")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert result == {"P01308": "AAAABBBBCCCC"}
-
-    def test_empty_file(self):
-        """Test empty file returns empty dict."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write("")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert result == {}
-
-    def test_header_whitespace_extraction(self):
-        """Test that only first word after > is used as header."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">sp|P01308|INS_HUMAN Insulin OS=Homo sapiens\nMKSGS\n")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert "sp|P01308|INS_HUMAN" in result
-        assert result["sp|P01308|INS_HUMAN"] == "MKSGS"
-
-    def test_trailing_whitespace_stripped(self):
-        """Test that trailing whitespace in sequence lines is stripped."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(">P01308\nAAAA   \nBBBB\t\n")
-            f.flush()
-
-            result = parse_fasta(Path(f.name))
-
-        assert result == {"P01308": "AAAABBBB"}
+        assert parse_fasta(fasta) == expected
 
 
 class TestIsFastaFile:
