@@ -136,11 +136,22 @@ async def test_malformed_job_id_is_rejected_before_lookup(app_factory):
         assert r.status_code == 422
 
 
-async def test_healthz_reflects_running_jobs(app_factory):
-    app = app_factory()
+async def test_healthz_reflects_running_jobs(app_factory, gated_pipeline):
+    app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
         r = await c.get("/healthz")
         assert r.status_code == 200
+        assert r.json() == {"ok": True, "jobs": {"running": 0, "queued": 0}}
+
+        files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
+        job_id = (await c.post("/api/prepare", files=files)).json()["job_id"]
+        await gated_pipeline.started.wait()
+        r = await c.get("/healthz")
+        assert r.json()["jobs"] == {"running": 1, "queued": 0}
+
+        gated_pipeline.release.set()
+        assert (await _drain_events(c, job_id))[-1] == "done"
+        r = await c.get("/healthz")
         assert r.json()["jobs"] == {"running": 0, "queued": 0}
 
 

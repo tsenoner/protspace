@@ -13,9 +13,6 @@ os.environ.setdefault("PREP_JOB_ROOT", _TEST_JOB_ROOT)
 atexit.register(shutil.rmtree, _TEST_JOB_ROOT, ignore_errors=True)
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
-from protspace_prep.app import create_app
 
 
 class GatedPipeline:
@@ -41,11 +38,3 @@ class GatedPipeline:
 @pytest.fixture
 def gated_pipeline() -> GatedPipeline:
     return GatedPipeline()
-
-
-@pytest.fixture
-async def client():
-    app = create_app()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
