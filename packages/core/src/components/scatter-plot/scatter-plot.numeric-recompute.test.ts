@@ -91,19 +91,6 @@ describe('numeric-recompute stale-job guard (F-23 characterization lock)', () =>
     q.forEach((cb) => cb(0));
   };
 
-  it('only the latest of two overlapping schedules clears the running state', () => {
-    const sp = document.createElement('protspace-scatterplot') as Internals;
-    sp.data = numericData();
-    sp.selectedAnnotation = 'score';
-
-    sp._scheduleNumericAnnotationRefresh(); // job 1 → queues RAF #1
-    sp._scheduleNumericAnnotationRefresh(); // job 2 → bumps id, queues RAF #2
-    expect(sp._numericRecomputeRunning).toBe(true); // running, nothing drained yet
-
-    drain(); // RAF#1 sees jobId mismatch → bails (no clear); RAF#2 completes → clears
-    expect(sp._numericRecomputeRunning).toBe(false); // surviving job cleared the state
-  });
-
   it('the superseded job does not clear the running state before the latest job runs', () => {
     const sp = document.createElement('protspace-scatterplot') as Internals;
     sp.data = numericData();

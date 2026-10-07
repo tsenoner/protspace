@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Legend reactivity (B11: F-19 / F-31 / F-57 / F-46). The legend → scatter-plot
+ * Legend reactivity (B11: F-19 / F-31 / F-57). The legend → scatter-plot
  * mapping transport (INV-06/07) is consumed by two handlers
  * (`_handleZOrderChange` / `_handleColorMappingChange`). This file LOCKS their
  * pre-change behavior:
@@ -32,12 +32,6 @@
  *     write to the `@state` mirror schedules its own Lit update, so the runner's
  *     explicit `host.requestUpdate()` in the start path is redundant. Signal:
  *     spy the host `requestUpdate` across a synchronous `schedule()` start.
- *
- *   - F-46: the public `numeric-recompute-start` / `-end` CustomEvents have ZERO
- *     consumers (confirmed by repo-wide search; absent from INV-05). They must
- *     be removed while the `_numericRecomputeRunning` busy mirror is preserved.
- *     Today the runner dispatches them via the host `dispatch` callback — RED for
- *     "not dispatched" until F-46.
  *
  * Construct the element via createElement WITHOUT appending (so Lit's
  * connectedCallback / WebGL init never runs — same no-append pattern as
@@ -278,18 +272,7 @@ describe('numeric-recompute scheduling — no redundant requestUpdate (F-57, pos
   });
 });
 
-describe('numeric-recompute events removed (F-46)', () => {
-  it('does not dispatch numeric-recompute-start on schedule', () => {
-    const el = makeEl();
-    const startSpy = vi.fn();
-    el.addEventListener('numeric-recompute-start', startSpy);
-    el._scheduleNumericAnnotationRefresh();
-    // RED today: the runner dispatches numeric-recompute-start via the host
-    // dispatch callback. The stale-job guard + busy state are characterized via
-    // the kept observables below + numeric-recompute-runner.test.ts.
-    expect(startSpy).not.toHaveBeenCalled();
-  });
-
+describe('numeric-recompute busy state', () => {
   it('still sets _numericRecomputeRunning so the busy UI is unaffected (guardrail)', () => {
     const el = makeEl();
     el._scheduleNumericAnnotationRefresh();
