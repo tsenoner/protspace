@@ -554,182 +554,82 @@ class TestIntegration:
 
         assert result["xref_pdb"].tolist() == ["", "False", "True"]
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_complete_workflow(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test complete workflow from initialization to DataFrame creation."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        # Test
-        headers = SAMPLE_HEADERS
-        annotations = ["length", "genus", "species"]
-        extractor = ProteinAnnotationExtractor(headers=headers, annotations=annotations)
-
-        result = extractor.to_pd()
-
-        # Verify result
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 3
-        assert "identifier" in result.columns
-        assert "genus" in result.columns
-        assert "species" in result.columns
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_with_file_output(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test workflow with file output."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = {}
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        # Test with file output
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "output.csv"
-            headers = SAMPLE_HEADERS
-
-            extractor = ProteinAnnotationExtractor(
-                headers=headers,
-                annotations=["length"],
-                output_path=output_path,
+    @pytest.fixture
+    def sample_retrievers(self):
+        """Patch UniProt and Taxonomy to serve the module's sample proteins."""
+        with (
+            patch("src.protspace.data.annotations.manager.UniProtRetriever") as uniprot,
+            patch(
+                "src.protspace.data.annotations.manager.TaxonomyRetriever"
+            ) as taxonomy,
+        ):
+            uniprot.return_value.failed_batch_count = 0
+            uniprot.return_value.fetch_annotations.return_value = (
+                SAMPLE_PROTEIN_ANNOTATIONS
             )
+            taxonomy.return_value.fetch_annotations.return_value = (
+                SAMPLE_TAXONOMY_ANNOTATIONS
+            )
+            yield uniprot, taxonomy
 
-            result = extractor.to_pd()
-
-            # Verify file was created and DataFrame loaded from it
-            assert output_path.exists()
-            assert isinstance(result, pd.DataFrame)
-            assert len(result) == 3
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_to_pd_annotation_filtering(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    def test_to_pd_returns_requested_annotations_with_merged_values(
+        self, sample_retrievers
     ):
-        """Test that only requested annotations are returned."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
+        """Only the requested columns come back, with taxonomy merged by organism."""
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, annotations=["length", "genus", "species"]
+        ).to_pd()
 
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+        assert list(result.columns) == ["identifier", "length", "genus", "species"]
+        assert result["identifier"].tolist() == SAMPLE_HEADERS
+        assert result["length"].tolist() == ["110", "142", "85"]
+        assert result["genus"].tolist() == ["Homo", "Homo", "Mus"]
+        assert result["species"].tolist() == [
+            "Homo sapiens",
+            "Homo sapiens",
+            "Mus musculus",
+        ]
 
-        # Test with specific annotations including length
-        headers = SAMPLE_HEADERS
-        requested_annotations = ["length", "genus"]
-        extractor = ProteinAnnotationExtractor(
-            headers=headers, annotations=requested_annotations
-        )
+    def test_to_pd_with_file_output(self, sample_retrievers, tmp_path):
+        """A requested subset is still filtered after the cache is written."""
+        output_path = tmp_path / "output.csv"
 
-        result = extractor.to_pd()
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS,
+            annotations=["length"],
+            output_path=output_path,
+        ).to_pd()
 
-        # Should only have identifier + requested annotations
-        expected_columns = {"identifier", "length", "genus"}
-        assert set(result.columns) == expected_columns
+        assert output_path.exists()
+        assert list(result.columns) == ["identifier", "length"]
+        assert len(result) == 3
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_internal_columns_removed_from_output(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
+    @pytest.mark.parametrize("with_cache", [False, True])
+    def test_internal_columns_dropped_from_output_but_kept_in_cache(
+        self, sample_retrievers, tmp_path, with_cache
     ):
-        """Test that internal columns (organism_id) are removed from final output."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
+        """organism_id and sequence never reach the output; the cache keeps them.
 
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
+        The cache needs organism_id for future cache hits. Without an
+        ``output_path`` no cache is written and the output is dropped the same way.
+        """
+        cache_path = tmp_path / "cache.parquet"
 
-        # Test with default annotations (no specific annotations requested)
-        headers = SAMPLE_HEADERS
-        extractor = ProteinAnnotationExtractor(headers=headers)
+        result = ProteinAnnotationExtractor(
+            headers=SAMPLE_HEADERS, output_path=cache_path if with_cache else None
+        ).to_pd()
 
-        result = extractor.to_pd()
-
-        # Internal columns should never appear in final output
         assert "organism_id" not in result.columns
         assert "sequence" not in result.columns
-
-        # Default group annotations should be present (length is now user-facing)
+        # Default group annotations are present (length is user-facing)
         assert "length" in result.columns
         assert "protein_families" in result.columns
-
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
-    def test_internal_columns_kept_in_cache_file(
-        self, mock_uniprot_retriever, mock_taxonomy_retriever
-    ):
-        """Test that internal columns are kept in cache file but removed from returned DataFrame."""
-        # Setup mocks
-        mock_uniprot_instance = Mock()
-        mock_uniprot_instance.failed_batch_count = 0
-        mock_uniprot_instance.fetch_annotations.return_value = (
-            SAMPLE_PROTEIN_ANNOTATIONS
-        )
-        mock_uniprot_retriever.return_value = mock_uniprot_instance
-
-        mock_taxonomy_instance = Mock()
-        mock_taxonomy_instance.fetch_annotations.return_value = (
-            SAMPLE_TAXONOMY_ANNOTATIONS
-        )
-        mock_taxonomy_retriever.return_value = mock_taxonomy_instance
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cache_path = Path(temp_dir) / "cache.parquet"
-            headers = SAMPLE_HEADERS
-            extractor = ProteinAnnotationExtractor(
-                headers=headers, output_path=cache_path
-            )
-
-            result = extractor.to_pd()
-
-            # Cache file should contain internal columns for future cache hits
+        if with_cache:
             cached_df = pd.read_parquet(cache_path)
             assert "organism_id" in cached_df.columns
             assert "length" in cached_df.columns
-
-            # But returned DataFrame should not have organism_id
-            assert "organism_id" not in result.columns
-            assert "sequence" not in result.columns
-            # length is now a user-facing annotation in the default group
-            assert "length" in result.columns
+        else:
+            assert not cache_path.exists()
 
 
 class TestExpandAnnotationGroups:
