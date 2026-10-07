@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.16.2 (2026-10-07)
+
+### Bug Fixes
+
+- **annotate**: Fail the Biocentral source when the client no longer lists a model
+  ([`030e5a7`](https://github.com/tsenoner/protspace/commit/030e5a76a53680723001acabb4fcfce9bafa4a06))
+
+### Continuous Integration
+
+- **biocentral**: Check the live server against the shipped client once a day
+  ([`f4b6c90`](https://github.com/tsenoner/protspace/commit/f4b6c903e1e3fe754c7995b753eb8ba8a3b4a26f))
+
+
 ## v4.16.1 (2026-10-07)
 
 ### Bug Fixes
