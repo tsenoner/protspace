@@ -288,12 +288,15 @@ def test_cluster_self_validity_matches_direct_annotation_scoring():
     assert pipeline_rows  # the guard is worthless if it compares two empty lists
 
     # Rebuild the labels the way an out-of-band re-score must: from the membership
-    # column already in the bundle, with the `|silhouette` confidence stripped.
+    # column already in the bundle, read as it is.
     column = next(o for o in outs if isinstance(o, AnnotationColumn))
-    labels = {pid: str(v).split("|", 1)[0] for pid, v in column.values.items()}
     direct = AnnotationValidityStatistic(label_kind="kmeans_elbow").compute(
         StatContext(
-            "projection", "PCA_2", coords=X, ids=ids, annotations={column.name: labels}
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            annotations={column.name: column.values},
         )
     )
 
