@@ -474,24 +474,6 @@ test.describe('URL-backed explore view state', () => {
     expect(assignments.projections).not.toContain(demoDefaultProjection);
   });
 
-  test('normalizes fully invalid params while preserving unrelated ones', async ({ page }) => {
-    await openExplore(page, '?seed=baseline');
-    const baselineHistoryLength = await page.evaluate(() => history.length);
-
-    await openExplore(page, '?annotation=bad_value&projection=bad_projection&foo=1');
-
-    const currentView = await getCurrentView(page);
-    expect(currentView.annotation).not.toBe('bad_value');
-    expect(currentView.projection).not.toBe('bad_projection');
-    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
-    await expectUrlParam(page, 'projection', currentView.projection ?? '');
-    await expect(page).toHaveURL(/foo=1/);
-    await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
-
-    await page.goBack();
-    await expect(page).toHaveURL('/explore?seed=baseline');
-  });
-
   test(
     'normalizes duplicate, empty, and partially invalid view params',
     { tag: '@cross-browser' },
@@ -580,7 +562,8 @@ test.describe('URL-backed explore view state', () => {
     'pushes one history entry for a user change and back/forward restores in one step',
     { tag: '@cross-browser' },
     async ({ page }) => {
-      await openExplore(page);
+      // `foo=1` is a param the app does not own: the push must carry it along.
+      await openExplore(page, '?foo=1');
       await waitForExploreInteractionReady(page);
 
       const initialView = await getCurrentView(page);
@@ -599,6 +582,7 @@ test.describe('URL-backed explore view state', () => {
         await waitForView(page, { annotation: nextAnnotation! });
         await expectUrlParam(page, 'annotation', nextAnnotation!);
         await expectUrlParam(page, 'projection', initialView.projection!);
+        await expectUrlParam(page, 'foo', '1');
 
         const afterChangeHistoryLength = await page.evaluate(() => history.length);
         expect(afterChangeHistoryLength).toBe(initialHistoryLength + 1);
@@ -652,25 +636,6 @@ test.describe('URL-backed explore view state', () => {
     });
 
     expectViewNotReloaded(stability);
-  });
-
-  test('preserves unrelated params when a user-driven change updates the URL', async ({ page }) => {
-    await openExplore(page, '?foo=1');
-
-    const initialView = await getCurrentView(page);
-    const nextAnnotation = initialView.annotations.find(
-      (annotation) => annotation !== initialView.annotation,
-    );
-
-    expect(nextAnnotation).toBeTruthy();
-
-    await selectAnnotation(page, nextAnnotation!);
-    await waitForView(page, { annotation: nextAnnotation! });
-
-    const currentView = await getCurrentView(page);
-    await expect(page).toHaveURL(/foo=1/);
-    await expectUrlParam(page, 'annotation', currentView.annotation ?? '');
-    await expectUrlParam(page, 'projection', currentView.projection ?? '');
   });
 
   test('applies ?density= and keeps it across an annotation change', async ({ page }) => {
