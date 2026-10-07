@@ -11,12 +11,6 @@ describe('WebGLRenderer init failure (F-03 characterization lock)', () => {
   // a console spy into the rest of the suite.
   afterEach(() => vi.restoreAllMocks());
 
-  it('getContext(webgl2) null → render() is a no-op, does not throw', () => {
-    const { renderer: r } = makeRenderer({ contextUnavailable: true });
-    expect(() => r.render(pd)).not.toThrow();
-    // No usable context, so no draw is attempted. drawArrays spy proves nothing rendered.
-  });
-
   it('program link failure → render() does not throw and draws nothing', () => {
     const { renderer: r, gl } = makeRenderer({ failProgramLink: true });
     const drawSpy = vi.spyOn(gl, 'drawArrays');
@@ -24,7 +18,7 @@ describe('WebGLRenderer init failure (F-03 characterization lock)', () => {
     expect(drawSpy).not.toHaveBeenCalled();
   });
 
-  it('console.error is emitted (not swallowed) when getContext returns null', () => {
+  it('getContext(webgl2) null → render() does not throw and reports it on console.error', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     makeRenderer({ contextUnavailable: true }).renderer.render(pd);
     expect(errSpy).toHaveBeenCalledWith('WebGL2 not available');
