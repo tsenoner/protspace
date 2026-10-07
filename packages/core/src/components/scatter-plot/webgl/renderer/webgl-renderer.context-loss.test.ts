@@ -1,29 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
-import type { PlotData } from '@protspace/utils';
-import type { ScalePair } from '../types';
+import type { WebGLRenderer } from './webgl-renderer';
 import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { GAMMA_FRAGMENT_SHADER } from './export-shaders';
-import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer, plotData, plotDataFrom } from './test-support/renderer-fixture';
 
-// The shared mock-webgl2 harness provides the full gl.* surface the render path needs
-// (incl. uniform3f / disableVertexAttribArray), so render()-driven tests below can
-// exercise the real path via createMockCanvas directly.
-const pd: PlotData = {
-  length: 2,
-  xs: new Float32Array([0, 1]),
-  ys: new Float32Array([0, 1]),
-  zs: null,
-  originalIndices: null,
-  proteinIds: ['p0', 'p1'],
-};
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
+const pd = plotDataFrom([0, 1], [0, 1]);
 describe('WebGLRenderer context loss (F-09 characterization lock)', () => {
   let rafQueue: FrameRequestCallback[];
   beforeEach(() => {
@@ -44,16 +26,8 @@ describe('WebGLRenderer context loss (F-09 characterization lock)', () => {
   };
 
   it('webglcontextlost on a rendering renderer preventDefaults and fires onContextLost once', () => {
-    const { canvas } = createMockCanvas();
     const onLost = vi.fn();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-      onLost,
-    );
+    const { renderer: r, canvas } = makeRenderer({}, undefined, { onContextLost: onLost });
     r.render(pd); // live GL resources, so the loss resets real renderer state
     const ev = new Event('webglcontextlost', { cancelable: true });
     const prevented = !canvas.dispatchEvent(ev);
@@ -63,16 +37,8 @@ describe('WebGLRenderer context loss (F-09 characterization lock)', () => {
   });
 
   it('destroy() removes the loss listener (a later loss does not fire onContextLost)', () => {
-    const { canvas } = createMockCanvas();
     const onLost = vi.fn();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-      onLost,
-    );
+    const { renderer: r, canvas } = makeRenderer({}, undefined, { onContextLost: onLost });
     r.destroy();
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     expect(onLost).not.toHaveBeenCalled();
@@ -87,14 +53,7 @@ describe('WebGLRenderer context loss (F-09 characterization lock)', () => {
   // that a restore event does not re-render.
   it('F-39: no webglcontextrestored listener — dispatching restore does NOT re-render', () => {
     const addSpy = vi.spyOn(HTMLCanvasElement.prototype, 'addEventListener');
-    const { canvas } = createMockCanvas();
-    const r = new WebGLRenderer(
-      canvas,
-      scales,
-      () => d3.zoomIdentity,
-      () => ({ width: 800, height: 600 }),
-      styleGetters(),
-    );
+    const { renderer: r, canvas } = makeRenderer();
     const types = addSpy.mock.calls.map((c) => c[0]);
     expect(types).toContain('webglcontextlost');
     expect(types).not.toContain('webglcontextrestored');

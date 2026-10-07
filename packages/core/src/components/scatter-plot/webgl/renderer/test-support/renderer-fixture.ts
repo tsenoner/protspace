@@ -30,10 +30,34 @@ export function plotData(length: number): PlotData {
   };
 }
 
+/**
+ * A PlotData with the given coordinates and ids `p0..pN-1`, for suites whose
+ * assertions depend on the positions (signatures, export extents).
+ */
+export function plotDataFrom(xs: number[], ys: number[]): PlotData {
+  return {
+    length: xs.length,
+    xs: new Float32Array(xs),
+    ys: new Float32Array(ys),
+    zs: null,
+    originalIndices: null,
+    proteinIds: xs.map((_, i) => `p${i}`),
+  };
+}
+
+/** The default scales: the unit data square onto the 800×600 canvas. */
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
 });
+
+/** What a suite can swap into the renderer the fixture builds. */
+interface RendererOverrides {
+  getConfig?: () => ScatterplotConfig;
+  getTransform?: () => d3.ZoomTransform;
+  getScales?: () => ScalePair | null;
+  onContextLost?: () => void;
+}
 
 /**
  * The canonical `WebGLStyleGetters` stub.
@@ -61,30 +85,34 @@ type MockGL = Record<string, ReturnType<typeof vi.fn>>;
 /**
  * A renderer over a mock GL context, with the style getters supplied by the
  * caller — for suites whose getters change mid-session. `overrides` swaps in a
- * live config or camera.
+ * live config, camera, scales or context-loss callback.
  */
 export function makeRendererWithStyle(
   styleGetters: WebGLStyleGetters,
   opts: MockGLOptions = {},
-  overrides: { getConfig?: () => ScatterplotConfig; getTransform?: () => d3.ZoomTransform } = {},
+  overrides: RendererOverrides = {},
 ) {
   const { canvas, gl, setContextLost } = createMockCanvas(opts);
   const degraded: RendererDegradedDetail[] = [];
   const renderer = new WebGLRenderer(
     canvas,
-    scales,
+    overrides.getScales ?? scales,
     overrides.getTransform ?? (() => d3.zoomIdentity),
     overrides.getConfig ?? (() => ({ width: 800, height: 600 })),
     styleGetters,
-    undefined,
+    overrides.onContextLost,
     () => [1, 1, 1],
     (detail) => degraded.push(detail),
   );
-  return { renderer, gl: gl as unknown as MockGL, degraded, setContextLost };
+  return { renderer, canvas, gl: gl as unknown as MockGL, degraded, setContextLost };
 }
 
-export function makeRenderer(opts: MockGLOptions = {}, colors?: string[]) {
-  return makeRendererWithStyle(styleGetters(colors), opts);
+export function makeRenderer(
+  opts: MockGLOptions = {},
+  colors?: string[],
+  overrides: RendererOverrides = {},
+) {
+  return makeRendererWithStyle(styleGetters(colors), opts, overrides);
 }
 
 /** Arguments of every texImage2D call, as [width, height] pairs. */

@@ -1,35 +1,19 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
-import type { PlotData } from '@protspace/utils';
 import type { ScalePair } from '../types';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import {
+  makeRenderer as makeFixtureRenderer,
+  plotDataFrom as pd,
+} from './test-support/renderer-fixture';
 
-function pd(xs: number[], ys: number[]): PlotData {
-  return {
-    length: xs.length,
-    xs: new Float32Array(xs),
-    ys: new Float32Array(ys),
-    zs: null,
-    originalIndices: null,
-    proteinIds: xs.map((_, i) => `p${i}`),
-  };
-}
+// This suite keeps its own [0, 10] data domain instead of the fixture's unit square.
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 10]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 10]).range([0, 600]),
 });
 function makeRenderer() {
-  const { canvas } = createMockCanvas();
-  return new WebGLRenderer(
-    canvas,
-    scales,
-    () => d3.zoomIdentity,
-    () => ({ width: 800, height: 600 }),
-    styleGetters(['#ff0000']),
-  );
+  return makeFixtureRenderer({}, ['#ff0000'], { getScales: scales }).renderer;
 }
 
 describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', () => {
