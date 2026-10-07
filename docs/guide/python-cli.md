@@ -477,6 +477,29 @@ separator, so such an identifier can never become the dataset you asked for.
 > directory of them as much as a single file. A `-f` path that does not exist is rejected outright
 > rather than ignored.
 
+### No healthy Biocentral service became available
+
+With the default `biocentral` backend, ProtSpace waits 30 seconds for the Biocentral server and then
+stops with `ERROR: No healthy Biocentral service became available in time`, followed by the reason:
+
+- **The server did not answer** (a connection error or a `503`). Biocentral is down or unreachable.
+  Retry later, or embed on your own hardware with `--backend local`.
+- **The server runs a version this release does not support.** The message names both versions and
+  the range your installed client accepts, for example
+  `runs Biocentral v3.0.0, but the installed biocentral-api 2.0.0 only supports servers v2.0.0 up to (not including) v3.0.0`.
+  The Biocentral client and server change major version together, and a ProtSpace release works with
+  one of them. Upgrade with `pip install -U protspace`, which needs Python 3.12 or newer.
+
+Annotation fails softly: with `-a biocentral`, the Biocentral columns are left empty with the same
+message as a warning, and are not cached, so a later run asks again.
+
+::: warning Python 3.14 and `pip`
+The Biocentral client declares `Python <3.14`, and `pip` honours that: on 3.14 it cannot install the
+current client, so `pip install protspace` settles on an older ProtSpace release without failing. The
+client itself runs on 3.14. Install with `uv pip install protspace`, which ignores that upper bound, or
+use Python 3.12 or 3.13. Check what you got with `pip show protspace`.
+:::
+
 ## `protspace project`
 
 Run dimensionality reduction on existing HDF5 embeddings. Writes

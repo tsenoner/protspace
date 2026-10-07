@@ -12,6 +12,8 @@ import numpy as np
 from biocentral_api import BiocentralAPI, CommonEmbedder, batched
 from tqdm import tqdm
 
+from protspace.data.biocentral_connection import BIOCENTRAL_URL, wait_for_server
+
 # Re-exported: the HDF5 layer moved to `store` so neither backend owns it. All
 # but `load_existing_ids` are used below; they stay importable from here for
 # out-of-repo callers that predate the move, which is the only reason
@@ -26,13 +28,17 @@ from protspace.data.embedding.store import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# Short aliases → CommonEmbedder enum member names.
+# Short aliases → the model id the server is asked to embed with, for the models the
+# client lists in ``CommonEmbedder``. The ids are held here rather than read off the enum
+# by member name: the names change between client releases (2.0 renamed ``ESM_8M``) and a
+# renamed member must not break importing this package, offline backend included. A test
+# pins them to the ids the client lists.
 MODEL_SHORT_KEYS: dict[str, str] = {
-    "prot_t5": "ProtT5",
-    "prost_t5": "ProstT5",
-    "esm2_8m": "ESM_8M",
-    "esm2_650m": "ESM2_650M",
-    "esm2_3b": "ESM2_3B",
+    "prot_t5": "Rostlab/prot_t5_xl_uniref50",
+    "prost_t5": "Rostlab/ProstT5",
+    "esm2_8m": "facebook/esm2_t6_8M_UR50D",
+    "esm2_650m": "facebook/esm2_t33_650M_UR50D",
+    "esm2_3b": "facebook/esm2_t36_3B_UR50D",
 }
 
 # Extra models not in CommonEmbedder — short key → full HuggingFace name.
@@ -68,9 +74,7 @@ class EmbedConfig:
 
 
 # Reverse lookup: full model name → short key
-_FULL_TO_SHORT: dict[str, str] = {
-    CommonEmbedder[v].value: k for k, v in MODEL_SHORT_KEYS.items()
-} | {v: k for k, v in EXTRA_SHORT_KEYS.items()}
+_FULL_TO_SHORT: dict[str, str] = {v: k for k, v in ALL_SHORT_KEYS.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -81,19 +85,13 @@ _FULL_TO_SHORT: dict[str, str] = {
 def resolve_embedder(name: str) -> str:
     """Resolve a short alias to the full embedder name.
 
-    Checks ``MODEL_SHORT_KEYS`` (CommonEmbedder models), then
-    ``EXTRA_SHORT_KEYS`` (arbitrary HuggingFace models), then enum
-    member names, then raw values.  Raises :class:`SystemExit` with
-    suggestions if the name is unrecognised.
+    Checks the shortcuts (``MODEL_SHORT_KEYS``, the models the client lists in
+    ``CommonEmbedder``, then ``EXTRA_SHORT_KEYS``, arbitrary HuggingFace models), then
+    enum member names, then raw values.  Raises :class:`SystemExit` with suggestions
+    if the name is unrecognised.
     """
-    if name in MODEL_SHORT_KEYS:
-        full = CommonEmbedder[MODEL_SHORT_KEYS[name]].value
-        logger.info("Resolved embedder '%s' → '%s'", name, full)
-        return full
-
-    # Extra models (not in CommonEmbedder enum)?
-    if name in EXTRA_SHORT_KEYS:
-        full = EXTRA_SHORT_KEYS[name]
+    if name in ALL_SHORT_KEYS:
+        full = ALL_SHORT_KEYS[name]
         logger.info("Resolved embedder '%s' → '%s'", name, full)
         return full
 
@@ -192,8 +190,7 @@ def embed_sequences(
 
     # Connect to Biocentral
     logger.info("Connecting to Biocentral server...")
-    api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
-    api = api.wait_until_healthy(max_wait_seconds=30)
+    api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))
     logger.info("Server is healthy")
 
     # Batch and embed
@@ -299,8 +296,7 @@ def probe_embedder(
     for pid, seq in probe_seqs.items():
         print(f"  {pid}: {seq[:40]}{'...' if len(seq) > 40 else ''} ({len(seq)} aa)")
 
-    api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
-    api = api.wait_until_healthy(max_wait_seconds=30)
+    api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))
 
     result = api.embed(
         embedder_name=embedder,

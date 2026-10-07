@@ -7,6 +7,7 @@ import warnings
 from tqdm import tqdm
 
 from protspace.data.annotations.retrievers.base_retriever import BaseAnnotationRetriever
+from protspace.data.biocentral_connection import BIOCENTRAL_URL, wait_for_server
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ _PREDICTION_MODELS = {
 # untested beyond a few thousand, and an example-scale run is 100K-485K.
 _BATCH_SIZE = 1000
 
-# The server's per-sequence length limits (biocentral.rostlab.org v1.2.1). It
+# The server's per-sequence length limits (the same on v1.2.1 and v2.0.1). It
 # answers a request holding any sequence outside them with 422 for the whole
 # request, so such sequences are never sent: they cannot be predicted at all.
 _MIN_SEQUENCE_LENGTH = 7
@@ -116,8 +117,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
         from biocentral_api import BiocentralAPI, BiocentralPredictionModel
 
         try:
-            api = BiocentralAPI(fixed_server_url="https://biocentral.rostlab.org")
-            api = api.wait_until_healthy(max_wait_seconds=30)
+            api = wait_for_server(BiocentralAPI(fixed_server_url=BIOCENTRAL_URL))
         except Exception as e:
             self.prediction_failed = True
             logger.warning(f"Biocentral API not available: {e}")

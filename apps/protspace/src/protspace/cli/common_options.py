@@ -37,8 +37,9 @@ class Backend(StrEnum):
 # ---------------------------------------------------------------------------
 
 # Mirrors ALL_SHORT_KEYS in data.embedding.biocentral, which is not imported
-# here because it pulls h5py/numpy/biocentral_api (~400 ms) into every CLI
-# startup, including `--help`. test_cli_no_similarity.py fails if they drift.
+# here because it pulls h5py/numpy/biocentral_api (~400 ms, ~0.9 s where torch is
+# installed: biotrainer-core imports it) into every CLI startup, including `--help`.
+# test_cli_no_similarity.py fails if they drift.
 EMBEDDER_MODELS: tuple[str, ...] = (
     "prot_t5",
     "prost_t5",
