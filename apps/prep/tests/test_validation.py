@@ -99,6 +99,27 @@ def test_rejects_nucleotide_only():
     assert exc.value.code is ValidationCode.MALFORMED_FASTA
 
 
+def test_rejects_header_without_identifier():
+    # A bare ">" is a 400, not an IndexError from splitting an empty header.
+    with pytest.raises(FastaValidationError) as exc:
+        parse_and_validate(">\nMKT\n", settings())
+    assert exc.value.code is ValidationCode.MALFORMED_FASTA
+
+
+@pytest.mark.parametrize("sequence", ["MKT1A", "MK#T"])
+def test_rejects_non_protein_characters(sequence):
+    with pytest.raises(FastaValidationError) as exc:
+        parse_and_validate(f">id\n{sequence}\n", settings())
+    assert exc.value.code is ValidationCode.MALFORMED_FASTA
+    assert "non-protein" in exc.value.message
+
+
+def test_accepts_utf8_byte_order_mark():
+    # Windows editors prepend a BOM; str.strip() does not remove U+FEFF.
+    records = parse_and_validate("\ufeff>id\nMKT\n", settings())
+    assert [r.identifier for r in records] == ["id"]
+
+
 def test_strips_whitespace_and_uppercases_sequence():
     text = ">id description here\n  mkt ay ia\nKQRQ\n"
     records = parse_and_validate(text, settings())

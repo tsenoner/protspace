@@ -5,6 +5,10 @@ name: prep CI (Python)
 # path-filters to prep changes. Run steps use working-directory: apps/prep; uv
 # detects the workspace root and uses the root lock — which is why uv.lock is in
 # the paths filter, since a dependency bump reaches prep only through that file.
+# apps/protspace/src/** and its pyproject.toml are in it too: prep imports
+# protspace and shells out to its CLI (`protspace` entry point), and the
+# prep-source-coupling spec requires a change that breaks either to fail the
+# prep suite in that same change.
 #
 # One job rather than protspace-ci.yml's lint/test split: that split pays for
 # itself there because `test` is a 3-version matrix, so a merged job would run
@@ -17,11 +21,15 @@ on:
     branches: [main]
     paths:
       - 'apps/prep/**'
+      - 'apps/protspace/src/**'
+      - 'apps/protspace/pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/prep-ci.yml'
   pull_request:
     paths:
       - 'apps/prep/**'
+      - 'apps/protspace/src/**'
+      - 'apps/protspace/pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/prep-ci.yml'
 

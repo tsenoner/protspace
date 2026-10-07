@@ -3,7 +3,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import typer
 
+from protspace.cli.app import app as protspace_cli
 from protspace_prep.config import load_settings
 from protspace_prep.jobs import JobContext, PipelineFailure
 from protspace_prep.pipeline import (
@@ -56,11 +58,13 @@ def _make_step_router(
     fail_step: str | None = None,
     fail_returncode: int = 2,
     fail_stderr: list[bytes] | None = None,
+    calls: list[list[str]] | None = None,
 ):
     """Return a fake create_subprocess_exec that simulates each protspace step.
 
     Each successful step writes its expected output artifact so the next step
-    sees a populated filesystem (mirrors what the real CLI does).
+    sees a populated filesystem (mirrors what the real CLI does). When *calls*
+    is given, every protspace argv is appended to it.
     """
     embed_dir = ctx.output_dir / "embed"
     project_dir = ctx.output_dir / "project"
@@ -72,6 +76,8 @@ def _make_step_router(
         if not cmd or cmd[0] != "protspace":
             return _mock_subprocess(returncode=0)
         step = cmd[1] if len(cmd) > 1 else ""
+        if calls is not None:
+            calls.append(list(cmd))
         if step == fail_step:
             return _mock_subprocess(
                 returncode=fail_returncode,
@@ -111,6 +117,64 @@ async def test_success_path_writes_bundle_and_emits_stages(ctx):
     assert stages.index("embedding") < stages.index("projecting")
     assert stages.index("annotating") < stages.index("projecting")
     assert stages.index("projecting") < stages.index("bundling")
+
+
+async def test_pipeline_argv_parses_against_the_real_protspace_cli(ctx):
+    """Every subprocess argv must be accepted by the in-repo protspace CLI.
+
+    prep-source-coupling: renaming or removing a flag of a subcommand prep
+    invokes has to fail the prep suite in the same change, not in production.
+    This parses without executing, so it catches renamed, removed or retyped
+    options; value grammar (e.g. the ``-m`` method list) is interpreted inside
+    the command bodies and is not checked here. Parsing runs after the
+    pipeline, while the step router's files satisfy the ``exists=True`` checks.
+    """
+    settings = load_settings()
+    calls: list[list[str]] = []
+    with patch(
+        "asyncio.create_subprocess_exec", new=_make_step_router(ctx, calls=calls)
+    ):
+        await run_protspace_prepare(ctx, AsyncMock(), settings=settings)
+
+    assert sorted(cmd[1] for cmd in calls) == ["annotate", "bundle", "embed", "project"]
+    group = typer.main.get_command(protspace_cli)
+    parsed: dict[str, dict] = {}
+    for cmd in calls:
+        assert cmd[0] == "protspace"
+        group_ctx = group.make_context("protspace", cmd[1:2])
+        command = group.get_command(group_ctx, cmd[1])
+        assert command is not None, f"protspace has no {cmd[1]!r} subcommand"
+        parsed[cmd[1]] = command.make_context(cmd[1], cmd[2:], parent=group_ctx).params
+
+    # The values land on the parameters prep means them for (raw, pre-conversion).
+    # The step router writes to fixed paths whatever the argv says, so these
+    # are the only checks that catch a wrong or swapped input/output path.
+    out = ctx.output_dir
+    fasta = str(out / "input.normalized.fasta")
+    expected = {
+        "embed": {
+            "input": fasta,
+            "embedder": (settings.embedder,),
+            "output": str(out / "embed"),
+        },
+        "annotate": {
+            "input": fasta,
+            "annotations": (settings.annotations,),
+            "output": str(out / "annotations.parquet"),
+        },
+        "project": {
+            "input": (str(out / "embed" / "prot_t5.h5"),),
+            "methods": (settings.methods,),
+            "output": str(out / "project"),
+        },
+        "bundle": {
+            "projections": str(out / "project"),
+            "annotations": str(out / "annotations.parquet"),
+            "output": str(out / "data.parquetbundle"),
+        },
+    }
+    for step, params in expected.items():
+        assert {name: parsed[step][name] for name in params} == params, step
 
 
 async def test_embed_and_annotate_run_concurrently(ctx):
@@ -183,7 +247,10 @@ async def test_annotate_failure_raises_pipeline_failure(ctx):
 async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc = MagicMock()
     proc.returncode = None
-    proc.kill = MagicMock()
+    # The process exits once killed, as a real one does; otherwise _run_step
+    # waits out its 5s post-kill grace period.
+    killed = asyncio.Event()
+    proc.kill = MagicMock(side_effect=killed.set)
     proc.stderr = MagicMock()
 
     async def _readline():
@@ -193,8 +260,8 @@ async def test_pipeline_timeout_kills_subprocess_and_raises(ctx):
     proc.stderr.readline = _readline
 
     async def _wait():
-        await asyncio.sleep(60)
-        return 0
+        await killed.wait()
+        return -9
 
     proc.wait = _wait
 
