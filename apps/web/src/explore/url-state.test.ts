@@ -658,21 +658,6 @@ describe('explore url state', () => {
   });
 
   describe('density param', () => {
-    it('parses a valid density mode', () => {
-      const parsed = parseExploreViewRequest(new URLSearchParams('density=auto'));
-
-      expect(parsed.requested.density).toBe('auto');
-      expect(parsed.present.density).toBe(true);
-      expect(parsed.normalize.density).toBe(false);
-    });
-
-    it('rejects a value outside the three modes and marks it for normalization', () => {
-      const parsed = parseExploreViewRequest(new URLSearchParams('density=bogus'));
-
-      expect(parsed.requested.density).toBeUndefined();
-      expect(parsed.normalize.density).toBe(true);
-    });
-
     it('flags duplicate density keys for normalization', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams('density=auto&density=on'));
 
@@ -723,15 +708,20 @@ describe('explore url state', () => {
       const parsed = parseExploreViewRequest(new URLSearchParams(`density=${token}`));
 
       expect(parsed.requested.density).toBe(token);
+      expect(parsed.present.density).toBe(true);
       expect(parsed.normalize.density).toBe(false);
     });
 
-    it.each(['contour-on', 'contour-bogus'])('normalizes the invalid token %s', (token) => {
-      const parsed = parseExploreViewRequest(new URLSearchParams(`density=${token}`));
+    it.each(['bogus', 'contour-on', 'contour-bogus'])(
+      'rejects the invalid token %s and marks it for normalization',
+      (token) => {
+        const parsed = parseExploreViewRequest(new URLSearchParams(`density=${token}`));
 
-      expect(parsed.requested.density).toBeUndefined();
-      expect(parsed.normalize.density).toBe(true);
-    });
+        expect(parsed.requested.density).toBeUndefined();
+        expect(parsed.present.density).toBe(true);
+        expect(parsed.normalize.density).toBe(true);
+      },
+    );
   });
 });
 

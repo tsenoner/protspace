@@ -244,8 +244,12 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     expect(changes).toEqual([[null, 'user']]);
   });
 
+  // beginUserRequest is left out: the example-dataset-load tests drive the real
+  // epoch logic and fail if it is swapped with currentRequestEpoch. Nothing else
+  // checks that currentRequestEpoch reaches the persisted controller (auto and
+  // startup loads tag their epoch with it) or that the cancel keeps its
+  // { source } filter.
   it.each([
-    ['beginUserRequest', [], 7],
     ['currentRequestEpoch', [], 7],
     ['cancelPendingExampleLoad', [{ source: 'menu' }], 'cancelled'],
   ] as const)('%s delegates to the persisted controller', (method, args, returned) => {

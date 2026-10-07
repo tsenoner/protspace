@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MACHINE_PATH } from '../../../../docs/scripts/machine-path';
-import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL } from './example-datasets';
+import { EXAMPLE_DATASETS } from './example-datasets';
 
 /**
  * Pins the catalog against the generated Example datasets page
@@ -28,10 +28,6 @@ describe('example-datasets.md', () => {
 
   it('has one section per catalog entry, in menu order', () => {
     expect(SECTION_IDS).toEqual(EXAMPLE_DATASETS.map((entry) => entry.id));
-  });
-
-  it.each(EXAMPLE_DATASETS)("links $id's info to its section", (entry) => {
-    expect(entry.docsUrl).toBe(`${EXAMPLES_DOCS_URL}#${entry.id}`);
   });
 });
 

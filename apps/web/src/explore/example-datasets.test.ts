@@ -24,13 +24,8 @@ const COMMITTED_PUBLIC_BUNDLES = Object.keys(
 const ID_FORMAT = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
 describe('example datasets catalog', () => {
-  it('has unique ids', () => {
-    const ids = EXAMPLE_DATASETS.map((entry) => entry.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('lists the demo first', () => {
-    expect(EXAMPLE_DATASETS[0]?.id).toBe('demo');
+  // 'the catalog' pins the ids, the demo first among them; this pins where it is served from.
+  it('serves the demo from the startup bundle', () => {
     expect(EXAMPLE_DATASETS[0]?.url).toBe('./data.parquetbundle');
   });
 
@@ -233,11 +228,6 @@ const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_
 const EAT_COMPANION_PATTERN = /__pred_(value|confidence|source)$/;
 
 describe('example datasets curated default view', () => {
-  it.each(EXAMPLE_DATASETS)('"$id" names a projection and an annotation', (entry) => {
-    expect(entry.defaultView.projection.trim()).not.toBe('');
-    expect(entry.defaultView.annotation.trim()).not.toBe('');
-  });
-
   // The drift guard: a renamed or dropped column or projection fails here, in
   // CI, without downloading any bundle.
   it.each(EXAMPLE_DATASETS)('"$id" names only what its bundle holds', (entry) => {

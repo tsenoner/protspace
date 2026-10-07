@@ -154,6 +154,88 @@ describe('renderSettingsDialog', () => {
   });
 });
 
+/**
+ * The dialog's copy, numeric and categorical. These were checked only by the
+ * numeric-binning e2e dialog reads; the rendering is the same here, without a browser.
+ */
+describe('settings dialog copy', () => {
+  const text = (el: Element | null | undefined) => el?.textContent?.trim() ?? '';
+  const fieldLabel = (container: HTMLElement, inputId: string) =>
+    text(
+      container
+        .querySelector(`#${inputId}`)
+        ?.closest('.other-items-list-item')
+        ?.querySelector('.other-items-list-item-label'),
+    );
+  const sortingLabels = (container: HTMLElement) =>
+    [...container.querySelectorAll('input[type="radio"][name^="sort-type-"]')].map((input) =>
+      text(input.closest('label')),
+    );
+  const selectOptions = (container: HTMLElement, selectId: string) => [
+    ...((container.querySelector(`#${selectId}`) as HTMLSelectElement | null)?.options ?? []),
+  ];
+
+  it('names the numeric controls and offers the gradient palettes', () => {
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'length',
+      isNumericAnnotation: true,
+      selectedPaletteId: 'batlow',
+      selectedNumericStrategy: 'quantile',
+    });
+
+    expect(text(container.querySelector('#legend-settings-title'))).toBe('Legend settings: length');
+    expect(fieldLabel(container, 'max-visible-input')).toBe('Max legend items');
+    expect(fieldLabel(container, 'shape-size-input')).toBe('Point size');
+    expect(sortingLabels(container)).toEqual(['By numeric value', 'Manual order']);
+    expect(selectOptions(container, 'palette-select').map(text)).toEqual([
+      'Batlow - Scientific sequential gradient',
+      'Cividis - Colorblind-friendly sequential gradient',
+      'Inferno - High-contrast sequential gradient',
+      'Plasma - Vivid sequential gradient',
+      'Viridis - Perceptually uniform sequential gradient',
+    ]);
+    expect(container.querySelector('.color-palette-gradient-bar')?.getAttribute('aria-label')).toBe(
+      'Batlow continuous gradient preview',
+    );
+    expect([...container.querySelectorAll('.color-palette-gradient-scale span')].map(text)).toEqual(
+      ['Low', 'High'],
+    );
+    expect(
+      selectOptions(container, 'numeric-distribution-select').map((option) => [
+        option.value,
+        text(option),
+      ]),
+    ).toEqual([
+      ['linear', 'Linear'],
+      ['quantile', 'Quantile'],
+      ['logarithmic', 'Logarithmic'],
+    ]);
+  });
+
+  it('names the categorical controls and offers no gradient palette or preview', () => {
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'family',
+      isNumericAnnotation: false,
+      selectedPaletteId: 'kellys',
+    });
+
+    expect(text(container.querySelector('#legend-settings-title'))).toBe('Legend settings: family');
+    expect(fieldLabel(container, 'max-visible-input')).toBe('Max legend items');
+    expect(fieldLabel(container, 'shape-size-input')).toBe('Shape size');
+    expect(sortingLabels(container)).toEqual(['By category size', 'Alphabetical', 'Manual order']);
+    expect(selectOptions(container, 'palette-select').map((option) => option.value)).toEqual([
+      'dark2',
+      'kellys',
+      'okabeIto',
+      'set2',
+      'tableau10',
+      'tolBright',
+    ]);
+    expect(container.querySelector('.color-palette-gradient-bar')).toBeNull();
+    expect(container.querySelector('#numeric-distribution-select')).toBeNull();
+  });
+});
+
 describe('shape size input', () => {
   function typeSize(value: string) {
     const { container, callbacks } = renderSettingsDialogToContainer();
@@ -466,5 +548,29 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
 
     expect(syncNumericAnnotationSettings).toHaveBeenCalled();
     expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+});
+
+/** The header's reverse button is named for what it does to the current order. */
+describe('legend header reverse button', () => {
+  it.each([
+    ['categorical', 'size-desc', 'Reverse z-order (keep Other last)'],
+    ['numeric', 'alpha-asc', 'Show high to low'],
+    ['numeric', 'alpha-desc', 'Show low to high'],
+    ['numeric', 'manual', 'Reverse manual order'],
+  ] as const)('labels it for a %s legend in %s order', (kind, sortMode, label) => {
+    const el = document.createElement('protspace-legend') as LegendTestElement & {
+      render: () => unknown;
+    };
+    el.selectedAnnotation = 'score';
+    el.annotationData = { name: 'score', values: ['1', '2'], kind };
+    el._annotationSortModes = { score: sortMode };
+    const container = document.createElement('div');
+
+    render(el.render(), container);
+
+    const button = container.querySelector('button.reverse-button');
+    expect(button?.getAttribute('aria-label')).toBe(label);
+    expect(button?.getAttribute('title')).toBe(label);
   });
 });

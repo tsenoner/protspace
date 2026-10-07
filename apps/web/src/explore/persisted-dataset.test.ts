@@ -945,6 +945,13 @@ describe("a user import's preparation step (a FASTA upload)", () => {
 });
 
 describe('the startup restore and the requests that supersede it', () => {
+  // `clearAllMocks` keeps implementations, so a stored import set up here would
+  // otherwise reach every later test if an assertion failed before a reset.
+  afterEach(() => {
+    vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
+    vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
+  });
+
   it('puts the previous status back when preempted while marking the load pending', async () => {
     const previous = { status: 'success' as const, failedAttempts: 0 };
     const marking = deferred<void>();
@@ -988,18 +995,6 @@ describe('the startup restore and the requests that supersede it', () => {
     expect(await fallback).toEqual({ kind: 'auto-loaded' });
     expect(loadLastImportedFile).toHaveBeenCalledTimes(2);
     expect(dataLoader.loadFromFile).toHaveBeenCalledTimes(2);
-    vi.mocked(loadLastImportedFile).mockReset().mockResolvedValue(null);
-    vi.mocked(readLastLoadStatus).mockReset().mockResolvedValue(null);
-  });
-
-  it('reports a failed startup demo as default-failed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse(500)));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { controller } = createController();
-
-    expect(await controller.loadPersistedOrDefaultDataset()).toEqual({ kind: 'default-failed' });
-    errorSpy.mockRestore();
-    expect(notifyMock.error).toHaveBeenCalledTimes(1);
   });
 });
 

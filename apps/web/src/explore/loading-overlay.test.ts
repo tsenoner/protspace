@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DOWNLOAD_SHARE,
   createLoadingOverlayController,
@@ -164,10 +164,6 @@ beforeEach(() => {
   doc = makeDoc();
 });
 
-afterEach(() => {
-  // nothing to clean up — new doc per test
-});
-
 function getNote() {
   return doc.getElementById('loading-note');
 }
@@ -226,18 +222,9 @@ describe('loading-overlay note rendering', () => {
     const noteEl = getNoteEl();
     expect(noteEl).not.toBeNull();
     const span = noteEl!.children.find((c) => c._tag === 'span');
-    // textContent assignment — no script element is created
+    // Set as textContent: an innerHTML assignment would leave the fake span's text empty.
     expect(span?.textContent).toBe('<script>alert(1)</script>');
-    const hasScript = (function walk(el: FakeEl): boolean {
-      if (el._tag === 'script') return true;
-      return el.children.some(walk);
-    })(doc._body);
-    expect(hasScript).toBe(false);
     ctrl.dispose();
-  });
-
-  it.skip('javascript: href — URL validation out of scope; current behavior is unvalidated', () => {
-    // Intentionally skipped per spec §2.5: URL sanitization is out of scope.
   });
 
   it('does not render a note after hide+show when no note arg is passed on re-show', () => {
