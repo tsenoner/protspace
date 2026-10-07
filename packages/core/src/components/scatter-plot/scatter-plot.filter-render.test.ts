@@ -258,17 +258,6 @@ describe('scatter-plot filter × hide order-independence', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task 1.8 — Dataset swap clears the filter channel before _processData runs
-//
-// updated() lines 454-457: when changedProperties has 'data' and filtersActive
-// is true, it synchronously clears filteredProteinIds / filtersActive BEFORE
-// _processData runs. This prevents a stale id-set from the previous dataset
-// from blanking the new plot.
-//
-// On an unattached element the Lit lifecycle never auto-runs, so we simulate
-// the lifecycle by calling updated() directly.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // Reset All regression — clearing an active filter must rebuild _plotData
 //
 // Bug: "Reset All" in the query builder clears filteredProteinIds/filtersActive,
@@ -439,6 +428,17 @@ describe('scatter-plot visible point count', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Task 1.8 — Dataset swap clears the filter channel before _processData runs
+//
+// When changedProperties has 'data' and filtersActive is true, updated() calls
+// _reconcileFilterOnDataSwap(), which synchronously clears filteredProteinIds /
+// filtersActive BEFORE _processData runs. This prevents a stale id-set from the
+// previous dataset from blanking the new plot.
+//
+// On an unattached element the Lit lifecycle never auto-runs, so we simulate
+// the lifecycle by calling updated() directly.
+// ---------------------------------------------------------------------------
 describe('scatter-plot dataset-swap clears stale query filter', () => {
   it('updated() on data swap resets filtersActive and filteredProteinIds before _processData', () => {
     const sp = makeScatter(); // dataset 1 (p0–p5), fam annotation

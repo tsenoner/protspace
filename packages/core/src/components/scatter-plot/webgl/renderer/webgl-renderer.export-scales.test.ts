@@ -1,36 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
 import { ExportRenderer } from './export-renderer';
-import type { PlotData } from '@protspace/utils';
-import type { ScalePair } from '../types';
-import { styleGetters } from './test-support/renderer-fixture';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import { makeRenderer as makeFixtureRenderer, plotDataFrom } from './test-support/renderer-fixture';
 
-const pd: PlotData = {
-  length: 2,
-  xs: new Float32Array([0, 1]),
-  ys: new Float32Array([0, 1]),
-  zs: null,
-  originalIndices: null,
-  proteinIds: ['p0', 'p1'],
-};
-const scales = (): ScalePair => ({
-  x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
-  y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
-});
+const pd = plotDataFrom([0, 1], [0, 1]);
 const config = { width: 800, height: 600 };
 
 function makeRenderer() {
-  const { canvas } = createMockCanvas({});
-  return new WebGLRenderer(
-    canvas,
-    scales,
-    () => d3.zoomIdentity,
-    () => config,
-    styleGetters(),
-  );
+  return makeFixtureRenderer({}, undefined, { getConfig: () => config }).renderer;
 }
 
 describe('WebGLRenderer.createExportScales (facade pass-through, #301/#302)', () => {

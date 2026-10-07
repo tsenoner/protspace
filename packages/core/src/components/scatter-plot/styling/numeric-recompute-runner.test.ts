@@ -1,7 +1,7 @@
 // F-04: NumericRecomputeRunner unit characterization.
 //
 // The runner owns the numeric-annotation recompute lifecycle extracted verbatim
-// from `_scheduleNumericAnnotationRefresh` (scatter-plot.ts L839-915):
+// from the component's `_scheduleNumericAnnotationRefresh`:
 //   - a monotonically-increasing job id captured per schedule(),
 //   - a synchronous requestUpdate + running-state mirror (setRunning(true)),
 //   - a deferred (RAF) body that bails when its job id was superseded

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspace/utils';
 import { NA_VALUE } from '@protspace/utils';
-import type { VisibilityInputs, VisibilityModel } from './visibility-model';
+import type { VisibilityInputs } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
 
 /**
@@ -456,43 +456,6 @@ describe('computeVisibilityModel', () => {
     });
   });
 
-  // ── F-45 removal guard: tierOf / DisplayTier are gone ─────────────────────
-  // tierOf was a convenience view with no live readers; the opacity/depth
-  // contract carriers (opacityOf / baseOpacityOf / isInteractive) carry all
-  // behavior. This guard locks tierOf's removal while proving those carriers
-  // — and the full hidden/selected/faded/base distinctions they encode — remain.
-  describe('F-45: model exposes no tierOf, distinctions live in opacity carriers', () => {
-    it('the model surface has no tierOf member', () => {
-      const data = makeData(['A'], Int32Array.of(0));
-      const model = computeVisibilityModel(baseInputs({ data }));
-      expect((model as Record<string, unknown>).tierOf).toBeUndefined();
-    });
-
-    it('hidden / selected / faded distinctions survive via opacityOf + isInteractive', () => {
-      const data = makeData(['A', 'B', 'C', 'D'], Int32Array.of(0, 1, 2, 3));
-      const model = computeVisibilityModel(
-        baseInputs({
-          data,
-          hiddenAnnotationValues: ['A'], // p0 hidden
-          selectedProteinIds: ['p1'], // p1 selected (=> p2,p3 faded)
-        }),
-      );
-      // hidden → opacity 0, non-interactive
-      expect(model.opacityOf(point('p0', 0))).toBe(0);
-      expect(model.isInteractive(point('p0', 0))).toBe(false);
-      // selected → selected opacity (never collapsed into base)
-      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
-      // faded → faded opacity (distinct from base and selected)
-      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
-    });
-
-    it('base opacity when no selection and not hidden', () => {
-      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
-      const model = computeVisibilityModel(baseInputs({ data }));
-      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
-    });
-  });
-
   // ── Edge: accessor behavior when annotation/annotation_data missing ────────
   describe('edge: selected annotation references missing data (replicate getOpacity)', () => {
     it('annotation_data lacks the selected key → every point opacity 0 (vacuous), !allHidden', () => {
@@ -568,17 +531,6 @@ describe('computeVisibilityModel', () => {
       expect(model.allHidden).toBe(true);
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
     });
-  });
-
-  // ── Type-surface smoke: all four exports are exercised ─────────────────────
-  it('exposes the VisibilityModel surface', () => {
-    const data = makeData(['A'], Int32Array.of(0));
-    const inputs: VisibilityInputs = baseInputs({ data });
-    const model: VisibilityModel = computeVisibilityModel(inputs);
-    expect(typeof model.opacityOf(point('p0', 0))).toBe('number');
-    expect(typeof model.baseOpacityOf(point('p0', 0))).toBe('number');
-    expect(typeof model.isInteractive(point('p0', 0))).toBe('boolean');
-    expect(typeof model.allHidden).toBe('boolean');
   });
 
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──

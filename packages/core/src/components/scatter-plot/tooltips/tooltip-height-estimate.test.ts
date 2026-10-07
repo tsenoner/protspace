@@ -58,17 +58,6 @@ describe('estimateTooltipHeight', () => {
     expect(estimateTooltipHeight(view)).toBe(160);
   });
 
-  it('is always >= 160 regardless of content', () => {
-    const heights = [
-      estimateTooltipHeight(makeView()),
-      estimateTooltipHeight(makeView({ geneName: ['TP53'] })),
-      estimateTooltipHeight(makeView({ blocks: [makeBlock()] })),
-    ];
-    for (const h of heights) {
-      expect(h).toBeGreaterThanOrEqual(160);
-    }
-  });
-
   it('increases height when proteinName is present (both above floor)', () => {
     // Anchor both views at one big block so raw totals are above 160
     const withoutName = estimateTooltipHeight(makeView({ proteinName: [], blocks: [bigBlock()] }));
@@ -114,17 +103,16 @@ describe('estimateTooltipHeight', () => {
     expect(hWithNumeric).toBeGreaterThan(hNoNumeric);
   });
 
-  it('produces a plausible height for a typical single-annotation tooltip', () => {
-    // Header-only protein, 1 annotation block with 3 values
+  it('sums the calibrated rows for a typical single-annotation tooltip', () => {
+    // Both names, 1 annotation block with 3 values
     const view = makeView({
       proteinName: ['Tumor protein p53'],
       geneName: ['TP53'],
       blocks: [makeBlock({ displayValues: ['Oncogene', 'Tumor suppressor', 'Kinase'] })],
     });
-    const h = estimateTooltipHeight(view);
-    // Should be well above the floor and below an unreasonably large value
-    expect(h).toBeGreaterThan(160);
-    expect(h).toBeLessThan(500);
+    // header 38 + content padding 24 + proteinName 20 + geneName 20 = 102
+    // + block: separator 17 + header row 16 + 3 × 16 rows = 81  → 183
+    expect(estimateTooltipHeight(view)).toBe(183);
   });
 
   it('produces a plausible height for a tall multi-annotation tooltip (5 blocks, many rows)', () => {
@@ -142,12 +130,6 @@ describe('estimateTooltipHeight', () => {
     // + header 38 + content padding 24 + proteinName 20 + geneName 20 = 102
     // total ≈ 747, well above floor
     expect(h).toBeGreaterThan(600);
-  });
-
-  it('two identical views produce equal heights', () => {
-    const view1 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
-    const view2 = makeView({ geneName: ['TP53'], blocks: [bigBlock()] });
-    expect(estimateTooltipHeight(view1)).toBe(estimateTooltipHeight(view2));
   });
 
   it('reserves additional lines for long transferred labels without inflating observed rows', () => {

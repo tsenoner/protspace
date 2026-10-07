@@ -199,7 +199,7 @@ describe('captureBadges — full-extent cache + invalidation (#301)', () => {
     const { controller, deps } = makeFixture();
     controller.captureBadges(exportProjection());
     expect(deps.getVisibleSlots).toHaveBeenCalledTimes(1);
-    controller.resetCacheKey(); // scatter-plot.ts:699 fires ONLY this on toggle
+    controller.resetCacheKey(); // the host's _reconcileConfigMerge fires this on toggle
     controller.captureBadges(exportProjection());
     expect(deps.getVisibleSlots).toHaveBeenCalledTimes(2);
   });
