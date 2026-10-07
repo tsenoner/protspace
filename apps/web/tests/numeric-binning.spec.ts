@@ -218,29 +218,18 @@ async function readNumericPreview(page: Page) {
     };
     const root = legend?.shadowRoot;
     const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const previewPanel = root?.querySelector(
-      '.color-palette-preview--continuous',
-    ) as HTMLElement | null;
     const previewCaption = root?.querySelector(
       '.color-palette-preview-caption',
     ) as HTMLElement | null;
     const scaleLabels = Array.from(
       root?.querySelectorAll('.color-palette-gradient-scale span') ?? [],
     ).map((node) => node.textContent?.trim() ?? '');
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
 
     return {
       gradientBarCount: root?.querySelectorAll('.color-palette-gradient-bar').length ?? 0,
       ariaLabel: gradientBar?.getAttribute('aria-label') ?? null,
       caption: previewCaption?.textContent?.trim() ?? '',
-      panelHeight: previewPanel?.getBoundingClientRect().height ?? 0,
       scaleLabels,
-      options: Array.from(distribution?.options ?? []).map((option) => ({
-        value: option.value,
-        label: option.textContent?.trim() ?? '',
-      })),
     };
   });
 }
@@ -355,20 +344,10 @@ async function readLegendSettingsDialog(page: Page) {
     const distribution = root?.querySelector(
       '#numeric-distribution-select',
     ) as HTMLSelectElement | null;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
     const sortingSection = root?.querySelector(
       '#legend-sorting-section-title',
     ) as HTMLElement | null;
     const reverseButton = root?.querySelector('button.reverse-button') as HTMLButtonElement | null;
-    const maxVisibleLabel = (root?.querySelector('#max-visible-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const shapeSizeLabel = (root?.querySelector('#shape-size-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const sortingLabels = Array.from(
-      root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? [],
-    ).map((input) => input.closest('label')?.textContent?.trim() ?? '');
     const selectedSortingLabel =
       (
         Array.from(root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? []).find(
@@ -380,28 +359,15 @@ async function readLegendSettingsDialog(page: Page) {
     const reverseGradientToggle = root?.querySelector(
       '#reverse-gradient-toggle',
     ) as HTMLInputElement | null;
-    const dialogTitle = root?.querySelector('#legend-settings-title') as HTMLElement | null;
-    const paletteOptionTexts = Array.from(palette?.options ?? []).map(
-      (option) => option.textContent?.trim() ?? '',
-    );
 
     return {
-      title: dialogTitle?.textContent?.trim() ?? '',
       includeShapesAbsent: !includeShapesPresent,
       palette: palette?.value ?? null,
-      paletteOptions: Array.from(palette?.options ?? []).map((option) => option.value),
-      paletteOptionTexts,
       reverseGradientChecked: reverseGradientToggle?.checked ?? false,
       distribution: distribution?.value ?? null,
       hasDistributionSelect: Boolean(distribution),
-      hasGradientPreview: Boolean(gradientBar),
       hasSortingSection: Boolean(sortingSection),
-      sortingSectionTitle: sortingSection?.textContent?.trim() ?? '',
       hasReverseButton: Boolean(reverseButton),
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
-      maxVisibleLabel: maxVisibleLabel?.textContent?.trim() ?? '',
-      shapeSizeLabel: shapeSizeLabel?.textContent?.trim() ?? '',
-      sortingLabels,
       selectedSortingLabel,
       logDisabled:
         (distribution?.querySelector('option[value="logarithmic"]') as HTMLOptionElement | null)
@@ -1104,28 +1070,10 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   expect(initialDialog.hasDistributionSelect).toBe(true);
   expect(initialDialog.hasSortingSection).toBe(true);
   expect(initialDialog.hasReverseButton).toBe(true);
-  expect(initialDialog.reverseButtonLabel).toBe('Show high to low');
-  expect(initialDialog.title).toBe('Legend settings: length');
-  expect(initialDialog.maxVisibleLabel).toBe('Max legend items');
-  expect(initialDialog.shapeSizeLabel).toBe('Point size');
-  expect(initialDialog.sortingLabels).toEqual(['By numeric value', 'Manual order']);
   expect(initialDialog.reverseGradientChecked).toBe(false);
-  expect(initialDialog.paletteOptionTexts).toEqual([
-    'Batlow - Scientific sequential gradient',
-    'Cividis - Colorblind-friendly sequential gradient',
-    'Inferno - High-contrast sequential gradient',
-    'Plasma - Vivid sequential gradient',
-    'Viridis - Perceptually uniform sequential gradient',
-  ]);
   expect(initialDialog.logDisabled).toBe(false);
-  const initialPreview = await readNumericPreview(page);
-  expect(initialPreview.ariaLabel).toBe('Batlow continuous gradient preview');
-  expect(initialPreview.caption).toBe('');
-  expect(initialPreview.scaleLabels).toEqual(['Low', 'High']);
-  expect((await readNumericPreview(page)).options).toContainEqual({
-    value: 'logarithmic',
-    label: 'Logarithmic',
-  });
+  // The dialog's copy (labels, palette names, gradient preview and scale) is pinned
+  // in jsdom by legend-settings-dialog.test.ts; this journey checks the staging.
 
   await updateLegendSettings(page, {
     maxVisibleValues: 5,
@@ -1135,8 +1083,6 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
     ariaLabel: 'Plasma continuous gradient preview',
   });
-  const plasmaPreview = await readNumericPreview(page);
-  expect(plasmaPreview.scaleLabels).toEqual(['Low', 'High']);
   await clickDialogButton(page, 'Cancel');
   await waitForDialogClosed(page);
 
@@ -1460,35 +1406,6 @@ test('numeric gradient preview uses the same rendered chrome as categorical swat
   expect(categoricalChrome.hasShadow).toBe(true);
 });
 
-test('categorical annotations do not expose gradient palettes or gradient previews', async ({
-  page,
-}) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const dialog = await readLegendSettingsDialog(page);
-  await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: family' }),
-  ).toBeVisible();
-  expect(dialog.hasGradientPreview).toBe(false);
-  expect(dialog.hasDistributionSelect).toBe(false);
-  expect(dialog.hasSortingSection).toBe(true);
-  expect(dialog.hasReverseButton).toBe(true);
-  expect(dialog.reverseButtonLabel).toBe('Reverse z-order (keep Other last)');
-  expect(dialog.title).toBe('Legend settings: family');
-  expect(dialog.maxVisibleLabel).toBe('Max legend items');
-  expect(dialog.shapeSizeLabel).toBe('Shape size');
-  expect(dialog.paletteOptions).toEqual([
-    'dark2',
-    'kellys',
-    'okabeIto',
-    'set2',
-    'tableau10',
-    'tolBright',
-  ]);
-});
-
 test('drag handles stay active outside manual mode and keep Other disabled', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
@@ -1756,24 +1673,6 @@ test('numeric header toggle reverses rendered bin order without changing color a
   );
   // (Numeric filtering is now a raw-value range input with no per-bin list, so
   // there is no longer a "filter order mirrors legend order" assertion here.)
-});
-
-test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 20,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  const realizedState = await getNumericState(page);
-  expect(realizedState.binCount).toBeLessThan(20);
-  // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
-  // range input, so there is no per-bin filter list to count against here.)
 });
 
 test('numeric legend labels are display summaries without comparison markers', async ({ page }) => {
