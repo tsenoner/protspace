@@ -194,9 +194,7 @@ class TestInterProAnnotationRetrieverFetch:
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
-        assert "pfam" in result[0].annotations
-        assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": "PF00001 (7tm_1)|50.2"}
 
     def test_fetch_annotations_no_headers(self):
         """Test fetch_annotations with no headers."""
@@ -265,14 +263,11 @@ class TestInterProAnnotationRetrieverParsing:
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
-        assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
-        assert "pfam_score" not in result[0].annotations
         # Matches API name takes precedence over XML name
-        assert (
-            result[0].annotations["superfamily"]
-            == "SSF12345 (7 transmembrane receptor)|60.5"
-        )
-        assert "superfamily_score" not in result[0].annotations
+        assert result[0].annotations == {
+            "pfam": "PF00001 (7tm_1)|50.2",
+            "superfamily": "SSF12345 (7 transmembrane receptor)|60.5",
+        }
 
     def test_parse_interpro_results_not_found(self):
         """Test parsing when protein not found in UniParc."""
@@ -287,8 +282,7 @@ class TestInterProAnnotationRetrieverParsing:
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
-        assert result[0].annotations["pfam"] == ""  # Empty when not found
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": ""}  # Empty when not found
 
     def test_parse_interpro_results_filter_databases(self):
         """Test that only requested databases are included."""
@@ -305,11 +299,8 @@ class TestInterProAnnotationRetrieverParsing:
 
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
-        assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
-        assert "pfam_score" not in result[0].annotations
         # SUPERFAMILY should not be included since not requested
-        assert "superfamily" not in result[0].annotations
-        assert "superfamily_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": "PF00001 (7tm_1)|50.2"}
 
     def test_parse_interpro_results_missing_confidence_scores(self):
         """Test parsing when confidence scores are missing (None)."""
@@ -327,8 +318,7 @@ class TestInterProAnnotationRetrieverParsing:
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
         # Should handle missing confidence scores gracefully (no scores, just accession with name)
-        assert result[0].annotations["pfam"] == "PF00001 (7tm_1)"
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": "PF00001 (7tm_1)"}
 
     def test_parse_interpro_results_duplicate_accessions(self):
         """Test that duplicate accessions collect all scores."""
@@ -346,8 +336,7 @@ class TestInterProAnnotationRetrieverParsing:
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
         # Should collect all scores for the same accession, use name from first occurrence
-        assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2,60.5"
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": "PF00001 (7tm_1)|50.2,60.5"}
 
     def test_parse_interpro_results_multidomain(self):
         """Test parsing of multidomain proteins (multiple different accessions)."""
@@ -368,11 +357,9 @@ class TestInterProAnnotationRetrieverParsing:
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
         # Should format multiple domains with semicolons, sorted by accession
-        assert (
-            result[0].annotations["pfam"]
-            == "PF00001 (7tm_1)|50.2;PF00002 (7tm_2)|60.5;PF00003 (7tm_3)|45.8"
-        )
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {
+            "pfam": "PF00001 (7tm_1)|50.2;PF00002 (7tm_2)|60.5;PF00003 (7tm_3)|45.8"
+        }
 
     def test_parse_interpro_results_multidomain_with_duplicates(self):
         """Test multidomain proteins with some domains appearing multiple times."""
@@ -396,11 +383,9 @@ class TestInterProAnnotationRetrieverParsing:
         # Should collect all scores for PF00001, and include PF00002
         # Sorted by accession, so PF00001 comes first
         # Name from first occurrence is used
-        assert (
-            result[0].annotations["pfam"]
-            == "PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5"
-        )
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {
+            "pfam": "PF00001 (7tm_1)|50.2,52.1,51.0;PF00002 (7tm_2)|60.5"
+        }
 
     def test_parse_interpro_results_missing_name(self):
         """Test parsing when name is missing (should work without name)."""
@@ -418,8 +403,7 @@ class TestInterProAnnotationRetrieverParsing:
         assert len(result) == 1
         assert result[0].identifier == TEST_PROTEIN_ID
         # Should work without name, just accession
-        assert result[0].annotations["pfam"] == "PF00001|50.2"
-        assert "pfam_score" not in result[0].annotations
+        assert result[0].annotations == {"pfam": "PF00001|50.2"}
 
 
 def _make_name_map(**kwargs):
@@ -847,15 +831,10 @@ class TestMemberDbNameMapCaching:
         ts = time.time() - (age_days * 86400)
         timestamp_file.write_text(str(ts))
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR"
-    )
-    def test_cache_hit_returns_cached_data(self, mock_cache_dir):
+    def test_cache_hit_returns_cached_data(self):
         """Test that fresh cache is used without downloading."""
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp) / "interpro"
-            mock_cache_dir.__truediv__ = cache_dir.__truediv__
-            # Patch the module-level constant to point to our temp dir
             expected = _make_name_map(SSF={"SSF53098": "Ribonuclease H-like"})
             self._write_cache(cache_dir, expected, age_days=1)
 
