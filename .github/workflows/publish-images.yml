@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     strategy:
@@ -92,7 +92,7 @@ jobs:
     name: Pin digest in deploy repo
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Mint deploy-repo token
         id: app-token
