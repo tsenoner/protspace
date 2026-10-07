@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { sanitizePublishState } from './publish-state-validator';
-import { createDefaultPublishState } from './publish-state';
+import { createDefaultPublishState, type LegendLayout } from './publish-state';
 
 describe('sanitizePublishState', () => {
   it('returns defaults for null/undefined/non-object', () => {
@@ -318,5 +318,59 @@ describe('sanitizePublishState', () => {
     expect(() =>
       sanitizePublishState({ overlays: [nested], insets: [{ sourceRect: nested }] }),
     ).not.toThrow();
+  });
+});
+
+// The legend arrives from an untrusted bundle settings blob; widthPercent and freePos feed
+// the compositor's pixel layout unchecked, so each field must fall back on its own.
+describe('sanitizePublishState legend', () => {
+  const DEFAULT_LEGEND = createDefaultPublishState().legend;
+  const VALID_LEGEND: LegendLayout = {
+    visible: false,
+    position: 'free',
+    widthPercent: 35,
+    fontSizePx: 12,
+    fontSizeUnit: 'px',
+    columns: 3,
+    overflow: 'truncate',
+    freePos: { nx: 0.2, ny: 0.7 },
+  };
+
+  it('keeps a valid legend unchanged', () => {
+    expect(sanitizePublishState({ legend: VALID_LEGEND }).legend).toEqual(VALID_LEGEND);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'right'],
+    ['an array', [VALID_LEGEND]],
+    ['a number', 42],
+  ])('replaces %s legend with the default', (_, raw) => {
+    expect(sanitizePublishState({ legend: raw }).legend).toEqual(DEFAULT_LEGEND);
+  });
+
+  it.each([
+    ['visible', 'yes'],
+    ['position', 'x'],
+    ['widthPercent', 0],
+    ['widthPercent', 100.5],
+    ['widthPercent', 1e9],
+    ['widthPercent', Number.NaN],
+    ['fontSizePx', -1],
+    ['fontSizeUnit', 'em'],
+    ['columns', 0],
+    ['columns', 1.5],
+    ['overflow', 'foo'],
+    ['freePos', { nx: 2, ny: 0.5 }],
+    ['freePos', { nx: 0.5 }],
+    ['freePos', 'center'],
+  ] as const)('falls back to the default %s for %j and keeps the rest', (field, bad) => {
+    const legend = sanitizePublishState({ legend: { ...VALID_LEGEND, [field]: bad } }).legend;
+    expect(legend).toEqual({ ...VALID_LEGEND, [field]: DEFAULT_LEGEND[field] });
+  });
+
+  it('accepts the boundary values widthPercent 100 and columns 1', () => {
+    const boundary = { ...VALID_LEGEND, widthPercent: 100, columns: 1 };
+    expect(sanitizePublishState({ legend: boundary }).legend).toEqual(boundary);
   });
 });

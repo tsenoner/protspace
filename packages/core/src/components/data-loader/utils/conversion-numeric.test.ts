@@ -5,6 +5,7 @@ import { NA_VALUE, NA_DEFAULT_COLOR } from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
+  generateColorsAndShapes,
 } from './conversion';
 import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
 import type { GenericRow, Rows } from './types';
@@ -732,8 +733,6 @@ describe('annotation_data storage shape', () => {
   });
 });
 
-import { generateColorsAndShapes } from './conversion';
-
 describe('generateColorsAndShapes', () => {
   it('returns palette.length × shapeCount distinct (color, shape) pairs', () => {
     const { colors, shapes } = generateColorsAndShapes('kellys', 200);
@@ -752,20 +751,19 @@ describe('generateColorsAndShapes', () => {
     expect(shapes).toHaveLength(10);
   });
 
-  it('cycles after palette.length × shapeCount entries', () => {
-    // The array is capped at distinctPairs (126 for Kelly's).
-    // Consumers index via colors[i % colors.length] to cycle for i >= 126.
-    const { colors: c1, shapes: s1 } = generateColorsAndShapes('kellys', 1);
-    const { colors: c126, shapes: s126 } = generateColorsAndShapes('kellys', 126);
-    // Entry 127 (index 126) wraps to index 0 via consumer-side modular indexing.
-    expect(c126[126 % c126.length]).toBe(c1[0]);
-    expect(s126[126 % s126.length]).toBe(s1[0]);
+  it('advances the colour first and the shape once per full palette cycle', () => {
+    // Colour-major order keeps neighbouring categories apart by colour before shape.
+    const { colors, shapes } = generateColorsAndShapes('kellys', 126);
+    expect(colors[1]).not.toBe(colors[0]);
+    expect(shapes[20]).toBe(shapes[0]);
+    expect(colors[21]).toBe(colors[0]);
+    expect(shapes[21]).not.toBe(shapes[0]);
   });
 
   it('falls back to kellys for unknown palette ids', () => {
-    const { colors } = generateColorsAndShapes('not-a-real-palette', 5);
-    expect(colors).toHaveLength(5);
-    // Should be the first 5 entries of the Kelly's palette
+    expect(generateColorsAndShapes('not-a-real-palette', 5)).toEqual(
+      generateColorsAndShapes('kellys', 5),
+    );
   });
 
   it('handles zero or negative counts as empty arrays', () => {

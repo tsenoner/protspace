@@ -21,17 +21,10 @@ describe('validateRowsBasic', () => {
     expect(() => validateRowsBasic(makeRows({ pfam: value }))).not.toThrow();
   });
 
-  it('rejects a single value exceeding the limit', () => {
-    const longValue = 'x'.repeat(300);
-    expect(() => validateRowsBasic(makeRows({ col: longValue }))).toThrow(
-      /Cell value too long in column 'col'/,
-    );
-  });
-
   it('error message includes column name and character count', () => {
     const longValue = 'y'.repeat(300);
     expect(() => validateRowsBasic(makeRows({ my_column: longValue }))).toThrow(
-      /my_column.*300 characters.*limit: 256/,
+      /Cell value too long in column 'my_column'.*300 characters.*limit: 256/,
     );
   });
 
@@ -43,11 +36,6 @@ describe('validateRowsBasic', () => {
     expect(() => validateRowsBasic(makeRows({ col: value }), { maxCellStringLength: 50 })).toThrow(
       /Cell value too long/,
     );
-  });
-
-  it('passes when semicolon-separated parts are each under the limit', () => {
-    const value = 'abc;def;ghi';
-    expect(() => validateRowsBasic(makeRows({ col: value }))).not.toThrow();
   });
 
   it('rejects when one semicolon-separated part exceeds the limit', () => {
