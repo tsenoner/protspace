@@ -328,20 +328,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(thresholdPercent).toHaveValue('0');
   await expect(filterButton).not.toHaveClass(/filter-active/);
   await expect.poll(predictedVisibleCount).toBe(213);
-
-  // Raising the threshold drives the shared `EAT_confidence >= x or N/A` filter, which
-  // HIDES sub-threshold predictions (fewer visible points) rather than dimming them.
-  await thresholdPercent.fill('99');
-  await expect(threshold).toHaveValue('0.99');
-  await expect(filterButton).toHaveClass(/filter-active/);
-  await expect.poll(predictedVisibleCount).toBeLessThan(213);
-
-  // Dragging back to 0 removes the condition and restores every prediction.
-  await threshold.press('Home');
-  await expect(threshold).toHaveValue('0');
-  await expect(thresholdPercent).toHaveValue('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
-  await expect.poll(predictedVisibleCount).toBe(213);
+  // Raising the threshold (hiding, the filter-active button, exact survivor counts)
+  // is checked by "keeps curated points visible while the reliability filter…".
 
   // The info popover explains predictions are filtered out while curated stays.
   await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
@@ -812,6 +800,7 @@ test('keeps curated points visible while the reliability filter hides low-confid
   const thresholdPercent = eatGroup.getByRole('spinbutton', {
     name: 'EAT reliability filter percentage',
   });
+  const filterButton = page.locator('protspace-control-bar .filter-container .dropdown-trigger');
 
   const confidences = await readEcEatConfidences(page);
   const curated = confidences.filter(({ confidence }) => confidence === null).map(({ id }) => id);
@@ -852,6 +841,8 @@ test('keeps curated points visible while the reliability filter hides low-confid
   // 60%: 94 of the 213 transfers fall below the threshold and are hidden; all
   // 619 curated points stay, so 619 + 119 = 738 points remain rendered.
   await thresholdPercent.fill('60');
+  // The threshold drives the shared filter, so the Filter button shows it as active.
+  await expect(filterButton).toHaveClass(/filter-active/);
   await expect
     .poll(() => visibility(0.6), { timeout: 15_000 })
     .toEqual({
@@ -874,8 +865,10 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedExpectedVisible: 4,
     });
 
-  // Back to 0: every prediction returns, so the filter hid rather than dropped them.
+  // Back to 0: the condition is removed and every prediction returns, so the
+  // filter hid rather than dropped them.
   await thresholdPercent.fill('0');
+  await expect(filterButton).not.toHaveClass(/filter-active/);
   await expect
     .poll(() => visibility(0), { timeout: 15_000 })
     .toEqual({
