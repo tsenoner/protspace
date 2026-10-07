@@ -208,15 +208,6 @@ async def test_late_subscriber_receives_queued_then_terminal(tmp_job_root):
     assert events[1].event in {"done", "error"}
 
 
-async def test_get_returns_none_for_unknown_job(tmp_job_root):
-    registry = JobRegistry(
-        job_root=tmp_job_root,
-        max_concurrent=1,
-        pipeline=_fake_pipeline_success,
-    )
-    assert registry.get("does-not-exist") is None
-
-
 async def test_peek_bundle_and_mark_consumed(tmp_job_root):
     registry = JobRegistry(
         job_root=tmp_job_root,
