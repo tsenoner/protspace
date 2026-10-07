@@ -22,10 +22,9 @@ const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
   'fixtures',
   'raw_numeric_test.parquetbundle',
 );
-// The default demo dataset (its annotation/projection names) changes over time,
-// and names can contain spaces/em-dashes (e.g. "ProtT5 — UMAP 2") that get
-// URL-encoded. Discover the demo's view at runtime and derive non-default
-// targets, so the tests don't hardcode names and survive demo swaps.
+// Annotation/projection names can contain spaces/em-dashes (e.g. "ProtT5 — UMAP 2")
+// that get URL-encoded. Discover the pinned startup fixture's view at runtime and
+// derive non-default targets, so the tests don't hardcode names.
 let demoAnnotations: string[] = [];
 let demoDefaultAnnotation = '';
 let demoDefaultProjection = '';
@@ -280,21 +279,14 @@ async function dropBundleOnScatterplot(
   );
 }
 
-// Discover the default demo's annotations/projections once per worker. Names can
-// contain spaces/em-dashes and change with demo swaps, so tests derive
-// non-default targets at runtime instead of hardcoding them.
-test.beforeAll(async ({ browser }) => {
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
-  const context = await browser.newContext({ baseURL });
+// Discover the startup fixture's annotations/projections once per worker, so tests
+// derive non-default targets at runtime instead of hardcoding them. The context
+// takes the project's baseURL and its tour-completed storage state, like `page`.
+test.beforeAll(async ({ browser }, testInfo) => {
+  const { baseURL, storageState } = testInfo.project.use;
+  const context = await browser.newContext({ baseURL, storageState });
   const page = await context.newPage();
   try {
-    await page.addInitScript(() => {
-      try {
-        localStorage.setItem('driver.overviewTour', 'true');
-      } catch {
-        /* ignore */
-      }
-    });
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
     // getCurrentView reads the control-bar's annotations/projections, which the
@@ -329,7 +321,7 @@ test.describe('URL-backed explore view state', () => {
 
     const currentView = await getCurrentView(page);
 
-    await expect(page).toHaveURL('http://localhost:8080/explore');
+    await expect(page).toHaveURL('/explore');
     expect(currentView.annotation).toBeTruthy();
     expect(currentView.projection).toBeTruthy();
     expect(currentView.annotations).toContain(currentView.annotation);
@@ -485,7 +477,7 @@ test.describe('URL-backed explore view state', () => {
     await expect.poll(() => page.evaluate(() => history.length)).toBe(baselineHistoryLength + 1);
 
     await page.goBack();
-    await expect(page).toHaveURL('http://localhost:8080/explore?seed=baseline');
+    await expect(page).toHaveURL('/explore?seed=baseline');
   });
 
   test(
@@ -632,7 +624,7 @@ test.describe('URL-backed explore view state', () => {
       (projection) => projection !== initialView.projection,
     );
 
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
+    expect(nextProjection).toBeTruthy();
 
     const initialHistoryLength = await page.evaluate(() => history.length);
     await selectProjection(page, nextProjection!);
@@ -732,7 +724,7 @@ test.describe('URL-backed explore view state', () => {
     );
 
     expect(nextAnnotation).toBeTruthy();
-    test.skip(!nextProjection, 'The current dataset exposes only one projection.');
+    expect(nextProjection).toBeTruthy();
 
     const postInteraction = await captureExploreViewStability(page, async () => {
       await selectAnnotation(page, nextAnnotation!);

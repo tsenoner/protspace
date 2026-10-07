@@ -903,12 +903,20 @@ async function readCategoricalPreviewRows(page: Page): Promise<{
   });
 }
 
-async function setSortMode(page: Page, annotation: string, mode: 'size' | 'alpha' | 'manual') {
-  const legend = page.locator('protspace-legend');
-  const inputs = legend.locator(`input[name="sort-type-${annotation}"][type="radio"]`);
-  const count = await inputs.count();
-  const index = mode === 'size' ? 0 : mode === 'alpha' ? 1 : count - 1;
-  await inputs.nth(index).click();
+/**
+ * Pick a sort mode in the open settings dialog by its label. Numeric and
+ * categorical annotations offer different options, so a position would pick
+ * a different mode for each.
+ */
+async function setSortMode(
+  page: Page,
+  label: 'By category size' | 'Alphabetical' | 'By numeric value' | 'Manual order',
+) {
+  const radio = page
+    .locator('protspace-legend #legend-settings-dialog')
+    .getByRole('radio', { name: label, exact: true });
+  await radio.check();
+  await expect(radio).toBeChecked();
 }
 
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
@@ -1678,32 +1686,33 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
     strategy: 'linear',
   });
 
-  const startedAt = Date.now();
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              { numericMetadata?: { binCount?: number; strategy?: string } }
-            >;
-          };
-          selectedAnnotation?: string;
-        })
-      | null;
+  // A rebin that leaves the UI stuck fails at this watchdog. Elapsed time on a
+  // shared runner is not asserted; performance thresholds live in the perf suite.
+  await page.waitForFunction(
+    () => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            getCurrentData?: () => {
+              annotations?: Record<
+                string,
+                { numericMetadata?: { binCount?: number; strategy?: string } }
+              >;
+            };
+            selectedAnnotation?: string;
+          })
+        | null;
 
-    return (
-      plot?.selectedAnnotation === 'length' &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) > 0 &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) <= 5 &&
-      plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.strategy === 'linear'
-    );
-  });
-
-  expect(Date.now() - startedAt).toBeLessThan(5000);
+      if (plot?.selectedAnnotation !== 'length') return false;
+      const metadata = plot.getCurrentData?.()?.annotations?.length?.numericMetadata;
+      const binCount = metadata?.binCount ?? 0;
+      return binCount > 0 && binCount <= 5 && metadata?.strategy === 'linear';
+    },
+    undefined,
+    { timeout: 10_000, polling: 100 },
+  );
 
   const finalNumericState = await getNumericState(page);
   expect(finalNumericState.binCount).toBeGreaterThan(0);
@@ -1835,7 +1844,7 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
 }) => {
   await loadDemoDataset(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'order', 'alpha');
+  await setSortMode(page, 'Alphabetical');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
   await clickLegendReverseButton(page);
@@ -2197,9 +2206,24 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
 
+  // The saved manual order belongs to the bins from before the rebin. Going
+  // back to those bins after the reload must give value order, not that
+  // stale manual order.
+  await openLegendSettings(page);
+  await updateLegendSettings(page, {
+    maxVisibleValues: 10,
+    paletteId: 'batlow',
+    strategy: 'quantile',
+  });
+  await clickDialogButton(page, 'Save');
+  await waitForDialogClosed(page);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+    .toEqual(initialLegend.items.map((item) => item.value));
+
   const reloadedLegend = await readLegendDisplay(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'length', 'alpha');
+  await setSortMode(page, 'By numeric value');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
