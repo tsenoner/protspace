@@ -130,6 +130,10 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
                 model_enums.append(BiocentralPredictionModel[model_name])
             except KeyError:
                 logger.warning(f"Unknown Biocentral model: {model_name}")
+                # The client's members are generated from the server's spec and can be
+                # renamed between releases. The columns this model feeds would come
+                # out blank and be cached as complete, so fail the source.
+                self.prediction_failed = True
 
         if not model_enums:
             return {}

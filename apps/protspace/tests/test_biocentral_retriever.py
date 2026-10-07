@@ -534,3 +534,58 @@ class TestNoUsableServer:
         warning = " ".join(r.getMessage() for r in caplog.records)
         assert any(p in warning.lower() for p in biocentral_down_patterns())
         assert "v3.0.0" in warning
+
+
+class TestUnknownModel:
+    """The client's enum members are generated from the server's spec, so a release can
+    rename or drop one the retriever asks for by name."""
+
+    @staticmethod
+    def _client_without(member):
+        import enum
+
+        import biocentral_api
+
+        members = {
+            m.name: m.value
+            for m in biocentral_api.BiocentralPredictionModel
+            if m.name != member
+        }
+        return enum.Enum("BiocentralPredictionModel", members, type=str)
+
+    def test_a_model_the_client_no_longer_lists_fails_the_source(self, caplog):
+        """Blank columns must stay out of the cache, as for an unreachable server."""
+        retriever = BiocentralPredictionRetriever(
+            headers=["P1"],
+            annotations=["predicted_transmembrane"],
+            sequences={"P1": _seq(1)},
+        )
+        fake = _FakeBiocentral()
+
+        with (
+            patch("biocentral_api.BiocentralAPI", fake),
+            patch(
+                "biocentral_api.BiocentralPredictionModel",
+                self._client_without("TMBED"),
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            rows = retriever.fetch_annotations()
+
+        assert retriever.prediction_failed
+        assert rows[0].annotations["predicted_transmembrane"] == ""
+        assert fake.requests == [], "nothing is sent for a model that cannot be named"
+        assert "Unknown Biocentral model: TMBED" in caplog.text
+
+    def test_every_model_the_retriever_names_is_one_the_client_lists(self):
+        from biocentral_api import BiocentralPredictionModel
+
+        from src.protspace.data.annotations.retrievers.biocentral_retriever import (
+            _PREDICTION_MODELS,
+        )
+
+        unlisted = set(_PREDICTION_MODELS.values()) - set(
+            BiocentralPredictionModel.__members__
+        )
+
+        assert not unlisted, f"not in the client's models: {sorted(unlisted)}"
