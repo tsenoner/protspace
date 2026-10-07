@@ -1410,7 +1410,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   private _renderWebGL(trigger: RenderWebGLTrigger = 'unknown') {
     if (!this._webglRenderer) return;
-    // `start` returns null unless a benchmark scenario is recording, which is the
+    // `start` returns null unless a benchmark run is in progress, which is the
     // normal case — so the byte accounting stays behind the token rather than
     // running on every frame for a `stop` that discards it.
     const perfToken = this._webglRenderPerf.start(trigger);

@@ -61,6 +61,8 @@ type PerfRunnerInternals = {
     active?: boolean,
   ): PerfScenarioRun | null;
   _endScenario(): void;
+  _waitForNextRender(prevCount: number, timeoutMs: number): Promise<boolean>;
+  _waitForRenderIdle(quietWindowMs: number, timeoutMs: number): Promise<boolean>;
   _runDragContinuousScenario(iterations: number): Promise<void>;
   _runDensityZoomScenario(iterations: number): Promise<void>;
   _runContourDragScenario(iterations: number): Promise<void>;
@@ -137,23 +139,35 @@ function mainGroupTransform(sp: PerfHostInternals): string | null {
 }
 
 /**
+ * Install the recorder `runWebGLRenderPerfMeasurements` creates for a run, with
+ * no scenario open yet. `start()` returns null without one, so every render
+ * would go unseen.
+ */
+function startRun(runner: PerfRunnerInternals): PerfRecorder {
+  const recorder: PerfRecorder = {
+    runId: 'host-contract',
+    iterations: 1,
+    passSeq: 0,
+    renderCount: 0,
+    lastRenderEndTs: 0,
+    activeScenario: null,
+    scenarios: [],
+  };
+  runner._recorder = recorder;
+  return recorder;
+}
+
+/**
  * Open the recording window that `runWebGLRenderPerfMeasurements` opens per
- * scenario. `start()` returns null unless a scenario is active, so without this
- * every render below would be measured as nothing at all — which is precisely
- * the state the benchmark was stuck in.
+ * scenario. Only a pass inside it is recorded, so without this every render
+ * below would be measured as nothing at all — which is precisely the state the
+ * benchmark was stuck in.
  */
 function beginRecordingScenario(
   runner: PerfRunnerInternals,
   name: PerfScenarioName,
 ): PerfScenarioRun {
-  runner._recorder = {
-    runId: 'host-contract',
-    iterations: 1,
-    passSeq: 0,
-    lastRenderEndTs: 0,
-    activeScenario: null,
-    scenarios: [],
-  };
+  startRun(runner);
   const scenario = runner._beginScenario(name, 1);
   if (!scenario) throw new Error('failed to begin perf scenario');
   return scenario;
@@ -287,7 +301,9 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     }
   });
 
-  it('never syncs the GPU outside a recording scenario', async () => {
+  it('never syncs the GPU outside a benchmark run', async () => {
+    // Inside a run, passes between scenarios are synced too (so the next
+    // scenario starts on a drained GPU); outside one, a render pays nothing.
     const sp = await mountScatter(makeFamilyData());
     const sync = vi.spyOn(sp._webglRenderer!, 'syncGpu');
 
@@ -298,17 +314,31 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     expect(sync).not.toHaveBeenCalled();
   });
 
+  it('a pass between scenarios ends a settle wait but is not recorded', async () => {
+    // Every restore — transform, density mode, annotation, selection — renders
+    // after `_endScenario()`. Both halves of the settle wait after it have to
+    // see that pass — the next-render count and the idle window's last end — or
+    // it sits out its whole 2s timeout and the restore is never really awaited.
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    const recorder = startRun(runner);
+    try {
+      const prevCount = recorder.renderCount;
+      runner._applyZoomScale(3);
+
+      await expect(runner._waitForNextRender(prevCount, 500)).resolves.toBe(true);
+      await expect(runner._waitForRenderIdle(10, 500)).resolves.toBe(true);
+      expect(recorder.scenarios).toEqual([]);
+      expect(recorder.passSeq).toBe(0);
+    } finally {
+      runner._recorder = null;
+    }
+  });
+
   it('dragContinuous records passes and restores the transform', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
-    runner._recorder = {
-      runId: 'host-contract',
-      iterations: 1,
-      passSeq: 0,
-      lastRenderEndTs: 0,
-      activeScenario: null,
-      scenarios: [],
-    };
+    startRun(runner);
     try {
       await runner._runDragContinuousScenario(1);
 
@@ -325,14 +355,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
   it('densityZoom restores the previous density mode after the scenario', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
-    runner._recorder = {
-      runId: 'host-contract',
-      iterations: 1,
-      passSeq: 0,
-      lastRenderEndTs: 0,
-      activeScenario: null,
-      scenarios: [],
-    };
+    startRun(runner);
     try {
       await runner._runDensityZoomScenario(1);
     } finally {
@@ -345,14 +368,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
   it('contourDrag records its own passes and restores the density mode', async () => {
     const sp = await mountScatter(makeFamilyData());
     const runner = sp._webglRenderPerf;
-    runner._recorder = {
-      runId: 'host-contract',
-      iterations: 1,
-      passSeq: 0,
-      lastRenderEndTs: 0,
-      activeScenario: null,
-      scenarios: [],
-    };
+    startRun(runner);
     try {
       await runner._runContourDragScenario(1);
       const scenario = runner._recorder?.scenarios.find((s) => s.name === 'contourDrag');
