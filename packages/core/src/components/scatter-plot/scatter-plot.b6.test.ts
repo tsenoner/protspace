@@ -20,13 +20,13 @@
  *   annotations:{key:{values,colors,shapes}}, annotation_data:{key:[...]},
  *   numeric_annotation_data:{...} } — NOT a makeViz factory.
  *
- * RED/GREEN status on the UNMODIFIED tree:
- *  - F-40 includeFilteredProteinIds:false  : GREEN  (existing fast path)
- *  - F-40 filtered correctness             : GREEN  (existing slice)
- *  - F-40 filtered memoization (toBe)      : RED    (not-yet-wired memo)
- *  - F-40 recompute on ref change          : GREEN  (rebuilds anyway today)
- *  - F-18 data-change emit gating          : GREEN  (existing gate)
- *  - F-18 INV-10 re-default                : GREEN  (existing default)
+ * What the tests pin:
+ *  - F-40: `_getCurrentDisplayData` slices to the filtered ids, returns the
+ *    memoized slice while its inputs are unchanged, rebuilds when the
+ *    filteredProteinIds reference changes, and skips the memo entirely for
+ *    `includeFilteredProteinIds: false`.
+ *  - F-18: `updated()` emits data-change only for a geometry (INV-11) input,
+ *    and re-defaults selectedAnnotation (INV-10) when the new data lacks it.
  *
  * Covered elsewhere, so not repeated here:
  *  - F-60 (materialize ref fast-path)  : scatter-plot.materialize-cache.test.ts
@@ -169,21 +169,21 @@ describe('B6 F-40 filtered display-data memoization', () => {
     return el;
   }
 
-  it('filtered slice preserves correctness (GREEN)', () => {
+  it('slices the display data to the filtered ids', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     expect(a).not.toBeNull();
     expect(a!.protein_ids).toEqual(['p1', 'p3']);
   });
 
-  it('returns the SAME filtered object on repeated calls with unchanged inputs (RED pre-wire — memoization)', () => {
+  it('returns the SAME filtered object on repeated calls with unchanged inputs', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     const b = el._getCurrentDisplayData();
     expect(b).toBe(a);
   });
 
-  it('recomputes when filteredProteinIds ref changes (GREEN)', () => {
+  it('recomputes when filteredProteinIds ref changes', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     el.filteredProteinIds = ['p2'];
@@ -193,7 +193,7 @@ describe('B6 F-40 filtered display-data memoization', () => {
     expect(b!.protein_ids).toEqual(['p2']);
   });
 
-  it('includeFilteredProteinIds:false bypasses the cache and returns the materialized object (GREEN)', () => {
+  it('includeFilteredProteinIds:false bypasses the cache and returns the materialized object', () => {
     const el = primed();
     const mat = el._getMaterializedData();
     const out = el._getCurrentDisplayData({ includeFilteredProteinIds: false });
@@ -211,7 +211,7 @@ describe('B6 F-40 filtered display-data memoization', () => {
 // scatter-plot.filter-render.test.ts.
 // ---------------------------------------------------------------------------
 describe('B6 F-18 updated() INV-11 gate & INV-10 re-default', () => {
-  it('emits data-change exactly when an INV-11 geometry input changes (GREEN)', () => {
+  it('emits data-change exactly when an INV-11 geometry input changes', () => {
     const el = makeScatter();
     el.data = makeFamilyData({ n: 6 });
     el.selectedAnnotation = 'fam';
@@ -232,7 +232,7 @@ describe('B6 F-18 updated() INV-11 gate & INV-10 re-default', () => {
     expect(seen).toEqual(['data-change']);
   });
 
-  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10, GREEN)', () => {
+  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10)', () => {
     const el = makeScatter();
     el.data = makeFamilyData({ n: 6 });
     el.selectedAnnotation = 'fam';
