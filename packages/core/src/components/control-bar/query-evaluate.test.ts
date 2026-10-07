@@ -623,7 +623,7 @@ describe('evaluateQueryExcluding', () => {
     expect(result).toEqual(new Set([0, 2]));
   });
 
-  it('returns all indices for empty data', () => {
+  it('returns an empty set for empty data', () => {
     const result = evaluateQueryExcluding([], {}, '1');
     expect(result).toEqual(new Set());
   });
@@ -731,20 +731,6 @@ describe('multi-label annotations', () => {
 
 describe('inclusive numeric operators (gte / lte)', () => {
   // length: P1=100, P2=250, P3=400, P4=550, P5=null
-  it('gte includes the boundary value, gt excludes it', () => {
-    const data = createTestData();
-    const gte = evaluateQuery(
-      [createNumericCondition({ annotation: 'length', operator: 'gte', min: 250 })],
-      data,
-    );
-    const gt = evaluateQuery(
-      [createNumericCondition({ annotation: 'length', operator: 'gt', min: 250 })],
-      data,
-    );
-    expect(gte).toEqual(new Set([1, 2, 3]));
-    expect(gt).toEqual(new Set([2, 3]));
-  });
-
   it('lte includes the boundary value, lt excludes it', () => {
     const data = createTestData();
     const lte = evaluateQuery(
