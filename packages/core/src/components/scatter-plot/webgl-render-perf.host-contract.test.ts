@@ -25,6 +25,7 @@
  * expected and irrelevant to the readiness contract.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
+import * as d3 from 'd3';
 import type { VisualizationData } from '@protspace/utils';
 import { PlotInteractionController } from './interaction/plot-interaction-controller';
 import type { PlotInteractionHost } from './interaction/plot-interaction-controller';
@@ -130,6 +131,13 @@ async function mountScatter(data: VisualizationData | null): Promise<PerfHostInt
   document.body.appendChild(sp);
   mounted.push(sp);
   await sp.updateComplete;
+  // The first `data` assignment starts resetZoom()'s 750ms transition. Every
+  // tick of it is a 'zoom' render, so a scenario begun inside that window
+  // records passes it never caused until the runner's first pan interrupts the
+  // transition. Settled here, the exact pass counts below cannot depend on how
+  // fast the runner's settle waits return.
+  const svg = sp._interaction?.mainGroup?.node()?.ownerSVGElement;
+  if (svg) d3.select(svg).interrupt();
   return sp;
 }
 
@@ -239,9 +247,7 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     try {
       // `_runZoomCycleScenario` drives every zoom through this helper; when the
       // d3 zoom handle is unreachable it returns at its guard and the scenario
-      // silently measures nothing. The `resetZoom()` that the first `data`
-      // assignment triggers is a 750ms transition from identity to identity, so
-      // it never competes with the value asserted here.
+      // silently measures nothing.
       runner._applyZoomScale(3);
       expect(mainGroupTransform(sp)).toMatch(/scale\(3\)/);
 
@@ -312,6 +318,20 @@ describe('WebglRenderPerfRunner ↔ scatter-plot host contract (#453)', () => {
     await nextFrame();
 
     expect(sync).not.toHaveBeenCalled();
+  });
+
+  it('no zoom pass reaches a scenario until the runner zooms', async () => {
+    // The precondition for the exact 'zoom' pass counts below. Without the
+    // interrupt in mountScatter, the reset transition records three of them here.
+    const sp = await mountScatter(makeFamilyData());
+    const runner = sp._webglRenderPerf;
+    const scenario = beginRecordingScenario(runner, 'dragContinuous');
+    try {
+      for (let i = 0; i < 3; i++) await nextFrame();
+      expect(scenario.passes.map((p) => p.trigger)).not.toContain('zoom');
+    } finally {
+      endRecording(runner);
+    }
   });
 
   it('a pass between scenarios ends a settle wait but is not recorded', async () => {
