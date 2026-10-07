@@ -1,8 +1,7 @@
+import asyncio
 import re
 from pathlib import Path
-from unittest.mock import patch
 
-import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -40,6 +39,17 @@ def app_factory(tmp_path, monkeypatch):
 async def _client(app):
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
+
+
+async def _drain_events(c: AsyncClient, job_id: str) -> list[str]:
+    """Read a job's SSE stream until the server closes it; return the event names."""
+    events = []
+    async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
+        assert stream.status_code == 200
+        async for line in stream.aiter_lines():
+            if line.startswith("event: "):
+                events.append(line[len("event: ") :])
+    return events
 
 
 async def test_post_prepare_rejects_oversized_upload(app_factory, monkeypatch):
@@ -80,14 +90,7 @@ async def test_post_prepare_returns_job_id_and_sse_drives_to_done(app_factory):
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            assert stream.status_code == 200
-            events = []
-            async for chunk in stream.aiter_lines():
-                if chunk.startswith("event: "):
-                    events.append(chunk[len("event: ") :])
-                if "event: done" in chunk or "event: error" in chunk:
-                    pass
+        events = await _drain_events(c, job_id)
         assert "queued" in events
         assert "done" in events
 
@@ -133,29 +136,32 @@ async def test_malformed_job_id_is_rejected_before_lookup(app_factory):
         assert r.status_code == 422
 
 
-async def test_healthz_reflects_running_jobs(app_factory):
-    app = app_factory()
+async def test_healthz_reflects_running_jobs(app_factory, gated_pipeline):
+    app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
         r = await c.get("/healthz")
         assert r.status_code == 200
+        assert r.json() == {"ok": True, "jobs": {"running": 0, "queued": 0}}
+
+        files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
+        job_id = (await c.post("/api/prepare", files=files)).json()["job_id"]
+        await gated_pipeline.started.wait()
+        r = await c.get("/healthz")
+        assert r.json()["jobs"] == {"running": 1, "queued": 0}
+
+        gated_pipeline.release.set()
+        assert (await _drain_events(c, job_id))[-1] == "done"
+        r = await c.get("/healthz")
         assert r.json()["jobs"] == {"running": 0, "queued": 0}
 
 
-async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch):
+async def test_post_prepare_returns_503_when_queue_full(
+    app_factory, monkeypatch, gated_pipeline
+):
     """When pending jobs hit the cap, the endpoint rejects with 503 + Retry-After."""
-    import asyncio
-
     monkeypatch.setenv("PREP_MAX_CONCURRENT_JOBS", "1")
     monkeypatch.setenv("PREP_MAX_PENDING_JOBS", "1")
-    gate = asyncio.Event()
-
-    async def gated(ctx, emit):
-        await gate.wait()
-        out = ctx.output_dir / "data.parquetbundle"
-        out.write_bytes(b"BUNDLE")
-        return out
-
-    app = app_factory(pipeline=gated)
+    app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
         files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
         r1 = await c.post("/api/prepare", files=files)
@@ -164,7 +170,7 @@ async def test_post_prepare_returns_503_when_queue_full(app_factory, monkeypatch
         r2 = await c.post("/api/prepare", files=files)
     assert r2.status_code == 503
     assert r2.headers.get("retry-after") == "30"
-    gate.set()
+    gated_pipeline.release.set()
 
 
 # ---------------------------------------------------------------------------
@@ -215,11 +221,7 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        # Drain SSE to completion
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            async for chunk in stream.aiter_lines():
-                if "done" in chunk or "error" in chunk:
-                    pass
+        assert (await _drain_events(c, job_id))[-1] == "done"
 
         r = await c.get(f"/api/prepare/{job_id}/bundle")
         assert r.status_code == 200
@@ -240,28 +242,18 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
 # ---------------------------------------------------------------------------
 
 
-async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeypatch):
+async def test_sse_keepalive_frame_emitted_on_slow_pipeline(
+    app_factory, monkeypatch, gated_pipeline
+):
     """When no event arrives within the keepalive interval, a comment frame
     is sent — and the stream must keep flowing afterwards (regression: a prior
     implementation cancelled the in-flight `__anext__()` on each keepalive,
     exhausting the subscriber generator so the stream truncated silently).
     """
-    import asyncio
-
     import protspace_prep.api as api_module
 
     # Speed up: use a very short keepalive interval so the test doesn't take 15s.
     monkeypatch.setattr(api_module, "_KEEPALIVE_INTERVAL_SECONDS", 0.05)
-
-    gate = asyncio.Event()
-
-    async def gated_pipeline(ctx, emit):
-        # Hold long enough for several keepalive intervals to fire before we
-        # produce a terminal event.
-        await gate.wait()
-        out = ctx.output_dir / "data.parquetbundle"
-        out.write_bytes(b"BUNDLE")
-        return out
 
     app = app_factory(pipeline=gated_pipeline)
     async with await _client(app) as c:
@@ -274,7 +266,7 @@ async def test_sse_keepalive_frame_emitted_on_slow_pipeline(app_factory, monkeyp
         # to fire, so the stream is exercised across the keepalive boundary.
         async def release_gate():
             await asyncio.sleep(0.3)
-            gate.set()
+            gated_pipeline.release.set()
 
         release_task = asyncio.create_task(release_gate())
 
@@ -311,10 +303,7 @@ async def test_bundle_expired_returns_410_and_does_not_consume(app_factory):
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            async for chunk in stream.aiter_lines():
-                if "done" in chunk or "error" in chunk:
-                    pass
+        assert (await _drain_events(c, job_id))[-1] == "done"
 
         # Delete the bundle file to simulate expiry before download
         registry = app.state.registry

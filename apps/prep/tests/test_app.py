@@ -5,14 +5,6 @@ import time
 from protspace_prep.app import create_app
 
 
-async def test_healthz_reports_ok_and_zero_jobs(client):
-    response = await client.get("/healthz")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["jobs"] == {"running": 0, "queued": 0}
-
-
 async def test_lifespan_sweeper_removes_expired_job_dirs(tmp_path, monkeypatch):
     """The background sweeper enforces the published two-hour retention.
 
