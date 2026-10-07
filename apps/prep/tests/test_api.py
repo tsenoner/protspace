@@ -1,8 +1,6 @@
 import re
 from pathlib import Path
-from unittest.mock import patch
 
-import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -40,6 +38,17 @@ def app_factory(tmp_path, monkeypatch):
 async def _client(app):
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
+
+
+async def _drain_events(c: AsyncClient, job_id: str) -> list[str]:
+    """Read a job's SSE stream until the server closes it; return the event names."""
+    events = []
+    async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
+        assert stream.status_code == 200
+        async for line in stream.aiter_lines():
+            if line.startswith("event: "):
+                events.append(line[len("event: ") :])
+    return events
 
 
 async def test_post_prepare_rejects_oversized_upload(app_factory, monkeypatch):
@@ -80,14 +89,7 @@ async def test_post_prepare_returns_job_id_and_sse_drives_to_done(app_factory):
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            assert stream.status_code == 200
-            events = []
-            async for chunk in stream.aiter_lines():
-                if chunk.startswith("event: "):
-                    events.append(chunk[len("event: ") :])
-                if "event: done" in chunk or "event: error" in chunk:
-                    pass
+        events = await _drain_events(c, job_id)
         assert "queued" in events
         assert "done" in events
 
@@ -215,11 +217,7 @@ async def test_bundle_download_with_hostile_filename_produces_safe_header(app_fa
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        # Drain SSE to completion
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            async for chunk in stream.aiter_lines():
-                if "done" in chunk or "error" in chunk:
-                    pass
+        assert (await _drain_events(c, job_id))[-1] == "done"
 
         r = await c.get(f"/api/prepare/{job_id}/bundle")
         assert r.status_code == 200
@@ -311,10 +309,7 @@ async def test_bundle_expired_returns_410_and_does_not_consume(app_factory):
         assert r.status_code == 202
         job_id = r.json()["job_id"]
 
-        async with c.stream("GET", f"/api/prepare/{job_id}/events") as stream:
-            async for chunk in stream.aiter_lines():
-                if "done" in chunk or "error" in chunk:
-                    pass
+        assert (await _drain_events(c, job_id))[-1] == "done"
 
         # Delete the bundle file to simulate expiry before download
         registry = app.state.registry
