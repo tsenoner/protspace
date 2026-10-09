@@ -77,7 +77,6 @@ const sizes = css`
   --ps-text-md: 14px;
   --ps-text-lg: 16px;
   --ps-text-xl: 20px;
-  --ps-weight-regular: 400;
   --ps-weight-medium: 500;
   --ps-weight-semibold: 600;
   --ps-leading-tight: 1.25;
@@ -87,7 +86,6 @@ const sizes = css`
   --ps-space-1-5: 6px;
   --ps-space-2: 8px;
   --ps-space-3: 12px;
-  --ps-space-4: 16px;
   --ps-space-5: 20px;
   --ps-space-6: 24px;
   --ps-radius-sm: 4px;
@@ -101,7 +99,6 @@ const sizes = css`
   --ps-focus-width: 2px;
   --ps-focus-offset: 2px;
   --ps-duration-fast: 120ms;
-  --ps-duration: 160ms;
   --ps-ease: cubic-bezier(0.2, 0, 0, 1);
 `;
 
