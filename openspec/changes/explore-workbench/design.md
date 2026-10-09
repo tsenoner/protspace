@@ -449,7 +449,8 @@ requirement that the desktop layout stays unchanged is superseded.
 - Built in phases, each leaving the app working and the tests green: (1) foundation: tokens, type,
   kit, icons, layer stack; (2) shell and layout, plot proportions, resize policy; (3) legend;
   (4) workflows; (5) phones and tablets; (6) dark-mode polish and QA; (7) docs, docs media, tour;
-  then the OpenSpec archive as the last commit.
+  (8) the spec files listed in the proposal, written from the final code; then the OpenSpec archive
+  as the last commit.
 
 ## Risks / Trade-offs
 

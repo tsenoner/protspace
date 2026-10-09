@@ -47,6 +47,11 @@ new analysis features, a native app or PWA, and translations.
 
 ## Capabilities
 
+The implementation plan is written from `design.md`. The spec files below are written at the end of
+the PR, from the final code, as the step before the archive commit, so `openspec/specs/` matches the
+shipped behaviour (AGENTS.md: archive before the merge). Until then this list records which
+capabilities the change adds and which existing specs it will update.
+
 ### New Capabilities
 
 - `explore-workbench-layout`: the app bar, the view bar that never wraps, tools and status on the
