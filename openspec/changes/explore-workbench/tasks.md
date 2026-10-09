@@ -20,18 +20,22 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 2. Shell and layout (plan: `plans/phase-2-shell.md`)
 
-- [ ] 2.1 Layout store `apps/web/src/explore/layout-state.ts` with localStorage persistence
-- [ ] 2.2 Workbench shell in React: app bar, view bar, plot area, sidebar, icon rail; the site header
-      leaves `/explore`
-- [ ] 2.3 Control bar split into separate elements (projection, annotation, contours, search, export,
-      import, plot selection tools); its coordination moves to controllers in `apps/web/src/explore/`
-- [ ] 2.4 Sidebar: collapse, rail, edge resize, divider, persistence
-- [ ] 2.5 Structure viewer docked and floating, rail dot, "View structure" in the tooltip
-- [ ] 2.6 One scale for both axes, shared by the live plot and the export renderer
-- [ ] 2.7 One resize per layout change, viewed centre kept; panel-toggle perf scenario and budget;
-      perf runs pin layout and theme
-- [ ] 2.8 View bar never wraps (shorter labels, then a More menu); help menu with shortcuts and tour
-- [ ] 2.9 E2E: layout-pinned specs and shared helpers updated; sidebar and persistence specs added
+- [ ] 2.1 One scale for both axes, shared by the live plot and the export renderer; the viewed
+      centre survives a resize
+- [ ] 2.2 Workbench shell in React (app bar, view bar, plot area, sidebar) and the layout store
+      `apps/web/src/explore/layout-state.ts`; the site header leaves `/explore`
+- [ ] 2.3 E2E helpers that reach the controls by role and name, whatever the layout
+- [ ] 2.4 Help menu with keyboard shortcuts and the tour, replacing the plot's tips
+- [ ] 2.5 Import and Export menus in the app bar
+- [ ] 2.6 Filter in a dialog with its own controller
+- [ ] 2.7 Projection and Contours pickers
+- [ ] 2.8 Pickers in the view bar with their controller; Color by and the projection details move
+- [ ] 2.9 Plot tools, the selection controller and search in the app bar
+- [ ] 2.10 Control bar removed; the view bar never wraps (shorter labels, then a More menu)
+- [ ] 2.11 Structure viewer docked under the legend, with a divider
+- [ ] 2.12 Sidebar rail, collapse and edge resize, one plot resize per change, persistence;
+      panel-toggle perf scenario and budget; perf runs pin layout and theme
+- [ ] 2.13 Floating structure; "View structure" in the tooltip
 
 ## 3. Legend (plan: `plans/phase-3-legend.md`)
 
