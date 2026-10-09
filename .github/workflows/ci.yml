@@ -48,6 +48,9 @@ jobs:
       - name: Run quality checks
         run: pnpm quality:ci
 
+      - name: Install Chromium for the core browser tests
+        run: pnpm exec playwright install --only-shell chromium
+
       - name: Run test suite
         run: pnpm test:ci
 
