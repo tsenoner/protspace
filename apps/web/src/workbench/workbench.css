@@ -318,10 +318,12 @@
 }
 
 /* App bar (Task 2.9): three columns, so search stays centred while both sides fit. A side
-   column never shrinks below its content (1fr = minmax(auto, 1fr)); search gives way first. */
+   column never shrinks below its content, so the dataset name (truncated only past 200 px) keeps
+   its width and search narrows toward 200 px first. A plain 1fr would size search to 420 px before
+   the sides and cut the name instead. */
 .workbench header[data-workbench='app-bar'] {
   display: grid;
-  grid-template-columns: 1fr minmax(200px, 420px) 1fr;
+  grid-template-columns: minmax(max-content, 1fr) minmax(200px, 420px) minmax(max-content, 1fr);
   align-items: center;
   column-gap: var(--ps-space-3);
 }

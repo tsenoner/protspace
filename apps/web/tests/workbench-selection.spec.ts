@@ -98,6 +98,11 @@ test.describe('plot tools and selection', () => {
     await expect(suggestions).toBeVisible();
     await searchInput(page).press('Escape');
     await expect(suggestions).toBeHidden();
+    // A wrong clear shows at once in the tools and reaches the plot after the paint.
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    await expect(selectionAction(page, 'Clear')).toBeVisible();
     expect(await getSelectedProteinIds(page)).toEqual([id]);
 
     // Nothing left to close: the next Escape clears the selection.
@@ -141,11 +146,19 @@ test.describe('plot tools and selection', () => {
 
     await page.locator('body').press('Control+k');
     await expect(searchInput(page)).toBeFocused();
+    // The field shows the focus ring.
+    expect(
+      await page
+        .locator('protspace-protein-search .search-chips')
+        .evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).toBe('solid');
   });
 
-  test('the app bar keeps one row without overflow at 951, 1024 and 1280 px', async ({ page }) => {
+  test('the app bar keeps one row without overflow at 951, 1024, 1280 and 1440 px', async ({
+    page,
+  }) => {
     await openExplore(page);
-    for (const width of [951, 1024, 1280]) {
+    for (const width of [951, 1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 720 });
       const bar = appBar(page);
       const box = (await bar.boundingBox())!;
@@ -164,6 +177,13 @@ test.describe('plot tools and selection', () => {
       // Left to right, never overlapping.
       expect(groups[0].x + groups[0].width).toBeLessThanOrEqual(groups[1].x + 1);
       expect(groups[1].x + groups[1].width).toBeLessThanOrEqual(groups[2].x + 1);
+      // The dataset name shows in full (it truncates only past 200 px); search narrows instead.
+      const name = page.locator('.wb-dataset-name');
+      await expect(name).toBeVisible();
+      expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect((await page.locator('#myProteinSearch').boundingBox())!.width).toBeGreaterThanOrEqual(
+        200,
+      );
 
       // Icon-only below 1100 px, still named.
       await expect(importTrigger(page)).toHaveAccessibleName('Import');
