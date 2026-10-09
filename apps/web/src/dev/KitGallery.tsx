@@ -103,7 +103,9 @@ export default function KitGallery() {
       </Section>
 
       <Section title="Inputs">
+        {/* As wide as the app bar's search in the mockup. */}
         <ps-input
+          className="w-[420px]"
           label="Search proteins"
           type="search"
           placeholder="Search proteins or paste IDs"
@@ -126,6 +128,7 @@ export default function KitGallery() {
         <ps-checkbox checked disabled>
           Disabled and checked
         </ps-checkbox>
+        <ps-checkbox label="Select all categories, named by its label property"></ps-checkbox>
       </Section>
 
       <Section title="Switches">

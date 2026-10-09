@@ -33,12 +33,26 @@ test('the kit gallery shows every control in light and dark without errors', asy
   );
   expect(defined).toEqual([]);
 
+  await expect(
+    page.getByRole('checkbox', { name: 'Select all categories, named by its label property' }),
+  ).toBeVisible();
+
+  // Check each Escape, so a failure names it instead of timing out on the next click.
+  const species = page.getByRole('menuitemradio', { name: 'Species' });
   await page.getByRole('button', { name: 'Open menu' }).click();
-  await expect(page.getByRole('menuitemradio', { name: 'Species' })).toBeVisible();
+  await expect(species).toBeVisible();
+  await expect(page.getByRole('menuitemradio', { name: 'Protein family' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   await page.keyboard.press('Escape');
+  await expect(species).toBeHidden();
+
+  const dialog = page.getByRole('dialog', { name: 'Legend settings' });
   await page.getByRole('button', { name: 'Open dialog' }).click();
-  await expect(page.getByRole('dialog', { name: 'Legend settings' })).toBeVisible();
+  await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
 
   await page.getByRole('button', { name: 'Dark' }).click();
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
