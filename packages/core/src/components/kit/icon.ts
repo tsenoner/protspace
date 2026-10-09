@@ -1,5 +1,5 @@
-import { html, type TemplateResult } from 'lit';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import type { TemplateResult } from 'lit';
+import { html, unsafeStatic } from 'lit/static-html.js';
 import { Check, ChevronDown, Search, X, type IconNode } from 'lucide';
 
 // The curated set. Each phase adds the icons it first needs; explicit imports keep the bundle to them.
@@ -44,7 +44,10 @@ export function iconMarkup(name: IconName, size: IconSize = 16): string {
   return svg;
 }
 
-/** An icon for a Lit template. The markup comes from the static Lucide set, never from input. */
+/**
+ * An icon for a Lit template. The markup comes from the static Lucide set, never from input.
+ * Lit caches static markup by its text, so each icon and size is parsed once.
+ */
 export function icon(name: IconName, size: IconSize = 16): TemplateResult {
-  return html`${unsafeHTML(iconMarkup(name, size))}`;
+  return html`${unsafeStatic(iconMarkup(name, size))}`;
 }

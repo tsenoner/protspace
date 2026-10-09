@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { render } from 'lit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { icon, iconMarkup } from './icon';
 
 describe('icon', () => {
@@ -15,8 +15,18 @@ describe('icon', () => {
     expect(svg.children.length).toBeGreaterThan(0);
   });
 
-  it('defaults to 16px and reuses the same markup', () => {
+  it('defaults to 16px', () => {
     expect(iconMarkup('x')).toBe(iconMarkup('x', 16));
     expect(iconMarkup('x')).toContain('width="16"');
+  });
+
+  it('parses each icon template once, however many places render it', () => {
+    const createElement = vi.spyOn(document, 'createElement');
+    const templates = () => createElement.mock.calls.filter(([tag]) => tag === 'template').length;
+    render(icon('check'), document.createElement('div'));
+    const afterFirst = templates();
+    render(icon('check'), document.createElement('div'));
+    expect(templates()).toBe(afterFirst);
+    createElement.mockRestore();
   });
 });
