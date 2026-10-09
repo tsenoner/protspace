@@ -9,14 +9,14 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 1.2 Theme tokens in `styles/theme.ts`, adopted into the document by core
 - [x] 1.3 Web app: Inter self-hosted, fixed root font size, Tailwind bridge to the `--ps-*` tokens
 - [x] 1.4 Icon helper on Lucide
-- [ ] 1.5 Layer stack: one Escape order and outside-press dismissal
-- [ ] 1.6 Kit: positioning helper, `ps-button`, `ps-icon-button`, `ps-tooltip`
-- [ ] 1.7 Kit: `ps-popover`
-- [ ] 1.8 Kit: `ps-menu`, `ps-menu-item`, `ps-menu-label`
-- [ ] 1.9 Kit: `ps-dialog`
-- [ ] 1.10 Kit: `ps-input`, `ps-select`, `ps-checkbox`, `ps-switch`, `ps-segmented`
-- [ ] 1.11 Style lint test with a shrinking allowlist of legacy style modules; unused tokens trimmed
-- [ ] 1.12 Kit gallery page (development builds only) and its e2e smoke test
+- [x] 1.5 Layer stack: one Escape order and outside-press dismissal
+- [x] 1.6 Kit: positioning helper, `ps-button`, `ps-icon-button`, `ps-tooltip`
+- [x] 1.7 Kit: `ps-popover`
+- [x] 1.8 Kit: `ps-menu`, `ps-menu-item`, `ps-menu-label`
+- [x] 1.9 Kit: `ps-dialog`
+- [x] 1.10 Kit: `ps-input`, `ps-select`, `ps-checkbox`, `ps-switch`, `ps-segmented`
+- [x] 1.11 Style lint test with a shrinking allowlist of legacy style modules; unused tokens trimmed
+- [x] 1.12 Kit gallery page (development builds only) and its e2e smoke test
 
 ## 2. Shell and layout (plan: `plans/phase-2-shell.md`)
 
