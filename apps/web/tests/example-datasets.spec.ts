@@ -901,9 +901,15 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     const historyLength = await page.evaluate(() => history.length);
 
     await page.route(SMALL.glob, failWith500);
+    const failed = page.waitForResponse(
+      (response) =>
+        response.status() === 500 && response.url().endsWith(SMALL.entry.url.replace(/^\.\//, '')),
+    );
     await page.goBack();
+    await failed;
 
-    await expect(toast).toBeVisible();
+    // The toast follows the failed response; a busy full suite can delay it past 5 s.
+    await expect(toast).toBeVisible({ timeout: 15_000 });
     await expect(toast.getByRole('button', { name: 'Report this' })).toBeVisible();
     await expect(page.locator('#progressive-loading')).toHaveCount(0);
     // No fallback: OTHER stays, and the entry still names SMALL.
@@ -929,8 +935,13 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     await waitForProteinCount(page, OTHER.count);
 
     await page.route(SMALL.glob, failWith500);
+    const failed = page.waitForResponse(
+      (response) =>
+        response.status() === 500 && response.url().endsWith(SMALL.entry.url.replace(/^\.\//, '')),
+    );
     await page.goBack();
-    await expect(toast).toBeVisible();
+    await failed;
+    await expect(toast).toBeVisible({ timeout: 15_000 });
     expect(await getUrlParam(page, 'annotation')).toBe('length_fixed');
 
     await selectAnnotation(page, 'ec');
