@@ -4,6 +4,7 @@ import { updateLayout } from '../explore/layout-state';
 import { AppBar } from './AppBar';
 import {
   clampSidebarToWindow,
+  clampSidebarWidth,
   DIVIDER_HEIGHT,
   LEGEND_MIN_HEIGHT,
   plotRightInset,
@@ -25,7 +26,8 @@ function subscribeWindowWidth(onChange: () => void): () => void {
   return () => window.removeEventListener('resize', onChange);
 }
 
-const getWindowWidth = () => window.innerWidth;
+/** The widest sidebar this window allows. A resize re-renders the workbench only when it changes. */
+const getSidebarCap = () => clampSidebarToWindow(SIDEBAR_WIDTH.max, window.innerWidth);
 
 /**
  * The explore workbench (design decision 1): the app bar, the view bar, then the plot beside a
@@ -43,14 +45,14 @@ export function Workbench() {
   // What the sidebar column holds under the legend: the empty footer, or the docked viewer.
   const structure = structureProteinId === null ? 'none' : 'docked';
   const desktop = mode === 'desktop';
-  const windowWidth = useSyncExternalStore(subscribeWindowWidth, getWindowWidth);
+  const sidebarCap = useSyncExternalStore(subscribeWindowWidth, getSidebarCap);
   const asideRef = useRef<HTMLElement>(null);
   const structureRef = useRef<HTMLElement>(null);
   const railToggleRef = useRef<HTMLElement>(null);
   // The edge's drag or key preview; null while the committed width shows.
   const [sidebarWidthPreview, setSidebarWidthPreview] = useState<number | null>(null);
   // The committed width this window can give the sidebar, so the plot keeps 480 px (render only).
-  const sidebarWidth = clampSidebarToWindow(layout.sidebarWidth, windowWidth);
+  const sidebarWidth = clampSidebarWidth(layout.sidebarWidth, sidebarCap);
   const phase = useSidebarTransition(layout.sidebarOpen, {
     aside: asideRef,
     structure: structureRef,
@@ -95,7 +97,7 @@ export function Workbench() {
         />
         <SidebarEdge
           width={sidebarWidthPreview ?? sidebarWidth}
-          maxWidth={clampSidebarToWindow(SIDEBAR_WIDTH.max, windowWidth)}
+          maxWidth={sidebarCap}
           onPreview={setSidebarWidthPreview}
           onCollapse={() => {
             updateLayout({ sidebarOpen: false });

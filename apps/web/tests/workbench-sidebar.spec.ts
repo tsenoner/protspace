@@ -290,6 +290,40 @@ test('a corrupt or oversized stored layout loads safely', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('a window resize re-renders the workbench only when the sidebar cap changes', async ({
+  page,
+}) => {
+  // A stub of React's devtools hook counts commits.
+  await page.addInitScript(() => {
+    const counter = window as unknown as { __reactCommits: number };
+    counter.__reactCommits = 0;
+    Object.assign(window, {
+      __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+        supportsFiber: true,
+        renderers: new Map(),
+        inject: () => 1,
+        onCommitFiberRoot: () => counter.__reactCommits++,
+        onCommitFiberUnmount: () => {},
+        onPostCommitFiberRoot: () => {},
+        onScheduleFiberRoot: () => {},
+        checkDCE: () => {},
+      },
+    });
+  });
+  const commits = () =>
+    page.evaluate(() => (window as unknown as { __reactCommits: number }).__reactCommits);
+  await openExplore(page);
+  // Past 1004 px the cap is 480 at every width, so these resizes change nothing on screen.
+  const before = await commits();
+  for (const width of [1290, 1300, 1310, 1320, 1330]) {
+    await page.setViewportSize({ width, height: 720 });
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+  }
+  expect(await commits()).toBe(before);
+});
+
 test('a zoomed-in view keeps its centre protein across collapse and expand', async ({ page }) => {
   await openExplore(page);
   const box = (await page.locator('#myPlot').boundingBox())!;
