@@ -1,8 +1,14 @@
 import { useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import { SIDEBAR_WIDTH } from '../explore/layout-defaults';
+import { RAIL_WIDTH, SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { AppBar } from './AppBar';
-import { clampSidebarToWindow, plotRightInset } from './layout-geometry';
+import {
+  clampSidebarToWindow,
+  DIVIDER_HEIGHT,
+  LEGEND_MIN_HEIGHT,
+  plotRightInset,
+  STRUCTURE_MIN_HEIGHT,
+} from './layout-geometry';
 import { PlotArea } from './PlotArea';
 import { Rail } from './Rail';
 import { Sidebar, SidebarEdge } from './Sidebar';
@@ -70,6 +76,12 @@ export function Workbench() {
             '--wb-sidebar-live-width': `${sidebarWidthPreview ?? sidebarWidth}px`,
             '--wb-plot-right': `${plotRightInset(phase, sidebarWidth)}px`,
             '--wb-legend-fraction': String(legendFraction),
+            // The column's geometry, from layout-geometry.ts so the CSS clamp and splitSidebar agree.
+            '--wb-divider-height': `${DIVIDER_HEIGHT}px`,
+            '--wb-legend-min': `${LEGEND_MIN_HEIGHT}px`,
+            '--wb-structure-min': `${STRUCTURE_MIN_HEIGHT}px`,
+            // Only the desktop has the rail; below 951 px the sidebar sits at the right edge.
+            '--wb-rail-width': desktop ? `${RAIL_WIDTH}px` : undefined,
           } as CSSProperties
         }
       >

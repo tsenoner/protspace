@@ -2,24 +2,10 @@ import { useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
 import { Box } from 'lucide-react';
 import { LEGEND_FRACTION } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
-import { fractionStep, splitSidebar } from './layout-geometry';
-
-/** The divider's height; the legend and the docked structure share the column's height minus it. */
-const DIVIDER_HEIGHT = 9;
+import { clampLegendFraction, DIVIDER_HEIGHT, fractionStep } from './layout-geometry';
 
 /** The sidebar column, the workbench body the section and the aside are placed in. */
 const columnOf = (element: Element) => element.closest<HTMLElement>('[data-workbench="body"]');
-
-/**
- * The fraction the column shows for a requested one: within the stored range, then within
- * splitSidebar's pixel minimums at this column height, so what is stored is what the user saw.
- */
-function shownFraction(requested: number, column: HTMLElement): number {
-  const fraction = Math.min(LEGEND_FRACTION.max, Math.max(LEGEND_FRACTION.min, requested));
-  const available = column.clientHeight - DIVIDER_HEIGHT;
-  if (available <= 0) return fraction;
-  return splitSidebar(available, fraction).legend / available;
-}
 
 interface LegendDividerProps {
   /** The legend's share of the column: the preview while one runs, else the stored value. */
@@ -57,7 +43,12 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
     const column = columnOf(event.currentTarget);
     if (!dragging.current || !column) return;
     const legendHeight = event.clientY - column.getBoundingClientRect().top - DIVIDER_HEIGHT / 2;
-    preview(shownFraction(legendHeight / (column.clientHeight - DIVIDER_HEIGHT), column));
+    preview(
+      clampLegendFraction(
+        legendHeight / (column.clientHeight - DIVIDER_HEIGHT),
+        column.clientHeight,
+      ),
+    );
   };
   const onPointerEnd = () => {
     if (!dragging.current) return;
@@ -77,7 +68,7 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
       requested = (pending.current ?? fraction) + step;
     }
     event.preventDefault();
-    preview(shownFraction(requested, column));
+    preview(clampLegendFraction(requested, column.clientHeight));
   };
   const onKeyUp = () => {
     if (!dragging.current && pending.current !== null) commit();

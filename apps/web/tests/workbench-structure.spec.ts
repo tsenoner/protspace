@@ -123,6 +123,13 @@ test('the divider moves by drag and by keyboard, survives a reload and never res
     .poll(async () => Number(await divider(page).getAttribute('aria-valuenow')))
     .toBeGreaterThan(50);
   expect(Number(await divider(page).getAttribute('aria-valuenow'))).toBeLessThanOrEqual(80);
+  // The CSS clamp reads the same constants: the structure keeps 220 px under the 9 px divider.
+  await expect.poll(async () => Math.round((await divider(page).boundingBox())!.height)).toBe(9);
+  await expect
+    .poll(async () =>
+      Math.round((await page.locator('[data-workbench="structure"]').boundingBox())!.height),
+    )
+    .toBe(229);
 });
 
 test('Close structure brings the footer back', async ({ page }) => {

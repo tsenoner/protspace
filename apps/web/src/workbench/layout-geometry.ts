@@ -3,12 +3,19 @@
  * (design decision 5); the stored layout's ranges live in explore/layout-defaults.ts.
  */
 
-import { MIN_PLOT_WIDTH, RAIL_WIDTH, SIDEBAR_WIDTH } from '../explore/layout-defaults';
+import {
+  LEGEND_FRACTION,
+  MIN_PLOT_WIDTH,
+  RAIL_WIDTH,
+  SIDEBAR_WIDTH,
+} from '../explore/layout-defaults';
 
 /** The legend keeps at least this much of the sidebar column's height. */
-const LEGEND_MIN_HEIGHT = 120;
+export const LEGEND_MIN_HEIGHT = 120;
 /** The docked structure keeps at least this much, under the divider. */
-const STRUCTURE_MIN_HEIGHT = 220;
+export const STRUCTURE_MIN_HEIGHT = 220;
+/** The divider's height; the legend and the docked structure share the column's height minus it. */
+export const DIVIDER_HEIGHT = 9;
 /** One arrow key moves the divider by this share of the column; Shift moves four times as far. */
 const FRACTION_STEP = 0.05;
 
@@ -31,6 +38,18 @@ export function splitSidebar(
   return { legend, structure: total - legend };
 }
 
+/**
+ * The legend fraction a column `columnHeight` px tall shows for a requested one: within the stored
+ * range, then within splitSidebar's pixel minimums at this height, so what the divider stores is
+ * what the user saw.
+ */
+export function clampLegendFraction(requested: number, columnHeight: number): number {
+  const fraction = Math.min(LEGEND_FRACTION.max, Math.max(LEGEND_FRACTION.min, requested));
+  const available = columnHeight - DIVIDER_HEIGHT;
+  if (available <= 0) return fraction;
+  return splitSidebar(available, fraction).legend / available;
+}
+
 /** The divider's step for a key: ArrowUp gives the legend 5 % less, ArrowDown 5 % more; 0 otherwise. */
 export function fractionStep(key: string, shift: boolean): number {
   const step = shift ? 4 * FRACTION_STEP : FRACTION_STEP;
@@ -49,6 +68,11 @@ const WIDTH_STEP = 16;
  */
 export function clampSidebarToWindow(width: number, windowWidth: number): number {
   return Math.min(width, Math.max(SIDEBAR_WIDTH.min, windowWidth - RAIL_WIDTH - MIN_PLOT_WIDTH));
+}
+
+/** A sidebar width in whole pixels, within 240 px and `maxWidth` (the window's cap, at most 480). */
+export function clampSidebarWidth(value: number, maxWidth: number): number {
+  return Math.min(maxWidth, Math.max(SIDEBAR_WIDTH.min, Math.round(value)));
 }
 
 /**

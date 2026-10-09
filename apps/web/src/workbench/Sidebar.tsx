@@ -1,7 +1,7 @@
 import { memo, useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
 import { SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
-import { sidebarStep } from './layout-geometry';
+import { clampSidebarWidth, sidebarStep } from './layout-geometry';
 
 interface SidebarProps {
   ref?: Ref<HTMLElement>;
@@ -50,8 +50,6 @@ const EDGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
 export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarEdgeProps) {
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);
   const pending = useRef<number | null>(null);
-  const clampWidth = (value: number) =>
-    Math.min(maxWidth, Math.max(SIDEBAR_WIDTH.min, Math.round(value)));
 
   const preview = (next: number) => {
     pending.current = next;
@@ -74,7 +72,7 @@ export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarE
     const start = drag.current;
     if (!start) return;
     // The sidebar is on the right: moving its edge left widens it.
-    preview(clampWidth(start.startWidth + start.startX - event.clientX));
+    preview(clampSidebarWidth(start.startWidth + start.startX - event.clientX, maxWidth));
   };
   const onPointerEnd = () => {
     if (!drag.current) return;
@@ -89,7 +87,9 @@ export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarE
     }
     if (!EDGE_KEYS.has(event.key)) return;
     event.preventDefault();
-    preview(Math.min(maxWidth, sidebarStep(event.key, event.shiftKey, pending.current ?? width)));
+    preview(
+      clampSidebarWidth(sidebarStep(event.key, event.shiftKey, pending.current ?? width), maxWidth),
+    );
   };
   const onKeyUp = () => {
     if (!drag.current && pending.current !== null) commit();

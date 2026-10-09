@@ -431,13 +431,13 @@
 /* ── Sidebar column: the legend over the structure (Task 2.11) ───────────── */
 
 .workbench[data-layout='desktop'] [data-workbench='body'] {
-  /* The legend's height: the stored or previewed fraction of what the 9 px divider leaves, at
-     least 120 px, and at most what leaves the structure 220 px. splitSidebar in
-     layout-geometry.ts is the same rule. */
+  /* The legend's height: the stored or previewed fraction of what the divider leaves, at least
+     the legend's minimum, and at most what leaves the structure its own. splitSidebar in
+     layout-geometry.ts is the same rule; the workbench sets these properties from its constants. */
   --wb-legend-height: clamp(
-    120px,
-    calc((100% - 9px) * var(--wb-legend-fraction, 0.5)),
-    calc(100% - 229px)
+    var(--wb-legend-min),
+    calc((100% - var(--wb-divider-height)) * var(--wb-legend-fraction, 0.5)),
+    calc(100% - var(--wb-divider-height) - var(--wb-structure-min))
   );
 }
 
@@ -487,7 +487,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  height: 9px;
+  height: var(--wb-divider-height);
   box-sizing: border-box;
   border-top: 1px solid var(--ps-border);
   cursor: row-resize;
@@ -564,10 +564,6 @@
 }
 
 /* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
-
-.workbench[data-layout='desktop'] {
-  --wb-rail-width: 44px;
-}
 
 /* The sidebar slides out past the rail; nothing may scroll it into view. */
 .workbench[data-layout='desktop'] [data-workbench='body'] {

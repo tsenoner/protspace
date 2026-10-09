@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampLegendFraction,
   clampSidebarToWindow,
+  clampSidebarWidth,
   fractionStep,
   plotRightInset,
   sidebarStep,
@@ -18,6 +20,27 @@ describe('splitSidebar', () => {
     expect(splitSidebar(300, 0.5)).toEqual({ legend: 120, structure: 180 });
     expect(splitSidebar(300, 0.8)).toEqual({ legend: 120, structure: 180 });
     expect(splitSidebar(80, 0.5)).toEqual({ legend: 80, structure: 0 });
+  });
+});
+
+describe('clampLegendFraction', () => {
+  it('clampLegendFraction keeps the stored range and the pixel minimums under the 9 px divider', () => {
+    // 509 px leaves 500 under the divider: the structure keeps 220, so the legend at most 280.
+    expect(clampLegendFraction(0.9, 509)).toBeCloseTo(280 / 500, 10);
+    expect(clampLegendFraction(0.5, 509)).toBeCloseTo(0.5, 10);
+    // The legend keeps 120 px.
+    expect(clampLegendFraction(0.2, 509)).toBeCloseTo(120 / 500, 10);
+    // Within the stored 0.2–0.8 when the column has no height yet.
+    expect(clampLegendFraction(0.9, 0)).toBe(0.8);
+    expect(clampLegendFraction(0.1, 9)).toBe(0.2);
+  });
+});
+
+describe('clampSidebarWidth', () => {
+  it('clampSidebarWidth rounds and keeps 240 up to the cap', () => {
+    expect(clampSidebarWidth(500, 427)).toBe(427);
+    expect(clampSidebarWidth(300.4, 480)).toBe(300);
+    expect(clampSidebarWidth(100, 480)).toBe(240);
   });
 });
 
