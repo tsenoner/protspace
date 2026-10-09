@@ -1,9 +1,11 @@
-import { LitElement, html, nothing } from 'lit';
+import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
+import { deepActiveElement } from './focus';
 import { icon } from './icon';
 import { menuItemStyles, menuLabelStyles, menuStyles } from './menu.styles';
 import './popover';
+import type { PsPopover } from './popover';
 import type { Placement } from './position';
 
 export type MenuItemType = 'item' | 'checkbox' | 'radio';
@@ -63,7 +65,11 @@ export class PsMenuLabel extends LitElement {
   }
 }
 
-/** A menu in a ps-popover: arrow keys, Home and End, type-ahead, optional search. */
+/**
+ * A menu in a ps-popover: arrow keys, Home and End, type-ahead, optional search. It sets
+ * `aria-haspopup` and `aria-expanded` on its anchor. Choosing an item closes the menu first
+ * (`ps-close`, focus back on the anchor), then dispatches `ps-select`; a checkbox item keeps it open.
+ */
 @customElement('ps-menu')
 export class PsMenu extends LitElement {
   static styles = menuStyles;
@@ -77,6 +83,9 @@ export class PsMenu extends LitElement {
 
   @state() private query = '';
   @query('input') private searchInput?: HTMLInputElement;
+  @query('ps-popover') private popoverEl?: PsPopover;
+  /** The anchor this menu marked, with the attribute values it had before. */
+  private marked?: { el: Element; hasPopup: string | null; expanded: string | null };
   private typed = '';
   private typedTimer = 0;
 
@@ -94,6 +103,47 @@ export class PsMenu extends LitElement {
     return this.items.filter((item) => !item.disabled && !item.hidden);
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    if (this.hasUpdated) this.markAnchor();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unmarkAnchor();
+  }
+
+  protected updated(changed: PropertyValues<this>): void {
+    if (changed.has('anchor') || changed.has('open') || changed.has('searchable'))
+      this.markAnchor();
+  }
+
+  private markAnchor(): void {
+    const anchor = this.anchor;
+    if (this.marked?.el !== anchor) {
+      this.unmarkAnchor();
+      if (anchor)
+        this.marked = {
+          el: anchor,
+          hasPopup: anchor.getAttribute('aria-haspopup'),
+          expanded: anchor.getAttribute('aria-expanded'),
+        };
+    }
+    // A searchable menu's panel is a dialog holding the search field and the menu.
+    anchor?.setAttribute('aria-haspopup', this.searchable ? 'dialog' : 'menu');
+    anchor?.setAttribute('aria-expanded', String(this.open));
+  }
+
+  private unmarkAnchor(): void {
+    if (!this.marked) return;
+    const { el, hasPopup, expanded } = this.marked;
+    this.marked = undefined;
+    const restore = (name: string, value: string | null) =>
+      value === null ? el.removeAttribute(name) : el.setAttribute(name, value);
+    restore('aria-haspopup', hasPopup);
+    restore('aria-expanded', expanded);
+  }
+
   render() {
     const noMatches = this.searchable && this.query.trim() !== '' && this.navigable.length === 0;
     return html`<ps-popover
@@ -101,7 +151,7 @@ export class PsMenu extends LitElement {
       .open=${this.open}
       placement=${this.placement}
       panel-role=${this.searchable ? 'dialog' : 'none'}
-      panel-label=${this.label}
+      panel-label=${this.searchable ? this.label : ''}
       @ps-open=${this.onOpen}
       @ps-close=${this.onPopoverClose}
     >
@@ -117,7 +167,7 @@ export class PsMenu extends LitElement {
             />
           </div>`
         : nothing}
-      <div class="items" role="menu" aria-label=${this.label}><slot></slot></div>
+      <div class="items" role="menu" aria-label=${this.label || nothing}><slot></slot></div>
       ${noMatches ? html`<p class="empty">No matches</p>` : nothing}
     </ps-popover>`;
   }
@@ -161,6 +211,14 @@ export class PsMenu extends LitElement {
   }
 
   private onKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Tab') {
+      // The ARIA menu pattern closes on Tab. dismiss() puts focus back on the anchor, so the
+      // browser's Tab moves on from there. Shift+Tab from an item back to the search field stays.
+      const backToSearch =
+        event.shiftKey && this.searchable && deepActiveElement() !== this.searchInput;
+      if (!backToSearch) this.popoverEl?.dismiss();
+      return;
+    }
     const items = this.navigable;
     if (items.length === 0) return;
     const current = items.indexOf(document.activeElement as PsMenuItem);
@@ -219,6 +277,12 @@ export class PsMenu extends LitElement {
     if (item.type === 'checkbox') item.checked = !item.checked;
     else if (item.type === 'radio')
       for (const each of this.items) if (each.type === 'radio') each.checked = each === item;
+    if (item.type !== 'checkbox') {
+      // Close first: dismiss() refocuses the anchor now and ends in close() through ps-close. A
+      // dialog the owner opens from ps-select then returns focus to the anchor, not a hidden item.
+      this.popoverEl?.dismiss();
+      if (this.open) this.close();
+    }
     this.dispatchEvent(
       new CustomEvent('ps-select', {
         bubbles: true,
@@ -226,7 +290,6 @@ export class PsMenu extends LitElement {
         detail: { value: item.value, checked: item.checked },
       }),
     );
-    if (item.type !== 'checkbox') this.close();
   }
 }
 
