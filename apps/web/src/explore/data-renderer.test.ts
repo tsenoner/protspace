@@ -137,7 +137,6 @@ describe('loadData overlay handling', () => {
   function buildRenderer(
     controls: Parameters<typeof createDataRenderer>[0]['controls'] = {
       showInitialView: vi.fn(),
-      setRendering: vi.fn(),
       clearStructure: vi.fn(),
     },
   ) {
@@ -188,7 +187,6 @@ describe('loadData overlay handling', () => {
       showInitialView: vi.fn((view: InitialView) =>
         calls.push(['view', view.projection, view.annotation, ...view.tooltip].join(' ')),
       ),
-      setRendering: vi.fn((rendering: boolean) => calls.push(`rendering ${rendering}`)),
       clearStructure: vi.fn(() => calls.push('clear structure')),
     });
 
@@ -196,8 +194,7 @@ describe('loadData overlay handling', () => {
     await vi.runAllTimersAsync();
     await pending;
 
-    // The controls stop syncing while the plot swaps data, show the new view without events,
-    // sync again, and the previous dataset's structure goes.
-    expect(calls).toEqual(['rendering true', 'view umap ec', 'rendering false', 'clear structure']);
+    // The controls show the new view without events, and the previous dataset's structure goes.
+    expect(calls).toEqual(['view umap ec', 'clear structure']);
   });
 });

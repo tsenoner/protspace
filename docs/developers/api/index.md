@@ -10,13 +10,21 @@ it exists on `main`.
 
 ## Components
 
-| Component                             | Tag                            | Purpose                          |
-| ------------------------------------- | ------------------------------ | -------------------------------- |
-| [Scatterplot](#scatterplot)           | `<protspace-scatterplot>`      | Main projection visualization    |
-| [Legend](#legend)                     | `<protspace-legend>`           | Category filtering and colors    |
-| [Control Bar](#control-bar)           | `<protspace-control-bar>`      | Projection/annotation selection  |
-| [Structure Viewer](#structure-viewer) | `<protspace-structure-viewer>` | 3D protein structures via Mol\*  |
-| [Data Loader](#data-loader)           | `<protspace-data-loader>`      | `.parquetbundle` / FASTA loading |
+| Component                                   | Tag                               | Purpose                                          |
+| ------------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                    |
+| [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                    |
+| [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                                |
+| [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations                 |
+| [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                             |
+| [Projection Metadata](#projection-metadata) | `<protspace-projection-metadata>` | Details of the projection on screen              |
+| [Protein Search](#protein-search)           | `<protspace-protein-search>`      | Find and select proteins by ID                   |
+| [Query Builder](#query-builder)             | `<protspace-query-builder>`       | Filter conditions                                |
+| [Import Menu](#import-menu)                 | `<protspace-import-menu>`         | Load a file or an example dataset                |
+| [Export Menu](#export-menu)                 | `<protspace-export-menu>`         | Image, ID and Parquet export                     |
+| [Plot Tools](#plot-tools)                   | `<protspace-plot-tools>`          | Move, box and lasso tools; Clear, Isolate, Reset |
+| [Structure Viewer](#structure-viewer)       | `<protspace-structure-viewer>`    | 3D protein structures via Mol\*                  |
+| [Data Loader](#data-loader)                 | `<protspace-data-loader>`         | `.parquetbundle` / FASTA loading                 |
 
 Importing `@protspace/core` registers all of them as side effects.
 
@@ -95,9 +103,10 @@ plot.config = {
 Any key you omit keeps its default. `densityLayer` sets the density contours: `'off'` (default)
 draws points only, `'auto'` sets their strength from the visible-point count, the plot size and the
 zoom (not from actual overlap), so they fade out as the user zooms in and start faint or hidden when
-few points are visible, and `'on'` draws them at full strength at every zoom. The control bar labels
-`'on'` as Always. When the context cannot draw them, the plot emits `renderer-degraded` once, with
-`context.reason` set to `density-unavailable`, and keeps drawing the points.
+few points are visible, and `'on'` draws them at full strength at every zoom. The Contours menu
+labels `'on'` as Always (`DENSITY_MODE_LABELS`, from `@protspace/utils`). When the context cannot draw them, the plot emits
+`renderer-degraded` once, with `context.reason` set to `density-unavailable`, and keeps drawing the
+points.
 
 ### Methods
 
@@ -221,36 +230,146 @@ legend.addEventListener('legend-zorder-change', (e) => {
 });
 ```
 
-## Control Bar
+## View and App Controls
 
-Projection, annotation, contours, selection, filter and export controls.
+::: warning BREAKING
+`<protspace-control-bar>` is removed. Its controls are separate elements now, each with one job:
+`protspace-projection-select`, `protspace-annotation-select`, `protspace-contours-menu`,
+`protspace-projection-metadata`, `protspace-protein-search`, `protspace-query-builder`,
+`protspace-import-menu`, `protspace-export-menu` and `protspace-plot-tools`. They do not write to
+the scatterplot (`auto-sync` and `scatterplot-selector` are gone): listen for their events and set
+`selectedProjectionIndex`, `selectedAnnotation`, `tooltipAnnotations`, `config.densityLayer`,
+`selectedProteinIds`, `selectionMode` and `selectionTool` yourself, as the app's controllers in
+`apps/web/src/explore/*-controller.ts` do. `selection-disabled-notification` is replaced by the
+scatterplot's `auto-disable-selection`, and `eat-threshold-mirror` by the host's own filter, which
+calls the legend's `setReliabilityState()`. The legend hears `annotation-change` and
+`projection-change` from anywhere in its document.
+:::
 
-### Properties
+A pick from the Projection, Color by or Contours menu shows at once and reaches listeners, with
+its event, one frame later, after the browser has painted the closed menu; the newest pick wins.
+A picker's `applySelection()` applies at once, fires its event and drops a pick still waiting (the
+contours menu's fires none); `cancelPending()` drops the waiting pick without applying anything, as
+a new dataset does. Every event below bubbles and is composed.
 
-| Property                | Type                      | Description                                                     |
-| ----------------------- | ------------------------- | --------------------------------------------------------------- |
-| `projections`           | `string[]`                | Projection names to offer                                       |
-| `annotations`           | `string[]`                | Annotation names to offer                                       |
-| `selectedProjection`    | `string`                  | Active projection                                               |
-| `selectedAnnotation`    | `string`                  | Active annotation                                               |
-| `tooltipAnnotations`    | `string[]`                | Annotations pinned into the plot tooltip                        |
-| `selectionMode`         | `boolean`                 | Selection mode toggle state                                     |
-| `selectionTool`         | `'rectangle' \| 'lasso'`  | Active selection tool                                           |
-| `densityLayer`          | `'off' \| 'auto' \| 'on'` | Contours mode, default `'off'`                                  |
-| `selectedProteinsCount` | `number`                  | Count shown in the selection controls                           |
-| `isolationMode`         | `boolean`                 | Isolation state mirrored from the plot                          |
-| `isolationHistory`      | `string[][]`              | Isolation stack mirrored from the plot                          |
-| `exampleDatasets`       | `ExampleDatasetSummary[]` | Example catalog, listed in the Import menu's "Examples" section |
-| `examplesDocsUrl`       | `string`                  | Page linked as "About these examples ↗"; no link when empty     |
-| `currentExampleId`      | `string \| null`          | id of the example currently loaded, `null` for a user import    |
+### Projection Select
 
-### HTML attributes
+The projection picker: radio items behind a "Projection" trigger that shows the current value.
 
-`selected-projection`, `selected-annotation`, `selection-mode`, `selection-tool`, `density-layer`,
-`selected-proteins-count`, `isolation-mode`, `isolation-history`, `has-file-settings`,
-`current-dataset-name`, `current-example-id`, `examples-docs-url`, `scatterplot-selector`,
-`auto-sync`. `exampleDatasets` is `attribute: false`, JavaScript-only; its `ExampleDatasetSummary`
-type is exported from `@protspace/core`:
+| Property             | Type                | Description                                            |
+| -------------------- | ------------------- | ------------------------------------------------------ |
+| `projections`        | `readonly string[]` | Projection names to offer; JavaScript-only             |
+| `selectedProjection` | `string`            | Projection shown in the trigger; `selected-projection` |
+
+Methods: `applySelection(projection)`, `cancelPending()`.
+
+| Event               | Detail           | Description        |
+| ------------------- | ---------------- | ------------------ |
+| `projection-change` | `{ projection }` | Projection changed |
+
+### Annotation Select
+
+"Color by": the annotation that colours the plot, in a searchable list that also pins extra
+annotations into the plot tooltip.
+
+| Property                | Type                                          | Description                                                     |
+| ----------------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| `annotations`           | `string[]`                                    | Annotations offered for colouring                               |
+| `annotationDefinitions` | `Record<string, Pick<Annotation, 'runtime'>>` | The dataset's annotation definitions                            |
+| `eatAnnotations`        | `string[]`                                    | Annotations that carry EAT predictions                          |
+| `selectedAnnotation`    | `string`                                      | Colouring annotation; `selected-annotation`                     |
+| `tooltipAnnotations`    | `string[]`                                    | Annotations pinned into the plot tooltip                        |
+| `statisticsRows`        | `readonly ProjectionStatisticRow[]`           | The bundle's optional statistics, read for `selectedProjection` |
+| `selectedProjection`    | `string`                                      | Projection the statistics are read for; `selected-projection`   |
+| `label`                 | `string`                                      | Key shown before the value, default `'Color by'`                |
+| `placeholder`           | `string`                                      | Shown while nothing is selected                                 |
+
+Methods: `applySelection(annotation)`, `applyTooltipSelection(names)`, `cancelPending()`.
+
+| Event                        | Detail                   | Description                    |
+| ---------------------------- | ------------------------ | ------------------------------ |
+| `annotation-change`          | `{ annotation }`         | Colouring annotation changed   |
+| `tooltip-annotations-change` | `{ tooltipAnnotations }` | Tooltip annotation set changed |
+
+Picking a tooltip extra as the colouring annotation fires `annotation-change`, then
+`tooltip-annotations-change` without it.
+
+### Contours Menu
+
+| Property       | Type                      | Description                                    |
+| -------------- | ------------------------- | ---------------------------------------------- |
+| `densityLayer` | `'off' \| 'auto' \| 'on'` | Contour mode, default `'off'`; `density-layer` |
+
+Methods: `pick(mode)` (a user's pick made from code: shows at once, fires after the paint),
+`applySelection(mode)` (no event), `cancelPending()`.
+
+| Event                  | Detail             | Description          |
+| ---------------------- | ------------------ | -------------------- |
+| `density-layer-change` | `{ densityLayer }` | Contour mode changed |
+
+The detail type is `DensityLayerChangeDetail`. `DENSITY_MODE_LABELS` maps each mode to the menu's
+label and hint, for hosts that offer the modes elsewhere; `'on'` reads "Always".
+
+### Projection Metadata
+
+An info button whose card describes the projection on screen. The host places it; the app puts it
+beside the Projection picker.
+
+| Property             | Type                                | Description                                                        |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| `projection`         | `Projection \| null`                | The projection on screen                                           |
+| `statisticsRows`     | `readonly ProjectionStatisticRow[]` | The bundle's optional statistics                                   |
+| `selectedAnnotation` | `string`                            | Annotation the quality section is scored on; `selected-annotation` |
+| `viewIsSubset`       | `boolean`                           | The plot shows a filtered or isolated subset                       |
+
+### Protein Search
+
+| Property              | Type       | Description                   |
+| --------------------- | ---------- | ----------------------------- |
+| `availableProteinIds` | `string[]` | IDs it suggests               |
+| `selectedProteinIds`  | `string[]` | The selection, shown as chips |
+
+⌘K (Ctrl+K elsewhere) focuses it, and pasting several IDs selects them all. It writes nothing to
+the plot: set `plot.selectedProteinIds` and `search.selectedProteinIds` from its events.
+
+| Event                    | Detail           | Description           |
+| ------------------------ | ---------------- | --------------------- |
+| `selection-change`       | `{ proteinIds }` | Replace the selection |
+| `add-selection`          | `{ proteinId }`  | Add one protein       |
+| `add-selection-multiple` | `{ proteinIds }` | Add several proteins  |
+| `remove-selection`       | `{ proteinId }`  | Remove one protein    |
+
+### Query Builder
+
+| Property      | Type                         | Description                                                           |
+| ------------- | ---------------------------- | --------------------------------------------------------------------- |
+| `annotations` | `string[]`                   | Columns a condition can test                                          |
+| `data`        | `ProtspaceData \| undefined` | Dataset the match count is computed on                                |
+| `query`       | `FilterQuery`                | Conditions and groups being edited                                    |
+| `embedded`    | `boolean`                    | Inside a host dialog: no title or close button of its own; `embedded` |
+
+| Event           | Detail               | Description                                       |
+| --------------- | -------------------- | ------------------------------------------------- |
+| `query-changed` | `{ query }`          | The query was edited                              |
+| `query-apply`   | `{ matchedIndices }` | Apply: a `Set` of indices into `data.protein_ids` |
+| `query-reset`   | none                 | Reset All                                         |
+| `query-close`   | none                 | Cancel                                            |
+
+Apply a match through the scatterplot's `filteredProteinIds` and `filtersActive`. The query
+helpers `createCondition`, `evaluateQuery`, `hasConfiguredCondition`,
+`findConditionsForAnnotation`, `replaceConditionsForAnnotation`, `conditionsForReliability`,
+`reliabilityFromConditions` and `sameConditions` and the `FilterQuery` type are exported too.
+
+### Import Menu
+
+| Property             | Type                               | Description                                                        |
+| -------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `exampleDatasets`    | `readonly ExampleDatasetSummary[]` | Example catalog, listed in the "Examples" section; JavaScript-only |
+| `examplesDocsUrl`    | `string`                           | Page linked as "About these examples ↗"; `examples-docs-url`       |
+| `currentDatasetName` | `string`                           | Dataset on screen; `current-dataset-name`                          |
+| `currentExampleId`   | `string \| null`                   | Example on screen, `null` for a user import; `current-example-id`  |
+
+`ExampleDatasetSummary` is exported from `@protspace/core`:
 
 | Field         | Type      | Shown as                                                    |
 | ------------- | --------- | ----------------------------------------------------------- |
@@ -263,38 +382,79 @@ type is exported from `@protspace/core`:
 
 When `currentExampleId` names an entry, the same info popover sits next to the current dataset name.
 
-### Events
+| Event                  | Detail           | Description                    |
+| ---------------------- | ---------------- | ------------------------------ |
+| `load-example-dataset` | `{ id: string }` | An example dataset was chosen  |
+| `open-file-dialog`     | `{}`             | "Load your dataset" was chosen |
 
-| Event                             | Detail                                   | Description                                |
-| --------------------------------- | ---------------------------------------- | ------------------------------------------ |
-| `projection-change`               | `{ projection }`                         | Projection changed                         |
-| `annotation-change`               | `{ annotation }`                         | Coloring annotation changed                |
-| `tooltip-annotations-change`      | `{ tooltipAnnotations }`                 | Tooltip annotation set changed             |
-| `protein-selection-change`        | `{ proteinIds }`                         | Selection changed (search, chips, clear)   |
-| `toggle-selection-mode`           | `{ selectionMode }`                      | Selection mode toggled                     |
-| `selection-tool-change`           | `{ selectionTool }`                      | Selection tool changed                     |
-| `density-layer-change`            | `{ densityLayer }`                       | Contours mode changed                      |
-| `clear-selections`                | `{}`                                     | Clear button pressed                       |
-| `isolate-data`                    | `{}`                                     | Isolate button pressed                     |
-| `reset-isolation`                 | `{}`                                     | Reset-isolation button pressed             |
-| `export`                          | `{ type, ...export options }`            | Export requested                           |
-| `open-publish-editor`             | `{}`                                     | Figure editor requested                    |
-| `load-example-dataset`            | `{ id: string }`                         | An example dataset was chosen              |
-| `selection-disabled-notification` | `{ message, severity, source, context }` | Host-consumed warning (selection auto-off) |
+Both fire inside the user's click: call the data loader's `openFilePicker()` from the
+`open-file-dialog` listener and the browser lets the file chooser open.
 
-With `auto-sync`, the control bar also applies these changes directly to the target scatterplot, so
-hosts only need to listen for the events they want to mirror elsewhere.
+### Export Menu
 
-A pick from the projection, annotation or contours menu, the search box or the Clear button shows in
-the control bar at once and reaches the scatterplot, with its event, one frame later, after the
-browser has painted the closed menu. The newest pick wins. `applyProjectionSelection()`,
-`applyAnnotationSelection()` and `applyDensityLayerSelection()` apply synchronously and drop a pick
-still waiting.
+| Property          | Type      | Description                                                                     |
+| ----------------- | --------- | ------------------------------------------------------------------------------- |
+| `hasFileSettings` | `boolean` | The loaded file carries settings a Parquet export can keep; `has-file-settings` |
+
+Methods: `reset()` returns the menu to PNG.
+
+| Event                 | Detail              | Description             |
+| --------------------- | ------------------- | ----------------------- |
+| `export`              | `ExportEventDetail` | Export requested        |
+| `open-publish-editor` | `{}`                | Figure editor requested |
+
+`ExportEventDetail` is `{ type: 'png' | 'pdf' | 'ids' | 'parquet', imageWidth, imageHeight,
+legendWidthPercent, legendFontSizePx, includeLegend, includeLegendSettings }`; `EXPORT_DEFAULTS`
+holds the default sizes.
+
+### Plot Tools
+
+The plot's tool strip, and beside it, while they apply, Clear and Isolate (with a selection) and
+Reset (while isolated).
+
+| Property            | Type                              | Description                                            |
+| ------------------- | --------------------------------- | ------------------------------------------------------ |
+| `tool`              | `'pan' \| 'rectangle' \| 'lasso'` | Pressed tool (`PlotTool`)                              |
+| `selectionDisabled` | `boolean`                         | Box and Lasso are off; `selection-disabled`            |
+| `selectedCount`     | `number`                          | Clear and Isolate show while above 0; `selected-count` |
+| `isolated`          | `boolean`                         | Reset shows while true                                 |
+
+| Event              | Detail     | Description             |
+| ------------------ | ---------- | ----------------------- |
+| `plot-tool-change` | `{ tool }` | A tool was chosen       |
+| `fit-view`         | `{}`       | Fit to view was pressed |
+| `clear-selections` | `{}`       | Clear was pressed       |
+| `isolate-data`     | `{}`       | Isolate was pressed     |
+| `reset-isolation`  | `{}`       | Reset was pressed       |
+
+On the scatterplot, `pan` is `selectionMode = false`; `rectangle` and `lasso` are
+`selectionMode = true` with that `selectionTool`. `fit-view` maps to `resetZoom()`.
 
 ### Example
 
 ```html
-<protspace-control-bar auto-sync scatterplot-selector="#plot"></protspace-control-bar>
+<protspace-projection-select></protspace-projection-select>
+<protspace-annotation-select></protspace-annotation-select>
+<protspace-scatterplot id="plot"></protspace-scatterplot>
+```
+
+```javascript
+const plot = document.getElementById('plot');
+const projection = document.querySelector('protspace-projection-select');
+const colorBy = document.querySelector('protspace-annotation-select');
+
+plot.addEventListener('data-change', (e) => {
+  projection.projections = e.detail.data.projections.map((p) => p.name);
+  colorBy.annotations = Object.keys(e.detail.data.annotations);
+});
+projection.addEventListener('projection-change', (e) => {
+  plot.selectedProjectionIndex = plot.data.projections.findIndex(
+    (p) => p.name === e.detail.projection,
+  );
+});
+colorBy.addEventListener('annotation-change', (e) => {
+  plot.selectedAnnotation = e.detail.annotation;
+});
 ```
 
 ## Structure Viewer
@@ -356,6 +516,12 @@ the host installs a `loadFromFileHandler` that prepares them, see
 ### HTML attributes
 
 `src`, `auto-load`, `allow-drop`, `column-mappings`. `loadFromFileHandler` is JavaScript-only.
+
+### Methods
+
+| Method             | Returns | Description                                                                |
+| ------------------ | ------- | -------------------------------------------------------------------------- |
+| `openFilePicker()` | `void`  | Opens the file chooser; call it inside a user gesture (`open-file-dialog`) |
 
 ### Events
 
@@ -460,7 +626,7 @@ import type {
   ProtspaceLegend,
   ProtspaceStructureViewer,
 } from '@protspace/core';
-import { ProtspaceControlBar } from '@protspace/core';
+import { DENSITY_MODE_LABELS } from '@protspace/core';
 
 import type { VisualizationData } from '@protspace/utils';
 

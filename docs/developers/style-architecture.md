@@ -10,7 +10,7 @@ ProtSpace uses a modular CSS architecture based on Lit's `css` tagged template l
 | ------- | --------------------------------- | ----------------------------- |
 | <150    | Single `.styles.ts` file          | `search`, `annotation-select` |
 | 150-300 | Monolithic or add `responsive.ts` | `structure-viewer`            |
-| 300+    | Modular `styles/` directory       | `control-bar`, `legend`       |
+| 300+    | Modular `styles/` directory       | `legend`                      |
 
 ### Modular Structure
 
@@ -105,12 +105,12 @@ Defined in `tokens.ts`:
 
 ### Component Prefixes
 
-| Component        | Prefix                 |
-| ---------------- | ---------------------- |
-| Legend           | `--legend-*`           |
-| Scatter-plot     | `--protspace-*`        |
-| Structure-viewer | `--protspace-viewer-*` |
-| Control-bar      | Uses tokens only       |
+| Component            | Prefix                 |
+| -------------------- | ---------------------- |
+| Legend               | `--legend-*`           |
+| Scatter-plot         | `--protspace-*`        |
+| Structure-viewer     | `--protspace-viewer-*` |
+| Kit and new elements | `--ps-*` tokens only   |
 
 ## Examples
 
@@ -174,18 +174,18 @@ export const legendStyles = [
 
 ## Reference Implementation
 
-Study **control-bar** as the ideal modular pattern:
+Study **legend** as the modular pattern:
 
 ```typescript
-// control-bar.styles.ts (35 lines)
-export const controlBarStyles = [
+// legend.styles.ts
+export const legendStyles = [
   tokens,
   buttonMixin,
-  inputMixin,
-  dropdownMixin,
+  overlayMixins,
+  themeStyles,
   layoutStyles,
-  filterStyles,
-  exportStyles,
+  itemStyles,
+  modalStyles,
   responsiveStyles, // Always last
 ];
 ```
@@ -207,8 +207,7 @@ When refactoring a component:
 
 | Component         | Organization | Status        |
 | ----------------- | ------------ | ------------- |
-| control-bar       | Modular      | ✅ Reference  |
-| legend            | Modular      | ✅ Refactored |
+| legend            | Modular      | ✅ Reference  |
 | structure-viewer  | Monolithic   | ✅ Updated    |
 | scatter-plot      | Per-feature  | ✅ Refactored |
 | annotation-select | Monolithic   | ✓ Good as-is  |

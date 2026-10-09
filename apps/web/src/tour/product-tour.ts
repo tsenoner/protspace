@@ -8,9 +8,9 @@
  *      highlight, and
  *   2. call `startProductTour()`.
  *
- * For elements inside Shadow DOM (e.g. inside <protspace-control-bar>) we
- * use the `() => Element` function form supported by driver.js, which
- * resolves the element lazily at step-activation time.
+ * For elements inside Shadow DOM (the legend's "Other" row) we use the
+ * `() => Element` function form supported by driver.js, which resolves the
+ * element lazily at step-activation time.
  */
 
 import { type Config, driver, type DriveStep, type PopoverDOM, type State } from 'driver.js';

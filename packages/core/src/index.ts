@@ -2,13 +2,13 @@
 export * from './components/scatter-plot/scatter-plot';
 export * from './components/legend/legend';
 export * from './components/structure-viewer/structure-viewer';
-export { ProtspaceControlBar } from './components/control-bar/control-bar'; // Explicit export for value access
 // The view bar's pickers (design decision 9).
 export { ProtspaceProjectionSelect } from './components/projection-select/projection-select';
 export { ProtspaceContoursMenu } from './components/contours-menu/contours-menu';
 export type { DensityLayerChangeDetail } from './components/contours-menu/contours-menu';
 export { ProtspaceAnnotationSelect } from './components/control-bar/annotation-select';
 export { ProtspaceProjectionMetadata } from './components/scatter-plot/projection-metadata/projection-metadata';
+export { DENSITY_MODE_LABELS } from '@protspace/utils';
 // The plot's tool strip and the app bar's search (design decision 9).
 export { ProtspacePlotTools } from './components/plot-tools/plot-tools';
 export type { PlotTool } from './components/plot-tools/plot-tools';
@@ -33,10 +33,6 @@ export { ProtspaceExportMenu, type ExportEventDetail } from './components/export
 export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';
 export * from './components/data-loader/data-loader';
 export * from './components/kit';
-export type {
-  SelectionDisabledNotificationContext,
-  SelectionDisabledNotificationDetail,
-} from './components/control-bar/control-bar.events';
 export type { ExampleDatasetSummary } from './components/import-menu/types';
 export type { DataLoadedEventDetail } from './components/data-loader/data-loader';
 export type {

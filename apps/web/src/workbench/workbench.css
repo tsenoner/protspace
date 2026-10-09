@@ -9,7 +9,7 @@
 
 .workbench {
   --wb-app-bar-height: 48px;
-  --wb-view-bar-min-height: 44px;
+  --wb-view-bar-height: 44px;
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
@@ -121,20 +121,17 @@
 
 /* ── View bar ────────────────────────────────────────────────────────────── */
 
+/* One 44 px row that never wraps (border included). Items start at the left, 4 px apart, as in
+   the mockup; the scale has no 10 px step. */
 [data-workbench='view-bar'] {
   display: flex;
   flex: none;
   align-items: center;
-  min-height: var(--wb-view-bar-min-height);
+  gap: var(--ps-space-1);
+  height: var(--wb-view-bar-height);
+  padding: 0 var(--ps-space-2) 0 10px;
   border-bottom: 1px solid var(--ps-border);
   background: var(--ps-surface);
-}
-
-/* The control bar fills the view bar until Tasks 2.5–2.10 split it. */
-#myControlBar {
-  display: block;
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 /* ── Body: the plot beside the sidebar ───────────────────────────────────── */
@@ -219,8 +216,15 @@
   min-height: 320px;
 }
 
-/* The view bar never wraps on desktop (Task 2.10 stages it instead); here its items may. */
-.workbench[data-layout='narrow'] [data-workbench='view-bar'] {
+/* The view bar never wraps on desktop. Here, once its last stage still does not fit, it wraps
+   rather than overflow the window. */
+.workbench[data-layout='narrow'] [data-workbench='view-bar'][data-stage='3'] {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: var(--wb-view-bar-height);
+}
+
+.workbench[data-layout='narrow'] [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
   flex-wrap: wrap;
 }
 
@@ -386,4 +390,45 @@
   top: 12px;
   left: 12px;
   z-index: 5;
+}
+
+/* ── View bar stages (Task 2.10) ──────────────────────────────────────────────
+   use-view-bar-stage.ts measures the items and sets data-stage on the bar: 0 full; 1 the keys
+   hide (they stay in the accessible names); 2 Contours moves into More; 3 Filter does too. Items
+   never shrink, so a measured width is the width the stage needs. */
+[data-workbench='view-bar'] > * {
+  flex: none;
+}
+
+[data-workbench='view-bar']:not([data-stage='0']) #myProjectionSelect::part(key),
+[data-workbench='view-bar']:not([data-stage='0']) #myAnnotationSelect::part(key),
+[data-workbench='view-bar']:not([data-stage='0']) #myContoursMenu::part(key) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-workbench='view-bar']:is([data-stage='2'], [data-stage='3']) #myContoursMenu,
+[data-workbench='view-bar'][data-stage='3'] #myFilterButton,
+[data-workbench='view-bar']:is([data-stage='0'], [data-stage='1']) .wb-more {
+  display: none;
+}
+
+/* The dot sits over the button's corner, so showing it never changes the bar's width. */
+.wb-more {
+  position: relative;
+}
+
+.wb-more-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
 }

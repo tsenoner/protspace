@@ -29,7 +29,7 @@ test.describe('workbench shell', () => {
     await expect(page.getByRole('button', { name: 'Resources', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('link', { name: 'ProtSpace home' })).toHaveAttribute('href', '/');
 
-    const viewBar = page.getByRole('toolbar', { name: 'View' });
+    const viewBar = page.getByRole('group', { name: 'View' });
     expect((await viewBar.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
     await expect(sidebar(page)).toHaveRole('complementary');

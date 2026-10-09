@@ -80,18 +80,6 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & { id?: string },
         HTMLElement
       >;
-      'protspace-control-bar': React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & {
-          id?: string;
-          'selected-projection'?: string;
-          'selected-annotation'?: string;
-          'selected-proteins-count'?: string;
-          'auto-sync'?: string;
-          'scatterplot-selector'?: string;
-          'data-driver-id'?: string;
-        },
-        HTMLElement
-      >;
       'protspace-plot-tools': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
         HTMLElement

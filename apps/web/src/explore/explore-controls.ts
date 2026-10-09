@@ -7,8 +7,8 @@ export interface InitialView {
 
 /**
  * The dataset pipeline's one seam to the controls (design decision 9). `dataset-controller.ts` and
- * `data-renderer.ts` reset and fill the controls only through this, and `runtime.ts` builds the one
- * implementation, which changes as the control bar is split while the pipeline does not.
+ * `data-renderer.ts` reset and fill the controls only through this; `runtime.ts` builds it from
+ * the view-bar, filter and selection controllers.
  */
 export interface ExploreControls {
   /** A new dataset is on its way: drop per-dataset control state (waiting picks, export format). */
@@ -17,8 +17,6 @@ export interface ExploreControls {
   setHasFileSettings(value: boolean): void;
   /** Show the new dataset's view in the controls, without change events. */
   showInitialView(view: InitialView): void;
-  /** True while the renderer swaps the plot's data, when the controls must not sync from it. */
-  setRendering(rendering: boolean): void;
   /** Close the previous dataset's structure. */
   clearStructure(): void;
 }

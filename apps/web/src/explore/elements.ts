@@ -1,7 +1,6 @@
 import type {
   ProtspaceAnnotationSelect,
   ProtspaceContoursMenu,
-  ProtspaceControlBar,
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   ProtspaceLegend,
@@ -18,7 +17,6 @@ import type {
 } from '@protspace/core';
 
 interface ExploreElements {
-  controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
   exportMenu: ProtspaceExportMenu;
   importMenu: ProtspaceImportMenu;
@@ -40,7 +38,6 @@ const REQUIRED_TAGS = [
   'protspace-scatterplot',
   'protspace-legend',
   'protspace-structure-viewer',
-  'protspace-control-bar',
   'protspace-data-loader',
   'protspace-import-menu',
   'protspace-export-menu',
@@ -64,7 +61,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const structureViewer = doc.getElementById(
     'myStructureViewer',
   ) as ProtspaceStructureViewer | null;
-  const controlBar = doc.getElementById('myControlBar') as ProtspaceControlBar | null;
   const dataLoader = doc.getElementById('myDataLoader') as ProtspaceDataLoader | null;
   const importMenu = doc.getElementById('myImportMenu') as ProtspaceImportMenu | null;
   const exportMenu = doc.getElementById('myExportMenu') as ProtspaceExportMenu | null;
@@ -88,7 +84,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !plotElement ||
     !legendElement ||
     !structureViewer ||
-    !controlBar ||
     !dataLoader ||
     !importMenu ||
     !exportMenu ||
@@ -106,7 +101,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
       plotElement,
       legendElement,
       structureViewer,
-      controlBar,
       dataLoader,
       importMenu,
       exportMenu,
@@ -124,7 +118,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
   }
 
   return {
-    controlBar,
     dataLoader,
     exportMenu,
     importMenu,

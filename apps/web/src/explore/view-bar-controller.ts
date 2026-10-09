@@ -15,6 +15,7 @@ import {
 import type { InitialView } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { ViewPickers } from './view-controller';
+import { setWorkbenchStatus } from './workbench-status';
 
 /** Annotations shown only in the hover tooltip; Color by and the filter do not offer them. */
 export const TOOLTIP_ONLY_ANNOTATIONS: ReadonlySet<string> = new Set([
@@ -157,6 +158,7 @@ export function createViewBarController({
 
   const onDensityChange = (event: Event) => {
     const { densityLayer } = (event as CustomEvent<DensityLayerChangeDetail>).detail;
+    setWorkbenchStatus({ densityLayer });
     const current = plotElement.config?.densityLayer ?? DENSITY_DEFAULT;
     if (densityLayer === current) return;
     plotElement.config = { ...(plotElement.config ?? {}), densityLayer };
@@ -191,6 +193,7 @@ export function createViewBarController({
     },
     applyDensityLayerSelection(mode) {
       contoursMenu.applySelection(mode);
+      setWorkbenchStatus({ densityLayer: mode });
     },
     showInitialView(view) {
       projectionSelect.selectedProjection = view.projection;
@@ -198,6 +201,8 @@ export function createViewBarController({
       annotationSelect.selectedAnnotation = view.annotation;
       annotationSelect.tooltipAnnotations = [...view.tooltip];
       syncProjectionDetails();
+      // A dataset keeps the contour mode; the More menu reads it from the status.
+      setWorkbenchStatus({ densityLayer: contoursMenu.densityLayer });
     },
     resetForNewDataset() {
       projectionSelect.cancelPending();

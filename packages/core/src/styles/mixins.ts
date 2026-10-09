@@ -444,20 +444,6 @@ export const menuBadgeMixin = css`
 `;
 
 /**
- * Icon Styling
- * Consistent icon sizing and appearance
- */
-export const iconMixin = css`
-  .icon {
-    width: 1rem;
-    height: 1rem;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 1.5;
-  }
-`;
-
-/**
  * Segmented control: a joined row of mutually exclusive toggle buttons.
  *   <div class="segmented" role="group" aria-label="…">
  *     <button type="button" class="segmented-btn" aria-pressed="true">…</button>

@@ -346,12 +346,17 @@ export async function openExportMenu(page: Page): Promise<void> {
   await expect(png).toBeVisible();
 }
 
-/** Opens the Filter dialog, unless it is open already. */
+/** Opens the Filter dialog, from the view bar or from More, unless it is open already. */
 export async function openFilter(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
   const dialog = filterDialog(page);
   if (await dialog.isVisible().catch(() => false)) return;
-  await filterButton(page).click();
+  if (await filterButton(page).isVisible()) {
+    await filterButton(page).click();
+  } else {
+    await moreButton(page).click();
+    await page.locator('#wb-more-menu').getByRole('menuitem', { name: 'Filter…' }).click();
+  }
   await expect(dialog).toBeVisible();
 }
 
@@ -475,16 +480,31 @@ export async function selectProjection(page: Page, projection: number | string):
 /** How each contour mode reads in the Contours menu. */
 const CONTOUR_MENU_LABELS = { off: 'Off', auto: 'Auto', on: 'Always' } as const;
 
-/** Sets the contour mode through the view bar's Contours menu and waits until the plot shows it. */
+/** The view bar's More button; its name reads "More view options" (", N active" with its dot). */
+function moreButton(page: Page): Locator {
+  return viewBar(page).getByRole('button', { name: /^More view options/ });
+}
+
+/**
+ * Sets the contour mode through the view bar's Contours menu, or through More while Contours sits
+ * there, and waits until the plot shows it.
+ */
 export async function setContours(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void> {
   await waitForExploreInteractionReady(page);
-  await viewBar(page)
-    .getByRole('button', { name: /^Contours/ })
-    .click();
-  await page
-    .locator('protspace-contours-menu')
-    .getByRole('menuitemradio', { name: new RegExp(`^${CONTOUR_MENU_LABELS[mode]}`) })
-    .click();
+  const contours = viewBar(page).getByRole('button', { name: /^Contours/ });
+  if (await contours.isVisible()) {
+    await contours.click();
+    await page
+      .locator('protspace-contours-menu')
+      .getByRole('menuitemradio', { name: new RegExp(`^${CONTOUR_MENU_LABELS[mode]}`) })
+      .click();
+  } else {
+    await moreButton(page).click();
+    await page
+      .locator('#wb-more-menu')
+      .getByRole('menuitemradio', { name: CONTOUR_MENU_LABELS[mode], exact: true })
+      .click();
+  }
   await expect.poll(() => getContoursMode(page)).toBe(mode);
 }
 

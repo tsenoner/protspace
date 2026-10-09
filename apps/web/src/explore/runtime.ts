@@ -349,10 +349,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       viewBarController.showInitialView(view);
       filterController.setSelectedAnnotation(view.annotation);
     },
-    setRendering() {
-      // Nothing to hold while a dataset renders: the controllers write the plot only on picks.
-      // Task 2.10 removes the method.
-    },
     clearStructure() {
       if (structureViewer.style.display !== 'none') {
         structureViewer.style.display = 'none';

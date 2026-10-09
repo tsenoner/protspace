@@ -39,7 +39,6 @@ function createControls() {
     resetForNewDataset: vi.fn(),
     setHasFileSettings: vi.fn(),
     showInitialView: vi.fn(),
-    setRendering: vi.fn(),
     clearStructure: vi.fn(),
   };
 }

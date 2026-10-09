@@ -662,15 +662,18 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   // At 601 px the Projection and Color by pickers still sit side by side on screen, and the EAT
   // reliability controls stay in the legend, not in the view bar.
+  // The view bar settles on its stage in the frame after the resize, so the layout is polled.
   await page.setViewportSize({ width: 601, height: 844 });
-  const projectionBox = await projectionTrigger(page).boundingBox();
-  const colorByBox = await colorByTrigger(page).boundingBox();
-  expect(projectionBox).not.toBeNull();
-  expect(colorByBox).not.toBeNull();
-  expect(projectionBox!.x + projectionBox!.width).toBeLessThanOrEqual(colorByBox!.x);
-  expect(projectionBox!.x).toBeGreaterThanOrEqual(0);
-  expect(colorByBox!.x + colorByBox!.width).toBeLessThanOrEqual(601);
-  expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
+  await expect(async () => {
+    const projectionBox = await projectionTrigger(page).boundingBox();
+    const colorByBox = await colorByTrigger(page).boundingBox();
+    expect(projectionBox).not.toBeNull();
+    expect(colorByBox).not.toBeNull();
+    expect(projectionBox!.x + projectionBox!.width).toBeLessThanOrEqual(colorByBox!.x);
+    expect(projectionBox!.x).toBeGreaterThanOrEqual(0);
+    expect(colorByBox!.x + colorByBox!.width).toBeLessThanOrEqual(601);
+    expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
+  }).toPass({ timeout: 5_000 });
   await expect(
     viewBar(page).getByRole('slider', { name: 'EAT reliability filter threshold' }),
   ).toHaveCount(0);

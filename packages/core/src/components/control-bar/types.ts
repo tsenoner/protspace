@@ -1,5 +1,7 @@
 /**
- * Control bar-related type definitions
+ * The dataset shape the annotation select, the search and the query builder read. The control bar
+ * these types served is gone (design decision 9); 4.4, 4.5 and 4.11 move these modules out of
+ * `control-bar/`.
  */
 
 import type {

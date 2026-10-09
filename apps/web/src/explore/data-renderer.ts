@@ -7,8 +7,8 @@ import type { LoadingOverlayController } from './loading-overlay';
 import type { EffectiveExploreView } from './view-state';
 
 interface DataRendererOptions {
-  /** The controls the renderer pauses and fills while it swaps the plot's data. */
-  controls: Pick<ExploreControls, 'showInitialView' | 'setRendering' | 'clearStructure'>;
+  /** The controls the renderer fills while it swaps the plot's data. */
+  controls: Pick<ExploreControls, 'showInitialView' | 'clearStructure'>;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
@@ -33,8 +33,8 @@ export function resolveRenderableView(
     0,
     newData.projections.findIndex((projection) => projection.name === projectionName),
   );
-  // Synthesized `__eat_confidence` annotations are filter-only (see control-bar's
-  // color-by/filterable split) — never auto-selected as the default color-by annotation.
+  // Synthesized `__eat_confidence` annotations are filter-only (Color by never offers them, see
+  // `deriveViewOptions` in view-bar-controller.ts), so never the default color-by annotation.
   const firstAnnotationKey =
     Object.keys(newData.annotations).find(
       (key) => !isEatConfidenceAnnotation(newData.annotations[key]),
@@ -156,7 +156,6 @@ export function createDataRenderer({
     await yieldToBrowser();
 
     console.log('Updating scatterplot with new data...');
-    controls.setRendering(true);
     // Only `syncLegendState` turns this back on. Until then the legend counts in protein
     // order (its `_computeAnnotationCounts`), which picks the rows and colours of tied
     // categories, and `updateLegend` leaves the legend to its own sync.
@@ -179,8 +178,6 @@ export function createDataRenderer({
 
     await yieldToBrowser();
     await yieldToBrowser();
-
-    controls.setRendering(false);
 
     updateOverlayForStep(
       overlayController,

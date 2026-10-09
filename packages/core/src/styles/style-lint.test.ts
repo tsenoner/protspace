@@ -24,11 +24,8 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
 const LEGACY = new Set<string>([
   '../components/common/info-popover.styles.ts',
   '../components/control-bar/annotation-select.styles.ts',
-  '../components/control-bar/control-bar.styles.ts',
   '../components/control-bar/query-builder.styles.ts',
   '../components/control-bar/search.styles.ts',
-  '../components/control-bar/styles/layout.ts',
-  '../components/control-bar/styles/responsive.ts',
   '../components/legend/category-score-strip.styles.ts',
   '../components/legend/legend.styles.ts',
   '../components/legend/styles/item.ts',

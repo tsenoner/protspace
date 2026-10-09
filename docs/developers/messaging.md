@@ -59,12 +59,15 @@ Host-consumed warning and error events share the `HostMessageEventDetail` shape 
 Each event narrows the generic parameters to the source, severity, and context it actually emits.
 Current normalized host-facing events:
 
-| Event                             | Source                                                                   | Severity  | Emitted by         |
-| --------------------------------- | ------------------------------------------------------------------------ | --------- | ------------------ |
-| `selection-disabled-notification` | `control-bar`                                                            | `warning` | `control-bar`      |
-| `data-error`                      | `data-loader`                                                            | `error`   | `data-loader`      |
-| `legend-error`                    | one of `data-processing`, `persistence`, `scatterplot-sync`, `rendering` | `error`   | `legend`           |
-| `structure-error`                 | `structure-viewer`                                                       | `error`   | `structure-viewer` |
+| Event             | Source                                                                   | Severity | Emitted by         |
+| ----------------- | ------------------------------------------------------------------------ | -------- | ------------------ |
+| `data-error`      | `data-loader`                                                            | `error`  | `data-loader`      |
+| `legend-error`    | one of `data-processing`, `persistence`, `scatterplot-sync`, `rendering` | `error`  | `legend`           |
+| `structure-error` | `structure-viewer`                                                       | `error`  | `structure-viewer` |
+
+Selection mode turning itself off is the scatterplot's `auto-disable-selection` (`{ reason,
+dataSize }`, not a `HostMessageEventDetail`); `apps/web/src/explore/notifications.ts` maps it to a
+warning toast.
 
 ## Host Responsibilities
 

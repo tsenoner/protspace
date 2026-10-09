@@ -1,3 +1,5 @@
+import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
+
 /**
  * Transient facts the explore runtime publishes for the React shell, which never reads them off the
  * runtime's elements. Nothing here is persisted. Later tasks add fields.
@@ -9,12 +11,15 @@ export interface WorkbenchStatus {
   proteinCount: number | null;
   /** Configured leaf conditions of the applied filter; 0 while no filter is applied. */
   appliedFilterConditions: number;
+  /** The plot's contour mode, which the view bar's More menu shows once Contours moves there. */
+  densityLayer: DensityLayerMode;
 }
 
 const EMPTY: WorkbenchStatus = {
   datasetName: null,
   proteinCount: null,
   appliedFilterConditions: 0,
+  densityLayer: DENSITY_DEFAULT,
 };
 
 let status: WorkbenchStatus = EMPTY;

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DENSITY_DEFAULT } from '@protspace/utils';
 import {
   createDatasetNamePublisher,
   getWorkbenchStatus,
@@ -17,6 +18,7 @@ describe('workbench status', () => {
       datasetName: null,
       proteinCount: null,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
   });
 
@@ -31,6 +33,7 @@ describe('workbench status', () => {
       datasetName: 'demo.parquetbundle',
       proteinCount: 12,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
@@ -57,6 +60,12 @@ describe('workbench status', () => {
     setWorkbenchStatus({ datasetName: 'mine.parquetbundle' });
     expect(getWorkbenchStatus()).not.toBe(first);
   });
+
+  it("densityLayer starts at the plot's default mode", () => {
+    expect(getWorkbenchStatus().densityLayer).toBe(DENSITY_DEFAULT);
+    setWorkbenchStatus({ densityLayer: 'auto' });
+    expect(getWorkbenchStatus().densityLayer).toBe('auto');
+  });
 });
 
 describe('createDatasetNamePublisher', () => {
@@ -71,6 +80,7 @@ describe('createDatasetNamePublisher', () => {
       datasetName: 'demo.parquetbundle',
       proteinCount: 10,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
   });
 
@@ -86,6 +96,7 @@ describe('createDatasetNamePublisher', () => {
       datasetName: 'new.parquetbundle',
       proteinCount: null,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
 
     data = ids(3);
@@ -94,6 +105,7 @@ describe('createDatasetNamePublisher', () => {
       datasetName: 'new.parquetbundle',
       proteinCount: 3,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
   });
 
@@ -113,6 +125,7 @@ describe('createDatasetNamePublisher', () => {
       datasetName: 'recovered.parquetbundle',
       proteinCount: null,
       appliedFilterConditions: 0,
+      densityLayer: 'off',
     });
   });
 });

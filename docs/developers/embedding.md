@@ -9,15 +9,21 @@ the monorepo (or have added the workspace package as a local dependency). There 
 
 ## Components Overview
 
-| Component        | Tag                            | Purpose                          |
-| ---------------- | ------------------------------ | -------------------------------- |
-| Scatterplot      | `<protspace-scatterplot>`      | Main projection visualization    |
-| Legend           | `<protspace-legend>`           | Category filtering               |
-| Control Bar      | `<protspace-control-bar>`      | Projection/annotation selection  |
-| Structure Viewer | `<protspace-structure-viewer>` | 3D protein structures            |
-| Data Loader      | `<protspace-data-loader>`      | `.parquetbundle` / FASTA loading |
+| Component        | Tag                                                                                           | Purpose                           |
+| ---------------- | --------------------------------------------------------------------------------------------- | --------------------------------- |
+| Scatterplot      | `<protspace-scatterplot>`                                                                     | Main projection visualization     |
+| Legend           | `<protspace-legend>`                                                                          | Category filtering                |
+| View controls    | `<protspace-projection-select>`, `<protspace-annotation-select>`, `<protspace-contours-menu>` | Projection, Color by and contours |
+| Plot tools       | `<protspace-plot-tools>`                                                                      | Move, box and lasso selection     |
+| Search           | `<protspace-protein-search>`                                                                  | Find and select proteins by ID    |
+| Import, Export   | `<protspace-import-menu>`, `<protspace-export-menu>`                                          | Load data, export figures         |
+| Structure Viewer | `<protspace-structure-viewer>`                                                                | 3D protein structures             |
+| Data Loader      | `<protspace-data-loader>`                                                                     | `.parquetbundle` / FASTA loading  |
 
 Importing `@protspace/core` once registers every element.
+
+The [API Reference](/developers/api/) lists every control, including the query builder and the
+projection details card.
 
 ## Getting the package
 
@@ -37,7 +43,8 @@ Then `pnpm install` and import it from your entry module.
 ## Basic HTML Setup
 
 ```html
-<protspace-control-bar auto-sync scatterplot-selector="#plot"></protspace-control-bar>
+<protspace-projection-select></protspace-projection-select>
+<protspace-annotation-select></protspace-annotation-select>
 <protspace-scatterplot id="plot"></protspace-scatterplot>
 <protspace-legend auto-sync scatterplot-selector="#plot"></protspace-legend>
 <protspace-structure-viewer
@@ -54,6 +61,8 @@ Then `pnpm install` and import it from your entry module.
 
   const fileInput = document.getElementById('fileInput');
   const plot = document.getElementById('plot');
+  const projection = document.querySelector('protspace-projection-select');
+  const colorBy = document.querySelector('protspace-annotation-select');
 
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -65,6 +74,21 @@ Then `pnpm install` and import it from your entry module.
     plot.data = data;
     plot.selectedProjectionIndex = 0;
     plot.selectedAnnotation = Object.keys(data.annotations)[0];
+
+    projection.projections = data.projections.map((p) => p.name);
+    projection.selectedProjection = data.projections[0].name;
+    colorBy.annotations = Object.keys(data.annotations);
+    colorBy.selectedAnnotation = plot.selectedAnnotation;
+  });
+
+  // The controls report picks; the page applies them to the plot.
+  projection.addEventListener('projection-change', (e) => {
+    plot.selectedProjectionIndex = plot.data.projections.findIndex(
+      (p) => p.name === e.detail.projection,
+    );
+  });
+  colorBy.addEventListener('annotation-change', (e) => {
+    plot.selectedAnnotation = e.detail.annotation;
   });
 </script>
 ```
@@ -89,7 +113,6 @@ on by default, so the attribute only spells it out:
 <protspace-scatterplot id="plot"></protspace-scatterplot>
 
 <protspace-legend auto-sync scatterplot-selector="#plot"></protspace-legend>
-<protspace-control-bar auto-sync scatterplot-selector="#plot"></protspace-control-bar>
 <protspace-structure-viewer auto-sync scatterplot-selector="#plot"></protspace-structure-viewer>
 ```
 
@@ -97,6 +120,11 @@ The legend follows the scatterplot whatever `autoSync` says. Setting `legend.aut
 the legend to its host, as the ProtSpace app does while it loads a dataset: the legend then counts
 categories in protein order, the order a per-protein `annotationValues` feed has, and leaves the EAT
 overlay switch for the host to apply to the plot.
+
+The view and app controls (Projection, Color by, Contours, search, Import, Export and the plot
+tools) have no auto-sync. They report picks as events and leave the plot to the host, as the
+example above does for Projection and Color by; the [API Reference](/developers/api/) lists each
+control's events and the plot properties they map to.
 
 ## Configuring the plot
 
@@ -127,16 +155,17 @@ function notify({ level, title, description }) {
   console[level === 'error' ? 'error' : 'log'](title, description ?? '');
 }
 
-const controlBar = document.querySelector('protspace-control-bar');
+const plot = document.getElementById('plot');
 const dataLoader = document.querySelector('protspace-data-loader');
 const legend = document.querySelector('protspace-legend');
 const viewer = document.querySelector('protspace-structure-viewer');
 
-controlBar.addEventListener('selection-disabled-notification', (event) => {
+plot.addEventListener('auto-disable-selection', (event) => {
+  const { reason, dataSize } = event.detail;
   notify({
     level: 'warning',
     title: 'Selection mode disabled.',
-    description: event.detail.message,
+    description: reason === 'insufficient-data' ? `Only ${dataSize} point(s) remaining` : undefined,
   });
 });
 
@@ -195,7 +224,6 @@ export default function ProtSpaceViewer() {
     <div>
       <input type="file" accept=".parquetbundle" onChange={handleFileChange} />
 
-      <protspace-control-bar auto-sync scatterplot-selector="#plot" />
       <protspace-scatterplot ref={plotRef} id="plot" />
       <protspace-legend auto-sync scatterplot-selector="#plot" />
       <protspace-structure-viewer auto-sync scatterplot-selector="#plot" />
@@ -211,7 +239,6 @@ export default function ProtSpaceViewer() {
   <div>
     <input type="file" accept=".parquetbundle" @change="handleFileChange" />
 
-    <protspace-control-bar auto-sync scatterplot-selector="#plot" />
     <protspace-scatterplot ref="plot" id="plot" />
     <protspace-legend auto-sync scatterplot-selector="#plot" />
     <protspace-structure-viewer auto-sync scatterplot-selector="#plot" />
@@ -311,7 +338,7 @@ plot.resetZoom();
 const visible = plot.getCurrentData();
 ```
 
-Image export is driven by the control bar, which emits an `export` event with the requested format
+Image export is driven by `<protspace-export-menu>`, which emits an `export` event with the requested format
 and options for the host to act on. See [Exporting](/explore/exporting).
 
 ## Drag and Drop Pattern

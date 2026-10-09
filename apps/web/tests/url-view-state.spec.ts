@@ -335,11 +335,8 @@ test.describe('URL-backed explore view state', () => {
         __pickerAnnotationAssignments?: string[];
         __pickerProjectionAssignments?: string[];
       };
-      // The elements that show the view, and the view property each one shows. The control bar
-      // shows both until the view bar's pickers replace it (Tasks 2.8 and 2.10); a tag that is
-      // not defined is simply never patched.
+      // The view bar's pickers, and the view property each one shows.
       const recorded: Record<string, Array<'selectedAnnotation' | 'selectedProjection'>> = {
-        'protspace-control-bar': ['selectedAnnotation', 'selectedProjection'],
         'protspace-annotation-select': ['selectedAnnotation'],
         'protspace-projection-select': ['selectedProjection'],
       };

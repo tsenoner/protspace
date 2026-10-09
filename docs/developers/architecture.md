@@ -9,7 +9,7 @@ ProtSpace uses a layered messaging model instead of a single catch-all UI primit
 - Component-owned workflow UI: Components keep their own dialogs and focused workflow controls. The legend settings and "Other" extraction dialogs stay inside the legend component.
 - Component-owned inline states: Components keep inline empty/loading/error states when the message belongs to the component surface itself. The structure viewer keeps its own empty, loading, and error UI.
 - Accessibility-only announcements: Components may expose `aria-live` status updates for assistive technologies without mirroring them as global toasts.
-- Host-consumed semantic events: Components emit normalized warning and error events such as `selection-disabled-notification`, `data-error`, `legend-error`, and `structure-error`. Hosts decide whether to surface those as toasts, inline UI, or silent recovery.
+- Host-consumed semantic events: Components emit normalized warning and error events such as `data-error`, `legend-error`, and `structure-error`. Hosts decide whether to surface those as toasts, inline UI, or silent recovery.
 
 The shared event contract uses these minimum fields:
 

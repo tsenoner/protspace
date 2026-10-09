@@ -6,8 +6,9 @@ import type {
   ProtspaceScatterplot,
 } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createViewBarController, deriveViewOptions } from './view-bar-controller';
+import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
 
 /** Fixtures carry only what the controller reads, so they go through `unknown`. */
 const asData = (data: unknown) => data as VisualizationData;
@@ -332,5 +333,29 @@ describe('createViewBarController', () => {
 
     expect(m.onUserChange).not.toHaveBeenCalled();
     expect(m.plot.selectedProjectionIndex).toBe(0);
+  });
+});
+
+describe('view-bar controller status', () => {
+  beforeEach(() => {
+    resetWorkbenchStatusForTests();
+  });
+
+  it('reports the contour mode to the workbench status', () => {
+    const m = setup();
+
+    m.contoursMenu.dispatchEvent(
+      new CustomEvent('density-layer-change', { detail: { densityLayer: 'auto' } }),
+    );
+    expect(getWorkbenchStatus().densityLayer).toBe('auto');
+
+    // A mode applied from the URL, then a new dataset's view: the menu keeps its mode, and the
+    // status reports what the menu shows. (Task 2.8's fake applySelection sets densityLayer,
+    // as the element does.)
+    m.controller.applyDensityLayerSelection('on');
+    expect(getWorkbenchStatus().densityLayer).toBe('on');
+    m.contoursMenu.densityLayer = 'auto';
+    m.controller.showInitialView({ projection: 'UMAP', annotation: 'family', tooltip: [] });
+    expect(getWorkbenchStatus().densityLayer).toBe('auto');
   });
 });
