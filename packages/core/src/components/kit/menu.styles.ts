@@ -31,6 +31,12 @@ export const menuStyles = [
       border-color: var(--ps-focus);
       box-shadow: 0 0 0 1px var(--ps-focus);
     }
+    /* Forced colours drop the shadow and the border colour, so the focused field gets an outline. */
+    @media (forced-colors: active) {
+      .search:focus-within {
+        outline: var(--ps-focus-width) solid Highlight;
+      }
+    }
     .search input {
       flex: 1;
       min-width: 0;
@@ -85,7 +91,9 @@ export const menuItemStyles = [
         outline-color: Highlight;
       }
     }
+    /* After hover and focus at equal specificity, so the tint stays under both. */
     :host([aria-checked='true']) {
+      background: var(--ps-accent-tint);
       color: var(--ps-accent-text);
       font-weight: var(--ps-weight-medium);
     }

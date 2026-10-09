@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import type { PsMenu, PsMenuGroup, PsMenuItem } from './menu';
 import './button';
@@ -295,6 +295,33 @@ describe('ps-menu', () => {
     expect(getComputedStyle(length).backgroundColor).toBe(
       getComputedStyle(species).backgroundColor,
     );
+  });
+
+  it('tints the checked row, as the workbench mockups do, and keeps the tint under hover', async () => {
+    const { menu } = await setup();
+    const family = menu.querySelector<PsMenuItem>('[value="family"]')!;
+    expect(family.getAttribute('aria-checked')).toBe('true');
+    // --ps-accent-tint in the light theme (sky-100)
+    expect(getComputedStyle(family).backgroundColor).toBe('rgb(224, 242, 254)');
+    await userEvent.hover(family);
+    expect(getComputedStyle(family).backgroundColor).toBe('rgb(224, 242, 254)');
+    const species = menu.querySelector<PsMenuItem>('[value="species"]')!;
+    expect(getComputedStyle(species).backgroundColor).not.toBe('rgb(224, 242, 254)');
+  });
+
+  it('marks the focused search field in forced colours', async () => {
+    const session = cdp();
+    await session.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'forced-colors', value: 'active' }],
+    });
+    try {
+      const { menu } = await setup('', 'searchable');
+      const search = menu.shadowRoot!.querySelector('.search')!;
+      expect(menu.shadowRoot!.activeElement).toBe(search.querySelector('input'));
+      expect(getComputedStyle(search).outlineStyle).toBe('solid');
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', { features: [] });
+    }
   });
 
   it('truncates a very long label instead of widening past the viewport', async () => {
