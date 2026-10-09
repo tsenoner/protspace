@@ -199,17 +199,24 @@ describe('ps-menu', () => {
     );
     const item = menu.querySelector<PsMenuItem>('[value="tooltip"]')!;
     item.click();
-    await menu.updateComplete;
+    await item.updateComplete;
     expect(item.checked).toBe(true);
     expect(item.getAttribute('aria-checked')).toBe('true');
     expect(menu.open).toBe(true);
   });
 
   it('exposes menu roles', async () => {
-    const { menu } = await setup();
-    expect(menu.querySelector('[value="species"]')!.getAttribute('role')).toBe('menuitemradio');
-    const list = menu.shadowRoot!.querySelector('[role="menu"]')!;
-    expect(list.getAttribute('aria-label')).toBe('Color by');
+    await setup();
+    await expect.element(page.getByRole('menu', { name: 'Color by' })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole('menuitemradio', { name: 'Species', checked: false }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('menuitemradio', { name: 'Protein family', checked: true }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole('menuitemradio', { name: 'EC number', disabled: true }))
+      .toBeInTheDocument();
   });
 
   it('filters items as you type in a searchable menu', async () => {
@@ -231,6 +238,65 @@ describe('ps-menu', () => {
     expect(menu.shadowRoot!.querySelector('.empty')?.textContent).toBe('No matches');
   });
 
+  it('announces "No matches" through a live region that exists before typing', async () => {
+    const { menu } = await setup('', 'searchable');
+    const status = menu.shadowRoot!.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    const input = menu.shadowRoot!.querySelector('input')!;
+    input.value = 'zzz';
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await menu.updateComplete;
+    expect(menu.shadowRoot!.querySelector('[role="status"]')).toBe(status);
+    expect(status.textContent).toBe('No matches');
+  });
+
+  it('keeps an item or label its owner hid hidden when it opens and after a search', async () => {
+    const { menu } = await setup(
+      '<ps-menu-label id="more" hidden>More</ps-menu-label>' +
+        '<ps-menu-item value="adv" hidden>Advanced</ps-menu-item>',
+      'searchable',
+    );
+    const adv = menu.querySelector<PsMenuItem>('[value="adv"]')!;
+    const more = document.getElementById('more')!;
+    expect(adv.hidden).toBe(true);
+    expect(more.hidden).toBe(true);
+    const input = menu.shadowRoot!.querySelector('input')!;
+    input.value = 'spe';
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await menu.updateComplete;
+    expect(adv.hidden).toBe(true);
+    expect(more.hidden).toBe(true);
+    expect(menu.querySelector<PsMenuItem>('[value="species"]')!.hidden).toBe(false);
+  });
+
+  it('does not focus or activate a disabled item on a press, and keys keep working', async () => {
+    const { menu } = await setup();
+    const onSelect = vi.fn();
+    menu.addEventListener('ps-select', onSelect);
+    await userEvent.click(menu.querySelector('[value="ec"]')!, { force: true });
+    expect(focused()).toBe('family');
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(menu.open).toBe(true);
+    key('End');
+    expect(focused()).toBe('length');
+  });
+
+  it('rings a keyboard-focused item but not a hovered one', async () => {
+    const { menu } = await setup();
+    await userEvent.keyboard('{ArrowDown}');
+    const species = menu.querySelector<PsMenuItem>('[value="species"]')!;
+    expect(document.activeElement).toBe(species);
+    expect(getComputedStyle(species).outlineStyle).toBe('solid');
+    const length = menu.querySelector<PsMenuItem>('[value="length"]')!;
+    await userEvent.hover(length);
+    expect(getComputedStyle(length).outlineStyle).toBe('none');
+    expect(getComputedStyle(length).backgroundColor).toBe(
+      getComputedStyle(species).backgroundColor,
+    );
+  });
+
   it('truncates a very long label instead of widening past the viewport', async () => {
     const { menu } = await setup(
       `<ps-menu-item value="long">${'metalloproteinase '.repeat(12)}</ps-menu-item>`,
@@ -241,5 +307,11 @@ describe('ps-menu', () => {
     const rect = panel.getBoundingClientRect();
     expect(rect.width).toBeLessThanOrEqual(360);
     expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
+    const long = menu.querySelector<PsMenuItem>('[value="long"]')!;
+    const label = long.shadowRoot!.querySelector<HTMLElement>('.label')!;
+    expect(label.scrollWidth).toBeGreaterThan(label.clientWidth); // clipped, not wrapped
+    expect(long.offsetHeight).toBe(
+      menu.querySelector<PsMenuItem>('[value="species"]')!.offsetHeight,
+    );
   });
 });

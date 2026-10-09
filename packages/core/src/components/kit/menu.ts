@@ -22,6 +22,14 @@ export class PsMenuItem extends LitElement {
   @property({ type: Boolean, reflect: true }) checked = false;
   @property({ type: Boolean, reflect: true }) disabled = false;
 
+  constructor() {
+    super();
+    // Arrow keys skip a disabled item, so a press must not focus it either.
+    this.addEventListener('mousedown', (event) => {
+      if (this.disabled) event.preventDefault();
+    });
+  }
+
   connectedCallback(): void {
     super.connectedCallback();
     if (!this.hasAttribute('tabindex')) this.tabIndex = -1;
@@ -86,6 +94,8 @@ export class PsMenu extends LitElement {
   @query('ps-popover') private popoverEl?: PsPopover;
   /** The anchor this menu marked, with the attribute values it had before. */
   private marked?: { el: Element; hasPopup: string | null; expanded: string | null };
+  /** What the search filter hid, so clearing it never unhides what the owner hid. */
+  private filteredOut = new WeakSet<HTMLElement>();
   private typed = '';
   private typedTimer = 0;
 
@@ -168,7 +178,9 @@ export class PsMenu extends LitElement {
           </div>`
         : nothing}
       <div class="items" role="menu" aria-label=${this.label || nothing}><slot></slot></div>
-      ${noMatches ? html`<p class="empty">No matches</p>` : nothing}
+      ${this.searchable
+        ? html`<p class="empty" role="status">${noMatches ? 'No matches' : ''}</p>`
+        : nothing}
     </ps-popover>`;
   }
 
@@ -178,7 +190,7 @@ export class PsMenu extends LitElement {
     this.applyFilter();
     queueMicrotask(() => {
       if (this.searchable) this.searchInput?.focus();
-      else this.focusItem(this.items.find((i) => i.checked && !i.disabled) ?? this.navigable[0]);
+      else this.focusItem(this.navigable.find((i) => i.checked) ?? this.navigable[0]);
     });
   };
 
@@ -199,9 +211,17 @@ export class PsMenu extends LitElement {
 
   private applyFilter(): void {
     const q = this.query.trim().toLowerCase();
+    const filter = (el: HTMLElement, out: boolean) => {
+      if (out && !el.hidden) {
+        el.hidden = true;
+        this.filteredOut.add(el);
+      } else if (!out && this.filteredOut.delete(el)) {
+        el.hidden = false;
+      }
+    };
     for (const item of this.items)
-      item.hidden = q !== '' && !(item.textContent ?? '').toLowerCase().includes(q);
-    for (const label of this.querySelectorAll('ps-menu-label')) label.hidden = q !== '';
+      filter(item, q !== '' && !(item.textContent ?? '').toLowerCase().includes(q));
+    for (const label of this.querySelectorAll('ps-menu-label')) filter(label, q !== '');
     this.requestUpdate();
   }
 

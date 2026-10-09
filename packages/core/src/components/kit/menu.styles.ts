@@ -48,6 +48,9 @@ export const menuStyles = [
       padding: var(--ps-space-2) var(--ps-space-3);
       color: var(--ps-text-muted);
     }
+    .empty:empty {
+      padding: 0;
+    }
   `,
 ];
 
@@ -68,9 +71,19 @@ export const menuItemStyles = [
     :host([hidden]) {
       display: none;
     }
-    :host(:hover),
-    :host(:focus) {
+    :host(:hover) {
       background: var(--ps-surface-hover);
+    }
+    /* Keyboard focus gets the kit's ring as well, so it differs from hover (decision 8). */
+    :host(:focus-visible) {
+      background: var(--ps-surface-hover);
+      outline: var(--ps-focus-width) solid var(--ps-focus);
+      outline-offset: calc(-1 * var(--ps-focus-width));
+    }
+    @media (forced-colors: active) {
+      :host(:focus-visible) {
+        outline-color: Highlight;
+      }
     }
     :host([aria-checked='true']) {
       color: var(--ps-accent-text);
