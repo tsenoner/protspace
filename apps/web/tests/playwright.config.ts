@@ -360,6 +360,12 @@ export default defineConfig({
       testMatch: /eat-visualization\.spec\.ts/,
     },
     {
+      // The spec sets its own 1440 px viewport (wider than the old viewport-scaled root's 1380 px).
+      name: 'foundation',
+      use: devices['Desktop Chrome'],
+      testMatch: /foundation\.spec\.ts/,
+    },
+    {
       // Mocked prep API (no backend); the live variant below is opt-in.
       name: 'fasta-prep',
       use: {
