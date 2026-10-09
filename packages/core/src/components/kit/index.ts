@@ -4,3 +4,4 @@ export { ESCAPE_ORDER, onEscapeFallback, pushLayer, topLayer, type Layer } from 
 export { PsButton, PsIconButton, type ButtonSize, type ButtonVariant } from './button';
 export { PsTooltip } from './tooltip';
 export type { Placement } from './position';
+export { PsPopover } from './popover';
