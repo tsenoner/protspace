@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
-import type { PsIconButton } from '../kit/button';
+import type { PsButton, PsIconButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
 import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspacePlotTools } from './plot-tools';
@@ -137,5 +137,62 @@ describe('protspace-plot-tools', () => {
     await userEvent.keyboard('{ArrowUp}');
     await userEvent.keyboard('{ArrowUp}');
     expect(deepActiveElement()).toBe(inner(tool(el, 'Fit to view')));
+  });
+
+  it('the toolbar is one Tab stop: the current tool; arrows still reach Fit', async () => {
+    const el = await mount();
+    const before = document.createElement('button');
+    const after = document.createElement('button');
+    document.body.prepend(before);
+    document.body.append(after);
+    el.tool = 'lasso';
+    await el.updateComplete;
+
+    before.focus();
+    await userEvent.keyboard('{Tab}');
+    expect(deepActiveElement()).toBe(inner(tool(el, 'Lasso select')));
+    await userEvent.keyboard('{Tab}');
+    expect(deepActiveElement()).toBe(after);
+
+    inner(tool(el, 'Lasso select')).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(deepActiveElement()).toBe(inner(tool(el, 'Fit to view')));
+  });
+
+  it('Clear, Isolate and Reset hand focus on when they disappear', async () => {
+    const el = await mount();
+    el.tool = 'rectangle';
+    el.selectedCount = 2;
+    el.addEventListener('clear-selections', () => (el.selectedCount = 0));
+    el.addEventListener('isolate-data', () => {
+      el.selectedCount = 0;
+      el.isolated = true;
+    });
+    el.addEventListener('reset-isolation', () => (el.isolated = false));
+    await el.updateComplete;
+    const selectionButton = (text: string) =>
+      [...el.shadowRoot!.querySelectorAll('.selection ps-button')].find(
+        (b) => b.textContent!.trim() === text,
+      )!;
+
+    // Clear: back to the current tool.
+    inner(selectionButton('Clear')).focus();
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    expect(deepActiveElement()).toBe(inner(tool(el, 'Box select')));
+
+    // Isolate: on to Reset.
+    el.selectedCount = 2;
+    await el.updateComplete;
+    inner(selectionButton('Isolate')).focus();
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    await (selectionButton('Reset') as PsButton).updateComplete;
+    expect(deepActiveElement()).toBe(inner(selectionButton('Reset')));
+
+    // Reset: back to the current tool.
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    expect(deepActiveElement()).toBe(inner(tool(el, 'Box select')));
   });
 });
