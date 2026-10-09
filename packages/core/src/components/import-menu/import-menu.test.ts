@@ -216,6 +216,13 @@ describe('protspace-import-menu', () => {
     expect(root().activeElement).toBe(trigger());
   });
 
+  it('is a disclosure of plain buttons, not an ARIA menu', async () => {
+    expect(trigger().hasAttribute('aria-haspopup')).toBe(false);
+    await open();
+    expect(panel()!.getAttribute('role')).toBe('group');
+    expect(panel()!.getAttribute('aria-label')).toBe('Import');
+  });
+
   it('the examples docs link opens in a new tab', async () => {
     await open();
     expect(root().querySelector('.import-examples-docs')).toBeNull();

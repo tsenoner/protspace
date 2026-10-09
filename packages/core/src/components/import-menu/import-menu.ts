@@ -43,7 +43,6 @@ export class ProtspaceImportMenu extends LitElement {
         class="trigger"
         type="button"
         aria-label="Import"
-        aria-haspopup="menu"
         aria-expanded=${String(this.open)}
         @click=${this.toggle}
       >
@@ -57,7 +56,7 @@ export class ProtspaceImportMenu extends LitElement {
       this.currentExampleId === null
         ? undefined
         : this.exampleDatasets.find((example) => example.id === this.currentExampleId);
-    return html`<div class="panel import-menu" role="menu" aria-label="Import">
+    return html`<div class="panel import-menu" role="group" aria-label="Import">
       <div class="import-current-dataset">
         <span class="import-current-dataset-label">Current dataset</span>
         <div class="import-current-dataset-row">
