@@ -6,12 +6,40 @@
  * are registered by augmenting `declare module 'react'`.
  */
 import type * as React from 'react';
+import type {
+  PsButton,
+  PsCheckbox,
+  PsDialog,
+  PsIconButton,
+  PsInput,
+  PsMenu,
+  PsMenuGroup,
+  PsMenuItem,
+  PsPopover,
+  PsSegmented,
+  PsSelect,
+  PsSwitch,
+  PsTooltip,
+} from '@protspace/core';
 
-/** Kit elements take arbitrary attributes and properties; React 19 sets properties on custom elements. */
-type KitElementProps = React.DetailedHTMLProps<
-  React.HTMLAttributes<HTMLElement> & Record<string, unknown>,
+/**
+ * A kit tag takes the named public properties of its class; React 19 sets a prop as a property when
+ * the element has one, else as an attribute. Refs stay `HTMLElement` so any element ref fits.
+ * Hyphenated attributes and `on<event>` listeners for the kit's custom events are listed per tag.
+ */
+type KitProps<E, K extends keyof E = never, Extra = unknown> = React.DetailedHTMLProps<
+  React.HTMLAttributes<HTMLElement>,
   HTMLElement
->;
+> &
+  Partial<Pick<E, K>> &
+  Extra;
+
+type ButtonKeys = 'variant' | 'size' | 'disabled' | 'describedBy';
+
+/** `ps-close` reaches the owner when the overlay closes by itself (Escape, outside press, pick). */
+interface CloseEvents {
+  'onps-close'?: (event: CustomEvent) => void;
+}
 
 declare module 'react' {
   namespace JSX {
@@ -67,20 +95,42 @@ declare module 'react' {
         },
         HTMLElement
       >;
-      'ps-button': KitElementProps;
-      'ps-icon-button': KitElementProps;
-      'ps-tooltip': KitElementProps;
-      'ps-popover': KitElementProps;
-      'ps-menu': KitElementProps;
-      'ps-menu-group': KitElementProps;
-      'ps-menu-item': KitElementProps;
-      'ps-menu-label': KitElementProps;
-      'ps-dialog': KitElementProps;
-      'ps-input': KitElementProps;
-      'ps-select': KitElementProps;
-      'ps-checkbox': KitElementProps;
-      'ps-switch': KitElementProps;
-      'ps-segmented': KitElementProps;
+      'ps-button': KitProps<PsButton, ButtonKeys>;
+      'ps-icon-button': KitProps<PsIconButton, ButtonKeys | 'icon' | 'label' | 'pressed'>;
+      'ps-tooltip': KitProps<
+        PsTooltip,
+        'text' | 'placement' | 'anchor' | 'namesTarget',
+        { 'names-target'?: boolean }
+      >;
+      'ps-popover': KitProps<
+        PsPopover,
+        'anchor' | 'placement' | 'open' | 'panelRole' | 'panelLabel',
+        CloseEvents & {
+          'panel-role'?: string;
+          'panel-label'?: string;
+          'onps-open'?: (event: CustomEvent) => void;
+        }
+      >;
+      'ps-menu': KitProps<
+        PsMenu,
+        'anchor' | 'open' | 'placement' | 'label' | 'searchable' | 'searchPlaceholder',
+        CloseEvents & {
+          'search-placeholder'?: string;
+          'onps-select'?: (event: CustomEvent<{ value: string; checked: boolean }>) => void;
+        }
+      >;
+      'ps-menu-group': KitProps<PsMenuGroup, 'label'>;
+      'ps-menu-item': KitProps<PsMenuItem, 'value' | 'type' | 'checked' | 'disabled'>;
+      'ps-menu-label': KitProps<HTMLElement>;
+      'ps-dialog': KitProps<PsDialog, 'open' | 'heading' | 'size' | 'dismissible', CloseEvents>;
+      'ps-input': KitProps<
+        PsInput,
+        'value' | 'type' | 'placeholder' | 'label' | 'invalid' | 'disabled'
+      >;
+      'ps-select': KitProps<PsSelect, 'options' | 'value' | 'label' | 'disabled'>;
+      'ps-checkbox': KitProps<PsCheckbox, 'checked' | 'indeterminate' | 'disabled' | 'label'>;
+      'ps-switch': KitProps<PsSwitch, 'checked' | 'disabled' | 'label'>;
+      'ps-segmented': KitProps<PsSegmented, 'options' | 'value' | 'label'>;
     }
   }
 }

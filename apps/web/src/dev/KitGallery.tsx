@@ -19,6 +19,10 @@ const PROJECTIONS: SegmentedOption[] = [
   { value: 'tsne', label: 't-SNE' },
 ];
 
+// custom-elements.d.ts types every kit prop, so a misspelled one must not compile.
+// @ts-expect-error `dismissable` is not a ps-dialog property
+void (<ps-dialog dismissable={false} />);
+
 /** Every kit control and its states in one place, for review in both themes. Development only. */
 export default function KitGallery() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
