@@ -408,6 +408,21 @@ describe('protspace-annotation-select picks', () => {
     expect(el.selectedAnnotation).not.toBe('pfam');
   });
 
+  it('a keyboard pick gives focus back to the trigger', async () => {
+    const el = await setup();
+    const trigger = el.shadowRoot!.querySelector('.dropdown-trigger') as HTMLButtonElement;
+    await openDropdown(el);
+    const input = el.shadowRoot!.querySelector('#annotation-search-input') as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await el.updateComplete;
+    await Promise.resolve();
+
+    expect(el.shadowRoot!.querySelector('#annotation-search-input')).toBeNull();
+    expect(el.shadowRoot!.activeElement).toBe(trigger);
+  });
+
   it('re-picking the annotation on screen dispatches nothing and drops a waiting pick', async () => {
     const el = await setup();
     const changed = vi.fn();

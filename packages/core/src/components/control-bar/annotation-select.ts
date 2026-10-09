@@ -188,7 +188,14 @@ export class ProtspaceAnnotationSelect extends LitElement {
   /** A user's pick: shown at once, committed after the next paint (the newest pick wins). */
   private selectAnnotation(annotation: string, event?: Event) {
     event?.stopPropagation();
+    // A keyboard pick removes the focused search input: give focus back to the trigger.
+    const hadFocus = this.shadowRoot?.activeElement != null;
     this.closeList();
+    if (hadFocus) {
+      void this.updateComplete.then(() =>
+        this.shadowRoot?.querySelector<HTMLElement>('.dropdown-trigger')?.focus(),
+      );
+    }
     // Re-picking the committed annotation changes nothing, and drops a pick still waiting.
     if (annotation === this.selectedAnnotation) {
       this.cancelPending();
