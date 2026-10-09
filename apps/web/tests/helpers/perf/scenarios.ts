@@ -62,6 +62,7 @@ const SEGMENTS = {
   camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
   resize: { repeatable: true },
   'panel-toggle': { repeatable: true },
+  'panel-expand': { repeatable: true },
   'search-select': { repeatable: true },
   import: { frameBound: LOAD_FRAME_BOUND },
   'import-no-settings': { frameBound: LOAD_FRAME_BOUND },
@@ -326,6 +327,13 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
       act: () => collapseSidebar(page),
       reset: () => expandSidebar(page),
       pixels: true,
+    },
+    {
+      name: 'panel-expand',
+      // Expanding slides the sidebar in over the plot, then narrows it: one resize, one render
+      // and one grid rebuild (decision 4). panel-toggle's reset checks the round trip's pixels.
+      setup: () => collapseSidebar(page),
+      act: () => expandSidebar(page),
     },
     {
       name: 'search-select',

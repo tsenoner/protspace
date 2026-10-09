@@ -379,6 +379,8 @@ async function openTimingWindow(
 
 export interface SegmentSpec {
   name: string;
+  /** Puts the page in the state `act` starts from, before the first settle: never counted. */
+  setup?: () => Promise<void>;
   /** Real Playwright input; `settle` waits with the segment's cap. */
   act: (settle: () => Promise<void>) => Promise<void>;
   reset?: () => Promise<void>;
@@ -399,11 +401,12 @@ export interface SegmentSpec {
 }
 
 /**
- * settle → snapshot → act → settle → snapshot → reset → settle, with a pixel
+ * setup → settle → snapshot → act → settle → snapshot → reset → settle, with a pixel
  * round-trip check when asked. Real Playwright input happens inside `act`.
  */
 export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentResult> {
   const settleSegment = () => settle(page, spec.capMs);
+  await spec.setup?.();
   await settleSegment();
   const pixelsBefore = spec.pixels ? await plotPixels(page) : null;
   const before = await readSnapshot(page, !!spec.timing);
