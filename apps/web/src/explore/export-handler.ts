@@ -1,4 +1,9 @@
-import type { ProtspaceExportMenu, ProtspaceLegend, ProtspaceScatterplot } from '@protspace/core';
+import type {
+  ExportEventDetail,
+  ProtspaceExportMenu,
+  ProtspaceLegend,
+  ProtspaceScatterplot,
+} from '@protspace/core';
 import { EXPORT_DEFAULTS, pxToMm } from '@protspace/core';
 import type { BundleSettings } from '@protspace/utils';
 import {
@@ -11,15 +16,8 @@ import {
 import { notify } from '../lib/notify';
 import { getExportFailureNotification, getExportSuccessNotification } from './notifications';
 
-interface ExportEventDetail {
-  imageHeight?: number;
-  imageWidth?: number;
-  includeLegend?: boolean;
-  includeLegendSettings?: boolean;
-  legendFontSizePx?: number;
-  legendWidthPercent?: number;
-  type: 'ids' | 'pdf' | 'png' | 'parquet';
-}
+/** The menu sends every field; other dispatchers may send only the type, so the rest default. */
+type ExportRequest = Pick<ExportEventDetail, 'type'> & Partial<Omit<ExportEventDetail, 'type'>>;
 
 interface ExportHandlerOptions {
   /** The Export menu, whose Figure Editor item asks for the publish modal. */
@@ -165,7 +163,7 @@ export function createExportHandler({
   // ── Original export handler ────────────────────────
 
   return async (event: Event) => {
-    const customEvent = event as CustomEvent<ExportEventDetail>;
+    const customEvent = event as CustomEvent<ExportRequest>;
     const {
       type,
       imageWidth,
