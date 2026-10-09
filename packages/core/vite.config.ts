@@ -34,7 +34,8 @@ export default defineConfig({
       // hyparquet is shared with @protspace/utils' bundle writer (hyparquet-writer imports its
       // modules), so it is left to the app to bundle once. The inline decode worker is built
       // separately (`worker` above) and still carries its own copy: a blob worker cannot import.
-      external: ['lit', 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
+      // Every lit/* subpath is external too: a bundled lit/directives/* module brings its own lit-html.
+      external: [/^lit(\/|$)/, 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
       output: {
         globals: {
           lit: 'Lit',
