@@ -5,3 +5,4 @@ export { PsButton, PsIconButton, type ButtonSize, type ButtonVariant } from './b
 export { PsTooltip } from './tooltip';
 export type { Placement } from './position';
 export { PsPopover } from './popover';
+export { PsMenu, PsMenuItem, PsMenuLabel, type MenuItemType } from './menu';
