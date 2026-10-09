@@ -1,16 +1,18 @@
 import { useSyncExternalStore } from 'react';
 import { DESKTOP_MIN_WIDTH } from '../explore/layout-defaults';
 
-const DESKTOP_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
+// Made on first use, not at import, and kept: React reads the snapshot on every render.
+let query: MediaQueryList | undefined;
+const desktopQuery = (): MediaQueryList =>
+  (query ??= window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`));
 
 function subscribe(onChange: () => void): () => void {
-  const query = window.matchMedia(DESKTOP_QUERY);
-  query.addEventListener('change', onChange);
-  return () => query.removeEventListener('change', onChange);
+  const list = desktopQuery();
+  list.addEventListener('change', onChange);
+  return () => list.removeEventListener('change', onChange);
 }
 
-const getMode = (): 'desktop' | 'narrow' =>
-  window.matchMedia(DESKTOP_QUERY).matches ? 'desktop' : 'narrow';
+const getMode = (): 'desktop' | 'narrow' => (desktopQuery().matches ? 'desktop' : 'narrow');
 
 /** 'desktop' from 951 px wide and 'narrow' below, following the window live. */
 export function useLayoutMode(): 'desktop' | 'narrow' {
