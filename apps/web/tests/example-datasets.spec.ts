@@ -781,9 +781,11 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
   /**
    * Stores the 40,026-protein fixture as a healthy import and reopens the app,
    * so its restore decodes long enough for a Back/Forward to land meanwhile.
-   * Resolves once the restore's overlay is up.
+   * The page itself goes Forward to the example `forwardTo` the moment the
+   * restore's overlay appears: a Forward sent from the test after the overlay
+   * shows can land once the import has rendered, which keeps it on screen.
    */
-  async function openWithLargeStoredImport(page: Page): Promise<void> {
+  async function openWithLargeStoredImport(page: Page, forwardTo: string): Promise<void> {
     await openExplore(page);
     await clearOpfs(page);
     await seedOpfsState(page, {
@@ -792,8 +794,28 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
       failedAttempts: 0,
       fixture: PE1_40026_FIXTURE,
     });
+    await forwardWhenRestoreStarts(page, forwardTo);
     await page.goto('/explore');
-    await expect(page.locator('#progressive-loading')).toBeVisible();
+  }
+
+  /**
+   * Arms a Forward to `?dataset=<id>` that the next page load runs as soon as
+   * its loading overlay appears. The router listens for popstate from its
+   * first render, before the runtime can show the overlay; the decode is
+   * async, so the Forward always comes before the import is on screen.
+   */
+  async function forwardWhenRestoreStarts(page: Page, id: string): Promise<void> {
+    await page.addInitScript((exampleId) => {
+      if (sessionStorage.getItem('e2e:forward') !== exampleId) return;
+      sessionStorage.removeItem('e2e:forward');
+      new MutationObserver((_, observer) => {
+        if (!document.getElementById('progressive-loading')) return;
+        observer.disconnect();
+        history.pushState(null, '', `/explore?dataset=${exampleId}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }).observe(document, { childList: true, subtree: true });
+    }, id);
+    await page.evaluate((exampleId) => sessionStorage.setItem('e2e:forward', exampleId), id);
   }
 
   /** A same-document entry naming an example, reached like Forward. */
@@ -807,8 +829,7 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
   test('Forward to an example while the stored import restores shows the example on its entry', async ({
     page,
   }) => {
-    await openWithLargeStoredImport(page);
-    await forwardToExample(page, OTHER.id);
+    await openWithLargeStoredImport(page, OTHER.id);
 
     await waitForProteinCount(page, OTHER.count);
     // The superseded restore must not replace-remove `dataset=` from the
@@ -830,8 +851,7 @@ test.describe('Example datasets: a Back/Forward supersedes a load already under 
   }) => {
     const { toast } = exampleFailureToast(page, OTHER.entry);
     await page.route(OTHER.glob, failWith500);
-    await openWithLargeStoredImport(page);
-    await forwardToExample(page, OTHER.id);
+    await openWithLargeStoredImport(page, OTHER.id);
 
     await expect(toast).toBeVisible();
     // Nothing was on screen yet, so the startup load runs: the import it had
