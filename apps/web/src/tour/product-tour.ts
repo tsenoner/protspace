@@ -189,17 +189,13 @@ const steps: DriveStep[] = [
         spotlightHelp(true);
       },
       // driver.js skips `onDeselected` when the step is left during its 400 ms highlight
-      // transition, so leaving it by Next, Skip or close also clears the spotlight.
+      // transition, so Next and Skip clear the spotlight themselves; `onDestroyStarted` covers
+      // every other way out.
       onNextClick: async (_el, _step, opts) => {
         spotlightHelp(false);
         await moveNext(opts);
       },
-      onCloseClick: () => {
-        spotlightHelp(false);
-        driverObj.destroy();
-      },
     },
-    onDeselected: () => spotlightHelp(false),
   },
 
   // ── Step 2 – Import button (Shadow DOM) ─────────────────────
@@ -297,6 +293,13 @@ driverObj.setConfig({
   prevBtnText: 'Back',
 
   onPopoverRender: onPopoverRenderBase,
+
+  // Every user close (the close button, Escape, an overlay click) comes through here, even during
+  // a step's highlight transition, when driver.js skips `onDeselected` and `onDestroyed`.
+  onDestroyStarted: () => {
+    spotlightHelp(false);
+    driverObj.destroy();
+  },
 
   steps,
 });
