@@ -7,6 +7,12 @@
  */
 import type * as React from 'react';
 
+/** Kit elements take arbitrary attributes and properties; React 19 sets properties on custom elements. */
+type KitElementProps = React.DetailedHTMLProps<
+  React.HTMLAttributes<HTMLElement> & Record<string, unknown>,
+  HTMLElement
+>;
+
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -61,6 +67,20 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'ps-button': KitElementProps;
+      'ps-icon-button': KitElementProps;
+      'ps-tooltip': KitElementProps;
+      'ps-popover': KitElementProps;
+      'ps-menu': KitElementProps;
+      'ps-menu-group': KitElementProps;
+      'ps-menu-item': KitElementProps;
+      'ps-menu-label': KitElementProps;
+      'ps-dialog': KitElementProps;
+      'ps-input': KitElementProps;
+      'ps-select': KitElementProps;
+      'ps-checkbox': KitElementProps;
+      'ps-switch': KitElementProps;
+      'ps-segmented': KitElementProps;
     }
   }
 }

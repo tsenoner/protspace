@@ -366,6 +366,12 @@ export default defineConfig({
       testMatch: /foundation\.spec\.ts/,
     },
     {
+      // Development-only page at /dev/kit; the dev server the suite starts serves it.
+      name: 'kit-gallery',
+      use: devices['Desktop Chrome'],
+      testMatch: /kit-gallery\.spec\.ts/,
+    },
+    {
       // Mocked prep API (no backend); the live variant below is opt-in.
       name: 'fasta-prep',
       use: {
