@@ -141,15 +141,15 @@ describe('legend score strips', () => {
   });
 
   it('re-syncs the strips to the new projection when the control bar reports a projection change', async () => {
-    const { legend, plot, controlBar } = await setup();
+    const { legend, plot, picker } = await setup();
 
     const before = legend.shadowRoot!.querySelector('protspace-score-strip') as StripElement;
     expect(before.points.find((point) => point.category === 'A')?.value).toBe(0.5);
 
-    // Mirrors what protspace-control-bar's applyProjectionSelection does in production:
-    // it sets the scatterplot's index directly, then dispatches projection-change.
+    // As the view bar's projection picker does in production: the app sets the scatterplot's
+    // index on the picker's own event, then the event bubbles to the legend's document.
     plot.selectedProjectionIndex = 1;
-    controlBar.dispatchEvent(
+    picker.dispatchEvent(
       new CustomEvent('projection-change', {
         detail: { projection: 'PCA 2' },
         bubbles: true,
@@ -198,7 +198,7 @@ describe('legend score strips', () => {
     // `|| changedProperties.has('_categoryScores')` half of that guard. Silhouette
     // ranks A above B on UMAP 2 and B above A on PCA 2 (see makeData), so a stale
     // sort would still show the UMAP 2 order after switching.
-    const { legend, plot, controlBar } = await setup();
+    const { legend, plot, picker } = await setup();
 
     const internals = legend as unknown as {
       _dialogSettings: { annotationSortModes: Record<string, string> } & Record<string, unknown>;
@@ -223,7 +223,7 @@ describe('legend score strips', () => {
     expect(rowOrder().indexOf('A')).toBeLessThan(rowOrder().indexOf('B'));
 
     plot.selectedProjectionIndex = 1;
-    controlBar.dispatchEvent(
+    picker.dispatchEvent(
       new CustomEvent('projection-change', {
         detail: { projection: 'PCA 2' },
         bubbles: true,

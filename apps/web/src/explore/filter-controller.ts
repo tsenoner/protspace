@@ -20,10 +20,8 @@ import {
   type EatReliabilityState,
   type VisualizationData,
 } from '@protspace/utils';
+import { TOOLTIP_ONLY_ANNOTATIONS } from './view-bar-controller';
 import { setWorkbenchStatus } from './workbench-status';
-
-/** Annotations shown only in the hover tooltip; the filter's column picker does not offer them. */
-const TOOLTIP_ONLY_ANNOTATIONS = new Set(['gene_name', 'protein_name', 'uniprot_kb_id']);
 
 interface FilterControllerOptions {
   plotElement: ProtspaceScatterplot;

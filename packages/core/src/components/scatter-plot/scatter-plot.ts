@@ -29,7 +29,6 @@ import {
   type LegendZOrderChangeEvent,
 } from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
-import './projection-metadata/projection-metadata';
 import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
@@ -1760,13 +1759,6 @@ export class ProtspaceScatterplot extends LitElement {
           viewBox="0 0 ${config.width} ${config.height}"
           style="position: absolute; top: 0; left: 0; max-width: ${config.width}px; max-height: ${config.height}px; z-index: 3; background: transparent;"
         ></svg>
-
-        <protspace-projection-metadata
-          .projection=${this.data?.projections[this.selectedProjectionIndex] ?? null}
-          .statisticsRows=${this.data?.statisticsRows}
-          selected-annotation=${this.selectedAnnotation}
-          .viewIsSubset=${this.filtersActive || this.isIsolationMode()}
-        ></protspace-projection-metadata>
 
         ${this._tooltipData
           ? html`

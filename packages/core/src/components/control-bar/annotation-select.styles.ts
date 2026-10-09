@@ -48,6 +48,44 @@ export const annotationSelectStyles = [
       max-width: min(28rem, calc(100vw - 2rem));
     }
 
+    /* The view bar's key/value trigger (decision 1): ghost, 32 px, key muted, value medium. */
+    .dropdown-trigger {
+      gap: var(--ps-space-1-5);
+      height: var(--ps-control-md);
+      min-width: 0;
+      padding: 0 var(--ps-space-2);
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+      color: var(--ps-text);
+      font-family: var(--ps-font-sans);
+      font-size: var(--ps-text-base);
+    }
+
+    .dropdown-trigger:hover,
+    .dropdown-trigger.open {
+      border-color: transparent;
+      background: var(--ps-surface-hover);
+    }
+
+    .dropdown-trigger.open {
+      box-shadow: inset 0 0 0 1px var(--ps-border-strong);
+    }
+
+    .dropdown-trigger .key {
+      color: var(--ps-text-muted);
+      white-space: nowrap;
+    }
+
+    .dropdown-trigger .dropdown-trigger-text {
+      max-width: 16rem;
+      font-weight: var(--ps-weight-medium);
+    }
+
+    .dropdown-trigger .chevron-down {
+      color: var(--ps-text-faint);
+    }
+
     .annotation-search-container {
       padding: var(--spacing-sm);
       border-bottom: var(--border-width) solid var(--border);
@@ -186,21 +224,6 @@ export const annotationSelectStyles = [
       text-align: center;
       font-size: var(--text-base);
       color: var(--muted);
-    }
-
-    @media (max-width: 1200px) {
-      :host,
-      .annotation-select-container,
-      .dropdown-trigger {
-        width: 100%;
-      }
-
-      .dropdown-menu {
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-width: 100%;
-      }
     }
   `,
 ];

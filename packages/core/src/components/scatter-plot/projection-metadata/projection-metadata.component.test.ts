@@ -613,3 +613,25 @@ describe('auto-cluster agreement placement', () => {
     expect(statsBlock(el)!.textContent).not.toContain('optimistic');
   });
 });
+
+describe('protspace-projection-metadata placement', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('caps the card at the viewport height below it', async () => {
+    const el = await setup({ n_components: 2 });
+    const content = el.shadowRoot!.querySelector('.content') as HTMLElement;
+    const top = vi.spyOn(content, 'getBoundingClientRect');
+
+    top.mockReturnValue({ top: 100 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(content.style.maxHeight).toBe(`${window.innerHeight - 100 - 8}px`);
+
+    // Never below the 200 px a scrolling card needs to be usable.
+    top.mockReturnValue({ top: window.innerHeight - 50 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(content.style.maxHeight).toBe('200px');
+  });
+});

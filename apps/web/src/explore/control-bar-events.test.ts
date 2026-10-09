@@ -1,34 +1,37 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { notify } from '../lib/notify';
 import { bindControlBarEvents } from './control-bar-events';
 
-/** Binds the control-bar listeners to a plain event target, with spied controllers. */
-function bind() {
-  const controlBar = new EventTarget();
-  const interactionController = { handleAnnotationChange: vi.fn() };
-  const viewController = {
-    handleUserAnnotationChange: vi.fn(),
-    handleUserProjectionChange: vi.fn(),
-    handleUserTooltipAnnotationsChange: vi.fn(),
-    handleUserDensityLayerChange: vi.fn(),
-  };
-  bindControlBarEvents({
-    addControlBarListener: (type, listener, options) =>
-      controlBar.addEventListener(type, listener, options),
-    interactionController: interactionController as never,
-    viewController: viewController as never,
-  });
-  return { controlBar, interactionController, viewController };
-}
+vi.mock('../lib/notify', () => ({ notify: { warning: vi.fn() } }));
 
-describe('the control bar events', () => {
-  it('an annotation change reaches the interaction and view controllers', () => {
-    const { controlBar, interactionController, viewController } = bind();
+describe('control bar events', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows the selection-disabled warning as a toast', () => {
+    const controlBar = new EventTarget();
+    bindControlBarEvents({
+      addControlBarListener: (type, listener, options) =>
+        controlBar.addEventListener(type, listener, options),
+    });
 
     controlBar.dispatchEvent(
-      new CustomEvent('annotation-change', { detail: { annotation: 'ec' } }),
+      new CustomEvent('selection-disabled-notification', {
+        detail: {
+          message: 'Selection mode disabled: Only 1 point remaining',
+          severity: 'warning',
+          source: 'control-bar',
+          context: { reason: 'insufficient-data', dataSize: 1 },
+        },
+      }),
     );
 
-    expect(interactionController.handleAnnotationChange).toHaveBeenCalledOnce();
-    expect(viewController.handleUserAnnotationChange).toHaveBeenCalledOnce();
+    expect(notify.warning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Selection mode disabled.',
+        description: 'Selection mode disabled: Only 1 point remaining',
+      }),
+    );
   });
 });

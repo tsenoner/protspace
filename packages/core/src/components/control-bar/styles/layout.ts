@@ -16,7 +16,6 @@ export const layoutStyles = css`
     border-bottom: var(--border-width) solid var(--border);
     box-shadow: var(--shadow-sm);
     border-radius: var(--radius);
-    min-width: 900px;
   }
 
   .left-controls,

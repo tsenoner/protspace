@@ -64,6 +64,22 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-projection-select': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
+      'protspace-projection-metadata': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
+      'protspace-annotation-select': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
+      'protspace-contours-menu': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
       'protspace-control-bar': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;

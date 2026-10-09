@@ -19,17 +19,6 @@ export function handleDropdownEscape(event: KeyboardEvent, onClose: () => void):
 }
 
 /**
- * Checks if any dropdown is currently open
- * Used by document-level handlers to avoid interfering with dropdown Escape handling
- *
- * @param dropdownStates - Object containing boolean states of all dropdowns
- * @returns true if any dropdown is open
- */
-export function isAnyDropdownOpen(dropdownStates: Record<string, boolean>): boolean {
-  return Object.values(dropdownStates).some((isOpen) => isOpen);
-}
-
-/**
  * Everything `handleListboxKeydown` needs to drive one dropdown's option list.
  *
  * Module-private: callers pass an object literal to `handleListboxKeydown` and

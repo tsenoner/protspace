@@ -36,6 +36,7 @@ import {
   startInitialExploreLoad,
 } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
+import { createViewBarController } from './view-bar-controller';
 import { createViewController } from './view-controller';
 import { createDatasetNamePublisher, setWorkbenchStatus } from './workbench-status';
 
@@ -69,6 +70,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotElement,
     queryBuilder,
     structureViewer,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
   } = elements;
   const lifecycle = createLifecycle();
 
@@ -277,17 +282,36 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     loadQueue.dispose();
   });
 
-  const viewController = createViewController({
-    plotElement,
-    controlBar,
-  });
-  lifecycle.addCleanup(() => viewController.dispose());
-
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
     structureViewer,
   });
+
+  // Before the filter controller: both hear annotation-change on the document, and the filter's
+  // reliability mirror runs last, as the control bar's did.
+  const viewBarController = createViewBarController({
+    plotElement,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
+    interactionController,
+    root: document,
+    onUserChange(kind) {
+      if (kind === 'projection') viewController.handleUserProjectionChange();
+      else if (kind === 'annotation') viewController.handleUserAnnotationChange();
+      else if (kind === 'tooltip') viewController.handleUserTooltipAnnotationsChange();
+      else viewController.handleUserDensityLayerChange();
+    },
+  });
+  lifecycle.addCleanup(() => viewBarController.dispose());
+
+  const viewController = createViewController({
+    plotElement,
+    pickers: viewBarController,
+  });
+  lifecycle.addCleanup(() => viewController.dispose());
 
   const filterController = createFilterController({
     plotElement,
@@ -304,6 +328,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const controls: ExploreControls = {
     resetForNewDataset() {
       controlBar.clearForNewDataset();
+      viewBarController.resetForNewDataset();
       exportMenu.reset();
       filterController.resetForNewDataset();
     },
@@ -311,13 +336,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       exportMenu.hasFileSettings = value;
     },
     showInitialView(view) {
-      controlBar.selectedProjection = view.projection;
-      controlBar.selectedAnnotation = view.annotation;
-      controlBar.tooltipAnnotations = [...view.tooltip];
+      viewBarController.showInitialView(view);
+      filterController.setSelectedAnnotation(view.annotation);
+      // The selection still lives in the control bar until Task 2.9.
       controlBar.selectionMode = false;
       controlBar.selectedProteinsCount = 0;
       controlBar.requestUpdate();
-      filterController.setSelectedAnnotation(view.annotation);
     },
     setRendering(rendering) {
       controlBar.autoSync = !rendering;
@@ -464,8 +488,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     addControlBarListener(type, listener, options) {
       addTrackedEventListener(lifecycle, controlBar, type, listener, options);
     },
-    interactionController,
-    viewController,
   });
 
   addTrackedEventListener(

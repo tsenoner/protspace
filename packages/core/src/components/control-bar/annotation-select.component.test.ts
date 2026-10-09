@@ -3,9 +3,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './annotation-select';
-import './control-bar';
 import type { ProjectionStatisticRow } from '@protspace/utils';
-import type { ProtspaceData } from './types';
+import { pushLayer, topLayer } from '../kit/layers';
 
 type AnnotationSelectElement = HTMLElement & {
   annotations: string[];
@@ -44,6 +43,15 @@ function getRowFor(el: AnnotationSelectElement, annotation: string): HTMLElement
   }
   return row;
 }
+
+/** Resolves in the task after the next frame, i.e. once a pick made now has been committed. */
+const afterNextPaint = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+type PickerElement = AnnotationSelectElement & {
+  applySelection(annotation: string): void;
+  label: string;
+};
 
 describe('protspace-annotation-select tooltip extras', () => {
   beforeEach(() => {
@@ -101,27 +109,24 @@ describe('protspace-annotation-select tooltip extras', () => {
     expect(inactiveBtn.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('dispatches tooltip-annotation-toggle when the toggle is clicked, without selecting', async () => {
+  it('dispatches tooltip-annotations-change when the toggle is clicked, without selecting', async () => {
     const el = await setup();
     await openDropdown(el);
 
     const toggleEvents: CustomEvent[] = [];
     const selectEvents: CustomEvent[] = [];
-    el.addEventListener('tooltip-annotation-toggle', (e) => toggleEvents.push(e as CustomEvent));
-    el.addEventListener('annotation-select', (e) => selectEvents.push(e as CustomEvent));
+    el.addEventListener('tooltip-annotations-change', (e) => toggleEvents.push(e as CustomEvent));
+    el.addEventListener('annotation-change', (e) => selectEvents.push(e as CustomEvent));
 
     const btn = getRowFor(el, 'gene_name').querySelector(
       '.tooltip-toggle-btn',
     ) as HTMLButtonElement;
     btn.click();
     await el.updateComplete;
+    await afterNextPaint();
 
     expect(toggleEvents).toHaveLength(1);
-    expect(toggleEvents[0].detail).toEqual({
-      annotation: 'gene_name',
-      active: true,
-      tooltipAnnotations: ['gene_name'],
-    });
+    expect(toggleEvents[0].detail).toEqual({ tooltipAnnotations: ['gene_name'] });
     expect(selectEvents).toHaveLength(0);
     expect(el.tooltipAnnotations).toEqual(['gene_name']);
   });
@@ -131,7 +136,7 @@ describe('protspace-annotation-select tooltip extras', () => {
     await openDropdown(el);
 
     const events: CustomEvent[] = [];
-    el.addEventListener('tooltip-annotation-toggle', (e) => events.push(e as CustomEvent));
+    el.addEventListener('tooltip-annotations-change', (e) => events.push(e as CustomEvent));
 
     const btn = getRowFor(el, 'gene_name').querySelector(
       '.tooltip-toggle-btn',
@@ -139,11 +144,7 @@ describe('protspace-annotation-select tooltip extras', () => {
     btn.click();
     await el.updateComplete;
 
-    expect(events[0].detail).toEqual({
-      annotation: 'gene_name',
-      active: false,
-      tooltipAnnotations: [],
-    });
+    expect(events[0].detail).toEqual({ tooltipAnnotations: [] });
     expect(el.tooltipAnnotations).toEqual([]);
   });
 
@@ -152,10 +153,11 @@ describe('protspace-annotation-select tooltip extras', () => {
     await openDropdown(el);
 
     const selectSpy = vi.fn();
-    el.addEventListener('annotation-select', selectSpy);
+    el.addEventListener('annotation-change', selectSpy);
 
     (getRowFor(el, 'gene_name').querySelector('.dropdown-item-label') as HTMLElement).click();
     await el.updateComplete;
+    await afterNextPaint();
 
     expect(selectSpy).toHaveBeenCalledTimes(1);
     expect((selectSpy.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'gene_name' });
@@ -349,14 +351,7 @@ describe('protspace-annotation-select statistics badge', () => {
   });
 });
 
-interface ControlBarInternals extends HTMLElement {
-  annotations: string[];
-  selectedAnnotation: string;
-  _updateOptionsFromData(data: ProtspaceData, capabilityData?: ProtspaceData): void;
-  updateComplete: Promise<unknown>;
-}
-
-describe('protspace-control-bar annotation list splitting', () => {
+describe('protspace-annotation-select picks', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -365,35 +360,160 @@ describe('protspace-control-bar annotation list splitting', () => {
     document.body.innerHTML = '';
   });
 
-  it('excludes eat-confidence annotations from the color-by list', async () => {
-    const controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
-    document.body.appendChild(controlBar);
-    await controlBar.updateComplete;
+  const shown = (el: AnnotationSelectElement) =>
+    el.shadowRoot!.querySelector('.dropdown-trigger .dropdown-trigger-text')!.textContent!.trim();
+  const rowLabel = (el: AnnotationSelectElement, annotation: string) =>
+    getRowFor(el, annotation).querySelector('.dropdown-item-label')!.textContent!.trim();
 
-    const data: ProtspaceData = {
-      projections: [{ name: 'umap' }],
-      annotations: {
-        pfam: { kind: 'categorical', values: ['a', 'b'] },
-        pfam__eat_confidence: {
-          kind: 'numeric',
-          values: ['0.9', '0.4'],
-          runtime: { role: 'eat-confidence', baseAnnotation: 'pfam' },
-        },
-        // Collision-renamed variant (real allocateEatConfidenceAnnotationKey output shape:
-        // `<base>__eat_confidence__runtime_N`) — identity must still key off runtime.role,
-        // not the `__eat_confidence` suffix.
-        pfam__eat_confidence__runtime_2: {
-          kind: 'numeric',
-          values: ['0.1', '0.7'],
-          runtime: { role: 'eat-confidence', baseAnnotation: 'pfam' },
-        },
-      },
-    };
+  async function pick(el: AnnotationSelectElement, annotation: string): Promise<string> {
+    await openDropdown(el);
+    const label = rowLabel(el, annotation);
+    (getRowFor(el, annotation).querySelector('.dropdown-item-label') as HTMLElement).click();
+    await el.updateComplete;
+    return label;
+  }
 
-    controlBar._updateOptionsFromData(data);
+  it('a pick shows at once, closes the list and dispatches annotation-change after the paint', async () => {
+    const el = await setup();
+    const changed = vi.fn();
+    el.addEventListener('annotation-change', changed);
 
-    expect(controlBar.annotations).toEqual(['pfam']);
-    // The default color-by selection must never land on an eat-confidence key.
-    expect(controlBar.selectedAnnotation).toBe('pfam');
+    const label = await pick(el, 'species');
+
+    expect(shown(el)).toBe(label);
+    expect(el.shadowRoot!.querySelector('.dropdown-menu')).toBeNull();
+    expect(el.selectedAnnotation).toBe('pfam');
+    expect(changed).not.toHaveBeenCalled();
+
+    await afterNextPaint();
+
+    expect(el.selectedAnnotation).toBe('species');
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect((changed.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'species' });
+  });
+
+  it('takes a keyboard pick down the same path', async () => {
+    const el = await setup();
+    const trigger = el.shadowRoot!.querySelector('.dropdown-trigger') as HTMLButtonElement;
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await el.updateComplete;
+    const input = el.shadowRoot!.querySelector('#annotation-search-input') as HTMLElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await el.updateComplete;
+
+    expect(el.selectedAnnotation).toBe('pfam');
+    await afterNextPaint();
+    expect(el.selectedAnnotation).not.toBe('pfam');
+  });
+
+  it('applies only the last of several picks made before the paint', async () => {
+    const el = await setup();
+    const changed = vi.fn();
+    el.addEventListener('annotation-change', changed);
+
+    await pick(el, 'species');
+    const label = await pick(el, 'gene_name');
+    expect(shown(el)).toBe(label);
+
+    await afterNextPaint();
+
+    expect(el.selectedAnnotation).toBe('gene_name');
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect((changed.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'gene_name' });
+  });
+
+  it('picking a tooltip extra as the primary then removes it from the tooltip annotations', async () => {
+    const el = await setup({ tooltipAnnotations: ['species', 'gene_name'] });
+    const events: Array<[string, unknown]> = [];
+    el.addEventListener('annotation-change', (e) =>
+      events.push(['annotation-change', (e as CustomEvent).detail]),
+    );
+    el.addEventListener('tooltip-annotations-change', (e) =>
+      events.push(['tooltip-annotations-change', (e as CustomEvent).detail]),
+    );
+
+    await pick(el, 'species');
+    await afterNextPaint();
+
+    expect(events).toEqual([
+      ['annotation-change', { annotation: 'species' }],
+      ['tooltip-annotations-change', { tooltipAnnotations: ['gene_name'] }],
+    ]);
+    expect(el.tooltipAnnotations).toEqual(['gene_name']);
+  });
+
+  it('applySelection dispatches at once and drops a pick still waiting', async () => {
+    const el = (await setup()) as PickerElement;
+    const changed = vi.fn();
+    el.addEventListener('annotation-change', changed);
+    await pick(el, 'species');
+
+    el.applySelection('gene_name');
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect((changed.mock.calls[0][0] as CustomEvent).detail).toEqual({ annotation: 'gene_name' });
+    await afterNextPaint();
+    await el.updateComplete;
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(el.selectedAnnotation).toBe('gene_name');
+    const label = await rowLabelAfterOpen(el, 'gene_name');
+    expect(shown(el)).toBe(label);
+  });
+
+  it('drops the shown pick when a programmatic apply keeps the current annotation', async () => {
+    const el = (await setup()) as PickerElement;
+    await pick(el, 'species');
+
+    el.applySelection('pfam');
+    await el.updateComplete;
+    await afterNextPaint();
+
+    expect(el.selectedAnnotation).toBe('pfam');
+    const label = await rowLabelAfterOpen(el, 'pfam');
+    expect(shown(el)).toBe(label);
+  });
+
+  it('Escape closes the list before anything else', async () => {
+    const dialogClose = vi.fn();
+    const releaseDialog = pushLayer({ close: dialogClose, elements: [] });
+    const el = await setup();
+    await openDropdown(el);
+    expect(el.shadowRoot!.querySelector('.dropdown-menu')).not.toBeNull();
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.dropdown-menu')).toBeNull();
+    expect(dialogClose).not.toHaveBeenCalled();
+    expect(topLayer()?.close).toBe(dialogClose);
+    releaseDialog();
+  });
+
+  it('the trigger reads Color by and the annotation', async () => {
+    const el = (await setup()) as PickerElement;
+    const trigger = el.shadowRoot!.querySelector('.dropdown-trigger')!;
+    const key = trigger.querySelector('[part="key"]')!;
+
+    expect(key.textContent!.trim()).toBe('Color by');
+    expect(trigger.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Color by \S/);
+
+    el.label = 'Colour';
+    await el.updateComplete;
+    expect(key.textContent!.trim()).toBe('Colour');
   });
 });
+
+/** The label a row shows for `annotation`, read from the opened list, which closes again. */
+async function rowLabelAfterOpen(el: AnnotationSelectElement, annotation: string): Promise<string> {
+  await openDropdown(el);
+  const label = getRowFor(el, annotation)
+    .querySelector('.dropdown-item-label')!
+    .textContent!.trim();
+  (el.shadowRoot!.querySelector('.dropdown-trigger') as HTMLButtonElement).click();
+  await el.updateComplete;
+  return label;
+}

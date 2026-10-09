@@ -225,6 +225,11 @@
   min-height: 320px;
 }
 
+/* The view bar never wraps on desktop (Task 2.10 stages it instead); here its items may. */
+.workbench[data-layout='narrow'] [data-workbench='view-bar'] {
+  flex-wrap: wrap;
+}
+
 /* ── Keyboard shortcuts dialog (light DOM slotted into ps-dialog) ─────────── */
 
 .wb-shortcuts {
@@ -303,4 +308,20 @@
 
 .wb-icon {
   display: inline-flex;
+}
+
+/* View bar pickers (Task 2.8): Projection, its details and Color by stay together. */
+.wb-view-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-1);
+}
+
+.wb-view-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--ps-space-1);
+  background: var(--ps-border);
 }

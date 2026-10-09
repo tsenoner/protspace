@@ -25,6 +25,7 @@ import {
 } from '@protspace/utils';
 import { projectionMetadataStyles } from './projection-metadata.styles';
 import '../../common/info-popover';
+import { icon } from '../../kit/icon';
 
 /** One rendered `<dt>/<dd>` pair. An empty `description` renders no ⓘ. */
 interface MetadataRow {
@@ -120,7 +121,7 @@ function modalCoverage(entries: readonly ClusterAgreementEntry[]): number | null
 }
 
 @customElement('protspace-projection-metadata')
-class ProtspaceProjectionMetadata extends LitElement {
+export class ProtspaceProjectionMetadata extends LitElement {
   @property({ type: Object }) projection: Projection | null = null;
   /** Rows of the optional `statistics.parquet` part; absent unless prepared with `--stats`. */
   @property({ type: Array }) statisticsRows?: readonly ProjectionStatisticRow[];
@@ -154,24 +155,8 @@ class ProtspaceProjectionMetadata extends LitElement {
 
   /** Smallest card worth showing before scrolling; below this a "scrollable" card is unusable. */
   private static readonly MIN_CARD_HEIGHT = 200;
-  /** Breathing room kept between the bottom of the card and the plot's edge. */
+  /** Breathing room kept between the bottom of the card and the viewport's edge. */
   private static readonly CARD_MARGIN = 8;
-
-  /**
-   * Created lazily and guarded: `ResizeObserver` is absent in jsdom and under SSR, and as a
-   * field initializer its constructor ran before the element could render at all. The measured
-   * cap still applies without it; only tracking a later resize is lost.
-   */
-  private _resize: ResizeObserver | null = null;
-
-  firstUpdated() {
-    // No measurement here: Lit runs `updated()` immediately after this in the same pass, and
-    // it already writes the cap.
-    // The plot host resizes with the window and with the side panels opening/closing.
-    if (typeof ResizeObserver === 'undefined' || !this.offsetParent) return;
-    this._resize = new ResizeObserver(() => this._updateMaxHeight());
-    this._resize.observe(this.offsetParent);
-  }
 
   updated(changed: PropertyValues) {
     // Only when the content that sets the natural height can actually have changed. This reads
@@ -190,32 +175,28 @@ class ProtspaceProjectionMetadata extends LitElement {
   }
 
   /**
-   * Cap the card at the space actually left inside the scatter-plot, which clips its overflow.
-   *
-   * Measured rather than expressed in CSS. The constraint is the plot host's height, and this
-   * card cannot reach it: percentages resolve against its own `:host`, which is only as tall as
-   * the 32px trigger. Viewport units miss by however far down the page the plot begins —
-   * measured at 209px, i.e. a 974px cap where only 827px fits. `container-type: size` on the
-   * host would express it exactly but also makes the host the containing block for
-   * `position: fixed` descendants, which would strand the side-placed ⓘ popovers.
+   * Caps the card at the room left below it in the viewport. The card opens from the view bar
+   * now, with the whole plot height free below it, so the viewport is the bound; a measured cap
+   * still beats a CSS one because the card's top depends on where the bar sits.
    */
   private _updateMaxHeight(): void {
-    const host = this.offsetParent as HTMLElement | null;
     const content = this.shadowRoot?.querySelector('.content') as HTMLElement | null;
-    if (!host || !content) return;
+    if (!content) return;
     const { MIN_CARD_HEIGHT, CARD_MARGIN } = ProtspaceProjectionMetadata;
-    // Measured, not reconstructed from the trigger's box plus a copy of the stylesheet's gap:
-    // that copy had to be kept in step with `--card-gap` by hand, and a drift between them
-    // would silently mis-size the cap.
-    const cardTop = content.getBoundingClientRect().top - host.getBoundingClientRect().top;
-    const available = host.clientHeight - cardTop - CARD_MARGIN;
+    const available = window.innerHeight - content.getBoundingClientRect().top - CARD_MARGIN;
     content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available)}px`;
+  }
+
+  private _onWindowResize = () => this._updateMaxHeight();
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('resize', this._onWindowResize);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._resize?.disconnect();
-    this._resize = null;
+    window.removeEventListener('resize', this._onWindowResize);
     this._setPinned(false);
   }
 
@@ -288,13 +269,7 @@ class ProtspaceProjectionMetadata extends LitElement {
         aria-describedby="projection-metadata-content"
         @click=${() => this._setPinned(!this._pinned)}
       >
-        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M7 14v4" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11 10v8" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 6v12" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 8v10" />
-        </svg>
+        ${icon('info', 16)}
       </button>
 
       <div

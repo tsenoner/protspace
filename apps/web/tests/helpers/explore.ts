@@ -400,13 +400,14 @@ async function waitForViewState(
 
 /**
  * Click a picker's menu item and wait until the pick is applied. A picker applies a pick after the
- * next paint and then dispatches `event`, which bubbles out of every shadow root to the document,
- * also when the pick re-selects the current value and so changes no state a test could wait for.
+ * next paint and then dispatches `event` (composed), also when the pick re-selects the current
+ * value and so changes no state a test could wait for. Heard in the capture phase: the view-bar
+ * controller stops a re-pick of the current value at its picker, before it bubbles.
  */
 async function pickFromMenu(
   page: Page,
   item: Locator,
-  event: 'annotation-change' | 'projection-change' | 'density-layer-change',
+  event: 'annotation-change' | 'projection-change',
 ): Promise<void> {
   const applied = await page.evaluateHandle((type) => {
     const state = { done: false };
@@ -415,7 +416,7 @@ async function pickFromMenu(
       () => {
         state.done = true;
       },
-      { once: true },
+      { once: true, capture: true },
     );
     return state;
   }, event);
@@ -442,44 +443,36 @@ export async function selectAnnotation(page: Page, annotation: string): Promise<
   await waitForViewState(page, 'selectedAnnotation', annotation, ['#myPlot', 'protspace-legend']);
 }
 
-/**
- * Pick a projection by its index in the plot's data, or by its label. An index is resolved to its
- * name first: the search box's suggestions in the same view bar are options too.
- */
+/** Pick a projection by its position in the Projection menu (the plot's order), or by its label. */
 export async function selectProjection(page: Page, projection: number | string): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const name =
-    typeof projection === 'number'
-      ? await page.evaluate(
-          (index) =>
-            (
-              document.querySelector('#myPlot') as
-                | (Element & { data?: { projections?: Array<{ name: string }> } })
-                | null
-            )?.data?.projections?.[index]?.name ?? '',
-          projection,
-        )
-      : projection;
-  expect(name, `no projection at index ${String(projection)}`).not.toBe('');
   await projectionTrigger(page).click();
-  const item = viewBar(page).getByRole('option', { name, exact: true });
+  const items = page.locator('protspace-projection-select').getByRole('menuitemradio');
+  const item =
+    typeof projection === 'number'
+      ? items.nth(projection)
+      : page
+          .locator('protspace-projection-select')
+          .getByRole('menuitemradio', { name: projection, exact: true });
   await pickFromMenu(page, item, 'projection-change');
   if (typeof projection === 'number') {
     await waitForViewState(page, 'selectedProjectionIndex', projection, ['#myPlot']);
   }
 }
 
-/** Sets the contour mode from the Contours menu and waits until the plot uses it. */
+/** How each contour mode reads in the Contours menu. */
+const CONTOUR_MENU_LABELS = { off: 'Off', auto: 'Auto', on: 'Always' } as const;
+
+/** Sets the contour mode through the view bar's Contours menu and waits until the plot shows it. */
 export async function setContours(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void> {
   await waitForExploreInteractionReady(page);
   await viewBar(page)
     .getByRole('button', { name: /^Contours/ })
     .click();
-  await pickFromMenu(
-    page,
-    viewBar(page).locator(`[role="menuitemradio"][data-mode="${mode}"]`),
-    'density-layer-change',
-  );
+  await page
+    .locator('protspace-contours-menu')
+    .getByRole('menuitemradio', { name: new RegExp(`^${CONTOUR_MENU_LABELS[mode]}`) })
+    .click();
   await expect.poll(() => getContoursMode(page)).toBe(mode);
 }
 

@@ -1,8 +1,12 @@
 import type {
+  ProtspaceAnnotationSelect,
+  ProtspaceContoursMenu,
   ProtspaceControlBar,
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   ProtspaceLegend,
+  ProtspaceProjectionMetadata,
+  ProtspaceProjectionSelect,
   ProtspaceQueryBuilder,
   ProtspaceScatterplot,
   ProtspaceStructureViewer,
@@ -22,6 +26,10 @@ interface ExploreElements {
   queryBuilder: ProtspaceQueryBuilder;
   filterDialog: PsDialog;
   filterButton: PsButton;
+  projectionSelect: ProtspaceProjectionSelect;
+  annotationSelect: ProtspaceAnnotationSelect;
+  contoursMenu: ProtspaceContoursMenu;
+  projectionMetadata: ProtspaceProjectionMetadata;
 }
 
 const REQUIRED_TAGS = [
@@ -34,6 +42,10 @@ const REQUIRED_TAGS = [
   'protspace-export-menu',
   'protspace-query-builder',
   'ps-dialog',
+  'protspace-projection-select',
+  'protspace-annotation-select',
+  'protspace-contours-menu',
+  'protspace-projection-metadata',
 ] as const;
 
 export async function waitForElements(): Promise<void> {
@@ -53,6 +65,16 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const queryBuilder = doc.getElementById('myQueryBuilder') as ProtspaceQueryBuilder | null;
   const filterDialog = doc.getElementById('myFilterDialog') as PsDialog | null;
   const filterButton = doc.getElementById('myFilterButton') as PsButton | null;
+  const projectionSelect = doc.getElementById(
+    'myProjectionSelect',
+  ) as ProtspaceProjectionSelect | null;
+  const annotationSelect = doc.getElementById(
+    'myAnnotationSelect',
+  ) as ProtspaceAnnotationSelect | null;
+  const contoursMenu = doc.getElementById('myContoursMenu') as ProtspaceContoursMenu | null;
+  const projectionMetadata = doc.getElementById(
+    'myProjectionMetadata',
+  ) as ProtspaceProjectionMetadata | null;
 
   if (
     !plotElement ||
@@ -64,7 +86,11 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !exportMenu ||
     !queryBuilder ||
     !filterDialog ||
-    !filterButton
+    !filterButton ||
+    !projectionSelect ||
+    !annotationSelect ||
+    !contoursMenu ||
+    !projectionMetadata
   ) {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
@@ -77,6 +103,10 @@ export function getElements(doc: Document = document): ExploreElements | null {
       queryBuilder,
       filterDialog,
       filterButton,
+      projectionSelect,
+      annotationSelect,
+      contoursMenu,
+      projectionMetadata,
     });
     return null;
   }
@@ -92,5 +122,9 @@ export function getElements(doc: Document = document): ExploreElements | null {
     queryBuilder,
     filterDialog,
     filterButton,
+    projectionSelect,
+    annotationSelect,
+    contoursMenu,
+    projectionMetadata,
   };
 }

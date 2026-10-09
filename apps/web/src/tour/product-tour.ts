@@ -210,12 +210,17 @@ const steps: DriveStep[] = [
     },
   },
 
-  // ── Step 3 – Projections & Annotations (Shadow DOM) ─────────
-  shadowStep(CONTROL_BAR, 'projections', {
-    title: 'Projections & Annotations',
-    description:
-      'Switch between <strong>projections</strong> (UMAP, PCA, etc.) and choose which <strong>annotation</strong> to color the points by.',
-  }),
+  // ── Step 3 – Projections & Annotations (view bar) ────────────
+  {
+    element: '[data-driver-id="projections"]',
+    popover: {
+      title: 'Projections & Annotations',
+      description:
+        'Switch between <strong>projections</strong> (UMAP, PCA, etc.) and choose which <strong>annotation</strong> to color the points by.',
+      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
+      onNextClick: async (_el, _step, opts) => moveNext(opts),
+    },
+  },
 
   // ── Step 4 – Search (Shadow DOM) ────────────────────────────
   shadowStep(CONTROL_BAR, 'search', {

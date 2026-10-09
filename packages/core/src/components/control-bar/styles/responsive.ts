@@ -22,8 +22,11 @@ export const responsiveStyles = css`
       order: 1;
     }
 
+    /* The search always takes a row of its own: the bar shares the view bar with the pickers,
+       whose labels change its width, and a wrap that followed them would change the view bar's
+       height, and so resize the plot, on a pick. */
     .search-group {
-      flex: 1 1 300px;
+      flex: 1 1 100%;
       min-width: 250px;
       order: 2;
       margin: 0 var(--spacing-sm);

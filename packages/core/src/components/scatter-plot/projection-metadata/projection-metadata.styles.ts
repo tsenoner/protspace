@@ -5,66 +5,51 @@ export const projectionMetadataStyles = [
   srOnlyMixin,
   css`
     :host {
-      position: absolute;
-      top: 0.5rem;
-      left: 0.5rem;
+      /* Placed by its host (the view bar). Relative, so the card hangs below the trigger; the
+         z-index lifts the card over the plot area, which follows in the document. */
+      position: relative;
+      display: inline-flex;
       z-index: 10;
 
       /* protspace-info-popover is shared with the legend and themes itself from these two
-         hooks, defaulting to a neutral grey (#6b7280). This panel is built on the cool slate
-         ramp below, so an unthemed info icon sat a whole hue family away from the label
-         beside it. Set them here rather than restyling the popover: the component already
-         exposes the seam, and the legend keeps its own values. */
-      --legend-text-secondary: #64748b;
-      --legend-text-color: var(--text-primary);
+         hooks, defaulting to a neutral grey. Set them from the tokens so its info icon and
+         text match the label beside it; the component already exposes the seam, and the
+         legend keeps its own values. */
+      --legend-text-secondary: var(--ps-text-muted);
+      --legend-text-color: var(--ps-text);
 
       /* Gap between the trigger and the card. Read by the card's top offset and by the
-         invisible hover bridge that spans it, which previously had to be kept in step by
-         hand. _updateMaxHeight() no longer restates it at all: it measures the card's
-         real offset instead. */
+         invisible hover bridge that spans it. */
       --card-gap: 0.5rem;
     }
 
+    /* The kit's ghost icon-button look (ps-icon-button size sm). */
     .trigger {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2rem;
-      height: 2rem;
+      width: var(--ps-control-sm);
+      height: var(--ps-control-sm);
       padding: 0;
-      background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-      border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
-      border-radius: 0.375rem;
+      border: 1px solid transparent;
+      border-radius: var(--ps-radius);
+      background: transparent;
+      color: var(--ps-text-muted);
       cursor: pointer;
-      box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition:
+        background-color var(--ps-duration-fast) var(--ps-ease),
+        color var(--ps-duration-fast) var(--ps-ease);
     }
 
-    .trigger:hover {
-      background: rgba(255, 255, 255, 1);
-      border-color: var(--protspace-highlight-color, #00a3e0);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-      transform: scale(1.05);
+    .trigger:hover,
+    .trigger[aria-expanded='true'] {
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
     }
 
     .trigger:focus-visible {
-      outline: 2px solid var(--primary-alpha-30);
-      outline-offset: 2px;
-    }
-
-    .trigger .icon {
-      width: 1rem;
-      height: 1rem;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.5;
-      color: #475569;
-      transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .trigger:hover .icon,
-    .trigger:focus-visible .icon {
-      color: var(--protspace-highlight-color, #00a3e0);
+      outline: var(--ps-focus-width) solid var(--ps-focus);
+      outline-offset: var(--ps-focus-offset);
     }
 
     .content {
@@ -85,10 +70,8 @@ export const projectionMetadataStyles = [
          region was the annotation-stats block: exactly what the dropdown's STATS badge
          sends people here to read. Safe for the side-placed info popovers, which are
          position:fixed and anchor to this element via data-info-popover-boundary. */
-      /* Fallback only. The real cap is measured and set inline by _updateMaxHeight(), because
-         the binding constraint is the scatter-plot host's height, not the viewport's: the plot
-         starts partway down the page (209px measured at 1102px tall), so a viewport rule
-         over-allocates by exactly that much and the tallest cards get clipped again. */
+      /* Fallback only: _updateMaxHeight() measures the room left below the card in the
+         viewport and sets the real cap inline. */
       max-height: calc(100vh - 8rem);
       overflow-y: auto;
       overscroll-behavior: contain;

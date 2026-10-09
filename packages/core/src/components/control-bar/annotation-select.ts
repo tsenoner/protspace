@@ -1,6 +1,8 @@
 import { LitElement, html, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { AfterPaintCommit } from '../../utils/after-paint-commit';
 import { customElement } from '../../utils/safe-custom-element';
+import { pushLayer } from '../kit/layers';
 import { annotationSelectStyles } from './annotation-select.styles';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import {
@@ -21,10 +23,17 @@ import {
 import '../common/info-popover';
 
 /**
- * Custom dropdown component for annotation selection with section headers and search
+ * The view bar's Color by picker (design decision 9): a searchable, grouped list of annotations,
+ * each row with its hover-tooltip toggle. A pick shows at once and reaches listeners as
+ * `annotation-change` after the next paint, because recolouring re-stages every point;
+ * `applySelection` applies at once. The open list is a layer: Escape and a press outside close
+ * it before anything else.
+ *
+ * @fires annotation-change - `{ annotation }`: the colouring annotation changed.
+ * @fires tooltip-annotations-change - `{ tooltipAnnotations }`: the tooltip's extras changed.
  */
 @customElement('protspace-annotation-select')
-class ProtspaceAnnotationSelect extends LitElement {
+export class ProtspaceAnnotationSelect extends LitElement {
   static styles = annotationSelectStyles;
 
   @property({ type: Array }) annotations: string[] = [];
@@ -34,6 +43,8 @@ class ProtspaceAnnotationSelect extends LitElement {
   @property({ type: String, attribute: 'selected-annotation' }) selectedAnnotation: string = '';
   @property({ type: Array }) tooltipAnnotations: string[] = [];
   @property({ type: String }) placeholder: string = 'Select annotation';
+  /** The key shown before the value; part of the trigger's accessible name. */
+  @property({ type: String }) label: string = 'Color by';
   /** Rows of the bundle's optional statistics part; empty when it was prepared without `--stats`. */
   @property({ type: Array }) statisticsRows: readonly ProjectionStatisticRow[] = [];
   /** Projection the statistics are reported for; statistics are scored per projection. */
@@ -42,48 +53,98 @@ class ProtspaceAnnotationSelect extends LitElement {
   @state() private open: boolean = false;
   @state() private query: string = '';
   @state() private highlightIndex: number = -1;
+  /** A pick waiting for its commit after the next paint; the trigger shows it until then. */
+  @state() private pending: string | null = null;
 
-  connectedCallback() {
-    super.connectedCallback();
-    // Listen for parent-initiated close. Bound field, not an inline closure: an inline
-    // one cannot be removed, so every re-attach of this element would stack another
-    // handler and leak the detached element.
-    this.addEventListener('close-dropdown', this._handleCloseDropdown);
+  private readonly commit = new AfterPaintCommit();
+  /** Releases the open list's layer; set while the list is open. */
+  private releaseLayer?: () => void;
+
+  /**
+   * Makes `annotation` the colouring now, drops a pick still waiting, and tells listeners. The
+   * new primary is implicitly in the tooltip, so it then leaves the extras.
+   */
+  applySelection(annotation: string): void {
+    this.commit.cancel();
+    this.pending = null;
+    this.selectedAnnotation = annotation;
+    this.dispatchEvent(
+      new CustomEvent('annotation-change', {
+        detail: { annotation },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    if (this.tooltipAnnotations.includes(annotation)) {
+      this.applyTooltipSelection(this.tooltipAnnotations.filter((name) => name !== annotation));
+    }
+  }
+
+  /** Sets the tooltip's extra annotations now, without the primary or repeats, and tells listeners. */
+  applyTooltipSelection(names: readonly string[]): void {
+    const next = Array.from(new Set(names.filter((name) => name !== this.selectedAnnotation)));
+    this.tooltipAnnotations = next;
+    this.dispatchEvent(
+      new CustomEvent('tooltip-annotations-change', {
+        detail: { tooltipAnnotations: [...next] },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** Drops a pick still waiting, as a new dataset does. */
+  cancelPending(): void {
+    this.commit.cancel();
+    this.pending = null;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.removeEventListener('close-dropdown', this._handleCloseDropdown);
+    this.cancelPending();
+    this.releaseLayer?.();
+    this.releaseLayer = undefined;
   }
 
-  private _handleCloseDropdown = () => {
+  protected updated(changed: Map<string, unknown>): void {
+    if (!changed.has('open')) return;
+    if (this.open) {
+      this.releaseLayer ??= pushLayer({ close: () => this.closeFromLayer(), elements: [this] });
+    } else {
+      this.releaseLayer?.();
+      this.releaseLayer = undefined;
+    }
+  }
+
+  /** Escape or a press outside: close, and give focus back to the trigger when it was in the list. */
+  private closeFromLayer(): void {
+    const hadFocus = this.shadowRoot?.activeElement != null;
+    this.closeList();
+    if (hadFocus) {
+      (this.shadowRoot?.querySelector('.dropdown-trigger') as HTMLElement | null)?.focus();
+    }
+  }
+
+  private openList() {
+    this.open = true;
+    this.updateComplete.then(() => {
+      const searchInput = this.shadowRoot?.querySelector(
+        '#annotation-search-input',
+      ) as HTMLInputElement | null;
+      searchInput?.focus();
+    });
+  }
+
+  private closeList() {
     this.open = false;
     this.query = '';
     this.highlightIndex = -1;
-  };
+  }
 
   private toggleDropdown(event?: Event) {
     event?.stopPropagation();
-    this.open = !this.open;
-    if (this.open) {
-      // Notify parent to close its dropdowns
-      this.dispatchEvent(
-        new CustomEvent('annotation-opened', {
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      // Focus search input when opening
-      this.updateComplete.then(() => {
-        const searchInput = this.shadowRoot?.querySelector(
-          '#annotation-search-input',
-        ) as HTMLInputElement | null;
-        searchInput?.focus();
-      });
-    } else {
-      this.query = '';
-      this.highlightIndex = -1;
-    }
+    if (this.open) this.closeList();
+    else this.openList();
   }
 
   private handleSearchInput(event: Event) {
@@ -109,11 +170,8 @@ class ProtspaceAnnotationSelect extends LitElement {
         this.highlightIndex = index;
         this.scrollToHighlighted();
       },
-      onEscape: () => {
-        this.open = false;
-        this.query = '';
-        this.highlightIndex = -1;
-      },
+      // The layer normally takes Escape first; this covers an event that never reached the window.
+      onEscape: () => this.closeList(),
       onSelect: (annotation) => this.selectAnnotation(annotation, event),
       root: this.shadowRoot,
       itemSelector: '.dropdown-item',
@@ -127,42 +185,27 @@ class ProtspaceAnnotationSelect extends LitElement {
     );
   }
 
+  /** A user's pick: shown at once, committed after the next paint (the newest pick wins). */
   private selectAnnotation(annotation: string, event?: Event) {
     if (event) {
       event.stopPropagation();
     }
-    this.selectedAnnotation = annotation;
-    this.open = false;
-    this.query = '';
-    this.highlightIndex = -1;
-
-    // Dispatch annotation-select event
-    this.dispatchEvent(
-      new CustomEvent('annotation-select', {
-        detail: { annotation },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this.closeList();
+    this.pending = annotation;
+    this.commit.schedule(() => this.applySelection(annotation));
   }
 
   private toggleTooltipAnnotation(annotation: string, event: Event) {
     event.stopPropagation();
     event.preventDefault();
-    if (annotation === this.selectedAnnotation) {
+    if (annotation === (this.pending ?? this.selectedAnnotation)) {
       return;
     }
     const isActive = this.tooltipAnnotations.includes(annotation);
-    const next = isActive
-      ? this.tooltipAnnotations.filter((name) => name !== annotation)
-      : [...this.tooltipAnnotations, annotation];
-    this.tooltipAnnotations = next;
-    this.dispatchEvent(
-      new CustomEvent('tooltip-annotation-toggle', {
-        detail: { annotation, active: !isActive, tooltipAnnotations: next },
-        bubbles: true,
-        composed: true,
-      }),
+    this.applyTooltipSelection(
+      isActive
+        ? this.tooltipAnnotations.filter((name) => name !== annotation)
+        : [...this.tooltipAnnotations, annotation],
     );
   }
 
@@ -209,24 +252,27 @@ class ProtspaceAnnotationSelect extends LitElement {
 
   render() {
     const filtered = this.getFilteredGroupedAnnotations();
+    const shown = this.pending ?? this.selectedAnnotation;
 
     return html`
       <div class="annotation-select-container">
         <button
           class="dropdown-trigger ${this.open ? 'open' : ''}"
+          part="trigger"
           @click=${this.toggleDropdown}
           @keydown=${this.handleKeydown}
           aria-expanded=${this.open}
           aria-haspopup="listbox"
         >
-          ${this.selectedAnnotation
+          <span class="key" part="key">${this.label}</span>
+          ${shown
             ? renderAnnotationName(
-                this.selectedAnnotation,
-                this.annotationDefinitions[this.selectedAnnotation],
+                shown,
+                this.annotationDefinitions[shown],
                 'dropdown-trigger-text',
               )
             : html`<span class="dropdown-trigger-text">${this.placeholder}</span>`}
-          <svg class="chevron-down" viewBox="0 0 24 24">
+          <svg class="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
@@ -267,7 +313,7 @@ class ProtspaceAnnotationSelect extends LitElement {
                                 // the pointer crossed. The index is for keyboard navigation only.
                                 const itemIndex = currentIndex++;
                                 const isHighlighted = itemIndex === this.highlightIndex;
-                                const isSelected = annotation === this.selectedAnnotation;
+                                const isSelected = annotation === shown;
                                 const isInTooltip = this.tooltipAnnotations.includes(annotation);
                                 const hasEatPredictions = this.eatAnnotations.includes(annotation);
                                 const definition = this.annotationDefinitions[annotation];

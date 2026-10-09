@@ -43,7 +43,7 @@ export async function mountLegendWithScatterplot(
 ): Promise<{
   legend: ProtspaceLegend;
   plot: MockScatterplot;
-  controlBar: HTMLElement;
+  picker: HTMLElement;
 }> {
   // Through `unknown`: the tag resolves to the real `ProtspaceScatterplot` in the global element
   // map, and the point of this mock is to implement only the slice the controller reads.
@@ -65,14 +65,14 @@ export async function mountLegendWithScatterplot(
   });
   document.body.append(scatterplot);
 
-  // A bare, unregistered element is enough: the sync controller matches control bars by tag
-  // name (see `scatterplot-sync-controller.ts` `_onScatterplotDiscovered`).
-  const controlBar = document.createElement('protspace-control-bar');
-  document.body.append(controlBar);
+  // Any element in the document stands in for a view-bar picker: the legend hears
+  // annotation-change and projection-change on its root node.
+  const picker = document.createElement('div');
+  document.body.append(picker);
 
   const legend = document.createElement('protspace-legend') as ProtspaceLegend;
   document.body.append(legend);
   await legend.updateComplete;
 
-  return { legend, plot: scatterplot, controlBar };
+  return { legend, plot: scatterplot, picker };
 }

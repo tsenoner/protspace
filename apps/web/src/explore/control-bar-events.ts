@@ -1,8 +1,6 @@
 import type { SelectionDisabledNotificationDetail } from '@protspace/core';
 import { notify } from '../lib/notify';
 import { getSelectionDisabledNotification } from './notifications';
-import type { InteractionController } from './interaction-controller';
-import type { ViewController } from './view-controller';
 
 interface ControlBarEventsOptions {
   addControlBarListener(
@@ -10,30 +8,13 @@ interface ControlBarEventsOptions {
     listener: EventListenerOrEventListenerObject,
     options?: boolean | AddEventListenerOptions,
   ): void;
-  interactionController: InteractionController;
-  viewController: ViewController;
 }
 
-export function bindControlBarEvents({
-  addControlBarListener,
-  interactionController,
-  viewController,
-}: ControlBarEventsOptions): void {
-  addControlBarListener('annotation-change', () => {
-    interactionController.handleAnnotationChange();
-    viewController.handleUserAnnotationChange();
-  });
-
-  addControlBarListener('projection-change', viewController.handleUserProjectionChange);
-
-  addControlBarListener('tooltip-annotations-change', () => {
-    viewController.handleUserTooltipAnnotationsChange();
-  });
-
-  addControlBarListener('density-layer-change', () => {
-    viewController.handleUserDensityLayerChange();
-  });
-
+/**
+ * The control bar's last host-facing event. The view pickers, Import, Export and Filter have
+ * their own controllers; Task 2.9 moves this warning into the selection controller.
+ */
+export function bindControlBarEvents({ addControlBarListener }: ControlBarEventsOptions): void {
   addControlBarListener('selection-disabled-notification', (event: Event) => {
     const customEvent = event as CustomEvent<SelectionDisabledNotificationDetail>;
     notify.warning(getSelectionDisabledNotification(customEvent.detail));

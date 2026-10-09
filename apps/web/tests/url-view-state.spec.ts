@@ -80,10 +80,10 @@ async function waitForView(
   // to @protspace/utils' annotation-metadata map (which doesn't import cleanly
   // under Playwright's ESM loader).
   if (expected.projection) {
-    // The Projection picker shows the projection's name last. A RegExp is matched against the
-    // raw text, so allow the trigger's trailing whitespace.
-    await expect(projectionTrigger(page)).toHaveText(
-      new RegExp(`${escapeRegExp(expected.projection)}\\s*$`),
+    // The Projection picker's trigger is named "Projection <projection>". Its text sits in the
+    // kit button's slots, which the inner button's own text does not include.
+    await expect(projectionTrigger(page)).toHaveAccessibleName(
+      new RegExp(`${escapeRegExp(expected.projection)}$`),
       { timeout },
     );
   }

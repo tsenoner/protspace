@@ -7,6 +7,8 @@ export { ProtspaceControlBar } from './components/control-bar/control-bar'; // E
 export { ProtspaceProjectionSelect } from './components/projection-select/projection-select';
 export { ProtspaceContoursMenu } from './components/contours-menu/contours-menu';
 export type { DensityLayerChangeDetail } from './components/contours-menu/contours-menu';
+export { ProtspaceAnnotationSelect } from './components/control-bar/annotation-select';
+export { ProtspaceProjectionMetadata } from './components/scatter-plot/projection-metadata/projection-metadata';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.
 export { ProtspaceQueryBuilder } from './components/control-bar/query-builder';
 export { createCondition } from './components/control-bar/query-types';
