@@ -35,7 +35,8 @@ export default defineConfig({
       // modules), so it is left to the app to bundle once. The inline decode worker is built
       // separately (`worker` above) and still carries its own copy: a blob worker cannot import.
       // Every lit/* subpath is external too: a bundled lit/directives/* module brings its own lit-html.
-      external: [/^lit(\/|$)/, 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
+      // @floating-ui/* stays external: the web app already ships it through Radix.
+      external: [/^lit(\/|$)/, /^@floating-ui\//, 'd3', '@protspace/utils', /^hyparquet(\/|$)/],
       output: {
         globals: {
           lit: 'Lit',

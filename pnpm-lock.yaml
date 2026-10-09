@@ -149,6 +149,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@floating-ui/dom':
+        specifier: ^1.7.6
+        version: 1.7.6
       '@protspace/utils':
         specifier: workspace:*
         version: link:../utils
