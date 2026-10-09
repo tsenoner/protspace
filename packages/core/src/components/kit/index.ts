@@ -6,3 +6,4 @@ export { PsTooltip } from './tooltip';
 export type { Placement } from './position';
 export { PsPopover } from './popover';
 export { PsMenu, PsMenuGroup, PsMenuItem, PsMenuLabel, type MenuItemType } from './menu';
+export { PsDialog, type DialogSize } from './dialog';
