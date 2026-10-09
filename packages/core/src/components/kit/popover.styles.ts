@@ -15,7 +15,7 @@ export const popoverStyles = [
       box-sizing: border-box;
       min-width: 160px;
       max-width: min(360px, calc(100vw - 16px));
-      max-height: min(480px, calc(100vh - 16px));
+      max-height: min(480px, var(--available-height, calc(100vh - 16px)));
       overflow: auto;
       padding: 0;
       border: 1px solid var(--ps-border);

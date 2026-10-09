@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { adoptTheme } from './adopt-theme';
-import { ESCAPE_ORDER, onEscapeFallback } from './layers';
+import { ESCAPE_ORDER, onEscapeFallback, topLayer } from './layers';
 import type { PsPopover } from './popover';
 import './popover';
 
@@ -154,5 +154,62 @@ describe('ps-popover', () => {
     expect(pop.open).toBe(false);
     escape();
     expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it('shows again when a keyed re-render moves it while open', async () => {
+    const { pop } = await setup();
+    const onOpen = vi.fn();
+    pop.addEventListener('ps-open', onOpen);
+    pop.open = true;
+    await settle(pop);
+    document.body.append(pop); // a move: disconnect, then connect
+    await settle(pop);
+    expect(panel(pop).matches(':popover-open')).toBe(true);
+    expect(onOpen).toHaveBeenCalledOnce(); // a move is not a new opening
+    escape();
+    expect(pop.open).toBe(false);
+    expect(topLayer()).toBeUndefined();
+  });
+
+  it('returns focus to the anchor when nothing had focus at open, as after a click in Safari', async () => {
+    const { anchor, pop } = await setup();
+    (document.activeElement as HTMLElement | null)?.blur();
+    pop.open = true;
+    await settle(pop);
+    document.getElementById('inside')!.focus();
+    escape();
+    expect(document.activeElement).toBe(anchor);
+  });
+
+  it('follows a new anchor set while open', async () => {
+    const { anchor, pop } = await setup();
+    pop.open = true;
+    await settle(pop);
+    const next = document.getElementById('outside')!;
+    anchor.remove();
+    pop.anchor = next;
+    await settle(pop);
+    expect(panel(pop).getBoundingClientRect().top).toBeCloseTo(
+      next.getBoundingClientRect().bottom + 6,
+      0,
+    );
+    press(next);
+    expect(pop.open).toBe(true);
+  });
+
+  it('shrinks to fit and scrolls when neither side has room', async () => {
+    const { anchor, pop } = await setup();
+    document.body.append(anchor);
+    anchor.style.cssText = 'position: fixed; top: 50%; left: 20px';
+    document.getElementById('content')!.style.height = '2000px';
+    pop.open = true;
+    await settle(pop);
+    const p = panel(pop);
+    const r = p.getBoundingClientRect();
+    expect(r.top).toBeGreaterThanOrEqual(0);
+    expect(r.bottom).toBeLessThanOrEqual(innerHeight);
+    expect(p.scrollHeight).toBeGreaterThan(p.clientHeight);
+    p.scrollTop = p.scrollHeight;
+    expect(p.scrollTop).toBeGreaterThan(0);
   });
 });

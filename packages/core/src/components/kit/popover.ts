@@ -24,6 +24,7 @@ export class PsPopover extends LitElement {
   private releaseLayer?: () => void;
   private stopPositioning?: () => void;
   private returnFocusTo: HTMLElement | null = null;
+  private announcedOpen = false;
 
   render() {
     return html`<div
@@ -37,10 +38,25 @@ export class PsPopover extends LitElement {
     </div>`;
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    // A keyed re-render moves the node (disconnect, then connect), and the disconnect hid the
+    // panel; update so updated() shows it again.
+    if (this.hasUpdated && this.open) this.requestUpdate();
+  }
+
   protected updated(changed: PropertyValues<this>): void {
-    if (changed.has('open')) {
-      if (this.open) this.show();
-      else this.hide();
+    if (!this.open) {
+      if (changed.has('open')) this.hide();
+    } else if (!this.releaseLayer) {
+      // Newly opened, moved while open, or the anchor arrived after `open`.
+      this.show();
+    } else if (changed.has('anchor') || changed.has('placement')) {
+      // Re-anchored while open (a re-render replaced the trigger): follow the new anchor.
+      this.stopPositioning?.();
+      this.stopPositioning = this.anchor
+        ? anchorTo(this.anchor, this.panel, this.placement)
+        : undefined;
     }
   }
 
@@ -59,15 +75,28 @@ export class PsPopover extends LitElement {
   }
 
   private show(): void {
-    if (!this.anchor || this.releaseLayer) return;
-    this.returnFocusTo = deepActiveElement();
+    if (!this.anchor || this.releaseLayer || !this.isConnected) return;
+    const active = deepActiveElement();
+    // Safari does not focus a clicked button; with nothing focused, return focus to the anchor.
+    this.returnFocusTo = active && active !== document.body ? active : (this.anchor as HTMLElement);
     this.panel.showPopover();
     this.stopPositioning = anchorTo(this.anchor, this.panel, this.placement);
-    this.releaseLayer = pushLayer({ close: () => this.dismiss(), elements: [this, this.anchor] });
+    // Read at each press, so a replaced anchor still counts as inside.
+    const elements = (): Element[] => (this.anchor ? [this, this.anchor] : [this]);
+    this.releaseLayer = pushLayer({
+      close: () => this.dismiss(),
+      get elements() {
+        return elements();
+      },
+    });
+    // A move while open shows the panel again but is not a new opening.
+    if (this.announcedOpen) return;
+    this.announcedOpen = true;
     this.dispatchEvent(new CustomEvent('ps-open', { bubbles: true, composed: true }));
   }
 
   private hide(): void {
+    this.announcedOpen = false;
     if (!this.releaseLayer) return;
     const focusWasInside = this.containsFocus();
     this.teardown();
