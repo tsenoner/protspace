@@ -1,10 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET } from '../src/explore/example-datasets';
-import { getProteinCount, holdNextRequest, openExplore } from './helpers/explore';
+import {
+  appBar,
+  getProteinCount,
+  holdNextRequest,
+  openExplore,
+  plotArea,
+  sidebar,
+} from './helpers/explore';
 
 /**
  * The workbench shell (Task 2.2): the app bar, the view bar, the plot beside a flush sidebar, the
- * narrow fallback and first paint. Regions are found by the data-workbench hooks the shell renders.
+ * narrow fallback and first paint. Regions are found through the region helpers.
  */
 
 const RUNTIME_ELEMENTS = ['myPlot', 'myLegend', 'myStructureViewer'];
@@ -25,10 +32,12 @@ test.describe('workbench shell', () => {
     const viewBar = page.getByRole('toolbar', { name: 'View' });
     expect((await viewBar.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
-    const plot = await page.locator('[data-workbench="plot"]').boundingBox();
-    const sidebar = await page.getByRole('complementary', { name: 'Sidebar' }).boundingBox();
-    expect(Math.abs(plot!.x + plot!.width - sidebar!.x)).toBeLessThan(0.5);
-    expect(sidebar!.width).toBe(300);
+    await expect(sidebar(page)).toHaveRole('complementary');
+    await expect(sidebar(page)).toHaveAccessibleName('Sidebar');
+    const plotBox = await plotArea(page).boundingBox();
+    const sidebarBox = await sidebar(page).boundingBox();
+    expect(Math.abs(plotBox!.x + plotBox!.width - sidebarBox!.x)).toBeLessThan(0.5);
+    expect(sidebarBox!.width).toBe(300);
 
     for (const id of [...RUNTIME_ELEMENTS, 'myDataLoader']) {
       await expect(page.locator(`#${id}`)).toHaveCount(1);
@@ -39,8 +48,10 @@ test.describe('workbench shell', () => {
     await openExplore(page);
     const count = await getProteinCount(page);
 
-    const dataset = page.locator('[data-workbench="dataset"]');
+    const dataset = appBar(page).locator('[data-workbench="dataset"]');
     await expect(dataset).toHaveAttribute('data-dataset-name', DEFAULT_EXAMPLE_DATASET.label);
+    // A decorative database icon leads the name.
+    await expect(dataset.locator('svg.wb-dataset-icon')).toHaveAttribute('aria-hidden', 'true');
     // An example's label reads "name · proteins · size"; the bar shows the name and its own count.
     await expect(dataset.locator('.wb-dataset-name')).toHaveText(
       DEFAULT_EXAMPLE_DATASET.label.split(' · ')[0],
@@ -56,15 +67,15 @@ test.describe('workbench shell', () => {
     const releaseRuntime = await holdNextRequest(page, '**/src/explore/runtime.ts*');
     await page.goto('/explore');
 
-    const appBar = page.locator('header[data-workbench="app-bar"]');
-    await expect(appBar).toBeVisible();
+    const bar = appBar(page);
+    await expect(bar).toBeVisible();
     const defined = await page.evaluate(() => ({
       kit: customElements.get('ps-button') !== undefined,
       core: customElements.get('protspace-scatterplot') !== undefined,
     }));
     expect(defined).toEqual({ kit: true, core: false });
     // --ps-border, so the theme was adopted before the full core arrived.
-    await expect(appBar).toHaveCSS('border-bottom-color', 'rgb(226, 232, 240)');
+    await expect(bar).toHaveCSS('border-bottom-color', 'rgb(226, 232, 240)');
     releaseRuntime();
   });
 
