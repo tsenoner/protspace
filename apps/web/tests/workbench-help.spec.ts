@@ -68,6 +68,26 @@ test.describe('help menu', () => {
     await expect(help(page)).toBeFocused();
   });
 
+  test('Keyboard shortcuts opens from the keyboard with focus inside the dialog', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await help(page).focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    await expect(dialog).toBeVisible();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('PS-DIALOG');
+    // Rendered outside the app bar, so the modal is not announced as part of the banner.
+    await expect(page.getByRole('banner').locator('ps-dialog')).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(help(page)).toBeFocused();
+  });
+
   test('Take the tour starts the tour', async ({ page }) => {
     await openExplore(page);
     await help(page).click();
