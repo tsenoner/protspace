@@ -87,6 +87,11 @@ export class PlotInteractionController {
     return this._zoom !== null && this._svgSelection !== null;
   }
 
+  /** Whether a resetZoom transition is still gliding to the identity. */
+  get isResetting(): boolean {
+    return this._resetsInFlight > 0;
+  }
+
   initialize(): void {
     const svg = this.host.getSvg();
     if (!svg) return;
@@ -140,15 +145,7 @@ export class PlotInteractionController {
       });
     }
     // Keep brush extent in sync with the viewport when scroll-zooming in selection mode.
-    // Skip if a brush gesture is in progress — re-applying the brush resets D3's drag state.
-    if (
-      this.host.getSelectionMode() &&
-      this.host.getSelectionTool() === 'rectangle' &&
-      this._brush &&
-      !this._isBrushing
-    ) {
-      this.updateBrushExtent();
-    }
+    this.refreshBrushExtent();
   }
 
   resetZoom(): void {
@@ -200,6 +197,37 @@ export class PlotInteractionController {
   setTransform(t: d3.ZoomTransform): void {
     if (!this._zoom || !this._svgSelection) return;
     this._zoom.transform(this._svgSelection, t);
+  }
+
+  /**
+   * Adopt `t` without drawing, for a host that draws once itself: a resize that re-centres the
+   * view. Unlike the three methods above it bypasses the behaviour, so it fires no zoom event and
+   * schedules no zoom-frame draw, but it writes d3's stored transform (`__zoom` on the SVG) itself,
+   * so the next wheel or drag starts from `t`.
+   */
+  syncTransform(t: d3.ZoomTransform): void {
+    this._svgSelection?.property('__zoom', t);
+    this.host.onTransform(t);
+    const value = t.toString();
+    this._mainGroup?.attr('transform', value);
+    this._brushGroup?.attr('transform', value);
+    this._overlayGroup?.attr('transform', value);
+    this.refreshBrushExtent();
+  }
+
+  /**
+   * Fit the rectangle brush to the visible area again, after a zoom, pan or resize moved it.
+   * Skipped while a brush gesture runs: re-applying the brush resets d3's drag state.
+   */
+  refreshBrushExtent(): void {
+    if (
+      this.host.getSelectionMode() &&
+      this.host.getSelectionTool() === 'rectangle' &&
+      this._brush &&
+      !this._isBrushing
+    ) {
+      this.updateBrushExtent();
+    }
   }
 
   /** Disable D3's built-in double-click zoom and attach our own reset handler. */

@@ -20,7 +20,9 @@ vi.mock('../../utils/perf-counters', async (importOriginal) => {
 });
 
 import { createPerfCounters, perfCounters } from '../../utils/perf-counters';
-import { createPlot, fakeFrames, mountPlot } from './test-support/plot-fixture';
+import * as d3 from 'd3';
+import { PlotInteractionController } from './interaction/plot-interaction-controller';
+import { createPlot, fakeFrames, mountPlot, type PlotInternals } from './test-support/plot-fixture';
 
 const counters = perfCounters!;
 
@@ -44,6 +46,17 @@ let frames: ReturnType<typeof fakeFrames>;
 function sizeTo(el: HTMLElement, width: number, height: number) {
   Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => width });
   Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => height });
+}
+
+/** The data point at the centre of the plot's view, in the coordinates its scales map. */
+function centreDatum(el: PlotInternals): { x: number; y: number } {
+  const { width, height } = el._mergedConfig;
+  const scales = el._scales!;
+  const t = el._transform;
+  return {
+    x: scales.x.invert((width / 2 - t.x) / t.k),
+    y: scales.y.invert((height / 2 - t.y) / t.k),
+  };
 }
 
 /** An unattached 800x600 plot with data, a staged render and a built point index. */
@@ -98,7 +111,7 @@ describe('scatter-plot resize', () => {
     XS.forEach((x, i) => {
       expect(el.pickInteractivePointAt(after.x(x), after.y(YS[i]))?.id).toBe(`p${i}`);
     });
-    // The old positions are empty now: p1 moved from (290, 136) to (542, 100).
+    // The old positions are empty now: p1 moved from (321, 64) to (656, 59).
     expect(el.pickInteractivePointAt(before.x(XS[1]), before.y(YS[1]))).toBeNull();
   });
 
@@ -142,5 +155,35 @@ describe('scatter-plot resize', () => {
     frames.run();
     expect(render).toHaveBeenCalledTimes(1);
     el.remove();
+  });
+
+  it('keeps the data under the view centre across a resize', () => {
+    const { el } = makePlot();
+    // What firstUpdated sets up. This plot is never attached, so the controller has no SVG.
+    el._interaction = new PlotInteractionController(el._interactionHost());
+    el._transform = d3.zoomIdentity.translate(-520, -310).scale(3);
+    const before = centreDatum(el);
+    const render = vi.spyOn(el, '_renderPlot');
+
+    sizeTo(el, 1100, 600);
+    el._updateSizeAndRender();
+    frames.run();
+
+    const after = centreDatum(el);
+    expect(el._transform.k).toBe(3);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1e-9);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1e-9);
+    expect(counters.restage).toBe(0);
+    // The synchronous draw only: re-centring schedules no zoom-frame draw.
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it('an identity transform stays identity after a resize', () => {
+    const { el } = makePlot();
+    el._interaction = new PlotInteractionController(el._interactionHost());
+    sizeTo(el, 1100, 700);
+    el._updateSizeAndRender();
+    frames.run();
+    expect(el._transform).toBe(d3.zoomIdentity);
   });
 });

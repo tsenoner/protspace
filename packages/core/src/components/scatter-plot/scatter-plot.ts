@@ -13,6 +13,7 @@ import type {
 } from '@protspace/utils';
 import {
   DataProcessor,
+  DATA_EXTENT_PADDING,
   buildTooltipView,
   EMPTY_PLOT_DATA,
   clonePlotData,
@@ -175,6 +176,9 @@ export class ProtspaceScatterplot extends LitElement {
   // getter closures passed to WebGLRenderer and the duplicate-overlay/hit-test
   // reads are pull-based and keep working unchanged.
   private _transform = d3.zoomIdentity;
+  // Whether _updateSizeAndRender has measured the element yet; until then _mergedConfig holds the
+  // default size, which no view was drawn at.
+  private _sizeMeasured = false;
   @state() private _isolationHistory: string[][] = [];
   @state() private _isolationMode = false;
   private _zOrderMapping: Record<string, number> | null = null;
@@ -1209,6 +1213,8 @@ export class ProtspaceScatterplot extends LitElement {
   private _updateSizeAndRender() {
     const width = this.clientWidth || 800;
     const height = this.clientHeight || 600;
+    // Read with the old size and scales, before _mergedConfig takes the new size.
+    const centre = this._viewCentreDatum(width, height);
 
     if (this._canvas) {
       if (!this._webglRenderer) {
@@ -1242,12 +1248,49 @@ export class ProtspaceScatterplot extends LitElement {
     }
 
     this._mergedConfig = { ...this._mergedConfig, width, height };
+    this._sizeMeasured = true;
+    // Same zoom, same data at the centre (design decision 4). syncTransform draws nothing: the
+    // synchronous draw below shows the new transform.
+    if (centre) this._recentreView(centre, width, height);
+    else this._interaction?.refreshBrushExtent();
     // Scales depend on width/height; rebuild spatial index to keep hit-testing accurate after resize
     this._pointGrid.scheduleRebuild();
     // Synchronous: resize() just cleared the canvas (see RenderLoop).
     this._renderLoop.now();
     this._updateSelectionOverlays();
     this._connectorOverlay.render();
+  }
+
+  /**
+   * The data point at the centre of the view, read before a resize takes effect, or null when the
+   * resize need not move the view: no data or no measured size yet, the same size, the identity
+   * view (the fit is centred, so it keeps its centre already, and staying exactly identity keeps
+   * `_isZoomedIn` false and the perf pixel round trip exact), or a reset gliding to the identity.
+   */
+  private _viewCentreDatum(width: number, height: number): { x: number; y: number } | null {
+    const scales = this._scales;
+    const t = this._transform;
+    if (!this._sizeMeasured || !scales) return null;
+    const { width: oldWidth, height: oldHeight } = this._mergedConfig;
+    if (oldWidth === width && oldHeight === height) return null;
+    if (t.k === 1 && t.x === 0 && t.y === 0) return null;
+    if (this._interaction?.isResetting) return null;
+    return {
+      x: scales.x.invert((oldWidth / 2 - t.x) / t.k),
+      y: scales.y.invert((oldHeight / 2 - t.y) / t.k),
+    };
+  }
+
+  /** Keeps the zoom factor and translates so `datum` sits at the centre of the resized view. */
+  private _recentreView(datum: { x: number; y: number }, width: number, height: number): void {
+    const scales = this._scales;
+    if (!scales) return;
+    const { k } = this._transform;
+    this._interaction?.syncTransform(
+      d3.zoomIdentity
+        .translate(width / 2 - k * scales.x(datum.x), height / 2 - k * scales.y(datum.y))
+        .scale(k),
+    );
   }
 
   // HiDPI setup and quality handled by WebGLRenderer
@@ -2286,10 +2329,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Margin used for a render at the given export dimensions. Returned values
-   * are in *export pixel space*. The publish modal uses this to translate
-   * inset source rects (in canvas-norm 0–1) into accurate data-coordinate
-   * viewports, instead of approximating with the raw extent.
+   * Margins of the data area in a reset-view export at the given size, in export pixels: the
+   * edges of the fitted rectangle, centring slack included. The publish modal uses this to
+   * translate inset source rects (in canvas-norm 0–1) into accurate data-coordinate viewports.
    */
   public getRenderInfo(
     exportWidth: number,
@@ -2300,9 +2342,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Data extent of the most recently rendered points. With `padded: true`
-   * applies the same 5% padding the renderer uses by default — so the
-   * returned domain matches what the main plot is actually showing.
+   * Data extent of the most recently rendered points. With `padded: true` it applies
+   * DATA_EXTENT_PADDING, as the live scales do, so the returned domain is the one the main plot
+   * is fitted to.
    */
   public getDataExtent(
     options: { padded?: boolean } = {},
@@ -2312,8 +2354,8 @@ export class ProtspaceScatterplot extends LitElement {
     const ext = this._webglRenderer.getDataExtent();
     if (!ext) return null;
     if (!options.padded) return ext;
-    const xPad = Math.abs(ext.xMax - ext.xMin) * 0.05;
-    const yPad = Math.abs(ext.yMax - ext.yMin) * 0.05;
+    const xPad = Math.abs(ext.xMax - ext.xMin) * DATA_EXTENT_PADDING;
+    const yPad = Math.abs(ext.yMax - ext.yMin) * DATA_EXTENT_PADDING;
     return {
       xMin: ext.xMin - xPad,
       xMax: ext.xMax + xPad,

@@ -23,7 +23,8 @@
  */
 
 import * as d3 from 'd3';
-import type { PlotData, ScatterplotConfig } from '@protspace/utils';
+import { fitRect, fitScales } from '@protspace/utils';
+import type { DataDomain, PlotData, PlotMargin, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
   type ScalePair,
@@ -72,12 +73,24 @@ const EXPORT_MARGIN_REFERENCE_HEIGHT = 600;
 const MAX_DIMENSION = 8192;
 const MAX_AREA = 268435456; // ~268M pixels
 
-/** A data-coordinate viewport rectangle. */
-interface DataDomain {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
+/**
+ * The plot margins at an export size: `config.margin` (20 px when unset) scaled from the fixed
+ * reference size, so an export does not depend on the browser window.
+ */
+function scaledExportMargin(
+  config: ScatterplotConfig,
+  exportWidth: number,
+  exportHeight: number,
+): PlotMargin {
+  const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
+  const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
+  const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
+  return {
+    top: margin.top * scaleY,
+    right: margin.right * scaleX,
+    bottom: margin.bottom * scaleY,
+    left: margin.left * scaleX,
+  };
 }
 
 /** Options for a single off-screen export render. */
@@ -113,15 +126,11 @@ interface ExportRenderOptions {
 
 export class ExportRenderer {
   /**
-   * Create scales appropriate for export dimensions.
-   * Scales the margin proportionally to maintain visual consistency.
-   *
-   * Replicates the inline `WebGLRenderer.createExportScales` exactly: when a
-   * `dataDomain` is supplied (inset / geometric-zoom render) the domain fills
-   * the canvas edge-to-edge (full bleed, no 5% padding, no margins); otherwise
-   * the data extent gets 5% padding and the margins are scaled from a fixed
-   * reference. The config + optional dataDomain are passed in (replacing the
-   * former `this.getConfig()` / inline `pd` reads).
+   * The scales an export of `exportWidth` × `exportHeight` maps points with. By default the live
+   * plot's fit (design decision 3): the 5%-padded extent with one pixels-per-unit, centred inside
+   * margins scaled from a fixed reference, so a figure has the screen's shape. A `dataDomain`
+   * (inset / geometric-zoom render) fills the canvas edge to edge instead, each axis on its own:
+   * the caller picks a domain that already matches its source rect.
    */
   static createExportScales(
     config: ScatterplotConfig,
@@ -131,81 +140,53 @@ export class ExportRenderer {
     dataDomain?: DataDomain,
   ): ScalePair | null {
     if (pd.length === 0) return null;
-
-    // Default margin if not specified
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-
-    // Scale margins from a fixed reference instead of the live display size,
-    // so the export render is reproducible across browser-window resizes.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
-
-    const scaledMargin = {
-      top: margin.top * scaleY,
-      right: margin.right * scaleX,
-      bottom: margin.bottom * scaleY,
-      left: margin.left * scaleX,
-    };
-
-    let xDomMin: number;
-    let xDomMax: number;
-    let yDomMin: number;
-    let yDomMax: number;
-    let useFullBleed = false;
     if (dataDomain) {
-      // Caller supplied an exact viewport — used by inset (geometric zoom)
-      // rendering. Skip the 5% padding AND skip margins so the data domain
-      // fills the canvas edge-to-edge. The caller is responsible for picking
-      // a domain that already accounts for the source plot's margins, so the
-      // inset's data fills aligns 1:1 with the source rect's data region.
-      xDomMin = dataDomain.xMin;
-      xDomMax = dataDomain.xMax;
-      yDomMin = dataDomain.yMin;
-      yDomMax = dataDomain.yMax;
-      useFullBleed = true;
-    } else {
-      // Compute data extent + 5% padding (ScaleManager.createScales convention).
-      const e = computePaddedExtent(pd.xs, pd.ys, pd.length);
-      xDomMin = e.xMin;
-      xDomMax = e.xMax;
-      yDomMin = e.yMin;
-      yDomMax = e.yMax;
+      return {
+        x: d3.scaleLinear().domain([dataDomain.xMin, dataDomain.xMax]).range([0, exportWidth]),
+        y: d3.scaleLinear().domain([dataDomain.yMin, dataDomain.yMax]).range([exportHeight, 0]),
+      };
     }
-
-    const xRangeStart = useFullBleed ? 0 : scaledMargin.left;
-    const xRangeEnd = useFullBleed ? exportWidth : exportWidth - scaledMargin.right;
-    const yRangeStart = useFullBleed ? exportHeight : exportHeight - scaledMargin.bottom;
-    const yRangeEnd = useFullBleed ? 0 : scaledMargin.top;
-
-    const xScale = d3.scaleLinear().domain([xDomMin, xDomMax]).range([xRangeStart, xRangeEnd]);
-    const yScale = d3.scaleLinear().domain([yDomMin, yDomMax]).range([yRangeStart, yRangeEnd]);
-
-    return { x: xScale, y: yScale };
+    return fitScales(
+      computePaddedExtent(pd.xs, pd.ys, pd.length),
+      exportWidth,
+      exportHeight,
+      scaledExportMargin(config, exportWidth, exportHeight),
+    );
   }
 
   /**
-   * Display configuration the renderer would apply to a render at the given
-   * export dimensions. Returned values are in *export pixel space* (i.e.
-   * `marginLeft` is the pixel offset of the data area's left edge inside an
-   * `exportWidth × exportHeight` canvas). Used by the publish modal to
-   * translate inset source rects (canvas-norm) into data-coord viewports
-   * with margin-aware accuracy. Static so it is unit-testable.
+   * Where the data area of a default export sits, as margins in export pixels: the fitted
+   * rectangle's edges, centring slack included. With the padded extent,
+   * `marginLeft + (x − xMin) / (xMax − xMin) × (exportWidth − marginLeft − marginRight)` is then
+   * exactly the export's x scale, and likewise for y, which is how the publish modal turns inset
+   * source rects into data domains. Without data there is no fit: the scaled margins.
    */
   static getRenderInfo(
     config: ScatterplotConfig,
+    pd: PlotData | null,
     exportWidth: number,
     exportHeight: number,
   ): { marginLeft: number; marginRight: number; marginTop: number; marginBottom: number } {
-    const margin = config.margin ?? { top: 20, right: 20, bottom: 20, left: 20 };
-    // Match createExportScales: anchor to the same fixed reference so insets'
-    // data-domain inversion stays consistent with the export render.
-    const scaleX = exportWidth / EXPORT_MARGIN_REFERENCE_WIDTH;
-    const scaleY = exportHeight / EXPORT_MARGIN_REFERENCE_HEIGHT;
+    const margin = scaledExportMargin(config, exportWidth, exportHeight);
+    if (!pd || pd.length === 0) {
+      return {
+        marginLeft: margin.left,
+        marginRight: margin.right,
+        marginTop: margin.top,
+        marginBottom: margin.bottom,
+      };
+    }
+    const rect = fitRect(
+      computePaddedExtent(pd.xs, pd.ys, pd.length),
+      exportWidth,
+      exportHeight,
+      margin,
+    );
     return {
-      marginLeft: margin.left * scaleX,
-      marginRight: margin.right * scaleX,
-      marginTop: margin.top * scaleY,
-      marginBottom: margin.bottom * scaleY,
+      marginLeft: rect.left,
+      marginRight: exportWidth - rect.left - rect.width,
+      marginTop: rect.top,
+      marginBottom: exportHeight - rect.top - rect.height,
     };
   }
 

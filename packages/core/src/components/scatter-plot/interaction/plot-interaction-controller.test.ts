@@ -137,4 +137,27 @@ describe('PlotInteractionController', () => {
     c.teardown();
     expect(calls.transforms.at(-1)?.k).toBe(3);
   });
+
+  it("syncTransform updates d3's stored transform and the host without scheduling a draw", () => {
+    const raf = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', raf);
+    const { bridge, calls } = makeHostBridge(svg);
+    const renderSpy = vi.fn();
+    const c = new PlotInteractionController({ ...bridge, renderWebGL: renderSpy });
+    c.initialize();
+    const t = d3.zoomIdentity.translate(-120, 40).scale(2.5);
+
+    c.syncTransform(t);
+
+    expect(d3.zoomTransform(svg)).toBe(t);
+    expect(calls.transforms.at(-1)).toBe(t);
+    expect(svg.querySelector('g.scatter-plot-container')?.getAttribute('transform')).toBe(
+      t.toString(),
+    );
+    expect(raf).not.toHaveBeenCalled();
+    expect(renderSpy).not.toHaveBeenCalled();
+    // The next gesture starts from t, not from the transform d3 last applied.
+    c.zoomBy(2);
+    expect(calls.transforms.at(-1)?.k).toBe(5);
+  });
 });

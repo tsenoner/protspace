@@ -186,8 +186,10 @@ async function sampleEncodedExportMarkers(
       const plotData = plot?._plotData;
       const predictedCells = plot?.data?.annotation_predicted?.ec;
       const extent = plot?.getDataExtent?.({ padded: true });
-      const width = 800;
-      const height = 600;
+      // Portrait, like the phosphatase projection: one scale for both axes fits the data to its own
+      // shape, so a landscape frame would leave its markers crowded in a narrow column.
+      const width = 600;
+      const height = 800;
       const margins = plot?.getRenderInfo?.(width, height);
       if (!plotData || !predictedCells || !extent || !margins || !plot?.captureAtResolution) {
         throw new Error('Export geometry is not ready');

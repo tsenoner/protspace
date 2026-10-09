@@ -994,18 +994,20 @@ export class WebGLRenderer {
   }
 
   /**
-   * Display configuration the renderer would apply to a render at the given
-   * export dimensions. Returned values are in *export pixel space* (i.e.
-   * `marginLeft` is the pixel offset of the data area's left edge inside an
-   * `exportWidth × exportHeight` canvas). Used by the publish modal to
-   * translate inset source rects (canvas-norm) into data-coord viewports
-   * with margin-aware accuracy.
+   * Where the data area of a reset-view export of the given size sits, as margins in export
+   * pixels (the fitted rectangle's edges, from the last-rendered data). The publish modal inverts
+   * inset source rects (canvas-norm) into data-coord viewports with it.
    */
   public getRenderInfo(
     exportWidth: number,
     exportHeight: number,
   ): { marginLeft: number; marginRight: number; marginTop: number; marginBottom: number } {
-    return ExportRenderer.getRenderInfo(this.getConfig(), exportWidth, exportHeight);
+    return ExportRenderer.getRenderInfo(
+      this.getConfig(),
+      this.lastRenderedData,
+      exportWidth,
+      exportHeight,
+    );
   }
 
   /**
