@@ -13,14 +13,14 @@ import type {
 } from '@protspace/utils';
 import {
   DataProcessor,
-  DATA_EXTENT_PADDING,
   buildTooltipView,
+  padDomain,
   EMPTY_PLOT_DATA,
   clonePlotData,
   materializePlotDataPoint,
   getProteinAnnotationValues,
 } from '@protspace/utils';
-import type { ScalePair } from '@protspace/utils';
+import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
 import {
   isLegendColorMappingDetail,
@@ -2339,22 +2339,12 @@ export class ProtspaceScatterplot extends LitElement {
    * DATA_EXTENT_PADDING, as the live scales do, so the returned domain is the one the main plot
    * is fitted to.
    */
-  public getDataExtent(
-    options: { padded?: boolean } = {},
-  ): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
+  public getDataExtent(options: { padded?: boolean } = {}): DataDomain | null {
     if (!this._webglRenderer) return null;
     this._renderLoop.flush();
     const ext = this._webglRenderer.getDataExtent();
     if (!ext) return null;
-    if (!options.padded) return ext;
-    const xPad = Math.abs(ext.xMax - ext.xMin) * DATA_EXTENT_PADDING;
-    const yPad = Math.abs(ext.yMax - ext.yMin) * DATA_EXTENT_PADDING;
-    return {
-      xMin: ext.xMin - xPad,
-      xMax: ext.xMax + xPad,
-      yMin: ext.yMin - yPad,
-      yMax: ext.yMax + yPad,
-    };
+    return options.padded ? padDomain(ext) : ext;
   }
 }
 

@@ -15,6 +15,7 @@ import * as d3 from 'd3';
 import {
   DENSITY_DEFAULT,
   plotDataOriginalIndex,
+  type DataDomain,
   type PlotData,
   type PlotDataPoint,
   type ScatterplotConfig,
@@ -1015,7 +1016,7 @@ export class WebGLRenderer {
    * has been rendered yet. Used by the publish modal to translate inset
    * source rects (in normalized canvas coords) into data-coordinate viewports.
    */
-  public getDataExtent(): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
+  public getDataExtent(): DataDomain | null {
     return this.exportRenderer.getDataExtent(this.lastRenderedData);
   }
 

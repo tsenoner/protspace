@@ -16,6 +16,18 @@ export interface DataDomain {
   yMax: number;
 }
 
+/** `domain` grown by {@link DATA_EXTENT_PADDING} of its span on every side. */
+export function padDomain(domain: DataDomain): DataDomain {
+  const xPad = Math.abs(domain.xMax - domain.xMin) * DATA_EXTENT_PADDING;
+  const yPad = Math.abs(domain.yMax - domain.yMin) * DATA_EXTENT_PADDING;
+  return {
+    xMin: domain.xMin - xPad,
+    xMax: domain.xMax + xPad,
+    yMin: domain.yMin - yPad,
+    yMax: domain.yMax + yPad,
+  };
+}
+
 /** Space kept between a plot's edges and its data, in pixels. */
 export interface PlotMargin {
   top: number;

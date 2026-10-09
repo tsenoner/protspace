@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitRect, fitScales, type DataDomain, type PlotMargin } from './scales';
+import { fitRect, fitScales, padDomain, type DataDomain, type PlotMargin } from './scales';
 
 const MARGIN: PlotMargin = { top: 40, right: 40, bottom: 40, left: 40 };
 const SQUARE: DataDomain = { xMin: 0, xMax: 10, yMin: 0, yMax: 10 };
@@ -67,5 +67,25 @@ describe('fitScales', () => {
   it('a box smaller than its margins stays finite', () => {
     const rect = fitRect(SQUARE, 50, 30, MARGIN);
     expect(rect).toEqual({ left: 40, top: 40, width: 1, height: 1 });
+  });
+});
+
+describe('padDomain', () => {
+  it('grows each axis by 5% of its span on both sides', () => {
+    expect(padDomain({ xMin: 0, xMax: 10, yMin: -5, yMax: 5 })).toEqual({
+      xMin: -0.5,
+      xMax: 10.5,
+      yMin: -5.5,
+      yMax: 5.5,
+    });
+  });
+
+  it('leaves a zero-span axis where it is', () => {
+    expect(padDomain({ xMin: 3, xMax: 3, yMin: 0, yMax: 20 })).toEqual({
+      xMin: 3,
+      xMax: 3,
+      yMin: -1,
+      yMax: 21,
+    });
   });
 });

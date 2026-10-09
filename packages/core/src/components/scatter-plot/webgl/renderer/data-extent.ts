@@ -1,21 +1,10 @@
-import { DATA_EXTENT_PADDING } from '@protspace/utils';
-
-interface DataExtent {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
-}
-
-// Re-exported so the export domain shares the single live-scale padding constant
-// (defined in @protspace/utils) — on-screen and exported framing stay in lockstep.
-export { DATA_EXTENT_PADDING };
+import { padDomain, type DataDomain } from '@protspace/utils';
 
 export function computeExtent(
   xs: ArrayLike<number>,
   ys: ArrayLike<number>,
   length: number,
-): DataExtent {
+): DataDomain {
   let xMin = Infinity,
     xMax = -Infinity,
     yMin = Infinity,
@@ -29,18 +18,11 @@ export function computeExtent(
   return { xMin, xMax, yMin, yMax };
 }
 
+/** The extent padded as the live scales pad it, so on-screen and exported framing match. */
 export function computePaddedExtent(
   xs: ArrayLike<number>,
   ys: ArrayLike<number>,
   length: number,
-): DataExtent {
-  const { xMin, xMax, yMin, yMax } = computeExtent(xs, ys, length);
-  const xPad = Math.abs(xMax - xMin) * DATA_EXTENT_PADDING;
-  const yPad = Math.abs(yMax - yMin) * DATA_EXTENT_PADDING;
-  return {
-    xMin: xMin - xPad,
-    xMax: xMax + xPad,
-    yMin: yMin - yPad,
-    yMax: yMax + yPad,
-  };
+): DataDomain {
+  return padDomain(computeExtent(xs, ys, length));
 }

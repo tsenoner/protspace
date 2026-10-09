@@ -1,6 +1,6 @@
 import type { VisualizationData, PlotData } from '../types.js';
 import { EMPTY_PLOT_DATA } from './plot-data.js';
-import { DATA_EXTENT_PADDING, fitScales, type PlotMargin, type ScalePair } from './scales.js';
+import { fitScales, padDomain, type PlotMargin, type ScalePair } from './scales.js';
 
 // Memoize x/y extents per PlotData object reference. Resizes pass the same PlotData
 // (extents unchanged) and reuse the cached scan; any data/projection/plane change builds
@@ -158,18 +158,10 @@ export class DataProcessor {
     const xExtent = extents.x;
     const yExtent = extents.y;
 
-    const xPadding = Math.abs(xExtent[1] - xExtent[0]) * DATA_EXTENT_PADDING;
-    const yPadding = Math.abs(yExtent[1] - yExtent[0]) * DATA_EXTENT_PADDING;
-
     // One pixels-per-unit for both axes, centred (design decision 3). The domain stays the
     // padded extent at every size, so a resize is a rescale on the GPU, not a re-stage.
     return fitScales(
-      {
-        xMin: xExtent[0] - xPadding,
-        xMax: xExtent[1] + xPadding,
-        yMin: yExtent[0] - yPadding,
-        yMax: yExtent[1] + yPadding,
-      },
+      padDomain({ xMin: xExtent[0], xMax: xExtent[1], yMin: yExtent[0], yMax: yExtent[1] }),
       width,
       height,
       margin,
