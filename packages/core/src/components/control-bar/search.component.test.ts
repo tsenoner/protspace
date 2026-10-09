@@ -172,6 +172,25 @@ describe('protspace-protein-search feedback', () => {
     expect(rowsOf(element)[0].classList.contains('active')).toBe(true);
   });
 
+  it('names the combobox, hides the shortcut hint and keeps the list out of the Tab order', async () => {
+    const element = await setupSearch();
+    const input = inputOf(element);
+    expect(input.getAttribute('aria-label')).toBe('Search proteins');
+    expect(input.getAttribute('aria-keyshortcuts')).toBe('Control+K Meta+K');
+    const hint = element.shadowRoot!.querySelector('.search-keyboard-shortcut-hint')!;
+    expect(hint.getAttribute('aria-hidden')).toBe('true');
+
+    await typeQuery(element, 'P');
+    expect(element.shadowRoot!.querySelector('[role="listbox"]')!.getAttribute('tabindex')).toBe(
+      '-1',
+    );
+    await typeQuery(element, 'ZZZ');
+    expect(element.shadowRoot!.querySelector('.no-results')).not.toBeNull();
+    expect(element.shadowRoot!.querySelector('[role="listbox"]')!.getAttribute('tabindex')).toBe(
+      '-1',
+    );
+  });
+
   it('marks rows with aria-selected for assistive technology', async () => {
     const element = await setupSearch(['GT4', 'GT40'], ['GT4']);
     await typeQuery(element, 'GT4');

@@ -65,6 +65,8 @@ export class ProtspaceProteinSearch extends LitElement {
             type="text"
             .value=${this.searchQuery}
             placeholder="Search or paste protein IDs"
+            aria-label="Search proteins"
+            aria-keyshortcuts="Control+K Meta+K"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded=${this._isPopupRendered}
@@ -79,7 +81,7 @@ export class ProtspaceProteinSearch extends LitElement {
             @paste=${this._onPaste}
           />
 
-          <div class="search-keyboard-shortcut-hint">
+          <div class="search-keyboard-shortcut-hint" aria-hidden="true">
             <kbd>${isMacOrIos() ? html`⌘K` : html`^K`}</kbd>
           </div>
         </div>
@@ -89,7 +91,11 @@ export class ProtspaceProteinSearch extends LitElement {
     `;
   }
 
-  /** The listbox, the no-match message, or nothing — driven by the same open flag. */
+  /**
+   * The listbox, the no-match message, or nothing — driven by the same open flag. The list is a
+   * scroll container, which Chrome makes a Tab stop; `tabindex="-1"` keeps focus in the input
+   * (the combobox pattern: `aria-activedescendant` moves instead).
+   */
   private _renderSuggestions() {
     if (this._isListboxRendered) {
       return html`
@@ -98,6 +104,7 @@ export class ProtspaceProteinSearch extends LitElement {
           id=${SUGGESTIONS_LIST_ID}
           role="listbox"
           aria-multiselectable="true"
+          tabindex="-1"
         >
           ${this.searchSuggestions.map((suggestion, i) => this._renderSuggestion(suggestion, i))}
         </div>
@@ -108,7 +115,7 @@ export class ProtspaceProteinSearch extends LitElement {
       // is on screen, and a combobox's controlled popup has to *be* one — an empty listbox
       // is valid, a bare div is not. Only one of the two branches ever renders.
       return html`
-        <div class="search-suggestions" id=${SUGGESTIONS_LIST_ID} role="listbox">
+        <div class="search-suggestions" id=${SUGGESTIONS_LIST_ID} role="listbox" tabindex="-1">
           <div class="no-results" role="status">No matching protein IDs found</div>
         </div>
       `;

@@ -148,6 +148,12 @@ export const searchStyles = [
 
     /* One control height, so the search sits in the 48 px app bar (Task 2.9); 4.5 restyles
        the search on the kit. */
+    /* The input draws no outline; the field draws the kit focus ring around it. */
+    .search-chips:has(.search-input:focus-visible) {
+      outline: var(--ps-focus-width) solid var(--ps-focus);
+      outline-offset: -1px;
+    }
+
     .search-chips {
       box-sizing: border-box;
       height: var(--ps-control-md);
