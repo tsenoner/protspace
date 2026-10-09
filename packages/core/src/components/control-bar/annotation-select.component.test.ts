@@ -351,7 +351,6 @@ describe('protspace-annotation-select statistics badge', () => {
 
 interface ControlBarInternals extends HTMLElement {
   annotations: string[];
-  _filterableAnnotations: string[];
   selectedAnnotation: string;
   _updateOptionsFromData(data: ProtspaceData, capabilityData?: ProtspaceData): void;
   updateComplete: Promise<unknown>;
@@ -366,7 +365,7 @@ describe('protspace-control-bar annotation list splitting', () => {
     document.body.innerHTML = '';
   });
 
-  it('excludes eat-confidence annotations from the color-by list but keeps them in the filterable list', async () => {
+  it('excludes eat-confidence annotations from the color-by list', async () => {
     const controlBar = document.createElement('protspace-control-bar') as ControlBarInternals;
     document.body.appendChild(controlBar);
     await controlBar.updateComplete;
@@ -394,11 +393,6 @@ describe('protspace-control-bar annotation list splitting', () => {
     controlBar._updateOptionsFromData(data);
 
     expect(controlBar.annotations).toEqual(['pfam']);
-    expect(controlBar._filterableAnnotations).toEqual([
-      'pfam',
-      'pfam__eat_confidence',
-      'pfam__eat_confidence__runtime_2',
-    ]);
     // The default color-by selection must never land on an eat-confidence key.
     expect(controlBar.selectedAnnotation).toBe('pfam');
   });

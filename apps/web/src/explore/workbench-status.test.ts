@@ -13,7 +13,11 @@ beforeEach(() => {
 
 describe('workbench status', () => {
   it('starts empty', () => {
-    expect(getWorkbenchStatus()).toEqual({ datasetName: null, proteinCount: null });
+    expect(getWorkbenchStatus()).toEqual({
+      datasetName: null,
+      proteinCount: null,
+      appliedFilterConditions: 0,
+    });
   });
 
   it('merges a patch and notifies once', () => {
@@ -23,7 +27,11 @@ describe('workbench status', () => {
     expect(listener).toHaveBeenCalledOnce();
 
     setWorkbenchStatus({ proteinCount: 12 });
-    expect(getWorkbenchStatus()).toEqual({ datasetName: 'demo.parquetbundle', proteinCount: 12 });
+    expect(getWorkbenchStatus()).toEqual({
+      datasetName: 'demo.parquetbundle',
+      proteinCount: 12,
+      appliedFilterConditions: 0,
+    });
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
@@ -34,6 +42,12 @@ describe('workbench status', () => {
     setWorkbenchStatus({ datasetName: 'demo.parquetbundle' });
     setWorkbenchStatus({});
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('starts with no filter applied', () => {
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    setWorkbenchStatus({ appliedFilterConditions: 2 });
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(2);
   });
 
   it('keeps the snapshot until a change', () => {
@@ -53,7 +67,11 @@ describe('createDatasetNamePublisher', () => {
     const publish = createDatasetNamePublisher(() => data);
     data = ids(10);
     publish('demo.parquetbundle');
-    expect(getWorkbenchStatus()).toEqual({ datasetName: 'demo.parquetbundle', proteinCount: 10 });
+    expect(getWorkbenchStatus()).toEqual({
+      datasetName: 'demo.parquetbundle',
+      proteinCount: 10,
+      appliedFilterConditions: 0,
+    });
   });
 
   it('never pairs a name set before its load with the previous dataset count', () => {
@@ -64,11 +82,19 @@ describe('createDatasetNamePublisher', () => {
 
     // An OPFS restore names its file before the load starts; the old data is still on screen.
     publish('new.parquetbundle');
-    expect(getWorkbenchStatus()).toEqual({ datasetName: 'new.parquetbundle', proteinCount: null });
+    expect(getWorkbenchStatus()).toEqual({
+      datasetName: 'new.parquetbundle',
+      proteinCount: null,
+      appliedFilterConditions: 0,
+    });
 
     data = ids(3);
     publish('new.parquetbundle');
-    expect(getWorkbenchStatus()).toEqual({ datasetName: 'new.parquetbundle', proteinCount: 3 });
+    expect(getWorkbenchStatus()).toEqual({
+      datasetName: 'new.parquetbundle',
+      proteinCount: 3,
+      appliedFilterConditions: 0,
+    });
   });
 
   it('keeps the count when the same dataset is named again', () => {
@@ -86,6 +112,7 @@ describe('createDatasetNamePublisher', () => {
     expect(getWorkbenchStatus()).toEqual({
       datasetName: 'recovered.parquetbundle',
       proteinCount: null,
+      appliedFilterConditions: 0,
     });
   });
 });

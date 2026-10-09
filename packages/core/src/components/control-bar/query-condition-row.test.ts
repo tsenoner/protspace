@@ -7,6 +7,7 @@
  * sourceKind:'numeric', and must still be filtered with the numeric range input.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pushLayer, topLayer } from '../kit/layers';
 import './query-condition-row';
 import type { FilterCondition } from './query-types';
 import { ANY_VALUE } from './query-types';
@@ -471,5 +472,31 @@ describe('query-condition-row annotation names', () => {
     cathRow.click();
 
     expect(stored).toBe('cath');
+  });
+});
+
+describe('query-condition-row inside a dialog', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('the open annotation picker is a layer, so Escape closes it before the dialog around it', async () => {
+    const dialogClose = vi.fn();
+    const releaseDialog = pushLayer({ close: dialogClose, elements: [] });
+    const el = await mount();
+
+    (el.shadowRoot!.querySelector('.annotation-select-trigger') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.annotation-picker')).not.toBeNull();
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.annotation-picker')).toBeNull();
+    expect(dialogClose).not.toHaveBeenCalled();
+    expect(topLayer()?.close).toBe(dialogClose);
+    releaseDialog();
   });
 });

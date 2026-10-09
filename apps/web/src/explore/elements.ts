@@ -3,9 +3,12 @@ import type {
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   ProtspaceLegend,
+  ProtspaceQueryBuilder,
   ProtspaceScatterplot,
   ProtspaceStructureViewer,
   DataLoader as ProtspaceDataLoader,
+  PsButton,
+  PsDialog,
 } from '@protspace/core';
 
 interface ExploreElements {
@@ -16,6 +19,9 @@ interface ExploreElements {
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
   structureViewer: ProtspaceStructureViewer;
+  queryBuilder: ProtspaceQueryBuilder;
+  filterDialog: PsDialog;
+  filterButton: PsButton;
 }
 
 const REQUIRED_TAGS = [
@@ -26,6 +32,8 @@ const REQUIRED_TAGS = [
   'protspace-data-loader',
   'protspace-import-menu',
   'protspace-export-menu',
+  'protspace-query-builder',
+  'ps-dialog',
 ] as const;
 
 export async function waitForElements(): Promise<void> {
@@ -42,6 +50,9 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const dataLoader = doc.getElementById('myDataLoader') as ProtspaceDataLoader | null;
   const importMenu = doc.getElementById('myImportMenu') as ProtspaceImportMenu | null;
   const exportMenu = doc.getElementById('myExportMenu') as ProtspaceExportMenu | null;
+  const queryBuilder = doc.getElementById('myQueryBuilder') as ProtspaceQueryBuilder | null;
+  const filterDialog = doc.getElementById('myFilterDialog') as PsDialog | null;
+  const filterButton = doc.getElementById('myFilterButton') as PsButton | null;
 
   if (
     !plotElement ||
@@ -50,7 +61,10 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !controlBar ||
     !dataLoader ||
     !importMenu ||
-    !exportMenu
+    !exportMenu ||
+    !queryBuilder ||
+    !filterDialog ||
+    !filterButton
   ) {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
@@ -60,6 +74,9 @@ export function getElements(doc: Document = document): ExploreElements | null {
       dataLoader,
       importMenu,
       exportMenu,
+      queryBuilder,
+      filterDialog,
+      filterButton,
     });
     return null;
   }
@@ -72,5 +89,8 @@ export function getElements(doc: Document = document): ExploreElements | null {
     legendElement,
     plotElement,
     structureViewer,
+    queryBuilder,
+    filterDialog,
+    filterButton,
   };
 }

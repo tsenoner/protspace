@@ -15,14 +15,10 @@ import {
 } from '../../utils/dropdown-helpers';
 import { AfterPaintCommit } from '../../utils/after-paint-commit';
 import {
-  DEFAULT_EAT_RELIABILITY,
   DENSITY_DEFAULT,
   DENSITY_LAYER_MODES,
   isEatConfidenceAnnotation,
-  isSameReliability,
-  NEUTRAL_BOUND,
   type DensityLayerMode,
-  type EatReliabilityState,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
 import { toggleProteinSelection, mergeProteinSelections } from './control-bar-helpers';
@@ -34,19 +30,6 @@ import {
 import type { BrushSelectionDetail, ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
 import './search';
 import './annotation-select';
-import './query-builder';
-import type { FilterQuery } from './query-types';
-import { createCondition } from './query-types';
-import { evaluateQuery, hasConfiguredCondition } from './query-evaluate';
-import {
-  findConditionsForAnnotation,
-  replaceConditionsForAnnotation,
-} from './query-annotation-conditions';
-import {
-  conditionsForReliability,
-  reliabilityFromConditions,
-  sameConditions,
-} from './eat-reliability';
 
 /** Stable empty statistics — a fresh [] per render would dirty the child on every update. */
 const NO_STATISTICS: readonly ProjectionStatisticRow[] = [];
@@ -92,8 +75,6 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: Array, attribute: 'isolation-history' })
   isolationHistory: string[][] = [];
   @state() private _eatAnnotationKeys: string[] = [];
-  /** Full annotation key list (includes synthesized `__eat_confidence` keys) for the query-filter column picker. */
-  @state() private _filterableAnnotations: string[] = [];
 
   @state() private _selectionDisabled: boolean = false;
 
@@ -103,19 +84,9 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
 
-  @state() private showFilterMenu: boolean = false;
   @state() private showProjectionMenu: boolean = false;
   @state() private showDensityMenu: boolean = false;
   @state() private densityHighlightIndex: number = -1;
-  @state() private filterQuery: FilterQuery = [];
-  @state() private filterActive = false;
-  // Last reliability state reflected across the control<->query mirror, PER
-  // eat-confidence column. Both directions compare against it so the forward
-  // (control->query) and reverse (query->control) paths can't ping-pong on an
-  // unchanged value (#6b). Keyed because a single shared scalar let a change on
-  // one base be de-duplicated against another base's threshold, silently
-  // dropping it or writing it onto the wrong annotation (#380).
-  private _lastMirroredState = new Map<string, EatReliabilityState>();
   @state() private _currentData: ProtspaceData | undefined;
   @state() private projectionHighlightIndex: number = -1;
 
@@ -157,7 +128,6 @@ export class ProtspaceControlBar extends LitElement {
   // re-attach of this element stacked another handler (and leaked the detached element).
   private _onAnnotationOpened = () => {
     this.showProjectionMenu = false;
-    this.showFilterMenu = false;
     this.showDensityMenu = false;
     // Close search when annotation opens
     this.shadowRoot
@@ -166,7 +136,6 @@ export class ProtspaceControlBar extends LitElement {
   };
   private _onSearchOpened = () => {
     this.showProjectionMenu = false;
-    this.showFilterMenu = false;
     this.showDensityMenu = false;
     // Close annotation when search opens
     this.shadowRoot
@@ -179,9 +148,8 @@ export class ProtspaceControlBar extends LitElement {
   /**
    * Close all dropdowns except the specified one
    */
-  private closeOtherDropdowns(except: 'projection' | 'filter' | 'density') {
+  private closeOtherDropdowns(except: 'projection' | 'density') {
     if (except !== 'projection') this.showProjectionMenu = false;
-    if (except !== 'filter') this.showFilterMenu = false;
     if (except !== 'density') this.showDensityMenu = false;
 
     // Close annotation dropdown via event
@@ -558,12 +526,6 @@ export class ProtspaceControlBar extends LitElement {
 
   public clearForNewDataset(): void {
     this._cancelPendingCommits();
-    // A new dataset has different protein ids, so any active filter is stale. Clear
-    // the badge/query here (the canonical per-dataset reset hook); the scatter plot's
-    // filter channel is reset in parallel by applyPlotState.
-    this.filterQuery = [];
-    this.filterActive = false;
-    this._lastMirroredState.clear();
   }
 
   render() {
@@ -859,64 +821,9 @@ export class ProtspaceControlBar extends LitElement {
                 `
               : ''}
           </div>
-
-          <!-- Filter / Export / Import group -->
-          <div class="data-actions-group">
-            <div class="filter-container right-controls-filter">
-              <button
-                class="dropdown-trigger ${this.showFilterMenu ? 'open' : ''} ${this.filterActive
-                  ? 'filter-active'
-                  : ''}"
-                @click=${this.toggleFilterMenu}
-                title="Filter Options"
-              >
-                <svg class="icon" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M3 5h18M6 12h12M10 19h4"
-                  />
-                </svg>
-                Filter
-                ${this.filterActive
-                  ? html`<span class="filter-badge">${this.filterQuery.length}</span>`
-                  : html`<svg class="chevron-down" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>`}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
-
-      ${this.showFilterMenu
-        ? html`
-            <div class="query-builder-overlay" @click=${this._handleOverlayClick}>
-              <div
-                class="query-builder-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Filter Query Builder"
-                @click=${(e: Event) => e.stopPropagation()}
-              >
-                <protspace-query-builder
-                  .annotations=${this._filterableAnnotations}
-                  .data=${this._currentData}
-                  .query=${this.filterQuery}
-                  @query-changed=${this._handleQueryChanged}
-                  @query-apply=${this._handleQueryApply}
-                  @query-reset=${this._handleQueryReset}
-                  @query-close=${this._handleQueryClose}
-                ></protspace-query-builder>
-              </div>
-            </div>
-          `
-        : ''}
     `;
-  }
-
-  private _handleOverlayClick() {
-    this.showFilterMenu = false;
   }
 
   connectedCallback() {
@@ -968,27 +875,13 @@ export class ProtspaceControlBar extends LitElement {
     this._pendingProjection = null;
   }
 
-  protected updated(changed: Map<string, unknown>): void {
-    // Switching the color-by annotation moves the legend reliability slider to the
-    // NEW base's threshold: re-derive from that base's eat-confidence condition and
-    // mirror it out. The value-compare guard inside keeps this from ping-ponging.
-    if (changed.has('selectedAnnotation')) {
-      this._emitEatThresholdMirror(true);
-    }
-  }
-
   private handleDocumentKeydown(event: KeyboardEvent) {
     const path = event.composedPath?.() ?? [];
     const inAriaModal = path.some(
       (n) => n instanceof HTMLElement && n.getAttribute('aria-modal') === 'true',
     );
-    if (inAriaModal) {
-      // ESC inside the filter modal closes the modal
-      if (event.key === 'Escape' && this.showFilterMenu) {
-        this.showFilterMenu = false;
-      }
-      return;
-    }
+    // A modal (the legend's dialogs, the figure editor) owns its own Escape.
+    if (inAriaModal) return;
 
     if (event.key === 'Escape') {
       // Top priority: close any open duplicate-badge spider on the scatter plot
@@ -1032,7 +925,6 @@ export class ProtspaceControlBar extends LitElement {
     // Check if click is inside ANY open dropdown menu
     const dropdownElements = [
       this.shadowRoot?.querySelector('.dropdown-menu.align-left'), // Projection
-      this.shadowRoot?.querySelector('.filter-menu'), // Filter
       this.shadowRoot?.querySelector('.density-container'), // Contours
       // Get annotation-select element
       this.shadowRoot?.querySelector('protspace-annotation-select'),
@@ -1049,7 +941,6 @@ export class ProtspaceControlBar extends LitElement {
     // Close ALL dropdowns if click is outside all dropdown menus
     if (!clickInsideDropdown) {
       // Close control-bar dropdowns
-      this.showFilterMenu = false;
       this.showProjectionMenu = false;
       this.projectionHighlightIndex = -1;
       this.showDensityMenu = false;
@@ -1145,8 +1036,8 @@ export class ProtspaceControlBar extends LitElement {
     } catch (e) {
       console.error(e);
     }
-    // Keep current data reference for query builder — use materialized (full) data
-    // so match count reflects the full dataset, not the isolated subset
+    // The annotation select's definitions and statistics read the materialized (full) data, so
+    // its badges describe the dataset, not the isolated subset.
     if (this._scatterplotElement) {
       const sp = this._scatterplotElement as ScatterplotElementLike;
       this._currentData = sp.getMaterializedData?.() ?? sp.getCurrentData?.();
@@ -1287,9 +1178,6 @@ export class ProtspaceControlBar extends LitElement {
     const fullAnnotationKeys = Object.keys(data.annotations || {}).filter(
       (a) => !TOOLTIP_ONLY_ANNOTATIONS.has(a),
     );
-    // The query-filter column picker can filter on the synthesized `__eat_confidence`
-    // columns (e.g. `EAT_confidence >= X or N/A`), but they're not meaningful to color by.
-    this._filterableAnnotations = fullAnnotationKeys;
     this.annotations = fullAnnotationKeys.filter(
       (key) => !isEatConfidenceAnnotation(data.annotations?.[key]),
     );
@@ -1420,234 +1308,6 @@ export class ProtspaceControlBar extends LitElement {
         ? mergeProteinSelections(this.selectedIdsChips, ids, distinct)
         : ids.slice(),
     );
-  }
-
-  private toggleFilterMenu(event?: Event) {
-    event?.stopPropagation();
-    const opening = !this.showFilterMenu;
-    this.showFilterMenu = opening;
-    if (opening) {
-      this.closeOtherDropdowns('filter');
-      // Refresh current data for the query builder — use materialized (full) data
-      // so match count reflects the full dataset, not the isolated subset
-      if (this._scatterplotElement) {
-        const sp = this._scatterplotElement as ScatterplotElementLike;
-        this._currentData = sp.getMaterializedData?.() ?? sp.getCurrentData?.();
-      }
-      // Seed with one empty condition so the user sees a row immediately
-      if (this.filterQuery.length === 0) {
-        this.filterQuery = [createCondition()];
-      }
-    }
-  }
-
-  private _handleQueryClose() {
-    this.showFilterMenu = false;
-  }
-
-  private _handleQueryChanged(e: CustomEvent<{ query: FilterQuery }>) {
-    this.filterQuery = e.detail.query;
-    // Reverse mirror (#6b): when the user edits the query directly, keep the
-    // legend reliability slider in sync with any `EAT_confidence >= X or N/A` condition.
-    this._emitEatThresholdMirror();
-  }
-
-  private _handleQueryApply(e: CustomEvent<{ matchedIndices: Set<number> }>) {
-    this._applyMatchedIndices(e.detail.matchedIndices);
-    this.showFilterMenu = false;
-  }
-
-  /**
-   * Apply a set of matched indices through the scatter plot's dedicated,
-   * idempotent filter channel. matchedIndices are positions in the exact array
-   * the query was evaluated against — `_currentData`, the full materialized
-   * snapshot handed to the query builder. Mapping through any other array (e.g.
-   * getCurrentData(), the isolated subset) mis-resolves the indices and shrank
-   * the result on every re-apply (#257). A filter is not a selection and not an
-   * isolation, so re-applying the same query is a no-op rather than stacking
-   * isolation layers.
-   */
-  private _applyMatchedIndices(matchedIndices: Set<number>) {
-    if (!this._scatterplotElement) return;
-    const sp = this._scatterplotElement as ScatterplotElementLike;
-    const proteinIds = this._currentData?.protein_ids;
-    if (!proteinIds) return;
-
-    // One pass, no intermediates: at Swiss-Prot scale the `Array.from -> map -> filter`
-    // chain allocated three arrays of up to N ids for what is one lookup per index,
-    // and this runs on every slider commit.
-    const matchedIds: string[] = [];
-    for (const index of matchedIndices) {
-      const id = proteinIds[index];
-      if (id !== undefined) matchedIds.push(id);
-    }
-
-    // A query that matches nothing used to be pushed as an ACTIVE filter, which
-    // blanked the canvas: `DataViews.filterSet()` reads an empty
-    // `filteredProteinIds` as "nothing is visible". Reaching that state was easy —
-    // a self-contradicting pair of conditions — and there was no way back, because
-    // Apply is disabled and Cancel does not revert. Leave the plot as it is
-    // instead; the query builder still reports the 0 count (#380).
-    if (matchedIds.length === 0) {
-      this._clearFilterChannel(sp);
-      return;
-    }
-
-    sp.filteredProteinIds = matchedIds;
-    sp.filtersActive = true;
-    this.filterActive = true;
-  }
-
-  /**
-   * Evaluate the current `filterQuery` and push the result through the filter
-   * channel — the same path `_handleQueryApply` runs, but sourcing the matched
-   * indices from the evaluator rather than a query-builder event. When no
-   * configured condition remains (e.g. the reliability slider was dragged back to
-   * 0 and its condition removed), clear the filter channel so all points return.
-   */
-  private _applyQuery() {
-    if (!this._scatterplotElement) return;
-    const data = this._currentData;
-    if (!data) return;
-    const sp = this._scatterplotElement as ScatterplotElementLike;
-
-    if (!hasConfiguredCondition(this.filterQuery)) {
-      this._clearFilterChannel(sp);
-      return;
-    }
-
-    this._applyMatchedIndices(evaluateQuery(this.filterQuery, data));
-  }
-
-  /**
-   * Release the filter channel so every protein returns, leaving isolation alone.
-   *
-   * Only writes when something is actually set. `filteredProteinIds` is an Array
-   * property compared by identity, so assigning a fresh `[]` over an already-empty
-   * one still marks the plot dirty and triggers a full geometry rebuild plus a
-   * `data-change` round trip through the legend's population counts — an O(N) pass
-   * over every protein for a no-op.
-   */
-  private _clearFilterChannel(sp: ScatterplotElementLike): void {
-    if (sp.filtersActive || (sp.filteredProteinIds?.length ?? 0) > 0) {
-      sp.filteredProteinIds = [];
-      sp.filtersActive = false;
-    }
-    this.filterActive = false;
-  }
-
-  /**
-   * Scalar entry point for the reliability filter, kept as the published component's
-   * back-compat surface: "hide below `x`" is `atLeast` with no upper bound, and
-   * `x <= 0` constrains nothing and so removes the condition. `setEatReliability`
-   * does the resync, the column lookup and the apply.
-   */
-  public setEatConfidenceThreshold(baseKey: string, x: number): void {
-    // No clamping here: `conditionsForReliability` normalizes the state it is handed,
-    // and the raw request is never stored.
-    this.setEatReliability(baseKey, { mode: 'atLeast', min: x, max: NEUTRAL_BOUND.max });
-  }
-
-  /**
-   * Forward mirror, generalised (#380). The control owns the reliability condition
-   * for one base annotation and replaces it wholesale on every change, at any depth
-   * in the query. It used to pattern-match a single fixed shape at the top level, so
-   * a hand-built condition with a different operator, or one nested in a group, was
-   * invisible — and a change appended a second, contradictory condition beside it.
-   */
-  public setEatReliability(baseKey: string, state: EatReliabilityState): void {
-    // Resync `_currentData` from the plot's materialized snapshot first: on a
-    // dataset switch the seed can fire before the data-change event refreshes it,
-    // and a stale snapshot would map matched indices against the previous dataset.
-    if (this._scatterplotElement) {
-      const sp = this._scatterplotElement as ScatterplotElementLike;
-      this._currentData = sp.getMaterializedData?.() ?? sp.getCurrentData?.() ?? this._currentData;
-    }
-
-    const key = this._findEatConfidenceAnnotationKey(baseKey);
-    if (!key) return;
-
-    const existing = findConditionsForAnnotation(this.filterQuery, key);
-    // A reliability state is one un-negated condition, or none at all.
-    const nextConditions = conditionsForReliability(key, state, existing[0]?.id);
-    const [replacement = null] = nextConditions;
-
-    // Record what the query will READ BACK as, not what was requested. The reverse
-    // mirror compares this against `reliabilityFromConditions`, and state -> conditions
-    // is not injective: `atMost 0..1` emits nothing and reads back as the `atLeast`
-    // default. Storing the request made the two disagree, so an unrelated edit in the
-    // filter dialog fired a spurious mirror that snapped the mode select back.
-    //
-    // Written BEFORE the de-dupe guard below. A mode picked before its bound —
-    // "Hide above" while the upper bound is still 1 — constrains nothing, so the guard
-    // returns early; skipping the record left the reverse mirror with no entry for this
-    // column, and a missing entry used to mean "emit unconditionally", which snapped the
-    // mode select back to "Hide below" on the next unrelated edit in the filter dialog.
-    this._lastMirroredState.set(key, reliabilityFromConditions(nextConditions));
-
-    // Guard, scoped to THIS base: the query already expresses this state, so
-    // re-applying would be redundant and could ping-pong with the reverse mirror.
-    // Compare the CONDITIONS, not the states they derive from — see `sameConditions`.
-    if (sameConditions(existing, nextConditions)) return;
-
-    this.filterQuery = replaceConditionsForAnnotation(this.filterQuery, key, replacement);
-    this._applyQuery();
-  }
-
-  /**
-   * Reverse mirror: tell the legend what the query says for the SELECTED base.
-   *
-   * `force` is set when the selected annotation changed. The control is then
-   * showing the PREVIOUS base's position and must be repositioned even if this
-   * base's state is unchanged since the control bar last wrote it — the de-dupe
-   * guard exists only to stop the two directions ping-ponging within one base.
-   */
-  private _emitEatThresholdMirror(force = false): void {
-    const key = this._findEatConfidenceAnnotationKey(this.selectedAnnotation);
-    if (!key) return;
-    // Conditions are matched by their column, not by their shape, which is what lets
-    // every operator mirror — including one the user built by hand, at any depth.
-    const derived = reliabilityFromConditions(findConditionsForAnnotation(this.filterQuery, key));
-    // No record yet means nothing has moved this column off its resting position, so
-    // that is what the legend is already showing. Treating a missing entry as "emit
-    // unconditionally" instead made every first query edit push the `atLeast` default
-    // onto a control the user may have already set to another mode.
-    const last = this._lastMirroredState.get(key) ?? DEFAULT_EAT_RELIABILITY;
-    if (!force && isSameReliability(last, derived)) return;
-    this._lastMirroredState.set(key, derived);
-    this.dispatchEvent(
-      new CustomEvent('eat-threshold-mirror', {
-        detail: { state: derived, value: derived.min },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  /** The eat-confidence column key whose runtime base is `baseKey`, if any. */
-  private _findEatConfidenceAnnotationKey(baseKey: string): string | undefined {
-    const annotations = this._currentData?.annotations;
-    if (!annotations) return undefined;
-    for (const [key, annotation] of Object.entries(annotations)) {
-      if (isEatConfidenceAnnotation(annotation) && annotation.runtime?.baseAnnotation === baseKey) {
-        return key;
-      }
-    }
-    return undefined;
-  }
-
-  private _handleQueryReset() {
-    if (!this._scatterplotElement) return;
-    const sp = this._scatterplotElement as ScatterplotElementLike;
-    // Clear only the filter channel; any manual isolation the user created
-    // independently of the filter is left untouched.
-    this._clearFilterChannel(sp);
-
-    this.filterQuery = [createCondition()];
-    // A full reset drops any reliability condition too, so pull the legend slider
-    // back to 0 via the reverse mirror.
-    this._emitEatThresholdMirror();
-    // Do NOT close popover -- user may want to start a new query
   }
 }
 

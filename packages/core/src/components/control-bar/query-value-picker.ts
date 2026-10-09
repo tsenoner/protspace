@@ -10,6 +10,7 @@ import { isNAValue } from '@protspace/utils';
 import { displayFilterValue } from './query-presence';
 import { queryBuilderStyles } from './query-builder.styles';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
+import { pushLayer } from '../kit/layers';
 
 /**
  * One dataset walk's worth of tallies: the per-value counts plus the two
@@ -61,6 +62,9 @@ class ProtspaceQueryValuePicker extends LitElement {
     full: Map<string, number> | undefined;
   } | null = null;
 
+  /** Releases this picker's layer; set while it is open. */
+  private _releaseLayer?: () => void;
+
   willUpdate(changed: Map<string, unknown>) {
     if (
       changed.has('data') ||
@@ -98,15 +102,29 @@ class ProtspaceQueryValuePicker extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     document.removeEventListener('click', this._handleDocumentClick, true);
+    this._releaseLayer?.();
+    this._releaseLayer = undefined;
   }
 
   // ─── Auto-focus on open ───────────────────────────────────────────────────
 
   updated(changedProperties: Map<string, unknown>) {
-    if (changedProperties.has('open') && this.open) {
+    if (!changedProperties.has('open')) return;
+    if (this.open) {
+      // A layer while open, so Escape closes this picker before the dialog it sits in. Outside
+      // clicks keep closing it through _handleDocumentClick.
+      this._releaseLayer ??= pushLayer({
+        close: () =>
+          this.dispatchEvent(new CustomEvent('picker-close', { bubbles: true, composed: true })),
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
       this.updateComplete.then(() => {
         this._inputEl?.focus();
       });
+    } else {
+      this._releaseLayer?.();
+      this._releaseLayer = undefined;
     }
   }
 

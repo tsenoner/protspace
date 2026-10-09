@@ -292,13 +292,13 @@ export const importMenu = (page: Page): Locator => page.locator('#myImportMenu')
 /** The element that holds the Export panel. */
 export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu');
 
-/** The Filter button; its accessible name starts with "Filter" (and shows the condition count). */
+/** The view bar's Filter button; its name reads "Filter" or "Filter, N conditions applied". */
 export const filterButton = (page: Page): Locator =>
   viewBar(page).getByRole('button', { name: /^Filter/ });
 
-/** The open filter dialog. */
+/** The Filter dialog (`ps-dialog` headed "Filter"). */
 export const filterDialog = (page: Page): Locator =>
-  page.getByRole('dialog', { name: 'Filter Query Builder' });
+  page.getByRole('dialog', { name: 'Filter', exact: true });
 
 export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
 
@@ -343,17 +343,13 @@ export async function openExportMenu(page: Page): Promise<void> {
   await expect(png).toBeVisible();
 }
 
-/** Opens the filter dialog unless it is open; resolves once it shows. */
+/** Opens the Filter dialog, unless it is open already. */
 export async function openFilter(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  if (
-    await filterDialog(page)
-      .isVisible()
-      .catch(() => false)
-  )
-    return;
+  const dialog = filterDialog(page);
+  if (await dialog.isVisible().catch(() => false)) return;
   await filterButton(page).click();
-  await expect(filterDialog(page)).toBeVisible();
+  await expect(dialog).toBeVisible();
 }
 
 /**

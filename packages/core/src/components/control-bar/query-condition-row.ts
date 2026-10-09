@@ -7,6 +7,7 @@ import type { ProtspaceData } from './types';
 import { filterGroupedAnnotations, flattenGroupedAnnotations } from './annotation-categories';
 import { renderAnnotationName } from './annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
+import { pushLayer } from '../kit/layers';
 import { isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 import { renderValueChip } from './query-presence';
@@ -39,6 +40,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _valuePickerPos = { top: 0, left: 0 };
 
   @litQuery('.annotation-picker-input') private _annotationInputEl?: HTMLInputElement;
+  /** Releases the annotation picker's layer; set while the picker is shown. */
+  private _releasePickerLayer?: () => void;
 
   // ─── Click-outside detection ──────────────────────────────────────────────
 
@@ -56,15 +59,27 @@ class ProtspaceQueryConditionRow extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     document.removeEventListener('click', this._handleDocumentClick, true);
+    this._releasePickerLayer?.();
+    this._releasePickerLayer = undefined;
   }
 
   // ─── Auto-focus annotation picker input ───────────────────────────────────
 
   updated(changedProperties: Map<string, unknown>) {
-    if (changedProperties.has('_showAnnotationPicker') && this._showAnnotationPicker) {
+    if (!changedProperties.has('_showAnnotationPicker')) return;
+    if (this._showAnnotationPicker) {
+      // A layer while shown, so Escape closes the picker before the dialog it sits in.
+      this._releasePickerLayer ??= pushLayer({
+        close: () => this._closeAnnotationPicker(),
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
       this.updateComplete.then(() => {
         this._annotationInputEl?.focus();
       });
+    } else {
+      this._releasePickerLayer?.();
+      this._releasePickerLayer = undefined;
     }
   }
 

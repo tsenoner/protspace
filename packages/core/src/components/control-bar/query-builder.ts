@@ -1,4 +1,4 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
@@ -18,12 +18,17 @@ import './query-condition-row';
  * - `query-reset`   — dispatched when "Reset All" is clicked
  */
 @customElement('protspace-query-builder')
-class ProtspaceQueryBuilder extends LitElement {
+export class ProtspaceQueryBuilder extends LitElement {
   static styles = [queryBuilderStyles, queryBuilderHostStyles];
 
   @property({ type: Array }) annotations: string[] = [];
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   @property({ type: Array }) query: FilterQuery = [];
+  /**
+   * Hosted by a dialog that brings its own heading, close button and Escape (the app's Filter
+   * dialog): the builder then shows neither its title nor its close button, and ignores Escape.
+   */
+  @property({ type: Boolean, reflect: true }) embedded = false;
 
   @state() private _matchedIndices: Set<number> = new Set();
   @state() private _excludedMatchMap: Map<string, Set<number>> = new Map();
@@ -34,7 +39,9 @@ class ProtspaceQueryBuilder extends LitElement {
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   private _onKeydown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    // Embedded, the dialog owns Escape (through the layer stack); a document listener here would
+    // dispatch query-close for every Escape on the page.
+    if (e.key === 'Escape' && !this.embedded) {
       this._handleClose();
     }
   };
@@ -275,18 +282,20 @@ class ProtspaceQueryBuilder extends LitElement {
     return html`
       <div class="query-builder">
         <div class="query-header">
-          <span>Filter Query</span>
+          ${this.embedded ? nothing : html`<span>Filter Query</span>`}
           <span class="match-count">
             ${this._matchedIndices.size} of ${this._totalCount} proteins matched
           </span>
-          <button
-            class="btn-close"
-            title="Close"
-            aria-label="Close filter query builder"
-            @click=${this._handleClose}
-          >
-            ${renderCloseIcon()}
-          </button>
+          ${this.embedded
+            ? nothing
+            : html`<button
+                class="btn-close"
+                title="Close"
+                aria-label="Close filter query builder"
+                @click=${this._handleClose}
+              >
+                ${renderCloseIcon()}
+              </button>`}
         </div>
 
         <div class="query-conditions">

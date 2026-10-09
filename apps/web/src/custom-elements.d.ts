@@ -76,6 +76,13 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-query-builder': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          id?: string;
+          embedded?: boolean;
+        },
+        HTMLElement
+      >;
       'protspace-scatterplot': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;

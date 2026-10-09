@@ -187,3 +187,44 @@ describe('query-builder removal normalizes the new first item operator', () => {
     expect(result[0].logicalOp).toBe('NOT');
   });
 });
+
+describe('query-builder embedded in a dialog', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function mountEmbedded(): Promise<QueryBuilderInternals & { embedded: boolean }> {
+    const builder = document.createElement('protspace-query-builder') as QueryBuilderInternals & {
+      embedded: boolean;
+    };
+    builder.embedded = true;
+    builder.annotations = ['organism'];
+    builder.data = makeData();
+    builder.query = [createCondition()];
+    document.body.appendChild(builder);
+    await builder.updateComplete;
+    return builder;
+  }
+
+  it('embedded hides the title and close button and keeps the match count', async () => {
+    const builder = await mountEmbedded();
+    const root = builder.shadowRoot!;
+
+    expect(builder.hasAttribute('embedded')).toBe(true);
+    expect(root.querySelector('.query-header')!.textContent).not.toContain('Filter Query');
+    expect(root.querySelector('.btn-close')).toBeNull();
+    expect(root.querySelector('.match-count')).not.toBeNull();
+    // The footer stays: Reset All, Cancel and Apply Filter.
+    expect(root.querySelector('.query-footer-reset')).not.toBeNull();
+  });
+
+  it('embedded leaves Escape to the dialog that hosts it', async () => {
+    const builder = await mountEmbedded();
+    const onClose = vi.fn();
+    builder.addEventListener('query-close', onClose);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

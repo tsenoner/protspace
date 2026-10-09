@@ -19,7 +19,8 @@
  *
  * These tests lock in current behaviour, including quirks.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { pushLayer, topLayer } from '../kit/layers';
 import './query-value-picker';
 import type { FilterQuery, LogicalOp } from './query-types';
 import { ANY_VALUE } from './query-types';
@@ -729,5 +730,30 @@ describe('query-value-picker', () => {
       (el.shadowRoot!.querySelector('.value-picker-input') as HTMLElement).click();
       expect(closed).toBe(false);
     });
+  });
+});
+
+describe('query-value-picker inside a dialog', () => {
+  it('an open picker is a layer, so Escape closes it before the dialog around it', async () => {
+    const dialogClose = vi.fn();
+    const releaseDialog = pushLayer({ close: dialogClose, elements: [] });
+    const el = await mount({ open: false });
+    const onClose = vi.fn();
+    el.addEventListener('picker-close', onClose);
+
+    el.open = true;
+    await el.updateComplete;
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(dialogClose).not.toHaveBeenCalled();
+
+    // The owner closes it on picker-close; the dialog is the top layer again.
+    el.open = false;
+    await el.updateComplete;
+    expect(topLayer()?.close).toBe(dialogClose);
+    releaseDialog();
   });
 });

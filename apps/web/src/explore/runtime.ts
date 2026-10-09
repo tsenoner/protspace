@@ -9,6 +9,7 @@ import { createDatasetController } from './dataset-controller';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
 import type { ExploreControls } from './explore-controls';
+import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { createLifecycle } from './lifecycle';
@@ -61,9 +62,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     controlBar,
     dataLoader,
     exportMenu,
+    filterButton,
+    filterDialog,
     importMenu,
     legendElement,
     plotElement,
+    queryBuilder,
     structureViewer,
   } = elements;
   const lifecycle = createLifecycle();
@@ -285,12 +289,23 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     structureViewer,
   });
 
+  const filterController = createFilterController({
+    plotElement,
+    legendElement,
+    queryBuilder,
+    dialog: filterDialog,
+    root: document,
+  });
+  lifecycle.addCleanup(() => filterController.dispose());
+  addTrackedEventListener(lifecycle, filterButton, 'click', () => filterController.open());
+
   // The dataset pipeline's one seam to the controls (explore-controls.ts). Until the control bar
   // is split up, most of it is still the control bar.
   const controls: ExploreControls = {
     resetForNewDataset() {
       controlBar.clearForNewDataset();
       exportMenu.reset();
+      filterController.resetForNewDataset();
     },
     setHasFileSettings(value) {
       exportMenu.hasFileSettings = value;
@@ -302,6 +317,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       controlBar.selectionMode = false;
       controlBar.selectedProteinsCount = 0;
       controlBar.requestUpdate();
+      filterController.setSelectedAnnotation(view.annotation);
     },
     setRendering(rendering) {
       controlBar.autoSync = !rendering;
@@ -383,13 +399,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'legend-error',
     interactionController.handleLegendError,
   );
-  // Two-way reliability mirror (#6b): the legend control drives the shared
-  // `EAT_confidence >= x or N/A` query filter on the control bar, and a direct edit of
-  // that filter pulls the control back. Each direction guards on the reliability
-  // state, keyed per eat-confidence column, so they can't ping-pong.
+  // The legend's reliability control drives the shared `EAT_confidence >= x or N/A` filter
+  // condition; the filter controller moves the control back when the query changes (#6b).
   addTrackedEventListener(lifecycle, legendElement, 'eat-overlay-change', (event: Event) => {
-    // The full state (mode + both bounds) is what reaches the query — the scalar
-    // threshold alone cannot express "hide above" or "keep between".
+    // The full state (mode + both bounds) reaches the query: the scalar threshold alone cannot
+    // express "hide above" or "keep between".
     const { reliability } = (
       event as CustomEvent<{
         enabled: boolean;
@@ -397,11 +411,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         reliability: EatReliabilityState;
       }>
     ).detail;
-    controlBar.setEatReliability(legendElement.selectedAnnotation, reliability);
-  });
-  addTrackedEventListener(lifecycle, controlBar, 'eat-threshold-mirror', (event: Event) => {
-    const { state } = (event as CustomEvent<{ value: number; state: EatReliabilityState }>).detail;
-    legendElement.setReliabilityState(state);
+    filterController.setEatReliability(legendElement.selectedAnnotation, reliability);
   });
   addTrackedEventListener(
     lifecycle,

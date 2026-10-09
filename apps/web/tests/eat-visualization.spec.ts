@@ -344,7 +344,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
   await expect.poll(plotFiltersActive).toBe(false);
-  await expect(filterButton(page)).not.toHaveClass(/filter-active/);
+  await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // Raising the threshold drives the shared `EAT_confidence >= x or N/A` filter, which
@@ -352,7 +352,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await thresholdPercent.fill('99');
   await expect(threshold).toHaveValue('0.99');
   await expect.poll(plotFiltersActive).toBe(true);
-  await expect(filterButton(page)).toHaveClass(/filter-active/);
+  await expect(filterButton(page)).toHaveAccessibleName('Filter, 1 condition applied');
   await expect.poll(predictedVisibleCount).toBeLessThan(213);
 
   // Dragging back to 0 removes the condition and restores every prediction.
@@ -360,7 +360,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
   await expect.poll(plotFiltersActive).toBe(false);
-  await expect(filterButton(page)).not.toHaveClass(/filter-active/);
+  await expect(filterButton(page)).toHaveAccessibleName('Filter');
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // The info popover explains predictions are filtered out while curated stays.

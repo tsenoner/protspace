@@ -283,3 +283,24 @@
 [data-workbench='app-bar-actions'] > .wb-separator {
   margin-inline: var(--ps-space-1);
 }
+
+/* Filter (Task 2.6): the count of applied conditions beside the label. */
+.wb-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent-tint);
+  color: var(--ps-accent-text);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-icon {
+  display: inline-flex;
+}

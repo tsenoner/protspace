@@ -501,4 +501,9 @@ export const queryBuilderHostStyles = css`
     width: 100%;
     height: 100%;
   }
+
+  /* Embedded in the app's Filter dialog, whose body already pads its content. */
+  :host([embedded]) .query-builder {
+    padding: 0;
+  }
 `;

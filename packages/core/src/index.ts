@@ -3,6 +3,20 @@ export * from './components/scatter-plot/scatter-plot';
 export * from './components/legend/legend';
 export * from './components/structure-viewer/structure-viewer';
 export { ProtspaceControlBar } from './components/control-bar/control-bar'; // Explicit export for value access
+// The filter's query builder and its pure query helpers; the app's filter controller drives them.
+export { ProtspaceQueryBuilder } from './components/control-bar/query-builder';
+export { createCondition } from './components/control-bar/query-types';
+export type { FilterQuery } from './components/control-bar/query-types';
+export { evaluateQuery, hasConfiguredCondition } from './components/control-bar/query-evaluate';
+export {
+  findConditionsForAnnotation,
+  replaceConditionsForAnnotation,
+} from './components/control-bar/query-annotation-conditions';
+export {
+  conditionsForReliability,
+  reliabilityFromConditions,
+  sameConditions,
+} from './components/control-bar/eat-reliability';
 export { ProtspaceImportMenu } from './components/import-menu/import-menu';
 export { ProtspaceExportMenu, type ExportEventDetail } from './components/export-menu/export-menu';
 export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';

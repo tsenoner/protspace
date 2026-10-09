@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { FilterControl } from './FilterControl';
 
 /**
  * How the plot is drawn (design decision 1). It hosts the control bar until Tasks 2.5–2.10 split it
@@ -14,6 +15,7 @@ export const ViewBar = memo(function ViewBar() {
         auto-sync="true"
         scatterplot-selector="#myPlot"
       ></protspace-control-bar>
+      <FilterControl />
     </div>
   );
 });

@@ -7,9 +7,15 @@ export interface WorkbenchStatus {
   datasetName: string | null;
   /** Its protein count; null before a load. */
   proteinCount: number | null;
+  /** Top-level conditions of the applied filter; 0 while no filter is applied. */
+  appliedFilterConditions: number;
 }
 
-const EMPTY: WorkbenchStatus = { datasetName: null, proteinCount: null };
+const EMPTY: WorkbenchStatus = {
+  datasetName: null,
+  proteinCount: null,
+  appliedFilterConditions: 0,
+};
 
 let status: WorkbenchStatus = EMPTY;
 const listeners = new Set<() => void>();
