@@ -11,7 +11,8 @@ import { projectionSelectStyles } from './projection-select.styles';
 /**
  * The view bar's Projection picker (design decision 9): a ghost key/value trigger over a menu of
  * radio items. A pick shows at once and reaches listeners as `projection-change` after the next
- * paint, because a switch moves every point; `applySelection` applies at once.
+ * paint, because a switch moves every point; `applySelection` applies at once. Re-picking the
+ * committed projection dispatches nothing.
  *
  * @fires projection-change - `{ projection: string }`, bubbling and composed.
  */
@@ -100,6 +101,11 @@ export class ProtspaceProjectionSelect extends LitElement {
     event.stopPropagation();
     const { value } = (event as CustomEvent<{ value: string }>).detail;
     this.open = false;
+    // Re-picking the committed value changes nothing, and drops a pick still waiting.
+    if (value === this.selectedProjection) {
+      this.cancelPending();
+      return;
+    }
     this.pending = value;
     this.commit.schedule(() => this.applySelection(value));
   };

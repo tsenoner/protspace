@@ -408,6 +408,20 @@ describe('protspace-annotation-select picks', () => {
     expect(el.selectedAnnotation).not.toBe('pfam');
   });
 
+  it('re-picking the annotation on screen dispatches nothing and drops a waiting pick', async () => {
+    const el = await setup();
+    const changed = vi.fn();
+    el.addEventListener('annotation-change', changed);
+
+    await pick(el, 'species'); // waits for the paint
+    const label = await pick(el, 'pfam'); // back to the committed one before it
+    await afterNextPaint();
+
+    expect(changed).not.toHaveBeenCalled();
+    expect(el.selectedAnnotation).toBe('pfam');
+    expect(shown(el)).toBe(label);
+  });
+
   it('applies only the last of several picks made before the paint', async () => {
     const el = await setup();
     const changed = vi.fn();

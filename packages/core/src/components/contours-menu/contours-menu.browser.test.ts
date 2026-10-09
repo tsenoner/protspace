@@ -89,6 +89,39 @@ describe('protspace-contours-menu', () => {
     expect((onChange.mock.calls[0][0] as CustomEvent).detail).toEqual({ densityLayer: 'on' });
   });
 
+  it('re-picking the mode on screen dispatches nothing and drops a waiting pick', async () => {
+    const el = await mount();
+    const onChange = vi.fn();
+    el.addEventListener('density-layer-change', onChange);
+    await openMenu(el);
+    items(el)[2].click(); // Always waits for the paint
+    items(el)[0].click(); // back to Off before it, as a quick second pick
+    await el.updateComplete;
+    await afterNextPaint();
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(el.densityLayer).toBe('off');
+    expect(shownValue(el)).toBe('Off');
+    expect(menu(el).open).toBe(false);
+  });
+
+  it('cancelPending shows the committed mode again', async () => {
+    const el = await mount();
+    const onChange = vi.fn();
+    el.addEventListener('density-layer-change', onChange);
+    el.pick('auto');
+    el.cancelPending();
+    await el.updateComplete;
+    await afterNextPaint();
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(shownValue(el)).toBe('Off');
+    // Off is committed, so a pick of Auto is a change again.
+    el.pick('auto');
+    await afterNextPaint();
+    expect(onChange).toHaveBeenCalledOnce();
+  });
+
   it('applySelection changes the value without an event', async () => {
     const el = await mount();
     const onChange = vi.fn();

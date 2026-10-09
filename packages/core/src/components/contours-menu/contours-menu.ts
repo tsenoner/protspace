@@ -23,7 +23,8 @@ export interface DensityLayerChangeDetail {
 /**
  * The view bar's Contours picker (design decision 9). A pick shows at once and reaches listeners
  * as `density-layer-change` after the next paint, because drawing the contours costs a frame;
- * `applySelection` sets the mode from outside without an event.
+ * `applySelection` sets the mode from outside without an event. Re-picking the committed mode
+ * dispatches nothing.
  *
  * @fires density-layer-change - `DensityLayerChangeDetail`, bubbling and composed.
  */
@@ -39,29 +40,45 @@ export class ProtspaceContoursMenu extends LitElement {
   @query('ps-menu') private menu!: PsMenu;
   private readonly commit = new AfterPaintCommit();
 
-  /** A user's pick made from code (the view bar's More menu): shows at once, dispatches after the paint. */
+  /** The mode committed before a pick still waiting; null when none waits. */
+  private committedBeforePick: DensityLayerMode | null = null;
+
+  /**
+   * A user's pick made from code (the view bar's More menu): shows at once, dispatches after the
+   * paint. Re-picking the committed mode dispatches nothing and drops a pick still waiting.
+   */
   pick(mode: DensityLayerMode): void {
+    const committed = this.committedBeforePick ?? this.densityLayer;
+    if (mode === committed) {
+      this.cancelPending();
+      return;
+    }
+    this.committedBeforePick = committed;
     this.densityLayer = mode;
-    this.commit.schedule(() =>
+    this.commit.schedule(() => {
+      this.committedBeforePick = null;
       this.dispatchEvent(
         new CustomEvent<DensityLayerChangeDetail>('density-layer-change', {
           detail: { densityLayer: mode },
           bubbles: true,
           composed: true,
         }),
-      ),
-    );
+      );
+    });
   }
 
   /** Sets the mode from outside (the URL) at once, without an event, dropping a pick still waiting. */
   applySelection(mode: DensityLayerMode): void {
     this.commit.cancel();
+    this.committedBeforePick = null;
     this.densityLayer = mode;
   }
 
-  /** Drops a pick still waiting, as a new dataset does. */
+  /** Drops a pick still waiting, as a new dataset does, and shows the committed mode again. */
   cancelPending(): void {
     this.commit.cancel();
+    if (this.committedBeforePick !== null) this.densityLayer = this.committedBeforePick;
+    this.committedBeforePick = null;
   }
 
   disconnectedCallback(): void {

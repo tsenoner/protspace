@@ -75,6 +75,22 @@ describe('protspace-projection-select', () => {
     expect((onChange.mock.calls[0][0] as CustomEvent).detail).toEqual({ projection: 'PCA' });
   });
 
+  it('re-picking the projection on screen dispatches nothing and drops a waiting pick', async () => {
+    const el = await mount();
+    const onChange = vi.fn();
+    el.addEventListener('projection-change', onChange);
+    await openMenu(el);
+    items(el)[1].click(); // PCA waits for the paint
+    items(el)[0].click(); // back to UMAP before it, as a quick second pick
+    await el.updateComplete;
+    await afterNextPaint();
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(el.selectedProjection).toBe('UMAP');
+    expect(shownValue(el)).toBe('UMAP');
+    expect(menu(el).open).toBe(false);
+  });
+
   it('applySelection dispatches at once and drops a waiting pick', async () => {
     const el = await mount();
     const onChange = vi.fn();

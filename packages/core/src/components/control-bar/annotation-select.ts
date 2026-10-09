@@ -187,10 +187,13 @@ export class ProtspaceAnnotationSelect extends LitElement {
 
   /** A user's pick: shown at once, committed after the next paint (the newest pick wins). */
   private selectAnnotation(annotation: string, event?: Event) {
-    if (event) {
-      event.stopPropagation();
-    }
+    event?.stopPropagation();
     this.closeList();
+    // Re-picking the committed annotation changes nothing, and drops a pick still waiting.
+    if (annotation === this.selectedAnnotation) {
+      this.cancelPending();
+      return;
+    }
     this.pending = annotation;
     this.commit.schedule(() => this.applySelection(annotation));
   }
