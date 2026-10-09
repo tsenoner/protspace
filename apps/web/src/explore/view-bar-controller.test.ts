@@ -111,20 +111,10 @@ function setup(data = makeData()) {
   };
 }
 
-/**
- * As the DOM delivers a bubbling, composed event: on the picker, then on the document, unless a
- * listener on the picker stopped its propagation.
- */
+/** As the DOM delivers a bubbling, composed event: on the picker, then on the document. */
 function bubble(target: EventTarget, root: EventTarget, type: string, detail: unknown): void {
-  const event = new CustomEvent(type, { detail });
-  let stopped = false;
-  const stopPropagation = event.stopPropagation.bind(event);
-  event.stopPropagation = () => {
-    stopped = true;
-    stopPropagation();
-  };
-  target.dispatchEvent(event);
-  if (!stopped) root.dispatchEvent(new CustomEvent(type, { detail }));
+  target.dispatchEvent(new CustomEvent(type, { detail }));
+  root.dispatchEvent(new CustomEvent(type, { detail }));
 }
 
 describe('deriveViewOptions', () => {
@@ -234,7 +224,7 @@ describe('createViewBarController', () => {
     expect(m.onUserChange).toHaveBeenCalledWith('density');
   });
 
-  it('a pick of the value the plot already shows changes nothing and stops at the picker', () => {
+  it('a picker event for the value the plot already shows changes nothing', () => {
     const m = setup();
     // Record every write to the plot: an equal write still re-renders (a new config object) or
     // re-syncs the legend and the URL through the change events.
@@ -249,17 +239,18 @@ describe('createViewBarController', () => {
         },
       });
     }
-    const heardOnRoot = vi.fn();
-    m.root.addEventListener('projection-change', heardOnRoot);
-    m.root.addEventListener('annotation-change', heardOnRoot);
-    m.root.addEventListener('density-layer-change', heardOnRoot);
 
-    bubble(m.projectionSelect, m.root, 'projection-change', { projection: 'UMAP' });
-    bubble(m.annotationSelect, m.root, 'annotation-change', { annotation: 'family' });
-    bubble(m.contoursMenu, m.root, 'density-layer-change', { densityLayer: 'off' });
+    m.projectionSelect.dispatchEvent(
+      new CustomEvent('projection-change', { detail: { projection: 'UMAP' } }),
+    );
+    m.annotationSelect.dispatchEvent(
+      new CustomEvent('annotation-change', { detail: { annotation: 'family' } }),
+    );
+    m.contoursMenu.dispatchEvent(
+      new CustomEvent('density-layer-change', { detail: { densityLayer: 'off' } }),
+    );
 
     expect(writes).toEqual([]);
-    expect(heardOnRoot).not.toHaveBeenCalled();
     expect(m.interactionController.handleAnnotationChange).not.toHaveBeenCalled();
     expect(m.onUserChange).not.toHaveBeenCalled();
   });

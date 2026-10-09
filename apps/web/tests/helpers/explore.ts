@@ -400,15 +400,21 @@ async function waitForViewState(
 
 /**
  * Click a picker's menu item and wait until the pick is applied. A picker applies a pick after the
- * next paint and then dispatches `event` (composed), also when the pick re-selects the current
- * value and so changes no state a test could wait for. Heard in the capture phase: the view-bar
- * controller stops a re-pick of the current value at its picker, before it bubbles.
+ * next paint and then dispatches `event` (composed). Re-picking the checked item dispatches
+ * nothing, so that click is not waited on.
  */
 async function pickFromMenu(
   page: Page,
   item: Locator,
   event: 'annotation-change' | 'projection-change',
 ): Promise<void> {
+  const checked =
+    (await item.getAttribute('aria-checked')) === 'true' ||
+    (await item.getAttribute('data-active')) === 'true';
+  if (checked) {
+    await item.click();
+    return;
+  }
   const applied = await page.evaluateHandle((type) => {
     const state = { done: false };
     document.addEventListener(
@@ -416,7 +422,7 @@ async function pickFromMenu(
       () => {
         state.done = true;
       },
-      { once: true, capture: true },
+      { once: true },
     );
     return state;
   }, event);

@@ -75,9 +75,8 @@ export function deriveViewOptions(
  * step with the plot, and writes each pick to the plot. Every picker is heard on the element
  * itself, so the plot changes before the legend's document listener re-syncs from it.
  *
- * The pickers also dispatch when the user picks the value already checked. Such a pick changes
- * nothing: its event stops at the picker, so neither the plot nor the legend, the provenance or
- * the URL hear it, and nothing re-renders.
+ * The pickers dispatch nothing when the user re-picks the value already checked. A host can still
+ * apply the value the plot shows; the guards below then leave the plot alone.
  */
 export function createViewBarController({
   plotElement,
@@ -120,17 +119,11 @@ export function createViewBarController({
     syncProjectionDetails();
   };
 
-  /** A pick of the value the plot already shows: stop it here, before anyone re-syncs. */
-  const ignoreRepeat = (event: Event, repeated: boolean): boolean => {
-    if (repeated) event.stopPropagation();
-    return repeated;
-  };
-
   const onProjectionChange = (event: Event) => {
     const { projection } = (event as CustomEvent<{ projection: string }>).detail;
     const projections = plotElement.data?.projections ?? [];
     const current = projections[plotElement.selectedProjectionIndex]?.name;
-    if (ignoreRepeat(event, projection === current)) return;
+    if (projection === current) return;
     const index = projections.findIndex((p) => p.name === projection);
     if (index !== -1) plotElement.selectedProjectionIndex = index;
     // Statistics are scored per projection.
@@ -142,7 +135,7 @@ export function createViewBarController({
   /** On the picker: the plot changes before the legend's document listener re-syncs from it. */
   const onAnnotationPicked = (event: Event) => {
     const { annotation } = (event as CustomEvent<{ annotation: string }>).detail;
-    if (ignoreRepeat(event, annotation === plotElement.selectedAnnotation)) return;
+    if (annotation === plotElement.selectedAnnotation) return;
     plotElement.selectedAnnotation = annotation;
     syncProjectionDetails();
   };
@@ -165,7 +158,7 @@ export function createViewBarController({
   const onDensityChange = (event: Event) => {
     const { densityLayer } = (event as CustomEvent<DensityLayerChangeDetail>).detail;
     const current = plotElement.config?.densityLayer ?? DENSITY_DEFAULT;
-    if (ignoreRepeat(event, densityLayer === current)) return;
+    if (densityLayer === current) return;
     plotElement.config = { ...(plotElement.config ?? {}), densityLayer };
     onUserChange('density');
   };
