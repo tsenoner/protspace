@@ -74,10 +74,10 @@ describe('Escape', () => {
   it('stops the key from reaching the page while it closes a layer', () => {
     const pageHandler = vi.fn();
     document.body.addEventListener('keydown', pageHandler);
+    cleanups.push(() => document.body.removeEventListener('keydown', pageHandler));
     open();
     escape();
     expect(pageHandler).not.toHaveBeenCalled();
-    document.body.removeEventListener('keydown', pageHandler);
   });
 });
 
