@@ -57,7 +57,9 @@ export const buttonStyles = [
     :host([variant='ghost']) button:hover:not(:disabled) {
       background: var(--ps-surface-hover);
     }
-    button[aria-pressed='true'] {
+    /* Same specificity as the variant and hover rules above, and later, so pressed wins. */
+    :host button[aria-pressed='true'],
+    :host button[aria-pressed='true']:hover:not(:disabled) {
       background: var(--ps-accent-tint);
       color: var(--ps-accent-text);
     }

@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import type { PsButton, PsIconButton } from './button';
+import type { PsTooltip } from './tooltip';
 import './button';
 
 beforeAll(() => adoptTheme());
@@ -21,6 +22,42 @@ async function mount<T extends HTMLElement & { updateComplete: Promise<unknown> 
 const inner = (host: Element) => host.shadowRoot!.querySelector('button')!;
 const tip = (host: Element) =>
   host.shadowRoot!.querySelector('ps-tooltip')!.shadowRoot!.querySelector('.tip')!;
+const tipOf = (tooltip: PsTooltip) => tooltip.shadowRoot!.querySelector('.tip')!;
+const transitions = (el: Element) => Promise.allSettled(el.getAnimations().map((a) => a.finished));
+function escapeOn(target: EventTarget): void {
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+  );
+}
+
+interface AXNode {
+  role?: { value: string };
+  name?: { value: string };
+  description?: { value: string };
+}
+/** The accessible description Chromium gives each button, as assistive technology reads it. */
+async function buttonDescriptions(): Promise<Record<string, string>> {
+  const session = cdp();
+  const { frameTree } = (await session.send('Page.getFrameTree')) as {
+    frameTree: { frame: { id: string }; childFrames?: unknown[] };
+  };
+  // The tests run in a child frame of the runner page.
+  const frames: string[] = [];
+  const walk = (f: { frame: { id: string }; childFrames?: unknown[] }) => {
+    frames.push(f.frame.id);
+    for (const child of f.childFrames ?? []) walk(child as typeof f);
+  };
+  walk(frameTree);
+  const out: Record<string, string> = {};
+  for (const frameId of frames) {
+    const { nodes } = (await session.send('Accessibility.getFullAXTree', { frameId })) as {
+      nodes: AXNode[];
+    };
+    for (const n of nodes)
+      if (n.role?.value === 'button') out[n.name?.value ?? ''] = n.description?.value ?? '';
+  }
+  return out;
+}
 
 describe('ps-button', () => {
   it('renders a native button that reports clicks', async () => {
@@ -40,6 +77,18 @@ describe('ps-button', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it('forwards aria-haspopup and aria-expanded to its inner button', async () => {
+    const el = await mount<PsButton>('<ps-button>Color by</ps-button>');
+    expect(inner(el).hasAttribute('aria-haspopup')).toBe(false);
+    el.setAttribute('aria-haspopup', 'menu');
+    el.setAttribute('aria-expanded', 'true');
+    await el.updateComplete;
+    await expect
+      .element(page.getByRole('button', { name: 'Color by', expanded: true }))
+      .toBeInTheDocument();
+    expect(inner(el).getAttribute('aria-haspopup')).toBe('menu');
+  });
+
   it('takes the primary fill from the tokens', async () => {
     const el = await mount<PsButton>('<ps-button variant="primary">Export</ps-button>');
     expect(getComputedStyle(inner(el)).backgroundColor).toBe('rgb(0, 122, 181)');
@@ -51,8 +100,39 @@ describe('ps-icon-button', () => {
     const el = await mount<PsIconButton>(
       '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
     );
-    expect(inner(el).getAttribute('aria-label')).toBe('Close');
+    await expect.element(page.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(inner(el).querySelector('svg')).not.toBeNull();
+  });
+
+  it('does not repeat its label as a description', async () => {
+    await mount<PsIconButton>('<ps-icon-button icon="x" label="Close"></ps-icon-button>');
+    expect((await buttonDescriptions()).Close).toBe('');
+  });
+
+  it('keeps the accent colour and tint when a pressed ghost toggle is hovered', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="search" label="Search" variant="ghost"></ps-icon-button>',
+    );
+    el.pressed = true;
+    await el.updateComplete;
+    await userEvent.hover(inner(el));
+    await transitions(inner(el));
+    const style = getComputedStyle(inner(el));
+    expect(style.color).toBe('rgb(3, 105, 161)');
+    expect(style.backgroundColor).toBe('rgb(224, 242, 254)');
+  });
+
+  it('forwards aria-haspopup and aria-expanded to its inner button', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="More" aria-haspopup="menu" aria-expanded="false"></ps-icon-button>',
+    );
+    expect(inner(el).getAttribute('aria-haspopup')).toBe('menu');
+    el.setAttribute('aria-expanded', 'true');
+    await el.updateComplete;
+    expect(inner(el).getAttribute('aria-expanded')).toBe('true');
+    el.removeAttribute('aria-expanded');
+    await el.updateComplete;
+    expect(inner(el).hasAttribute('aria-expanded')).toBe(false);
   });
 
   it('reports a toggle state through aria-pressed only when pressed is set', async () => {
@@ -88,5 +168,83 @@ describe('ps-icon-button', () => {
     expect(tip(el).matches(':popover-open')).toBe(true);
     inner(el).dispatchEvent(new PointerEvent('pointerleave'));
     expect(tip(el).matches(':popover-open')).toBe(false);
+  });
+
+  it('cancels the hover tooltip when the pointer leaves before 500ms', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    vi.useFakeTimers();
+    inner(el).dispatchEvent(new PointerEvent('pointerenter'));
+    vi.advanceTimersByTime(300);
+    inner(el).dispatchEvent(new PointerEvent('pointerleave'));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(false);
+  });
+
+  it('hides the tooltip when focus leaves', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    await userEvent.tab();
+    expect(tip(el).matches(':popover-open')).toBe(true);
+    await userEvent.tab();
+    expect(tip(el).matches(':popover-open')).toBe(false);
+  });
+});
+
+describe('ps-tooltip', () => {
+  it('shows on keyboard focus of the ps-button it follows', async () => {
+    document.body.innerHTML =
+      '<ps-button>Export</ps-button><ps-tooltip text="Export the figure"></ps-tooltip>';
+    const tooltip = document.querySelector('ps-tooltip')!;
+    await tooltip.updateComplete;
+    await userEvent.tab();
+    expect(tipOf(tooltip).matches(':popover-open')).toBe(true);
+  });
+
+  it('hides a hover-shown tooltip on Escape while its target is not focused', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    vi.useFakeTimers();
+    inner(el).dispatchEvent(new PointerEvent('pointerenter'));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(true);
+    escapeOn(document.body);
+    expect(tip(el).matches(':popover-open')).toBe(false);
+  });
+
+  it('describes its target, through a kit button to the inner button that takes focus', async () => {
+    document.body.innerHTML = `
+      <ps-button>Export</ps-button><ps-tooltip text="Export the figure"></ps-tooltip>
+      <button>Reset</button><ps-tooltip text="Restores defaults"></ps-tooltip>`;
+    const [first, second] = document.querySelectorAll('ps-tooltip');
+    await first.updateComplete;
+    await second.updateComplete;
+    await document.querySelector('ps-button')!.updateComplete;
+    expect(await buttonDescriptions()).toMatchObject({
+      Export: 'Export the figure',
+      Reset: 'Restores defaults',
+    });
+    first.remove();
+    second.remove();
+    await document.querySelector('ps-button')!.updateComplete;
+    expect(await buttonDescriptions()).toMatchObject({ Export: '', Reset: '' });
+  });
+
+  it('leaves no listeners on an external anchor when removed in the task it was added', async () => {
+    const anchor = document.createElement('button');
+    document.body.append(anchor);
+    const spy = vi.spyOn(anchor, 'addEventListener');
+    const t = document.createElement('ps-tooltip');
+    t.text = 'Hint';
+    t.anchor = anchor;
+    document.body.append(t);
+    t.remove();
+    await t.updateComplete;
+    await Promise.resolve();
+    expect(spy).not.toHaveBeenCalled();
+    expect(anchor.ariaDescribedByElements ?? []).toEqual([]);
   });
 });
