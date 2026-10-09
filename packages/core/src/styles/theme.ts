@@ -23,7 +23,7 @@ const lightRoles = css`
   --ps-border-strong: #cbd5e1; /* slate-300 */
   --ps-text: #0f172a; /* slate-900 */
   --ps-text-muted: #475569; /* slate-600 */
-  --ps-text-faint: #94a3b8; /* slate-400, for placeholders and captions only */
+  --ps-text-faint: #94a3b8; /* slate-400, 2.6:1 on white: disabled text and decorative icons only */
   --ps-text-on-accent: #ffffff;
   --ps-accent: #007ab5; /* brand cyan #00a3e0 deepened: 4.7:1 under white text */
   --ps-accent-hover: #00699c;
@@ -50,7 +50,7 @@ const darkRoles = css`
   --ps-border-strong: #334155; /* slate-700 */
   --ps-text: #f1f5f9; /* slate-100 */
   --ps-text-muted: #94a3b8; /* slate-400 */
-  --ps-text-faint: #64748b; /* slate-500 */
+  --ps-text-faint: #64748b; /* slate-500, 3.8:1 on the surface: disabled text and decorative icons only */
   --ps-text-on-accent: #04121c;
   --ps-accent: #38bdf8; /* sky-400, 8.3:1 on the dark surface */
   --ps-accent-hover: #7dd3fc; /* sky-300 */
