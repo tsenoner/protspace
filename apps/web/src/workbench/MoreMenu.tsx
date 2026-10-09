@@ -98,7 +98,12 @@ export function MoreMenu({ stage }: { stage: ViewBarStage }) {
             ))}
           </ps-menu-group>
         )}
-        {filterInside && <ps-menu-item value={FILTER_VALUE}>Filter…</ps-menu-item>}
+        {/* Its own group, so Filter does not read as a fourth contour mode. */}
+        {filterInside && (
+          <ps-menu-group label="Filter">
+            <ps-menu-item value={FILTER_VALUE}>Filter…</ps-menu-item>
+          </ps-menu-group>
+        )}
       </ps-menu>
     </>
   );

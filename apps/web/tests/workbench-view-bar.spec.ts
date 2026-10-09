@@ -246,6 +246,15 @@ test.describe('view bar stages', () => {
     expect(filterOut).toBeLessThan(contoursOut);
     expect(await stageWhenNarrowedTo(page, filterOut)).toBe(3);
     await expect(filterButton(page)).toBeHidden();
+    // Filter sits in its own group, not under the contour modes.
+    await moreButton(page).click();
+    await expect(
+      moreItems(page)
+        .getByRole('group', { name: 'Filter' })
+        .getByRole('menuitem', { name: 'Filter…' }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(moreMenu(page)).toBeHidden();
     // Filter… in More opens the same dialog, which hands focus back to More.
     await openFilter(page);
     await page.keyboard.press('Escape');
