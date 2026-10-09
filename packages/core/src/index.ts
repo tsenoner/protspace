@@ -1,3 +1,8 @@
+import { adoptTheme } from './components/kit/adopt-theme';
+
+// Every component reads --ps-* tokens from the document root (design decision 5).
+if (typeof document !== 'undefined') adoptTheme();
+
 // Export web components - these will auto-register when imported
 export * from './components/scatter-plot/scatter-plot';
 export * from './components/legend/legend';
