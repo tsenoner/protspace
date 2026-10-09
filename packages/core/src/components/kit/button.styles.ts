@@ -57,6 +57,11 @@ export const buttonStyles = [
     :host([variant='ghost']) button:hover:not(:disabled) {
       background: var(--ps-surface-hover);
     }
+    /* A ghost menu button shows its menu is open: the tint plus an inset ring (the focus ring is an outline). */
+    :host([variant='ghost']) button[aria-expanded='true'] {
+      background: var(--ps-surface-hover);
+      box-shadow: inset 0 0 0 1px var(--ps-border-strong);
+    }
     /* Same specificity as the variant and hover rules above, and later, so pressed wins. */
     :host button[aria-pressed='true'],
     :host button[aria-pressed='true']:hover:not(:disabled) {

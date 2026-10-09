@@ -109,6 +109,18 @@ describe('ps-icon-button', () => {
     expect((await buttonDescriptions()).Close).toBe('');
   });
 
+  it('shows a ghost menu button as open while its menu is expanded', async () => {
+    const el = await mount<PsButton>('<ps-button variant="ghost">Projection</ps-button>');
+    el.expanded = 'true';
+    await el.updateComplete;
+    await transitions(inner(el));
+    const style = getComputedStyle(inner(el));
+    expect(style.backgroundColor).toBe('rgb(241, 245, 249)');
+    expect(style.boxShadow).toContain('inset');
+    // The focus ring stays an outline, apart from the open ring.
+    expect(style.outlineStyle).toBe('none');
+  });
+
   it('keeps the accent colour and tint when a pressed ghost toggle is hovered', async () => {
     const el = await mount<PsIconButton>(
       '<ps-icon-button icon="search" label="Search" variant="ghost"></ps-icon-button>',
