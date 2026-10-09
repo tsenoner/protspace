@@ -61,3 +61,27 @@ describe('interaction controller structure requests', () => {
     expect(controller.getSelectedProteins()).toEqual([]);
   });
 });
+
+describe('interaction controller protein clicks', () => {
+  it("a plain click asks for the clicked protein's structure; a modified click does not", () => {
+    const requestStructure = vi.fn();
+    const controller = createInteractionController({
+      plotElement: { clearProvenanceConnectors: vi.fn() } as never,
+      legendElement: { autoSync: true, forceSync: vi.fn() } as never,
+      requestStructure,
+    });
+    const click = (detail: object) =>
+      controller.handleProteinClick(new CustomEvent('protein-click', { detail }));
+
+    click({ proteinId: 'P1' });
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('P1');
+
+    for (const key of ['ctrl', 'meta', 'shift']) {
+      click({
+        proteinId: 'P2',
+        modifierKeys: { ctrl: false, meta: false, shift: false, alt: false, [key]: true },
+      });
+    }
+    expect(requestStructure).not.toHaveBeenCalledWith('P2');
+  });
+});

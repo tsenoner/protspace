@@ -1,5 +1,6 @@
 import type {
   LegendErrorEventDetail,
+  ProteinClickDetail,
   ProtspaceLegend,
   ProtspaceScatterplot,
   StructureErrorEventDetail,
@@ -91,10 +92,13 @@ export function createInteractionController({
       }
     },
     handleProteinClick(event) {
-      const detail = (
-        event as CustomEvent<{ proteinId?: string; point?: { originalIndex?: number } }>
-      ).detail;
+      const detail = (event as CustomEvent<Partial<ProteinClickDetail>>).detail;
       const proteinId = detail?.proteinId;
+      // A plain click shows the clicked protein's structure, also one whose viewer was closed
+      // or that the click deselected. It runs after the selection controller's listener, so it
+      // wins over the selection's last protein.
+      const keys = detail?.modifierKeys;
+      if (proteinId && !keys?.ctrl && !keys?.meta && !keys?.shift) requestStructure(proteinId);
       const originalIndex = detail?.point?.originalIndex;
       const data = plotElement.data;
       const annotation = plotElement.selectedAnnotation;
