@@ -12,7 +12,7 @@ const STEP_TITLES = [
   'Projections & Annotations',
   'Search Proteins',
   'Selection Tools',
-  'Filter, Export & Import',
+  'Export & Import',
   'Interactive Scatterplot',
   'Legend Panel',
   'Expand Hidden Categories',
@@ -34,7 +34,7 @@ const STEP_TARGETS: StepTarget[] = [
   { driverId: 'projections' }, // Projections & Annotations
   { driverId: 'search' }, // Search
   { driverId: 'selection' }, // Select & Isolate
-  { driverId: 'data-actions' }, // Filter & Export
+  { driverId: 'data-actions' }, // Export & Import
   { driverId: 'scatterplot' }, // Scatterplot
   { driverId: 'legend' }, // Legend
   { driverId: 'other-row' }, // Expand Hidden Categories

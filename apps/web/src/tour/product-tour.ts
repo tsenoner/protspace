@@ -216,7 +216,7 @@ const steps: DriveStep[] = [
     popover: {
       title: 'Projections & Annotations',
       description:
-        'Switch between <strong>projections</strong> (UMAP, PCA, etc.) and choose which <strong>annotation</strong> to color the points by.',
+        'Switch between <strong>projections</strong> (UMAP, PCA, etc.) and choose which <strong>annotation</strong> to color the points by. <strong>Filter</strong> (in the same bar) opens a query builder for combining annotation conditions with AND/OR logic.',
       onPrevClick: async (_el, _step, opts) => movePrevious(opts),
       onNextClick: async (_el, _step, opts) => moveNext(opts),
     },
@@ -239,9 +239,9 @@ const steps: DriveStep[] = [
   {
     element: '[data-driver-id="data-actions"]',
     popover: {
-      title: 'Filter, Export & Import',
+      title: 'Export & Import',
       description:
-        '<strong>Filter</strong> opens a query builder for combining annotation conditions with AND/OR logic. <strong>Export</strong> opens the <strong>Figure Editor</strong> for publication-ready figures with journal presets, overlays, zoom insets, and legend customization — or use <strong>Quick Export</strong> for a fast PNG, PDF, protein IDs, or <code>.parquetbundle</code> dump. <strong>Import</strong> uploads a new dataset or loads one of the built-in examples.',
+        '<strong>Export</strong> opens the <strong>Figure Editor</strong> for publication-ready figures with journal presets, overlays, zoom insets, and legend customization — or use <strong>Quick Export</strong> for a fast PNG, PDF, protein IDs, or <code>.parquetbundle</code> dump. <strong>Import</strong> uploads a new dataset or loads one of the built-in examples.',
       onPrevClick: async (_el, _step, opts) => movePrevious(opts),
       onNextClick: async (_el, _step, opts) => moveNext(opts),
     },
