@@ -575,15 +575,10 @@ test.describe('Unified app notifications', () => {
     expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
+  test('auto-disable-selection uses the unified warning toast path', async ({ page }) => {
+    await dispatchCustomEvent(page, '#myPlot', 'auto-disable-selection', {
+      reason: 'insufficient-data',
+      dataSize: 1,
     });
 
     await expect(page.getByText('Selection mode disabled.')).toBeVisible();

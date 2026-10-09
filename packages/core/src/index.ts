@@ -9,6 +9,11 @@ export { ProtspaceContoursMenu } from './components/contours-menu/contours-menu'
 export type { DensityLayerChangeDetail } from './components/contours-menu/contours-menu';
 export { ProtspaceAnnotationSelect } from './components/control-bar/annotation-select';
 export { ProtspaceProjectionMetadata } from './components/scatter-plot/projection-metadata/projection-metadata';
+// The plot's tool strip and the app bar's search (design decision 9).
+export { ProtspacePlotTools } from './components/plot-tools/plot-tools';
+export type { PlotTool } from './components/plot-tools/plot-tools';
+export { ProtspaceProteinSearch } from './components/control-bar/search';
+export { AfterPaintCommit } from './utils/after-paint-commit';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.
 export { ProtspaceQueryBuilder } from './components/control-bar/query-builder';
 export { createCondition } from './components/control-bar/query-types';
@@ -40,6 +45,8 @@ export type {
 } from './components/data-loader/data-loader.events';
 export type { LegendErrorEventDetail, LegendErrorSource } from './components/legend/legend.events';
 export type {
+  BrushSelectionDetail,
+  ProteinClickDetail,
   RendererDegradedContext,
   RendererDegradedDetail,
   RendererDegradedReason,

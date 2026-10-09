@@ -5,8 +5,10 @@ import type {
   ProtspaceExportMenu,
   ProtspaceImportMenu,
   ProtspaceLegend,
+  ProtspacePlotTools,
   ProtspaceProjectionMetadata,
   ProtspaceProjectionSelect,
+  ProtspaceProteinSearch,
   ProtspaceQueryBuilder,
   ProtspaceScatterplot,
   ProtspaceStructureViewer,
@@ -30,6 +32,8 @@ interface ExploreElements {
   annotationSelect: ProtspaceAnnotationSelect;
   contoursMenu: ProtspaceContoursMenu;
   projectionMetadata: ProtspaceProjectionMetadata;
+  plotTools: ProtspacePlotTools;
+  proteinSearch: ProtspaceProteinSearch;
 }
 
 const REQUIRED_TAGS = [
@@ -46,6 +50,8 @@ const REQUIRED_TAGS = [
   'protspace-annotation-select',
   'protspace-contours-menu',
   'protspace-projection-metadata',
+  'protspace-plot-tools',
+  'protspace-protein-search',
 ] as const;
 
 export async function waitForElements(): Promise<void> {
@@ -75,6 +81,8 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const projectionMetadata = doc.getElementById(
     'myProjectionMetadata',
   ) as ProtspaceProjectionMetadata | null;
+  const plotTools = doc.getElementById('myPlotTools') as ProtspacePlotTools | null;
+  const proteinSearch = doc.getElementById('myProteinSearch') as ProtspaceProteinSearch | null;
 
   if (
     !plotElement ||
@@ -90,7 +98,9 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !projectionSelect ||
     !annotationSelect ||
     !contoursMenu ||
-    !projectionMetadata
+    !projectionMetadata ||
+    !plotTools ||
+    !proteinSearch
   ) {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
@@ -107,6 +117,8 @@ export function getElements(doc: Document = document): ExploreElements | null {
       annotationSelect,
       contoursMenu,
       projectionMetadata,
+      plotTools,
+      proteinSearch,
     });
     return null;
   }
@@ -126,5 +138,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
     annotationSelect,
     contoursMenu,
     projectionMetadata,
+    plotTools,
+    proteinSearch,
   };
 }

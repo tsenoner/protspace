@@ -4,7 +4,6 @@ import type {
   LegendErrorEventDetail,
   RendererDegradedDetail,
   RendererDegradedReason,
-  SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
 import * as notificationMappers from './notifications';
@@ -57,21 +56,20 @@ describe('explore notifications', () => {
     expect(notification.description).toMatch(/does not support the Origin Private File System/i);
   });
 
-  it('maps normalized selection-disabled events to a warning notification', () => {
-    const detail: SelectionDisabledNotificationDetail = {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    };
-
-    expect(getSelectionDisabledNotification(detail)).toMatchObject({
+  it('says why selection was turned off', () => {
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 1 }),
+    ).toMatchObject({
       title: 'Selection mode disabled.',
       description: 'Selection mode disabled: Only 1 point remaining',
+      dedupeKey: 'selection-disabled:insufficient-data:1',
     });
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 0 }).description,
+    ).toBe('Selection mode disabled: Only 0 points remaining');
+    expect(getSelectionDisabledNotification({ reason: 'other', dataSize: 5 }).description).toBe(
+      'Selection mode disabled',
+    );
   });
 
   it('maps normalized data errors to a dataset import failure notification', () => {

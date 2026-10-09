@@ -31,7 +31,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     items: [
       { keys: ['Click'], action: 'Select a protein and show its structure' },
       { keys: ['Mod', 'Click'], action: 'Add a protein to the selection, or remove it' },
-      { keys: ['Escape'], action: 'Clear the selection, then leave selection mode' },
+      { keys: ['Escape'], action: 'Clear the selection, then return to Move and zoom' },
     ],
   },
   {

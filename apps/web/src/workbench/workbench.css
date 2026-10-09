@@ -29,10 +29,7 @@
 /* ── App bar ─────────────────────────────────────────────────────────────── */
 
 [data-workbench='app-bar'] {
-  display: flex;
   flex: none;
-  align-items: center;
-  gap: var(--ps-space-2);
   height: var(--wb-app-bar-height);
   /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
   padding: 0 var(--ps-space-3) 0 16px;
@@ -80,8 +77,10 @@
 
 .wb-dataset-name {
   min-width: 0;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: var(--ps-weight-semibold);
 }
 
@@ -89,11 +88,6 @@
   flex: none;
   color: var(--ps-text-muted);
   font-variant-numeric: tabular-nums;
-}
-
-[data-workbench='app-bar-center'] {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 [data-workbench='app-bar-actions'] {
@@ -324,4 +318,72 @@
   height: 20px;
   margin: 0 var(--ps-space-1);
   background: var(--ps-border);
+}
+
+/* App bar (Task 2.9): three columns, so search stays centred while both sides fit. A side
+   column never shrinks below its content (1fr = minmax(auto, 1fr)); search gives way first. */
+.workbench header[data-workbench='app-bar'] {
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 420px) 1fr;
+  align-items: center;
+  column-gap: var(--ps-space-3);
+}
+
+.wb-app-bar-start {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  min-width: 0;
+}
+
+.workbench [data-workbench='app-bar-center'] {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.workbench [data-workbench='app-bar-actions'] {
+  justify-self: end;
+}
+
+#myProteinSearch {
+  display: block;
+  width: 100%;
+}
+
+/* Import and Export keep their names but show only their icons. */
+@media (max-width: 1099.98px) {
+  #myImportMenu::part(trigger-label),
+  #myExportMenu::part(trigger-label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .wb-dataset-count {
+    display: none;
+  }
+}
+
+/* Narrow fallback (below 951 px): search gives way entirely before anything leaves the window. */
+.workbench[data-layout='narrow'] header[data-workbench='app-bar'] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.workbench[data-layout='narrow'] .wb-dataset-name {
+  max-width: 120px;
+}
+
+/* The plot's tool strip: over the plot's top-left corner, never part of the plot's box. */
+#myPlotTools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
 }

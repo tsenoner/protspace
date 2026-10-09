@@ -4,7 +4,6 @@ import type { EatReliabilityState } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getRendererDegradedNotification } from './notifications';
 import { startProductTour } from '../tour/product-tour';
-import { bindControlBarEvents } from './control-bar-events';
 import { createDatasetController } from './dataset-controller';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
@@ -30,6 +29,7 @@ import {
 import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
+import { createSelectionController } from './selection-controller';
 import {
   handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
@@ -60,7 +60,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   }
 
   const {
-    controlBar,
     dataLoader,
     exportMenu,
     filterButton,
@@ -74,6 +73,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     annotationSelect,
     contoursMenu,
     projectionMetadata,
+    plotTools,
+    proteinSearch,
   } = elements;
   const lifecycle = createLifecycle();
 
@@ -288,6 +289,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     structureViewer,
   });
 
+  const selectionController = createSelectionController({
+    plotElement,
+    plotTools,
+    proteinSearch,
+    interactionController,
+    root: document,
+    warn: (options) => notify.warning(options),
+  });
+  lifecycle.addCleanup(() => selectionController.dispose());
+
   // Before the filter controller: both hear annotation-change on the document, and the filter's
   // reliability mirror runs last, as the control bar's did.
   const viewBarController = createViewBarController({
@@ -323,11 +334,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   lifecycle.addCleanup(() => filterController.dispose());
   addTrackedEventListener(lifecycle, filterButton, 'click', () => filterController.open());
 
-  // The dataset pipeline's one seam to the controls (explore-controls.ts). Until the control bar
-  // is split up, most of it is still the control bar.
+  // The dataset pipeline's one seam to the controls (explore-controls.ts).
   const controls: ExploreControls = {
     resetForNewDataset() {
-      controlBar.clearForNewDataset();
+      selectionController.resetForNewDataset();
       viewBarController.resetForNewDataset();
       exportMenu.reset();
       filterController.resetForNewDataset();
@@ -338,13 +348,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     showInitialView(view) {
       viewBarController.showInitialView(view);
       filterController.setSelectedAnnotation(view.annotation);
-      // The selection still lives in the control bar until Task 2.9.
-      controlBar.selectionMode = false;
-      controlBar.selectedProteinsCount = 0;
-      controlBar.requestUpdate();
     },
-    setRendering(rendering) {
-      controlBar.autoSync = !rendering;
+    setRendering() {
+      // Nothing to hold while a dataset renders: the controllers write the plot only on picks.
+      // Task 2.10 removes the method.
     },
     clearStructure() {
       if (structureViewer.style.display !== 'none') {
@@ -393,12 +400,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotElement,
   });
 
-  addTrackedEventListener(
-    lifecycle,
-    controlBar,
-    'protein-selection-change',
-    interactionController.handleSelectionChange,
-  );
   addTrackedEventListener(
     lifecycle,
     plotElement,
@@ -484,11 +485,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     dataLoader,
     datasetController,
   });
-  bindControlBarEvents({
-    addControlBarListener(type, listener, options) {
-      addTrackedEventListener(lifecycle, controlBar, type, listener, options);
-    },
-  });
 
   addTrackedEventListener(
     lifecycle,
@@ -529,7 +525,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   let hasStartedInitialDatasetLoad = false;
 
   console.log('ProtSpace components loaded and connected!');
-  console.log('Use the control bar to change annotations and toggle selection modes!');
+  console.log('Use the view bar to change the view and the plot tools to select proteins.');
 
   return {
     setRequestedView(requested) {

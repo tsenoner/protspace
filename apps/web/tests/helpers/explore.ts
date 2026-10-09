@@ -308,9 +308,12 @@ export const annotationSelect = (page: Page): Locator =>
 export const searchInput = (page: Page): Locator =>
   page.locator('protspace-protein-search #protein-search-input');
 
-/** Clear, Isolate or Reset. Clear and Isolate need a selection; Reset shows only while isolated. */
+/**
+ * Clear, Isolate or Reset, beside the plot's tool strip. Clear and Isolate show only with a
+ * selection; Reset only while isolated.
+ */
 export const selectionAction = (page: Page, name: 'Clear' | 'Isolate' | 'Reset'): Locator =>
-  viewBar(page).getByRole('button', { name, exact: true });
+  page.getByRole('group', { name: 'Selection' }).getByRole('button', { name, exact: true });
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 
@@ -491,7 +494,7 @@ const TOOL_STATES = {
   'Lasso select': { selectionMode: true, selectionTool: 'lasso' },
 } as const;
 
-/** Chooses a plot tool and waits until the plot uses it. */
+/** Picks a tool on the plot's tool strip and waits until the plot uses it. */
 export async function chooseTool(
   page: Page,
   tool: 'Move and zoom' | 'Box select' | 'Lasso select',
@@ -508,15 +511,10 @@ export async function chooseTool(
       };
     });
   const wanted = TOOL_STATES[tool];
-  // Until the plot has its tool strip (Task 2.9), the control bar's Select toggle turns
-  // selection on and off, and its segmented control picks the shape.
-  if ((await readTool()).selectionMode !== wanted.selectionMode) {
-    await viewBar(page).getByRole('button', { name: 'Select', exact: true }).click();
-  }
-  if (wanted.selectionMode) {
-    const shape = tool === 'Box select' ? 'Rectangle selection' : 'Lasso selection';
-    await viewBar(page).getByRole('button', { name: shape, exact: true }).click();
-  }
+  await page
+    .getByRole('toolbar', { name: 'Plot tools' })
+    .getByRole('button', { name: tool, exact: true })
+    .click();
   await expect
     .poll(async () => {
       const state = await readTool();

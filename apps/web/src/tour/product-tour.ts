@@ -23,9 +23,6 @@ import { TOUR_STORAGE_KEY } from './storage-key';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Host selector for the control-bar custom element. */
-const CONTROL_BAR = '[data-driver-id="control-bar"]';
-
 /** Host selector for the legend custom element. */
 const LEGEND = '[data-driver-id="legend"]';
 
@@ -222,18 +219,28 @@ const steps: DriveStep[] = [
     },
   },
 
-  // ── Step 4 – Search (Shadow DOM) ────────────────────────────
-  shadowStep(CONTROL_BAR, 'search', {
-    title: 'Search Proteins',
-    description: `Press <kbd><span class="mod-key">${isMacOrIos() ? '⌘' : 'Ctrl+'}</span>K</kbd> or click here to search. Type a protein ID to find it instantly, or <strong>paste</strong> multiple IDs to select them all at once.`,
-  }),
+  // ── Step 4 – Search (app bar) ───────────────────────────────
+  {
+    element: '[data-driver-id="search"]',
+    popover: {
+      title: 'Search Proteins',
+      description: `Press <kbd><span class="mod-key">${isMacOrIos() ? '⌘' : 'Ctrl+'}</span>K</kbd> or click here to search. Type a protein ID to find it instantly, or <strong>paste</strong> multiple IDs to select them all at once.`,
+      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
+      onNextClick: async (_el, _step, opts) => moveNext(opts),
+    },
+  },
 
-  // ── Step 5 – Selection Tools (Shadow DOM) ──────────────────
-  shadowStep(CONTROL_BAR, 'selection', {
-    title: 'Selection Tools',
-    description:
-      '<strong>Select</strong> enters selection mode\u2009—\u2009click points or drag to select multiple. Choose <strong>rectangle</strong> or <strong>lasso</strong> to switch tools. Press <kbd>Esc</kbd> to clear the current selection; press it again to exit selection mode.<br><br><strong>Clear</strong> deselects all, <strong>Isolate</strong> focuses on selected proteins, and <strong>Reset</strong> restores the full dataset.',
-  }),
+  // ── Step 5 – Selection Tools (plot tool strip) ─────────────
+  {
+    element: '[data-driver-id="selection"]',
+    popover: {
+      title: 'Selection Tools',
+      description:
+        '<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again, and <strong>Fit to view</strong> shows every point. Press <kbd>Esc</kbd> to clear the current selection; press it again to return to Move and zoom.<br><br>With a selection, <strong>Clear</strong> deselects all and <strong>Isolate</strong> focuses on the selected proteins; <strong>Reset</strong> restores the full dataset.',
+      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
+      onNextClick: async (_el, _step, opts) => moveNext(opts),
+    },
+  },
 
   // ── Step 6 – Export & Import (app bar) ──────────────────────
   {

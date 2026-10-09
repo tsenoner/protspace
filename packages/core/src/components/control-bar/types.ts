@@ -3,12 +3,9 @@
  */
 
 import type {
-  NumericAnnotationDisplaySettingsMap,
   AnnotationData,
   AnnotationPredictedData,
   ProjectionStatisticRow,
-  LegendSortMode,
-  ScatterplotConfig,
 } from '@protspace/utils';
 
 export interface ProtspaceData {
@@ -47,47 +44,4 @@ export interface ProtspaceData {
   annotation_predicted?: AnnotationPredictedData;
   /** Rows of the bundle's optional statistics part (backend `--stats`); absent otherwise. */
   statisticsRows?: readonly ProjectionStatisticRow[];
-}
-
-export interface DataChangeDetail {
-  data: ProtspaceData;
-}
-
-export interface ScatterplotElementLike extends Element {
-  // State properties
-  selectedProjectionIndex?: number;
-  selectedAnnotation?: string;
-  tooltipAnnotations?: string[];
-  selectionMode?: boolean;
-  selectionTool?: 'rectangle' | 'lasso';
-  config?: Partial<ScatterplotConfig>;
-  selectedProteinIds?: string[];
-  data?: ProtspaceData;
-  filteredProteinIds?: string[];
-  filtersActive?: boolean;
-  numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
-  annotationSortModes?: Record<string, LegendSortMode>;
-  numericManualOrderIdsByAnnotation?: Record<string, string[]>;
-
-  // Data access
-  getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => ProtspaceData | undefined;
-  getMaterializedData?: () => ProtspaceData | undefined;
-
-  // Isolation functionality
-  isIsolationMode?: () => boolean;
-  getIsolationHistory?: () => string[][];
-  isolateSelection?: () => void;
-  resetIsolation?: () => void;
-
-  // Duplicate-stack spider expansion
-  hasExpandedDuplicateStack?: () => boolean;
-  closeExpandedDuplicateStack?: () => void;
-
-  // Event emitting is through DOM, so we rely on add/removeEventListener from Element
-  click?: () => void;
-}
-
-export interface StructureViewerElement extends Element {
-  loadStructure?: (proteinId: string, structureUrl: string | null) => void;
-  loadProtein?: (proteinId: string) => void;
 }

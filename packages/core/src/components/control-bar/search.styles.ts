@@ -145,5 +145,13 @@ export const searchStyles = [
       font-size: var(--text-base);
       color: var(--muted);
     }
+
+    /* One control height, so the search sits in the 48 px app bar (Task 2.9); 4.5 restyles
+       the search on the kit. */
+    .search-chips {
+      box-sizing: border-box;
+      height: var(--ps-control-md);
+      padding-block: 0;
+    }
   `,
 ];

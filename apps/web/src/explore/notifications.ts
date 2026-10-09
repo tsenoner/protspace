@@ -2,7 +2,6 @@ import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
   RendererDegradedDetail,
-  SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
@@ -230,15 +229,20 @@ export function getExportFailureNotification(error: unknown): NotifyOptions {
   };
 }
 
-export function getSelectionDisabledNotification(
-  detail: SelectionDisabledNotificationDetail,
-): NotifyOptions {
-  const reason = detail.context?.reason ?? 'unknown';
-  const dataSize = detail.context?.dataSize ?? 'unknown';
-
+/** Why the plot turned selection off (its `auto-disable-selection` event). */
+export function getSelectionDisabledNotification({
+  reason,
+  dataSize,
+}: {
+  reason: string;
+  dataSize: number;
+}): NotifyOptions {
   return {
     title: 'Selection mode disabled.',
-    description: detail.message,
+    description:
+      reason === 'insufficient-data'
+        ? `Selection mode disabled: Only ${dataSize} point${dataSize !== 1 ? 's' : ''} remaining`
+        : 'Selection mode disabled',
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,
   };

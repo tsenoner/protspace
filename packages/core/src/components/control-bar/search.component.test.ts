@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pushLayer, topLayer } from '../kit/layers';
 import './search';
 
 type ProteinSearchElement = HTMLElement & {
@@ -447,5 +448,71 @@ describe('protspace-protein-search feedback', () => {
     await element.updateComplete;
 
     expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
+});
+
+describe('protspace-protein-search and the layer stack', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+  });
+
+  it('the open suggestion list closes on Escape before anything else and on a press outside', async () => {
+    const dialogClose = vi.fn();
+    const releaseDialog = pushLayer({ close: dialogClose, elements: [] });
+    const element = await setupSearch(FIVE, []);
+    await typeQuery(element, 'P0059');
+    expect(rowsOf(element).length).toBeGreaterThan(0);
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+    expect(inputOf(element).value).toBe('');
+    expect(dialogClose).not.toHaveBeenCalled();
+    expect(topLayer()?.close).toBe(dialogClose);
+
+    // A press outside blurs the input: the list closes 200 ms later and keeps the query.
+    await typeQuery(element, 'P0059');
+    expect(rowsOf(element).length).toBeGreaterThan(0);
+    inputOf(element).dispatchEvent(new FocusEvent('blur'));
+    vi.advanceTimersByTime(200);
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+    expect(inputOf(element).value).toBe('P0059');
+    expect(topLayer()?.close).toBe(dialogClose);
+    releaseDialog();
+  });
+
+  it('Escape with nothing to close passes on to the page', async () => {
+    const element = await setupSearch(FIVE, ['P00595']);
+    const pageEscape = vi.fn();
+    document.addEventListener('keydown', pageEscape);
+
+    inputOf(element).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+
+    // The page's selection controller hears it and clears the selection.
+    expect(pageEscape).toHaveBeenCalledOnce();
+    document.removeEventListener('keydown', pageEscape);
+  });
+
+  it('no search-opened event is dispatched', async () => {
+    const element = await setupSearch();
+    const opened = vi.fn();
+    element.addEventListener('search-opened', opened);
+
+    inputOf(element).focus();
+    await element.updateComplete;
+
+    expect(opened).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { property } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { buttonStyles } from './button.styles';
 import { icon, type IconName } from './icon';
+import type { Placement } from './position';
 import './tooltip';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -58,6 +59,8 @@ export class PsIconButton extends KitButtonBase {
   @property({ reflect: true }) override variant: ButtonVariant = 'ghost';
   /** Set for toggles such as the plot's tools; leave unset for plain actions. */
   @property({ type: Boolean }) pressed?: boolean;
+  /** Where the label tooltip opens: right of the plot's tool strip, left of the sidebar rail. */
+  @property({ attribute: 'tooltip-placement' }) tooltipPlacement: Placement = 'top';
 
   render() {
     if (!this.label) console.warn(`<ps-icon-button icon="${this.icon}"> needs a label`);
@@ -66,7 +69,8 @@ export class PsIconButton extends KitButtonBase {
         icon(this.icon, this.size === 'sm' ? 14 : 16),
         this.label,
         this.pressed,
-      )} <ps-tooltip text=${this.label} names-target></ps-tooltip>`;
+      )}
+      <ps-tooltip text=${this.label} placement=${this.tooltipPlacement} names-target></ps-tooltip>`;
   }
 }
 

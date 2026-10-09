@@ -260,3 +260,26 @@ describe('ps-tooltip', () => {
     expect(anchor.ariaDescribedByElements ?? []).toEqual([]);
   });
 });
+
+describe('ps-icon-button tooltip placement', () => {
+  const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  it("tooltip-placement sets the tooltip's side", async () => {
+    document.body.innerHTML =
+      '<ps-icon-button icon="x" label="Close" tooltip-placement="right" style="position: fixed; left: 40px; top: 40px"></ps-icon-button>';
+    const el = document.body.firstElementChild as PsIconButton;
+    await el.updateComplete;
+    const tooltip = el.shadowRoot!.querySelector('ps-tooltip') as PsTooltip;
+    await tooltip.updateComplete;
+    expect(tooltip.placement).toBe('right');
+
+    tooltip.show();
+    await nextFrame();
+    await nextFrame();
+
+    const tip = tooltip.shadowRoot!.querySelector('.tip')!.getBoundingClientRect();
+    const button = el.shadowRoot!.querySelector('button')!.getBoundingClientRect();
+    expect(tip.left).toBeGreaterThanOrEqual(button.right);
+    tooltip.hide();
+  });
+});

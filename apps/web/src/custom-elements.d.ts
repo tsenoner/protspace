@@ -92,6 +92,14 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-plot-tools': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
+        HTMLElement
+      >;
+      'protspace-protein-search': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
+        HTMLElement
+      >;
       'protspace-query-builder': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;

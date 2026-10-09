@@ -2,6 +2,7 @@ import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { handleDropdownEscape, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
+import { pushLayer } from '../kit/layers';
 import { searchStyles } from './search.styles';
 import { isMacOrIos } from '@protspace/utils';
 import { computeSearchSuggestions, type SearchSuggestion } from './search-suggestions';
@@ -20,7 +21,7 @@ const suggestionRowId = (index: number) => `${SUGGESTIONS_LIST_ID}-${index}`;
  * Protein search component with autocomplete suggestions and multi-select state (no chips UI)
  */
 @customElement('protspace-protein-search')
-class ProtspaceProteinSearch extends LitElement {
+export class ProtspaceProteinSearch extends LitElement {
   static styles = searchStyles;
 
   @property({ type: Array }) availableProteinIds: string[] = [];
@@ -34,6 +35,8 @@ class ProtspaceProteinSearch extends LitElement {
 
   private _suggestionDebounceId: ReturnType<typeof setTimeout> | null = null;
   private _blurTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  /** Releases the suggestion list's layer; set while the list is on screen. */
+  private _releaseLayer?: () => void;
 
   /** True exactly when `render()` emits the listbox that the combobox ARIA refers to. */
   private get _isListboxRendered(): boolean {
@@ -140,29 +143,16 @@ class ProtspaceProteinSearch extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener('keydown', this._handleBodyKeydown);
-    // Listen for parent-initiated close. Bound field, not an inline closure: an inline
-    // one cannot be removed, so every re-attach of this element would stack another
-    // handler and run the close N times.
-    this.addEventListener('close-search', this._handleCloseSearch);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener('keydown', this._handleBodyKeydown);
-    this.removeEventListener('close-search', this._handleCloseSearch);
     this._clearSuggestionDebounce();
     this._clearBlurTimeout();
+    this._releaseLayer?.();
+    this._releaseLayer = undefined;
   }
-
-  private _handleCloseSearch = () => {
-    this._resetSearch();
-    this.isInputFocused = false;
-    // Blur the input element to sync state
-    const input = this.shadowRoot?.querySelector(
-      '#protein-search-input',
-    ) as HTMLInputElement | null;
-    input?.blur();
-  };
 
   protected willUpdate(changed: PropertyValues<this>): void {
     // `searchSuggestions` is computed on a debounce, so a selection change made elsewhere
@@ -184,11 +174,31 @@ class ProtspaceProteinSearch extends LitElement {
   // instead, matching the convention elsewhere in this package (e.g. scatter-plot.ts,
   // legend.ts, query-numeric-input.ts).
   protected updated(changed: Map<string, unknown>): void {
+    this._syncLayer();
     // `.search-suggestions` is a fixed-height (max-height: 20rem) scroll container fitting
     // ~8 rows, so past that arrow-key navigation would run off screen (issue #413).
     if (!changed.has('highlightedSuggestionIndex')) return;
     if (this.highlightedSuggestionIndex < 0) return;
     scrollHighlightedIntoView(this.shadowRoot, '.search-suggestion.active');
+  }
+
+  /**
+   * While the suggestions show they are a layer, so Escape resets the search before the page
+   * clears the selection (Review Focus 4). A press outside blurs the input, which closes the
+   * list and keeps the query, as before; the layer leaves outside presses to that.
+   */
+  private _syncLayer(): void {
+    const open = this._isPopupRendered;
+    if (open && !this._releaseLayer) {
+      this._releaseLayer = pushLayer({
+        close: () => this._resetSearch(),
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
+    } else if (!open && this._releaseLayer) {
+      this._releaseLayer();
+      this._releaseLayer = undefined;
+    }
   }
 
   private _handleBodyKeydown = (event: KeyboardEvent) => {
@@ -267,7 +277,9 @@ class ProtspaceProteinSearch extends LitElement {
         const prev = Math.max(this.highlightedSuggestionIndex - 1, 0);
         this.highlightedSuggestionIndex = prev;
       }
-    } else if (event.key === 'Escape') {
+    } else if (event.key === 'Escape' && (this.searchQuery || this._isPopupRendered)) {
+      // The layer normally takes Escape first; this covers a typed query whose list has not
+      // opened yet. With nothing to close, Escape passes on to clear the selection.
       handleDropdownEscape(event, () => this._resetSearch());
     }
   }
@@ -277,13 +289,6 @@ class ProtspaceProteinSearch extends LitElement {
     this._clearSuggestionDebounce();
     this._clearBlurTimeout();
     this._updateSuggestions();
-    // Notify parent to close other dropdowns
-    this.dispatchEvent(
-      new CustomEvent('search-opened', {
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   private _onInputBlur() {

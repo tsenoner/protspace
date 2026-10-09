@@ -19,38 +19,3 @@ export function getSelectionDisabledMessage(reason: string, dataSize: number): s
   }
   return 'Selection mode disabled';
 }
-
-/**
- * Toggle protein selection (add or remove)
- */
-export function toggleProteinSelection(proteinId: string, currentSelection: string[]): string[] {
-  const currentSet = new Set(currentSelection);
-  if (currentSet.has(proteinId)) {
-    currentSet.delete(proteinId);
-  } else {
-    currentSet.add(proteinId);
-  }
-  return Array.from(currentSet);
-}
-
-/**
- * Merge multiple protein selections (for brush selection). With `newAreDistinct`
- * (no id repeats in `newSelections`) the new ids skip the set: ~0.3 s for the
- * 782K ids of a lasso at 5M points.
- */
-export function mergeProteinSelections(
-  currentSelection: string[],
-  newSelections: string[],
-  newAreDistinct = false,
-): string[] {
-  if (!newAreDistinct) {
-    const merged = new Set(currentSelection);
-    newSelections.forEach((id) => merged.add(id));
-    return Array.from(merged);
-  }
-  if (currentSelection.length === 0) return newSelections.slice();
-  const current = new Set(currentSelection);
-  const merged = Array.from(current);
-  for (const id of newSelections) if (!current.has(id)) merged.push(id);
-  return merged;
-}

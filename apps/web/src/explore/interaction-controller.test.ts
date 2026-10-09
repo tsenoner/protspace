@@ -41,3 +41,22 @@ describe('interaction controller legend updates', () => {
     expect(legendElement.forceSync).toHaveBeenCalledOnce();
   });
 });
+
+describe('interaction controller selection', () => {
+  it('a selection loads its last protein', () => {
+    const loadProtein = vi.fn();
+    const controller = createInteractionController({
+      plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
+      legendElement: { autoSync: false, forceSync: vi.fn() } as never,
+      structureViewer: { loadProtein } as never,
+    });
+
+    controller.handleSelectionChange(['P1', 'P2']);
+    expect(loadProtein).toHaveBeenCalledWith('P2');
+    expect(controller.getSelectedProteins()).toEqual(['P1', 'P2']);
+
+    controller.handleSelectionChange([]);
+    expect(loadProtein).toHaveBeenCalledOnce();
+    expect(controller.getSelectedProteins()).toEqual([]);
+  });
+});

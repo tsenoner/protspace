@@ -27,7 +27,8 @@ interface ActiveProvenanceClick {
 export interface InteractionController {
   updateLegend(): void;
   getSelectedProteins(): string[];
-  handleSelectionChange(event: Event): void;
+  /** The selection changed: remember it and show its last protein's structure. */
+  handleSelectionChange(proteinIds: readonly string[]): void;
   handleProteinClick(event: Event): void;
   handlePlotDataChange(): void;
   handleLegendError(event: Event): void;
@@ -83,11 +84,8 @@ export function createInteractionController({
     getSelectedProteins() {
       return selectedProteins;
     },
-    handleSelectionChange(event) {
-      const customEvent = event as CustomEvent<{ proteinIds?: string[] }>;
-      selectedProteins = Array.isArray(customEvent.detail.proteinIds)
-        ? [...customEvent.detail.proteinIds]
-        : [];
+    handleSelectionChange(proteinIds) {
+      selectedProteins = [...proteinIds];
 
       if (selectedProteins.length > 0) {
         structureViewer.loadProtein(selectedProteins[selectedProteins.length - 1]);
