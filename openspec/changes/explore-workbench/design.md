@@ -77,7 +77,8 @@ The page becomes a workbench (mockup: [`mockups/workbench-light.png`](mockups/wo
   menu to switch to an example or import a file; search in the centre (⌘K / Ctrl+K); Import and
   Export; the theme switch; a help menu (docs, keyboard shortcuts, tour); Feedback; GitHub. The
   site's Home / Docs / Explore / Resources navigation leaves this page; Docs moves into the help
-  menu.
+  menu. The plot's Tips & Shortcuts popover and its tour button move into the help menu as
+  "Keyboard shortcuts" and "Take the tour".
 - **View bar** (44 px): how the plot is drawn. Projection (with the projection's "how it was made"
   details beside it), Color by, Contours, Filter. It never wraps: labels shorten first, then the
   least-used items move into a "More" menu.
@@ -147,6 +148,9 @@ the plot's width would pay that on every frame.
 - On resize the zoom transform is adjusted so the point at the centre of the view stays at the
   centre. Today zoom and pixel translate survive a resize but the data under the centre drifts.
 - A new perf scenario, panel toggle, is budgeted at one render and one grid rebuild per toggle.
+- Perf runs pin the layout (sidebar open at its default width, structure docked and closed) and the
+  light theme. The sidebar's width sets the plot size, which feeds the point scale and the Auto
+  contour strength, so an unpinned layout would make runs incomparable.
 
 Alternatives considered: animating the plot's width (stutters at 573K), and keeping the canvas
 full-width under the panels (no resizes at all, but the fit must then ignore a covered strip whose
@@ -211,7 +215,7 @@ elements):
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | `ps-button`                                | primary, secondary, ghost, danger; 28 or 32 px                                                     |
 | `ps-icon-button`                           | icon-only; requires a label, shown as its tooltip and used as its accessible name                  |
-| `ps-input`, `ps-select`                    | text input; single choice with type-ahead                                                          |
+| `ps-input`, `ps-select`                    | text input; single choice as a styled native `<select>`, so phones keep their own picker           |
 | `ps-menu`, `ps-menu-item`                  | grouped, searchable, checkable menus                                                               |
 | `ps-popover`                               | anchored panel (the native `popover` attribute)                                                    |
 | `ps-dialog`                                | modal window (the native `<dialog>`, `showModal()`), with a full-screen size for the figure editor |
@@ -222,7 +226,8 @@ Popovers and dialogs render in the browser's top layer, so no `overflow`, `trans
 on an ancestor can clip them, and `<dialog>` brings focus containment, inert background and Escape
 for free. `@floating-ui/dom` positions popovers next to their anchor, because CSS anchor positioning
 is not yet in all target browsers. Icons come from Lucide only (`lucide` for Lit, `lucide-react`
-already in the shell), at one stroke width (1.75) and 14/16/20 px; the emoji and text-glyph icons go.
+already in the shell), at one stroke width (1.75) and 14/16/20 px; the emoji and text-glyph icons go,
+including the ⚡ that marks predicted annotations in the annotation picker and the legend header.
 Focus uses one `:focus-visible` ring everywhere, with a `forced-colors` fallback. Panels and popovers
 animate for 120–200 ms; the plot never animates; `prefers-reduced-motion` turns the animations off.
 
@@ -256,9 +261,9 @@ script in `apps/web/index.html` reads before first paint (decision 16).
 ### 11. One layer stack for Escape and closing
 
 A layer stack in core (`kit/layers.ts`) records which popovers, menus, dialogs, sheets and the
-figure editor are open. Escape closes only the top layer. The plot clears its selection on Escape
-only when the stack is empty; today Escape passes through the figure editor and the projection
-details panel and clears the selection. Clicking outside closes popovers the same way everywhere:
+figure editor are open. Escape works through one order: the top open layer first, then the EAT
+provenance connectors, then the selection; each press undoes one step. Today Escape passes
+through the figure editor and the projection details panel and clears the selection. Clicking outside closes popovers the same way everywhere:
 a press and release both outside, so a drag that ends outside does not close anything. This replaces
 the Escape handling in `control-bar.ts` and the legend's own focus trap.
 
@@ -309,6 +314,11 @@ path. Edits are a draft until Apply; Cancel discards the draft and returns to th
 (today Cancel keeps the edits). When Apply is disabled the panel says why ("Choose a value for
 condition 2"). Removing the filter is one click on the Filter chip's ✕.
 
+The modal used to stop the EAT reliability slider and the query builder from being edited at the
+same time; the side panel allows both. The slider stays an immediate control: it changes the
+applied filter at once and also updates the reliability condition in an open draft. Editing that
+condition in the draft moves the slider only when the draft is applied.
+
 ### 15. Search, messages, import and export
 
 - **Search.** A pasted list reports "12 of 15 found" with the missing IDs listed and copyable. An
@@ -316,14 +326,19 @@ condition 2"). Removing the filter is one click on the Filter chip's ✕.
   hit pans and zooms to the protein; several hits are selected, and the selection bar offers "Zoom
   to them".
 - **Notifications.** One style (Sonner, restyled from the tokens) with a close button, placed at
-  the plot's bottom edge so it never covers the legend. Every export confirms.
+  the plot's bottom edge so it never covers the legend. A notification carries up to two actions,
+  each a link or a callback (Retry, Undo, Report a bug). Every export confirms.
 - **Loading.** The overlay takes the kit's look and tells the truth about the data: "Reading your
   file in the browser" for local files; only FASTA files go to the server, for embedding, and the
-  Import menu says so before upload. The rocket emoji and the inline styles go.
+  Import menu says so before upload. The rocket emoji and the inline styles go. The overlay keeps
+  its id `#progressive-loading`, still blocks the page while a load runs, and keeps the example
+  download's progress and Cancel; the plot keeps `#myPlot`. The e2e helpers and the perf suite
+  key on both ids.
 - **Empty state and drop target.** If nothing is loaded the plot shows "Drop a file or pick an
-  example". Dragging a file over the page shows a drop area; today the drag sets an attribute that
-  nothing styles.
-- **Import menu.** Lists accepted formats and the examples.
+  example". Dragging a file anywhere over the workbench shows a drop area; today the scatterplot
+  handles drops and sets an attribute that nothing styles. Drop handling moves to the shell.
+- **Import menu.** The Import button and the dataset name open the same menu: the examples, the last
+  imported file, and "Open a file…", with the accepted formats listed.
 - **Export menu.** Figure editor, quick PNG, quick PDF, protein IDs, data bundle. The note that
   contours are not part of quick exports moves from a hover title into the menu.
 - **Figure editor.** Becomes a full-screen `ps-dialog`: Escape closes it, focus is contained, and
@@ -400,7 +415,8 @@ requirement that the desktop layout stays unchanged is superseded.
   instead of the about 100 fixed `waitForTimeout` pauses.
 - Each image is one entry (name, viewport, theme, steps, PNG or GIF); one runner handles file names,
   light and dark variants and the GIF conversion, with a size budget per GIF.
-- All 17 screenshots, 9 GIFs and the 5 example thumbnails are regenerated. New captures cover the
+- All 17 screenshots, 9 GIFs and the 5 example thumbnails are regenerated. The thumbnails move here
+  from the `examples-live` e2e suite, so every docs image comes from one pipeline. New captures cover the
   sidebar fold and resize, the floating structure, the selection bar, the filter panel, search
   messages, the theme switch and the phone layout. Images named after the old layout
   (`control-bar-*.png`) are replaced and deleted. The main screenshots get dark variants, shown when
