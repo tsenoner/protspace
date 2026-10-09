@@ -1,4 +1,4 @@
-import type { Ref } from 'react';
+import type { Ref, RefObject } from 'react';
 import { updateLayout } from '../explore/layout-state';
 
 interface RailProps {
@@ -9,17 +9,28 @@ interface RailProps {
   structureDocked: boolean;
   /** The collapse toggle, for a caller that moves focus to it. */
   toggleRef?: Ref<HTMLElement>;
+  /** The docked structure section, which Structure focuses while the sidebar is open. */
+  structureRef?: RefObject<HTMLElement | null>;
 }
 
 /**
  * The 44 px icon rail at the sidebar's right edge (design decision 2). It stays when the sidebar
  * collapses, so the legend and a waiting structure stay one click away. Hidden below 951 px.
  */
-export function Rail({ sidebarOpen, structureProteinId, structureDocked, toggleRef }: RailProps) {
+export function Rail({
+  sidebarOpen,
+  structureProteinId,
+  structureDocked,
+  toggleRef,
+  structureRef,
+}: RailProps) {
   const toggleSidebar = () => updateLayout({ sidebarOpen: !sidebarOpen });
-  // A docked structure in a collapsed sidebar waits; opening the sidebar loads it.
+  // A docked structure in a collapsed sidebar waits; opening the sidebar loads it. In an open
+  // sidebar it is already on screen: Structure takes focus there.
   const showStructure = () => {
-    if (structureDocked && !sidebarOpen) updateLayout({ sidebarOpen: true });
+    if (!structureDocked) return;
+    if (!sidebarOpen) updateLayout({ sidebarOpen: true });
+    else structureRef?.current?.focus();
   };
   return (
     <nav className="wb-rail" data-workbench="rail" aria-label="Panels">
@@ -53,7 +64,6 @@ export function Rail({ sidebarOpen, structureProteinId, structureDocked, toggleR
         label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
         tooltipPlacement="left"
         expanded={sidebarOpen ? 'true' : 'false'}
-        aria-controls="wb-sidebar"
         onClick={toggleSidebar}
       ></ps-icon-button>
     </nav>

@@ -44,8 +44,8 @@ const EDGE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
  * The sidebar's draggable left edge (design decisions 2 and 4; the WAI-ARIA window splitter). A
  * drag or an arrow key previews the width through --wb-sidebar-live-width, which moves the sidebar
  * over the plot without resizing it; the width is written once, on release or keyup, and the plot
- * resizes once. Enter collapses the sidebar. Rendered by the workbench as the aside's sibling, so
- * it sits above the structure section too.
+ * resizes once. Enter collapses the sidebar. Rendered by the workbench before the aside, as its
+ * sibling: it is the sidebar's first Tab stop and paints above the structure section too.
  */
 export function SidebarEdge({ width, maxWidth, onPreview, onCollapse }: SidebarEdgeProps) {
   const drag = useRef<{ startX: number; startWidth: number } | null>(null);

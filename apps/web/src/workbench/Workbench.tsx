@@ -88,13 +88,8 @@ export function Workbench() {
         }
       >
         <PlotArea />
-        <Sidebar ref={asideRef} inert={sidebarHidden} />
-        <StructurePanel
-          ref={structureRef}
-          inert={sidebarHidden}
-          legendFraction={legendFraction}
-          onLegendFractionPreview={setLegendFractionPreview}
-        />
+        {/* Before the aside: the edge sits at the sidebar's left, so it is the sidebar's first Tab
+            stop. Its z-index keeps it painted over the aside and the structure. */}
         <SidebarEdge
           width={sidebarWidthPreview ?? sidebarWidth}
           maxWidth={sidebarCap}
@@ -105,11 +100,19 @@ export function Workbench() {
             railToggleRef.current?.focus();
           }}
         />
+        <Sidebar ref={asideRef} inert={sidebarHidden} />
+        <StructurePanel
+          ref={structureRef}
+          inert={sidebarHidden}
+          legendFraction={legendFraction}
+          onLegendFractionPreview={setLegendFractionPreview}
+        />
         <Rail
           sidebarOpen={layout.sidebarOpen}
           structureProteinId={structureProteinId}
           structureDocked={layout.structurePlacement === 'docked'}
           toggleRef={railToggleRef}
+          structureRef={structureRef}
         />
       </div>
       <protspace-data-loader id="myDataLoader"></protspace-data-loader>

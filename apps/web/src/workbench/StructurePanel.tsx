@@ -120,6 +120,8 @@ export function StructurePanel({
     <section
       ref={ref}
       inert={inert}
+      // The rail's Structure button focuses the section; it is no Tab stop of its own.
+      tabIndex={-1}
       className="wb-structure"
       data-workbench="structure"
       aria-label="Structure"

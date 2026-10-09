@@ -458,6 +458,12 @@
   background: var(--ps-surface);
 }
 
+/* The rail's Structure button focuses the section. */
+.wb-structure:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
 .workbench[data-layout='desktop'] .wb-structure {
   position: absolute;
   right: var(--wb-rail-width, 0px);

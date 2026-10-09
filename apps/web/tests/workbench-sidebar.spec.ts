@@ -399,6 +399,36 @@ test('a protein clicked while collapsed waits behind the Structure dot; Structur
   await expect(page.locator('#myStructureViewer')).toBeVisible();
 });
 
+test('Structure in an open sidebar focuses the docked structure', async ({ page }) => {
+  await stubStructureRequests(page);
+  await openExplore(page);
+  const id = await clickProteinNearPlotCentre(page);
+  await expect(page.locator('#myStructureViewer')).toBeVisible();
+
+  const structure = rail(page).getByRole('button', { name: `Structure: ${id}` });
+  await structure.focus();
+  await page.keyboard.press('Enter');
+  await expect(structurePanel(page)).toBeFocused();
+  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+});
+
+test('the edge is the Tab stop after the plot tools, and the rail toggle names no dangling id', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await page
+    .getByRole('toolbar', { name: 'Plot tools' })
+    .getByRole('button', { name: 'Move and zoom', exact: true })
+    .focus();
+  await page.keyboard.press('Tab');
+  await expect(edge(page)).toBeFocused();
+
+  // An id on a host would not reach the inner button that takes focus.
+  const buttons = rail(page).locator('ps-icon-button');
+  await expect(buttons).toHaveCount(3);
+  await expect(rail(page).locator('ps-icon-button[aria-controls]')).toHaveCount(0);
+});
+
 /**
  * Whether `locator`'s element is the topmost thing painted at its centre and across its box (a 3×3
  * grid 8 px inside its edges), looking through every shadow root on the way down.
