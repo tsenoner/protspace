@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
 import { Box } from 'lucide-react';
-import { LEGEND_FRACTION } from '../explore/layout-defaults';
+import { LEGEND_FRACTION, type StructurePlacement } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { clampLegendFraction, DIVIDER_HEIGHT, fractionStep } from './layout-geometry';
 
@@ -98,8 +98,12 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
 
 interface StructurePanelProps {
   ref?: Ref<HTMLElement>;
-  /** Out of the tab order while the sidebar is collapsed or collapsing. */
+  /** Out of the tab order while the sidebar is collapsed or collapsing (and the card docked). */
   inert?: boolean;
+  /** Where the structure shows: in the sidebar column, or floating over the plot. */
+  placement: StructurePlacement;
+  /** Whether it may float here: desktop widths only (below 951 px it always docks). */
+  canFloat: boolean;
   legendFraction: number;
   onLegendFractionPreview(fraction: number | null): void;
 }
@@ -108,20 +112,26 @@ interface StructurePanelProps {
  * The structure section: a sibling of the sidebar's aside, never inside it, so placing it never
  * moves #myStructureViewer to another parent (its disconnect would dispose Mol*). It holds the
  * divider, the 44 px empty footer and the viewer, which the structure controller drives. Where it
- * sits, and which part shows, is CSS from the workbench root's data-structure.
+ * sits, docked under the legend or floating over the plot, and which part shows, is CSS from the
+ * workbench root's data-structure; the pop-out button and the floating card's grip are the only
+ * children that come and go, and never the viewer.
  */
 export function StructurePanel({
   ref,
   inert,
+  placement,
+  canFloat,
   legendFraction,
   onLegendFractionPreview,
 }: StructurePanelProps) {
+  const floating = placement === 'floating';
   return (
     <section
       ref={ref}
       inert={inert}
-      // The rail's Structure button focuses the section; it is no Tab stop of its own.
-      tabIndex={-1}
+      // The rail's Structure button focuses the section. Docked it is no Tab stop of its own; a
+      // floating card is one, so the arrow keys can move it.
+      tabIndex={floating ? 0 : -1}
       className="wb-structure"
       data-workbench="structure"
       aria-label="Structure"
@@ -139,7 +149,25 @@ export function StructurePanel({
         show-close-button="true"
         auto-sync="true"
         scatterplot-selector="#myPlot"
-      ></protspace-structure-viewer>
+      >
+        {canFloat && (
+          <ps-icon-button
+            slot="header-actions"
+            size="sm"
+            icon={floating ? 'panel-right' : 'picture-in-picture-2'}
+            label={floating ? 'Dock structure' : 'Pop out structure'}
+            onClick={() => updateLayout({ structurePlacement: floating ? 'docked' : 'floating' })}
+          ></ps-icon-button>
+        )}
+      </protspace-structure-viewer>
+      {floating && (
+        <button
+          type="button"
+          className="wb-float-grip"
+          data-workbench="float-grip"
+          aria-label="Resize structure"
+        ></button>
+      )}
     </section>
   );
 }

@@ -9,7 +9,7 @@ interface RailProps {
   structureDocked: boolean;
   /** The collapse toggle, for a caller that moves focus to it. */
   toggleRef?: Ref<HTMLElement>;
-  /** The docked structure section, which Structure focuses while the sidebar is open. */
+  /** The structure section, which Structure focuses while it is on screen. */
   structureRef?: RefObject<HTMLElement | null>;
 }
 
@@ -25,11 +25,10 @@ export function Rail({
   structureRef,
 }: RailProps) {
   const toggleSidebar = () => updateLayout({ sidebarOpen: !sidebarOpen });
-  // A docked structure in a collapsed sidebar waits; opening the sidebar loads it. In an open
-  // sidebar it is already on screen: Structure takes focus there.
+  // A docked structure in a collapsed sidebar waits; opening the sidebar loads it. Docked in an
+  // open sidebar, or floating over the plot, it is already on screen: Structure takes focus there.
   const showStructure = () => {
-    if (!structureDocked) return;
-    if (!sidebarOpen) updateLayout({ sidebarOpen: true });
+    if (structureDocked && !sidebarOpen) updateLayout({ sidebarOpen: true });
     else structureRef?.current?.focus();
   };
   return (

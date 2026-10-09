@@ -4,6 +4,8 @@ import { customElement } from '../../../utils/safe-custom-element';
 import { toDisplayValue, toInternalValue } from '@protspace/utils';
 import type { AnnotationBlock, NumericAnnotationType, TooltipView } from '@protspace/utils';
 import { proteinTooltipStyles } from './protein-tooltip.styles';
+import '../../kit/button';
+import type { TooltipAction } from '../scatter-plot.events';
 import {
   getAnnotationHeaderType,
   getGeneName,
@@ -131,6 +133,8 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
 @customElement('protspace-protein-tooltip')
 class ProtspaceProteinTooltip extends LitElement {
   @property({ type: Object }) view: TooltipView | null = null;
+  /** Buttons under the details while the tooltip is pinned; each dispatches `protein-tooltip-action`. */
+  @property({ attribute: false }) actions: readonly TooltipAction[] = [];
 
   static styles = proteinTooltipStyles;
 
@@ -168,8 +172,25 @@ class ProtspaceProteinTooltip extends LitElement {
             : ''}
           ${view.blocks.map((block) => renderAnnotationBlock(block))}
         </div>
+        ${this.actions.length > 0
+          ? html`<div class="tooltip-actions">
+              ${this.actions.map(
+                (action) =>
+                  html`<ps-button size="sm" variant="secondary" @click=${() => this._act(action.id)}
+                    >${action.label}</ps-button
+                  >`,
+              )}
+            </div>`
+          : ''}
       </div>
     `;
+  }
+
+  private _act(id: string): void {
+    // Stays in the plot's shadow root: the plot adds the protein and re-dispatches it.
+    this.dispatchEvent(
+      new CustomEvent('protein-tooltip-action', { detail: { id }, bubbles: true }),
+    );
   }
 }
 

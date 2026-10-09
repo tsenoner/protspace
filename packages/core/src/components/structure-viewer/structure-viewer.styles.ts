@@ -35,6 +35,7 @@ const structureViewerStylesCore = css`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     padding: 0.4rem 0.4rem 0.4rem 1.2rem;
     background: var(--protspace-viewer-header-bg);
     border-bottom: 1px solid var(--protspace-viewer-border);
@@ -42,6 +43,7 @@ const structureViewerStylesCore = css`
   }
 
   .header-actions {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 0.25rem;
@@ -74,16 +76,23 @@ const structureViewerStylesCore = css`
     color: var(--protspace-viewer-text-muted);
   }
 
+  /*
+   * One line, so the header keeps its height in a narrow sidebar: links that do not fit wrap onto
+   * a second line that is clipped away whole, never cut mid-word. Focusing a clipped link scrolls
+   * it into the line.
+   */
   .header-links {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
     column-gap: 0.35rem;
-    row-gap: 0.1rem;
+    max-height: 1.5em;
+    overflow: hidden;
     margin: 0;
     padding: 0;
     list-style: none;
     font-size: 0.75rem;
+    line-height: 1.5;
   }
 
   .header-links-item {
@@ -118,14 +127,15 @@ const structureViewerStylesCore = css`
    * The separator is a CSS rule rather than a hand-placed element, so adding a
    * resource cannot forget one or misplace it. It hangs off the list item, not
    * the link, so it stays out of the link's name, click area and focus ring,
-   * and it trails its own item so a wrapped row starts on a label. The empty
-   * alt text keeps screen readers from announcing it; the first declaration is
-   * the fallback for engines without that syntax.
+   * and it leads its own item, so a link clipped off the line takes its
+   * separator with it and the line ends on a label. The empty alt text keeps
+   * screen readers from announcing it; the first declaration is the fallback
+   * for engines without that syntax.
    */
-  .header-links-item:not(:last-child)::after {
+  .header-links-item:not(:first-child)::before {
     content: '·';
     content: '·' / '';
-    margin-left: 0.35rem;
+    margin-right: 0.35rem;
     color: var(--protspace-viewer-text-muted);
     opacity: 0.5;
   }

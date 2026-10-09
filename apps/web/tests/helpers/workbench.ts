@@ -1,6 +1,7 @@
 /**
- * Helpers for the workbench's sidebar column: the structure section, the rail, collapse and the
- * edge, the stored layout, and the plot's resize count that layout changes must keep at one.
+ * Helpers for the workbench's sidebar column: the structure section (docked or floating), the
+ * rail, collapse and the edge, the stored layout, and the plot's resize count that layout changes
+ * must keep at one.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
 import {
@@ -12,6 +13,23 @@ import {
 /** The structure section of the sidebar: the docked viewer, or its empty footer. */
 export function structurePanel(page: Page): Locator {
   return page.locator('[data-workbench="structure"]');
+}
+
+/** The plot area: the floating structure card stays inside it. */
+export function plotArea(page: Page): Locator {
+  return page.locator('[data-workbench="plot"]');
+}
+
+/** Pops the structure out of the sidebar into its floating card over the plot. */
+export async function floatStructure(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Pop out structure' }).click();
+  await expect(page.locator('.workbench')).toHaveAttribute('data-structure', 'floating');
+}
+
+/** Docks the floating structure card under the legend again. */
+export async function dockStructure(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Dock structure' }).click();
+  await expect(page.locator('.workbench')).toHaveAttribute('data-structure', 'docked');
 }
 
 /** Drags the divider between the legend and the structure by `dy` pixels and releases it. */

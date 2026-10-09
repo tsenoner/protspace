@@ -19,6 +19,12 @@ import {
 import type { StructureErrorEvent, StructureLoadEvent } from './types';
 import type { ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
 
+/**
+ * A protein's 3D structure (Mol*), its resource links and colouring.
+ *
+ * @slot header-actions - Buttons placed in the header, before the close button.
+ * @csspart header - The header row: title, protein id, links and actions.
+ */
 @customElement('protspace-structure-viewer')
 export class ProtspaceStructureViewer extends LitElement {
   static styles = structureViewerStyles;
@@ -398,7 +404,7 @@ export class ProtspaceStructureViewer extends LitElement {
     return html`
       ${this.showHeader
         ? html`
-            <div class="header">
+            <div class="header" part="header">
               <div class="header-info">
                 <div class="header-title-row">
                   <span class="title">${this.title}</span>
@@ -424,6 +430,7 @@ export class ProtspaceStructureViewer extends LitElement {
                 </ul>
               </div>
               <div class="header-actions">
+                <slot name="header-actions"></slot>
                 ${this.showCloseButton
                   ? html`<button
                       type="button"

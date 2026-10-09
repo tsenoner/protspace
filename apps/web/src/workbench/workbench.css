@@ -569,6 +569,14 @@
   display: none;
 }
 
+/* One 44 px header row, docked and floating: its links truncate rather than wrap. */
+.workbench #myStructureViewer::part(header) {
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  border-radius: 0;
+}
+
 /* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
 
 /* The sidebar slides out past the rail; nothing may scroll it into view. */
@@ -585,9 +593,11 @@
   z-index: 2;
 }
 
-/* Collapsed: laid out at full size (the legend and Mol* keep theirs), hidden and inert. */
+/* Collapsed: laid out at full size (the legend and Mol* keep theirs), hidden and inert. A floating
+   card stays over the plot. */
 .workbench[data-layout='desktop'][data-sidebar='collapsed'] #wb-sidebar,
-.workbench[data-layout='desktop'][data-sidebar='collapsed'] .wb-structure {
+.workbench[data-layout='desktop'][data-sidebar='collapsed']:not([data-structure='floating'])
+  .wb-structure {
   visibility: hidden;
 }
 
@@ -668,6 +678,64 @@
 
 .wb-rail-spacer {
   flex: 1;
+}
+
+/* ── The floating structure card (Task 2.13) ──────────────────────────────── */
+
+.workbench[data-layout='desktop'][data-structure='floating'] #myLegend {
+  height: 100%;
+}
+
+/* Above the plot; under the sidebar while it slides or is resized over the plot area (Task 2.12
+   lifts it then), and under the kit's top layer. */
+.workbench[data-layout='desktop'][data-structure='floating'] .wb-structure {
+  top: var(--wb-float-y);
+  right: auto;
+  bottom: auto;
+  left: var(--wb-float-x);
+  z-index: 1;
+  width: var(--wb-float-w);
+  height: var(--wb-float-h);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-lg);
+}
+
+.workbench[data-structure='floating'] #myStructureViewer::part(header) {
+  cursor: grab;
+  user-select: none;
+}
+
+.wb-float-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.wb-float-grip::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-right: 2px solid var(--ps-border-strong);
+  border-bottom: 2px solid var(--ps-border-strong);
+  border-bottom-right-radius: 2px;
+}
+
+.wb-float-grip:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
 }
 
 /* index.css answers reduced motion with a 0.01 ms transition-duration on every element, which

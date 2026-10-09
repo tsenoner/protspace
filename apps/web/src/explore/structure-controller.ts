@@ -1,7 +1,15 @@
-import type { ProtspaceStructureViewer } from '@protspace/core';
+import type {
+  ProtspaceScatterplot,
+  ProtspaceStructureViewer,
+  TooltipAction,
+  TooltipActionDetail,
+} from '@protspace/core';
 import type { LayoutState } from './layout-defaults';
-import { getLayout, subscribeLayout } from './layout-state';
+import { getLayout, subscribeLayout, updateLayout } from './layout-state';
 import { setWorkbenchStatus } from './workbench-status';
+
+/** "View structure" in a pinned protein tooltip. */
+const VIEW_STRUCTURE: TooltipAction = { id: 'view-structure', label: 'View structure' };
 
 /**
  * Whether the structure can be seen with this layout. Below 951 px the stacked sidebar never
@@ -23,6 +31,11 @@ export interface StructureController {
 
 interface StructureControllerOptions {
   viewer: ProtspaceStructureViewer;
+  /** The plot whose pinned tooltip offers "View structure". */
+  plotElement: Pick<
+    ProtspaceScatterplot,
+    'tooltipActions' | 'addEventListener' | 'removeEventListener'
+  >;
   /** `matchMedia('(min-width: 951px)')` in the app; a fake in tests. */
   desktopQuery: Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>;
 }
@@ -36,6 +49,7 @@ interface StructureControllerOptions {
  */
 export function createStructureController({
   viewer,
+  plotElement,
   desktopQuery,
 }: StructureControllerOptions): StructureController {
   // Properties, not attributes: Lit reads auto-show="false" as true.
@@ -62,16 +76,42 @@ export function createStructureController({
     publish(null);
   };
 
-  const unsubscribe = subscribeLayout(loadWaiting);
-  desktopQuery.addEventListener('change', loadWaiting);
+  const request = (proteinId: string) => {
+    publish(proteinId);
+    if (visible()) load(proteinId);
+    else waiting = proteinId;
+  };
+
+  // "View structure" is offered only where a click cannot show the structure: docked in a
+  // collapsed sidebar, on desktop (design decision 2). A visible or floating one loads on click.
+  const offerViewStructure = () => {
+    const layout = getLayout();
+    const offer =
+      desktopQuery.matches && layout.structurePlacement === 'docked' && !layout.sidebarOpen;
+    if (offer !== plotElement.tooltipActions.length > 0) {
+      plotElement.tooltipActions = offer ? [VIEW_STRUCTURE] : [];
+    }
+  };
+  const onLayoutChange = () => {
+    offerViewStructure();
+    loadWaiting();
+  };
+  const onTooltipAction = (event: Event) => {
+    const { id, proteinId } = (event as CustomEvent<TooltipActionDetail>).detail;
+    if (id !== VIEW_STRUCTURE.id) return;
+    // Wait for the tooltip's protein, then open the sidebar, which loads it.
+    request(proteinId);
+    updateLayout({ sidebarOpen: true });
+  };
+
+  const unsubscribe = subscribeLayout(onLayoutChange);
+  desktopQuery.addEventListener('change', onLayoutChange);
   viewer.addEventListener('structure-close', forget);
+  plotElement.addEventListener('tooltip-action', onTooltipAction);
+  offerViewStructure();
 
   return {
-    request(proteinId) {
-      publish(proteinId);
-      if (visible()) load(proteinId);
-      else waiting = proteinId;
-    },
+    request,
     clear() {
       // close() dispatches structure-close, which forgets the protein.
       if (viewer.proteinId) viewer.close();
@@ -79,8 +119,9 @@ export function createStructureController({
     },
     dispose() {
       unsubscribe();
-      desktopQuery.removeEventListener('change', loadWaiting);
+      desktopQuery.removeEventListener('change', onLayoutChange);
       viewer.removeEventListener('structure-close', forget);
+      plotElement.removeEventListener('tooltip-action', onTooltipAction);
     },
   };
 }

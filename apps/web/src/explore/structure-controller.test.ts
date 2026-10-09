@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LAYOUT } from './layout-defaults';
-import { resetLayoutForTests, updateLayout } from './layout-state';
+import { getLayout, resetLayoutForTests, updateLayout } from './layout-state';
 import {
   createStructureController,
   isStructureVisible,
@@ -52,17 +52,30 @@ function fakeDesktopQuery(matches: boolean) {
   return query;
 }
 
+/** The plot's surface the controller uses: its tooltip actions and the tooltip-action event. */
+function fakePlot() {
+  const events = new EventTarget();
+  return {
+    tooltipActions: [] as readonly { id: string; label: string }[],
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
+  };
+}
+
 const controllers: StructureController[] = [];
 
 function setup({ desktop = true } = {}) {
   const viewer = fakeViewer();
+  const plot = fakePlot();
   const desktopQuery = fakeDesktopQuery(desktop);
   const controller = createStructureController({
     viewer: viewer as never,
+    plotElement: plot as never,
     desktopQuery: desktopQuery as never,
   });
   controllers.push(controller);
-  return { viewer, desktopQuery, controller };
+  return { viewer, plot, desktopQuery, controller };
 }
 
 beforeEach(() => {
@@ -170,5 +183,48 @@ describe('createStructureController', () => {
     expect(viewer.loadProtein).not.toHaveBeenCalled();
     viewer.close();
     expect(getWorkbenchStatus().structureProteinId).toBe('P1');
+  });
+
+  it('offers View structure only while docked and collapsed on desktop', () => {
+    const { plot, desktopQuery } = setup();
+    const viewStructure = [{ id: 'view-structure', label: 'View structure' }];
+    expect(plot.tooltipActions).toEqual([]);
+    updateLayout({ sidebarOpen: false });
+    expect(plot.tooltipActions).toEqual(viewStructure);
+    updateLayout({ structurePlacement: 'floating' });
+    expect(plot.tooltipActions).toEqual([]);
+    updateLayout({ structurePlacement: 'docked' });
+    expect(plot.tooltipActions).toEqual(viewStructure);
+    desktopQuery.set(false);
+    expect(plot.tooltipActions).toEqual([]);
+    desktopQuery.set(true);
+    expect(plot.tooltipActions).toEqual(viewStructure);
+    updateLayout({ sidebarOpen: true });
+    expect(plot.tooltipActions).toEqual([]);
+  });
+
+  it('View structure opens the sidebar, which loads the waiting protein', () => {
+    const { viewer, plot, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+
+    plot.dispatchEvent(
+      new CustomEvent('tooltip-action', { detail: { id: 'view-structure', proteinId: 'P1' } }),
+    );
+
+    expect(getLayout().sidebarOpen).toBe(true);
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    expect(plot.tooltipActions).toEqual([]);
+  });
+
+  it('ignores other tooltip actions', () => {
+    const { viewer, plot } = setup();
+    updateLayout({ sidebarOpen: false });
+    plot.dispatchEvent(
+      new CustomEvent('tooltip-action', { detail: { id: 'copy-id', proteinId: 'P1' } }),
+    );
+    expect(getLayout().sidebarOpen).toBe(false);
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,19 @@ export const proteinTooltipStyles = css`
     visibility: visible;
   }
 
+  /* A pinned tooltip takes the pointer, for its action buttons. */
+  :host(.pinned) {
+    pointer-events: auto;
+  }
+
+  .tooltip-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ps-space-1-5);
+    padding: var(--ps-space-2) var(--ps-space-3);
+    border-top: 1px solid var(--ps-border);
+  }
+
   .tooltip {
     box-sizing: border-box;
     background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));

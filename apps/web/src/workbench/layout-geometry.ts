@@ -1,13 +1,15 @@
 /**
- * Pure geometry of the workbench's sidebar column. Sizes here are shell literals, not tokens
+ * Pure geometry of the workbench's sidebar column and the floating structure card. Sizes here are shell literals, not tokens
  * (design decision 5); the stored layout's ranges live in explore/layout-defaults.ts.
  */
 
 import {
+  FLOATING_CARD,
   LEGEND_FRACTION,
   MIN_PLOT_WIDTH,
   RAIL_WIDTH,
   SIDEBAR_WIDTH,
+  type FloatingRect,
 } from '../explore/layout-defaults';
 
 /** The legend keeps at least this much of the sidebar column's height. */
@@ -100,4 +102,47 @@ export type SidebarPhase = 'open' | 'opening' | 'closing' | 'collapsed';
  */
 export function plotRightInset(phase: SidebarPhase, width: number): number {
   return phase === 'open' ? width + RAIL_WIDTH : RAIL_WIDTH;
+}
+
+/** One arrow key moves or resizes the floating card this many pixels; Shift four times as far. */
+const FLOAT_STEP = 16;
+
+/**
+ * Where the floating structure card goes in a plot area of `bounds`: the stored rectangle, or for
+ * null the default 340 × 360 card 14 px in from the bottom-right corner. Its size is at least
+ * 280 × 240 and at most the plot area, and it is moved inside the plot area. Render only: a card
+ * stored outside a smaller window shows inside it, and storage keeps the user's rectangle.
+ */
+export function clampFloatRect(
+  rect: FloatingRect | null,
+  bounds: { width: number; height: number },
+): FloatingRect {
+  const areaWidth = Math.max(0, bounds.width);
+  const areaHeight = Math.max(0, bounds.height);
+  const width = Math.min(
+    Math.max(rect?.width ?? FLOATING_CARD.defaultWidth, FLOATING_CARD.minWidth),
+    areaWidth,
+  );
+  const height = Math.min(
+    Math.max(rect?.height ?? FLOATING_CARD.defaultHeight, FLOATING_CARD.minHeight),
+    areaHeight,
+  );
+  const x = rect ? rect.x : areaWidth - FLOATING_CARD.inset - width;
+  const y = rect ? rect.y : areaHeight - FLOATING_CARD.inset - height;
+  return {
+    x: Math.min(Math.max(x, 0), areaWidth - width),
+    y: Math.min(Math.max(y, 0), areaHeight - height),
+    width,
+    height,
+  };
+}
+
+/** The floating card's move (or resize) for an arrow key; zero for other keys. */
+export function floatStep(key: string, shift: boolean): { dx: number; dy: number } {
+  const step = shift ? 4 * FLOAT_STEP : FLOAT_STEP;
+  if (key === 'ArrowLeft') return { dx: -step, dy: 0 };
+  if (key === 'ArrowRight') return { dx: step, dy: 0 };
+  if (key === 'ArrowUp') return { dx: 0, dy: -step };
+  if (key === 'ArrowDown') return { dx: 0, dy: step };
+  return { dx: 0, dy: 0 };
 }

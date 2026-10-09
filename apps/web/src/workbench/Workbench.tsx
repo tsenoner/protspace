@@ -1,4 +1,11 @@
-import { useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import {
+  createRef,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from 'react';
 import { RAIL_WIDTH, SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { AppBar } from './AppBar';
@@ -14,12 +21,16 @@ import { PlotArea } from './PlotArea';
 import { Rail } from './Rail';
 import { Sidebar, SidebarEdge } from './Sidebar';
 import { StructurePanel } from './StructurePanel';
+import { useFloatingCard } from './use-floating-card';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
 import { useSidebarTransition } from './use-sidebar-transition';
 import { useWorkbenchStatus } from './use-workbench-status';
 import { ViewBar } from './ViewBar';
 import './workbench.css';
+
+/** A slide target that is never there: the structure while it floats over the plot. */
+const NO_SLIDE_TARGET = createRef<HTMLElement>();
 
 function subscribeWindowWidth(onChange: () => void): () => void {
   window.addEventListener('resize', onChange);
@@ -42,9 +53,11 @@ export function Workbench() {
   // The divider's drag or key preview; null while the stored fraction shows.
   const [legendFractionPreview, setLegendFractionPreview] = useState<number | null>(null);
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
-  // What the sidebar column holds under the legend: the empty footer, or the docked viewer.
-  const structure = structureProteinId === null ? 'none' : 'docked';
   const desktop = mode === 'desktop';
+  // Floating is desktop-only: below 951 px a stored floating card shows docked (storage keeps it).
+  const placement = desktop ? layout.structurePlacement : 'docked';
+  // The empty footer under the legend, the docked viewer, or the floating card over the plot.
+  const structure = structureProteinId === null ? 'none' : placement;
   const sidebarCap = useSyncExternalStore(subscribeWindowWidth, getSidebarCap);
   const asideRef = useRef<HTMLElement>(null);
   const structureRef = useRef<HTMLElement>(null);
@@ -55,8 +68,17 @@ export function Workbench() {
   const sidebarWidth = clampSidebarWidth(layout.sidebarWidth, sidebarCap);
   const phase = useSidebarTransition(layout.sidebarOpen, {
     aside: asideRef,
-    structure: structureRef,
+    // A floating card stays over the plot: it does not slide with the sidebar.
+    structure: structure === 'floating' ? NO_SLIDE_TARGET : structureRef,
   });
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // The plot area the floating card stays inside: PlotArea's main[data-workbench="plot"].
+  const plotAreaRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    plotAreaRef.current =
+      bodyRef.current?.querySelector<HTMLElement>('[data-workbench="plot"]') ?? null;
+  }, []);
+  useFloatingCard(structureRef, plotAreaRef);
   // On desktop a collapsed or collapsing sidebar is inert; below 951 px it always shows.
   const sidebarHidden = desktop && (phase === 'collapsed' || phase === 'closing');
   return (
@@ -70,6 +92,7 @@ export function Workbench() {
       <AppBar />
       <ViewBar />
       <div
+        ref={bodyRef}
         className="wb-body"
         data-workbench="body"
         style={
@@ -103,14 +126,17 @@ export function Workbench() {
         <Sidebar ref={asideRef} inert={sidebarHidden} />
         <StructurePanel
           ref={structureRef}
-          inert={sidebarHidden}
+          inert={sidebarHidden && structure !== 'floating'}
+          // With no protein the section is the docked footer: no card, no grip.
+          placement={structure === 'floating' ? 'floating' : 'docked'}
+          canFloat={desktop}
           legendFraction={legendFraction}
           onLegendFractionPreview={setLegendFractionPreview}
         />
         <Rail
           sidebarOpen={layout.sidebarOpen}
           structureProteinId={structureProteinId}
-          structureDocked={layout.structurePlacement === 'docked'}
+          structureDocked={placement === 'docked'}
           toggleRef={railToggleRef}
           structureRef={structureRef}
         />

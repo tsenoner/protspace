@@ -46,6 +46,8 @@ export type {
   RendererDegradedContext,
   RendererDegradedDetail,
   RendererDegradedReason,
+  TooltipAction,
+  TooltipActionDetail,
 } from './components/scatter-plot/scatter-plot.events';
 export type {
   StructureErrorContext,

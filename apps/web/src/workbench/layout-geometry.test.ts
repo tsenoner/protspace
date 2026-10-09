@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampFloatRect,
   clampLegendFraction,
   clampSidebarToWindow,
   clampSidebarWidth,
+  floatStep,
   fractionStep,
   plotRightInset,
   sidebarStep,
@@ -89,5 +91,57 @@ describe('plotRightInset', () => {
     expect(plotRightInset('collapsed', 300)).toBe(44);
     // Opening slides the sidebar in over the plot; the plot narrows only once it is open.
     expect(plotRightInset('opening', 300)).toBe(44);
+  });
+});
+
+describe('clampFloatRect', () => {
+  // The plot area at 1280 × 720 with the sidebar open: 1280 − 300 − 44 by 720 − 48 − 44.
+  const area = { width: 936, height: 628 };
+
+  it('clampFloatRect defaults to the bottom-right inset', () => {
+    expect(clampFloatRect(null, area)).toEqual({ x: 582, y: 254, width: 340, height: 360 });
+  });
+
+  it('keeps a card inside a plot that shrank', () => {
+    const card = { x: 500, y: 200, width: 340, height: 360 };
+    expect(clampFloatRect(card, area)).toEqual(card);
+    expect(clampFloatRect(card, { width: 656, height: 508 })).toEqual({
+      x: 316,
+      y: 148,
+      width: 340,
+      height: 360,
+    });
+    expect(clampFloatRect({ ...card, x: 5000, y: -300 }, area)).toEqual({
+      x: 596,
+      y: 0,
+      width: 340,
+      height: 360,
+    });
+  });
+
+  it('enforces the 280 × 240 minimum', () => {
+    expect(clampFloatRect({ x: 10, y: 10, width: 100, height: 50 }, area)).toEqual({
+      x: 10,
+      y: 10,
+      width: 280,
+      height: 240,
+    });
+    // A plot area smaller than the minimum: the card fills it.
+    expect(clampFloatRect(null, { width: 250, height: 200 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 250,
+      height: 200,
+    });
+  });
+});
+
+describe('floatStep', () => {
+  it('floatStep moves 16 px, or 64 px with Shift', () => {
+    expect(floatStep('ArrowLeft', false)).toEqual({ dx: -16, dy: 0 });
+    expect(floatStep('ArrowDown', false)).toEqual({ dx: 0, dy: 16 });
+    expect(floatStep('ArrowUp', true)).toEqual({ dx: 0, dy: -64 });
+    expect(floatStep('ArrowRight', true)).toEqual({ dx: 64, dy: 0 });
+    expect(floatStep('Enter', false)).toEqual({ dx: 0, dy: 0 });
   });
 });

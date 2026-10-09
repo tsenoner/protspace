@@ -117,3 +117,18 @@ export function createRendererDegradedDetail(
     context,
   };
 }
+
+/** A button a pinned protein tooltip offers (`ProtspaceScatterplot.tooltipActions`). */
+export interface TooltipAction {
+  /** Returned in `tooltip-action`'s detail. */
+  id: string;
+  /** The button's text, which is also its accessible name. */
+  label: string;
+}
+
+/** `tooltip-action`: a pinned tooltip's button was pressed. */
+export interface TooltipActionDetail {
+  id: string;
+  /** The protein the tooltip was pinned on. */
+  proteinId: string;
+}

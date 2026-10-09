@@ -76,6 +76,7 @@ interactions.
 | `filteredProteinIds`                | `string[]`                            | `[]`          | Result of an active filter query               |
 | `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied |
 | `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration         |
+| `tooltipActions`                    | `readonly TooltipAction[]`            | `[]`          | Buttons a pinned tooltip offers (see below)    |
 
 ### HTML attributes
 
@@ -132,6 +133,7 @@ All scatterplot events bubble.
 | ------------------------ | ------------------------------------------------ | ----------------------------------- |
 | `protein-click`          | `{ proteinId, point, view, modifierKeys }`       | A point was clicked                 |
 | `protein-hover`          | `{ proteinId, point, view }`                     | The pointer entered a point         |
+| `tooltip-action`         | `{ id, proteinId }`                              | A pinned tooltip's action pressed   |
 | `brush-selection`        | `{ proteinIds, isMultiple, idsUnique }`          | Rectangle/lasso selection committed |
 | `data-change`            | `{ data }`                                       | The displayed dataset changed       |
 | `data-isolation`         | `{ isolationHistory, isolationMode, dataSize }`  | Isolation applied                   |
@@ -142,6 +144,13 @@ All scatterplot events bubble.
 
 `modifierKeys` on `protein-click` is `{ ctrl, meta, shift, alt }`. `view` is the tooltip-friendly
 projection of the protein's annotations; `point` is the bare plot point.
+
+`tooltipActions` takes `{ id, label }` objects (`TooltipAction`) and is a property only. While it
+holds any, a plain click on a protein pins its tooltip at the protein with one button per action.
+The pin ends on Escape, a press outside the plot, the next click, a zoom or pan, a hover of another
+protein, a data or projection change, or when `tooltipActions` becomes empty. A button dispatches
+`tooltip-action` (bubbles, composed) with the action's `id` and the pinned `proteinId`
+(`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only.
 
 ### Example
 
@@ -483,6 +492,13 @@ colorBy.addEventListener('annotation-change', (e) => {
 | `structure-load`  | `{ proteinId, status, data? }`                           | Lifecycle event for loading or loaded |
 | `structure-error` | `{ message, severity, source, context, originalError? }` | Host-consumed error event             |
 | `structure-close` | `{ proteinId }`                                          | Viewer closed                         |
+
+### Slots and parts
+
+| Name                    | Description                                              |
+| ----------------------- | -------------------------------------------------------- |
+| `header-actions` (slot) | Buttons placed in the header, before the close button    |
+| `header` (part)         | The header row: title, protein id, links and the buttons |
 
 ### Example
 

@@ -83,6 +83,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   // What the structure viewer shows and when: a protein loads only where it can be seen.
   const structureController = createStructureController({
     viewer: structureViewer,
+    plotElement,
     desktopQuery: window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`),
   });
   lifecycle.addCleanup(() => structureController.dispose());

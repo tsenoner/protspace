@@ -39,7 +39,10 @@ import type {
   BrushSelectionDetail,
   ProteinClickDetail,
   RendererDegradedDetail,
+  TooltipAction,
+  TooltipActionDetail,
 } from './scatter-plot.events';
+import { pushLayer } from '../kit/layers';
 import { PointGridController, type GridStash } from './interaction/point-grid-controller';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
@@ -109,7 +112,11 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_focusedValues',
   '_isZoomedIn',
   '_mergedConfig',
+  'tooltipActions',
+  '_pinnedTooltip',
 ]);
+
+const NO_TOOLTIP_ACTIONS: readonly TooltipAction[] = [];
 
 /** Same keys, same values. Style getters read these maps only by key lookup. */
 function sameMapping<T>(current: Record<string, T> | null, next: Record<string, T>): boolean {
@@ -157,6 +164,13 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'filters-active' }) filtersActive = false;
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
+  /**
+   * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
+   * Escape, a press outside the plot, the next click, a zoom or pan, a hover of another protein,
+   * a data or projection change, or until this becomes empty. A button dispatches
+   * `tooltip-action` with its id and the protein. Empty (the default) keeps tooltips hover-only.
+   */
+  @property({ attribute: false }) tooltipActions: readonly TooltipAction[] = [];
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -166,6 +180,10 @@ export class ProtspaceScatterplot extends LitElement {
     view: TooltipView;
   } | null = null;
   @state() private _tooltipHeight: number | null = null;
+  // The tooltip a plain click pinned while tooltipActions offered buttons, at its protein.
+  @state() private _pinnedTooltip: { point: PlotDataPoint; view: TooltipView } | null = null;
+  // Releases the pin's layer (kit/layers.ts), through which Escape and outside presses end it.
+  private _releasePinnedTooltip: (() => void) | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   // Plain field, NOT @state: render() never reads _transform (it drives the
   // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
@@ -525,6 +543,7 @@ export class ProtspaceScatterplot extends LitElement {
     window.removeEventListener('keyup', this._handleShiftKey);
     window.removeEventListener('blur', this._handleWindowBlur);
     this._tooltipData = null;
+    this._unpinTooltip();
     this._hoveredPoint = null;
     this._shiftDown = false;
     this._focusedValues = null;
@@ -622,6 +641,7 @@ export class ProtspaceScatterplot extends LitElement {
     // Before `updated()` rebuilds the style getters, so this render already uses the re-derived
     // focus (a change here joins the current update instead of scheduling another one).
     this._reconcileFocus(changedProperties);
+    this._reconcilePinnedTooltip(changedProperties);
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -913,13 +933,13 @@ export class ProtspaceScatterplot extends LitElement {
     // updates such as zoom/pan (_transform), selection overlays, or the self-triggered
     // _tooltipHeight update. Clearing _tooltipData to null IS a _tooltipData change,
     // so the null-reset path in _measureTooltipHeight still fires correctly.
-    if (changedProperties.has('_tooltipData')) {
+    if (changedProperties.has('_tooltipData') || changedProperties.has('_pinnedTooltip')) {
       this._measureTooltipHeight();
     }
   }
 
   private _measureTooltipHeight() {
-    if (!this._tooltipData) {
+    if (!this._tooltipData && !this._pinnedTooltip) {
       this._tooltipMeasureToken++; // invalidate any in-flight async measurement
       if (this._tooltipHeight !== null) {
         this._tooltipHeight = null;
@@ -941,7 +961,9 @@ export class ProtspaceScatterplot extends LitElement {
       () => {
         // Guard against: (a) a newer hover that bumped the token while we were
         // waiting, or (b) the tooltip being cleared while we were waiting.
-        if (token !== this._tooltipMeasureToken || !this._tooltipData) return;
+        if (token !== this._tooltipMeasureToken || (!this._tooltipData && !this._pinnedTooltip)) {
+          return;
+        }
         const height = el.offsetHeight;
         if (height > 0 && height !== this._tooltipHeight) {
           this._tooltipHeight = height;
@@ -1194,9 +1216,13 @@ export class ProtspaceScatterplot extends LitElement {
       queryByPixels: (x0, y0, x1, y1) => this._pointGrid.index().queryByPixels(x0, y0, x1, y1),
       resolveSlotsToIds: (slots) => this._slotsToInteractiveIds(slots),
       onTransform: (t) => {
+        const before = this._transform;
         this._transform = t;
         this._isZoomedIn = t.k > 1 + ZOOM_IDENTITY_EPSILON;
         this._connectorOverlay.updateZoomScale(t.k);
+        // A zoom or pan moves the protein away from its pinned tooltip. A reset glide that is
+        // already at the identity emits the same transform each frame and moves nothing.
+        if (t.k !== before.k || t.x !== before.x || t.y !== before.y) this._unpinTooltip();
       },
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),
@@ -1448,6 +1474,8 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
+    // Another protein's hover ends a pin.
+    if (this._pinnedTooltip && this._pinnedTooltip.point.id !== point.id) this._unpinTooltip();
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
     const view = buildTooltipView(
@@ -1504,6 +1532,15 @@ export class ProtspaceScatterplot extends LitElement {
         composed: true,
       }),
     );
+    if (
+      view &&
+      this.tooltipActions.length > 0 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey
+    ) {
+      this._pinTooltip(point, view);
+    }
   }
 
   /**
@@ -1583,6 +1620,8 @@ export class ProtspaceScatterplot extends LitElement {
    */
   private _handleCanvasClick(event: MouseEvent): void {
     if (!this._scales) return;
+    // Any click on the plot ends a pin; a plain click on a protein pins anew below.
+    this._unpinTooltip();
 
     // If the click originated from the spiderfy UI, let the spiderfy handlers deal with it.
     // This avoids collapsing the expanded stack (and early-returning) before a spiderfy node can be selected.
@@ -1701,6 +1740,20 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction?.resetZoom();
   }
 
+  /** The tooltip on screen: the pinned one, at its protein, else the hovered protein's. */
+  private _shownTooltip(): { x: number; y: number; view: TooltipView } | null {
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return this._tooltipData;
+    const scales = this._scales;
+    if (!scales) return null;
+    const t = this._transform;
+    return {
+      x: scales.x(pinned.point.x) * t.k + t.x,
+      y: scales.y(pinned.point.y) * t.k + t.y,
+      view: pinned.view,
+    };
+  }
+
   /**
    * Content-scaled fallback height derived from the tooltip view model.
    * Used when the async DOM measurement has not yet resolved (first hover or
@@ -1708,26 +1761,77 @@ export class ProtspaceScatterplot extends LitElement {
    * helper so the logic is unit-testable without a DOM.
    */
   private _estimateTooltipHeight(): number {
-    if (!this._tooltipData) return TOOLTIP_FALLBACK_HEIGHT;
-    return estimateTooltipHeight(
-      this._tooltipData.view,
-      effectiveTooltipWidth(this._mergedConfig.width),
-    );
+    const shown = this._shownTooltip();
+    if (!shown) return TOOLTIP_FALLBACK_HEIGHT;
+    return estimateTooltipHeight(shown.view, effectiveTooltipWidth(this._mergedConfig.width));
   }
 
   private _getTooltipStyle() {
-    if (!this._tooltipData) return '';
-
-    const { x, y } = this._tooltipData;
+    const shown = this._shownTooltip();
+    if (!shown) return '';
     const config = this._mergedConfig;
     return computeTooltipStyle({
-      x,
-      y,
+      x: shown.x,
+      y: shown.y,
       height: this._tooltipHeight ?? this._estimateTooltipHeight(),
       viewportWidth: config.width,
       viewportHeight: config.height,
     });
   }
+
+  private _renderTooltip() {
+    const shown = this._shownTooltip();
+    if (!shown) return '';
+    const pinned = this._pinnedTooltip !== null;
+    // Shift-focus fades the hover tooltip; a pinned one stays.
+    const className = pinned ? 'visible pinned' : this._focusedValues ? '' : 'visible';
+    return html`
+      <protspace-protein-tooltip
+        class=${className}
+        style="${this._getTooltipStyle()}"
+        .view=${shown.view}
+        .actions=${pinned ? this.tooltipActions : NO_TOOLTIP_ACTIONS}
+        @protein-tooltip-action=${this._handleTooltipAction}
+      ></protspace-protein-tooltip>
+    `;
+  }
+
+  private _pinTooltip(point: PlotDataPoint, view: TooltipView): void {
+    this._pinnedTooltip = { point, view };
+    // Presses on the plot end the pin through the click and zoom handlers; the layer handles
+    // Escape and presses anywhere else.
+    this._releasePinnedTooltip ??= pushLayer({
+      close: () => this._unpinTooltip(),
+      elements: [this],
+    });
+  }
+
+  private _unpinTooltip(): void {
+    this._releasePinnedTooltip?.();
+    this._releasePinnedTooltip = null;
+    this._pinnedTooltip = null;
+  }
+
+  /** A pin ends with its data, with its points' positions, or with the last action. */
+  private _reconcilePinnedTooltip(changedProperties: Map<string, unknown>): void {
+    if (!this._pinnedTooltip) return;
+    const actionsGone = changedProperties.has('tooltipActions') && this.tooltipActions.length === 0;
+    if (actionsGone || this._geometryInputsChanged(changedProperties)) this._unpinTooltip();
+  }
+
+  private _handleTooltipAction = (event: Event) => {
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return;
+    const { id } = (event as CustomEvent<{ id: string }>).detail;
+    this._unpinTooltip();
+    this.dispatchEvent(
+      new CustomEvent<TooltipActionDetail>('tooltip-action', {
+        detail: { id, proteinId: pinned.point.id },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
 
   render() {
     const config = this._mergedConfig;
@@ -1760,16 +1864,7 @@ export class ProtspaceScatterplot extends LitElement {
           style="position: absolute; top: 0; left: 0; max-width: ${config.width}px; max-height: ${config.height}px; z-index: 3; background: transparent;"
         ></svg>
 
-        ${this._tooltipData
-          ? html`
-              <protspace-protein-tooltip
-                class=${this._focusedValues ? '' : 'visible'}
-                style="${this._getTooltipStyle()}"
-                .view=${this._tooltipData.view}
-              >
-              </protspace-protein-tooltip>
-            `
-          : ''}
+        ${this._renderTooltip()}
         ${this.selectionMode || this.selectedProteinIds.length > 0
           ? html`
               <div
