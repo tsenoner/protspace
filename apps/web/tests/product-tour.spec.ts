@@ -238,8 +238,39 @@ test.describe('Product Tour', () => {
     // Lifted above the tour's overlay while the welcome step shows, and put back after it.
     const helpHost = page.locator('[data-driver-id="help"]');
     await expect(helpHost).toHaveCSS('z-index', '100001');
+    // Drawn above the overlay: Help is the topmost element at its own centre. driver.js turns off
+    // pointer events on the page while a tour runs, and hit testing skips such elements, so Help
+    // takes them back for the probe.
+    const box = (await helpHost.boundingBox())!;
+    expect(
+      await page.evaluate(
+        ({ x, y }) => {
+          const host = document.querySelector<HTMLElement>('[data-driver-id="help"]')!;
+          host.style.setProperty('pointer-events', 'auto', 'important');
+          const top = document.elementFromPoint(x, y);
+          host.style.removeProperty('pointer-events');
+          return top?.closest('[data-driver-id="help"]') !== null;
+        },
+        { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      ),
+    ).toBe(true);
     await clickNext(page);
     await expect(helpHost).not.toHaveCSS('z-index', '100001');
+  });
+
+  test('Escape right after the tour starts leaves no spotlight on Help', async ({ page }) => {
+    await page.locator('.driver-tour-skip-btn').click();
+    await waitForTourDismissed(page);
+
+    await appBar(page).getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Take the tour' }).click();
+    // Inside the welcome step's 400 ms highlight transition, when driver.js skips onDeselected.
+    await page.locator('.driver-tour-skip-btn').waitFor({ state: 'attached' });
+    await page.keyboard.press('Escape');
+    await waitForTourDismissed(page);
+
+    await expect(page.locator('[data-driver-id="help"]')).not.toHaveAttribute('style', /z-index/);
+    await expect(page.locator('[data-driver-id="help"] button')).toHaveCSS('box-shadow', 'none');
   });
 
   // ── Step highlights correct element ─────────────────────────
