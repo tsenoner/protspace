@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
-import type { PsMenu, PsMenuItem } from './menu';
+import type { PsMenu, PsMenuGroup, PsMenuItem } from './menu';
 import './button';
 import './menu';
 
@@ -313,5 +313,103 @@ describe('ps-menu', () => {
     expect(long.offsetHeight).toBe(
       menu.querySelector<PsMenuItem>('[value="species"]')!.offsetHeight,
     );
+  });
+});
+
+describe('ps-menu-group', () => {
+  async function grouped(attrs = '', extra = '') {
+    document.body.innerHTML = `
+      <button id="anchor">Color by</button>
+      <ps-menu label="Color by" ${attrs}>
+        <ps-menu-label>Ungrouped</ps-menu-label>
+        <ps-menu-item value="length" type="radio">Length</ps-menu-item>
+        <ps-menu-group label="UniProt">
+          <ps-menu-item value="family" type="radio" checked>Protein family</ps-menu-item>
+          <ps-menu-item value="species" type="radio">Species</ps-menu-item>
+        </ps-menu-group>
+        <ps-menu-group label="InterPro" ${extra}>
+          <ps-menu-item value="pfam" type="radio">Pfam clan</ps-menu-item>
+        </ps-menu-group>
+      </ps-menu>`;
+    const anchor = document.getElementById('anchor')!;
+    const menu = document.querySelector('ps-menu') as PsMenu;
+    menu.anchor = anchor;
+    anchor.focus();
+    menu.open = true;
+    await menu.updateComplete;
+    await frame();
+    await frame();
+    const groups = [...menu.querySelectorAll<PsMenuGroup>('ps-menu-group')];
+    return { menu, groups };
+  }
+
+  function search(menu: PsMenu, text: string) {
+    const input = menu.shadowRoot!.querySelector('input')!;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    return menu.updateComplete;
+  }
+
+  it('is a group named by its caption, which is not read twice', async () => {
+    const { groups } = await grouped();
+    await expect.element(page.getByRole('group', { name: 'UniProt' })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole('group', { name: 'UniProt' }))
+      .toHaveTextContent('Protein family');
+    const caption = groups[0].shadowRoot!.querySelector('.caption')!;
+    expect(caption.textContent).toBe('UniProt');
+    expect(caption.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('draws its caption like ps-menu-label', async () => {
+    const { menu, groups } = await grouped();
+    const caption = getComputedStyle(groups[0].shadowRoot!.querySelector('.caption')!);
+    const label = getComputedStyle(menu.querySelector('ps-menu-label')!);
+    for (const prop of [
+      'color',
+      'fontSize',
+      'fontWeight',
+      'letterSpacing',
+      'textTransform',
+      'paddingTop',
+      'paddingLeft',
+      'paddingBottom',
+    ] as const)
+      expect(caption[prop], prop).toBe(label[prop]);
+  });
+
+  it('lets arrow keys and type-ahead reach items inside groups', async () => {
+    await grouped();
+    expect(focused()).toBe('family');
+    key('ArrowDown');
+    expect(focused()).toBe('species');
+    key('ArrowDown');
+    expect(focused()).toBe('pfam');
+    key('ArrowDown');
+    expect(focused()).toBe('length');
+    key('p');
+    expect(focused()).toBe('family');
+    key('End');
+    expect(focused()).toBe('pfam');
+  });
+
+  it('filters items inside groups and hides a group with no match', async () => {
+    const { menu, groups } = await grouped('searchable');
+    await search(menu, 'spe');
+    expect(groups.map((g) => g.hidden)).toEqual([false, true]);
+    key('ArrowDown');
+    expect(focused()).toBe('species');
+    await search(menu, '');
+    expect(groups.map((g) => g.hidden)).toEqual([false, false]);
+  });
+
+  it('skips the items of a group its owner hid, and keeps it hidden', async () => {
+    const { menu, groups } = await grouped('searchable', 'hidden');
+    await search(menu, 'pf');
+    await search(menu, '');
+    expect(groups[1].hidden).toBe(true);
+    key('ArrowDown');
+    key('End');
+    expect(focused()).toBe('species');
   });
 });

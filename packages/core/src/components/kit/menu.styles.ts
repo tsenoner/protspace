@@ -113,20 +113,41 @@ export const menuItemStyles = [
   `,
 ];
 
+/** A group caption's look, shared by ps-menu-label and ps-menu-group. */
+const caption = css`
+  display: block;
+  padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1);
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+`;
+
 export const menuLabelStyles = [
   kitHost,
   css`
     :host {
-      display: block;
-      padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1);
-      color: var(--ps-text-muted);
-      font-size: var(--ps-text-xs);
-      font-weight: var(--ps-weight-semibold);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      ${caption}
     }
     :host([hidden]) {
       display: none;
+    }
+  `,
+];
+
+export const menuGroupStyles = [
+  kitHost,
+  css`
+    :host {
+      display: flex;
+      flex-direction: column;
+    }
+    :host([hidden]) {
+      display: none;
+    }
+    .caption {
+      ${caption}
     }
   `,
 ];

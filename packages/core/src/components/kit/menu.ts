@@ -3,7 +3,7 @@ import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { deepActiveElement } from './focus';
 import { icon } from './icon';
-import { menuItemStyles, menuLabelStyles, menuStyles } from './menu.styles';
+import { menuGroupStyles, menuItemStyles, menuLabelStyles, menuStyles } from './menu.styles';
 import './popover';
 import type { PsPopover } from './popover';
 import type { Placement } from './position';
@@ -58,7 +58,7 @@ export class PsMenuItem extends LitElement {
   }
 }
 
-/** A caption above a group of items. */
+/** A caption above items that are not in a ps-menu-group. Assistive technology skips it. */
 @customElement('ps-menu-label')
 export class PsMenuLabel extends LitElement {
   static styles = menuLabelStyles;
@@ -70,6 +70,30 @@ export class PsMenuLabel extends LitElement {
 
   render() {
     return html`<slot></slot>`;
+  }
+}
+
+/**
+ * Related items under a caption. Assistive technology gets a group named by the caption. Radio
+ * items stay exclusive across the whole menu, not per group.
+ */
+@customElement('ps-menu-group')
+export class PsMenuGroup extends LitElement {
+  static styles = menuGroupStyles;
+
+  @property() label = '';
+
+  protected willUpdate(): void {
+    this.setAttribute('role', 'group');
+    if (this.label) this.setAttribute('aria-label', this.label);
+    else this.removeAttribute('aria-label');
+  }
+
+  render() {
+    // The host's aria-label names the group; the caption is for the eye only.
+    return html`${this.label
+        ? html`<div class="caption" aria-hidden="true">${this.label}</div>`
+        : nothing}<slot></slot>`;
   }
 }
 
@@ -110,7 +134,8 @@ export class PsMenu extends LitElement {
   }
 
   private get navigable(): PsMenuItem[] {
-    return this.items.filter((item) => !item.disabled && !item.hidden);
+    // closest() also catches an item inside a hidden ps-menu-group.
+    return this.items.filter((item) => !item.disabled && !item.closest('[hidden]'));
   }
 
   connectedCallback(): void {
@@ -222,6 +247,12 @@ export class PsMenu extends LitElement {
     for (const item of this.items)
       filter(item, q !== '' && !(item.textContent ?? '').toLowerCase().includes(q));
     for (const label of this.querySelectorAll('ps-menu-label')) filter(label, q !== '');
+    // After the items: a group hides when the search left none of its items visible.
+    for (const group of this.querySelectorAll('ps-menu-group'))
+      filter(
+        group,
+        q !== '' && ![...group.querySelectorAll('ps-menu-item')].some((item) => !item.hidden),
+      );
     this.requestUpdate();
   }
 
@@ -318,5 +349,6 @@ declare global {
     'ps-menu': PsMenu;
     'ps-menu-item': PsMenuItem;
     'ps-menu-label': PsMenuLabel;
+    'ps-menu-group': PsMenuGroup;
   }
 }
