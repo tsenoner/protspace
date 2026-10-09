@@ -1,0 +1,174 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_LAYOUT } from './layout-defaults';
+import { resetLayoutForTests, updateLayout } from './layout-state';
+import {
+  createStructureController,
+  isStructureVisible,
+  type StructureController,
+} from './structure-controller';
+import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
+
+/** The viewer's surface the controller uses, over a real EventTarget. */
+function fakeViewer() {
+  const events = new EventTarget();
+  const viewer = {
+    autoShow: true,
+    showTips: true,
+    title: 'Protein Structure',
+    proteinId: null as string | null,
+    style: {
+      display: 'none',
+      removeProperty(name: string) {
+        if (name === 'display') this.display = '';
+        return '';
+      },
+    },
+    loadProtein: vi.fn((proteinId: string) => {
+      viewer.proteinId = proteinId;
+    }),
+    // As the element does: forget the protein, then tell listeners.
+    close: vi.fn(() => {
+      viewer.proteinId = null;
+      events.dispatchEvent(new CustomEvent('structure-close', { detail: { proteinId: null } }));
+    }),
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+  };
+  return viewer;
+}
+
+/** `(min-width: 951px)`, answered by the test. */
+function fakeDesktopQuery(matches: boolean) {
+  const events = new EventTarget();
+  const query = {
+    matches,
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    set(next: boolean) {
+      query.matches = next;
+      events.dispatchEvent(new Event('change'));
+    },
+  };
+  return query;
+}
+
+const controllers: StructureController[] = [];
+
+function setup({ desktop = true } = {}) {
+  const viewer = fakeViewer();
+  const desktopQuery = fakeDesktopQuery(desktop);
+  const controller = createStructureController({
+    viewer: viewer as never,
+    desktopQuery: desktopQuery as never,
+  });
+  controllers.push(controller);
+  return { viewer, desktopQuery, controller };
+}
+
+beforeEach(() => {
+  resetLayoutForTests();
+  resetWorkbenchStatusForTests();
+});
+
+afterEach(() => {
+  while (controllers.length) controllers.pop()!.dispose();
+});
+
+describe('isStructureVisible', () => {
+  it('isStructureVisible: always below 951 px; on desktop docked follows the sidebar and floating is visible', () => {
+    const collapsed = { ...DEFAULT_LAYOUT, sidebarOpen: false };
+    expect(isStructureVisible(collapsed, false)).toBe(true);
+    expect(isStructureVisible(DEFAULT_LAYOUT, true)).toBe(true);
+    expect(isStructureVisible(collapsed, true)).toBe(false);
+    expect(isStructureVisible({ ...collapsed, structurePlacement: 'floating' }, true)).toBe(true);
+  });
+});
+
+describe('createStructureController', () => {
+  it('sets autoShow, showTips and the title and clears the inline display', () => {
+    const { viewer } = setup();
+    expect(viewer.autoShow).toBe(false);
+    expect(viewer.showTips).toBe(false);
+    expect(viewer.title).toBe('Structure');
+    expect(viewer.style.display).toBe('');
+  });
+
+  it('a request while visible loads at once and publishes the protein', () => {
+    const { viewer, controller } = setup();
+    controller.request('P12345');
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P12345');
+    expect(getWorkbenchStatus().structureProteinId).toBe('P12345');
+  });
+
+  it('a request while hidden only publishes the protein', () => {
+    const { viewer, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P12345');
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+    expect(getWorkbenchStatus().structureProteinId).toBe('P12345');
+  });
+
+  it('becoming visible, by layout or by crossing 951 px, loads the waiting protein once', () => {
+    const { viewer, desktopQuery, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    updateLayout({ sidebarOpen: true });
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    updateLayout({ sidebarWidth: 320 });
+    expect(viewer.loadProtein).toHaveBeenCalledOnce();
+
+    updateLayout({ sidebarOpen: false });
+    controller.request('P2');
+    desktopQuery.set(false);
+    expect(viewer.loadProtein).toHaveBeenCalledTimes(2);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('P2');
+    desktopQuery.set(true);
+    desktopQuery.set(false);
+    expect(viewer.loadProtein).toHaveBeenCalledTimes(2);
+  });
+
+  it('structure-close forgets the protein', () => {
+    const { viewer, controller } = setup();
+    controller.request('P1');
+    viewer.close();
+    expect(getWorkbenchStatus().structureProteinId).toBeNull();
+    // Hidden and shown again: nothing waits, so nothing loads.
+    updateLayout({ sidebarOpen: false });
+    updateLayout({ sidebarOpen: true });
+    expect(viewer.loadProtein).toHaveBeenCalledOnce();
+  });
+
+  it('clear closes a loaded viewer and does nothing when empty', () => {
+    const { viewer, controller } = setup();
+    controller.request('P1');
+    controller.clear();
+    expect(viewer.close).toHaveBeenCalledOnce();
+    expect(getWorkbenchStatus().structureProteinId).toBeNull();
+    controller.clear();
+    expect(viewer.close).toHaveBeenCalledOnce();
+    expect(getWorkbenchStatus().structureProteinId).toBeNull();
+  });
+
+  it('clear forgets a protein that waits while the structure is hidden', () => {
+    const { viewer, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    controller.clear();
+    expect(viewer.close).not.toHaveBeenCalled();
+    expect(getWorkbenchStatus().structureProteinId).toBeNull();
+    updateLayout({ sidebarOpen: true });
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+  });
+
+  it('dispose stops following the layout, the breakpoint and the viewer', () => {
+    const { viewer, desktopQuery, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    controller.dispose();
+    updateLayout({ sidebarOpen: true });
+    desktopQuery.set(false);
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+    viewer.close();
+    expect(getWorkbenchStatus().structureProteinId).toBe('P1');
+  });
+});

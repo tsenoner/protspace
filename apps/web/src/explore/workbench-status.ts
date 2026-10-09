@@ -13,6 +13,8 @@ export interface WorkbenchStatus {
   appliedFilterConditions: number;
   /** The plot's contour mode, which the view bar's More menu shows once Contours moves there. */
   densityLayer: DensityLayerMode;
+  /** The protein the structure viewer shows or waits to show (the rail's dot); null for none. */
+  structureProteinId: string | null;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -20,6 +22,7 @@ const EMPTY: WorkbenchStatus = {
   proteinCount: null,
   appliedFilterConditions: 0,
   densityLayer: DENSITY_DEFAULT,
+  structureProteinId: null,
 };
 
 let status: WorkbenchStatus = EMPTY;

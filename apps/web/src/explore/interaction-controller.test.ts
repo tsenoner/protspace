@@ -16,7 +16,7 @@ function setup(autoSync: boolean) {
   const controller = createInteractionController({
     plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
     legendElement: legendElement as never,
-    structureViewer: {} as never,
+    requestStructure: vi.fn(),
   });
   return { controller, legendElement };
 }
@@ -42,21 +42,22 @@ describe('interaction controller legend updates', () => {
   });
 });
 
-describe('interaction controller selection', () => {
-  it('a selection loads its last protein', () => {
-    const loadProtein = vi.fn();
+describe('interaction controller structure requests', () => {
+  it("a selection requests its last protein's structure", () => {
+    const requestStructure = vi.fn();
     const controller = createInteractionController({
       plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
-      legendElement: { autoSync: false, forceSync: vi.fn() } as never,
-      structureViewer: { loadProtein } as never,
+      legendElement: { autoSync: true, forceSync: vi.fn() } as never,
+      requestStructure,
     });
 
-    controller.handleSelectionChange(['P1', 'P2']);
-    expect(loadProtein).toHaveBeenCalledWith('P2');
-    expect(controller.getSelectedProteins()).toEqual(['P1', 'P2']);
+    controller.handleSelectionChange(['p0', 'p1']);
+    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('p1');
+    expect(controller.getSelectedProteins()).toEqual(['p0', 'p1']);
 
+    // Clearing the selection leaves the structure as it is.
     controller.handleSelectionChange([]);
-    expect(loadProtein).toHaveBeenCalledOnce();
+    expect(requestStructure).toHaveBeenCalledOnce();
     expect(controller.getSelectedProteins()).toEqual([]);
   });
 });

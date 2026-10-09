@@ -156,11 +156,11 @@ const structureViewerStylesCore = css`
   .close-button {
     background: none;
     border: none;
-    font-size: 1.25rem;
+    display: inline-grid;
+    place-items: center;
     color: var(--protspace-viewer-text-muted);
     cursor: pointer;
-    padding: 0.5rem 0.7rem;
-    line-height: 1;
+    padding: 6px;
     border-radius: 0.25rem;
     transition: color 0.2s;
   }

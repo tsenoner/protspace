@@ -11,6 +11,7 @@ import {
   type StructureColorMode,
 } from './molstar-loader';
 import { RESOURCE_LINKS } from './header-links';
+import { icon } from '../kit/icon';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
@@ -424,7 +425,14 @@ export class ProtspaceStructureViewer extends LitElement {
               </div>
               <div class="header-actions">
                 ${this.showCloseButton
-                  ? html` <button class="close-button" @click=${this._handleClose}>✕</button> `
+                  ? html`<button
+                      type="button"
+                      class="close-button"
+                      aria-label="Close structure"
+                      @click=${this._handleClose}
+                    >
+                      ${icon('x')}
+                    </button>`
                   : ''}
               </div>
             </div>

@@ -11,6 +11,7 @@ import type { ExploreControls } from './explore-controls';
 import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
+import { DESKTOP_MIN_WIDTH } from './layout-defaults';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -30,6 +31,7 @@ import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
 import { createSelectionController } from './selection-controller';
+import { createStructureController } from './structure-controller';
 import {
   handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
@@ -77,6 +79,13 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     proteinSearch,
   } = elements;
   const lifecycle = createLifecycle();
+
+  // What the structure viewer shows and when: a protein loads only where it can be seen.
+  const structureController = createStructureController({
+    viewer: structureViewer,
+    desktopQuery: window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`),
+  });
+  lifecycle.addCleanup(() => structureController.dispose());
 
   importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
   importMenu.examplesDocsUrl = EXAMPLES_DOCS_URL;
@@ -286,7 +295,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const interactionController = createInteractionController({
     legendElement,
     plotElement,
-    structureViewer,
+    requestStructure: (proteinId) => structureController.request(proteinId),
   });
 
   const selectionController = createSelectionController({
@@ -350,9 +359,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       filterController.setSelectedAnnotation(view.annotation);
     },
     clearStructure() {
-      if (structureViewer.style.display !== 'none') {
-        structureViewer.style.display = 'none';
-      }
+      structureController.clear();
     },
   };
 
@@ -445,12 +452,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     structureViewer,
     'structure-error',
     interactionController.handleStructureError,
-  );
-  addTrackedEventListener(
-    lifecycle,
-    structureViewer,
-    'structure-close',
-    interactionController.handleStructureClose,
   );
   addTrackedEventListener(
     lifecycle,

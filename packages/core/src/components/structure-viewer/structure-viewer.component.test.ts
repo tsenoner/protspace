@@ -55,6 +55,16 @@ describe('protspace-structure-viewer resource links', () => {
     const root = await mount();
     expect(root.querySelector('.title')?.tagName).toBe('SPAN');
   });
+
+  it('the close button is named Close structure', async () => {
+    const root = await mount();
+    const button = root.querySelector<HTMLButtonElement>('button.close-button')!;
+    expect(button.getAttribute('aria-label')).toBe('Close structure');
+    expect(button.getAttribute('type')).toBe('button');
+    // A Lucide icon, not the old text glyph.
+    expect(button.querySelector('svg.ps-icon')).not.toBeNull();
+    expect(button.textContent?.trim()).toBe('');
+  });
 });
 
 describe('protspace-structure-viewer protein-click', () => {

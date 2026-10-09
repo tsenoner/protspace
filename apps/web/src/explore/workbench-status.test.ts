@@ -19,6 +19,7 @@ describe('workbench status', () => {
       proteinCount: null,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
   });
 
@@ -34,6 +35,7 @@ describe('workbench status', () => {
       proteinCount: 12,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
@@ -66,6 +68,12 @@ describe('workbench status', () => {
     setWorkbenchStatus({ densityLayer: 'auto' });
     expect(getWorkbenchStatus().densityLayer).toBe('auto');
   });
+
+  it('structureProteinId starts null and takes the published protein', () => {
+    expect(getWorkbenchStatus().structureProteinId).toBeNull();
+    setWorkbenchStatus({ structureProteinId: 'P12345' });
+    expect(getWorkbenchStatus().structureProteinId).toBe('P12345');
+  });
 });
 
 describe('createDatasetNamePublisher', () => {
@@ -81,6 +89,7 @@ describe('createDatasetNamePublisher', () => {
       proteinCount: 10,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
   });
 
@@ -97,6 +106,7 @@ describe('createDatasetNamePublisher', () => {
       proteinCount: null,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
 
     data = ids(3);
@@ -106,6 +116,7 @@ describe('createDatasetNamePublisher', () => {
       proteinCount: 3,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
   });
 
@@ -126,6 +137,7 @@ describe('createDatasetNamePublisher', () => {
       proteinCount: null,
       appliedFilterConditions: 0,
       densityLayer: 'off',
+      structureProteinId: null,
     });
   });
 });

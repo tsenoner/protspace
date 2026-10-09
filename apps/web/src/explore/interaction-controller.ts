@@ -2,7 +2,6 @@ import type {
   LegendErrorEventDetail,
   ProtspaceLegend,
   ProtspaceScatterplot,
-  ProtspaceStructureViewer,
   StructureErrorEventDetail,
   StructureLoadEvent,
 } from '@protspace/core';
@@ -14,7 +13,8 @@ import { EatProvenanceResolver } from './eat-provenance';
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
-  structureViewer: ProtspaceStructureViewer;
+  /** Asks for a protein's structure; the structure controller decides when it loads. */
+  requestStructure(proteinId: string): void;
 }
 
 interface ActiveProvenanceClick {
@@ -34,14 +34,13 @@ export interface InteractionController {
   handleLegendError(event: Event): void;
   handleStructureLoad(event: Event): void;
   handleStructureError(event: Event): void;
-  handleStructureClose(event: Event): void;
   handleAnnotationChange(): void;
 }
 
 export function createInteractionController({
   legendElement,
   plotElement,
-  structureViewer,
+  requestStructure,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
@@ -88,7 +87,7 @@ export function createInteractionController({
       selectedProteins = [...proteinIds];
 
       if (selectedProteins.length > 0) {
-        structureViewer.loadProtein(selectedProteins[selectedProteins.length - 1]);
+        requestStructure(selectedProteins[selectedProteins.length - 1]);
       }
     },
     handleProteinClick(event) {
@@ -160,13 +159,6 @@ export function createInteractionController({
     handleStructureError(event) {
       const customEvent = event as CustomEvent<StructureErrorEventDetail>;
       console.warn('Structure viewer error:', customEvent.detail);
-    },
-    handleStructureClose(event) {
-      const customEvent = event as CustomEvent<{ proteinId?: string }>;
-      console.log(
-        `🔒 Structure viewer closed for protein: ${customEvent.detail.proteinId || 'none'}`,
-      );
-      console.log('Structure viewer should now be hidden');
     },
     handleAnnotationChange() {
       clearProvenance();

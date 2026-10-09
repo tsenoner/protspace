@@ -180,16 +180,6 @@
   box-shadow: none;
 }
 
-/* The viewer still shows and hides itself, at its own height, until Task 2.11. */
-#myStructureViewer {
-  flex: none;
-  width: auto;
-  border: 0;
-  border-top: 1px solid var(--ps-border);
-  border-radius: 0;
-  box-shadow: none;
-}
-
 /* ── Narrow fallback below 951 px: the plot, then the sidebar; the page scrolls ── */
 
 .workbench[data-layout='narrow'] .wb-body {
@@ -431,4 +421,139 @@
   height: 6px;
   border-radius: var(--ps-radius-full);
   background: var(--ps-accent);
+}
+
+/* ── Sidebar column: the legend over the structure (Task 2.11) ───────────── */
+
+.workbench[data-layout='desktop'] [data-workbench='body'] {
+  /* The legend's height: the stored or previewed fraction of what the 9 px divider leaves, at
+     least 120 px, and at most what leaves the structure 220 px. splitSidebar in
+     layout-geometry.ts is the same rule. */
+  --wb-legend-height: clamp(
+    120px,
+    calc((100% - 9px) * var(--wb-legend-fraction, 0.5)),
+    calc(100% - 229px)
+  );
+}
+
+.workbench[data-layout='desktop'] #myLegend {
+  flex: none;
+  height: calc(100% - 44px);
+}
+
+.workbench[data-layout='desktop'][data-structure='docked'] #myLegend {
+  height: var(--wb-legend-height);
+}
+
+.wb-structure {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--ps-surface);
+}
+
+.workbench[data-layout='desktop'] .wb-structure {
+  position: absolute;
+  right: var(--wb-rail-width, 0px);
+  bottom: 0;
+  width: var(--wb-sidebar-live-width, var(--wb-sidebar-width));
+  z-index: 3;
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='desktop'][data-structure='none'] .wb-structure {
+  height: 44px;
+}
+
+.workbench[data-layout='desktop'][data-structure='docked'] .wb-structure {
+  top: var(--wb-legend-height);
+}
+
+.workbench[data-layout='narrow'] .wb-structure {
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='narrow'][data-structure='docked'] .wb-structure {
+  height: 420px;
+}
+
+.wb-divider {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 9px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--ps-border);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.wb-divider::before {
+  content: '';
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ps-border-strong);
+}
+
+.wb-divider:hover::before,
+.wb-divider:focus-visible::before {
+  background: var(--ps-text-muted);
+}
+
+.wb-divider:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+.workbench:not([data-layout='desktop']) .wb-divider,
+.workbench:not([data-structure='docked']) .wb-divider {
+  display: none;
+}
+
+.wb-structure-empty {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 var(--ps-space-2) 0 var(--ps-space-3);
+  color: var(--ps-text-muted);
+}
+
+.workbench[data-layout='desktop'] .wb-structure-empty {
+  border-top: 1px solid var(--ps-border);
+}
+
+.wb-structure-empty-title {
+  color: var(--ps-text);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-structure-empty-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--ps-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench:not([data-structure='none']) .wb-structure-empty {
+  display: none;
+}
+
+/* Outer rules beat the viewer's :host rules: no card chrome, and it fills the section. */
+.workbench #myStructureViewer {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.workbench[data-structure='none'] #myStructureViewer {
+  display: none;
 }

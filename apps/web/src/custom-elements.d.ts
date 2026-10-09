@@ -115,13 +115,10 @@ declare module 'react' {
       'protspace-structure-viewer': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
-          title?: string;
           height?: string;
           'show-header'?: string;
           'show-close-button'?: string;
-          'show-tips'?: string;
           'auto-sync'?: string;
-          'auto-show'?: string;
           'scatterplot-selector'?: string;
         },
         HTMLElement
