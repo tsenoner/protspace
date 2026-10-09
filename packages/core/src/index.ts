@@ -3,6 +3,10 @@ export * from './components/scatter-plot/scatter-plot';
 export * from './components/legend/legend';
 export * from './components/structure-viewer/structure-viewer';
 export { ProtspaceControlBar } from './components/control-bar/control-bar'; // Explicit export for value access
+// The view bar's pickers (design decision 9).
+export { ProtspaceProjectionSelect } from './components/projection-select/projection-select';
+export { ProtspaceContoursMenu } from './components/contours-menu/contours-menu';
+export type { DensityLayerChangeDetail } from './components/contours-menu/contours-menu';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.
 export { ProtspaceQueryBuilder } from './components/control-bar/query-builder';
 export { createCondition } from './components/control-bar/query-types';

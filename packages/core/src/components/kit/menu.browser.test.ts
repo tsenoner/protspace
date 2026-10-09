@@ -440,3 +440,46 @@ describe('ps-menu-group', () => {
     expect(focused()).toBe('species');
   });
 });
+
+describe('ps-menu inside another element’s shadow root', () => {
+  it('moves with the arrow keys and selects with Enter inside another element’s shadow root', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <button id="anchor">Projection</button>
+      <ps-menu label="Projection">
+        <ps-menu-item value="umap" type="radio" checked>UMAP</ps-menu-item>
+        <ps-menu-item value="pca" type="radio">PCA</ps-menu-item>
+      </ps-menu>`;
+    const menu = root.querySelector('ps-menu') as PsMenu;
+    menu.anchor = root.getElementById('anchor');
+    menu.open = true;
+    await menu.updateComplete;
+    await frame();
+    await frame();
+    const deepKey = (name: string) =>
+      (root.activeElement ?? host).dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: name,
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        }),
+      );
+    const focusedValue = () => (root.activeElement as PsMenuItem | null)?.value;
+
+    expect(focusedValue()).toBe('umap');
+    deepKey('ArrowDown');
+    expect(focusedValue()).toBe('pca');
+
+    const onSelect = vi.fn();
+    menu.addEventListener('ps-select', onSelect);
+    deepKey('Enter');
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect((onSelect.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      value: 'pca',
+      checked: true,
+    });
+  });
+});

@@ -303,6 +303,18 @@ export type DensityLayerMode = (typeof DENSITY_LAYER_MODES)[number];
 
 export const DENSITY_DEFAULT: DensityLayerMode = 'off';
 
+/** Menu copy per contour mode; the tokens stay off/auto/on (URL, config), only 'on' reads as 'Always'. */
+export const DENSITY_MODE_LABELS: Readonly<
+  Record<DensityLayerMode, { readonly label: string; readonly hint: string }>
+> = {
+  off: { label: 'Off', hint: 'No contours' },
+  auto: {
+    label: 'Auto',
+    hint: 'Fades out as you zoom in; faint or hidden when few points are shown',
+  },
+  on: { label: 'Always', hint: 'Full strength at every zoom level' },
+};
+
 export function isValidDensityLayerMode(value: unknown): value is DensityLayerMode {
   return typeof value === 'string' && DENSITY_LAYER_MODES.includes(value as DensityLayerMode);
 }

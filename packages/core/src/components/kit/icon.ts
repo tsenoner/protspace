@@ -8,6 +8,7 @@ import {
   Minus,
   Search,
   SquarePen,
+  Target,
   Upload,
   X,
   type IconNode,
@@ -22,6 +23,7 @@ const ICONS = {
   minus: Minus,
   search: Search,
   'square-pen': SquarePen,
+  target: Target,
   upload: Upload,
   x: X,
 } satisfies Record<string, IconNode>;

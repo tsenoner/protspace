@@ -272,7 +272,10 @@ export class PsMenu extends LitElement {
     }
     const items = this.navigable;
     if (items.length === 0) return;
-    const current = items.indexOf(document.activeElement as PsMenuItem);
+    // Items live in the menu's own tree, which is a shadow root when a feature element renders
+    // the menu (the view bar's pickers); document.activeElement would name that element instead.
+    const focused = (this.getRootNode() as Document | ShadowRoot).activeElement;
+    const current = items.indexOf(focused as PsMenuItem);
     const last = items.length - 1;
     switch (event.key) {
       case 'ArrowDown':
