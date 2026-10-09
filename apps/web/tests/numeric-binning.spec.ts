@@ -901,7 +901,9 @@ async function hoverFirstVisiblePoint(page: Page): Promise<void> {
     return targets;
   });
 
-  for (const target of targets) {
+  // Hover is coalesced to a frame and the tooltip renders one update later; a loaded suite can
+  // take longer than the short probes, so the first target gets a real wait.
+  for (const [i, target] of targets.entries()) {
     await page.mouse.move(target.x, target.y, { steps: 4 });
     const hovered = await page
       .waitForFunction(
@@ -912,7 +914,7 @@ async function hoverFirstVisiblePoint(page: Page): Promise<void> {
           return Boolean(plot?.shadowRoot?.querySelector('protspace-protein-tooltip'));
         },
         undefined,
-        { timeout: 200 },
+        { timeout: i === 0 ? 3_000 : 300 },
       )
       .then(() => true)
       .catch(() => false);

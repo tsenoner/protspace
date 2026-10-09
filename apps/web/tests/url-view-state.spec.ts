@@ -83,7 +83,7 @@ async function waitForView(
     // The Projection picker's trigger is named "Projection <projection>". Its text sits in the
     // kit button's slots, which the inner button's own text does not include.
     await expect(projectionTrigger(page)).toHaveAccessibleName(
-      new RegExp(`${escapeRegExp(expected.projection)}$`),
+      `Projection ${expected.projection}`,
       { timeout },
     );
   }

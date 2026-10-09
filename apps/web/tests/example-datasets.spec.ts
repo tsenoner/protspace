@@ -933,6 +933,8 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     await openExplore(page, `?dataset=${SMALL.id}&annotation=length_fixed`, SMALL.count);
     await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
+    // The entry is pushed after the plot's data is set: go Back only once it exists.
+    await expectUrlParam(page, 'dataset', OTHER.id);
 
     await page.route(SMALL.glob, failWith500);
     const failed = page.waitForResponse(

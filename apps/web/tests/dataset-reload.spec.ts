@@ -349,9 +349,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
-    // Import still reads as a menu at this width, not as an immediate action.
+    // Import still opens a panel at this width (a closed disclosure), not an immediate action.
     await expect(importTrigger(page)).toBeVisible();
-    await expect(importTrigger(page)).toHaveAttribute('aria-haspopup', 'menu');
+    await expect(importTrigger(page)).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
