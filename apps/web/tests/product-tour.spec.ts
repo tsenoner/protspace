@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { appBar, waitForExploreDataLoad } from './helpers/explore';
+import { appBar, collapseSidebar, waitForExploreDataLoad } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -232,6 +232,19 @@ test.describe('Product Tour', () => {
     await waitForTourPopover(page);
     const title = await getPopoverTitle(page);
     expect(title).toBe(STEP_TITLES[0]);
+  });
+
+  test('starting the tour opens a collapsed sidebar', async ({ page }) => {
+    await page.locator('.driver-tour-skip-btn').click();
+    await waitForTourDismissed(page);
+    await collapseSidebar(page);
+
+    await appBar(page).getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Take the tour' }).click();
+
+    // Its legend steps need the legend on screen.
+    await expect(page.locator('.workbench')).toHaveAttribute('data-sidebar', 'open');
+    await expect(page.locator('#myLegend')).toBeVisible();
   });
 
   test('the welcome step spotlights Help', async ({ page }) => {
