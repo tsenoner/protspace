@@ -1,15 +1,19 @@
 import type { TemplateResult } from 'lit';
 import { html, unsafeStatic } from 'lit/static-html.js';
 import {
+  Box,
   Check,
   ChevronDown,
   CircleHelp,
   Download,
   Info,
   Lasso,
+  List,
   Maximize,
   Minus,
   MousePointer,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
   SquareDashed,
   SquarePen,
@@ -21,15 +25,19 @@ import {
 
 // The curated set. Each phase adds the icons it first needs; explicit imports keep the bundle to them.
 const ICONS = {
+  box: Box,
   check: Check,
   'chevron-down': ChevronDown,
   'circle-help': CircleHelp,
   download: Download,
   info: Info,
   lasso: Lasso,
+  list: List,
   maximize: Maximize,
   minus: Minus,
   'mouse-pointer': MousePointer,
+  'panel-right-close': PanelRightClose,
+  'panel-right-open': PanelRightOpen,
   search: Search,
   'square-dashed': SquareDashed,
   'square-pen': SquarePen,

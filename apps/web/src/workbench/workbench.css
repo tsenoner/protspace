@@ -144,7 +144,7 @@
 
 [data-workbench='plot'] {
   position: absolute;
-  inset: 0 var(--wb-sidebar-width) 0 0;
+  inset: 0 var(--wb-plot-right) 0 0;
   isolation: isolate;
   background: var(--ps-surface);
 }
@@ -158,14 +158,17 @@
   isolation: isolate;
 }
 
+/* No z-index: the aside paints over the plot by DOM order. A z-index would make it a stacking
+   context that traps the legend's position: fixed dialogs under the structure, the edge and the
+   rail (Task 2.12 lifts it only while it slides or its edge is dragged). */
 [data-workbench='sidebar'] {
   position: absolute;
   top: 0;
-  right: 0;
+  right: var(--wb-rail-width, 0px);
   bottom: 0;
   display: flex;
   flex-direction: column;
-  width: var(--wb-sidebar-width);
+  width: var(--wb-sidebar-live-width);
   border-left: 1px solid var(--ps-border);
   background: var(--ps-surface);
 }
@@ -556,4 +559,121 @@
 
 .workbench[data-structure='none'] #myStructureViewer {
   display: none;
+}
+
+/* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
+
+.workbench[data-layout='desktop'] {
+  --wb-rail-width: 44px;
+}
+
+/* The sidebar slides out past the rail; nothing may scroll it into view. */
+.workbench[data-layout='desktop'] [data-workbench='body'] {
+  overflow: clip;
+}
+
+/* A z-index would make the sidebar a stacking context and trap the legend's position: fixed
+   dialogs under the structure, the edge and the rail. It is lifted over a floating card only while
+   it slides or its edge is dragged, when no legend dialog is open. */
+.workbench[data-sidebar='opening'] #wb-sidebar,
+.workbench[data-sidebar='closing'] #wb-sidebar,
+.workbench[data-sidebar-resizing] #wb-sidebar {
+  z-index: 2;
+}
+
+/* Collapsed: laid out at full size (the legend and Mol* keep theirs), hidden and inert. */
+.workbench[data-layout='desktop'][data-sidebar='collapsed'] #wb-sidebar,
+.workbench[data-layout='desktop'][data-sidebar='collapsed'] .wb-structure {
+  visibility: hidden;
+}
+
+.wb-sidebar-edge {
+  display: none;
+}
+
+.workbench[data-layout='desktop'][data-sidebar='open'] .wb-sidebar-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--wb-rail-width) + var(--wb-sidebar-live-width) - 4px);
+  z-index: 4;
+  display: block;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.wb-sidebar-edge::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 5px;
+  height: 36px;
+  margin-top: -18px;
+  border-radius: 3px;
+  background: var(--ps-border-strong);
+}
+
+.wb-sidebar-edge:hover::before,
+.wb-sidebar-edge:focus-visible::before {
+  background: var(--ps-text-muted);
+}
+
+.wb-sidebar-edge:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+}
+
+.wb-rail {
+  display: none;
+}
+
+.workbench[data-layout='desktop'] .wb-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ps-space-1);
+  width: var(--wb-rail-width);
+  box-sizing: border-box;
+  padding: var(--ps-space-2) 0;
+  border-left: 1px solid var(--ps-border);
+  background: var(--ps-surface-muted);
+}
+
+.wb-rail-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.wb-rail-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-accent);
+  box-shadow: 0 0 0 2px var(--ps-surface-muted);
+  pointer-events: none;
+}
+
+.wb-rail-spacer {
+  flex: 1;
+}
+
+/* index.css answers reduced motion with a 0.01 ms transition-duration on every element, which
+   makes any property change a transition: the plot's box would follow its inset a frame late.
+   The boxes that move with the sidebar change at once instead (still one resize per change). */
+@media (prefers-reduced-motion: reduce) {
+  [data-workbench='plot'],
+  #wb-sidebar,
+  .wb-structure,
+  .wb-sidebar-edge {
+    transition-property: none;
+  }
 }

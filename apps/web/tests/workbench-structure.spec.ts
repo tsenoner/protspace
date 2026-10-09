@@ -113,6 +113,16 @@ test('the divider moves by drag and by keyboard, survives a reload and never res
   await waitForExploreDataLoad(page);
   await clickProteinNearPlotCentre(page);
   await expect(divider(page)).toHaveAttribute('aria-valuenow', String(dragged - 15));
+
+  // Home and End go to the ends of the range; End's 80 % is trimmed by the structure's 220 px.
+  await divider(page).focus();
+  await page.keyboard.press('Home');
+  await expect(divider(page)).toHaveAttribute('aria-valuenow', '20');
+  await page.keyboard.press('End');
+  await expect
+    .poll(async () => Number(await divider(page).getAttribute('aria-valuenow')))
+    .toBeGreaterThan(50);
+  expect(Number(await divider(page).getAttribute('aria-valuenow'))).toBeLessThanOrEqual(80);
 });
 
 test('Close structure brings the footer back', async ({ page }) => {

@@ -101,6 +101,7 @@ const sizes = css`
   --ps-focus-width: 2px;
   --ps-focus-offset: 2px;
   --ps-duration-fast: 120ms;
+  --ps-duration: 160ms; /* panels: the sidebar's slide */
   --ps-ease: cubic-bezier(0.2, 0, 0, 1);
 `;
 

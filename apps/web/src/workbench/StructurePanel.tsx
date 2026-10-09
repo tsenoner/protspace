@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
 import { Box } from 'lucide-react';
 import { LEGEND_FRACTION } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
@@ -28,9 +28,9 @@ interface LegendDividerProps {
 }
 
 /**
- * The separator between the legend and the docked structure (design decision 2). A drag or an
- * arrow key previews through `--wb-legend-fraction`; the layout is written once, on pointerup or
- * keyup. Neither changes the plot's box (decision 4).
+ * The separator between the legend and the docked structure (design decision 2). A drag, an
+ * arrow key, Home or End previews through `--wb-legend-fraction`; the layout is written once, on
+ * pointerup or keyup. Neither changes the plot's box (decision 4).
  */
 function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
   const dragging = useRef(false);
@@ -65,11 +65,19 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
     commit();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = fractionStep(event.key, event.shiftKey);
     const column = columnOf(event.currentTarget);
-    if (step === 0 || !column) return;
+    if (!column) return;
+    // Home and End go to the ends of the range (the WAI-ARIA window splitter), as on the sidebar edge.
+    let requested: number;
+    if (event.key === 'Home') requested = LEGEND_FRACTION.min;
+    else if (event.key === 'End') requested = LEGEND_FRACTION.max;
+    else {
+      const step = fractionStep(event.key, event.shiftKey);
+      if (step === 0) return;
+      requested = (pending.current ?? fraction) + step;
+    }
     event.preventDefault();
-    preview(shownFraction((pending.current ?? fraction) + step, column));
+    preview(shownFraction(requested, column));
   };
   const onKeyUp = () => {
     if (!dragging.current && pending.current !== null) commit();
@@ -98,6 +106,9 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
 }
 
 interface StructurePanelProps {
+  ref?: Ref<HTMLElement>;
+  /** Out of the tab order while the sidebar is collapsed or collapsing. */
+  inert?: boolean;
   legendFraction: number;
   onLegendFractionPreview(fraction: number | null): void;
 }
@@ -108,9 +119,20 @@ interface StructurePanelProps {
  * divider, the 44 px empty footer and the viewer, which the structure controller drives. Where it
  * sits, and which part shows, is CSS from the workbench root's data-structure.
  */
-export function StructurePanel({ legendFraction, onLegendFractionPreview }: StructurePanelProps) {
+export function StructurePanel({
+  ref,
+  inert,
+  legendFraction,
+  onLegendFractionPreview,
+}: StructurePanelProps) {
   return (
-    <section className="wb-structure" data-workbench="structure" aria-label="Structure">
+    <section
+      ref={ref}
+      inert={inert}
+      className="wb-structure"
+      data-workbench="structure"
+      aria-label="Structure"
+    >
       <LegendDivider fraction={legendFraction} onPreview={onLegendFractionPreview} />
       <div className="wb-structure-empty" data-workbench="structure-empty">
         <Box size={16} strokeWidth={1.75} aria-hidden="true" />

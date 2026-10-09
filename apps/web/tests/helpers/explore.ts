@@ -1,4 +1,9 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import {
+  DEFAULT_LAYOUT,
+  LAYOUT_STORAGE_KEY,
+  type LayoutState,
+} from '../../src/explore/layout-defaults';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -892,4 +897,53 @@ export async function watchPlotResizes(page: Page): Promise<() => Promise<number
     return state;
   });
   return () => counter.evaluate((state) => state.count);
+}
+
+/** The icon rail at the sidebar's right edge. */
+export function rail(page: Page): Locator {
+  return page.getByRole('navigation', { name: 'Panels' });
+}
+
+/** Collapses the sidebar from the rail and waits until its slide has ended. */
+export async function collapseSidebar(page: Page): Promise<void> {
+  await rail(page).getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(page.locator('.workbench')).toHaveAttribute('data-sidebar', 'collapsed');
+}
+
+/** Expands the sidebar from the rail and waits until it is open and the plot has narrowed. */
+export async function expandSidebar(page: Page): Promise<void> {
+  await rail(page).getByRole('button', { name: 'Expand sidebar' }).click();
+  await expect(page.locator('.workbench')).toHaveAttribute('data-sidebar', 'open');
+}
+
+/** Drags the sidebar's left edge by `dx` pixels (negative widens the sidebar) and releases it. */
+export async function dragSidebarEdge(page: Page, dx: number): Promise<void> {
+  const box = await page.getByRole('separator', { name: 'Resize sidebar' }).boundingBox();
+  if (!box) throw new Error('The sidebar edge is not shown');
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y, { steps: 10 });
+  await page.mouse.up();
+}
+
+/** Stores `patch` over the default layout before every navigation of `page`. */
+export async function seedLayout(page: Page, patch: Partial<LayoutState>): Promise<void> {
+  await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
+    key: LAYOUT_STORAGE_KEY,
+    value: JSON.stringify({ ...DEFAULT_LAYOUT, ...patch }),
+  });
+}
+
+/** The layout protspace:layout:v1 holds, or null when nothing readable is stored. */
+export async function readLayout(page: Page): Promise<LayoutState | null> {
+  return page.evaluate((key) => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? null : (JSON.parse(raw) as LayoutState);
+    } catch {
+      return null;
+    }
+  }, LAYOUT_STORAGE_KEY);
 }

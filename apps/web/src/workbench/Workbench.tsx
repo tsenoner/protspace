@@ -1,18 +1,31 @@
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { SIDEBAR_WIDTH } from '../explore/layout-defaults';
+import { updateLayout } from '../explore/layout-state';
 import { AppBar } from './AppBar';
+import { clampSidebarToWindow, plotRightInset } from './layout-geometry';
 import { PlotArea } from './PlotArea';
-import { Sidebar } from './Sidebar';
+import { Rail } from './Rail';
+import { Sidebar, SidebarEdge } from './Sidebar';
 import { StructurePanel } from './StructurePanel';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
+import { useSidebarTransition } from './use-sidebar-transition';
 import { useWorkbenchStatus } from './use-workbench-status';
 import { ViewBar } from './ViewBar';
 import './workbench.css';
 
+function subscribeWindowWidth(onChange: () => void): () => void {
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+
+const getWindowWidth = () => window.innerWidth;
+
 /**
  * The explore workbench (design decision 1): the app bar, the view bar, then the plot beside a
- * flush right sidebar. The runtime finds its elements by id, so they render once in this fixed tree;
- * every layout state is a data attribute or a --wb-* property that workbench.css reads.
+ * flush right sidebar and its icon rail. The runtime finds its elements by id, so they render once
+ * in this fixed tree; every layout state is a data attribute or a --wb-* property that
+ * workbench.css reads.
  */
 export function Workbench() {
   const layout = useLayout();
@@ -23,8 +36,29 @@ export function Workbench() {
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
   // What the sidebar column holds under the legend: the empty footer, or the docked viewer.
   const structure = structureProteinId === null ? 'none' : 'docked';
+  const desktop = mode === 'desktop';
+  const windowWidth = useSyncExternalStore(subscribeWindowWidth, getWindowWidth);
+  const asideRef = useRef<HTMLElement>(null);
+  const structureRef = useRef<HTMLElement>(null);
+  const railToggleRef = useRef<HTMLElement>(null);
+  // The edge's drag or key preview; null while the committed width shows.
+  const [sidebarWidthPreview, setSidebarWidthPreview] = useState<number | null>(null);
+  // The committed width this window can give the sidebar, so the plot keeps 480 px (render only).
+  const sidebarWidth = clampSidebarToWindow(layout.sidebarWidth, windowWidth);
+  const phase = useSidebarTransition(layout.sidebarOpen, {
+    aside: asideRef,
+    structure: structureRef,
+  });
+  // On desktop a collapsed or collapsing sidebar is inert; below 951 px it always shows.
+  const sidebarHidden = desktop && (phase === 'collapsed' || phase === 'closing');
   return (
-    <div className="workbench" data-layout={mode} data-structure={structure}>
+    <div
+      className="workbench"
+      data-layout={mode}
+      data-structure={structure}
+      data-sidebar={phase}
+      data-sidebar-resizing={sidebarWidthPreview !== null ? '' : undefined}
+    >
       <AppBar />
       <ViewBar />
       <div
@@ -32,16 +66,36 @@ export function Workbench() {
         data-workbench="body"
         style={
           {
-            '--wb-sidebar-width': `${layout.sidebarWidth}px`,
+            '--wb-sidebar-width': `${sidebarWidth}px`,
+            '--wb-sidebar-live-width': `${sidebarWidthPreview ?? sidebarWidth}px`,
+            '--wb-plot-right': `${plotRightInset(phase, sidebarWidth)}px`,
             '--wb-legend-fraction': String(legendFraction),
           } as CSSProperties
         }
       >
         <PlotArea />
-        <Sidebar />
+        <Sidebar ref={asideRef} inert={sidebarHidden} />
         <StructurePanel
+          ref={structureRef}
+          inert={sidebarHidden}
           legendFraction={legendFraction}
           onLegendFractionPreview={setLegendFractionPreview}
+        />
+        <SidebarEdge
+          width={sidebarWidthPreview ?? sidebarWidth}
+          maxWidth={clampSidebarToWindow(SIDEBAR_WIDTH.max, windowWidth)}
+          onPreview={setSidebarWidthPreview}
+          onCollapse={() => {
+            updateLayout({ sidebarOpen: false });
+            // The edge hides with the sidebar: keep focus on the control that brings it back.
+            railToggleRef.current?.focus();
+          }}
+        />
+        <Rail
+          sidebarOpen={layout.sidebarOpen}
+          structureProteinId={structureProteinId}
+          structureDocked={layout.structurePlacement === 'docked'}
+          toggleRef={railToggleRef}
         />
       </div>
       <protspace-data-loader id="myDataLoader"></protspace-data-loader>

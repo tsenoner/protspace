@@ -2,8 +2,11 @@ import { expect, type Browser, type BrowserContext, type Page } from '@playwrigh
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_LAYOUT } from '../../../src/explore/layout-defaults';
 import {
+  collapseSidebar,
   dismissTourIfPresent,
+  expandSidebar,
   importMenu,
   openImportMenu,
   searchInput,
@@ -11,7 +14,7 @@ import {
   selectProjection,
   waitForExploreDataLoad,
 } from '../explore';
-import { tourCompletedStorageState } from '../tour-storage-state';
+import { exploreStorageState } from '../tour-storage-state';
 import {
   installProbes,
   readSnapshot,
@@ -58,6 +61,7 @@ const SEGMENTS = {
   'legend-isolate': { repeatable: true },
   camera: { repeatable: true, frameBound: ['render', 'glSync'], drawsAll: true },
   resize: { repeatable: true },
+  'panel-toggle': { repeatable: true },
   'search-select': { repeatable: true },
   import: { frameBound: LOAD_FRAME_BOUND },
   'import-no-settings': { frameBound: LOAD_FRAME_BOUND },
@@ -139,12 +143,17 @@ async function blockExternalRequests(page: Page, baseUrl: string): Promise<void>
   );
 }
 
-/** A context with the viewport and pixel ratio the segments assume, past the tour. */
+/**
+ * A context with the viewport and pixel ratio the segments assume, past the tour, with the layout
+ * and the colour scheme pinned: the sidebar's width sets the plot's size, which feeds the point
+ * scale and the Auto contour strength, so an unpinned layout would make runs incomparable.
+ */
 export function newPerfContext(browser: Browser, baseUrl: string): Promise<BrowserContext> {
   return browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: 1,
-    storageState: tourCompletedStorageState(baseUrl),
+    colorScheme: 'light',
+    storageState: exploreStorageState(baseUrl, { layout: DEFAULT_LAYOUT }),
   });
 }
 
@@ -231,7 +240,7 @@ export async function importBundle(page: Page, file: string): Promise<void> {
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–11 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–12 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -308,6 +317,14 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
         await settleSegment();
         await page.setViewportSize(VIEWPORT);
       },
+      pixels: true,
+    },
+    {
+      name: 'panel-toggle',
+      // Collapsing widens the plot under the sliding sidebar: one resize, one render and one grid
+      // rebuild (design decision 4). The reset expands it back to the pinned width.
+      act: () => collapseSidebar(page),
+      reset: () => expandSidebar(page),
       pixels: true,
     },
     {

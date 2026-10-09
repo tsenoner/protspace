@@ -8,7 +8,8 @@ import {
   plotBackground,
   readExploreState,
 } from './helpers/perf/scenarios';
-import { tourCompletedStorageState } from './helpers/tour-storage-state';
+import { DEFAULT_LAYOUT } from '../src/explore/layout-defaults';
+import { exploreStorageState } from './helpers/tour-storage-state';
 import { chooseTool, clearSelection, openImportMenu } from './helpers/explore';
 
 /**
@@ -146,7 +147,8 @@ async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession
   const context = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: DPR,
-    storageState: tourCompletedStorageState(BASE_URL),
+    colorScheme: 'light',
+    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT }),
   });
   const page = await context.newPage();
   page.on('console', (m) => {

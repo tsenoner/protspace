@@ -51,3 +51,8 @@ export const DEFAULT_LAYOUT: LayoutState = {
   structurePlacement: 'docked',
   floatingRect: null,
 };
+
+/** The icon rail at the sidebar's right edge, shown at desktop widths. */
+export const RAIL_WIDTH = 44;
+/** The plot keeps at least this width beside a sidebar at desktop widths (rendering clamps the sidebar). */
+export const MIN_PLOT_WIDTH = 480;
