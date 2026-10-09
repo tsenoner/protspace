@@ -158,23 +158,24 @@ width changes, and points under an opaque sidebar are drawn for nothing).
 
 ### 5. Design tokens on the document root
 
-- One stylesheet in core, `packages/core/src/styles/theme.css`, is the single source of the design
-  values. Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names the landing
-  page uses. It has three layers: raw ramps (the slate greys and the cyan scale); roles, which the
-  themes set (surface, raised surface, sunken surface, border, strong border, text, muted text,
-  faint text, accent fill, accent text, accent tint, danger, warning, success, focus, scrim, plot
-  background, the neutral point greys); and sizes (control heights 28/32 px, list row 28 px, radius
-  6 px, the type scale, spacing, motion durations, layers).
+- One stylesheet in core, `packages/core/src/styles/theme.ts` (a Lit `css` module, so the existing
+  ESLint rule and `styles-integrity.test.ts` cover it), is the single source of the design values.
+  Every variable is prefixed `--ps-`, so nothing clashes with the shadcn names the landing page uses.
+  It has two kinds of token: roles, which the themes set (surfaces, borders, text, accent fill, accent
+  text, accent tint, danger, warning, success, focus, scrim, shadows, and later the plot background
+  and neutral point greys); and sizes (control heights 28/32 px, list row 28 px, radii, the type
+  scale, spacing, motion durations, layers). Role values are literal colours from the slate and cyan
+  ramps, named in comments; the ramps are not variables, so every variable has a user.
 - The variables live on `:root` under `[data-theme="light"]` and `[data-theme="dark"]`. CSS custom
   properties inherit into shadow roots, so every component reads them without importing anything.
 - Components only read tokens. The current `tokens` export, which re-declares values on each
   component's `:host`, goes, because a value declared on `:host` blocks the page's theme.
-- Core adopts `theme.css` into the document once, when it is first imported, so an embedder gets a
+- Core adopts the theme sheet into the document once, when it is first imported, so an embedder gets a
   working theme with no setup. A page overrides any token with a more specific selector.
 - Tailwind 4 in `apps/web` maps the same variables in `@theme inline` (e.g. `bg-ps-surface`), so
   React code and Lit code draw from one list.
 - A unit test fails when a core stylesheet contains a raw colour, a pixel font size or a `var(--…)`
-  that `theme.css` does not define, and when `theme.css` defines a token nothing uses.
+  that `theme.ts` does not define, and when `theme.ts` defines a token nothing uses.
 
 Alternatives considered: keeping per-component tokens (the cause of the drift), and generating CSS
 from a TypeScript token module (a build step for no gain: the CSS file is readable on its own, and
@@ -185,9 +186,12 @@ the test checks it).
 Slate greys with ProtSpace's cyan (`#00a3e0`) as the accent (mockups:
 [`workbench-light.png`](mockups/workbench-light.png), [`workbench-dark.png`](mockups/workbench-dark.png),
 and the controls at real size in [`controls.png`](mockups/controls.png)). Cyan marks selection, focus and the primary action and
-nothing else. Text in the accent colour (links, the active tab, the selected menu item) uses a
-darker cyan (`#0284c7` light, `#38bdf8` dark) because `#00a3e0` on white is below the 4.5:1 contrast
-WCAG AA requires for text.
+nothing else. The brand cyan `#00a3e0` is 2.9:1 against white, below WCAG AA for text (4.5:1) and
+for controls (3:1), so the light theme uses deeper shades of the same hue: `#007ab5` for fills that
+carry white text (4.7:1), `#0369a1` for accent text such as links and the selected menu item (5.9:1),
+and `#0284c7` for the focus ring (4.1:1, above the 3:1 required for non-text). The dark theme uses
+`#38bdf8` (8.3:1 on its surface) with dark text on accent fills. The mockups show the brighter brand
+cyan; buttons ship one shade deeper.
 
 Alternatives considered: neutral zinc greys (generic, colder in the dark theme) and a navy app bar
 for brand presence (pulls the eye from the plot and loses its contrast in the dark theme).

@@ -121,7 +121,7 @@ capabilities the change adds and which existing specs it will update.
 
 ## Impact
 
-- **Core (`packages/core`)**: a new `components/kit/` (controls, layer stack); `styles/theme.css`
+- **Core (`packages/core`)**: a new `components/kit/` (controls, layer stack); `styles/theme.ts`
   replaces `styles/tokens.ts` and most of `mixins.ts` / `overlay-mixins.ts`; the legend split into
   focused files; `control-bar.ts` replaced by separate elements; the figure editor moved onto
   `ps-dialog` and split; the scatterplot reads its background and neutral colours from tokens,
