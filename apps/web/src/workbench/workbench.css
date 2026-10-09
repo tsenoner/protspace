@@ -35,7 +35,7 @@
   gap: var(--ps-space-2);
   height: var(--wb-app-bar-height);
   /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
-  padding: 0 var(--ps-space-2) 0 16px;
+  padding: 0 var(--ps-space-3) 0 16px;
   border-bottom: 1px solid var(--ps-border);
   background: var(--ps-surface);
 }
@@ -56,6 +56,8 @@
 .wb-separator {
   flex: none;
   width: 1px;
+  /* With the row's gap: 12 px from the wordmark, 20 px to the dataset icon, as in the mockup. */
+  margin-inline: var(--ps-space-1) var(--ps-space-3);
   height: 20px;
   background: var(--ps-border);
 }
@@ -66,6 +68,14 @@
   gap: var(--ps-space-1-5);
   min-width: 0;
   white-space: nowrap;
+}
+
+/* The row stays baseline-aligned for the name and count; the icon centres itself. */
+.wb-dataset-icon {
+  flex: none;
+  align-self: center;
+  margin-right: var(--ps-space-1);
+  color: var(--ps-text-muted);
 }
 
 .wb-dataset-name {
@@ -101,11 +111,12 @@
   height: var(--ps-control-md);
   border-radius: var(--ps-radius);
   color: var(--ps-text-muted);
+  /* As the kit's ghost icon button beside them: the background changes, the colour stays. */
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
 }
 
 .wb-icon-link:hover {
   background: var(--ps-surface-hover);
-  color: var(--ps-text);
 }
 
 [data-workbench='home']:focus-visible,

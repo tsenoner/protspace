@@ -1,4 +1,4 @@
-import { Github, MessageSquare } from 'lucide-react';
+import { Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
 import { HelpMenu } from './HelpMenu';
@@ -28,7 +28,12 @@ export function AppBar() {
       </Link>
       <span className="wb-separator" aria-hidden="true" />
       <div data-workbench="dataset" data-dataset-name={datasetName ?? ''}>
-        {datasetName !== null && <span className="wb-dataset-name">{shownName(datasetName)}</span>}
+        {datasetName !== null && (
+          <>
+            <Database className="wb-dataset-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span className="wb-dataset-name">{shownName(datasetName)}</span>
+          </>
+        )}
         {proteinCount !== null && (
           <span className="wb-dataset-count">{proteinCountText(proteinCount)}</span>
         )}
