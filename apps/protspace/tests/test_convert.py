@@ -45,17 +45,6 @@ SETTINGS = {
 }
 
 
-@pytest.fixture(autouse=True)
-def _restore_root_logging():
-    """``setup_logging`` in the CLI swaps the root handlers for one bound to the
-    runner's stderr, which is closed once ``invoke`` returns."""
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    yield
-    root.handlers[:] = handlers
-    root.setLevel(level)
-
-
 def _serialized(table: pa.Table) -> bytes:
     buf = io.BytesIO()
     pq.write_table(table, buf)
@@ -423,6 +412,7 @@ def test_style_reports_a_legacy_input_v3_cannot_hold_as_a_usage_error(tmp_path):
     assert "cannot style" in result.output
     assert "disagree on the projection" in plain(result.output)
     assert isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
     assert not out.exists()
 
 
