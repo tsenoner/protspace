@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   dismissTourIfPresent,
+  importMenu,
+  openImportMenu,
+  searchInput,
   selectAnnotation,
   selectProjection,
   waitForExploreDataLoad,
@@ -203,10 +206,8 @@ async function plotCenter(page: Page): Promise<{ x: number; y: number }> {
 }
 
 export async function importBundle(page: Page, file: string): Promise<void> {
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  }
+  await openImportMenu(page);
+  const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
   // A refused file (too large, unreadable) never loads: fail with its message instead.
   const loaded = page.evaluate(
     () =>
@@ -312,16 +313,12 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     {
       name: 'search-select',
       act: async () => {
-        const input = page.locator(
-          'protspace-control-bar protspace-protein-search #protein-search-input',
-        );
+        const input = searchInput(page);
         await input.fill(state.accession);
         await input.press('Enter');
       },
       reset: async () => {
-        const input = page.locator(
-          'protspace-control-bar protspace-protein-search #protein-search-input',
-        );
+        const input = searchInput(page);
         await input.press('Escape');
         await input.blur();
         await page.keyboard.press('Escape');

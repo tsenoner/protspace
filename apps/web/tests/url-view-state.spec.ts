@@ -6,11 +6,16 @@ import {
   clickLegendItem,
   dismissTourIfPresent,
   expectUrlParam,
+  getColorByOptions,
+  getContoursMode,
   getFirstLegendItemValue,
+  getViewState,
   isLegendItemHidden,
   openExplore,
+  projectionTrigger,
   selectAnnotation,
   selectProjection,
+  setContours,
   supportsExplorePersistedDataset,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
@@ -34,40 +39,22 @@ let demoDefaultProjection = '';
 let targetAnnotation = '';
 let targetProjection = '';
 
+/** The plot's view, the annotations Color by offers and the projections the data holds. */
 async function getCurrentView(page: Page) {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & {
-          selectedAnnotation?: string;
-          selectedProjection?: string;
-          annotations?: string[];
-          projections?: string[];
-        })
-      | null;
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          selectedAnnotation?: string;
-          selectedProjectionIndex?: number;
-          data?: { projections?: Array<{ name: string }> };
-        })
-      | null;
-
-    const projections =
-      controlBar?.projections ?? plot?.data?.projections?.map((p) => p.name) ?? [];
-    const projectionIndex =
-      plot?.selectedProjectionIndex ?? projections.indexOf(controlBar?.selectedProjection ?? '');
-    const plotProjection = projectionIndex >= 0 ? projections[projectionIndex] : null;
-
-    return {
-      annotation: controlBar?.selectedAnnotation ?? plot?.selectedAnnotation ?? null,
-      projection: plotProjection ?? controlBar?.selectedProjection ?? null,
-      controlBarProjection: controlBar?.selectedProjection ?? null,
-      plotProjection,
-      annotations: controlBar?.annotations ?? [],
-      projections,
-    };
-  });
+  const [view, annotations, projections] = await Promise.all([
+    getViewState(page),
+    getColorByOptions(page),
+    page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as
+        | (Element & { data?: { projections?: Array<{ name: string }> } | null })
+        | null;
+      return plot?.data?.projections?.map((projection) => projection.name) ?? [];
+    }),
+  ]);
+  return { annotation: view.annotation, projection: view.projection, annotations, projections };
 }
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function waitForView(
   page: Page,
@@ -93,10 +80,12 @@ async function waitForView(
   // to @protspace/utils' annotation-metadata map (which doesn't import cleanly
   // under Playwright's ESM loader).
   if (expected.projection) {
-    const projectionTriggerText = page.locator(
-      'protspace-control-bar #projection-trigger .dropdown-trigger-text',
+    // The Projection picker shows the projection's name last. A RegExp is matched against the
+    // raw text, so allow the trigger's trailing whitespace.
+    await expect(projectionTrigger(page)).toHaveText(
+      new RegExp(`${escapeRegExp(expected.projection)}\\s*$`),
+      { timeout },
     );
-    await expect(projectionTriggerText).toHaveText(expected.projection, { timeout });
   }
 }
 
@@ -278,9 +267,9 @@ test.beforeAll(async ({ browser }, workerInfo) => {
     });
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
-    // getCurrentView reads the control-bar's annotations/projections, which the
-    // app wires separately from the scatter-plot data and can lag the
-    // plot-data-ready signal under parallel load. Poll until both expose at
+    // getCurrentView reads Color by's options, which the app wires separately
+    // from the scatter-plot data and can lag the plot-data-ready signal under
+    // parallel load. Poll until both it and the projections expose at
     // least two entries — the deep-link tests below derive a non-default target
     // from these, so an empty or single-value view would silently collapse it
     // to the default and make later assertions self-contradictory.
@@ -343,81 +332,59 @@ test.describe('URL-backed explore view state', () => {
   }) => {
     await page.addInitScript(() => {
       const win = window as Window & {
-        __controlBarAnnotationAssignments?: string[];
-        __controlBarProjectionAssignments?: string[];
+        __pickerAnnotationAssignments?: string[];
+        __pickerProjectionAssignments?: string[];
       };
+      // The elements that show the view, and the view property each one shows. The control bar
+      // shows both until the view bar's pickers replace it (Tasks 2.8 and 2.10); a tag that is
+      // not defined is simply never patched.
+      const recorded: Record<string, Array<'selectedAnnotation' | 'selectedProjection'>> = {
+        'protspace-control-bar': ['selectedAnnotation', 'selectedProjection'],
+        'protspace-annotation-select': ['selectedAnnotation'],
+        'protspace-projection-select': ['selectedProjection'],
+      };
+      const patched = new WeakSet<object>();
       const originalDefine = customElements.define.bind(customElements);
 
       customElements.define = (name, constructor, options) => {
-        if (name === 'protspace-scatterplot') {
-          const proto = constructor.prototype as {
-            __urlViewStatePatched?: boolean;
-          };
+        const proto = constructor.prototype as object;
 
-          if (!proto.__urlViewStatePatched) {
-            proto.__urlViewStatePatched = true;
-            const dataDescriptor = Object.getOwnPropertyDescriptor(proto, 'data');
-
-            if (dataDescriptor?.get && dataDescriptor?.set) {
-              Object.defineProperty(proto, 'data', {
-                configurable: true,
-                enumerable: dataDescriptor.enumerable ?? true,
-                get: dataDescriptor.get,
-                set(value) {
-                  win.__controlBarAnnotationAssignments = [];
-                  win.__controlBarProjectionAssignments = [];
-                  return dataDescriptor.set.call(this, value);
-                },
-              });
-            }
+        if (name === 'protspace-scatterplot' && !patched.has(proto)) {
+          patched.add(proto);
+          const dataDescriptor = Object.getOwnPropertyDescriptor(proto, 'data');
+          if (dataDescriptor?.get && dataDescriptor?.set) {
+            Object.defineProperty(proto, 'data', {
+              configurable: true,
+              enumerable: dataDescriptor.enumerable ?? true,
+              get: dataDescriptor.get,
+              set(value) {
+                win.__pickerAnnotationAssignments = [];
+                win.__pickerProjectionAssignments = [];
+                return dataDescriptor.set.call(this, value);
+              },
+            });
           }
         }
 
-        if (name === 'protspace-control-bar') {
-          const proto = constructor.prototype as {
-            __urlViewStatePatched?: boolean;
-          };
-
-          if (!proto.__urlViewStatePatched) {
-            proto.__urlViewStatePatched = true;
-
-            const annotationDescriptor = Object.getOwnPropertyDescriptor(
-              proto,
-              'selectedAnnotation',
-            );
-            if (annotationDescriptor?.get && annotationDescriptor?.set) {
-              Object.defineProperty(proto, 'selectedAnnotation', {
-                configurable: true,
-                enumerable: annotationDescriptor.enumerable ?? true,
-                get: annotationDescriptor.get,
-                set(value) {
-                  win.__controlBarAnnotationAssignments ??= [];
-                  if (typeof value === 'string') {
-                    win.__controlBarAnnotationAssignments.push(value);
-                  }
-                  return annotationDescriptor.set.call(this, value);
-                },
-              });
-            }
-
-            const projectionDescriptor = Object.getOwnPropertyDescriptor(
-              proto,
-              'selectedProjection',
-            );
-            if (projectionDescriptor?.get && projectionDescriptor?.set) {
-              Object.defineProperty(proto, 'selectedProjection', {
-                configurable: true,
-                enumerable: projectionDescriptor.enumerable ?? true,
-                get: projectionDescriptor.get,
-                set(value) {
-                  win.__controlBarProjectionAssignments ??= [];
-                  if (typeof value === 'string') {
-                    win.__controlBarProjectionAssignments.push(value);
-                  }
-                  return projectionDescriptor.set.call(this, value);
-                },
-              });
-            }
+        const keys = recorded[name] ?? [];
+        if (keys.length > 0 && !patched.has(proto)) {
+          patched.add(proto);
+          for (const key of keys) {
+            const descriptor = Object.getOwnPropertyDescriptor(proto, key);
+            if (!descriptor?.get || !descriptor?.set) continue;
+            const list =
+              key === 'selectedAnnotation'
+                ? '__pickerAnnotationAssignments'
+                : '__pickerProjectionAssignments';
+            Object.defineProperty(proto, key, {
+              configurable: true,
+              enumerable: descriptor.enumerable ?? true,
+              get: descriptor.get,
+              set(value) {
+                if (typeof value === 'string') (win[list] ??= []).push(value);
+                return descriptor.set.call(this, value);
+              },
+            });
           }
         }
 
@@ -433,13 +400,13 @@ test.describe('URL-backed explore view state', () => {
 
     const assignments = await page.evaluate(() => {
       const win = window as Window & {
-        __controlBarAnnotationAssignments?: string[];
-        __controlBarProjectionAssignments?: string[];
+        __pickerAnnotationAssignments?: string[];
+        __pickerProjectionAssignments?: string[];
       };
 
       return {
-        annotations: win.__controlBarAnnotationAssignments ?? [],
-        projections: win.__controlBarProjectionAssignments ?? [],
+        annotations: win.__pickerAnnotationAssignments ?? [],
+        projections: win.__pickerProjectionAssignments ?? [],
       };
     });
 
@@ -651,12 +618,9 @@ test.describe('URL-backed explore view state', () => {
   test('applies ?density= and keeps it across an annotation change', async ({ page }) => {
     await openExplore(page, '?density=on');
 
-    const bar = page.locator('protspace-control-bar');
-    const densityTrigger = bar.locator('#density-layer-trigger');
-    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Always');
+    await expect.poll(() => getContoursMode(page)).toBe('on');
 
-    await densityTrigger.click();
-    await bar.locator('.density-item[data-mode="auto"]').click();
+    await setContours(page, 'auto');
     await expectUrlParam(page, 'density', 'auto');
 
     const initialView = await getCurrentView(page);
@@ -669,7 +633,7 @@ test.describe('URL-backed explore view state', () => {
     await waitForView(page, { annotation: nextAnnotation! });
 
     await expectUrlParam(page, 'density', 'auto');
-    await expect(densityTrigger).toHaveAttribute('aria-label', 'Contours: Auto');
+    await expect.poll(() => getContoursMode(page)).toBe('auto');
   });
 
   test('annotation changes update history without reloading the page instance', async ({

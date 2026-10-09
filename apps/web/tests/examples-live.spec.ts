@@ -9,7 +9,7 @@ import {
   collectDefaultViewDriftWarnings,
   curatedViewOf,
   dismissTourIfPresent,
-  getControlBarView,
+  getViewState,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
@@ -100,7 +100,7 @@ test.describe('every example opens on its curated view', () => {
       await dismissTourIfPresent(page);
       // The manifest's count, so the wait cannot pass on another dataset.
       await waitForExploreDataLoad(page, { timeout: loadTimeout, proteinCount: record.proteins });
-      await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(entry));
+      await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(entry));
       expect(await page.evaluate(() => window.location.search)).toBe(`?dataset=${entry.id}`);
       expect(driftWarnings).toEqual([]);
       expect(fallbacks).toEqual([]);

@@ -22,25 +22,22 @@ const STEP_TITLES = [
 const TOTAL_STEPS = STEP_TITLES.length;
 
 /**
- * Describes where the highlighted element lives for each step.
- *
- * - `null`                          – centred popover, no element highlighted.
- * - `{ driverId: '…' }`            – regular DOM element with a `data-driver-id` attribute.
- * - `{ shadow: '…', host: '…' }`   – element inside a host's Shadow DOM,
- *                                     matched by the given CSS selector.
+ * Where the highlighted element lives for each step: `null` for a centred popover with no element
+ * highlighted, otherwise the element's `data-driver-id`. The check finds it through shadow roots,
+ * so a step passes before and after its control moves out of the control bar.
  */
-type StepTarget = null | { driverId: string } | { shadow: string; host: string };
+type StepTarget = null | { driverId: string };
 
 const STEP_TARGETS: StepTarget[] = [
   null, // Welcome
-  { shadow: '[data-driver-id="import"]', host: '[data-driver-id="control-bar"]' }, // Import
-  { shadow: '[data-driver-id="projections"]', host: '[data-driver-id="control-bar"]' }, // Projections & Annotations
-  { shadow: '[data-driver-id="search"]', host: '[data-driver-id="control-bar"]' }, // Search
-  { shadow: '[data-driver-id="selection"]', host: '[data-driver-id="control-bar"]' }, // Select & Isolate
-  { shadow: '[data-driver-id="data-actions"]', host: '[data-driver-id="control-bar"]' }, // Filter & Export
+  { driverId: 'import' }, // Import
+  { driverId: 'projections' }, // Projections & Annotations
+  { driverId: 'search' }, // Search
+  { driverId: 'selection' }, // Select & Isolate
+  { driverId: 'data-actions' }, // Filter & Export
   { driverId: 'scatterplot' }, // Scatterplot
   { driverId: 'legend' }, // Legend
-  { shadow: '[data-driver-id="other-row"]', host: '[data-driver-id="legend"]' }, // Expand Hidden Categories
+  { driverId: 'other-row' }, // Expand Hidden Categories
   null, // You're All Set!
 ];
 
@@ -76,11 +73,9 @@ async function clickPrev(page: Page): Promise<void> {
 }
 
 /**
- * Assert that the correct element is highlighted for the given step target.
- *
- * For regular DOM elements we check `document.querySelector('.driver-active-element')`.
- * For Shadow DOM elements `document.querySelectorAll` cannot pierce the shadow
- * boundary, so we query the host's shadow root directly.
+ * Assert that the correct element is highlighted for the given step target. Playwright's CSS
+ * locators pierce shadow roots, so one locator finds the target in a bar's light DOM or inside a
+ * host's shadow root.
  */
 async function assertHighlightedElement(page: Page, target: StepTarget): Promise<void> {
   if (target === null) {
@@ -92,25 +87,9 @@ async function assertHighlightedElement(page: Page, target: StepTarget): Promise
     return;
   }
 
-  if ('driverId' in target) {
-    const highlightedId = await page.evaluate(() => {
-      const active = document.querySelector('.driver-active-element');
-      return active?.getAttribute('data-driver-id') ?? null;
-    });
-    expect(highlightedId).toBe(target.driverId);
-    return;
-  }
-
-  // Shadow DOM element
-  const hasShadowHighlight = await page.evaluate(
-    ({ shadowSelector, hostSelector }) => {
-      const host = document.querySelector(hostSelector);
-      const el = host?.shadowRoot?.querySelector(shadowSelector);
-      return el?.classList.contains('driver-active-element') ?? false;
-    },
-    { shadowSelector: target.shadow, hostSelector: target.host },
+  await expect(page.locator(`[data-driver-id="${target.driverId}"]`)).toHaveClass(
+    /(^|\s)driver-active-element(\s|$)/,
   );
-  expect(hasShadowHighlight).toBe(true);
 }
 
 // ---------------------------------------------------------------------------

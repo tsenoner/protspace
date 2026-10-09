@@ -168,39 +168,83 @@ export async function holdNextRequest(page: Page, glob: string): Promise<() => v
   return release;
 }
 
-/** The view the control bar shows: colour-by annotation, projection and tooltip annotations. */
-interface ControlBarView {
+// ─── Regions ───────────────────────────────────────────────────────────────────
+// The workbench's regions, by the data-workbench hooks the shell renders. Specs reach controls
+// through the helpers below, which find them by role, accessible name or tag (Playwright's CSS
+// pierces shadow roots). When a control moves, a helper's internals change and no spec does.
+
+export const appBar = (page: Page): Locator => page.locator('[data-workbench="app-bar"]');
+export const viewBar = (page: Page): Locator => page.locator('[data-workbench="view-bar"]');
+export const plotArea = (page: Page): Locator => page.locator('[data-workbench="plot"]');
+export const sidebar = (page: Page): Locator => page.locator('[data-workbench="sidebar"]');
+
+// ─── View state ────────────────────────────────────────────────────────────────
+
+/** The view the plot shows: colour-by annotation, projection and tooltip annotations. */
+export interface ViewState {
   annotation: string | null;
   projection: string | null;
   tooltip: string[];
 }
 
-export async function getControlBarView(page: Page): Promise<ControlBarView> {
+/** The view, read from #myPlot whichever controls show it. */
+export async function getViewState(page: Page): Promise<ViewState> {
   return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
+    const plot = document.querySelector('#myPlot') as
       | (Element & {
           selectedAnnotation?: string;
-          selectedProjection?: string;
+          selectedProjectionIndex?: number;
           tooltipAnnotations?: string[];
+          data?: { projections?: Array<{ name: string }> } | null;
         })
       | null;
+    const index = plot?.selectedProjectionIndex ?? -1;
     return {
-      annotation: controlBar?.selectedAnnotation ?? null,
-      projection: controlBar?.selectedProjection ?? null,
-      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
+      annotation: plot?.selectedAnnotation ?? null,
+      projection: plot?.data?.projections?.[index]?.name ?? null,
+      tooltip: [...(plot?.tooltipAnnotations ?? [])],
     };
   });
 }
 
-/** A catalog entry's curated view, in the shape `getControlBarView` reads. */
+/** A catalog entry's curated view, in the shape `getViewState` reads. */
 export function curatedViewOf(entry: {
   defaultView: { projection: string; annotation: string; tooltip?: readonly string[] };
-}): ControlBarView {
+}): ViewState {
   return {
     annotation: entry.defaultView.annotation,
     projection: entry.defaultView.projection,
     tooltip: [...(entry.defaultView.tooltip ?? [])],
   };
+}
+
+/** The annotations Color by offers, in its order (tooltip-only and EAT-confidence columns left out). */
+export async function getColorByOptions(page: Page): Promise<string[]> {
+  return annotationSelect(page).evaluate(
+    (select) => [...((select as Element & { annotations?: string[] }).annotations ?? [])],
+    undefined,
+    { timeout: 10_000 },
+  );
+}
+
+/** The plot's contour mode. */
+export async function getContoursMode(page: Page): Promise<'off' | 'auto' | 'on'> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { config?: { densityLayer?: 'off' | 'auto' | 'on' } })
+      | null;
+    return plot?.config?.densityLayer ?? 'off';
+  });
+}
+
+/** The proteins the plot has selected. */
+export async function getSelectedProteinIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { selectedProteinIds?: string[] })
+      | null;
+    return [...(plot?.selectedProteinIds ?? [])];
+  });
 }
 
 /**
@@ -217,24 +261,99 @@ export function collectDefaultViewDriftWarnings(page: Page): string[] {
   return warnings;
 }
 
+/** The dataset the app bar names: an example's label or a file's name; null before a load. */
 export async function getCurrentDatasetName(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { currentDatasetName?: string })
-      | null;
-    return controlBar?.currentDatasetName ?? null;
-  });
+  const name = await appBar(page)
+    .locator('[data-workbench="dataset"]')
+    .getAttribute('data-dataset-name');
+  return name || null;
 }
 
+// ─── Controls ──────────────────────────────────────────────────────────────────
+
+/** The Projection picker's trigger; its accessible name starts with "Projection". */
+export const projectionTrigger = (page: Page): Locator =>
+  viewBar(page).getByRole('button', { name: /^Projection/ });
+
+/**
+ * The Color by picker's trigger: the annotation select's first popup button. The select keeps its
+ * trigger first when it moves to the view bar (Task 2.8).
+ */
+export const colorByTrigger = (page: Page): Locator =>
+  annotationSelect(page).locator('button[aria-haspopup]').first();
+
+/** The Import menu's trigger. */
+export const importTrigger = (page: Page): Locator =>
+  viewBar(page).getByRole('button', { name: 'Import', exact: true });
+
+/** The element that holds the Import panel: today the control bar. */
+export const importMenu = (page: Page): Locator => page.locator('protspace-control-bar');
+
+/** The element that holds the Export panel: today the control bar. */
+export const exportMenu = (page: Page): Locator => page.locator('protspace-control-bar');
+
+/** The Filter button; its accessible name starts with "Filter" (and shows the condition count). */
+export const filterButton = (page: Page): Locator =>
+  viewBar(page).getByRole('button', { name: /^Filter/ });
+
+/** The open filter dialog. */
+export const filterDialog = (page: Page): Locator =>
+  page.getByRole('dialog', { name: 'Filter Query Builder' });
+
+export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
+
+export const annotationSelect = (page: Page): Locator =>
+  page.locator('protspace-annotation-select');
+
+export const searchInput = (page: Page): Locator =>
+  page.locator('protspace-protein-search #protein-search-input');
+
+/** Clear, Isolate or Reset. Clear and Isolate need a selection; Reset shows only while isolated. */
+export const selectionAction = (page: Page, name: 'Clear' | 'Isolate' | 'Reset'): Locator =>
+  viewBar(page).getByRole('button', { name, exact: true });
+
+// ─── Actions ───────────────────────────────────────────────────────────────────
+
+/**
+ * Opens the Import menu unless it is open. Importing a custom dataset leaves the menu open
+ * (nothing closes it), so only click the trigger when the menu is closed: re-clicking toggles it.
+ */
 export async function openImportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  // Importing a custom dataset leaves the menu open (nothing closes it), so only
-  // click the trigger when the menu is closed — re-clicking would toggle it shut.
+  const ownDataset = importMenu(page).locator('[data-driver-id="import-own-dataset"]');
   if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+    await importTrigger(page).click();
   }
   await expect(ownDataset).toBeVisible();
+}
+
+/** Chooses an example from the Import menu by its catalog id. */
+export async function pickExample(page: Page, id: string): Promise<void> {
+  await openImportMenu(page);
+  await importMenu(page).locator(`[data-example-id="${id}"]`).click();
+}
+
+/** Opens the Export menu unless it is open; resolves once its formats show. */
+export async function openExportMenu(page: Page): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const png = exportMenu(page).getByRole('button', { name: 'PNG', exact: true });
+  if (!(await png.isVisible().catch(() => false))) {
+    await exportMenu(page).getByRole('button', { name: 'Export', exact: true }).click();
+  }
+  await expect(png).toBeVisible();
+}
+
+/** Opens the filter dialog unless it is open; resolves once it shows. */
+export async function openFilter(page: Page): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  if (
+    await filterDialog(page)
+      .isVisible()
+      .catch(() => false)
+  )
+    return;
+  await filterButton(page).click();
+  await expect(filterDialog(page)).toBeVisible();
 }
 
 /**
@@ -284,18 +403,18 @@ async function waitForViewState(
 }
 
 /**
- * Click a control-bar menu item and wait until the control bar applies the pick. It does
- * that after the next paint and then dispatches `event`, also when the pick re-selects the
- * current value and so changes no state a test could wait for.
+ * Click a picker's menu item and wait until the pick is applied. A picker applies a pick after the
+ * next paint and then dispatches `event`, which bubbles out of every shadow root to the document,
+ * also when the pick re-selects the current value and so changes no state a test could wait for.
  */
 async function pickFromMenu(
   page: Page,
   item: Locator,
-  event: 'annotation-change' | 'projection-change',
+  event: 'annotation-change' | 'projection-change' | 'density-layer-change',
 ): Promise<void> {
-  const applied = await page.locator('protspace-control-bar').evaluateHandle((bar, type) => {
+  const applied = await page.evaluateHandle((type) => {
     const state = { done: false };
-    bar.addEventListener(
+    document.addEventListener(
       type,
       () => {
         state.done = true;
@@ -309,37 +428,118 @@ async function pickFromMenu(
   await applied.dispose();
 }
 
+/**
+ * Picks `annotation` from Color by. Its rows show the display label and carry the raw key on
+ * `data-annotation`; the annotation select keeps those rows when it moves (Task 2.8).
+ */
 export async function selectAnnotation(page: Page, annotation: string): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const select = page.locator('protspace-control-bar protspace-annotation-select');
-  // Items show the display label but carry the raw key on data-annotation.
-  const item = select.locator(`.dropdown-item[data-annotation="${annotation}"]`).first();
+  const item = annotationSelect(page)
+    .locator(`.dropdown-item[data-annotation="${annotation}"]`)
+    .first();
   // The trigger toggles, so only click it when the menu is closed.
-  if (!(await item.isVisible())) await select.locator('.dropdown-trigger').click();
+  if (!(await item.isVisible())) await colorByTrigger(page).click();
   await expect(item, `annotation menu item "${annotation}" not shown`).toBeVisible({
     timeout: 5_000,
   });
   await pickFromMenu(page, item, 'annotation-change');
-  await waitForViewState(page, 'selectedAnnotation', annotation, [
-    '#myPlot',
-    'protspace-control-bar',
-    'protspace-legend',
-  ]);
+  await waitForViewState(page, 'selectedAnnotation', annotation, ['#myPlot', 'protspace-legend']);
 }
 
 /** Pick a projection by its position in the menu, or by its label. */
 export async function selectProjection(page: Page, projection: number | string): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.locator('#projection-trigger').click();
+  await projectionTrigger(page).click();
   const item =
     typeof projection === 'number'
-      ? controlBar.locator('.projection-container .dropdown-item').nth(projection)
-      : controlBar.getByRole('option', { name: projection, exact: true });
+      ? viewBar(page).getByRole('option').nth(projection)
+      : viewBar(page).getByRole('option', { name: projection, exact: true });
   await pickFromMenu(page, item, 'projection-change');
   if (typeof projection === 'number') {
     await waitForViewState(page, 'selectedProjectionIndex', projection, ['#myPlot']);
   }
+}
+
+/** Sets the contour mode from the Contours menu and waits until the plot uses it. */
+export async function setContours(page: Page, mode: 'off' | 'auto' | 'on'): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  await viewBar(page)
+    .getByRole('button', { name: /^Contours/ })
+    .click();
+  await pickFromMenu(
+    page,
+    viewBar(page).locator(`[role="menuitemradio"][data-mode="${mode}"]`),
+    'density-layer-change',
+  );
+  await expect.poll(() => getContoursMode(page)).toBe(mode);
+}
+
+const TOOL_STATES = {
+  'Move and zoom': { selectionMode: false },
+  'Box select': { selectionMode: true, selectionTool: 'rectangle' },
+  'Lasso select': { selectionMode: true, selectionTool: 'lasso' },
+} as const;
+
+/** Chooses a plot tool and waits until the plot uses it. */
+export async function chooseTool(
+  page: Page,
+  tool: 'Move and zoom' | 'Box select' | 'Lasso select',
+): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const readTool = () =>
+    page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as
+        | (Element & { selectionMode?: boolean; selectionTool?: string })
+        | null;
+      return {
+        selectionMode: plot?.selectionMode ?? false,
+        selectionTool: plot?.selectionTool ?? 'rectangle',
+      };
+    });
+  const wanted = TOOL_STATES[tool];
+  // Until the plot has its tool strip (Task 2.9), the control bar's Select toggle turns
+  // selection on and off, and its segmented control picks the shape.
+  if ((await readTool()).selectionMode !== wanted.selectionMode) {
+    await viewBar(page).getByRole('button', { name: 'Select', exact: true }).click();
+  }
+  if (wanted.selectionMode) {
+    const shape = tool === 'Box select' ? 'Rectangle selection' : 'Lasso selection';
+    await viewBar(page).getByRole('button', { name: shape, exact: true }).click();
+  }
+  await expect
+    .poll(async () => {
+      const state = await readTool();
+      return wanted.selectionMode ? state : { selectionMode: state.selectionMode };
+    })
+    .toEqual(wanted);
+}
+
+async function isIsolated(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { isIsolationMode?: () => boolean })
+      | null;
+    return plot?.isIsolationMode?.() ?? false;
+  });
+}
+
+/** Clears the selection with Clear and waits until the plot holds none; a no-op with none. */
+export async function clearSelection(page: Page): Promise<void> {
+  if ((await getSelectedProteinIds(page)).length === 0) return;
+  await selectionAction(page, 'Clear').click();
+  await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
+}
+
+/** Isolates the selected proteins with Isolate and waits until the plot is isolated. */
+export async function isolateSelection(page: Page): Promise<void> {
+  await selectionAction(page, 'Isolate').click();
+  await expect.poll(() => isIsolated(page)).toBe(true);
+}
+
+/** Leaves isolation with Reset and waits until the plot shows the full dataset again. */
+export async function resetIsolation(page: Page): Promise<void> {
+  await selectionAction(page, 'Reset').click();
+  await expect.poll(() => isIsolated(page)).toBe(false);
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {

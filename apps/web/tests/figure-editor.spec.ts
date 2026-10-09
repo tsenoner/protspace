@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForExploreDataLoad, dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, exportMenu, waitForExploreDataLoad } from './helpers/explore';
 
 /**
  * E2E coverage for the Publish (Figure Editor) modal — specifically the
@@ -23,13 +23,12 @@ interface Inset {
 }
 
 async function openFigureEditor(page: Page): Promise<void> {
-  // Trigger the open-publish-editor event directly — the same handler the
+  // Dispatch open-publish-editor from the Export menu directly — the same handler the
   // Export → Figure Editor button click goes through. Skips the dropdown
   // animation and possible viewport-clipping headaches.
-  await page.evaluate(() => {
-    const cb = document.querySelector('protspace-control-bar');
-    cb?.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true }));
-  });
+  await exportMenu(page).evaluate((menu) =>
+    menu.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true })),
+  );
   await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
     timeout: 5_000,
   });

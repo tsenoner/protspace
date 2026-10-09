@@ -1,7 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent, selectAnnotation, waitForExploreDataLoad } from './helpers/explore';
+import {
+  dismissTourIfPresent,
+  filterDialog,
+  getColorByOptions,
+  openFilter,
+  queryBuilder,
+  selectAnnotation,
+  waitForExploreDataLoad,
+} from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -147,17 +155,14 @@ async function waitForAnnotationAvailable(page: Page, annotation: string): Promi
           getCurrentData?: () => { annotations?: Record<string, unknown> };
         })
       | null;
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { annotations?: string[] })
-      | null;
 
-    const plotHasAnnotation =
+    return (
       Boolean(plot?.data?.annotations?.[nextAnnotation]) ||
-      Boolean(plot?.getCurrentData?.()?.annotations?.[nextAnnotation]);
-    const controlBarHasAnnotation = Boolean(controlBar?.annotations?.includes(nextAnnotation));
-
-    return plotHasAnnotation && controlBarHasAnnotation;
+      Boolean(plot?.getCurrentData?.()?.annotations?.[nextAnnotation])
+    );
   }, annotation);
+  // And Color by offers it.
+  await expect.poll(() => getColorByOptions(page)).toContain(annotation);
 }
 
 async function waitForLegendAnnotation(page: Page, annotation: string): Promise<void> {
@@ -411,28 +416,12 @@ async function clickLegendReverseButton(page: Page): Promise<void> {
 }
 
 // ─── Query-builder filter helpers ───────────────────────────────────────────
-// The control-bar Filter button opens the query builder (role="dialog"
-// "Filter Query Builder"). A condition row picks an annotation and one or more
-// of its values; "Apply & Isolate" isolates the scatter-plot to the matched
-// proteins (observed via getCurrentData()), and "Reset All" clears isolation.
+// The Filter button opens the query builder in the filter dialog. A condition row picks an
+// annotation and one or more of its values; "Apply & Isolate" isolates the scatter-plot to the
+// matched proteins (observed via getCurrentData()), and "Reset All" clears isolation.
 // Numeric bins are listed in the value picker by their internal id
 // (e.g. "num:quantile:10:20.5"); these helpers map friendly bin labels (as the
 // legend shows them) to those internal ids via numericMetadata.bins.
-
-const FILTER_DIALOG = { name: 'Filter Query Builder' } as const;
-
-async function openQueryBuilder(page: Page): Promise<void> {
-  await dismissTourIfPresent(page);
-  const dialog = page.getByRole('dialog', FILTER_DIALOG);
-  if (await dialog.isVisible().catch(() => false)) {
-    return;
-  }
-  await page
-    .locator('protspace-control-bar')
-    .getByRole('button', { name: /^Filter/ })
-    .click();
-  await expect(dialog).toBeVisible();
-}
 
 /**
  * The annotation column of every top-level condition row, '' for a row with no
@@ -440,10 +429,8 @@ async function openQueryBuilder(page: Page): Promise<void> {
  * trigger shows the annotation's label, not its column name.
  */
 async function topRowAnnotations(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -469,7 +456,7 @@ function conditionRow(page: Page, index: number) {
  * condition only when necessary. Returns the row's index.
  */
 async function ensureCondition(page: Page, annotation: string): Promise<number> {
-  await openQueryBuilder(page);
+  await openFilter(page);
   const existing = await rowIndexFor(page, annotation);
   if (existing >= 0) {
     return existing;
@@ -478,10 +465,7 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   let annotations = await topRowAnnotations(page);
   let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
-    await page
-      .locator('protspace-query-builder')
-      .getByRole('button', { name: '+ Add condition' })
-      .click();
+    await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
     await expect
       .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);
@@ -546,10 +530,8 @@ async function valueMap(
 }
 
 async function isValuePickerOpen(page: Page, rowIndex: number): Promise<boolean> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -569,29 +551,29 @@ async function openValuePicker(page: Page, rowIndex: number): Promise<void> {
   await expect.poll(async () => isValuePickerOpen(page, rowIndex)).toBe(true);
   // The value list renders synchronously, but wait until at least one item or an
   // existing chip is present so callers can read/select reliably.
-  await page.waitForFunction((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
-    const rows = Array.from(conds?.children ?? []).filter(
-      (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
-    );
-    const row = rows[idx] as (HTMLElement & { shadowRoot: ShadowRoot }) | undefined;
-    const picker = row?.shadowRoot?.querySelector('protspace-query-value-picker') as
-      | (HTMLElement & { shadowRoot: ShadowRoot })
-      | undefined;
-    const items = picker?.shadowRoot?.querySelectorAll('.value-picker-item').length ?? 0;
-    const chips = row?.shadowRoot?.querySelectorAll('.value-chip-text').length ?? 0;
-    return items + chips > 0;
-  }, rowIndex);
+  await expect
+    .poll(() =>
+      queryBuilder(page).evaluate((qb, idx) => {
+        const conds = qb.shadowRoot?.querySelector('.query-conditions');
+        const rows = Array.from(conds?.children ?? []).filter(
+          (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
+        );
+        const row = rows[idx] as (HTMLElement & { shadowRoot: ShadowRoot }) | undefined;
+        const picker = row?.shadowRoot?.querySelector('protspace-query-value-picker') as
+          | (HTMLElement & { shadowRoot: ShadowRoot })
+          | undefined;
+        const items = picker?.shadowRoot?.querySelectorAll('.value-picker-item').length ?? 0;
+        const chips = row?.shadowRoot?.querySelectorAll('.value-chip-text').length ?? 0;
+        return items + chips > 0;
+      }, rowIndex),
+    )
+    .toBe(true);
 }
 
 /** Read the internal value labels currently listed in the open value picker. */
 async function pickerItemValues(page: Page, rowIndex: number): Promise<string[]> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -610,10 +592,8 @@ async function pickerItemValues(page: Page, rowIndex: number): Promise<string[]>
 
 /** Read the internal value labels currently selected as chips on the row. */
 async function chipValues(page: Page, rowIndex: number): Promise<string[]> {
-  return page.evaluate((idx) => {
-    const cb = document.querySelector('protspace-control-bar');
-    const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-    const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate((qb, idx) => {
+    const conds = qb.shadowRoot?.querySelector('.query-conditions');
     const rows = Array.from(conds?.children ?? []).filter(
       (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
     );
@@ -630,11 +610,9 @@ async function clickPickerValue(
   rowIndex: number,
   internalValue: string,
 ): Promise<boolean> {
-  return page.evaluate(
-    ({ idx, val }) => {
-      const cb = document.querySelector('protspace-control-bar');
-      const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-      const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+  return queryBuilder(page).evaluate(
+    (qb, { idx, val }) => {
+      const conds = qb.shadowRoot?.querySelector('.query-conditions');
       const rows = Array.from(conds?.children ?? []).filter(
         (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
       );
@@ -659,17 +637,15 @@ async function clickPickerValue(
 
 /** Remove every selected value chip from a condition row. */
 async function clearChips(page: Page, rowIndex: number): Promise<void> {
-  // Removing a chip dispatches condition-changed up through the control-bar and
+  // Removing a chip dispatches condition-changed up through the query builder and
   // back down, so the chip DOM only updates after an async Lit re-render. Wait
   // for the chip count to actually drop before the next click so we never
   // re-click a stale/detached button, and cap the loop so a removal regression
   // fails fast (a clear poll timeout) instead of spinning until the test timeout.
   let remaining = (await chipValues(page, rowIndex)).length;
   for (let guard = remaining + 5; guard > 0 && remaining > 0; guard -= 1) {
-    const removed = await page.evaluate((idx) => {
-      const cb = document.querySelector('protspace-control-bar');
-      const qb = cb?.shadowRoot?.querySelector('protspace-query-builder');
-      const conds = qb?.shadowRoot?.querySelector('.query-conditions');
+    const removed = await queryBuilder(page).evaluate((qb, idx) => {
+      const conds = qb.shadowRoot?.querySelector('.query-conditions');
       const rows = Array.from(conds?.children ?? []).filter(
         (c) => c.tagName?.toLowerCase() === 'protspace-query-condition-row',
       );
@@ -689,7 +665,7 @@ async function clearChips(page: Page, rowIndex: number): Promise<void> {
 
 /** Close any open annotation/value picker without closing the dialog. */
 async function closeOpenPickers(page: Page): Promise<void> {
-  const matchCount = page.locator('protspace-query-builder .match-count');
+  const matchCount = queryBuilder(page).locator('.match-count');
   if (await matchCount.isVisible().catch(() => false)) {
     await matchCount.click();
   }
@@ -762,17 +738,17 @@ async function setNumericFilter(
  * one annotation uses this to return to the unfiltered view.
  */
 async function disableFilter(page: Page, _annotation: string): Promise<void> {
-  await openQueryBuilder(page);
+  await openFilter(page);
   await closeOpenPickers(page);
-  await page.locator('protspace-query-builder .query-footer-reset').click();
+  await queryBuilder(page).locator('.query-footer-reset').click();
 }
 
 async function applyFiltersFromMenu(page: Page): Promise<void> {
   await closeOpenPickers(page);
-  const apply = page.locator('protspace-query-builder .btn-primary');
+  const apply = queryBuilder(page).locator('.btn-primary');
   await expect(apply).toBeEnabled();
   await apply.click();
-  await expect(page.getByRole('dialog', FILTER_DIALOG)).toBeHidden();
+  await expect(filterDialog(page)).toBeHidden();
 }
 
 /**
@@ -2389,30 +2365,20 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   // A zero-match query cannot be isolated: the builder reports zero matches and
   // keeps "Apply & Isolate" disabled, so the view never collapses to empty or
   // falls back to the full data via a stale filter.
-  await openQueryBuilder(page);
+  await openFilter(page);
   await expect
     .poll(async () =>
-      page.evaluate(() => {
-        const cb = document.querySelector('protspace-control-bar') as
-          | (HTMLElement & { shadowRoot: ShadowRoot })
-          | null;
-        const qb = cb?.shadowRoot?.querySelector('protspace-query-builder') as
-          | (HTMLElement & { shadowRoot: ShadowRoot })
-          | null;
-        return qb?.shadowRoot?.querySelector('.match-count')?.textContent?.trim() ?? '';
-      }),
+      ((await queryBuilder(page).locator('.match-count').textContent()) ?? '').trim(),
     )
     // Anchor to the start: the count renders as "<n> of <total> proteins
     // matched", so a bare .toContain('0 of') would also match "10 of", "20 of",
     // etc. Require the matched count itself to be exactly 0.
     .toMatch(/^0 of /);
-  await expect(page.locator('protspace-query-builder .btn-primary')).toBeDisabled();
+  await expect(queryBuilder(page).locator('.btn-primary')).toBeDisabled();
   expect(await isolatedCount(page)).toBe(fullCount);
 
-  await page
-    .getByRole('dialog', { name: 'Filter Query Builder' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
+  // Cancel is the builder's own button, so it is found inside the builder wherever the dialog is.
+  await queryBuilder(page).getByRole('button', { name: 'Cancel' }).click();
 
   const legend = await readLegendDisplay(page);
   expect(legend.items.length).toBeGreaterThan(0);
@@ -2482,10 +2448,10 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as unknown as
-        | (Element & { filterActive?: boolean })
+      const plot = document.querySelector('protspace-scatterplot') as unknown as
+        | (Element & { filtersActive?: boolean })
         | null;
-      return cb?.filterActive ?? false;
+      return plot?.filtersActive ?? false;
     }),
   ).toBe(true);
 
@@ -2504,11 +2470,9 @@ test('loading a new dataset clears active filters before rendering the replaceme
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
-    const cb = document.querySelector('protspace-control-bar') as unknown as
-      | (Element & { filterActive?: boolean })
-      | null;
     return {
-      filterActive: cb?.filterActive ?? false,
+      filterActive:
+        (plot as (Element & { filtersActive?: boolean }) | null)?.filtersActive ?? false,
       visibleCount: plot?.getCurrentData?.()?.protein_ids?.length ?? 0,
     };
   });

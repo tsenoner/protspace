@@ -11,16 +11,20 @@ import {
   curatedViewOf,
   dismissTourIfPresent,
   expectUrlParam,
-  getControlBarView,
+  getContoursMode,
   getCurrentDatasetName,
   getFirstLegendItemValue,
   getProteinCount,
   getUrlParam,
+  getViewState,
   holdNextRequest,
+  importMenu,
   importUserFile,
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickExample,
+  selectAnnotation,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
@@ -65,44 +69,17 @@ const USER_IMPORT_PATH = PHOSPHATASE_1587_FIXTURE;
 const USER_IMPORT_COUNT = 1587;
 
 async function getSelectedAnnotation(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { selectedAnnotation?: string })
-      | null;
-    return controlBar?.selectedAnnotation ?? null;
-  });
-}
-
-async function getDensityLayer(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar') as
-      | (Element & { densityLayer?: string })
-      | null;
-    return controlBar?.densityLayer ?? null;
-  });
-}
-
-async function chooseExampleFromMenu(page: Page, id: string): Promise<void> {
-  await openImportMenu(page);
-  await page.locator(`protspace-control-bar [data-example-id="${id}"]`).click();
+  return (await getViewState(page)).annotation;
 }
 
 /** Opens the menu, reads whether `id`'s item is disabled, and leaves the menu open. */
 async function isExampleDisabled(page: Page, id: string): Promise<boolean> {
   await openImportMenu(page);
-  return page.locator(`protspace-control-bar [data-example-id="${id}"]`).isDisabled();
+  return importMenu(page).locator(`[data-example-id="${id}"]`).isDisabled();
 }
 
 async function getSearch(page: Page): Promise<string> {
   return page.evaluate(() => window.location.search);
-}
-
-/** Picks `annotation` in the control bar's annotation dropdown (a user change, so a push). */
-async function pickAnnotation(page: Page, annotation: string): Promise<void> {
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
-  await controlBar.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
-  await expect.poll(() => getSelectedAnnotation(page)).toBe(annotation);
 }
 
 /** The error toast for a failed download of `entry`, and its Retry button. */
@@ -215,13 +192,13 @@ test.describe('Example datasets: Import menu and deep link', () => {
 
     const initialHistoryLength = await page.evaluate(() => history.length);
 
-    await chooseExampleFromMenu(page, SMALL.id);
+    await pickExample(page, SMALL.id);
     await waitForProteinCount(page, SMALL.count);
     await expectUrlParam(page, 'dataset', SMALL.id);
     await expect.poll(() => page.evaluate(() => history.length)).toBe(initialHistoryLength + 1);
     expect(await isExampleDisabled(page, SMALL.id)).toBe(true);
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
     await expectUrlParam(page, 'dataset', OTHER.id);
 
@@ -243,19 +220,19 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // Back restores both.
     await openExplore(page, '?annotation=ec&density=on', DEMO_COUNT);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
-    await expect.poll(() => getDensityLayer(page)).toBe('on');
+    await expect.poll(() => getContoursMode(page)).toBe('on');
 
-    await chooseExampleFromMenu(page, SMALL.id);
+    await pickExample(page, SMALL.id);
     await waitForProteinCount(page, SMALL.count);
     await expectUrlParam(page, 'dataset', SMALL.id);
-    await expect.poll(() => getDensityLayer(page)).toBe('off');
+    await expect.poll(() => getContoursMode(page)).toBe('off');
     expect(await getUrlParam(page, 'density')).toBeNull();
 
     await page.goBack();
     await expectUrlParam(page, 'dataset', null);
     await waitForProteinCount(page, DEMO_COUNT);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('ec');
-    await expect.poll(() => getDensityLayer(page)).toBe('on');
+    await expect.poll(() => getContoursMode(page)).toBe('on');
   });
 
   test('Back/Forward through a menu choice and a view pick keeps the target entry intact (1b repro)', async ({
@@ -267,11 +244,11 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // normalize it.
     await openExplore(page, `?dataset=${SMALL.id}`, SMALL.count);
 
-    await chooseExampleFromMenu(page, 'demo');
+    await pickExample(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
     await expectUrlParam(page, 'dataset', 'demo');
 
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     await expectUrlParam(page, 'annotation', 'ec');
 
     await page.goBack();
@@ -330,7 +307,7 @@ test.describe('Example datasets: Import menu and deep link', () => {
       route.fulfill({ status: 500, body: 'Internal Server Error' }),
     );
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
 
     await expect(page.getByText(`Couldn't load "${OTHER.entry.label}".`)).toBeVisible();
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
@@ -353,15 +330,15 @@ test.describe('Example datasets: Import menu and deep link', () => {
     // `dataset=` from the URL.
     await openExplore(page, '', DEMO_COUNT);
 
-    await chooseExampleFromMenu(page, SMALL.id);
+    await pickExample(page, SMALL.id);
     await waitForProteinCount(page, SMALL.count);
     await expectUrlParam(page, 'dataset', SMALL.id);
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
     await expectUrlParam(page, 'dataset', OTHER.id);
 
-    await chooseExampleFromMenu(page, 'demo');
+    await pickExample(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
     await expectUrlParam(page, 'dataset', 'demo');
 
@@ -399,7 +376,7 @@ test.describe('Example datasets: Import menu and deep link', () => {
 
     const datasetNameBefore = await getCurrentDatasetName(page);
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
 
     await expect(page.getByText('Dataset import failed.')).toBeVisible();
     await expectUrlParam(page, 'dataset', null);
@@ -424,11 +401,11 @@ test.describe('Example datasets: Import menu and deep link', () => {
     await openExplore(page, `?dataset=${SMALL.id}&annotation=phylum`, SMALL.count);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('phylum');
 
-    await chooseExampleFromMenu(page, SLOW.id);
+    await pickExample(page, SLOW.id);
     await waitForProteinCount(page, SLOW.count);
     await expectUrlParam(page, 'dataset', SLOW.id);
 
-    await chooseExampleFromMenu(page, 'demo');
+    await pickExample(page, 'demo');
     await waitForProteinCount(page, DEMO_COUNT);
     await expectUrlParam(page, 'dataset', 'demo');
 
@@ -473,19 +450,16 @@ test.describe('Example datasets: Import menu info', () => {
     await openExplore(page, '', DEMO_COUNT);
     await openImportMenu(page);
 
-    const controlBar = page.locator('protspace-control-bar');
-    await expect(controlBar.locator('.import-examples-docs')).toHaveAttribute(
-      'href',
-      EXAMPLES_DOCS_URL,
+    const menu = importMenu(page);
+    await expect(menu.locator('.import-examples-docs')).toHaveAttribute('href', EXAMPLES_DOCS_URL);
+    await expect(menu.locator(`[data-example-id="${large.id}"] .import-example-badge`)).toHaveText(
+      'Large',
     );
-    await expect(
-      controlBar.locator(`[data-example-id="${large.id}"] .import-example-badge`),
-    ).toHaveText('Large');
-    await expect(controlBar.locator('.import-example-badge')).toHaveCount(
+    await expect(menu.locator('.import-example-badge')).toHaveCount(
       EXAMPLE_DATASETS.filter((entry) => entry.large).length,
     );
 
-    const info = controlBar.locator(`.import-examples [data-example-info="${other.id}"]`);
+    const info = menu.locator(`.import-examples [data-example-info="${other.id}"]`);
     await info.locator('.info-button').click();
     const popover = info.locator('.popover');
     await expect(popover.locator('.popover-description')).toHaveText(other.description);
@@ -499,7 +473,7 @@ test.describe('Example datasets: Import menu info', () => {
 
     // The loaded example's info sits next to the current dataset name.
     await expect(
-      controlBar.locator('.import-current-dataset-row [data-example-info="demo"]'),
+      menu.locator('.import-current-dataset-row [data-example-info="demo"]'),
     ).toHaveCount(1);
   });
 });
@@ -522,7 +496,7 @@ test.describe('Example datasets: download progress and Cancel', () => {
   }) => {
     const large = largeExample();
     await openExplore(page, '', DEMO_COUNT);
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     await expectUrlParam(page, 'annotation', 'ec');
     const searchBefore = await getSearch(page);
     const historyLengthBefore = await page.evaluate(() => history.length);
@@ -530,7 +504,7 @@ test.describe('Example datasets: download progress and Cancel', () => {
     const failedRequests: string[] = [];
     page.on('requestfailed', (request) => failedRequests.push(request.url()));
     const release = await holdNextRequest(page, exampleBundleGlob(large));
-    await chooseExampleFromMenu(page, large.id);
+    await pickExample(page, large.id);
 
     const overlay = page.locator('#progressive-loading');
     await expect(overlay).toBeVisible();
@@ -588,19 +562,19 @@ test.describe('Example datasets: curated default view', () => {
     // carry-over of the previous view into the new example would show here.
     await openExplore(page, '?annotation=ec&tooltip=pfam', DEMO_COUNT);
     await expect
-      .poll(() => getControlBarView(page))
+      .poll(() => getViewState(page))
       .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
     await expect.poll(() => getSearch(page)).toBe(`?dataset=${OTHER.id}`);
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(OTHER.entry));
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(OTHER.entry));
 
     await page.goBack();
     await expectUrlParam(page, 'dataset', null);
     await waitForProteinCount(page, DEMO_COUNT);
     await expect
-      .poll(() => getControlBarView(page))
+      .poll(() => getViewState(page))
       .toMatchObject({ annotation: 'ec', tooltip: ['pfam'] });
     expect(await getSearch(page)).toBe('?annotation=ec&tooltip=pfam');
   });
@@ -610,7 +584,7 @@ test.describe('Example datasets: curated default view', () => {
   }) => {
     await openExplore(page, `?dataset=${OTHER.id}`, OTHER.count);
 
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(OTHER.entry));
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(OTHER.entry));
     expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}`);
   });
 
@@ -619,14 +593,14 @@ test.describe('Example datasets: curated default view', () => {
   }) => {
     const curated = curatedViewOf(OTHER.entry);
     await openExplore(page, `?dataset=${OTHER.id}`, OTHER.count);
-    await expect.poll(() => getControlBarView(page)).toEqual(curated);
+    await expect.poll(() => getViewState(page)).toEqual(curated);
 
-    await pickAnnotation(page, 'pfam');
+    await selectAnnotation(page, 'pfam');
     await expectUrlParam(page, 'annotation', 'pfam');
 
     await page.goBack();
     await expect.poll(() => getSearch(page)).toBe(`?dataset=${OTHER.id}`);
-    await expect.poll(() => getControlBarView(page)).toEqual(curated);
+    await expect.poll(() => getViewState(page)).toEqual(curated);
   });
 
   test('explicit deep-link view params win over the curated view', async ({ page }) => {
@@ -637,7 +611,7 @@ test.describe('Example datasets: curated default view', () => {
     // Any view param makes the request the user's: the missing projection
     // comes from the curated view, and an absent tooltip means none.
     await expect
-      .poll(() => getControlBarView(page))
+      .poll(() => getViewState(page))
       .toEqual({ annotation: 'pfam', projection: curated.projection, tooltip: [] });
     expect(await getSearch(page)).toBe(`?dataset=${OTHER.id}&annotation=pfam`);
   });
@@ -650,7 +624,7 @@ test.describe('Example datasets: curated default view', () => {
     await openExplore(page, `?dataset=${OTHER.id}&annotation=not_a_column`, OTHER.count);
 
     await expect
-      .poll(() => getControlBarView(page))
+      .poll(() => getViewState(page))
       .toEqual({ annotation: curated.annotation, projection: curated.projection, tooltip: [] });
     await expectUrlParam(page, 'annotation', curated.annotation);
   });
@@ -668,10 +642,10 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     await openExplore(page, `?dataset=${SMALL.id}&annotation=length_quantile`, SMALL.count);
     await expect.poll(() => getSelectedAnnotation(page)).toBe('length_quantile');
 
-    await pickAnnotation(page, 'length_fixed');
+    await selectAnnotation(page, 'length_fixed');
     await expectUrlParam(page, 'annotation', 'length_fixed');
 
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
     await expectUrlParam(page, 'dataset', OTHER.id);
 
@@ -692,13 +666,13 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     page,
   }) => {
     await openExplore(page, '', DEMO_COUNT);
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     await expectUrlParam(page, 'annotation', 'ec');
 
     const failedRequests: string[] = [];
     page.on('requestfailed', (request) => failedRequests.push(request.url()));
     const releaseOther = await holdNextRequest(page, OTHER.glob);
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await expect(page.locator('#progressive-loading')).toBeVisible();
 
     await page.goBack(); // -> the bare demo entry, while OTHER is still downloading
@@ -726,10 +700,10 @@ test.describe('Example datasets: history steps while a load is pending', () => {
     // its curated view, labelled and named in a pushed entry, and the entry
     // the user went back to is left as it was.
     await openExplore(page, '', DEMO_COUNT);
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     await expectUrlParam(page, 'annotation', 'ec');
 
-    await chooseExampleFromMenu(page, SLOW.id);
+    await pickExample(page, SLOW.id);
     // Back in the same task that sees SLOW's data on the plot with the
     // loading overlay still up, so the race is hit, never merely approached.
     await page.waitForFunction(
@@ -752,7 +726,7 @@ test.describe('Example datasets: history steps while a load is pending', () => {
 
     await waitForProteinCount(page, SLOW.count);
     await expectUrlParam(page, 'dataset', SLOW.id);
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(SLOW.entry));
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(SLOW.entry));
     expect(await getCurrentDatasetName(page)).toBe(SLOW.entry.label);
     expect(await getUrlParam(page, 'annotation')).toBeNull();
 
@@ -919,9 +893,9 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
   }) => {
     const { toast, retry } = exampleFailureToast(page, SMALL.entry);
     await openExplore(page, '', DEMO_COUNT);
-    await chooseExampleFromMenu(page, SMALL.id);
+    await pickExample(page, SMALL.id);
     await waitForProteinCount(page, SMALL.count);
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
     await expectUrlParam(page, 'dataset', OTHER.id);
     const historyLength = await page.evaluate(() => history.length);
@@ -941,7 +915,7 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     await page.unroute(SMALL.glob, failWith500);
     await retry.click();
     await waitForProteinCount(page, SMALL.count);
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(SMALL.entry));
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(SMALL.entry));
     expect(await getSearch(page)).toBe(`?dataset=${SMALL.id}`);
     expect(await page.evaluate(() => history.length)).toBe(historyLength);
   });
@@ -951,7 +925,7 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
   }) => {
     const { toast } = exampleFailureToast(page, SMALL.entry);
     await openExplore(page, `?dataset=${SMALL.id}&annotation=length_fixed`, SMALL.count);
-    await chooseExampleFromMenu(page, OTHER.id);
+    await pickExample(page, OTHER.id);
     await waitForProteinCount(page, OTHER.count);
 
     await page.route(SMALL.glob, failWith500);
@@ -959,7 +933,7 @@ test.describe('Example datasets: a failed load keeps what is on screen', () => {
     await expect(toast).toBeVisible();
     expect(await getUrlParam(page, 'annotation')).toBe('length_fixed');
 
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     await expectUrlParam(page, 'dataset', OTHER.id);
     expect(await getUrlParam(page, 'annotation')).toBe('ec');
     // Naming the displayed dataset reloads nothing.
@@ -1013,7 +987,7 @@ test.describe('Example datasets: examples reopen in their curated state (d)', ()
     await waitForProteinCount(page, USER_IMPORT_COUNT);
     await waitForPersistedExploreDataset(page);
     await expectUrlParam(page, 'dataset', null);
-    await pickAnnotation(page, 'ec');
+    await selectAnnotation(page, 'ec');
     const importValue = await hideFirstLegendCategory(page);
     await page.reload();
     await waitForExploreDataLoad(page, { proteinCount: USER_IMPORT_COUNT });
@@ -1027,7 +1001,7 @@ test.describe('Example datasets: the EAT example', () => {
     page,
   }) => {
     await openExplore(page, `?dataset=${EAT.id}`, EAT.count);
-    await expect.poll(() => getControlBarView(page)).toEqual(curatedViewOf(EAT.entry));
+    await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(EAT.entry));
 
     const eatGroup = page
       .locator('protspace-legend')

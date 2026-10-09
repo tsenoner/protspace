@@ -1,7 +1,22 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { dismissTourIfPresent, waitForProteinCount } from './helpers/explore';
+import {
+  annotationSelect,
+  clearSelection,
+  colorByTrigger,
+  dismissTourIfPresent,
+  exportMenu,
+  isolateSelection,
+  openExportMenu,
+  projectionTrigger,
+  resetIsolation,
+  searchInput,
+  selectAnnotation,
+  selectProjection,
+  viewBar,
+  waitForProteinCount,
+} from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
 
 const EAT_FIXTURE = fileURLToPath(
@@ -29,22 +44,6 @@ async function loadEatFixture(page: Page): Promise<void> {
 
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
   await waitForProteinCount(page, 832);
-}
-
-async function selectEcAnnotation(page: Page): Promise<void> {
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
-  await controlBar.locator('.dropdown-item[data-annotation="ec"]').click();
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const plot = document.querySelector('protspace-scatterplot') as
-          | (Element & { selectedAnnotation?: string })
-          | null;
-        return plot?.selectedAnnotation;
-      }),
-    )
-    .toBe('ec');
 }
 
 /**
@@ -299,9 +298,8 @@ async function sampleEncodedExportMarkers(
 
 test('renders and explores EAT transfers from the real phosphatase bundle', async ({ page }) => {
   await loadEatFixture(page);
-  await selectEcAnnotation(page);
+  await selectAnnotation(page, 'ec');
 
-  const controlBar = page.locator('protspace-control-bar');
   const plot = page.locator('protspace-scatterplot');
   const legend = page.locator('protspace-legend');
   const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
@@ -312,7 +310,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const thresholdPercent = eatGroup.getByRole('spinbutton', {
     name: 'EAT reliability filter percentage',
   });
-  const filterButton = controlBar.locator('.filter-container .dropdown-trigger');
+  // The plot's filter channel, which the Filter button's badge reflects.
+  const plotFiltersActive = () =>
+    page.evaluate(
+      () =>
+        (document.querySelector('#myPlot') as (Element & { filtersActive?: boolean }) | null)
+          ?.filtersActive ?? false,
+    );
   const predictedVisibleCount = () =>
     page.evaluate(() => {
       const renderer = (
@@ -338,21 +342,21 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   // Default position 0: every prediction visible, filter box clean.
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect.poll(plotFiltersActive).toBe(false);
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // Raising the threshold drives the shared `EAT_confidence >= x or N/A` filter, which
   // HIDES sub-threshold predictions (fewer visible points) rather than dimming them.
   await thresholdPercent.fill('99');
   await expect(threshold).toHaveValue('0.99');
-  await expect(filterButton).toHaveClass(/filter-active/);
+  await expect.poll(plotFiltersActive).toBe(true);
   await expect.poll(predictedVisibleCount).toBeLessThan(213);
 
   // Dragging back to 0 removes the condition and restores every prediction.
   await threshold.press('Home');
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect.poll(plotFiltersActive).toBe(false);
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // The info popover explains predictions are filtered out while curated stays.
@@ -372,18 +376,18 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await eatToggle.check();
   await expect(legendSummary).toBeVisible();
 
-  const annotationSelect = controlBar.locator('protspace-annotation-select');
-  await annotationSelect.locator('.dropdown-trigger').click();
-  const ecRow = annotationSelect.locator('.dropdown-item[data-annotation="ec"]');
+  const colorBy = annotationSelect(page);
+  await colorByTrigger(page).click();
+  const ecRow = colorBy.locator('.dropdown-item[data-annotation="ec"]');
   await expect(ecRow.locator('.eat-badge')).toHaveText('EAT');
-  const ordinaryRow = annotationSelect
+  const ordinaryRow = colorBy
     .locator('.dropdown-item:not(:has(.eat-badge))')
-    .filter({ hasNot: annotationSelect.locator('.annotation-section-header') })
+    .filter({ hasNot: colorBy.locator('.annotation-section-header') })
     .first();
   await ordinaryRow.click();
   await expect(eatGroup).toBeHidden();
-  await annotationSelect.locator('.dropdown-trigger').click();
-  await annotationSelect.locator('.dropdown-item[data-annotation="ec"]').click();
+  await colorByTrigger(page).click();
+  await colorBy.locator('.dropdown-item[data-annotation="ec"]').click();
   await expect(eatGroup).toBeVisible();
 
   await expect(legendSummary).toContainText(/Observed\s*535/);
@@ -415,10 +419,9 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     prediction: null,
   });
 
-  const proteinSearch = controlBar.locator('protspace-protein-search');
-  await proteinSearch.locator('#protein-search-input').fill('A0JMF6');
-  await proteinSearch.locator('#protein-search-input').press('Enter');
-  await controlBar.getByRole('button', { name: 'Isolate' }).click();
+  await searchInput(page).fill('A0JMF6');
+  await searchInput(page).press('Enter');
+  await isolateSelection(page);
   await expect(legendSummary).toContainText(/Observed\s*0/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*0/);
   await expect
@@ -451,7 +454,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const isolatedTooltip = plot.locator('protspace-protein-tooltip');
   await expect(isolatedTooltip).toContainText('A0JMF6');
   await expect(isolatedTooltip).not.toContainText('Predicted (transferred)');
-  await controlBar.getByRole('button', { name: 'Reset' }).click();
+  await resetIsolation(page);
   await expect(legendSummary).toContainText(/Observed\s*535/);
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
 
@@ -629,8 +632,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .first()
     .getAttribute('x1');
 
-  await controlBar.getByRole('button', { name: 'Projection:' }).click();
-  await controlBar.locator('.projection-container .dropdown-item').nth(1).click();
+  await selectProjection(page, 1);
   await expect
     .poll(() => plot.locator('line.eat-provenance-connector').first().getAttribute('x1'))
     .not.toBe(firstConnectorX);
@@ -652,35 +654,21 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(0);
   // The point clicks above also selected a protein, as a real click does. Clear it so the
   // export markers below are sampled without the selection dimming the other points.
-  await controlBar.getByRole('button', { name: 'Clear', exact: true }).click();
-  await expect(controlBar.getByRole('button', { name: 'Clear', exact: true })).toBeDisabled();
+  await clearSelection(page);
 
+  // At 601 px the Projection and Color by pickers still sit side by side on screen, and the EAT
+  // reliability controls stay in the legend, not in the view bar.
   await page.setViewportSize({ width: 601, height: 844 });
-  const compactControlBar = await controlBar.evaluate((element) => {
-    const root = element.shadowRoot!;
-    const [projectionElement, annotationElement] = root.querySelectorAll<HTMLElement>(
-      '.left-controls > .control-group',
-    );
-    const projection = projectionElement.getBoundingClientRect();
-    const annotation = annotationElement.getBoundingClientRect();
-    return {
-      projectionRight: projection.right,
-      projectionClientWidth: projectionElement.clientWidth,
-      projectionScrollWidth: projectionElement.scrollWidth,
-      annotationLeft: annotation.left,
-      annotationClientWidth: annotationElement.clientWidth,
-      annotationScrollWidth: annotationElement.scrollWidth,
-      eatControlCount: root.querySelectorAll('.eat-controls').length,
-    };
-  });
-  expect(compactControlBar.projectionRight).toBeLessThanOrEqual(compactControlBar.annotationLeft);
-  expect(compactControlBar.projectionScrollWidth).toBeLessThanOrEqual(
-    compactControlBar.projectionClientWidth,
-  );
-  expect(compactControlBar.annotationScrollWidth).toBeLessThanOrEqual(
-    compactControlBar.annotationClientWidth,
-  );
-  expect(compactControlBar.eatControlCount).toBe(0);
+  const projectionBox = await projectionTrigger(page).boundingBox();
+  const colorByBox = await colorByTrigger(page).boundingBox();
+  expect(projectionBox).not.toBeNull();
+  expect(colorByBox).not.toBeNull();
+  expect(projectionBox!.x + projectionBox!.width).toBeLessThanOrEqual(colorByBox!.x);
+  expect(projectionBox!.x).toBeGreaterThanOrEqual(0);
+  expect(colorByBox!.x + colorByBox!.width).toBeLessThanOrEqual(601);
+  await expect(
+    viewBar(page).getByRole('slider', { name: 'EAT reliability filter threshold' }),
+  ).toHaveCount(0);
 
   for (const width of [320, 390, 601, 800]) {
     await page.setViewportSize({ width, height: 844 });
@@ -777,9 +765,9 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(transparentExport.predicted[3]).toBe(0);
   expect(transparentExport.corner[3]).toBe(0);
 
-  await controlBar.getByRole('button', { name: 'Export' }).click();
+  await openExportMenu(page);
   const downloadPromise = page.waitForEvent('download');
-  await controlBar.getByRole('button', { name: 'Quick Export PNG' }).click();
+  await exportMenu(page).getByRole('button', { name: 'Quick Export PNG' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   const downloadPath = await download.path();
@@ -805,7 +793,7 @@ test('keeps curated points visible while the reliability filter hides low-confid
   page,
 }) => {
   await loadEatFixture(page);
-  await selectEcAnnotation(page);
+  await selectAnnotation(page, 'ec');
 
   const plot = page.locator('protspace-scatterplot');
   const legend = page.locator('protspace-legend');

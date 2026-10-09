@@ -1,25 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  annotationSelect,
+  colorByTrigger,
   dismissTourIfPresent,
+  getColorByOptions,
+  getViewState,
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
 } from './helpers/explore';
 
 async function openAnnotationDropdown(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const trigger = page.locator(
-    'protspace-control-bar protspace-annotation-select .dropdown-trigger',
-  );
-  await trigger.click();
+  await colorByTrigger(page).click();
 }
 
 async function getRowForAnnotation(page: Page, annotation: string) {
   // Dropdown items show the friendly display label (e.g. "EC number") but carry
   // the raw annotation key on data-annotation; match by key so this stays
   // label-agnostic.
-  return page.locator(
-    `protspace-control-bar protspace-annotation-select .dropdown-item[data-annotation="${annotation}"]`,
-  );
+  return annotationSelect(page).locator(`.dropdown-item[data-annotation="${annotation}"]`);
 }
 
 test.describe('Multi-annotation hover tooltip', () => {
@@ -42,12 +41,7 @@ test.describe('Multi-annotation hover tooltip', () => {
 
     await openAnnotationDropdown(page);
 
-    const annotations = await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
-        | (Element & { annotations?: string[] })
-        | null;
-      return cb?.annotations ?? [];
-    });
+    const annotations = await getColorByOptions(page);
     const otherAnnotation = annotations.find((name) => name !== 'ec');
     if (!otherAnnotation) {
       test.skip(true, 'demo dataset has only a single annotation');
@@ -59,20 +53,15 @@ test.describe('Multi-annotation hover tooltip', () => {
 
     await expect(page).toHaveURL(new RegExp(`tooltip=${otherAnnotation}`));
 
-    const tooltipState = await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
-        | (Element & { tooltipAnnotations?: string[] })
-        | null;
-      const plot = document.querySelector('protspace-scatterplot') as
-        | (Element & { tooltipAnnotations?: string[] })
-        | null;
-      return {
-        controlBar: cb?.tooltipAnnotations ?? null,
-        plot: plot?.tooltipAnnotations ?? null,
-      };
-    });
+    // The picker lists the extra, and the plot draws it into the tooltip.
+    const tooltipState = {
+      picker: await annotationSelect(page).evaluate((select) => [
+        ...((select as Element & { tooltipAnnotations?: string[] }).tooltipAnnotations ?? []),
+      ]),
+      plot: (await getViewState(page)).tooltip,
+    };
 
-    expect(tooltipState.controlBar).toEqual([otherAnnotation]);
+    expect(tooltipState.picker).toEqual([otherAnnotation]);
     expect(tooltipState.plot).toEqual([otherAnnotation]);
   });
 
@@ -82,12 +71,7 @@ test.describe('Multi-annotation hover tooltip', () => {
     await waitForExploreDataLoad(page);
 
     await openAnnotationDropdown(page);
-    const available = await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
-        | (Element & { annotations?: string[] })
-        | null;
-      return cb?.annotations ?? [];
-    });
+    const available = await getColorByOptions(page);
     const otherAnnotation = available.find((name) => name !== 'ec');
     if (!otherAnnotation) {
       test.skip(true, 'demo dataset has only a single annotation');

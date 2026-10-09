@@ -7,10 +7,12 @@ import {
   getCurrentDatasetName,
   getFirstLegendItemValue,
   getProteinCount,
+  importTrigger,
   importUserFile,
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickExample,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
@@ -196,26 +198,6 @@ async function loadCustomDatasetFromPath(
   );
 }
 
-async function loadDemoDatasetFromImportMenu(page: Page): Promise<void> {
-  await openImportMenu(page);
-  await page.locator('protspace-control-bar [data-example-id="demo"]').click();
-}
-
-async function isImportChevronVisible(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const controlBar = document.querySelector('protspace-control-bar');
-    const chevron = controlBar?.shadowRoot?.querySelector(
-      '[data-driver-id="import"] .chevron-down',
-    );
-
-    if (!(chevron instanceof Element)) {
-      return false;
-    }
-
-    return getComputedStyle(chevron).display !== 'none';
-  });
-}
-
 async function dispatchCustomEvent(
   page: Page,
   selector: string,
@@ -352,7 +334,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
-    await loadDemoDatasetFromImportMenu(page);
+    await pickExample(page, 'demo');
     await waitForProteinCount(page, defaultCount);
 
     await page.reload();
@@ -367,7 +349,9 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
 
-    expect(await isImportChevronVisible(page)).toBe(true);
+    // Import still reads as a menu at this width, not as an immediate action.
+    await expect(importTrigger(page)).toBeVisible();
+    await expect(importTrigger(page)).toHaveAttribute('aria-haspopup', 'menu');
   });
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
