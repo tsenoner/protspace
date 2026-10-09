@@ -34,3 +34,14 @@ it.each([':root', ":root[data-theme='dark']"])(
     expect(ratio(t.get('--ps-text-on-accent')!, t.get('--ps-accent')!)).toBeGreaterThanOrEqual(4.5);
   },
 );
+
+// WCAG 1.4.11: a control's boundary and the selected-segment ring need 3:1 on what they sit on.
+it.each([':root', ":root[data-theme='dark']"])(
+  'control boundaries reach 3:1 on every surface (%s)',
+  (sel) => {
+    const t = hexes(sel);
+    for (const fg of ['--ps-border-control', '--ps-accent'])
+      for (const bg of ['--ps-surface', '--ps-surface-muted', '--ps-surface-raised'])
+        expect(ratio(t.get(fg)!, t.get(bg)!), `${fg} on ${bg}`).toBeGreaterThanOrEqual(3);
+  },
+);

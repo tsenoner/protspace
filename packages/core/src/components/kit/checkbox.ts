@@ -1,11 +1,11 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { checkboxStyles } from './choice.styles';
 import { icon } from './icon';
 
-/** A checkbox with its label in the default slot. */
+/** A checkbox with its label in the default slot, or named by `label` when it shows no text. */
 @customElement('ps-checkbox')
 export class PsCheckbox extends LitElement {
   static styles = checkboxStyles;
@@ -14,6 +14,8 @@ export class PsCheckbox extends LitElement {
   @property({ type: Boolean, reflect: true }) checked = false;
   @property({ type: Boolean }) indeterminate = false;
   @property({ type: Boolean, reflect: true }) disabled = false;
+  /** The accessible name when no text is slotted. */
+  @property() label = '';
 
   render() {
     return html`<label>
@@ -21,7 +23,8 @@ export class PsCheckbox extends LitElement {
         part="input"
         type="checkbox"
         .checked=${live(this.checked)}
-        .indeterminate=${this.indeterminate}
+        aria-label=${this.label || nothing}
+        .indeterminate=${live(this.indeterminate)}
         ?disabled=${this.disabled}
         @change=${this.onChange}
       />

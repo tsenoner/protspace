@@ -21,6 +21,7 @@ const lightRoles = css`
   --ps-surface-hover: #f1f5f9; /* slate-100 */
   --ps-border: #e2e8f0; /* slate-200 */
   --ps-border-strong: #cbd5e1; /* slate-300 */
+  --ps-border-control: #64748b; /* slate-500, 4.5:1 on the muted surface: a control's own edge */
   --ps-text: #0f172a; /* slate-900 */
   --ps-text-muted: #475569; /* slate-600 */
   --ps-text-faint: #94a3b8; /* slate-400, 2.6:1 on white: disabled text and decorative icons only */
@@ -48,6 +49,7 @@ const darkRoles = css`
   --ps-surface-hover: #1e293b; /* slate-800 */
   --ps-border: #1e293b;
   --ps-border-strong: #334155; /* slate-700 */
+  --ps-border-control: #64748b; /* slate-500, 3.4:1 on the raised surface */
   --ps-text: #f1f5f9; /* slate-100 */
   --ps-text-muted: #94a3b8; /* slate-400 */
   --ps-text-faint: #64748b; /* slate-500, 3.8:1 on the surface: disabled text and decorative icons only */

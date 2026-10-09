@@ -65,6 +65,7 @@ export const fieldStyles = [
       background: transparent;
       color: var(--ps-text);
       font: inherit;
+      text-overflow: ellipsis;
     }
     input::placeholder {
       color: var(--ps-text-muted);

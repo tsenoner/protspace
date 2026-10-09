@@ -1,5 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { fieldStyles } from './field.styles';
 import { icon } from './icon';
@@ -10,7 +11,11 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-/** A styled native <select>, so phones keep their own picker. */
+/**
+ * A styled native <select>, so phones keep their own picker. Each option's `selected` is bound
+ * live: after a user pick, the attribute no longer moves the selection, and the owner may reject a
+ * pick by setting `value` back.
+ */
 @customElement('ps-select')
 export class PsSelect extends LitElement {
   static styles = fieldStyles;
@@ -34,7 +39,7 @@ export class PsSelect extends LitElement {
             html`<option
               value=${option.value}
               ?disabled=${option.disabled}
-              ?selected=${option.value === this.value}
+              .selected=${live(option.value === this.value)}
             >
               ${option.label}
             </option>`,

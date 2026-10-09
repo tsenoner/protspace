@@ -27,7 +27,7 @@ export const checkboxStyles = [
       place-items: center;
       width: 16px;
       height: 16px;
-      border: 1px solid var(--ps-border-strong);
+      border: 1px solid var(--ps-border-control);
       border-radius: var(--ps-radius-sm);
       background: var(--ps-surface);
       color: var(--ps-text-on-accent);
@@ -77,11 +77,13 @@ export const switchStyles = [
       border: 0;
       border-radius: var(--ps-radius-full);
       background: var(--ps-border-strong);
+      box-shadow: inset 0 0 0 1px var(--ps-border-control);
       cursor: pointer;
       transition: background-color var(--ps-duration-fast) var(--ps-ease);
     }
     button[aria-checked='true'] {
       background: var(--ps-accent);
+      box-shadow: none;
     }
     .thumb {
       position: absolute;
@@ -142,10 +144,13 @@ export const segmentedStyles = [
       font: inherit;
       cursor: pointer;
     }
+    /* The accent ring marks the chip: surface on the muted track is near 1:1 (decision 6). */
     button[aria-checked='true'] {
       background: var(--ps-surface);
       color: var(--ps-text);
-      box-shadow: var(--ps-shadow-sm);
+      box-shadow:
+        inset 0 0 0 1px var(--ps-accent),
+        var(--ps-shadow-sm);
     }
     @media (forced-colors: active) {
       button[aria-checked='true'] {

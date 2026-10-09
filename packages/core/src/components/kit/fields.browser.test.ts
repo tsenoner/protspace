@@ -40,9 +40,17 @@ describe('ps-input', () => {
   it('draws one focus ring, on the field, not a second one on the inner input', async () => {
     const el = await mount<PsInput>('<ps-input label="Size"></ps-input>');
     const input = el.shadowRoot!.querySelector('input')!;
+    const field = el.shadowRoot!.querySelector('.field')!;
+    expect(getComputedStyle(field).boxShadow).toBe('none');
     await userEvent.click(input);
     expect(input.matches(':focus-visible')).toBe(true);
     expect(getComputedStyle(input).outlineStyle).toBe('none');
+    expect(getComputedStyle(field).boxShadow).not.toBe('none');
+  });
+
+  it('ends text too long for the field in an ellipsis', async () => {
+    const el = await mount<PsInput>('<ps-input label="Search"></ps-input>');
+    expect(getComputedStyle(el.shadowRoot!.querySelector('input')!).textOverflow).toBe('ellipsis');
   });
 
   it('marks itself invalid for assistive technology', async () => {
@@ -68,6 +76,44 @@ describe('ps-select', () => {
     expect(el.value).toBe('okabe');
     expect(onChange).toHaveBeenCalledOnce();
   });
+
+  it('shows the option that value names after the user picked another', async () => {
+    const el = await mount<PsSelect>('<ps-select label="Palette"></ps-select>');
+    el.options = [
+      { value: 'kelly', label: 'Kelly' },
+      { value: 'okabe', label: 'Okabe-Ito' },
+    ];
+    el.value = 'kelly';
+    await el.updateComplete;
+    const select = el.shadowRoot!.querySelector('select')!;
+    await userEvent.selectOptions(select, 'okabe');
+    el.value = 'kelly';
+    await el.updateComplete;
+    expect(select.value).toBe('kelly');
+    el.value = 'okabe';
+    await el.updateComplete;
+    el.value = 'kelly';
+    await el.updateComplete;
+    el.value = 'okabe';
+    await el.updateComplete;
+    expect(select.value).toBe('okabe');
+  });
+
+  it('shows the old option when the owner rejects a pick', async () => {
+    const el = await mount<PsSelect>('<ps-select label="Palette"></ps-select>');
+    el.options = [
+      { value: 'kelly', label: 'Kelly' },
+      { value: 'okabe', label: 'Okabe-Ito' },
+    ];
+    el.value = 'kelly';
+    await el.updateComplete;
+    el.addEventListener('change', () => (el.value = 'kelly'));
+    const select = el.shadowRoot!.querySelector('select')!;
+    await userEvent.selectOptions(select, 'okabe');
+    await el.updateComplete;
+    expect(el.value).toBe('kelly');
+    expect(select.value).toBe('kelly');
+  });
 });
 
 describe('ps-checkbox', () => {
@@ -79,6 +125,27 @@ describe('ps-checkbox', () => {
     expect(el.checked).toBe(true);
     expect(el.indeterminate).toBe(false);
     expect(onChange).toHaveBeenCalledOnce();
+  });
+
+  it('stays mixed when the owner sets indeterminate again on change', async () => {
+    const el = await mount<PsCheckbox>('<ps-checkbox indeterminate>Select all</ps-checkbox>');
+    el.addEventListener('change', () => (el.indeterminate = true));
+    await userEvent.click(el.shadowRoot!.querySelector('label')!);
+    await el.updateComplete;
+    expect(el.indeterminate).toBe(true);
+    expect(el.shadowRoot!.querySelector('input')!.indeterminate).toBe(true);
+  });
+
+  it('takes an accessible name from label when it has no text', async () => {
+    await mount<PsCheckbox>('<ps-checkbox label="Select all"></ps-checkbox>');
+    await expect.element(page.getByRole('checkbox', { name: 'Select all' })).toBeInTheDocument();
+  });
+
+  it('draws the unchecked box with the control border colour', async () => {
+    const el = await mount<PsCheckbox>('<ps-checkbox label="Select all"></ps-checkbox>');
+    const box = el.shadowRoot!.querySelector('.box')!;
+    // --ps-border-control, slate-500 in the light theme
+    expect(getComputedStyle(box).borderTopColor).toBe('rgb(100, 116, 139)');
   });
 });
 
@@ -92,6 +159,12 @@ describe('ps-switch', () => {
     await userEvent.keyboard(' ');
     expect(el.checked).toBe(true);
     expect(button.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('outlines the off track with the control border colour', async () => {
+    const el = await mount<PsSwitch>('<ps-switch label="Contours"></ps-switch>');
+    const button = el.shadowRoot!.querySelector('button')!;
+    expect(getComputedStyle(button).boxShadow).toContain('rgb(100, 116, 139)');
   });
 
   it('takes its name from the slotted text, and a click on the text toggles it', async () => {
@@ -118,6 +191,9 @@ describe('ps-segmented', () => {
     await el.updateComplete;
     const radios = [...el.shadowRoot!.querySelectorAll('[role="radio"]')] as HTMLElement[];
     expect(radios.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    // The selected chip gets an accent ring (3:1 against the track; colour alone is not enough).
+    expect(getComputedStyle(radios[0]).boxShadow).toContain('rgb(0, 122, 181)');
+    expect(getComputedStyle(radios[1]).boxShadow).toBe('none');
     const onChange = vi.fn();
     el.addEventListener('change', onChange);
     radios[0].focus();
