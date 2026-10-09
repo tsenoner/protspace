@@ -105,6 +105,33 @@ describe('ps-popover', () => {
     expect(document.activeElement).toBe(anchor);
   });
 
+  it("keeps a nested overlay's ps-close from its owner", async () => {
+    const { anchor, pop } = await setup();
+    const inner = document.createElement('ps-popover');
+    inner.innerHTML = '<button id="nested">Nested</button>';
+    pop.append(inner);
+    inner.anchor = document.getElementById('inside');
+    const onClose = vi.fn();
+    pop.addEventListener('ps-close', onClose);
+    pop.addEventListener('ps-close', () => (pop.open = false)); // a controlled owner
+    const onInnerClose = vi.fn();
+    inner.addEventListener('ps-close', onInnerClose);
+    anchor.focus();
+    pop.open = true;
+    await settle(pop);
+    inner.open = true;
+    await settle(inner);
+    document.getElementById('nested')!.focus();
+    escape();
+    await settle(pop);
+    expect(onInnerClose).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(pop.open).toBe(true);
+    escape();
+    await settle(pop);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('closes on a press outside but not on a drag that started inside or a press on the anchor', async () => {
     const { anchor, pop } = await setup();
     pop.open = true;

@@ -3,6 +3,7 @@ import { userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import type { PsDialog } from './dialog';
 import './dialog';
+import { dialogStyles } from './dialog.styles';
 import { ESCAPE_ORDER, onEscapeFallback, topLayer } from './layers';
 import type { PsMenu } from './menu';
 import './menu';
@@ -144,6 +145,87 @@ describe('ps-dialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(topLayer()).toBeUndefined();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("keeps a nested menu's ps-close from the dialog's owner", async () => {
+    const { dialog, menu } = await setup();
+    const onClose = vi.fn();
+    dialog.addEventListener('ps-close', onClose);
+    dialog.addEventListener('ps-close', () => (dialog.open = false)); // a controlled owner
+    const onMenuClose = vi.fn();
+    menu.addEventListener('ps-close', onMenuClose);
+    menu.open = true;
+    await settle(menu);
+    await userEvent.keyboard('{Enter}');
+    await settle(dialog);
+    expect(onMenuClose).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialog.open).toBe(true);
+    await userEvent.keyboard('{Escape}');
+    await settle(dialog);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(dialog.open).toBe(false);
+  });
+
+  it("keeps a nested dialog's ps-close from the outer dialog's owner", async () => {
+    document.body.innerHTML = `
+      <ps-dialog id="outer" heading="Outer">
+        <ps-dialog id="inner" heading="Inner"><p>Inner text</p></ps-dialog>
+      </ps-dialog>`;
+    const outer = document.getElementById('outer') as PsDialog;
+    const inner = document.getElementById('inner') as PsDialog;
+    const onOuterClose = vi.fn();
+    const onInnerClose = vi.fn();
+    outer.addEventListener('ps-close', onOuterClose);
+    inner.addEventListener('ps-close', onInnerClose);
+    outer.open = true;
+    await settle(outer);
+    inner.open = true;
+    await settle(inner);
+    await userEvent.keyboard('{Escape}');
+    await settle(inner);
+    expect(onInnerClose).toHaveBeenCalledOnce();
+    expect(onOuterClose).not.toHaveBeenCalled();
+    expect(outer.open).toBe(true);
+  });
+
+  it('follows a close the browser makes on its own', async () => {
+    const { opener, dialog } = await setup();
+    const onClose = vi.fn();
+    dialog.addEventListener('ps-close', onClose);
+    nativeDialog(dialog).close();
+    await settle(dialog);
+    expect([dialog.open, onClose.mock.calls.length, topLayer()]).toEqual([false, 1, undefined]);
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('reads dismissible="false" in markup as false', async () => {
+    document.body.innerHTML = `
+      <ps-dialog id="off" heading="Info" dismissible="false"><p>Only text</p></ps-dialog>
+      <ps-dialog id="bare" heading="Info" dismissible></ps-dialog>
+      <ps-dialog id="none" heading="Info"></ps-dialog>`;
+    const off = document.getElementById('off') as PsDialog;
+    const bare = document.getElementById('bare') as PsDialog;
+    const none = document.getElementById('none') as PsDialog;
+    expect([off.dismissible, bare.dismissible, none.dismissible]).toEqual([false, true, true]);
+    off.open = true;
+    await settle(off);
+    press(nativeDialog(off));
+    expect(off.open).toBe(true);
+  });
+
+  it('focuses the frame when nothing is marked autofocus', async () => {
+    document.body.innerHTML = '<ps-dialog heading="Info"><p>Only text</p></ps-dialog>';
+    const dialog = document.querySelector('ps-dialog') as PsDialog;
+    dialog.open = true;
+    await settle(dialog);
+    expect(dialog.shadowRoot!.activeElement).toBe(dialog.shadowRoot!.querySelector('.frame'));
+  });
+
+  it('sizes by the dynamic viewport, so a full dialog fits under a phone toolbar', () => {
+    const cssText = dialogStyles.map((sheet) => sheet.cssText).join('');
+    expect(cssText).not.toMatch(/100vh/);
+    expect(cssText).toMatch(/100dvh/);
   });
 
   it('returns focus to the opener when removed while open', async () => {

@@ -12,7 +12,7 @@ export const dialogStyles = [
     dialog {
       box-sizing: border-box;
       width: min(480px, calc(100vw - 32px));
-      max-height: calc(100vh - 32px);
+      max-height: calc(100dvh - 32px);
       padding: 0;
       border: 1px solid var(--ps-border);
       border-radius: var(--ps-radius-lg);
@@ -30,7 +30,7 @@ export const dialogStyles = [
     }
     :host([size='full']) dialog {
       width: calc(100vw - 32px);
-      height: calc(100vh - 32px);
+      height: calc(100dvh - 32px);
     }
     dialog::backdrop {
       background: var(--ps-scrim);
@@ -38,7 +38,7 @@ export const dialogStyles = [
     .frame {
       display: flex;
       flex-direction: column;
-      max-height: calc(100vh - 34px);
+      max-height: calc(100dvh - 34px);
       height: 100%;
       outline: none;
     }

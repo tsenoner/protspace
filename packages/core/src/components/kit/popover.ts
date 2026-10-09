@@ -7,6 +7,12 @@ import { popoverStyles } from './popover.styles';
 import { anchorTo, type Placement } from './position';
 
 /**
+ * A `ps-close` from slotted content is a nested overlay closing, not this one: stop it at the
+ * panel. This popover dispatches its own on the host, outside the panel (ps-dialog does the same).
+ */
+const stopNestedClose = (event: Event) => event.stopPropagation();
+
+/**
  * An anchored panel in the top layer. The owner sets `open`; the popover closes itself on Escape
  * or an outside press and then dispatches `ps-close`.
  */
@@ -33,6 +39,7 @@ export class PsPopover extends LitElement {
       popover="manual"
       role=${this.panelRole}
       aria-label=${this.panelLabel || nothing}
+      @ps-close=${stopNestedClose}
     >
       <slot></slot>
     </div>`;

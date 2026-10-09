@@ -28,6 +28,13 @@ if (typeof window !== 'undefined') {
   );
 }
 
+/**
+ * Every kit overlay (dialog, popover) stops `ps-close` at the element around its slot: one from
+ * its content is a nested menu or dialog closing, not this overlay. The overlay dispatches its
+ * own `ps-close` on the host, outside that element, so its owner still hears it.
+ */
+const stopNestedClose = (event: Event) => event.stopPropagation();
+
 function focusOrigin(): HTMLElement | null {
   const active = deepActiveElement();
   if (active && active !== document.body) return active;
@@ -45,8 +52,12 @@ export class PsDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property() heading = '';
   @property({ reflect: true }) size: DialogSize = 'md';
-  /** A press and release on the backdrop closes the dialog. */
-  @property({ type: Boolean }) dismissible = true;
+  /**
+   * A press and release on the backdrop closes the dialog. Defaults to true; `dismissible="false"`
+   * in markup, or the property set to false, turns it off.
+   */
+  @property({ converter: { fromAttribute: (value: string | null) => value !== 'false' } })
+  dismissible = true;
 
   @state() private hasFooter = false;
   @query('dialog') private dialog!: HTMLDialogElement;
@@ -63,7 +74,7 @@ export class PsDialog extends LitElement {
       @cancel=${this.onCancel}
       @close=${this.onNativeClose}
     >
-      <div class="frame" tabindex="-1">
+      <div class="frame" tabindex="-1" @ps-close=${stopNestedClose}>
         <header>
           <h2 id="heading">${this.heading}</h2>
           <slot name="header-actions"></slot>
