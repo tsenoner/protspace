@@ -61,6 +61,9 @@ docs/superpowers/
 /temp-videos
 **/playwright-report
 .playwright-mcp
+# Vitest browser mode: failure screenshots and attachments
+packages/core/src/**/__screenshots__/
+packages/core/.vitest-attachments/
 
 # Claude (config + CLI-generated OpenSpec skills/commands; run `openspec init` locally)
 CLAUDE.md
