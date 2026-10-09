@@ -1,11 +1,12 @@
 import type { TemplateResult } from 'lit';
 import { html, unsafeStatic } from 'lit/static-html.js';
-import { Check, ChevronDown, Minus, Search, X, type IconNode } from 'lucide';
+import { Check, ChevronDown, CircleHelp, Minus, Search, X, type IconNode } from 'lucide';
 
 // The curated set. Each phase adds the icons it first needs; explicit imports keep the bundle to them.
 const ICONS = {
   check: Check,
   'chevron-down': ChevronDown,
+  'circle-help': CircleHelp,
   minus: Minus,
   search: Search,
   x: X,

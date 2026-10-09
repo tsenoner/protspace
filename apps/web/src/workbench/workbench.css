@@ -213,3 +213,50 @@
   flex: none;
   min-height: 320px;
 }
+
+/* ── Keyboard shortcuts dialog (light DOM slotted into ps-dialog) ─────────── */
+
+.wb-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ps-space-5) var(--ps-space-6);
+}
+
+.wb-shortcuts h3 {
+  margin: 0 0 var(--ps-space-2);
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: var(--ps-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wb-shortcuts dl {
+  display: grid;
+  gap: var(--ps-space-1-5);
+  margin: 0;
+}
+
+.wb-shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ps-space-3);
+}
+
+.wb-shortcut dd {
+  flex: none;
+  margin: 0;
+}
+
+.wb-shortcut kbd {
+  padding: 0 5px;
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-sm);
+  background: var(--ps-surface-muted);
+  color: var(--ps-text-muted);
+  font: inherit;
+  font-size: var(--ps-text-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { waitForExploreDataLoad } from './helpers/explore';
+import { appBar, waitForExploreDataLoad } from './helpers/explore';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -218,46 +218,28 @@ test.describe('Product Tour', () => {
     await expect(popover).toHaveCount(0);
   });
 
-  // ── Re-trigger from tips popover ────────────────────────────
+  // ── Re-trigger from the help menu ───────────────────────────
 
-  test('can be re-triggered from tips popover', async ({ page }) => {
+  test('can be re-triggered from the help menu', async ({ page }) => {
     // Dismiss the auto-started tour first
     await page.locator('.driver-tour-skip-btn').click();
     await waitForTourDismissed(page);
 
-    // Hover over the tips button inside the scatterplot to open the popover.
-    // The tips button is inside the scatterplot's Shadow DOM, so we need
-    // to use evaluate to trigger hover/click.
-    await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as any;
-      if (!plot?.shadowRoot) return;
-
-      const tips = plot.shadowRoot.querySelector('protspace-tips') as any;
-      if (!tips?.shadowRoot) return;
-
-      const trigger = tips.shadowRoot.querySelector('.trigger') as HTMLElement;
-      trigger?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-    });
-
-    // Wait for the tips popover to become visible (inside Shadow DOM)
-    await page.waitForTimeout(300);
-
-    // Click the "Take a Tour" button
-    await page.evaluate(() => {
-      const plot = document.querySelector('#myPlot') as any;
-      if (!plot?.shadowRoot) return;
-
-      const tips = plot.shadowRoot.querySelector('protspace-tips') as any;
-      if (!tips?.shadowRoot) return;
-
-      const tourBtn = tips.shadowRoot.querySelector('.tour-button') as HTMLElement;
-      tourBtn?.click();
-    });
+    await appBar(page).getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Take the tour' }).click();
 
     // The tour should restart
     await waitForTourPopover(page);
     const title = await getPopoverTitle(page);
     expect(title).toBe(STEP_TITLES[0]);
+  });
+
+  test('the welcome step spotlights Help', async ({ page }) => {
+    // Lifted above the tour's overlay while the welcome step shows, and put back after it.
+    const helpHost = page.locator('[data-driver-id="help"]');
+    await expect(helpHost).toHaveCSS('z-index', '100001');
+    await clickNext(page);
+    await expect(helpHost).not.toHaveCSS('z-index', '100001');
   });
 
   // ── Step highlights correct element ─────────────────────────

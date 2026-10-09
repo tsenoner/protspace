@@ -30,7 +30,6 @@ import {
 } from '../legend/legend-mapping-events';
 import { scatterplotStyles } from './scatter-plot.styles';
 import './projection-metadata/projection-metadata';
-import './tooltips/protspace-tips';
 import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
@@ -158,7 +157,6 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Array }) filteredProteinIds: string[] = [];
   @property({ type: Boolean, attribute: 'filters-active' }) filtersActive = false;
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
-  @property({ type: Boolean, attribute: 'show-tour-button' }) showTourButton = false;
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
 
   // State
@@ -1769,11 +1767,6 @@ export class ProtspaceScatterplot extends LitElement {
           selected-annotation=${this.selectedAnnotation}
           .viewIsSubset=${this.filtersActive || this.isIsolationMode()}
         ></protspace-projection-metadata>
-
-        <protspace-tips
-          data-driver-id="tips"
-          .showTourButton=${this.showTourButton}
-        ></protspace-tips>
 
         ${this._tooltipData
           ? html`

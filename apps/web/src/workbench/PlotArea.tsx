@@ -7,11 +7,7 @@ import { memo } from 'react';
 export const PlotArea = memo(function PlotArea() {
   return (
     <main className="wb-plot" data-workbench="plot">
-      <protspace-scatterplot
-        id="myPlot"
-        data-driver-id="scatterplot"
-        show-tour-button="true"
-      ></protspace-scatterplot>
+      <protspace-scatterplot id="myPlot" data-driver-id="scatterplot"></protspace-scatterplot>
     </main>
   );
 });

@@ -139,7 +139,7 @@ const scatterplotStylesCore = css`
 
   /* Small status chips overlaid on the plot (visible point count bottom-left,
      numeric recompute notice bottom-right). Same card look as the top-left
-     hover buttons (projection-metadata / protspace-tips triggers). */
+     projection-metadata trigger. */
   .plot-indicator {
     position: absolute;
     bottom: 0.5rem;

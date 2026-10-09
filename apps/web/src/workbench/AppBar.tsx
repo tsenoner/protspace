@@ -1,6 +1,7 @@
 import { Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
+import { HelpMenu } from './HelpMenu';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
@@ -34,6 +35,7 @@ export function AppBar() {
       </div>
       <div data-workbench="app-bar-center" />
       <div data-workbench="app-bar-actions">
+        <HelpMenu />
         <a className="wb-icon-link" href={FEEDBACK_HREF} aria-label="Feedback">
           <MessageSquare size={16} strokeWidth={1.75} aria-hidden="true" />
         </a>

@@ -29,9 +29,6 @@ const CONTROL_BAR = '[data-driver-id="control-bar"]';
 /** Host selector for the legend custom element. */
 const LEGEND = '[data-driver-id="legend"]';
 
-/** Host selector for the scatterplot custom element. */
-const SCATTERPLOT = '[data-driver-id="scatterplot"]';
-
 // ---------------------------------------------------------------------------
 // Driver instance (singleton)
 // ---------------------------------------------------------------------------
@@ -65,33 +62,36 @@ function cleanupShadowElement(element: Element | undefined) {
 }
 
 // ---------------------------------------------------------------------------
-// Tips icon spotlight (step 1)
+// Help spotlight (step 1)
 // ---------------------------------------------------------------------------
 
+/** The app bar's Help button, where the tour and the shortcuts live. */
+const HELP = '[data-driver-id="help"]';
+
 /**
- * Add or remove a visual spotlight on the tips (?) trigger button.
- * Used during the centred welcome step so the user can see where to find
- * the tour later, even though the popover is not attached to the element.
+ * Add or remove a visual spotlight on the Help button. Used during the centred welcome step so
+ * the user can see where to find the tour later, even though the popover is not attached to it.
  *
- * We target the `.trigger` button inside the `<protspace-tips>` shadow DOM
- * (not the host) so the glow follows the button's rounded shape exactly.
+ * The glow goes on the `<button>` inside `<ps-icon-button>`'s shadow DOM (not the host), so it
+ * follows the button's rounded shape. Lifting the host above the overlay works because the app
+ * bar creates no stacking context.
  */
-function spotlightTipsIcon(on: boolean) {
-  const host = shadowEl(SCATTERPLOT, '[data-driver-id="tips"]');
-  if (!host || !(host instanceof HTMLElement)) return;
-  const trigger = host.shadowRoot?.querySelector('.trigger');
-  if (!trigger || !(trigger instanceof HTMLElement)) return;
+function spotlightHelp(on: boolean) {
+  const host = document.querySelector(HELP);
+  if (!(host instanceof HTMLElement)) return;
+  const button = host.shadowRoot?.querySelector('button');
+  if (!(button instanceof HTMLElement)) return;
 
   if (on) {
     // Lift the host above the driver.js overlay (z-index ~100000)
     host.style.zIndex = '100001';
-    // Glow on the rounded trigger button so there are no corner artifacts
-    trigger.style.boxShadow = '0 0 0 3px #00a3e0, 0 0 12px rgba(0, 163, 224, 0.5)';
-    trigger.style.transition = 'box-shadow 0.3s ease';
+    // Glow on the rounded button so there are no corner artifacts
+    button.style.boxShadow = '0 0 0 3px #00a3e0, 0 0 12px rgba(0, 163, 224, 0.5)';
+    button.style.transition = 'box-shadow 0.3s ease';
   } else {
     host.style.removeProperty('z-index');
-    trigger.style.removeProperty('box-shadow');
-    trigger.style.removeProperty('transition');
+    button.style.removeProperty('box-shadow');
+    button.style.removeProperty('transition');
   }
 }
 
@@ -179,15 +179,27 @@ const steps: DriveStep[] = [
         const skipButton = document.createElement('button');
         skipButton.innerText = 'Skip';
         skipButton.className = 'driver-tour-skip-btn';
-        skipButton.addEventListener('click', () => driverObj.destroy());
+        skipButton.addEventListener('click', () => {
+          spotlightHelp(false);
+          driverObj.destroy();
+        });
         popover.nextButton.insertAdjacentElement('beforebegin', skipButton);
 
-        // Spotlight the ? icon so the user knows where to find it
-        spotlightTipsIcon(true);
+        // Spotlight Help so the user knows where to find the tour again
+        spotlightHelp(true);
       },
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
+      // driver.js skips `onDeselected` when the step is left during its 400 ms highlight
+      // transition, so leaving it by Next, Skip or close also clears the spotlight.
+      onNextClick: async (_el, _step, opts) => {
+        spotlightHelp(false);
+        await moveNext(opts);
+      },
+      onCloseClick: () => {
+        spotlightHelp(false);
+        driverObj.destroy();
+      },
     },
-    onDeselected: () => spotlightTipsIcon(false),
+    onDeselected: () => spotlightHelp(false),
   },
 
   // ── Step 2 – Import button (Shadow DOM) ─────────────────────

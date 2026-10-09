@@ -40,7 +40,6 @@ const LEGACY = new Set<string>([
   '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',
   '../components/scatter-plot/tooltips/protein-tooltip.styles.ts',
-  '../components/scatter-plot/tooltips/protspace-tips.styles.ts',
   '../components/structure-viewer/structure-viewer.styles.ts',
   './mixins.ts',
   './overlay-mixins.ts',

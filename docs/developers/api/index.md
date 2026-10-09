@@ -68,14 +68,13 @@ interactions.
 | `filteredProteinIds`                | `string[]`                            | `[]`          | Result of an active filter query               |
 | `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied |
 | `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration         |
-| `showTourButton`                    | `boolean`                             | `false`       | Show the guided-tour button                    |
 
 ### HTML attributes
 
 Three properties have explicit kebab-case attributes: `selection-tool`, `filters-active` and
-`show-tour-button`. The rest are reachable from markup under their implicit all-lowercase names (for
-example `selectedannotation`, `projectionplane`); no scatterplot property is `attribute: false`. Set
-the object and array properties from JavaScript.
+`eat-overlay-enabled`. The rest are reachable from markup under their implicit all-lowercase names
+(for example `selectedannotation`, `projectionplane`); no scatterplot property is
+`attribute: false`. Set the object and array properties from JavaScript.
 
 ### Configuration
 
@@ -131,7 +130,6 @@ All scatterplot events bubble.
 | `auto-disable-selection` | `{ reason, dataSize }`                           | Selection mode turned itself off    |
 | `file-dropped`           | `{ file }`                                       | A file was dropped on the plot      |
 | `renderer-degraded`      | `{ message, severity, source, context }`         | A rendering capability was reduced  |
-| `tour-start`             | none                                             | The guided-tour button was pressed  |
 
 `modifierKeys` on `protein-click` is `{ ctrl, meta, shift, alt }`. `view` is the tooltip-friendly
 projection of the protein's annotations; `point` is the bare plot point.

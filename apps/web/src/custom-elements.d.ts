@@ -66,7 +66,6 @@ declare module 'react' {
       'protspace-scatterplot': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
-          'show-tour-button'?: string;
           'data-driver-id'?: string;
         },
         HTMLElement

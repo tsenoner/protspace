@@ -445,10 +445,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     { once: true },
   );
 
-  addTrackedEventListener(lifecycle, plotElement, 'tour-start', () => {
-    startProductTour({ force: true });
-  });
-
   interactionController.updateLegend();
 
   // Startup is not kicked off here: it waits for the URL sync hook's
