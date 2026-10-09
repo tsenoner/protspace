@@ -51,6 +51,19 @@ declare module 'react' {
         },
         HTMLElement
       >;
+      'protspace-import-menu': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          id?: string;
+          'data-driver-id'?: string;
+        },
+        HTMLElement
+      >;
+      'protspace-export-menu': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          id?: string;
+        },
+        HTMLElement
+      >;
       'protspace-control-bar': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & {
           id?: string;

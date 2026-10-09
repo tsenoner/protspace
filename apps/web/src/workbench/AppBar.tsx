@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
@@ -14,6 +15,19 @@ function shownName(datasetName: string): string {
 function proteinCountText(count: number): string {
   return `· ${count.toLocaleString()} ${count === 1 ? 'protein' : 'proteins'}`;
 }
+
+/**
+ * The runtime's Import and Export menus. Memoised and without props, so a status change never
+ * re-renders them; the runtime finds them by id.
+ */
+const DataActions = memo(function DataActions() {
+  return (
+    <div className="wb-data-actions" data-driver-id="data-actions">
+      <protspace-import-menu id="myImportMenu" data-driver-id="import"></protspace-import-menu>
+      <protspace-export-menu id="myExportMenu"></protspace-export-menu>
+    </div>
+  );
+});
 
 /**
  * The 48 px app bar (design decision 1): the wordmark, the dataset on screen, a centre that search
@@ -40,6 +54,8 @@ export function AppBar() {
       </div>
       <div data-workbench="app-bar-center" />
       <div data-workbench="app-bar-actions">
+        <DataActions />
+        <span className="wb-separator" aria-hidden="true" />
         <HelpMenu />
         <a className="wb-icon-link" href={FEEDBACK_HREF} aria-label="Feedback">
           <MessageSquare size={16} strokeWidth={1.75} aria-hidden="true" />

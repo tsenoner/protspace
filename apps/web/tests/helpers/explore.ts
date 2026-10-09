@@ -282,15 +282,15 @@ export const projectionTrigger = (page: Page): Locator =>
 export const colorByTrigger = (page: Page): Locator =>
   annotationSelect(page).locator('button[aria-haspopup]').first();
 
-/** The Import menu's trigger. */
+/** The Import menu's trigger, in the app bar. */
 export const importTrigger = (page: Page): Locator =>
-  viewBar(page).getByRole('button', { name: 'Import', exact: true });
+  appBar(page).getByRole('button', { name: 'Import', exact: true });
 
-/** The element that holds the Import panel: today the control bar. */
-export const importMenu = (page: Page): Locator => page.locator('protspace-control-bar');
+/** The element that holds the Import panel. */
+export const importMenu = (page: Page): Locator => page.locator('#myImportMenu');
 
-/** The element that holds the Export panel: today the control bar. */
-export const exportMenu = (page: Page): Locator => page.locator('protspace-control-bar');
+/** The element that holds the Export panel. */
+export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu');
 
 /** The Filter button; its accessible name starts with "Filter" (and shows the condition count). */
 export const filterButton = (page: Page): Locator =>

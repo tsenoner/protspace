@@ -1,24 +1,20 @@
-import type {
-  ProtspaceControlBar,
-  ProtspaceLegend,
-  ProtspaceScatterplot,
-  ProtspaceStructureViewer,
-} from '@protspace/core';
+import type { ProtspaceLegend, ProtspaceScatterplot } from '@protspace/core';
 import type { VisualizationData } from '@protspace/utils';
 import { DENSITY_DEFAULT, isEatConfidenceAnnotation } from '@protspace/utils';
+import type { ExploreControls } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { LoadingOverlayController } from './loading-overlay';
 import type { EffectiveExploreView } from './view-state';
 
 interface DataRendererOptions {
-  controlBar: ProtspaceControlBar;
+  /** The controls the renderer pauses and fills while it swaps the plot's data. */
+  controls: Pick<ExploreControls, 'showInitialView' | 'setRendering' | 'clearStructure'>;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
   legendElement: ProtspaceLegend;
   overlayController: Pick<LoadingOverlayController, 'update'>;
   plotElement: ProtspaceScatterplot;
   resolveInitialView(data: VisualizationData): EffectiveExploreView | null;
-  structureViewer: ProtspaceStructureViewer;
 }
 
 interface ResolvedInitialView {
@@ -104,15 +100,6 @@ function applyPlotState(
   plotElement.requestUpdate('data', previousData);
 }
 
-function applyControlBarState(controlBar: ProtspaceControlBar, initialView: ResolvedInitialView) {
-  controlBar.selectedProjection = initialView.projectionName;
-  controlBar.selectedAnnotation = initialView.annotation;
-  controlBar.tooltipAnnotations = [...initialView.tooltip];
-  controlBar.selectionMode = false;
-  controlBar.selectedProteinsCount = 0;
-  controlBar.requestUpdate();
-}
-
 async function syncLegendState(
   legendElement: ProtspaceLegend,
   interactionController: InteractionController,
@@ -131,14 +118,13 @@ async function syncLegendState(
 }
 
 export function createDataRenderer({
-  controlBar,
+  controls,
   getIsDisposed,
   interactionController,
   legendElement,
   overlayController,
   plotElement,
   resolveInitialView,
-  structureViewer,
 }: DataRendererOptions) {
   const yieldToBrowser = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -170,14 +156,18 @@ export function createDataRenderer({
     await yieldToBrowser();
 
     console.log('Updating scatterplot with new data...');
-    controlBar.autoSync = false;
+    controls.setRendering(true);
     // Only `syncLegendState` turns this back on. Until then the legend counts in protein
     // order (its `_computeAnnotationCounts`), which picks the rows and colours of tied
     // categories, and `updateLegend` leaves the legend to its own sync.
     legendElement.autoSync = false;
 
     applyPlotState(plotElement, newData, resolvedInitialView);
-    applyControlBarState(controlBar, resolvedInitialView);
+    controls.showInitialView({
+      projection: resolvedInitialView.projectionName,
+      annotation: resolvedInitialView.annotation,
+      tooltip: resolvedInitialView.tooltip,
+    });
 
     updateOverlayForStep(
       overlayController,
@@ -190,7 +180,7 @@ export function createDataRenderer({
     await yieldToBrowser();
     await yieldToBrowser();
 
-    controlBar.autoSync = true;
+    controls.setRendering(false);
 
     updateOverlayForStep(
       overlayController,
@@ -206,9 +196,7 @@ export function createDataRenderer({
     // dismisses the overlay.
     await syncLegendState(legendElement, interactionController, isLargeDataset);
 
-    if (structureViewer.style.display !== 'none') {
-      structureViewer.style.display = 'none';
-    }
+    controls.clearStructure();
 
     if (getIsDisposed()) {
       return null;

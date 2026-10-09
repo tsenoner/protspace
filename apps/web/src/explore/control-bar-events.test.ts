@@ -1,60 +1,34 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { bindControlBarEvents } from './control-bar-events';
-import { EXAMPLE_DATASETS } from './example-datasets';
 
-/** Binds the control-bar listeners to a plain event target, with a spied dataset controller. */
+/** Binds the control-bar listeners to a plain event target, with spied controllers. */
 function bind() {
   const controlBar = new EventTarget();
-  const datasetController = {
-    loadExampleDatasetAndClearPersistedFile: vi.fn().mockResolvedValue('loaded'),
+  const interactionController = { handleAnnotationChange: vi.fn() };
+  const viewController = {
+    handleUserAnnotationChange: vi.fn(),
+    handleUserProjectionChange: vi.fn(),
+    handleUserTooltipAnnotationsChange: vi.fn(),
+    handleUserDensityLayerChange: vi.fn(),
   };
   bindControlBarEvents({
     addControlBarListener: (type, listener, options) =>
       controlBar.addEventListener(type, listener, options),
-    datasetController: datasetController as never,
-    handleExport: vi.fn(),
-    interactionController: {} as never,
-    viewController: {} as never,
+    interactionController: interactionController as never,
+    viewController: viewController as never,
   });
-  const chooseExample = (id: string) =>
-    controlBar.dispatchEvent(new CustomEvent('load-example-dataset', { detail: { id } }));
-  return { chooseExample, controlBar, datasetController };
+  return { controlBar, interactionController, viewController };
 }
 
-describe("the Import menu's example choice", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+describe('the control bar events', () => {
+  it('an annotation change reaches the interaction and view controllers', () => {
+    const { controlBar, interactionController, viewController } = bind();
 
-  it('loads the catalog entry the menu names, in place of the stored import', () => {
-    const { chooseExample, datasetController } = bind();
-    const entry = EXAMPLE_DATASETS[1];
-
-    chooseExample(entry.id);
-
-    expect(datasetController.loadExampleDatasetAndClearPersistedFile).toHaveBeenCalledWith(
-      entry,
-      'menu',
+    controlBar.dispatchEvent(
+      new CustomEvent('annotation-change', { detail: { annotation: 'ec' } }),
     );
-  });
 
-  it('warns about an id the catalog does not hold, and loads nothing', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { chooseExample, datasetController } = bind();
-
-    chooseExample('not-a-real-id');
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not-a-real-id'));
-    expect(datasetController.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
-  });
-
-  it('warns about an event that names no example, rather than throwing', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { controlBar, datasetController } = bind();
-
-    expect(() => controlBar.dispatchEvent(new CustomEvent('load-example-dataset'))).not.toThrow();
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Unknown example dataset id'));
-    expect(datasetController.loadExampleDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+    expect(interactionController.handleAnnotationChange).toHaveBeenCalledOnce();
+    expect(viewController.handleUserAnnotationChange).toHaveBeenCalledOnce();
   });
 });

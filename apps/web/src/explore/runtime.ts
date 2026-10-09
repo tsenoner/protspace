@@ -8,6 +8,8 @@ import { bindControlBarEvents } from './control-bar-events';
 import { createDatasetController } from './dataset-controller';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
+import type { ExploreControls } from './explore-controls';
+import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { createLifecycle } from './lifecycle';
 import {
@@ -55,21 +57,29 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     return NOOP_CONTROLLER;
   }
 
-  const { controlBar, dataLoader, legendElement, plotElement, structureViewer } = elements;
+  const {
+    controlBar,
+    dataLoader,
+    exportMenu,
+    importMenu,
+    legendElement,
+    plotElement,
+    structureViewer,
+  } = elements;
   const lifecycle = createLifecycle();
 
-  controlBar.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
-  controlBar.examplesDocsUrl = EXAMPLES_DOCS_URL;
+  importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
+  importMenu.examplesDocsUrl = EXAMPLES_DOCS_URL;
 
   // The app bar names the dataset on screen and its size.
   const publishDatasetName = createDatasetNamePublisher(() => plotElement.data);
   const setCurrentDatasetName = (name: string) => {
-    controlBar.currentDatasetName = name;
+    importMenu.currentDatasetName = name;
     publishDatasetName(name);
   };
 
   const setCurrentExampleId = (id: string | null) => {
-    controlBar.currentExampleId = id;
+    importMenu.currentExampleId = id;
   };
 
   // A remounted page starts from an empty app bar until its own first load names a dataset.
@@ -275,8 +285,36 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     structureViewer,
   });
 
+  // The dataset pipeline's one seam to the controls (explore-controls.ts). Until the control bar
+  // is split up, most of it is still the control bar.
+  const controls: ExploreControls = {
+    resetForNewDataset() {
+      controlBar.clearForNewDataset();
+      exportMenu.reset();
+    },
+    setHasFileSettings(value) {
+      exportMenu.hasFileSettings = value;
+    },
+    showInitialView(view) {
+      controlBar.selectedProjection = view.projection;
+      controlBar.selectedAnnotation = view.annotation;
+      controlBar.tooltipAnnotations = [...view.tooltip];
+      controlBar.selectionMode = false;
+      controlBar.selectedProteinsCount = 0;
+      controlBar.requestUpdate();
+    },
+    setRendering(rendering) {
+      controlBar.autoSync = !rendering;
+    },
+    clearStructure() {
+      if (structureViewer.style.display !== 'none') {
+        structureViewer.style.display = 'none';
+      }
+    },
+  };
+
   const datasetController = createDatasetController({
-    controlBar,
+    controls,
     dataLoader,
     getIsDisposed: lifecycle.isDisposed,
     interactionController,
@@ -284,7 +322,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     loadQueue,
     overlayController,
     plotElement,
-    structureViewer,
     setCurrentExampleId,
     setCurrentDatasetName,
     viewController,
@@ -309,7 +346,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
 
   const handleExport = createExportHandler({
-    controlBar,
+    exportMenu,
     getSelectedProteins: interactionController.getSelectedProteins,
     getUnplacedProteinCount: datasetController.getUnplacedProteinCount,
     legendElement,
@@ -403,12 +440,20 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       void dataLoader.loadFromFile(file);
     }
   });
+  addTrackedEventListener(lifecycle, exportMenu, 'export', (event: Event) => {
+    void handleExport(event);
+  });
+  bindImportMenu({
+    listen(type, listener) {
+      addTrackedEventListener(lifecycle, importMenu, type, listener);
+    },
+    dataLoader,
+    datasetController,
+  });
   bindControlBarEvents({
     addControlBarListener(type, listener, options) {
       addTrackedEventListener(lifecycle, controlBar, type, listener, options);
     },
-    datasetController,
-    handleExport,
     interactionController,
     viewController,
   });

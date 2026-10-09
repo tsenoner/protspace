@@ -1,8 +1,6 @@
 import type { SelectionDisabledNotificationDetail } from '@protspace/core';
 import { notify } from '../lib/notify';
-import { findExampleDataset } from './example-datasets';
 import { getSelectionDisabledNotification } from './notifications';
-import type { DatasetController } from './dataset-controller';
 import type { InteractionController } from './interaction-controller';
 import type { ViewController } from './view-controller';
 
@@ -12,16 +10,12 @@ interface ControlBarEventsOptions {
     listener: EventListenerOrEventListenerObject,
     options?: boolean | AddEventListenerOptions,
   ): void;
-  datasetController: DatasetController;
-  handleExport(event: Event): Promise<void>;
   interactionController: InteractionController;
   viewController: ViewController;
 }
 
 export function bindControlBarEvents({
   addControlBarListener,
-  datasetController,
-  handleExport,
   interactionController,
   viewController,
 }: ControlBarEventsOptions): void {
@@ -43,21 +37,5 @@ export function bindControlBarEvents({
   addControlBarListener('selection-disabled-notification', (event: Event) => {
     const customEvent = event as CustomEvent<SelectionDisabledNotificationDetail>;
     notify.warning(getSelectionDisabledNotification(customEvent.detail));
-  });
-
-  // This event name is part of the control-bar custom element contract in @protspace/core.
-  addControlBarListener('load-example-dataset', (event: Event) => {
-    // A dispatch without a detail names no example: warn rather than throw.
-    const id = (event as CustomEvent<{ id?: string } | null>).detail?.id;
-    const entry = id === undefined ? undefined : findExampleDataset(id);
-    if (!entry) {
-      console.warn(`Unknown example dataset id: ${id}`);
-      return;
-    }
-    void datasetController.loadExampleDatasetAndClearPersistedFile(entry, 'menu');
-  });
-
-  addControlBarListener('export', (event: Event) => {
-    void handleExport(event);
   });
 }

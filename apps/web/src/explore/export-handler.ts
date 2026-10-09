@@ -1,4 +1,4 @@
-import type { ProtspaceControlBar, ProtspaceLegend, ProtspaceScatterplot } from '@protspace/core';
+import type { ProtspaceExportMenu, ProtspaceLegend, ProtspaceScatterplot } from '@protspace/core';
 import { EXPORT_DEFAULTS, pxToMm } from '@protspace/core';
 import type { BundleSettings } from '@protspace/utils';
 import {
@@ -22,7 +22,8 @@ interface ExportEventDetail {
 }
 
 interface ExportHandlerOptions {
-  controlBar: ProtspaceControlBar;
+  /** The Export menu, whose Figure Editor item asks for the publish modal. */
+  exportMenu: ProtspaceExportMenu;
   getSelectedProteins(): string[];
   /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
   getUnplacedProteinCount(): number;
@@ -56,7 +57,7 @@ function loadPublishState(): Record<string, unknown> | null {
 }
 
 export function createExportHandler({
-  controlBar,
+  exportMenu,
   getSelectedProteins,
   getUnplacedProteinCount,
   legendElement,
@@ -65,7 +66,7 @@ export function createExportHandler({
   // ── Publish editor handler ─────────────────────────
 
   function setupPublishEditorHandler() {
-    controlBar.addEventListener('open-publish-editor', async () => {
+    exportMenu.addEventListener('open-publish-editor', async () => {
       try {
         // Lazy-import the publish modal component (side-effect registers
         // the custom element on first open).

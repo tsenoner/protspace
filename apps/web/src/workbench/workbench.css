@@ -271,3 +271,15 @@
   line-height: 18px;
   white-space: nowrap;
 }
+
+/* Import and Export, the tour's "data actions". */
+.wb-data-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1-5);
+}
+
+/* Between Import/Export and Help: even space on both sides, unlike the wordmark's separator. */
+[data-workbench='app-bar-actions'] > .wb-separator {
+  margin-inline: var(--ps-space-1);
+}

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import { createDataRenderer, resolveRenderableView } from './data-renderer';
+import type { InitialView } from './explore-controls';
 import type { EffectiveExploreView } from './view-state';
 
 const projections: VisualizationData['projections'] = [
@@ -133,17 +134,22 @@ describe('loadData overlay handling', () => {
     };
   }
 
-  function buildRenderer() {
+  function buildRenderer(
+    controls: Parameters<typeof createDataRenderer>[0]['controls'] = {
+      showInitialView: vi.fn(),
+      setRendering: vi.fn(),
+      clearStructure: vi.fn(),
+    },
+  ) {
     const overlayUpdate = vi.fn();
     const loadData = createDataRenderer({
-      controlBar: { requestUpdate: vi.fn() },
+      controls,
       getIsDisposed: () => false,
       interactionController: { updateLegend: vi.fn() },
       legendElement: {},
       overlayController: { update: overlayUpdate },
       plotElement: { clearIsolationState: vi.fn(), requestUpdate: vi.fn(), config: {} },
       resolveInitialView: (): null => null,
-      structureViewer: { style: { display: 'none' } },
     } as unknown as Parameters<typeof createDataRenderer>[0]);
     return { loadData, overlayUpdate };
   }
@@ -174,5 +180,24 @@ describe('loadData overlay handling', () => {
     expect(overlayUpdate).not.toHaveBeenCalledWith(false);
     const messages = overlayUpdate.mock.calls.map(([, , message]) => message);
     expect(messages).not.toContain('Ready to explore!');
+  });
+
+  it('a new dataset resets the controls and shows its initial view', async () => {
+    const calls: string[] = [];
+    const { loadData } = buildRenderer({
+      showInitialView: vi.fn((view: InitialView) =>
+        calls.push(['view', view.projection, view.annotation, ...view.tooltip].join(' ')),
+      ),
+      setRendering: vi.fn((rendering: boolean) => calls.push(`rendering ${rendering}`)),
+      clearStructure: vi.fn(() => calls.push('clear structure')),
+    });
+
+    const pending = loadData(datasetOf(10));
+    await vi.runAllTimersAsync();
+    await pending;
+
+    // The controls stop syncing while the plot swaps data, show the new view without events,
+    // sync again, and the previous dataset's structure goes.
+    expect(calls).toEqual(['rendering true', 'view umap ec', 'rendering false', 'clear structure']);
   });
 });

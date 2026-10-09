@@ -1,8 +1,6 @@
 import type {
-  ProtspaceControlBar,
   ProtspaceLegend,
   ProtspaceScatterplot,
-  ProtspaceStructureViewer,
   DataLoadedEventDetail,
   DataErrorEventDetail,
   DataLoader as ProtspaceDataLoader,
@@ -22,6 +20,7 @@ import {
 } from './opfs-dataset-store';
 import { createDataRenderer } from './data-renderer';
 import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets';
+import type { ExploreControls } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
 import { progressAfterExampleDownload, type LoadingOverlayController } from './loading-overlay';
@@ -42,7 +41,8 @@ import { createEmptyExploreViewRequest } from './url-state';
 import type { ViewController } from './view-controller';
 
 interface DatasetControllerOptions {
-  controlBar: ProtspaceControlBar;
+  /** The controls a new dataset resets and fills; `runtime.ts` builds them. */
+  controls: ExploreControls;
   dataLoader: ProtspaceDataLoader;
   getIsDisposed: () => boolean;
   interactionController: InteractionController;
@@ -52,7 +52,6 @@ interface DatasetControllerOptions {
   plotElement: ProtspaceScatterplot;
   setCurrentExampleId(id: string | null): void;
   setCurrentDatasetName(name: string): void;
-  structureViewer: ProtspaceStructureViewer;
   viewController: ViewController;
   /**
    * Called after the loading overlay's Cancel has aborted an example
@@ -161,7 +160,7 @@ function warnOnMissingDefaultViewNames(entry: ExampleDataset, data: Visualizatio
 }
 
 export function createDatasetController({
-  controlBar,
+  controls,
   dataLoader,
   getIsDisposed,
   interactionController,
@@ -171,7 +170,6 @@ export function createDatasetController({
   plotElement,
   setCurrentExampleId,
   setCurrentDatasetName,
-  structureViewer,
   viewController,
   onExampleLoadCancelled,
 }: DatasetControllerOptions): DatasetController {
@@ -199,14 +197,13 @@ export function createDatasetController({
   };
 
   const loadData = createDataRenderer({
-    controlBar,
+    controls,
     getIsDisposed,
     interactionController,
     legendElement,
     overlayController: phaseOverlayController,
     plotElement,
     resolveInitialView: viewController.resolveLatestView,
-    structureViewer,
   });
 
   const exampleRetrySubscribers = new Set<(exampleId: string) => void>();
@@ -410,7 +407,7 @@ export function createDatasetController({
         loadMeta.kind === 'default' || (loadMeta.kind === 'user' && settings != null);
 
       legendElement.clearForNewDataset(datasetHash, shouldClearPersistedState);
-      controlBar.clearForNewDataset(datasetHash, shouldClearPersistedState);
+      controls.resetForNewDataset();
 
       // The dataset's own landing view fills whatever the view request leaves
       // unset. Set for every load (null for user imports, OPFS restores and
@@ -452,12 +449,13 @@ export function createDatasetController({
         legendElement.applyEatSettings(eatOverlayEnabled, eatConfidenceThreshold);
       }
 
-      controlBar.hasFileSettings =
+      controls.setHasFileSettings(
         settings != null &&
-        (Object.keys(settings.legendSettings).length > 0 ||
-          settings.eatOverlayEnabled !== undefined ||
-          settings.eatConfidenceThreshold !== undefined ||
-          settings.shapeSize !== undefined);
+          (Object.keys(settings.legendSettings).length > 0 ||
+            settings.eatOverlayEnabled !== undefined ||
+            settings.eatConfidenceThreshold !== undefined ||
+            settings.shapeSize !== undefined),
+      );
 
       // An example load carries its entry in load meta (set by
       // persisted-dataset.ts's `loadExampleDataset`), so it's identified by

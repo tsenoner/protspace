@@ -1,5 +1,7 @@
 import type {
   ProtspaceControlBar,
+  ProtspaceExportMenu,
+  ProtspaceImportMenu,
   ProtspaceLegend,
   ProtspaceScatterplot,
   ProtspaceStructureViewer,
@@ -9,6 +11,8 @@ import type {
 interface ExploreElements {
   controlBar: ProtspaceControlBar;
   dataLoader: ProtspaceDataLoader;
+  exportMenu: ProtspaceExportMenu;
+  importMenu: ProtspaceImportMenu;
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
   structureViewer: ProtspaceStructureViewer;
@@ -20,6 +24,8 @@ const REQUIRED_TAGS = [
   'protspace-structure-viewer',
   'protspace-control-bar',
   'protspace-data-loader',
+  'protspace-import-menu',
+  'protspace-export-menu',
 ] as const;
 
 export async function waitForElements(): Promise<void> {
@@ -34,14 +40,26 @@ export function getElements(doc: Document = document): ExploreElements | null {
   ) as ProtspaceStructureViewer | null;
   const controlBar = doc.getElementById('myControlBar') as ProtspaceControlBar | null;
   const dataLoader = doc.getElementById('myDataLoader') as ProtspaceDataLoader | null;
+  const importMenu = doc.getElementById('myImportMenu') as ProtspaceImportMenu | null;
+  const exportMenu = doc.getElementById('myExportMenu') as ProtspaceExportMenu | null;
 
-  if (!plotElement || !legendElement || !structureViewer || !controlBar || !dataLoader) {
+  if (
+    !plotElement ||
+    !legendElement ||
+    !structureViewer ||
+    !controlBar ||
+    !dataLoader ||
+    !importMenu ||
+    !exportMenu
+  ) {
     console.error('Could not find one or more required explore elements.', {
       plotElement,
       legendElement,
       structureViewer,
       controlBar,
       dataLoader,
+      importMenu,
+      exportMenu,
     });
     return null;
   }
@@ -49,6 +67,8 @@ export function getElements(doc: Document = document): ExploreElements | null {
   return {
     controlBar,
     dataLoader,
+    exportMenu,
+    importMenu,
     legendElement,
     plotElement,
     structureViewer,

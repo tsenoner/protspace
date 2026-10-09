@@ -198,12 +198,17 @@ const steps: DriveStep[] = [
     },
   },
 
-  // ── Step 2 – Import button (Shadow DOM) ─────────────────────
-  shadowStep(CONTROL_BAR, 'import', {
-    title: 'Import Your Data',
-    description:
-      'Click <strong>Import</strong> or drag-and-drop a file onto the canvas. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is uploaded to our server to be prepared first. No data yet? Pick one of the <strong>Examples</strong> in the Import menu. <a href="/docs/guide/data-preparation" target="_blank" rel="noopener">Learn how to prepare your data<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.',
-  }),
+  // ── Step 2 – Import menu (app bar) ──────────────────────────
+  {
+    element: '[data-driver-id="import"]',
+    popover: {
+      title: 'Import Your Data',
+      description:
+        'Click <strong>Import</strong> or drag-and-drop a file onto the canvas. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is uploaded to our server to be prepared first. No data yet? Pick one of the <strong>Examples</strong> in the Import menu. <a href="/docs/guide/data-preparation" target="_blank" rel="noopener">Learn how to prepare your data<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.',
+      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
+      onNextClick: async (_el, _step, opts) => moveNext(opts),
+    },
+  },
 
   // ── Step 3 – Projections & Annotations (Shadow DOM) ─────────
   shadowStep(CONTROL_BAR, 'projections', {
@@ -225,12 +230,17 @@ const steps: DriveStep[] = [
       '<strong>Select</strong> enters selection mode\u2009—\u2009click points or drag to select multiple. Choose <strong>rectangle</strong> or <strong>lasso</strong> to switch tools. Press <kbd>Esc</kbd> to clear the current selection; press it again to exit selection mode.<br><br><strong>Clear</strong> deselects all, <strong>Isolate</strong> focuses on selected proteins, and <strong>Reset</strong> restores the full dataset.',
   }),
 
-  // ── Step 6 – Filter, Export & Import (Shadow DOM) ──────────
-  shadowStep(CONTROL_BAR, 'data-actions', {
-    title: 'Filter, Export & Import',
-    description:
-      '<strong>Filter</strong> opens a query builder for combining annotation conditions with AND/OR logic. <strong>Export</strong> opens the <strong>Figure Editor</strong> for publication-ready figures with journal presets, overlays, zoom insets, and legend customization — or use <strong>Quick Export</strong> for a fast PNG, PDF, protein IDs, or <code>.parquetbundle</code> dump. <strong>Import</strong> uploads a new dataset or loads one of the built-in examples.',
-  }),
+  // ── Step 6 – Export & Import (app bar) ──────────────────────
+  {
+    element: '[data-driver-id="data-actions"]',
+    popover: {
+      title: 'Filter, Export & Import',
+      description:
+        '<strong>Filter</strong> opens a query builder for combining annotation conditions with AND/OR logic. <strong>Export</strong> opens the <strong>Figure Editor</strong> for publication-ready figures with journal presets, overlays, zoom insets, and legend customization — or use <strong>Quick Export</strong> for a fast PNG, PDF, protein IDs, or <code>.parquetbundle</code> dump. <strong>Import</strong> uploads a new dataset or loads one of the built-in examples.',
+      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
+      onNextClick: async (_el, _step, opts) => moveNext(opts),
+    },
+  },
 
   // ── Step 7 – Scatterplot ────────────────────────────────────
   {

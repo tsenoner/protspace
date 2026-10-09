@@ -4,10 +4,8 @@ import { customElement } from '../../utils/safe-custom-element';
 import { controlBarStyles } from './control-bar.styles';
 import type {
   DataChangeDetail,
-  ExampleDatasetSummary,
   ProtspaceData,
   ScatterplotElementLike,
-  DataLoaderElement,
   StructureViewerElement,
 } from './types';
 import {
@@ -27,11 +25,7 @@ import {
   type EatReliabilityState,
   type ProjectionStatisticRow,
 } from '@protspace/utils';
-import {
-  EXPORT_DEFAULTS,
-  toggleProteinSelection,
-  mergeProteinSelections,
-} from './control-bar-helpers';
+import { toggleProteinSelection, mergeProteinSelections } from './control-bar-helpers';
 import {
   createSelectionDisabledNotificationDetail,
   type DensityLayerChangeDetail,
@@ -41,7 +35,6 @@ import type { BrushSelectionDetail, ProteinClickDetail } from '../scatter-plot/s
 import './search';
 import './annotation-select';
 import './query-builder';
-import '../common/info-popover';
 import type { FilterQuery } from './query-types';
 import { createCondition } from './query-types';
 import { evaluateQuery, hasConfiguredCondition } from './query-evaluate';
@@ -98,19 +91,6 @@ export class ProtspaceControlBar extends LitElement {
   isolationMode: boolean = false;
   @property({ type: Array, attribute: 'isolation-history' })
   isolationHistory: string[][] = [];
-  @property({ type: Boolean, attribute: 'has-file-settings' })
-  hasFileSettings: boolean = false;
-  @property({ type: String, attribute: 'current-dataset-name' })
-  currentDatasetName: string = '';
-  @property({ type: String, attribute: 'current-example-id' })
-  currentExampleId: string | null = null;
-  /** The host app's example-dataset catalog, listed in the Import menu's "Examples" section. */
-  @property({ attribute: false }) exampleDatasets: readonly ExampleDatasetSummary[] = [];
-  /**
-   * The host's page about its examples, linked as "About these examples ↗" from the "Examples"
-   * heading; no link when empty.
-   */
-  @property({ type: String, attribute: 'examples-docs-url' }) examplesDocsUrl = '';
   @state() private _eatAnnotationKeys: string[] = [];
   /** Full annotation key list (includes synthesized `__eat_confidence` keys) for the query-filter column picker. */
   @state() private _filterableAnnotations: string[] = [];
@@ -123,8 +103,6 @@ export class ProtspaceControlBar extends LitElement {
   @property({ type: Boolean, attribute: 'auto-sync' })
   autoSync: boolean = true;
 
-  @state() private showExportMenu: boolean = false;
-  @state() private showImportMenu: boolean = false;
   @state() private showFilterMenu: boolean = false;
   @state() private showProjectionMenu: boolean = false;
   @state() private showDensityMenu: boolean = false;
@@ -141,9 +119,6 @@ export class ProtspaceControlBar extends LitElement {
   @state() private _currentData: ProtspaceData | undefined;
   @state() private projectionHighlightIndex: number = -1;
 
-  // Export configuration state
-  @state() private exportFormat: 'png' | 'pdf' | 'ids' | 'parquet' = EXPORT_DEFAULTS.FORMAT;
-  @state() private exportIncludeLegendSettings: boolean = true;
   private _scatterplotElement: ScatterplotElementLike | null = null;
   /**
    * The one pending auto-sync timer — a scatter plot lookup retry or the initial
@@ -183,8 +158,6 @@ export class ProtspaceControlBar extends LitElement {
   private _onAnnotationOpened = () => {
     this.showProjectionMenu = false;
     this.showFilterMenu = false;
-    this.showExportMenu = false;
-    this.showImportMenu = false;
     this.showDensityMenu = false;
     // Close search when annotation opens
     this.shadowRoot
@@ -194,8 +167,6 @@ export class ProtspaceControlBar extends LitElement {
   private _onSearchOpened = () => {
     this.showProjectionMenu = false;
     this.showFilterMenu = false;
-    this.showExportMenu = false;
-    this.showImportMenu = false;
     this.showDensityMenu = false;
     // Close annotation when search opens
     this.shadowRoot
@@ -208,11 +179,9 @@ export class ProtspaceControlBar extends LitElement {
   /**
    * Close all dropdowns except the specified one
    */
-  private closeOtherDropdowns(except: 'projection' | 'filter' | 'export' | 'import' | 'density') {
+  private closeOtherDropdowns(except: 'projection' | 'filter' | 'density') {
     if (except !== 'projection') this.showProjectionMenu = false;
     if (except !== 'filter') this.showFilterMenu = false;
-    if (except !== 'export') this.showExportMenu = false;
-    if (except !== 'import') this.showImportMenu = false;
     if (except !== 'density') this.showDensityMenu = false;
 
     // Close annotation dropdown via event
@@ -587,99 +556,8 @@ export class ProtspaceControlBar extends LitElement {
     }
   }
 
-  private handleExport() {
-    const customEvent = new CustomEvent('export', {
-      detail: {
-        type: this.exportFormat,
-        imageWidth: EXPORT_DEFAULTS.IMAGE_WIDTH,
-        imageHeight: EXPORT_DEFAULTS.IMAGE_HEIGHT,
-        legendWidthPercent: EXPORT_DEFAULTS.LEGEND_WIDTH_PERCENT,
-        legendFontSizePx: EXPORT_DEFAULTS.LEGEND_FONT_SIZE_PX,
-        includeLegend: EXPORT_DEFAULTS.INCLUDE_LEGEND,
-        includeLegendSettings: this.exportIncludeLegendSettings,
-      },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(customEvent);
-    this.showExportMenu = false;
-  }
-
-  private handleOpenPublishEditor() {
-    const customEvent = new CustomEvent('open-publish-editor', {
-      detail: {},
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(customEvent);
-    this.showExportMenu = false;
-  }
-
-  private toggleExportMenu(event?: Event) {
-    event?.stopPropagation();
-    this.showExportMenu = !this.showExportMenu;
-    if (this.showExportMenu) {
-      this.closeOtherDropdowns('export');
-      this.updateComplete.then(() => {
-        const firstFormatBtn = this.shadowRoot?.querySelector(
-          '.export-format-options button',
-        ) as HTMLButtonElement | null;
-        firstFormatBtn?.focus();
-      });
-    }
-  }
-
-  private toggleImportMenu(event?: Event) {
-    event?.stopPropagation();
-    this.showImportMenu = !this.showImportMenu;
-    if (this.showImportMenu) {
-      this.closeOtherDropdowns('import');
-      this.updateComplete.then(() => {
-        const firstImportAction = this.shadowRoot?.querySelector(
-          '.import-menu button',
-        ) as HTMLButtonElement | null;
-        firstImportAction?.focus();
-      });
-    }
-  }
-
-  private handleExportKeydown(event: KeyboardEvent) {
-    if (!this.showExportMenu) {
-      // Handle trigger button keys
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        this.toggleExportMenu();
-      }
-      return;
-    }
-
-    // Only handle Escape to close (native form navigation handles the rest)
-    if (event.key === 'Escape') {
-      handleDropdownEscape(event, () => {
-        this.showExportMenu = false;
-      });
-    }
-  }
-
-  private handleImportKeydown(event: KeyboardEvent) {
-    if (!this.showImportMenu) {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        this.toggleImportMenu();
-      }
-      return;
-    }
-
-    if (event.key === 'Escape') {
-      handleDropdownEscape(event, () => {
-        this.showImportMenu = false;
-      });
-    }
-  }
-
-  public clearForNewDataset(_datasetHash: string, _clearPersistedState: boolean = true): void {
+  public clearForNewDataset(): void {
     this._cancelPendingCommits();
-    this.exportFormat = EXPORT_DEFAULTS.FORMAT;
     // A new dataset has different protein ids, so any active filter is stale. Clear
     // the badge/query here (the canonical per-dataset reset hook); the scatter plot's
     // filter channel is reset in parallel by applyPlotState.
@@ -688,49 +566,7 @@ export class ProtspaceControlBar extends LitElement {
     this._lastMirroredState.clear();
   }
 
-  private openFileDialog() {
-    this.showImportMenu = false;
-    const loader = document.querySelector('protspace-data-loader') as DataLoaderElement;
-    const fileInput = loader?.shadowRoot?.querySelector(
-      'input[type="file"]',
-    ) as HTMLInputElement | null;
-    fileInput?.click();
-  }
-
-  private handleLoadExampleDataset(id: string) {
-    this.showImportMenu = false;
-    this.dispatchEvent(
-      new CustomEvent('load-example-dataset', {
-        detail: { id },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  /**
-   * An example's "ⓘ": its description, insight and docs link. A sibling of the item's button, never
-   * inside it: interactive content inside a `<button>` is invalid, and a click on it would load
-   * the example.
-   */
-  private renderExampleInfo(example: ExampleDatasetSummary | undefined) {
-    if (!example) return '';
-    return html`<protspace-info-popover
-      class="import-example-info"
-      placement="side"
-      data-example-info=${example.id}
-      .description=${example.description}
-      .detail=${example.insight ?? ''}
-      docs-url=${example.docsUrl ?? ''}
-      label=${example.label}
-    ></protspace-info-popover>`;
-  }
-
   render() {
-    const currentExample =
-      this.currentExampleId === null
-        ? undefined
-        : this.exampleDatasets.find((example) => example.id === this.currentExampleId);
     // `density-layer` is a plain attribute: show an unknown token as-is rather than throw.
     const densityLabel = DENSITY_MODE_LABELS[this.densityLayer]?.label ?? this.densityLayer;
     return html`
@@ -1025,7 +861,7 @@ export class ProtspaceControlBar extends LitElement {
           </div>
 
           <!-- Filter / Export / Import group -->
-          <div class="data-actions-group" data-driver-id="data-actions">
+          <div class="data-actions-group">
             <div class="filter-container right-controls-filter">
               <button
                 class="dropdown-trigger ${this.showFilterMenu ? 'open' : ''} ${this.filterActive
@@ -1048,262 +884,6 @@ export class ProtspaceControlBar extends LitElement {
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
                     </svg>`}
               </button>
-            </div>
-
-            <!-- Export dropdown -->
-            <div class="export-container right-controls-export">
-              <button
-                class="dropdown-trigger ${this.showExportMenu ? 'open' : ''}"
-                @click=${this.toggleExportMenu}
-                @keydown=${this.handleExportKeydown}
-                title="${this.hasFileSettings
-                  ? 'Export Options (file contains custom settings)'
-                  : 'Export Options'}"
-              >
-                <svg class="icon" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-                Export
-                <svg class="chevron-down" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              ${this.showExportMenu
-                ? html`
-                    <div class="export-menu" @keydown=${this.handleExportKeydown}>
-                      <div class="export-menu-header">
-                        <span>Export Options</span>
-                      </div>
-
-                      <div class="export-menu-content">
-                        <!-- Format Selection -->
-                        <div class="export-option-group">
-                          <label class="export-option-label">Format</label>
-                          <div class="export-format-options">
-                            <button
-                              class="btn-secondary btn-compact ${this.exportFormat === 'png'
-                                ? 'active'
-                                : ''}"
-                              @click=${() => {
-                                this.exportFormat = 'png';
-                              }}
-                              title="Export as PNG image"
-                            >
-                              PNG
-                            </button>
-                            <button
-                              class="btn-secondary btn-compact ${this.exportFormat === 'pdf'
-                                ? 'active'
-                                : ''}"
-                              @click=${() => {
-                                this.exportFormat = 'pdf';
-                              }}
-                              title="Export as PDF document"
-                            >
-                              PDF
-                            </button>
-                            <button
-                              class="btn-secondary btn-compact ${this.exportFormat === 'ids'
-                                ? 'active'
-                                : ''}"
-                              @click=${() => {
-                                this.exportFormat = 'ids';
-                              }}
-                              title="Export protein IDs list"
-                            >
-                              IDs
-                            </button>
-                            <button
-                              class="btn-secondary btn-compact ${this.exportFormat === 'parquet'
-                                ? 'active'
-                                : ''}"
-                              @click=${() => {
-                                this.exportFormat = 'parquet';
-                              }}
-                              title="Export as Parquet bundle"
-                            >
-                              Parquet
-                            </button>
-                          </div>
-                        </div>
-
-                        <!-- Parquet Settings -->
-                        ${this.exportFormat === 'parquet'
-                          ? html`
-                              <div class="export-option-group">
-                                <label class="export-checkbox-label">
-                                  <input
-                                    type="checkbox"
-                                    class="export-checkbox"
-                                    .checked=${this.exportIncludeLegendSettings}
-                                    @change=${(e: Event) => {
-                                      this.exportIncludeLegendSettings = (
-                                        e.target as HTMLInputElement
-                                      ).checked;
-                                    }}
-                                  />
-                                  <span>Include legend settings</span>
-                                </label>
-                                <div class="export-parquet-help">
-                                  Legend customizations can be saved in the file and restored when
-                                  loading.
-                                </div>
-                              </div>
-                            `
-                          : ''}
-
-                        <!-- Image export actions (PNG/PDF) or direct export (IDs/Parquet) -->
-                        ${this.exportFormat === 'png' || this.exportFormat === 'pdf'
-                          ? html`
-                              <div class="export-image-actions">
-                                <button
-                                  class="btn-primary"
-                                  @click=${this.handleOpenPublishEditor}
-                                  title="Open full-screen figure editor with live preview, journal presets, and annotation tools"
-                                >
-                                  <svg class="icon" viewBox="0 0 24 24">
-                                    <path
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                    />
-                                  </svg>
-                                  Figure Editor
-                                </button>
-                                <button class="btn-secondary" @click=${this.handleExport}>
-                                  <svg class="icon" viewBox="0 0 24 24">
-                                    <path
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                                    />
-                                  </svg>
-                                  Quick Export ${this.exportFormat.toUpperCase()}
-                                </button>
-                              </div>
-                              <div class="export-image-hint">
-                                Figure Editor offers live preview, journal presets, annotations, and
-                                more.
-                              </div>
-                            `
-                          : html`
-                              <button
-                                class="btn-primary export-action-btn"
-                                @click=${this.handleExport}
-                              >
-                                <svg class="icon" viewBox="0 0 24 24">
-                                  <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                                  />
-                                </svg>
-                                Export ${this.exportFormat.toUpperCase()}
-                              </button>
-                            `}
-                      </div>
-                    </div>
-                  `
-                : ''}
-            </div>
-            <div class="export-container right-controls-data" data-driver-id="import">
-              <button
-                class="dropdown-trigger ${this.showImportMenu ? 'open' : ''}"
-                @click=${this.toggleImportMenu}
-                @keydown=${this.handleImportKeydown}
-                title="Import Data"
-                aria-haspopup="menu"
-                aria-expanded=${this.showImportMenu}
-              >
-                <svg class="icon" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L9 8m3-4v12"
-                  />
-                </svg>
-                <span class="dropdown-trigger-text">Import</span>
-                <svg class="chevron-down" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              ${this.showImportMenu
-                ? html`
-                    <div class="dropdown-menu align-right import-menu" role="menu">
-                      <div class="import-current-dataset">
-                        <span class="import-current-dataset-label">Current dataset</span>
-                        <div class="import-current-dataset-row">
-                          <span
-                            class="import-current-dataset-name"
-                            title=${this.currentDatasetName || 'No dataset loaded'}
-                          >
-                            ${this.currentDatasetName || 'No dataset loaded'}
-                          </span>
-                          ${this.renderExampleInfo(currentExample)}
-                        </div>
-                      </div>
-                      <div class="import-actions">
-                        <button
-                          class="btn-primary"
-                          @click=${this.openFileDialog}
-                          data-driver-id="import-own-dataset"
-                        >
-                          Load your dataset
-                        </button>
-                      </div>
-                      ${this.exampleDatasets.length > 0
-                        ? html`
-                            <div class="import-examples">
-                              <div class="import-examples-header">
-                                <span class="import-examples-label">Examples</span>
-                                ${this.examplesDocsUrl
-                                  ? html`<a
-                                      class="import-examples-docs"
-                                      href=${this.examplesDocsUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      >About these examples ↗</a
-                                    >`
-                                  : ''}
-                              </div>
-                              <p class="import-examples-hint">
-                                Examples open in a curated view; your changes aren't kept.
-                              </p>
-                              <div class="import-actions">
-                                ${this.exampleDatasets.map(
-                                  (example) => html`
-                                    <div class="import-example-row">
-                                      <button
-                                        class="btn-secondary import-example-button"
-                                        @click=${() => this.handleLoadExampleDataset(example.id)}
-                                        data-driver-id="import-example-dataset"
-                                        data-example-id=${example.id}
-                                        ?disabled=${example.id === this.currentExampleId}
-                                      >
-                                        <span class="import-example-label">${example.label}</span>
-                                        ${example.large
-                                          ? html`<span class="menu-badge import-example-badge"
-                                              >Large</span
-                                            >`
-                                          : ''}
-                                      </button>
-                                      ${this.renderExampleInfo(example)}
-                                    </div>
-                                  `,
-                                )}
-                              </div>
-                            </div>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
             </div>
           </div>
         </div>
@@ -1425,8 +1005,6 @@ export class ProtspaceControlBar extends LitElement {
       if (
         isAnyDropdownOpen({
           projection: this.showProjectionMenu,
-          export: this.showExportMenu,
-          import: this.showImportMenu,
           density: this.showDensityMenu,
         })
       ) {
@@ -1455,8 +1033,6 @@ export class ProtspaceControlBar extends LitElement {
     const dropdownElements = [
       this.shadowRoot?.querySelector('.dropdown-menu.align-left'), // Projection
       this.shadowRoot?.querySelector('.filter-menu'), // Filter
-      this.shadowRoot?.querySelector('.export-menu'), // Export
-      this.shadowRoot?.querySelector('.import-menu'), // Import
       this.shadowRoot?.querySelector('.density-container'), // Contours
       // Get annotation-select element
       this.shadowRoot?.querySelector('protspace-annotation-select'),
@@ -1473,8 +1049,6 @@ export class ProtspaceControlBar extends LitElement {
     // Close ALL dropdowns if click is outside all dropdown menus
     if (!clickInsideDropdown) {
       // Close control-bar dropdowns
-      this.showExportMenu = false;
-      this.showImportMenu = false;
       this.showFilterMenu = false;
       this.showProjectionMenu = false;
       this.projectionHighlightIndex = -1;

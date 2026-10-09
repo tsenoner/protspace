@@ -106,6 +106,14 @@ export class DataLoader extends LitElement {
     `;
   }
 
+  /**
+   * Opens the browser's file picker on the loader's own file input. Browsers open it only inside a
+   * user gesture, so call it from the click or key press that asked for it.
+   */
+  openFilePicker(): void {
+    this.renderRoot.querySelector<HTMLInputElement>('input[type="file"]')?.click();
+  }
+
   private handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];

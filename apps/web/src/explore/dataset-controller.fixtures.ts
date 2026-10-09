@@ -50,7 +50,13 @@ export function buildControllerOptions(
 ) {
   const { loadQueue, ...rest } = overrides;
   const options = {
-    controlBar: { clearForNewDataset: vi.fn(), hasFileSettings: false },
+    controls: {
+      resetForNewDataset: vi.fn(),
+      setHasFileSettings: vi.fn(),
+      showInitialView: vi.fn(),
+      setRendering: vi.fn(),
+      clearStructure: vi.fn(),
+    },
     dataLoader: {},
     getIsDisposed: () => false,
     interactionController: {},
@@ -72,7 +78,6 @@ export function buildControllerOptions(
     plotElement: {},
     setCurrentExampleId: vi.fn(),
     setCurrentDatasetName: vi.fn(),
-    structureViewer: {},
     viewController: {
       subscribeToViewChanges: vi.fn(() => () => {}),
       resolveLatestView: vi.fn(),

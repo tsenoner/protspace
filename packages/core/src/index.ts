@@ -3,14 +3,16 @@ export * from './components/scatter-plot/scatter-plot';
 export * from './components/legend/legend';
 export * from './components/structure-viewer/structure-viewer';
 export { ProtspaceControlBar } from './components/control-bar/control-bar'; // Explicit export for value access
-export { EXPORT_DEFAULTS } from './components/control-bar/control-bar-helpers';
+export { ProtspaceImportMenu } from './components/import-menu/import-menu';
+export { ProtspaceExportMenu, type ExportEventDetail } from './components/export-menu/export-menu';
+export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';
 export * from './components/data-loader/data-loader';
 export * from './components/kit';
 export type {
   SelectionDisabledNotificationContext,
   SelectionDisabledNotificationDetail,
 } from './components/control-bar/control-bar.events';
-export type { ExampleDatasetSummary } from './components/control-bar/types';
+export type { ExampleDatasetSummary } from './components/import-menu/types';
 export type { DataLoadedEventDetail } from './components/data-loader/data-loader';
 export type {
   DataErrorContext,

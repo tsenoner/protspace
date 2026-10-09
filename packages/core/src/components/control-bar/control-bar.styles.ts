@@ -22,7 +22,6 @@ import {
 } from '../../styles/mixins';
 import { layoutStyles } from './styles/layout';
 import { queryBuilderStyles } from './query-builder.styles';
-import { exportStyles } from './styles/export';
 import { responsiveStyles } from './styles/responsive';
 
 /**
@@ -46,6 +45,5 @@ export const controlBarStyles = [
   menuBadgeMixin,
   segmentedControlMixin,
   layoutStyles,
-  exportStyles,
   responsiveStyles,
 ];

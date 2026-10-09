@@ -611,7 +611,7 @@ test.describe('Unified app notifications', () => {
   test('successful parquet exports show the unified success toast', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
 
-    await dispatchCustomEvent(page, '#myControlBar', 'export', {
+    await dispatchCustomEvent(page, '#myExportMenu', 'export', {
       type: 'parquet',
       includeLegendSettings: false,
       includeExportOptions: false,
@@ -640,7 +640,7 @@ test.describe('Unified app notifications', () => {
       plot.getCurrentData = () => null;
     });
 
-    await dispatchCustomEvent(page, '#myControlBar', 'export', {
+    await dispatchCustomEvent(page, '#myExportMenu', 'export', {
       type: 'parquet',
       includeLegendSettings: false,
       includeExportOptions: false,
