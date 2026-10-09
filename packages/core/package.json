@@ -44,6 +44,7 @@
     "hyparquet": "^1.31.1",
     "hysnappy": "^1.1.1",
     "lit": "^3.3.3",
+    "lucide": "^0.462.0",
     "sortablejs": "^1.15.7"
   },
   "devDependencies": {

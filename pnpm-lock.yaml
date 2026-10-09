@@ -164,6 +164,9 @@ importers:
       lit:
         specifier: ^3.3.3
         version: 3.3.3
+      lucide:
+        specifier: ^0.462.0
+        version: 0.462.0
       sortablejs:
         specifier: ^1.15.7
         version: 1.15.7
@@ -3173,6 +3176,9 @@ packages:
     resolution: {integrity: sha512-NTL7EbAao9IFtuSivSZgrAh4fZd09Lr+6MTkqIxuHaH2nnYiYIzXPo06cOxHg9wKLdj6LL8TByG4qpePqwgx/g==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0-rc
+
+  lucide@0.462.0:
+    resolution: {integrity: sha512-mu9dpNXnonG2e2jO3jS8PCXwT0yNo8qyEOtEfcTIfbyRYgDa6Br81lP0eJRCcXUEvaGekw2h1diAvgL+l1M+GA==}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -7030,6 +7036,8 @@ snapshots:
   lucide-react@0.462.0(react@19.2.7):
     dependencies:
       react: 19.2.7
+
+  lucide@0.462.0: {}
 
   magic-string@0.30.21:
     dependencies:

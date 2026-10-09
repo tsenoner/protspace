@@ -10,6 +10,7 @@ export * from './components/structure-viewer/structure-viewer';
 export { ProtspaceControlBar } from './components/control-bar/control-bar'; // Explicit export for value access
 export { EXPORT_DEFAULTS } from './components/control-bar/control-bar-helpers';
 export * from './components/data-loader/data-loader';
+export * from './components/kit';
 export type {
   SelectionDisabledNotificationContext,
   SelectionDisabledNotificationDetail,
