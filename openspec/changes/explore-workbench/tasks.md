@@ -30,10 +30,10 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 2.6 Filter in a dialog with its own controller
 - [x] 2.7 Projection and Contours pickers
 - [x] 2.8 Pickers in the view bar with their controller; Color by and the projection details move
-- [ ] 2.9 Plot tools, the selection controller and search in the app bar
-- [ ] 2.10 Control bar removed; the view bar never wraps (shorter labels, then a More menu)
-- [ ] 2.11 Structure viewer docked under the legend, with a divider
-- [ ] 2.12 Sidebar rail, collapse and edge resize, one plot resize per change, persistence;
+- [x] 2.9 Plot tools, the selection controller and search in the app bar
+- [x] 2.10 Control bar removed; the view bar never wraps (shorter labels, then a More menu)
+- [x] 2.11 Structure viewer docked under the legend, with a divider
+- [x] 2.12 Sidebar rail, collapse and edge resize, one plot resize per change, persistence;
       panel-toggle perf scenario and budget; perf runs pin layout and theme
 - [ ] 2.13 Floating structure; "View structure" in the tooltip
 
