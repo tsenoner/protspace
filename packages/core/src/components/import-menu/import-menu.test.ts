@@ -223,6 +223,24 @@ describe('protspace-import-menu', () => {
     expect(panel()!.getAttribute('aria-label')).toBe('Import');
   });
 
+  it('Tab out of the panel closes it; focus moving inside keeps it open', async () => {
+    await open();
+    const own = root().querySelector<HTMLButtonElement>('[data-driver-id="import-own-dataset"]')!;
+    const focusOutTo = (to: Element | null) =>
+      own.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, composed: true, relatedTarget: to }),
+      );
+    focusOutTo(example('5K'));
+    focusOutTo(trigger());
+    focusOutTo(null);
+    await menu.updateComplete;
+    expect(panel()).not.toBeNull();
+
+    focusOutTo(document.body.appendChild(document.createElement('button')));
+    await menu.updateComplete;
+    expect(panel()).toBeNull();
+  });
+
   it('the examples docs link opens in a new tab', async () => {
     await open();
     expect(root().querySelector('.import-examples-docs')).toBeNull();

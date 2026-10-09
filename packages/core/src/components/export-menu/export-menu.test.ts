@@ -142,6 +142,35 @@ describe('protspace-export-menu', () => {
   });
 });
 
+function focusOutTo(from: Element, to: Element | null): void {
+  from.dispatchEvent(
+    new FocusEvent('focusout', { bubbles: true, composed: true, relatedTarget: to }),
+  );
+}
+
+describe('protspace-export-menu focus', () => {
+  it('Tab out of the panel closes it; focus moving inside keeps it open', async () => {
+    await open();
+    focusOutTo(button('PNG')!, button('PDF')!);
+    focusOutTo(button('PNG')!, trigger());
+    await menu.updateComplete;
+    expect(panel()).not.toBeNull();
+
+    const next = document.body.appendChild(document.createElement('button'));
+    focusOutTo(button('Quick Export PNG')!, next);
+    await menu.updateComplete;
+    expect(panel()).toBeNull();
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('a focus loss with no new target keeps the panel open', async () => {
+    await open();
+    focusOutTo(button('PNG')!, null);
+    await menu.updateComplete;
+    expect(panel()).not.toBeNull();
+  });
+});
+
 describe('EXPORT_DEFAULTS', () => {
   it('has correct default values', () => {
     expect(EXPORT_DEFAULTS.FORMAT).toBe('png');

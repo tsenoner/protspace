@@ -31,8 +31,14 @@ export class ProtspaceImportMenu extends LitElement {
   @query('.trigger') private trigger!: HTMLButtonElement;
   private releaseLayer?: () => void;
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.addEventListener('focusout', this.onFocusOut);
+  }
+
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.removeEventListener('focusout', this.onFocusOut);
     this.releaseLayer?.();
     this.releaseLayer = undefined;
     this.open = false;
@@ -134,6 +140,16 @@ export class ProtspaceImportMenu extends LitElement {
       label=${example.label}
     ></protspace-info-popover>`;
   }
+
+  /**
+   * Tab out of the panel closes it, as ps-menu does. Focus moving inside the shadow root reaches
+   * this host listener retargeted to the host itself; a null target (a press on the panel's
+   * background, or the window losing focus) leaves it open.
+   */
+  private onFocusOut = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (this.open && next && !flatContains(this, next)) this.close();
+  };
 
   private toggle = () => {
     if (this.open) this.close();
