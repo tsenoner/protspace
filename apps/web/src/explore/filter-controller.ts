@@ -56,6 +56,16 @@ export interface FilterController {
  * column (#6b, #380). Both directions compare against the last state recorded for that column, so
  * they cannot ping-pong, and a change on one base is never measured against another's.
  */
+/** Leaf conditions that constrain something: a group counts its own, an empty row counts 0. */
+function countConfigured(items: FilterQuery): number {
+  let count = 0;
+  for (const item of items) {
+    if ('conditions' in item) count += countConfigured(item.conditions);
+    else if (hasConfiguredCondition([item])) count += 1;
+  }
+  return count;
+}
+
 export function createFilterController({
   plotElement,
   legendElement,
@@ -65,6 +75,8 @@ export function createFilterController({
 }: FilterControllerOptions): FilterController {
   let query: FilterQuery = [];
   let filterActive = false;
+  /** The configured conditions of the query last applied; the draft in the dialog may differ. */
+  let appliedCount = 0;
   let selectedAnnotation = '';
   /** The materialized snapshot the builder evaluates; refreshed on every plot data-change. */
   let snapshot: VisualizationData | undefined;
@@ -77,7 +89,7 @@ export function createFilterController({
     Object.keys(data?.annotations ?? {}).filter((key) => !TOOLTIP_ONLY_ANNOTATIONS.has(key));
 
   const publish = () =>
-    setWorkbenchStatus({ appliedFilterConditions: filterActive ? query.length : 0 });
+    setWorkbenchStatus({ appliedFilterConditions: filterActive ? appliedCount : 0 });
 
   /**
    * The builder re-counts the whole dataset whenever its data or query changes, so it gets them
@@ -126,6 +138,7 @@ export function createFilterController({
     plotElement.filteredProteinIds = matchedIds;
     plotElement.filtersActive = true;
     filterActive = true;
+    appliedCount = countConfigured(query);
     publish();
   };
 
@@ -264,6 +277,8 @@ export function createFilterController({
       queryBuilder.removeEventListener('query-close', onQueryClose);
       root.removeEventListener('annotation-change', onAnnotationChange);
       plotElement.removeEventListener('data-change', onDataChange);
+      // The status store outlives this page: no stale count after leaving /explore.
+      setWorkbenchStatus({ appliedFilterConditions: 0 });
     },
   };
 }

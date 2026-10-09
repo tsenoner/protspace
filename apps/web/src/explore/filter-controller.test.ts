@@ -19,9 +19,10 @@ import type {
 import { NA_VALUE, NEUTRAL_BOUND, type VisualizationData } from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findConditionsForAnnotation } from '../../../../packages/core/src/components/control-bar/query-annotation-conditions';
-import type {
-  FilterQuery,
-  NumericCondition,
+import {
+  createCondition,
+  type FilterQuery,
+  type NumericCondition,
 } from '../../../../packages/core/src/components/control-bar/query-types';
 import { createFilterController, type FilterController } from './filter-controller';
 import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
@@ -150,6 +151,13 @@ const editQuery = (queryBuilder: EventTarget, query: FilterQuery) =>
 /** The legend slider's scalar form: "hide below `x`". */
 const threshold = (controller: FilterController, base: string, x: number) =>
   controller.setEatReliability(base, { mode: 'atLeast', min: x, max: NEUTRAL_BOUND.max });
+/** A categorical condition with a value picked, so it constrains the query. */
+const configured = (id: string): FilterQuery[number] => ({
+  id,
+  kind: 'categorical',
+  annotation: 'family',
+  values: ['A'],
+});
 const numericCount = (query: FilterQuery) =>
   query.filter((item) => 'kind' in item && item.kind === 'numeric').length;
 /** The column's live reliability condition, which is always the first (and only) one. */
@@ -191,10 +199,45 @@ describe('filter controller: the Filter dialog', () => {
   });
 
   it('apply closes the dialog and reports the condition count', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, range(30));
 
     expect(m.dialog.open).toBe(false);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+  });
+
+  it('the count is the applied filter’s: a row added after Apply does not change it', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(30));
+    m.controller.open();
+
+    editQuery(m.queryBuilder, [configured('a'), createCondition()]);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+
+    editQuery(m.queryBuilder, [configured('a'), configured('b')]);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+  });
+
+  it('counts configured leaf conditions: empty rows and groups add nothing, a group adds its conditions', () => {
+    editQuery(m.queryBuilder, [
+      configured('a'),
+      createCondition(),
+      { id: 'g1', conditions: [configured('b'), configured('c'), createCondition()] },
+      { id: 'g2', conditions: [createCondition()] },
+    ]);
+    apply(m.queryBuilder, range(30));
+
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(3);
+  });
+
+  it('dispose clears the applied count', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(30));
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+
+    m.controller.dispose();
+
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
   });
 
   it('is idempotent: re-applying the same query yields the same matches', () => {

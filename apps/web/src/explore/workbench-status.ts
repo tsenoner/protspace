@@ -7,7 +7,7 @@ export interface WorkbenchStatus {
   datasetName: string | null;
   /** Its protein count; null before a load. */
   proteinCount: number | null;
-  /** Top-level conditions of the applied filter; 0 while no filter is applied. */
+  /** Configured leaf conditions of the applied filter; 0 while no filter is applied. */
   appliedFilterConditions: number;
 }
 
