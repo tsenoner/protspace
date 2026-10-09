@@ -263,6 +263,13 @@ pnpm perf:scale    # Timings and memory over the number of points
 pnpm perf:webgl    # Cross-browser WebGL render passes
 ```
 
+`pnpm test` and `pnpm test:ci` also run core's `*.browser.test.ts` files in headless Chromium.
+Install it once:
+
+```bash
+pnpm exec playwright install --only-shell chromium
+```
+
 The perf commands read their datasets from `perf/datasets/`, so run `pnpm perf:fetch` first. See
 [perf/README.md](perf/README.md) for each command and its flags.
 
