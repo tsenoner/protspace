@@ -10,7 +10,8 @@ import { css } from 'lit';
  *
  * Light values sit on :root. Dark values apply under [data-theme='dark'], and under
  * [data-theme='system'] when the OS prefers dark. Until the theme switch lands nothing sets
- * data-theme, so pages stay light.
+ * data-theme, so pages stay light. All of it sits in the `ps-theme` cascade layer, so any
+ * unlayered page rule, even `:root { --ps-accent: … }`, overrides a token in both themes.
  */
 
 const lightRoles = css`
@@ -105,19 +106,21 @@ const sizes = css`
 `;
 
 export const theme = css`
-  :root {
-    color-scheme: light;
-    ${lightRoles}
-    ${sizes}
-  }
-  :root[data-theme='dark'] {
-    color-scheme: dark;
-    ${darkRoles}
-  }
-  @media (prefers-color-scheme: dark) {
-    :root[data-theme='system'] {
+  @layer ps-theme {
+    :root {
+      color-scheme: light;
+      ${lightRoles}
+      ${sizes}
+    }
+    :root[data-theme='dark'] {
       color-scheme: dark;
       ${darkRoles}
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme='system'] {
+        color-scheme: dark;
+        ${darkRoles}
+      }
     }
   }
 `;

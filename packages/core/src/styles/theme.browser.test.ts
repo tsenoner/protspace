@@ -28,4 +28,24 @@ describe('theme tokens in a real cascade', () => {
     expect(token(inner, '--ps-text')).toBe('#f1f5f9');
     host.remove();
   });
+
+  it('lets a plain, unlayered page rule override a token in light and in dark', () => {
+    const style = document.head.appendChild(document.createElement('style'));
+    style.textContent = ':root { --ps-accent: #123456; }';
+    expect(token(root, '--ps-accent')).toBe('#123456');
+    root.dataset.theme = 'dark';
+    expect(token(root, '--ps-accent')).toBe('#123456');
+    style.remove();
+    expect(token(root, '--ps-accent')).toBe('#38bdf8');
+  });
+
+  it('adds the tokens to another document, such as an iframe, with its own sheet', () => {
+    const frame = document.body.appendChild(document.createElement('iframe'));
+    const doc = frame.contentDocument!;
+    expect(() => adoptTheme(doc)).not.toThrow();
+    expect(doc.adoptedStyleSheets).toHaveLength(1);
+    const style = frame.contentWindow!.getComputedStyle(doc.documentElement);
+    expect(style.getPropertyValue('--ps-surface').trim()).toBe('#ffffff');
+    frame.remove();
+  });
 });

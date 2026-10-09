@@ -21,6 +21,15 @@ describe('adoptTheme', () => {
     expect(copies).toBe(1);
     expect(themeTextIn(doc)).toContain('--ps-surface');
   });
+
+  it('records a document only once the sheet is in, so a failed call can be retried', () => {
+    const doc = document.implementation.createHTMLDocument('probe');
+    doc.head.remove();
+    expect(() => adoptTheme(doc)).toThrow();
+    doc.documentElement.prepend(doc.createElement('head'));
+    adoptTheme(doc);
+    expect(themeTextIn(doc)).toContain('--ps-surface');
+  });
 });
 
 describe('theme', () => {
