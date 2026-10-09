@@ -321,7 +321,7 @@ const lightRoles = css`
   --ps-border-strong: #cbd5e1; /* slate-300 */
   --ps-text: #0f172a; /* slate-900 */
   --ps-text-muted: #475569; /* slate-600 */
-  --ps-text-faint: #94a3b8; /* slate-400, for placeholders and captions only */
+  --ps-text-faint: #94a3b8; /* slate-400, 2.6:1 on white: disabled text and decorative icons only */
   --ps-text-on-accent: #ffffff;
   --ps-accent: #007ab5; /* brand cyan #00a3e0 deepened: 4.7:1 under white text */
   --ps-accent-hover: #00699c;
@@ -348,7 +348,7 @@ const darkRoles = css`
   --ps-border-strong: #334155; /* slate-700 */
   --ps-text: #f1f5f9; /* slate-100 */
   --ps-text-muted: #94a3b8; /* slate-400 */
-  --ps-text-faint: #64748b; /* slate-500 */
+  --ps-text-faint: #64748b; /* slate-500, 3.8:1 on the surface: disabled text and decorative icons only */
   --ps-text-on-accent: #04121c;
   --ps-accent: #38bdf8; /* sky-400, 8.3:1 on the dark surface */
   --ps-accent-hover: #7dd3fc; /* sky-300 */
@@ -2201,6 +2201,9 @@ export const menuStyles = [
       color: var(--ps-text);
       font: inherit;
     }
+    .search input::placeholder {
+      color: var(--ps-text-muted);
+    }
     .empty {
       margin: 0;
       padding: var(--ps-space-2) var(--ps-space-3);
@@ -2264,7 +2267,7 @@ export const menuLabelStyles = [
     :host {
       display: block;
       padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1);
-      color: var(--ps-text-faint);
+      color: var(--ps-text-muted);
       font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
       letter-spacing: 0.04em;
@@ -3087,6 +3090,10 @@ export const fieldStyles = [
       border: 1px solid var(--ps-border-strong);
       border-radius: var(--ps-radius);
       background: var(--ps-surface);
+      color: var(--ps-text-muted);
+    }
+    /* Faint reaches only decorative icons; slotted text and typed text stay readable. */
+    ::slotted(svg) {
       color: var(--ps-text-faint);
     }
     .field:focus-within {
@@ -3111,7 +3118,7 @@ export const fieldStyles = [
       font: inherit;
     }
     input::placeholder {
-      color: var(--ps-text-faint);
+      color: var(--ps-text-muted);
     }
     .select {
       padding: 0;
@@ -4018,7 +4025,7 @@ export default function KitGallery() {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mb-8">
-      <h2 className="mb-3 text-ps-sm font-semibold uppercase tracking-wide text-ps-text-faint">
+      <h2 className="mb-3 text-ps-sm font-semibold uppercase tracking-wide text-ps-text-muted">
         {title}
       </h2>
       <div className="flex flex-wrap items-center gap-3">{children}</div>

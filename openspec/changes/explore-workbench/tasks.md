@@ -5,10 +5,10 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 1. Foundation (plan: `plans/phase-1-foundation.md`)
 
-- [ ] 1.1 Real-browser test project for core (Vitest browser mode) and Chromium in the CI unit jobs
-- [ ] 1.2 Theme tokens in `styles/theme.ts`, adopted into the document by core
-- [ ] 1.3 Web app: Inter self-hosted, fixed root font size, Tailwind bridge to the `--ps-*` tokens
-- [ ] 1.4 Icon helper on Lucide
+- [x] 1.1 Real-browser test project for core (Vitest browser mode) and Chromium in the CI unit jobs
+- [x] 1.2 Theme tokens in `styles/theme.ts`, adopted into the document by core
+- [x] 1.3 Web app: Inter self-hosted, fixed root font size, Tailwind bridge to the `--ps-*` tokens
+- [x] 1.4 Icon helper on Lucide
 - [ ] 1.5 Layer stack: one Escape order and outside-press dismissal
 - [ ] 1.6 Kit: positioning helper, `ps-button`, `ps-icon-button`, `ps-tooltip`
 - [ ] 1.7 Kit: `ps-popover`
