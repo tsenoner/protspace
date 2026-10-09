@@ -287,7 +287,7 @@ def test_failed_in_place_conversion_leaves_the_input(tmp_path):
     result = _convert(str(src), "--in-place")
 
     assert result.exit_code != 0
-    assert "disagree on the projection" in result.output
+    assert "disagree on the projection" in plain(result.output)
     assert src.read_bytes() == before
     assert [p.name for p in tmp_path.iterdir()] == ["old.parquetbundle"]
 
@@ -421,7 +421,7 @@ def test_style_reports_a_legacy_input_v3_cannot_hold_as_a_usage_error(tmp_path):
 
     assert result.exit_code == 2, result.output
     assert "cannot style" in result.output
-    assert "disagree on the projection" in result.output
+    assert "disagree on the projection" in plain(result.output)
     assert isinstance(result.exception, SystemExit)
     assert not out.exists()
 
