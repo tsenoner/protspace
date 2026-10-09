@@ -7,6 +7,7 @@ import {
   colorByTrigger,
   dismissTourIfPresent,
   exportMenu,
+  filterButton,
   isolateSelection,
   openExportMenu,
   projectionTrigger,
@@ -343,6 +344,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
   await expect.poll(plotFiltersActive).toBe(false);
+  await expect(filterButton(page)).not.toHaveClass(/filter-active/);
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // Raising the threshold drives the shared `EAT_confidence >= x or N/A` filter, which
@@ -350,6 +352,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await thresholdPercent.fill('99');
   await expect(threshold).toHaveValue('0.99');
   await expect.poll(plotFiltersActive).toBe(true);
+  await expect(filterButton(page)).toHaveClass(/filter-active/);
   await expect.poll(predictedVisibleCount).toBeLessThan(213);
 
   // Dragging back to 0 removes the condition and restores every prediction.
@@ -357,6 +360,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toHaveValue('0');
   await expect(thresholdPercent).toHaveValue('0');
   await expect.poll(plotFiltersActive).toBe(false);
+  await expect(filterButton(page)).not.toHaveClass(/filter-active/);
   await expect.poll(predictedVisibleCount).toBe(213);
 
   // The info popover explains predictions are filtered out while curated stays.
@@ -666,6 +670,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(projectionBox!.x + projectionBox!.width).toBeLessThanOrEqual(colorByBox!.x);
   expect(projectionBox!.x).toBeGreaterThanOrEqual(0);
   expect(colorByBox!.x + colorByBox!.width).toBeLessThanOrEqual(601);
+  expect(await viewBar(page).evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
   await expect(
     viewBar(page).getByRole('slider', { name: 'EAT reliability filter threshold' }),
   ).toHaveCount(0);
@@ -723,6 +728,11 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const exportMarkers = markerProfiles[1];
   const distanceFromWhite = ([red, green, blue]: number[]) =>
     Math.abs(255 - red) + Math.abs(255 - green) + Math.abs(255 - blue);
+  // Measured at a 1280x720 window: predicted nearest neighbour 8.36 px, observed 10.93 px, export
+  // radius 5.36 px, ring offset 4 px. The ring sample that faces the predicted point's nearest
+  // neighbour lands 4.36 px from that neighbour's centre, 1 px inside its marker, so the stricter
+  // `> exportRadius + ringOffset` does not hold for this data. The predicted centre (the hollow
+  // check) is 3 px clear of every neighbour's marker and the observed centre 5.6 px.
   expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
   expect(exportMarkers.observedNearestNeighbor).toBeGreaterThan(8);
   // Predicted interiors are hollow (Task 3: #3+#4) — `captureAtResolution` fills the export
