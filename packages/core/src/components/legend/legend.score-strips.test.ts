@@ -140,7 +140,7 @@ describe('legend score strips', () => {
     document.body.innerHTML = '';
   });
 
-  it('re-syncs the strips to the new projection when the control bar reports a projection change', async () => {
+  it('re-syncs the strips to the new projection when the view bar reports a projection change', async () => {
     const { legend, plot, picker } = await setup();
 
     const before = legend.shadowRoot!.querySelector('protspace-score-strip') as StripElement;

@@ -159,7 +159,7 @@ export class ProtspaceImportMenu extends LitElement {
   private show(): void {
     this.open = true;
     this.releaseLayer = pushLayer({ close: () => this.close(), elements: [this] });
-    // Keyboard users land on the panel's first action, as in the control bar's menu.
+    // Keyboard users land on the panel's first action, as in the other menus.
     void this.updateComplete.then(() =>
       this.renderRoot
         .querySelector<HTMLButtonElement>('.import-menu button:not([disabled])')

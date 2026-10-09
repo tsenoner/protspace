@@ -3,7 +3,7 @@ import type { HostMessageEventDetail } from '../../events';
 
 /**
  * `brush-selection`: a rectangle or lasso selection was committed. The plot dispatches it,
- * and the control bar merges it into the selection.
+ * and the app's selection controller merges it into the selection.
  */
 export interface BrushSelectionDetail {
   /** The selected interactive protein ids, one per selected point, in slot order. */
@@ -18,7 +18,7 @@ export interface BrushSelectionDetail {
   idsUnique?: boolean;
 }
 
-/** `protein-click`: a point was clicked. The control bar and the structure viewer listen. */
+/** `protein-click`: a point was clicked. The selection and interaction controllers listen. */
 export interface ProteinClickDetail {
   proteinId: string;
   /** The bare plot point. */

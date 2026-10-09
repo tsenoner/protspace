@@ -3,7 +3,7 @@ import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
  * The trigger, the panel and the panel's buttons, shared by the Import and Export menus until
- * phase 4.8 rebuilds both on the kit. Token values only; the layout is the control bar's.
+ * phase 4.8 rebuilds both on the kit. Token values only; the app bar does the layout.
  */
 export const dataMenuStyles = [
   kitHost,
@@ -42,7 +42,7 @@ export const dataMenuStyles = [
       color: var(--ps-text-muted);
     }
 
-    /* Over the plot and the sidebar it overlaps (100, as the control bar's dropdowns), under the
+    /* Over the plot and the sidebar it overlaps (100, as the other dropdowns), under the
        loading overlay. Not in the top layer: an example's position: fixed info bubble must not get
        a containing block. */
     .panel {

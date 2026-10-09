@@ -88,7 +88,7 @@ export const publishModalStyles = css`
   }
 
   /* Shared toggle button base — used for tool buttons, preset grid.
-   * Mirrors the control-bar dropdown-trigger / filter-active pattern. */
+   * Mirrors the shared dropdown-trigger pattern (styles/mixins.ts). */
   .publish-toggle-btn {
     display: flex;
     align-items: center;

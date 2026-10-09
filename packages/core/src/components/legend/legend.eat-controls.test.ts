@@ -270,7 +270,7 @@ describe('legend-owned EAT controls', () => {
     expect(
       legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value,
     ).toBe('42');
-    // Reverse direction must stay silent so it can't loop back to the control bar.
+    // Reverse direction must stay silent so it can't loop back to the filter controller.
     expect(listener).not.toHaveBeenCalled();
   });
 
@@ -300,7 +300,7 @@ describe('legend-owned EAT controls', () => {
 
 /**
  * #380 — the legend must be able to express the three filter directions the issue
- * names, not just "hide below". Each mode emits the full state so the control bar
+ * names, not just "hide below". Each mode emits the full state so the filter controller
  * can translate it into one un-negated condition carrying the N/A presence chip,
  * which is what keeps curated points visible.
  */

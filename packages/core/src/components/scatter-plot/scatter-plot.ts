@@ -765,7 +765,7 @@ export class ProtspaceScatterplot extends LitElement {
         this._webglRenderPerf.maybeAutoRunFromUrl();
       }
 
-      // Dispatch data-change event for auto-sync with control bar and other components
+      // Dispatch data-change event for auto-sync with the legend and other listeners
       if (
         (changedProperties.has('data') ||
           changedProperties.has('filteredProteinIds') ||
@@ -2056,7 +2056,7 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Clear isolation state without reprocessing. Use before loading new data.
    * Dispatches `data-isolation-reset` when state actually changed, so listeners
-   * (e.g. the control bar's Reset chip) stay in sync. Pass `{ silent: true }`
+   * (e.g. the plot tools' Reset) stay in sync. Pass `{ silent: true }`
    * when the caller will dispatch its own reset event with a fuller payload.
    */
   clearIsolationState(options?: { silent?: boolean }): void {

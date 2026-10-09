@@ -158,7 +158,7 @@ export class ProtspaceExportMenu extends LitElement {
   private show(): void {
     this.open = true;
     this.releaseLayer = pushLayer({ close: () => this.close(), elements: [this] });
-    // Keyboard users land on the first format, as in the control bar's menu.
+    // Keyboard users land on the first format, as in the other menus.
     void this.updateComplete.then(() =>
       this.renderRoot.querySelector<HTMLButtonElement>('.export-format-options button')?.focus(),
     );

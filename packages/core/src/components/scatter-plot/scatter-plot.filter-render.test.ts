@@ -191,7 +191,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
   it('clearing an active filter via updated() rebuilds _plotData with all proteins', () => {
     const sp = makeScatter();
 
-    // Apply a filter (control-bar query-apply path) and run the lifecycle.
+    // Apply a filter (the filter controller's apply path) and run the lifecycle.
     sp.filteredProteinIds = ['p3', 'p4', 'p5'];
     sp.filtersActive = true;
     sp.updated(
@@ -202,7 +202,7 @@ describe('scatter-plot query-filter clear restores the full plot', () => {
     );
     expect(plotIds(sp._plotData).sort()).toEqual(['p3', 'p4', 'p5']);
 
-    // Reset All (control-bar query-reset path): clear the channel, lifecycle runs.
+    // Reset All (the filter controller's reset path): clear the channel, lifecycle runs.
     sp.filteredProteinIds = [];
     sp.filtersActive = false;
     sp.updated(

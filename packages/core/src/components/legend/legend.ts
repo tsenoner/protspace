@@ -1325,7 +1325,7 @@ export class ProtspaceLegend extends LitElement {
     this._emitEatOverlayChange();
   }
 
-  /** The reliability filter as the control bar models it: a mode plus bounds. */
+  /** The reliability filter as the filter controller models it: a mode plus bounds. */
   public get reliabilityState(): EatReliabilityState {
     return this._reliability;
   }
@@ -1336,7 +1336,7 @@ export class ProtspaceLegend extends LitElement {
    * the bound the mode ignores, ordering a crossed band — lives in the shared
    * `normalizeReliability`; the legend used to restate each of them by hand and had
    * already drifted (a band dragged past itself stayed crossed on screen while the
-   * control bar filtered on the ordered one).
+   * filter applied the ordered one).
    */
   private _setReliability(state: EatReliabilityState): void {
     this._reliability = normalizeReliability(state);
@@ -1344,8 +1344,8 @@ export class ProtspaceLegend extends LitElement {
 
   /**
    * Reverse mirror: set the control's position from the query filter WITHOUT
-   * re-emitting `eat-overlay-change`, so the control-bar->legend direction does not
-   * loop back into the legend->control-bar direction (#6b).
+   * re-emitting `eat-overlay-change`, so the filter-controller->legend direction does not
+   * loop back into the legend->filter-controller direction (#6b).
    *
    * Cancels any pending drag commit first: a discrete update from the query side
    * supersedes an in-flight drag, and leaving the timer armed let a stale late emit

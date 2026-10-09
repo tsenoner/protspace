@@ -85,7 +85,7 @@ function makeMarkedEl(): Plot {
   return el;
 }
 
-/** Select `ids` as the control bar does, and run the update it triggers. */
+/** Select `ids` as the selection controller does, and run the update it triggers. */
 function select(el: Plot, ids: string[]) {
   el.selectedProteinIds = ids;
   el.updated(changed('selectedProteinIds'));
