@@ -1,16 +1,8 @@
 import type { PsMenu } from '@protspace/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DOCS_URL } from '@/config';
 import { ShortcutsDialog } from './ShortcutsDialog';
-
-/**
- * Runs `action` once the menu that dispatched the pick has closed and handed focus back to Help:
- * the shortcuts dialog then returns focus to Help when it closes, and the tour starts over a
- * closed menu.
- */
-function afterMenuCloses(action: () => void): void {
-  window.setTimeout(action, 0);
-}
 
 /**
  * The app bar's help menu (design decisions 1 and 15): the documentation, the keyboard shortcuts
@@ -30,13 +22,13 @@ export function HelpMenu() {
       const { value } = (event as CustomEvent<{ value: string }>).detail;
       // Synchronous, inside the user's click or key press, so the browser allows the new tab.
       if (value === 'docs') window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
-      if (value === 'shortcuts') afterMenuCloses(() => setShortcutsOpen(true));
+      // ps-menu has closed and refocused Help before it dispatches the pick, so the dialog
+      // records Help as the element to return focus to.
+      if (value === 'shortcuts') setShortcutsOpen(true);
       if (value === 'tour') {
-        afterMenuCloses(() => {
-          void import('../tour/product-tour').then(({ startProductTour }) =>
-            startProductTour({ force: true }),
-          );
-        });
+        void import('../tour/product-tour').then(({ startProductTour }) =>
+          startProductTour({ force: true }),
+        );
       }
     };
     element.addEventListener('ps-select', onSelect);
@@ -61,7 +53,11 @@ export function HelpMenu() {
         <ps-menu-item value="shortcuts">Keyboard shortcuts</ps-menu-item>
         <ps-menu-item value="tour">Take the tour</ps-menu-item>
       </ps-menu>
-      <ShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
+      {/* In body, not in the app bar's banner landmark: a modal belongs to no landmark. */}
+      {createPortal(
+        <ShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />,
+        document.body,
+      )}
     </>
   );
 }
