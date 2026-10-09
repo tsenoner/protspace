@@ -15,6 +15,7 @@
 
 import { type Config, driver, type DriveStep, type PopoverDOM, type State } from 'driver.js';
 import { isMacOrIos } from '@protspace/utils';
+import { getLayout, updateLayout } from '../explore/layout-state';
 import './product-tour.css';
 import { waitForElement } from './wait-for-element';
 import { TOUR_STORAGE_KEY } from './storage-key';
@@ -353,5 +354,7 @@ export function startProductTour(options: ProductTourOptions = {}) {
   // user closes the tour early.
   localStorage.setItem(TOUR_STORAGE_KEY, 'true');
 
+  // The legend steps need the sidebar open; its slide ends long before they come.
+  if (!getLayout().sidebarOpen) updateLayout({ sidebarOpen: true });
   driverObj.drive();
 }
