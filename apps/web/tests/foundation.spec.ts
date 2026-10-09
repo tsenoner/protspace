@@ -5,10 +5,9 @@ test.describe('design foundation', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test('explore keeps a 16px root, adopts the tokens and self-hosts Inter', async ({ page }) => {
-    const fontHosts: string[] = [];
+    const fontRequests: string[] = [];
     page.on('request', (request) => {
-      const host = new URL(request.url()).host;
-      if (/fonts\.(googleapis|gstatic)\.com/.test(host)) fontHosts.push(host);
+      if (request.resourceType() === 'font') fontRequests.push(request.url());
     });
     await openExplore(page);
     const result = await page.evaluate(async () => {
@@ -23,6 +22,9 @@ test.describe('design foundation', () => {
     expect(result.rootSize).toBe('16px');
     expect(result.accent).toBe('#007ab5');
     expect(result.interFaces).toBeGreaterThan(0);
-    expect(fontHosts).toEqual([]);
+    // Every font, Inter included, comes from the app's own server, never a font CDN.
+    const origin = new URL(page.url()).origin;
+    expect(fontRequests.length).toBeGreaterThan(0);
+    expect(fontRequests.filter((url) => new URL(url).origin !== origin)).toEqual([]);
   });
 });
