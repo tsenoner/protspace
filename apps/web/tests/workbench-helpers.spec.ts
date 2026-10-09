@@ -100,6 +100,25 @@ test.describe('explore helpers', () => {
     expect((await getViewState(page)).projection).toBe(before.projection);
   });
 
+  test('selectProjection picks by name while search suggestions are open', async ({ page }) => {
+    await openExplore(page);
+    const projections = await plotProjections(page);
+    const before = (await getViewState(page)).projection;
+    const nextIndex = projections.findIndex((projection) => projection !== before);
+    const firstId = await page.evaluate(
+      () =>
+        (document.querySelector('#myPlot') as Element & { data: { protein_ids: string[] } }).data
+          .protein_ids[0],
+    );
+    await searchInput(page).fill(firstId.slice(0, 2));
+    await expect(
+      page.locator('protspace-protein-search').getByRole('option').first(),
+    ).toBeVisible();
+
+    await selectProjection(page, nextIndex);
+    expect((await getViewState(page)).projection).toBe(projections[nextIndex]);
+  });
+
   test("setContours changes the plot's contour mode and the URL", async ({ page }) => {
     await openExplore(page);
     expect(await getContoursMode(page)).toBe('off');

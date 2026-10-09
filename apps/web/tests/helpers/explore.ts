@@ -446,14 +446,27 @@ export async function selectAnnotation(page: Page, annotation: string): Promise<
   await waitForViewState(page, 'selectedAnnotation', annotation, ['#myPlot', 'protspace-legend']);
 }
 
-/** Pick a projection by its position in the menu, or by its label. */
+/**
+ * Pick a projection by its index in the plot's data, or by its label. An index is resolved to its
+ * name first: the search box's suggestions in the same view bar are options too.
+ */
 export async function selectProjection(page: Page, projection: number | string): Promise<void> {
   await waitForExploreInteractionReady(page);
-  await projectionTrigger(page).click();
-  const item =
+  const name =
     typeof projection === 'number'
-      ? viewBar(page).getByRole('option').nth(projection)
-      : viewBar(page).getByRole('option', { name: projection, exact: true });
+      ? await page.evaluate(
+          (index) =>
+            (
+              document.querySelector('#myPlot') as
+                | (Element & { data?: { projections?: Array<{ name: string }> } })
+                | null
+            )?.data?.projections?.[index]?.name ?? '',
+          projection,
+        )
+      : projection;
+  expect(name, `no projection at index ${String(projection)}`).not.toBe('');
+  await projectionTrigger(page).click();
+  const item = viewBar(page).getByRole('option', { name, exact: true });
   await pickFromMenu(page, item, 'projection-change');
   if (typeof projection === 'number') {
     await waitForViewState(page, 'selectedProjectionIndex', projection, ['#myPlot']);
