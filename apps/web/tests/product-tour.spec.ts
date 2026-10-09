@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { appBar, collapseSidebar, waitForExploreDataLoad } from './helpers/explore';
+import { appBar, waitForExploreDataLoad } from './helpers/explore';
+import { collapseSidebar } from './helpers/workbench';
 
 // ---------------------------------------------------------------------------
 // Helpers

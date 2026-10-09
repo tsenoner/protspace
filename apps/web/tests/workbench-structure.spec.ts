@@ -1,16 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { LAYOUT_STORAGE_KEY } from '../src/explore/layout-defaults';
 import { PHOSPHATASE_1587_FIXTURE } from './helpers/fixtures';
+import { importUserFile, openExplore, waitForExploreDataLoad } from './helpers/explore';
 import {
   clickProteinNearPlotCentre,
   dragDivider,
-  importUserFile,
-  openExplore,
   structurePanel,
   stubStructureRequests,
-  waitForExploreDataLoad,
   watchPlotResizes,
-} from './helpers/explore';
+} from './helpers/workbench';
 
 const workbench = (page: Page) => page.locator('.workbench');
 const footer = (page: Page) => structurePanel(page).locator('[data-workbench="structure-empty"]');

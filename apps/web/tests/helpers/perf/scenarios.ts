@@ -4,9 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_LAYOUT } from '../../../src/explore/layout-defaults';
 import {
-  collapseSidebar,
   dismissTourIfPresent,
-  expandSidebar,
   importMenu,
   openImportMenu,
   searchInput,
@@ -14,6 +12,7 @@ import {
   selectProjection,
   waitForExploreDataLoad,
 } from '../explore';
+import { collapseSidebar, expandSidebar } from '../workbench';
 import { exploreStorageState } from '../tour-storage-state';
 import {
   installProbes,

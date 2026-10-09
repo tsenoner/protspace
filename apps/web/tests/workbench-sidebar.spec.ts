@@ -1,24 +1,26 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DEFAULT_LAYOUT, LAYOUT_STORAGE_KEY } from '../src/explore/layout-defaults';
 import {
-  clickProteinNearPlotCentre,
-  collapseSidebar,
-  dragSidebarEdge,
-  expandSidebar,
   exportMenu,
   importMenu,
   openExplore,
   openExportMenu,
   openImportMenu,
+  sidebar,
+  waitForExploreDataLoad,
+} from './helpers/explore';
+import {
+  clickProteinNearPlotCentre,
+  collapseSidebar,
+  dragSidebarEdge,
+  expandSidebar,
   rail,
   readLayout,
   seedLayout,
-  sidebar,
   structurePanel,
   stubStructureRequests,
-  waitForExploreDataLoad,
   watchPlotResizes,
-} from './helpers/explore';
+} from './helpers/workbench';
 
 const workbench = (page: Page) => page.locator('.workbench');
 const edge = (page: Page) => page.getByRole('separator', { name: 'Resize sidebar' });
