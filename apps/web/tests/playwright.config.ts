@@ -366,6 +366,15 @@ export default defineConfig({
       testMatch: /foundation\.spec\.ts/,
     },
     {
+      // The workbench shell and its controls (workbench-*.spec.ts), at the size it is designed for.
+      name: 'workbench',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /(^|[\\/])workbench-[^\\/]*\.spec\.ts$/,
+    },
+    {
       // Development-only page at /dev/kit; the dev server the suite starts serves it.
       name: 'kit-gallery',
       use: devices['Desktop Chrome'],

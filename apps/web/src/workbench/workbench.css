@@ -1,0 +1,215 @@
+/*
+ * The explore workbench (design decision 1). The runtime's elements render once, in a fixed tree;
+ * every layout state is a data attribute or a --wb-* custom property read here. Colours, type,
+ * radii and shadows come from the --ps-* tokens; shell sizes are literals or --wb-* properties.
+ * No transform, filter, contain or container-type sits on an ancestor of the legend or the bars:
+ * their position: fixed popovers would be trapped. The bars get no overflow: hidden and no
+ * z-index; the plot area isolates its own stacking.
+ */
+
+.workbench {
+  --wb-app-bar-height: 48px;
+  --wb-view-bar-min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-tight);
+}
+
+/* Desktop: the window is the workbench, and the page never scrolls. */
+.workbench[data-layout='desktop'] {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── App bar ─────────────────────────────────────────────────────────────── */
+
+[data-workbench='app-bar'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-2);
+  height: var(--wb-app-bar-height);
+  /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
+  padding: 0 var(--ps-space-2) 0 16px;
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+[data-workbench='home'] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: var(--ps-radius);
+}
+
+[data-workbench='home'] img {
+  display: block;
+  width: auto;
+  height: 22px;
+}
+
+.wb-separator {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--ps-border);
+}
+
+[data-workbench='dataset'] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ps-space-1-5);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.wb-dataset-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-dataset-count {
+  flex: none;
+  color: var(--ps-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-workbench='app-bar-center'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-workbench='app-bar-actions'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-1-5);
+}
+
+.wb-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ps-control-md);
+  height: var(--ps-control-md);
+  border-radius: var(--ps-radius);
+  color: var(--ps-text-muted);
+}
+
+.wb-icon-link:hover {
+  background: var(--ps-surface-hover);
+  color: var(--ps-text);
+}
+
+[data-workbench='home']:focus-visible,
+.wb-icon-link:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+/* ── View bar ────────────────────────────────────────────────────────────── */
+
+[data-workbench='view-bar'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-height: var(--wb-view-bar-min-height);
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* The control bar fills the view bar until Tasks 2.5–2.10 split it. */
+#myControlBar {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ── Body: the plot beside the sidebar ───────────────────────────────────── */
+
+.wb-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+[data-workbench='plot'] {
+  position: absolute;
+  inset: 0 var(--wb-sidebar-width) 0 0;
+  isolation: isolate;
+  background: var(--ps-surface);
+}
+
+#myPlot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  isolation: isolate;
+}
+
+[data-workbench='sidebar'] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--wb-sidebar-width);
+  border-left: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* The legend fills the column; the sidebar draws the edges, so the host's own card goes. */
+#myLegend {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The viewer still shows and hides itself, at its own height, until Task 2.11. */
+#myStructureViewer {
+  flex: none;
+  width: auto;
+  border: 0;
+  border-top: 1px solid var(--ps-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ── Narrow fallback below 951 px: the plot, then the sidebar; the page scrolls ── */
+
+.workbench[data-layout='narrow'] .wb-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench[data-layout='narrow'] [data-workbench='plot'] {
+  position: relative;
+  inset: auto;
+  height: 60vh;
+  min-height: 320px;
+}
+
+.workbench[data-layout='narrow'] [data-workbench='sidebar'] {
+  position: static;
+  width: auto;
+  border-top: 1px solid var(--ps-border);
+  border-left: 0;
+}
+
+.workbench[data-layout='narrow'] #myLegend {
+  flex: none;
+  min-height: 320px;
+}

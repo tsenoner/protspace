@@ -34,6 +34,7 @@ import {
 } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
+import { setWorkbenchStatus } from './workbench-status';
 
 function addTrackedEventListener(
   lifecycle: ReturnType<typeof createLifecycle>,
@@ -62,11 +63,19 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
   const setCurrentDatasetName = (name: string) => {
     controlBar.currentDatasetName = name;
+    // The app bar names the dataset on screen and its size.
+    setWorkbenchStatus({
+      datasetName: name,
+      proteinCount: plotElement.data?.protein_ids.length ?? null,
+    });
   };
 
   const setCurrentExampleId = (id: string | null) => {
     controlBar.currentExampleId = id;
   };
+
+  // A remounted page starts from an empty app bar until its own first load names a dataset.
+  lifecycle.addCleanup(() => setWorkbenchStatus({ datasetName: null, proteinCount: null }));
 
   const overlayController = createLoadingOverlayController();
   lifecycle.addCleanup(() => overlayController.dispose());

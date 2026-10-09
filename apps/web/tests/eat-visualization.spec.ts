@@ -514,7 +514,9 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     await page.setViewportSize({ width, height: 844 });
     await plot.scrollIntoViewIfNeeded();
     const responsivePosition = await getProteinScreenPosition(page, 'O88488');
-    await page.mouse.move(responsivePosition.x, responsivePosition.y);
+    // Whole pixels: Chrome truncates the mouse event's coordinates, and at this size O88488 sits
+    // 1.5 px from P0C5E4, so a truncated fractional probe can land nearer the neighbour.
+    await page.mouse.move(Math.round(responsivePosition.x), Math.round(responsivePosition.y));
     await expect(transferredLabels).toHaveCount(4);
     const tooltipBounds = await tooltip.boundingBox();
     expect(tooltipBounds).not.toBeNull();

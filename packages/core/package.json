@@ -15,6 +15,11 @@
       "types": "./dist/components/publish/index.d.ts",
       "import": "./dist/publish.mjs",
       "require": "./dist/publish.js"
+    },
+    "./kit": {
+      "types": "./dist/components/kit/index.d.ts",
+      "import": "./dist/kit.mjs",
+      "require": "./dist/kit.js"
     }
   },
   "files": [

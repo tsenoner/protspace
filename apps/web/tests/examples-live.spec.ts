@@ -107,7 +107,7 @@ test.describe('every example opens on its curated view', () => {
 
       await waitForLegendItems(page, loadTimeout);
       await page
-        .locator('.visualization-container')
+        .locator('[data-workbench="body"]')
         .screenshot({ path: path.join(THUMBNAIL_DIR, `${entry.id}.png`) });
     });
   }

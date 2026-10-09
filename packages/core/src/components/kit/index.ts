@@ -1,4 +1,10 @@
-// Public kit API (design decision 8). Each kit task adds its exports here.
+// Public kit API (design decision 8). Each kit task adds its exports here. Importing the kit, as
+// `@protspace/core` and the `@protspace/core/kit` entry both do, adopts the theme into the
+// document once, so every component reads --ps-* tokens from :root (design decision 5).
+import { adoptTheme } from './adopt-theme';
+
+if (typeof document !== 'undefined') adoptTheme();
+
 export { icon, type IconName, type IconSize } from './icon';
 export { ESCAPE_ORDER, onEscapeFallback, pushLayer, topLayer, type Layer } from './layers';
 export { PsButton, PsIconButton, type ButtonSize, type ButtonVariant } from './button';

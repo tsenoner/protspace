@@ -27,6 +27,10 @@ export default defineConfig({
       entry: {
         core: resolve(__dirname, 'src/index.ts'),
         publish: resolve(__dirname, 'src/components/publish/index.ts'),
+        // The kit alone (tokens and ps-* elements), for a page that paints before the full core
+        // loads: the explore route imports it first. core re-exports it, so one module defines
+        // the elements whichever entry a page imports.
+        kit: resolve(__dirname, 'src/components/kit/index.ts'),
       },
       formats: ['es', 'cjs'],
     },
