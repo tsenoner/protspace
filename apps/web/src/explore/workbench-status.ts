@@ -35,6 +35,27 @@ export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
   for (const listener of [...listeners]) listener();
 }
 
+/**
+ * Publishes the name of the dataset on screen with its protein count. A name can be set before its
+ * load starts (an OPFS restore), while the previous dataset is still on screen: the count is
+ * published only once the plot's data has changed since the last name, so the app bar never pairs
+ * a new name with the old count.
+ */
+export function createDatasetNamePublisher(
+  getData: () => { protein_ids: ArrayLike<unknown> } | null | undefined,
+): (name: string) => void {
+  let namedData = getData() ?? null;
+  return (name) => {
+    const data = getData() ?? null;
+    if (data !== null && data !== namedData) {
+      namedData = data;
+      setWorkbenchStatus({ datasetName: name, proteinCount: data.protein_ids.length });
+    } else if (name !== status.datasetName) {
+      setWorkbenchStatus({ datasetName: name, proteinCount: null });
+    }
+  };
+}
+
 export function resetWorkbenchStatusForTests(): void {
   status = EMPTY;
   listeners.clear();

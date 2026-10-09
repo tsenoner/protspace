@@ -34,7 +34,7 @@ import {
 } from './startup';
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewController } from './view-controller';
-import { setWorkbenchStatus } from './workbench-status';
+import { createDatasetNamePublisher, setWorkbenchStatus } from './workbench-status';
 
 function addTrackedEventListener(
   lifecycle: ReturnType<typeof createLifecycle>,
@@ -61,13 +61,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   controlBar.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
   controlBar.examplesDocsUrl = EXAMPLES_DOCS_URL;
 
+  // The app bar names the dataset on screen and its size.
+  const publishDatasetName = createDatasetNamePublisher(() => plotElement.data);
   const setCurrentDatasetName = (name: string) => {
     controlBar.currentDatasetName = name;
-    // The app bar names the dataset on screen and its size.
-    setWorkbenchStatus({
-      datasetName: name,
-      proteinCount: plotElement.data?.protein_ids.length ?? null,
-    });
+    publishDatasetName(name);
   };
 
   const setCurrentExampleId = (id: string | null) => {
