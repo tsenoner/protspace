@@ -247,7 +247,7 @@ def test_cli_bad_where_column_is_clean_error(tmp_path):
     )
     assert result.exit_code != 0
     assert not isinstance(result.exception, KeyError)
-    assert "nonexistent" in result.output
+    assert "nonexistent" in plain(result.output)
 
 
 def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
@@ -731,5 +731,5 @@ def test_cli_transfer_reports_a_legacy_bundle_v3_cannot_hold_as_a_usage_error(
 
     assert result.exit_code == click.UsageError.exit_code, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "cannot write" in result.output
+    assert "cannot write" in plain(result.output)
     assert not out_path.exists()
