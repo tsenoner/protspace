@@ -704,6 +704,8 @@
 
 .workbench[data-structure='floating'] #myStructureViewer::part(header) {
   cursor: grab;
+  /* A touch drag moves the card instead of panning the page. */
+  touch-action: none;
   user-select: none;
 }
 
@@ -711,8 +713,8 @@
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   background: transparent;

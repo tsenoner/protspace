@@ -99,9 +99,18 @@ export function createStructureController({
   const onTooltipAction = (event: Event) => {
     const { id, proteinId } = (event as CustomEvent<TooltipActionDetail>).detail;
     if (id !== VIEW_STRUCTURE.id) return;
+    // The focused button goes with its tooltip; focus what it opened instead of leaving <body>.
+    const focused =
+      typeof document !== 'undefined' && document.activeElement === event.currentTarget;
     // Wait for the tooltip's protein, then open the sidebar, which loads it.
     request(proteinId);
     updateLayout({ sidebarOpen: true });
+    // A frame on, the opening sidebar has rendered and the section is no longer inert.
+    if (focused) {
+      requestAnimationFrame(() =>
+        viewer.closest<HTMLElement>('[data-workbench="structure"]')?.focus(),
+      );
+    }
   };
 
   const unsubscribe = subscribeLayout(onLayoutChange);

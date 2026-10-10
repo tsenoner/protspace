@@ -218,6 +218,17 @@ describe('createStructureController', () => {
     expect(plot.tooltipActions).toEqual([]);
   });
 
+  it('View structure loads the protein the tooltip named, not the one that was waiting', () => {
+    const { viewer, plot, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    plot.dispatchEvent(
+      new CustomEvent('tooltip-action', { detail: { id: 'view-structure', proteinId: 'P2' } }),
+    );
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P2');
+    expect(getWorkbenchStatus().structureProteinId).toBe('P2');
+  });
+
   it('ignores other tooltip actions', () => {
     const { viewer, plot } = setup();
     updateLayout({ sidebarOpen: false });

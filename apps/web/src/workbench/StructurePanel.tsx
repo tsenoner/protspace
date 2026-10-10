@@ -135,6 +135,7 @@ export function StructurePanel({
       className="wb-structure"
       data-workbench="structure"
       aria-label="Structure"
+      aria-describedby={floating ? 'wb-float-move-hint' : undefined}
     >
       <LegendDivider fraction={legendFraction} onPreview={onLegendFractionPreview} />
       <div className="wb-structure-empty" data-workbench="structure-empty">
@@ -156,17 +157,35 @@ export function StructurePanel({
             size="sm"
             icon={floating ? 'panel-right' : 'picture-in-picture-2'}
             label={floating ? 'Dock structure' : 'Pop out structure'}
-            onClick={() => updateLayout({ structurePlacement: floating ? 'docked' : 'floating' })}
+            // Docking puts the structure back in the sidebar, so a collapsed sidebar opens: the
+            // structure stays in view and this button, now "Pop out structure", keeps focus.
+            onClick={() =>
+              updateLayout(
+                floating
+                  ? { structurePlacement: 'docked', sidebarOpen: true }
+                  : { structurePlacement: 'floating' },
+              )
+            }
           ></ps-icon-button>
         )}
       </protspace-structure-viewer>
       {floating && (
-        <button
-          type="button"
-          className="wb-float-grip"
-          data-workbench="float-grip"
-          aria-label="Resize structure"
-        ></button>
+        <>
+          <span id="wb-float-move-hint" hidden>
+            Arrow keys move the card; Shift moves it farther.
+          </span>
+          <span id="wb-float-resize-hint" hidden>
+            Arrow keys resize the card; Shift resizes it faster.
+          </span>
+          <button
+            type="button"
+            className="wb-float-grip"
+            data-workbench="float-grip"
+            aria-label="Resize structure"
+            aria-describedby="wb-float-resize-hint"
+            aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+          ></button>
+        </>
       )}
     </section>
   );

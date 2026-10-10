@@ -272,6 +272,17 @@ test('the card drags and resizes, survives a reload, and a card stored outside t
   expectNear(moved.x, start.x - 200);
   expectNear(moved.y, start.y - 100);
 
+  // A press on a header link does not drag the card.
+  const link = (await page
+    .locator('#myStructureViewer')
+    .getByRole('link', { name: /AlphaFold/ })
+    .boundingBox())!;
+  await page.mouse.move(link.x + link.width / 2, link.y + link.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(link.x - 100, link.y + link.height / 2, { steps: 5 });
+  await page.mouse.up();
+  expect(await card.boundingBox()).toEqual(moved);
+
   // Resize from the corner grip.
   const grip = (await page.getByRole('button', { name: 'Resize structure' }).boundingBox())!;
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
@@ -294,6 +305,12 @@ test('the card drags and resizes, survives a reload, and a card stored outside t
   const reloaded = (await card.boundingBox())!;
   expectNear(reloaded.x, resized.x);
   expectNear(reloaded.y, resized.y);
+
+  // A press on the header without a move writes nothing.
+  const storedBefore = await readLayout(page);
+  const t = (await page.locator('#myStructureViewer .title').boundingBox())!;
+  await page.mouse.click(t.x + t.width / 2, t.y + t.height / 2);
+  expect(await readLayout(page)).toEqual(storedBefore);
 
   // A shrinking window keeps the card inside the plot area, and storage keeps the user's rect.
   await page.setViewportSize({ width: 1000, height: 600 });
@@ -390,4 +407,154 @@ test('while collapsed and docked, View structure in the pinned tooltip opens the
   await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
   await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', id);
   await expect(action).toBeHidden();
+});
+
+test('a press, a cancelled drag or a key that moves nothing leaves the default card unstored', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  const card = structurePanel(page);
+  const start = (await card.boundingBox())!;
+  expect((await readLayout(page))!.floatingRect).toBeNull();
+
+  // A press and release on the title, without a move.
+  const t = (await page.locator('#myStructureViewer .title').boundingBox())!;
+  const [x, y] = [t.x + t.width / 2, t.y + t.height / 2];
+  await page.mouse.click(x, y);
+  expect((await readLayout(page))!.floatingRect).toBeNull();
+
+  // A drag the browser cancels puts the card back and stores nothing.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 120, y - 60, { steps: 4 });
+  expectNear((await card.boundingBox())!.x, start.x - 120);
+  await card.evaluate((section) =>
+    section.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true })),
+  );
+  await page.mouse.up();
+  expect(await card.boundingBox()).toEqual(start);
+  expect((await readLayout(page))!.floatingRect).toBeNull();
+
+  // Still the default: collapsing the sidebar moves the card to the wider plot's corner.
+  await collapseSidebar(page);
+  await expect
+    .poll(async () => {
+      const area = (await plotArea(page).boundingBox())!;
+      const box = (await card.boundingBox())!;
+      return Math.round(area.x + area.width - (box.x + box.width));
+    })
+    .toBe(14);
+
+  // At the corner, an arrow key that moves nothing writes nothing.
+  await card.focus();
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+ArrowRight');
+  expect((await readLayout(page))!.floatingRect).not.toBeNull();
+  await page.evaluate((key) => {
+    const w = window as unknown as { __layoutWrites: number };
+    w.__layoutWrites = 0;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name: string, value: string) {
+      if (name === key) w.__layoutWrites++;
+      setItem.call(this, name, value);
+    };
+  }, LAYOUT_STORAGE_KEY);
+  const atEdge = await card.boundingBox();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  expect(await card.boundingBox()).toEqual(atEdge);
+  expect(
+    await page.evaluate(() => (window as unknown as { __layoutWrites: number }).__layoutWrites),
+  ).toBe(0);
+});
+
+test('the floating card tells how its keys work and its grip is a 24 px target', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  await expect(structurePanel(page)).toHaveAccessibleDescription(/Arrow keys move the card/);
+  const grip = page.getByRole('button', { name: 'Resize structure' });
+  await expect(grip).toHaveAccessibleDescription(/Arrow keys resize the card/);
+  const box = (await grip.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(24);
+  expect(box.height).toBeGreaterThanOrEqual(24);
+});
+
+test('the Dock structure tooltip stays hidden after Pop out', async ({ page }) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  const tip = page.locator(
+    '#myStructureViewer ps-icon-button[slot="header-actions"] ps-tooltip .tip',
+  );
+
+  await floatStructure(page);
+  // Past the 500 ms hover delay that the press cancelled, with the pointer left where it was.
+  await page.waitForTimeout(800);
+  await expect(tip).toBeHidden();
+  await page.mouse.move(5, 300);
+  await expect(tip).toBeHidden();
+
+  // The tooltip still shows on a hover of the button.
+  await page.getByRole('button', { name: 'Dock structure' }).hover();
+  await expect(tip).toBeVisible();
+});
+
+test('docking from a collapsed sidebar opens it and keeps focus on the button', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await floatStructure(page);
+  await collapseSidebar(page);
+  await page.getByRole('button', { name: 'Dock structure' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+  await expect(page.locator('#myStructureViewer')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pop out structure' })).toBeFocused();
+});
+
+test('View structure from the keyboard moves focus to the structure', async ({ page }) => {
+  await openExplore(page);
+  await collapseSidebar(page);
+  await clickProteinNearPlotCentre(page);
+  const action = page.locator('#myPlot').getByRole('button', { name: 'View structure' });
+  await action.focus();
+  await page.keyboard.press('Enter');
+  await expect(workbench(page)).toHaveAttribute('data-sidebar', 'open');
+  await expect(structurePanel(page)).toBeFocused();
+});
+
+test.describe('on a touch screen', () => {
+  test.use({ hasTouch: true });
+
+  test('the card drags by its header', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'CDP touch input is Chromium only');
+    await openExplore(page);
+    await clickProteinNearPlotCentre(page);
+    await floatStructure(page);
+    const card = structurePanel(page);
+    const start = (await card.boundingBox())!;
+
+    const cdp = await page.context().newCDPSession(page);
+    const t = (await page.locator('#myStructureViewer .title').boundingBox())!;
+    const [x, y] = [t.x + t.width / 2, t.y + t.height / 2];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let i = 1; i <= 10; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: x - 15 * i, y: y - 8 * i }],
+      });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+    const moved = (await card.boundingBox())!;
+    expectNear(moved.x, start.x - 150);
+    expectNear(moved.y, start.y - 80);
+    expect((await readLayout(page))!.floatingRect).not.toBeNull();
+  });
 });
