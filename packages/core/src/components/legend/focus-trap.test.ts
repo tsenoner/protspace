@@ -194,15 +194,17 @@ describe('focus-trap', () => {
 
     it('does not move focus once cleaned up before the next frame', () => {
       const { firstBtn } = mountFirstAndLast();
-      const frames = new Map<number, FrameRequestCallback>();
+      let frame: FrameRequestCallback | undefined;
       vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-        frames.set(frames.size + 1, cb);
-        return frames.size;
+        frame = cb;
+        return 1;
       });
-      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => frames.delete(id));
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {
+        frame = undefined;
+      });
 
       createFocusTrap(container)();
-      frames.forEach((frame) => frame(0));
+      frame?.(0);
 
       expect(document.activeElement).not.toBe(firstBtn);
     });

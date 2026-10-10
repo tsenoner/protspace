@@ -61,8 +61,8 @@ const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
   gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
 
 /**
- * Report every framebuffer incomplete once the float density target (RGBA32F,
- * 0x8814) has been allocated, so the gamma targets allocated before it stay
+ * Report every framebuffer incomplete once the float density target (RGBA32F)
+ * has been allocated, so the gamma targets allocated before it stay
  * complete and only density fails. Returns a call that lets the device recover.
  */
 function failDensityTarget(gl: ReturnType<typeof setup>['gl']): () => void {
@@ -70,10 +70,11 @@ function failDensityTarget(gl: ReturnType<typeof setup>['gl']): () => void {
   let sawFloatTarget = false;
   const texImage2D = gl.texImage2D;
   gl.texImage2D = ((...args: unknown[]) => {
-    if (args[2] === 0x8814) sawFloatTarget = true;
+    if (args[2] === gl.RGBA32F) sawFloatTarget = true;
     return texImage2D(...(args as []));
   }) as typeof gl.texImage2D;
-  gl.checkFramebufferStatus = (() => (failing && sawFloatTarget ? 0 : 0x8cd5)) as never;
+  gl.checkFramebufferStatus = (() =>
+    failing && sawFloatTarget ? 0 : gl.FRAMEBUFFER_COMPLETE) as never;
   return () => {
     failing = false;
   };
