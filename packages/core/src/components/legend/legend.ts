@@ -26,8 +26,6 @@ import {
   getAnnotationMeta,
   annotationCategoryScores,
   isAutoClusterColumn,
-  metricDisplay,
-  AUTO_CLUSTER_SCORE_CAVEAT,
   type NumericBinningStrategy,
   type NumericAnnotationDisplaySettingsMap,
   type EatReliabilityMode,
@@ -51,8 +49,6 @@ import {
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
-import './category-score-strip';
-import type { ScoreStripPoint } from './category-score-strip';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -63,7 +59,22 @@ import {
   createProcessorContext,
   type LegendProcessorContext,
 } from './legend-data-processor';
-import { LegendRenderer } from './legend-renderer';
+import {
+  legendReverseLabel,
+  renderLegendHeader,
+  type LegendHeaderActions,
+  type LegendHeaderView,
+} from './legend-header';
+import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
+import { renderLegendList } from './legend-list';
+import {
+  deriveStripPoints,
+  EMPTY_STRIP_POINTS,
+  renderScoreStrips,
+  type ScoreStripsHandlers,
+  type ScoreStripsView,
+  type StripPoints,
+} from './legend-score-strips';
 
 // Helpers
 import {
@@ -275,7 +286,7 @@ export class ProtspaceLegend extends LitElement {
   @state() private _isClusterAnnotation = false;
   /**
    * Category under the pointer, from a legend row or from a score strip. Read by
-   * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrip`
+   * `_renderLegendItem` (the row's `legend-item-score-hover` class) and by `_renderScoreStrips`
    * (each strip's `highlighted` binding), so a hover in either place lights up both.
    */
   @state() private _hoveredCategory: string | null = null;
@@ -2780,6 +2791,19 @@ export class ProtspaceLegend extends LitElement {
     const predicted = activeName ? isPredictedAnnotation(activeName) : false;
     const meta = activeName ? getAnnotationMeta(activeName, activeAnnotation) : undefined;
     const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
+    const header: LegendHeaderView = {
+      title,
+      predicted,
+      info:
+        meta && hasDocs
+          ? html`<protspace-info-popover
+              .description=${meta.description}
+              docs-url=${meta.docsUrl ?? ''}
+              label=${title}
+            ></protspace-info-popover>`
+          : undefined,
+      reverseLabel: legendReverseLabel(this._isNumericAnnotation(), this._currentSortMode),
+    };
 
     return html`
       <div
@@ -2794,34 +2818,7 @@ export class ProtspaceLegend extends LitElement {
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
-        ${LegendRenderer.renderHeader(
-          title,
-          {
-            onReverse: () => this._toggleLegendOrderDirection(),
-            reverseLabel: this._isNumericAnnotation()
-              ? this._currentSortMode.startsWith('manual')
-                ? 'Reverse manual order'
-                : this._currentSortMode === 'alpha-desc'
-                  ? 'Show low to high'
-                  : 'Show high to low'
-              : 'Reverse z-order (keep Other last)',
-            onCustomize: () => this._handleCustomize(),
-          },
-          {
-            predicted,
-            predictedNote: predicted
-              ? 'Computationally predicted, not experimentally curated.'
-              : undefined,
-            info:
-              meta && hasDocs
-                ? html`<protspace-info-popover
-                    .description=${meta.description}
-                    docs-url=${meta.docsUrl ?? ''}
-                    label=${title}
-                  ></protspace-info-popover>`
-                : undefined,
-          },
-        )}
+        ${renderLegendHeader(header, this._headerActions)}
         ${this._hasSelectedEatAnnotation()
           ? html`
               <section class="eat-legend" aria-label="Embedding Annotation Transfer">
@@ -2862,7 +2859,7 @@ export class ProtspaceLegend extends LitElement {
             `
           : ''}
         ${this._renderScoreStrips()}
-        ${LegendRenderer.renderLegendContent(this._sortedLegendItems, (item, index) =>
+        ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
         ${this._renderColorPicker()}
@@ -2880,170 +2877,86 @@ export class ProtspaceLegend extends LitElement {
     this._hoveredCategory = this._categoryScores.length === 0 ? null : category;
   }
 
+  /** The header's buttons. Built once: their handlers never change. */
+  private _headerActions: LegendHeaderActions = {
+    onReverse: () => this._toggleLegendOrderDirection(),
+    onCustomize: () => this._handleCustomize(),
+  };
+
   /**
-   * Dots for one metric, in the legend's own colours so the mapping to rows is legible
-   * before any hover happens. A category swept into the "Other" bucket still gets a dot,
-   * greyed: the scores are computed over the whole dataset regardless of what the legend
-   * chooses to show, and dropping those dots would misstate the distribution.
+   * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the legend
+   * items and the scores, while the most frequent cause of a legend re-render is a hover, which
+   * changes neither. A plain field, not `@state`: it is computed before render from properties
+   * that are already reactive, so making it reactive would only add a second update cycle.
+   * Written in `willUpdate` and not `updated()` for the same reason -- after render it would
+   * paint one cycle stale.
    */
+  private _stripPoints: StripPoints = EMPTY_STRIP_POINTS;
+
   /**
-   * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the
-   * legend items and the scores, while the most frequent cause of a legend re-render is a
-   * hover, which changes neither. Plain fields, not `@state`: they are computed before render
-   * from properties that are already reactive, so making them reactive would only add a
-   * second update cycle. Written in `willUpdate` and not `updated()` for the same reason --
-   * after render they would paint one cycle stale.
+   * A hover on a strip lights its row; a click on a dot toggles its category, but only one that
+   * is a legend row: a category grouped under Other has no row to hide.
    */
-  private _silhouettePoints: ScoreStripPoint[] = [];
-  private _daviesBouldinPoints: ScoreStripPoint[] = [];
-  private _daviesBouldinDomain: [number, number] = [0, 1];
+  private _scoreStripHandlers: ScoreStripsHandlers = {
+    onHover: (category) => this._setHoveredCategory(category),
+    onToggle: (category) => {
+      if (this._legendItems.some((item) => item.value === category)) {
+        this._handleItemClick(category);
+      }
+    },
+  };
 
   protected willUpdate(changedProperties: Map<string, unknown>): void {
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._deriveStripPoints();
+      this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
-  }
-
-  private _deriveStripPoints(): void {
-    // One map for both strips: it is keyed by the same legend items either way.
-    const colorByValue = new Map(this._legendItems.map((item) => [item.value, item.color]));
-    // Davies-Bouldin has no embedding-space counterpart on CategoryScore, so only the
-    // silhouette strip's tooltip carries an embedding reference.
-    this._silhouettePoints = this._stripPoints(
-      colorByValue,
-      (score) => score.silhouette,
-      (score) => score.silhouetteEmbedding,
-    );
-    this._daviesBouldinPoints = this._stripPoints(colorByValue, (score) => score.daviesBouldin);
-    // Silhouette is bounded to [-1, 1], so its axis is fixed and comparable across datasets.
-    // Davies-Bouldin is unbounded above, so it scales to the data at hand. Folded rather than
-    // spread into Math.min/max: the argument list would grow with the category count, and a
-    // high-cardinality annotation would blow the call-argument limit.
-    let low = Infinity;
-    let high = -Infinity;
-    for (const point of this._daviesBouldinPoints) {
-      if (point.value < low) low = point.value;
-      if (point.value > high) high = point.value;
-    }
-    this._daviesBouldinDomain = this._daviesBouldinPoints.length > 0 ? [low, high] : [0, 1];
-  }
-
-  private _stripPoints(
-    colorByValue: Map<string, string>,
-    pick: (score: CategoryScore) => number | null,
-    pickEmbedding?: (score: CategoryScore) => number | null,
-  ): ScoreStripPoint[] {
-    const points: ScoreStripPoint[] = [];
-    for (const score of this._categoryScores) {
-      const value = pick(score);
-      if (value === null) continue;
-      points.push({
-        category: score.category,
-        value,
-        color: colorByValue.get(score.category) ?? '#888',
-        embedding: pickEmbedding?.(score) ?? null,
-      });
-    }
-    return points;
   }
 
   private _renderScoreStrips() {
-    // Nothing to plot: this annotation was never scored, or the bundle carries no statistics.
-    if (this._categoryScores.length === 0) return '';
-    // Scored, but the view is showing a subset. The numbers describe the whole dataset and do
-    // not recompute, so plotting them beside a narrowed legend would misdescribe what is on
-    // screen; the strips step aside and say so. Gated on the live filter/isolation state
-    // directly, which is the actual question -- the scores themselves are read from the
-    // unsliced dataset (see `_handleScatterplotDataChange`) and so stay available for sorting.
-    const scatterplot = this._scatterplotController.scatterplot;
-    if (this.isolationMode || scatterplot?.filtersActive) {
-      return html`<p class="score-strips-note">
-        Separation scores are hidden while the view is filtered.
-      </p>`;
-    }
-
-    const silhouette = this._silhouettePoints;
-    const daviesBouldin = this._daviesBouldinPoints;
-    const dbDomain = this._daviesBouldinDomain;
-
-    return html`
-      <section
-        class="score-strips"
-        aria-label="Separation by category"
-        @strip-hover=${(event: CustomEvent<{ category: string | null }>) =>
-          this._setHoveredCategory(event.detail.category)}
-        @strip-click=${(event: CustomEvent<{ category: string }>) => {
-          if (this._legendItems.some((item) => item.value === event.detail.category)) {
-            this._handleItemClick(event.detail.category);
-          }
-        }}
-      >
-        ${this._renderScoreStrip('silhouette', silhouette, [-1, 1])}
-        ${daviesBouldin.length > 0
-          ? this._renderScoreStrip('davies_bouldin', daviesBouldin, dbDomain)
-          : ''}
-        <!-- Stated here rather than only in the projection-metadata panel: this is where
-             the per-category numbers are actually read, and a user hovering rows may
-             never open that panel. -->
-        ${this._isClusterAnnotation
-          ? html`<p class="score-strips-caveat">${AUTO_CLUSTER_SCORE_CAVEAT}</p>`
-          : ''}
-      </section>
-    `;
-  }
-
-  /**
-   * One metric's strip. Name and optimisation direction come from `metricDisplay`, the same
-   * entry the metadata panel's rows read, so the two panels cannot name a metric differently
-   * and a metric added to that map arrives here already labelled.
-   */
-  private _renderScoreStrip(metric: string, points: ScoreStripPoint[], domain: [number, number]) {
-    const { label, higherIsBetter, description } = metricDisplay(metric);
-    return html`
-      <protspace-score-strip
-        label=${label}
-        .description=${description}
-        .higherIsBetter=${higherIsBetter}
-        .points=${points}
-        .domain=${domain}
-        .highlighted=${this._hoveredCategory}
-      ></protspace-score-strip>
-    `;
+    const view: ScoreStripsView = {
+      hasScores: this._categoryScores.length > 0,
+      // Gated on the live filter/isolation state directly, which is the actual question -- the
+      // scores themselves are read from the unsliced dataset (see `_handleScatterplotDataChange`)
+      // and so stay available for sorting.
+      filtered:
+        this.isolationMode || Boolean(this._scatterplotController.scatterplot?.filtersActive),
+      points: this._stripPoints,
+      highlighted: this._hoveredCategory,
+      clusterCaveat: this._isClusterAnnotation,
+    };
+    return renderScoreStrips(view, this._scoreStripHandlers);
   }
 
   private _renderLegendItem(item: LegendItem, sortedIndex: number) {
     const selected = isItemSelected(item, this.selectedItems);
-    const classes = `${getItemClasses(item, selected, false)}${
-      this._categoryScores.length > 0 && item.value === this._hoveredCategory
-        ? ' legend-item-score-hover'
-        : ''
-    }`;
-    const otherCount = item.value === LEGEND_VALUES.OTHER ? this._otherItems.length : undefined;
-
-    return LegendRenderer.renderLegendItem(
-      item,
-      classes,
+    const view: LegendRowView = {
+      classes: `${getItemClasses(item, selected, false)}${
+        this._categoryScores.length > 0 && item.value === this._hoveredCategory
+          ? ' legend-item-score-hover'
+          : ''
+      }`,
       selected,
-      {
-        onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
-        onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
-        onViewOther: (e: Event) => {
-          e.stopPropagation();
-          this._showOtherDialog = true;
-        },
-        onKeyDown: (e: KeyboardEvent) => this._handleItemKeyDown(e, item, sortedIndex),
-        onDragHandleKeyDown: (e: KeyboardEvent) => this._handleDragHandleKeyDown(e, item),
-        onHover: (category) => this._setHoveredCategory(category),
-        onSymbolClick:
-          item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
-            ? (e: MouseEvent) => this._handleSymbolClick(item, e)
-            : undefined,
+      symbolSize: LEGEND_STYLES.legendDisplaySize,
+      otherCount: item.value === LEGEND_VALUES.OTHER ? this._otherItems.length : undefined,
+      index: sortedIndex,
+      draggable: this._canDragLegendItem(item),
+    };
+    const handlers: LegendRowHandlers = {
+      onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
+      onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
+      onViewOther: (e: Event) => {
+        e.stopPropagation();
+        this._showOtherDialog = true;
       },
-      LEGEND_STYLES.legendDisplaySize,
-      otherCount,
-      sortedIndex,
-      this._canDragLegendItem(item),
-    );
+      onKeyDown: (e: KeyboardEvent) => this._handleItemKeyDown(e, item, sortedIndex),
+      onHandleKeyDown: (e: KeyboardEvent) => this._handleDragHandleKeyDown(e, item),
+      onHover: (category) => this._setHoveredCategory(category),
+      onSymbolClick:
+        item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
+          ? (e: MouseEvent) => this._handleSymbolClick(item, e)
+          : undefined,
+    };
+    return renderLegendRow(item, view, handlers);
   }
 
   private _renderOtherDialog() {
