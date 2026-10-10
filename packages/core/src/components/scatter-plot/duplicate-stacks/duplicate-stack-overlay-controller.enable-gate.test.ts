@@ -1,10 +1,8 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import * as d3 from 'd3';
-import { DuplicateStackOverlayController } from './duplicate-stack-overlay-controller';
 import { DuplicateBadgesCanvasRenderer } from './duplicate-badges-canvas-renderer';
-import { PointGridIndex } from '../interaction/point-grid-index';
-import { tenPointPD } from './test-support/plot-data-fixtures';
+import { makeControllerFixture } from './test-support/overlay-controller-fixture';
 import { materializePlotDataPoint } from '@protspace/utils';
 
 /**
@@ -15,17 +13,6 @@ import { materializePlotDataPoint } from '@protspace/utils';
  */
 
 function makeFixture() {
-  const pd = tenPointPD();
-  const scales = {
-    x: d3.scaleLinear().domain([0, 100]).range([0, 100]),
-    y: d3.scaleLinear().domain([0, 100]).range([0, 100]),
-  };
-  const pointIndex = new PointGridIndex();
-  pointIndex.setScales(scales);
-  pointIndex.rebuild(
-    pd,
-    Array.from({ length: pd.length }, (_, i) => i),
-  );
   const svg = d3.select(document.body).append('svg');
   const overlayGroup = svg.append('g') as unknown as d3.Selection<
     SVGGElement,
@@ -38,27 +25,10 @@ function makeFixture() {
   overlayGroup.append('g').attr('class', 'duplicate-spiderfy-layer');
 
   const state = { enabled: false };
-  const config = {
-    width: 800,
-    height: 600,
-    margin: { top: 20, right: 20, bottom: 20, left: 20 },
-  };
-  const controller = new DuplicateStackOverlayController({
-    getOverlayGroup: () => overlayGroup,
-    getBadgesCanvas: () => undefined,
-    getTransform: () => d3.zoomIdentity,
-    getConfig: () => config,
-    getScales: () => scales,
-    getPlotData: () => pd,
-    getPointGridIndex: () => pointIndex,
-    getVisibleSlots: () => null,
+  const { controller, pd } = makeControllerFixture({
+    overlayGroup,
     isEnabled: () => state.enabled,
-    isSelectionMode: () => false,
-    getColor: () => '#000000',
-    onPointActivate: () => {},
-    onHover: () => {},
-    onHoverEnd: () => {},
-  } as unknown as ConstructorParameters<typeof DuplicateStackOverlayController>[0]);
+  });
   const layerCount = () =>
     overlayGroup.selectAll('g.duplicate-stacks-layer, g.duplicate-spiderfy-layer').size();
   return { controller, state, pd, layerCount };

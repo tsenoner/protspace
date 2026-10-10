@@ -60,6 +60,25 @@ afterEach(() => vi.restoreAllMocks());
 const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
   gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
 
+/**
+ * Report every framebuffer incomplete once the float density target (RGBA32F,
+ * 0x8814) has been allocated, so the gamma targets allocated before it stay
+ * complete and only density fails. Returns a call that lets the device recover.
+ */
+function failDensityTarget(gl: ReturnType<typeof setup>['gl']): () => void {
+  let failing = true;
+  let sawFloatTarget = false;
+  const texImage2D = gl.texImage2D;
+  gl.texImage2D = ((...args: unknown[]) => {
+    if (args[2] === 0x8814) sawFloatTarget = true;
+    return texImage2D(...(args as []));
+  }) as typeof gl.texImage2D;
+  gl.checkFramebufferStatus = (() => (failing && sawFloatTarget ? 0 : 0x8cd5)) as never;
+  return () => {
+    failing = false;
+  };
+}
+
 describe('density layer, off', () => {
   it('makes byte-identical GL calls whether densityLayer is off or absent', () => {
     const off = setup({ width: 800, height: 600, densityLayer: 'off' });
@@ -435,13 +454,7 @@ describe('density layer failure is not a gamma failure', () => {
   it('keeps rendering through the gamma pipeline when the grid cannot be allocated', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    let sawFloatTarget = false;
-    const texImage2D = on.gl.texImage2D;
-    on.gl.texImage2D = ((...args: unknown[]) => {
-      if (args[2] === 0x8814) sawFloatTarget = true;
-      return texImage2D(...(args as []));
-    }) as typeof on.gl.texImage2D;
-    on.gl.checkFramebufferStatus = (() => (sawFloatTarget ? 0 : 0x8cd5)) as never;
+    failDensityTarget(on.gl);
 
     const calls = recordCalls(on.glRecord);
     on.renderer.render(plotData(50));
@@ -468,17 +481,8 @@ describe('stale-handle reset', () => {
   it('clears the density latch so the rebuilt state can try again', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const on = setup({ width: 800, height: 600, densityLayer: 'on' });
-    // Fail only the float density target (as in the grid-allocation test above),
-    // so density latches off while the gamma pipeline keeps working.
-    let failDensityTarget = true;
-    let sawFloatTarget = false;
-    const texImage2D = on.gl.texImage2D;
-    on.gl.texImage2D = ((...args: unknown[]) => {
-      if (args[2] === 0x8814) sawFloatTarget = true;
-      return texImage2D(...(args as []));
-    }) as typeof on.gl.texImage2D;
-    on.gl.checkFramebufferStatus = (() =>
-      failDensityTarget && sawFloatTarget ? 0 : 0x8cd5) as never;
+    // Density latches off while the gamma pipeline keeps working.
+    const recover = failDensityTarget(on.gl);
     const calls = recordCalls(on.glRecord);
 
     on.renderer.render(plotData(50));
@@ -486,7 +490,7 @@ describe('stale-handle reset', () => {
 
     // The device recovers, but the latch holds: a re-render that would
     // re-accumulate the field still draws no density.
-    failDensityTarget = false;
+    recover();
     on.renderer.invalidateStyleCache();
     on.renderer.render(plotData(50));
     expect(countOf(calls, 'blendFunc(1,1)')).toBe(0);
