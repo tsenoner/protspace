@@ -194,6 +194,25 @@ describe('ps-icon-button', () => {
     expect(tip(el).matches(':popover-open')).toBe(false);
   });
 
+  it('a press hides the tooltip and cancels a pending one', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    vi.useFakeTimers();
+    // A press can move the button out from under the pointer, so no pointerleave follows.
+    inner(el).dispatchEvent(new PointerEvent('pointerenter'));
+    vi.advanceTimersByTime(300);
+    inner(el).dispatchEvent(new PointerEvent('pointerdown'));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(false);
+
+    inner(el).dispatchEvent(new PointerEvent('pointerenter'));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(true);
+    inner(el).dispatchEvent(new PointerEvent('pointerdown'));
+    expect(tip(el).matches(':popover-open')).toBe(false);
+  });
+
   it('hides the tooltip when focus leaves', async () => {
     const el = await mount<PsIconButton>(
       '<ps-icon-button icon="x" label="Close"></ps-icon-button>',

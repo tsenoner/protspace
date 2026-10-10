@@ -81,6 +81,8 @@ export class PsTooltip extends LitElement {
     this.target = next;
     next?.addEventListener('pointerenter', this.onEnter);
     next?.addEventListener('pointerleave', this.onLeave);
+    // A press can move the target out from under the pointer, and then no pointerleave comes.
+    next?.addEventListener('pointerdown', this.onLeave);
     next?.addEventListener('focusin', this.onFocus);
     next?.addEventListener('focusout', this.onLeave);
     if (next && !this.namesTarget) this.describe(next, true);
@@ -89,6 +91,7 @@ export class PsTooltip extends LitElement {
   private unbind(): void {
     this.target?.removeEventListener('pointerenter', this.onEnter);
     this.target?.removeEventListener('pointerleave', this.onLeave);
+    this.target?.removeEventListener('pointerdown', this.onLeave);
     this.target?.removeEventListener('focusin', this.onFocus);
     this.target?.removeEventListener('focusout', this.onLeave);
     if (this.target) this.describe(this.target, false);
