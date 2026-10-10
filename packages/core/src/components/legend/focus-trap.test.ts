@@ -192,6 +192,21 @@ describe('focus-trap', () => {
       expect(document.activeElement).toBe(firstBtn);
     });
 
+    it('does not move focus once cleaned up before the next frame', () => {
+      const { firstBtn } = mountFirstAndLast();
+      const frames = new Map<number, FrameRequestCallback>();
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.set(frames.size + 1, cb);
+        return frames.size;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => frames.delete(id));
+
+      createFocusTrap(container)();
+      frames.forEach((frame) => frame(0));
+
+      expect(document.activeElement).not.toBe(firstBtn);
+    });
+
     it('does nothing on non-Tab keys', () => {
       container.innerHTML = '<button id="btn">Click</button>';
       createFocusTrap(container);
