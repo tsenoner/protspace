@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import './legend';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './legend-eat-controls';
 
 function makeData(): VisualizationData {
   return {
@@ -143,6 +144,25 @@ describe('legend-owned EAT controls', () => {
         detail: expect.objectContaining({ enabled: true, confidenceThreshold: 0.62 }),
       }),
     );
+  });
+
+  it('commits exactly EAT_THRESHOLD_COMMIT_DELAY_MS after the last tick, not before', async () => {
+    expect(EAT_THRESHOLD_COMMIT_DELAY_MS).toBe(150);
+    const { legend } = await setup();
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    legend.addEventListener('eat-overlay-change', listener);
+
+    const range = legend.shadowRoot!.querySelector<HTMLInputElement>(
+      '.eat-threshold input[type="range"]',
+    )!;
+    range.value = '0.5';
+    range.dispatchEvent(new Event('input'));
+
+    vi.advanceTimersByTime(EAT_THRESHOLD_COMMIT_DELAY_MS - 1);
+    expect(listener).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(listener).toHaveBeenCalledOnce();
   });
 
   it('collapses a rapid drag into a single deferred emit', async () => {
