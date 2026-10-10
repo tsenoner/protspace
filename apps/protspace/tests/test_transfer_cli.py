@@ -263,9 +263,7 @@ def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
         f.attrs["model_name"] = "m"
         f.create_dataset("ZZZ", data=np.array([0.0, 0.0], dtype=np.float32))
     out = tmp_path / "out.parquetbundle"
-    # Rich wraps the error panel to the terminal width; pin it so a narrow
-    # exported COLUMNS cannot split the message fragments asserted below.
-    result = CliRunner(env={"COLUMNS": "200"}).invoke(
+    result = CliRunner().invoke(
         app,
         [
             "transfer",
@@ -285,7 +283,7 @@ def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
     )
     assert result.exit_code == click.UsageError.exit_code, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "matching embedding" in result.output
+    assert "matching embedding" in plain(result.output)
 
 
 def test_cli_no_query_match_is_clean_error(tmp_path):
@@ -296,7 +294,7 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
 
     bundle, h5 = _write_bundle_and_h5(tmp_path)
     out = tmp_path / "out.parquetbundle"
-    result = CliRunner(env={"COLUMNS": "200"}).invoke(
+    result = CliRunner().invoke(
         app,
         [
             "transfer",
@@ -316,7 +314,7 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
     )
     assert result.exit_code == click.UsageError.exit_code, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "matched no query proteins" in result.output
+    assert "matched no query proteins" in plain(result.output)
 
 
 def test_cli_both_id_columns_present_is_clean_error(tmp_path):
@@ -329,7 +327,7 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
         tmp_path, extra_columns={"identifier": ["TRINITY_1", "P00001"]}
     )
     out = tmp_path / "out.parquetbundle"
-    result = CliRunner(env={"COLUMNS": "200"}).invoke(
+    result = CliRunner().invoke(
         app,
         [
             "transfer",
@@ -349,7 +347,7 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
     )
     assert result.exit_code == click.UsageError.exit_code, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "both 'protein_id'" in result.output
+    assert "both 'protein_id'" in plain(result.output)
 
 
 def test_transfer_help_renders():
