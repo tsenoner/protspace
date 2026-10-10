@@ -364,6 +364,8 @@ export class ProtspaceLegend extends LitElement {
 
   // Focus trap cleanup function (stored for proper cleanup)
   private _focusTrapCleanup: (() => void) | null = null;
+  // Frame that will create the focus trap once the dialog has rendered
+  private _focusTrapSetupFrame: number | null = null;
 
   // Debounce timer for color picker updates
   private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -938,6 +940,13 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _cleanupFocusTrap(): void {
+    // A trap still waiting for its dialog to render must not be created after this
+    // cleanup: nothing would remove it (a disconnect, or a second dialog's setup
+    // overwriting `_focusTrapCleanup`).
+    if (this._focusTrapSetupFrame !== null) {
+      cancelAnimationFrame(this._focusTrapSetupFrame);
+      this._focusTrapSetupFrame = null;
+    }
     if (this._focusTrapCleanup) {
       this._focusTrapCleanup();
       this._focusTrapCleanup = null;
@@ -946,7 +955,8 @@ export class ProtspaceLegend extends LitElement {
 
   private _setupFocusTrap(dialogId: string): void {
     this._cleanupFocusTrap();
-    requestAnimationFrame(() => {
+    this._focusTrapSetupFrame = requestAnimationFrame(() => {
+      this._focusTrapSetupFrame = null;
       const dialog = this.shadowRoot?.querySelector(`#${dialogId}`) as HTMLElement | null;
       if (dialog) {
         this._focusTrapCleanup = createFocusTrap(dialog);

@@ -54,7 +54,9 @@ describe('control-bar auto-sync timers', () => {
     await controlBar.updateComplete;
 
     // First lookup ran synchronously on connect and found nothing; a retry is pending.
+    expect(vi.getTimerCount()).toBe(1);
     controlBar.remove();
+    expect(vi.getTimerCount()).toBe(0);
     const querySpy = vi.spyOn(document, 'querySelector');
     const plot = addScatterplot();
     const addListenerSpy = vi.spyOn(plot, 'addEventListener');
@@ -73,7 +75,9 @@ describe('control-bar auto-sync timers', () => {
     expect(controlBar._scatterplotElement).not.toBeNull();
 
     const syncSpy = vi.spyOn(controlBar, '_syncWithScatterplot');
+    expect(vi.getTimerCount()).toBe(1);
     controlBar.remove();
+    expect(vi.getTimerCount()).toBe(0);
 
     await vi.advanceTimersByTimeAsync(DRAIN_MS);
 

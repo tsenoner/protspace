@@ -12,33 +12,14 @@ import {
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { createDefaultSettings } from './legend-helpers';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settle,
+  stubLocalStorage,
+} from './test-support/legend-scatterplot-harness';
 
-// These tests seed and read the persisted settings through `localStorage` directly. Stub an
-// in-memory store rather than using the runtime's: Node does not hand jsdom a usable
-// `localStorage` without `--localstorage-file`, which made the `clear()` below throw outright.
-// Same shape as the mock in `legend.score-sync.test.ts`.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+// These tests seed and read the persisted settings through `localStorage` directly.
+stubLocalStorage();
 
 type ShapeSizeLegend = HTMLElement & {
   shapeSize: number;
@@ -476,11 +457,6 @@ function makeData(count: number, prefix = 'p'): VisualizationData {
     annotations: { group: categorical(['A', 'B']), kind: categorical(['x', 'y']) },
     annotation_data: { group: codes, kind: codes.slice() },
   };
-}
-
-/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
 }
 
 function showView(plot: MockPlot, view: VisualizationData): void {

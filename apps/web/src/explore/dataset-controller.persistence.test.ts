@@ -102,10 +102,10 @@ beforeEach(() => {
   mocks.isCurrentRequest.mockReturnValue(true);
 });
 
-describe('dataset controller OPFS persistence', () => {
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Drain the microtask queue so every already-resolved await has run. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+describe('dataset controller OPFS persistence', () => {
   it('stores the imported bytes before the render starts', async () => {
     let finishSave = () => {};
     mocks.saveLastImportedFile.mockImplementation(
@@ -330,8 +330,6 @@ describe('dataset controller loading overlay', () => {
     vi.restoreAllMocks();
   });
 
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const opfsRestore: LoadMeta = { sequence: 3, kind: 'opfs', epoch: 1 };
   const lastCall = (fn: { mock: { invocationCallOrder: number[] } }) =>
     fn.mock.invocationCallOrder[fn.mock.invocationCallOrder.length - 1];
@@ -438,6 +436,20 @@ describe('dataset controller loading overlay', () => {
     await controller.handleDataLoaded(loadedEvent);
 
     // The dataset is on screen all the same, but the overlay is the newer request's.
+    expect(overlayUpdate).not.toHaveBeenCalledWith(false);
+    expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
+  });
+
+  it('is left to the newer request when the load is superseded during its post-load work', async () => {
+    // A menu choice made while the import's load status is written shows its own
+    // "Downloading…" on the overlay by the time this load settles.
+    mocks.markLastLoadStatus.mockImplementation(async () => {
+      mocks.isCurrentRequest.mockReturnValue(false);
+    });
+    const { controller, overlayUpdate } = buildController({ sequence: 3, kind: 'user', epoch: 1 });
+    await controller.handleDataLoaded(loadedEvent);
+
+    expect(mocks.markLastLoadStatus).toHaveBeenCalledWith('success');
     expect(overlayUpdate).not.toHaveBeenCalledWith(false);
     expect(mocks.resolvePendingLoadFinalization).toHaveBeenCalledWith(3, true);
   });

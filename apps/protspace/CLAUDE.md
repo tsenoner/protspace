@@ -317,13 +317,13 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
 | `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
-| `test_base_data_processor.py` | BaseProcessor: reduction, output creation, save (incl. settings in unbundled output) |
+| `test_base_data_processor.py` | BaseProcessor: reduction (the MDS input actually fed: a similarity matrix converted with `sqrt(max(s) - s)`, a distance matrix passed through), output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
 | `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
 | `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
-| `test_transfer_cli.py` | Transfer orchestration core and CLI registration |
+| `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end |
 | `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |

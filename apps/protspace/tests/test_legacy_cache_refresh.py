@@ -130,13 +130,13 @@ def _values(frame: pd.DataFrame, column: str) -> list:
     return frame[column].tolist() if column in frame.columns else []
 
 
-def _forbid_ted(monkeypatch):
+def _forbid(monkeypatch, retriever_cls, name):
     def fetch(_retriever):
         # pytest.fail, not AssertionError: the manager wraps every retriever call
         # in `except Exception`, which would turn this into an incomplete source.
-        pytest.fail("cached TED values are current and must be reused")
+        pytest.fail(f"{name} values are current and must be reused")
 
-    monkeypatch.setattr(TedRetriever, "fetch_annotations", fetch)
+    monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
 
 
 def _holds_stale_value_as_current(cache: pd.DataFrame, column: str) -> bool:
@@ -159,7 +159,7 @@ class TestRequestedColumnsAreRefreshed:
         _write_v1_cache(tmp_path)
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
         annotations = ["protein_families", "ted_domains"]
 
         result = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
@@ -233,7 +233,7 @@ class TestUnrequestedColumnsAreDropped:
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
         _serve_interpro(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
 
         result = _pipeline(tmp_path, ["gene_name", "ted_domains"])._fetch_annotations(
             ["P01308"]
@@ -251,7 +251,7 @@ class TestUnrequestedColumnsAreDropped:
         calls: list = []
         _serve_uniprot(monkeypatch, calls)
         _serve_interpro(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
 
         def biocentral(retriever):
             calls.append("biocentral")
@@ -378,7 +378,7 @@ class TestFailedRefresh:
         # The next run refreshes UniProt and reuses TED.
         calls.clear()
         _serve_uniprot(monkeypatch, calls)
-        _forbid_ted(monkeypatch)
+        _forbid(monkeypatch, TedRetriever, "TED")
         again = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
 
         assert calls == ["uniprot"]
@@ -525,15 +525,6 @@ def _serve_biocentral(
         ]
 
     monkeypatch.setattr(BiocentralPredictionRetriever, "fetch_annotations", fetch)
-
-
-def _forbid(monkeypatch, retriever_cls, name):
-    def fetch(_retriever):
-        # pytest.fail (a BaseException), so the manager's `except Exception` around
-        # each retriever cannot swallow a forbidden fetch (see _forbid_ted).
-        pytest.fail(f"{name} values are current and must be reused")
-
-    monkeypatch.setattr(retriever_cls, "fetch_annotations", fetch)
 
 
 def _forbid_all_but_taxonomy_and_biocentral(monkeypatch):

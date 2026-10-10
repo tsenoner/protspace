@@ -1453,14 +1453,14 @@ export class ProtspaceControlBar extends LitElement {
   }
 
   private _scheduleAutoSync(callback: () => void, delayMs: number) {
+    this._clearAutoSyncTimer();
     this._autoSyncTimer = setTimeout(() => {
       this._autoSyncTimer = null;
-      if (this.isConnected) callback();
+      callback();
     }, delayMs);
   }
 
   private _setupAutoSync() {
-    this._clearAutoSyncTimer();
     // Find scatterplot element with retries
     const trySetup = (attempts: number = 0) => {
       this._scatterplotElement = document.querySelector(
