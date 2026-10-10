@@ -1,11 +1,4 @@
-import {
-  createRef,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type CSSProperties,
-} from 'react';
+import { createRef, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { RAIL_WIDTH, SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { AppBar } from './AppBar';
@@ -71,13 +64,8 @@ export function Workbench() {
     // A floating card stays over the plot: it does not slide with the sidebar.
     structure: structure === 'floating' ? NO_SLIDE_TARGET : structureRef,
   });
-  const bodyRef = useRef<HTMLDivElement>(null);
-  // The plot area the floating card stays inside: PlotArea's main[data-workbench="plot"].
-  const plotAreaRef = useRef<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    plotAreaRef.current =
-      bodyRef.current?.querySelector<HTMLElement>('[data-workbench="plot"]') ?? null;
-  }, []);
+  // The plot area the floating card stays inside.
+  const plotAreaRef = useRef<HTMLElement>(null);
   useFloatingCard(structureRef, plotAreaRef);
   // On desktop a collapsed or collapsing sidebar is inert; below 951 px it always shows.
   const sidebarHidden = desktop && (phase === 'collapsed' || phase === 'closing');
@@ -92,7 +80,6 @@ export function Workbench() {
       <AppBar />
       <ViewBar />
       <div
-        ref={bodyRef}
         className="wb-body"
         data-workbench="body"
         style={
@@ -110,7 +97,7 @@ export function Workbench() {
           } as CSSProperties
         }
       >
-        <PlotArea />
+        <PlotArea ref={plotAreaRef} />
         {/* Before the aside: the edge sits at the sidebar's left, so it is the sidebar's first Tab
             stop. Its z-index keeps it painted over the aside and the structure. */}
         <SidebarEdge
