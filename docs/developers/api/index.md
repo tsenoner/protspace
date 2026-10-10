@@ -147,8 +147,8 @@ projection of the protein's annotations; `point` is the bare plot point.
 
 `tooltipActions` takes `{ id, label }` objects (`TooltipAction`) and is a property only. While it
 holds any, a plain click on a protein pins its tooltip at the protein with one button per action.
-The pin ends on Escape, a press outside the plot, the next click, a zoom or pan, a hover of another
-protein, a data or projection change, or when `tooltipActions` becomes empty. A button dispatches
+The pin ends on Escape, a press outside the plot, the next click, a zoom or pan, a data or
+projection change, or when `tooltipActions` becomes empty. Hovers over other proteins leave it. A button dispatches
 `tooltip-action` (bubbles, composed) with the action's `id` and the pinned `proteinId`
 (`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only.
 

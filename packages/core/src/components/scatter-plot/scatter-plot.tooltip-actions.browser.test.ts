@@ -36,9 +36,16 @@ async function mountPlot(actions: readonly TooltipAction[] = [VIEW_STRUCTURE]) {
   document.body.append(plot);
   await plot.updateComplete;
   // Hit tests read the point grid, rebuilt on a frame after the data and the size.
-  for (let i = 0; i < 3; i++) await frame();
-  await plot.updateComplete;
+  await gridReady(plot);
   return plot;
+}
+
+async function gridReady(plot: ProtspaceScatterplot): Promise<void> {
+  await vi.waitFor(() => {
+    const rect = plot.getBoundingClientRect();
+    const p = at(plot, 'P3');
+    expect(plot.pickInteractivePointAt(p.x - rect.left, p.y - rect.top)).not.toBeNull();
+  });
 }
 
 /** A mouse event on the plot's interaction layer at client coordinates. */
@@ -78,7 +85,7 @@ describe('scatterplot tooltip actions', () => {
     expect(pinned(plot)).toBeNull();
   });
 
-  it('with actions a click pins the tooltip and a hover elsewhere does not clear it', async () => {
+  it('with actions a click pins the tooltip and hovers elsewhere do not clear it', async () => {
     const plot = await mountPlot();
     mouse(plot, 'click', at(plot, 'P2'));
     await plot.updateComplete;
@@ -93,9 +100,62 @@ describe('scatterplot tooltip actions', () => {
     await plot.updateComplete;
     expect(pinned(plot)).not.toBeNull();
 
-    // Another protein's hover ends it.
+    // Another protein's hover keeps it: the way to the button crosses proteins.
     mouse(plot, 'mousemove', at(plot, 'P3'));
     await frame();
+    await plot.updateComplete;
+    expect(pinned(plot)).toBe(tip);
+    expect(tip.shadowRoot!.textContent).toContain('P2');
+
+    // The next click ends it and pins the clicked protein.
+    mouse(plot, 'click', at(plot, 'P3'));
+    await plot.updateComplete;
+    await pinned(plot)!.updateComplete;
+    expect(pinned(plot)!.shadowRoot!.textContent).toContain('P3');
+  });
+
+  it('a zoom ends the pin; a reset glide at the identity keeps it', async () => {
+    const plot = await mountPlot();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    plot.resetZoom();
+    for (let i = 0; i < 10; i++) await frame();
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+
+    const p = at(plot, 'P2');
+    plot.shadowRoot!.querySelector('svg')!.dispatchEvent(
+      new WheelEvent('wheel', {
+        clientX: p.x,
+        clientY: p.y,
+        deltaY: -200,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await vi.waitFor(async () => {
+      await plot.updateComplete;
+      expect(pinned(plot)).toBeNull();
+    });
+  });
+
+  it('a click on empty plot ends the pin', async () => {
+    const plot = await mountPlot();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+    const rect = plot.getBoundingClientRect();
+    mouse(plot, 'click', { x: rect.left + 8, y: rect.bottom - 8 });
+    await plot.updateComplete;
+    expect(pinned(plot)).toBeNull();
+  });
+
+  it('new data ends the pin', async () => {
+    const plot = await mountPlot();
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+    plot.data = makeData();
     await plot.updateComplete;
     expect(pinned(plot)).toBeNull();
   });

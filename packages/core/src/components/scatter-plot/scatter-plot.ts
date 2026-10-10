@@ -166,8 +166,8 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
   /**
    * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
-   * Escape, a press outside the plot, the next click, a zoom or pan, a hover of another protein,
-   * a data or projection change, or until this becomes empty. A button dispatches
+   * Escape, a press outside the plot, the next click, a zoom or pan, a data or projection
+   * change, or until this becomes empty. Hovers over other proteins leave it. A button dispatches
    * `tooltip-action` with its id and the protein. Empty (the default) keeps tooltips hover-only.
    */
   @property({ attribute: false }) tooltipActions: readonly TooltipAction[] = [];
@@ -1474,8 +1474,8 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _handleMouseOver(event: MouseEvent, point: PlotDataPoint) {
-    // Another protein's hover ends a pin.
-    if (this._pinnedTooltip && this._pinnedTooltip.point.id !== point.id) this._unpinTooltip();
+    // A pin ignores hovers: the way to its buttons often crosses other proteins.
+    if (this._pinnedTooltip) return;
     if (!this.data) return;
     const { x, y } = this._getLocalPointerPosition(event);
     const view = buildTooltipView(
