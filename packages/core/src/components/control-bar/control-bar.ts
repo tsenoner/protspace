@@ -1455,7 +1455,7 @@ export class ProtspaceControlBar extends LitElement {
   private _scheduleAutoSync(callback: () => void, delayMs: number) {
     this._autoSyncTimer = setTimeout(() => {
       this._autoSyncTimer = null;
-      if (this.isConnected) callback();
+      callback();
     }, delayMs);
   }
 
