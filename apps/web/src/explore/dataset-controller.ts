@@ -709,9 +709,6 @@ export function createDatasetController({
       phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
     },
     handleLoadingProgress(event: Event) {
-      if (isRunningLoadSuperseded()) {
-        return;
-      }
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));
