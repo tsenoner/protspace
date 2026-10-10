@@ -35,7 +35,7 @@ previous phase left. A phase ends with the app working and every test green.
 - [x] 2.11 Structure viewer docked under the legend, with a divider
 - [x] 2.12 Sidebar rail, collapse and edge resize, one plot resize per change, persistence;
       panel-toggle perf scenario and budget; perf runs pin layout and theme
-- [ ] 2.13 Floating structure; "View structure" in the tooltip
+- [x] 2.13 Floating structure; "View structure" in the tooltip
 
 ## 3. Legend (plan: `plans/phase-3-legend.md`)
 
