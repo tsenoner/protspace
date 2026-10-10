@@ -2,29 +2,9 @@
 
 ## Purpose
 
-How annotations are surfaced to the reader: the dedicated Predicted group in the dropdown, friendly labels at every display site, the legend's marking of predicted values, and the per-annotation documentation popover.
+How annotations are surfaced to the reader: the source-grouped dropdown with per-row predicted badges, friendly labels at every display site, the legend's marking of predicted values, and the per-annotation documentation popover.
 
 ## Requirements
-
-### Requirement: Dedicated "Predicted" group in the annotation dropdown
-
-The annotation selection dropdown SHALL present predicted annotations in a dedicated "Predicted"
-group, derived from the annotation-metadata registry, shown as the first group ahead of the
-source-based groups (UniProt, InterPro, Taxonomy, Other). Predicted items SHALL appear in the
-Predicted group regardless of their original source, and SHALL NOT be duplicated in a source group.
-Existing search, keyboard navigation, and tooltip-toggle behavior SHALL continue to work across the
-new grouping.
-
-#### Scenario: Predicted annotations are grouped together
-
-- **WHEN** the dropdown is opened for a bundle containing predicted and experimental annotations
-- **THEN** a "Predicted" group lists the predicted annotations first, and experimental annotations
-  appear under their source groups below
-
-#### Scenario: Search and keyboard navigation span the new group
-
-- **WHEN** the user filters or arrow-key-navigates the dropdown
-- **THEN** items in the Predicted group are included in the filtered results and navigation order
 
 ### Requirement: Friendly annotation labels at display sites
 
@@ -135,3 +115,17 @@ All annotation pickers SHALL apply this same rule, through one shared implementa
 - **WHEN** the same query is entered in the annotation dropdown and in the query builder's
   annotation picker
 - **THEN** both offer the same annotations, under the same labels
+
+### Requirement: The annotation dropdown groups annotations by source
+
+The annotation selection dropdown SHALL group annotations into source sections, in the order Biocentral, InterPro, TED, Taxonomy, UniProt, Other, and SHALL leave out sections that have no annotations. Within a section, annotations SHALL be sorted alphabetically, except Taxonomy, which SHALL be ordered by rank from general to specific. A predicted annotation, as derived from the annotation-metadata registry, SHALL stay in its source section, SHALL NOT be duplicated in another section, and SHALL carry the predicted badge on its row. Search and keyboard navigation SHALL work across all sections.
+
+#### Scenario: Predicted annotations stay in their source sections
+
+- **WHEN** the dropdown is opened for a bundle containing Biocentral predictions, InterPro de-novo predictors and UniProt annotations
+- **THEN** each annotation is listed once, under its source section, the sections appear in the defined order, and every predicted annotation's row carries the predicted badge
+
+#### Scenario: Search and keyboard navigation span every section
+
+- **WHEN** the user filters or arrow-key-navigates the dropdown
+- **THEN** items in every section are included in the filtered results and navigation order, and sections left without a match are hidden
