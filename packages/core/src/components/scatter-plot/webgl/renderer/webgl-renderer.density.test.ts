@@ -57,8 +57,9 @@ vi.mock('../color-utils', () => ({
 
 afterEach(() => vi.restoreAllMocks());
 
-const accumAllocations = (gl: Record<string, ReturnType<typeof vi.fn>>) =>
-  gl.texImage2D.mock.calls.filter((c) => c[2] === 0x8814).length;
+/** Allocations of the float density target (RGBA32F). */
+const accumAllocations = (gl: ReturnType<typeof setup>['gl']) =>
+  vi.mocked(gl.texImage2D).mock.calls.filter((c) => c[2] === gl.RGBA32F).length;
 
 /**
  * Report every framebuffer incomplete once the float density target (RGBA32F)
