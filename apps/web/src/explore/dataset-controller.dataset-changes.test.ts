@@ -342,7 +342,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
     const renderOverlay = mocks.rendererOverlay!;
 
     // A newer request (say a Back to another example, now downloading) owns
-    // the overlay: neither a render step nor the render's final hide reaches it.
+    // the overlay: neither a render step nor the load's final hide reaches it.
     mocks.persisted.isCurrentRequest.mockReturnValue(false);
     renderOverlay.update(true, 60, 'Organizing color categories...', 'Visualizing 1 proteins');
     renderOverlay.update(false);
@@ -350,13 +350,7 @@ describe('startup outcomes and dataset-change emits (persisted-dataset mocked)',
 
     mocks.persisted.isCurrentRequest.mockReturnValue(true);
     renderOverlay.update(false);
-    expect(overlayController.update).toHaveBeenCalledWith(
-      false,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    );
+    expect(overlayController.update).toHaveBeenCalledWith(false);
   });
 
   it("a superseded user import's parse failure is reported but leaves the overlay to the newer request", async () => {
