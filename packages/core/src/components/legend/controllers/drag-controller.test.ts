@@ -225,27 +225,17 @@ describe('DragController', () => {
       expect(rowOrder()).toEqual(['cat1', 'cat2', 'cat3', 'Other']);
     });
 
-    it('does nothing for a row without data-value', () => {
+    it.each([
+      ['without data-value', (el: HTMLElement) => el.removeAttribute('data-value')],
+      ['the legend does not know', (el: HTMLElement) => el.setAttribute('data-value', 'stale')],
+    ])('does nothing for a row %s', (_label, corrupt) => {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
-      row('cat2').removeAttribute('data-value');
+      const item = row('cat2');
+      corrupt(item);
 
       options().onEnd!({
         from: mockContainer,
-        item: mockContainer.children[1],
-        oldIndex: 1,
-        newIndex: 0,
-      } as Sortable.SortableEvent);
-
-      for (const callback of stateCallbacks()) expect(callback).not.toHaveBeenCalled();
-    });
-
-    it('does nothing for a row the legend does not know', () => {
-      vi.spyOn(console, 'warn').mockImplementation(() => {});
-      row('cat2').setAttribute('data-value', 'stale');
-
-      options().onEnd!({
-        from: mockContainer,
-        item: mockContainer.children[1],
+        item,
         oldIndex: 1,
         newIndex: 0,
       } as Sortable.SortableEvent);
