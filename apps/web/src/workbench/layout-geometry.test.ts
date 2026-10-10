@@ -6,7 +6,9 @@ import {
   clampSidebarWidth,
   floatStep,
   fractionStep,
+  moveFloatRect,
   plotRightInset,
+  resizeFloatRect,
   sidebarStep,
   splitSidebar,
 } from './layout-geometry';
@@ -143,5 +145,28 @@ describe('floatStep', () => {
     expect(floatStep('ArrowUp', true)).toEqual({ dx: 0, dy: -64 });
     expect(floatStep('ArrowRight', true)).toEqual({ dx: 64, dy: 0 });
     expect(floatStep('Enter', false)).toEqual({ dx: 0, dy: 0 });
+  });
+});
+
+describe('moveFloatRect and resizeFloatRect', () => {
+  const area = { width: 936, height: 628 };
+  const card = { x: 500, y: 200, width: 340, height: 360 };
+
+  it('moveFloatRect moves the card and keeps it inside the plot area', () => {
+    expect(moveFloatRect(card, -16, 64, area)).toEqual({ ...card, x: 484, y: 264 });
+    expect(moveFloatRect(card, -1000, 0, area)).toEqual({ ...card, x: 0 });
+    expect(moveFloatRect(card, 1000, 1000, area)).toEqual({ ...card, x: 596, y: 268 });
+  });
+
+  it('resizeFloatRect keeps the top-left corner and stops at the plot area', () => {
+    expect(resizeFloatRect(card, 200, 200, area)).toEqual({
+      x: 500,
+      y: 200,
+      width: 436,
+      height: 428,
+    });
+    expect(resizeFloatRect(card, 16, -16, area)).toEqual({ ...card, width: 356, height: 344 });
+    // The 280 × 240 minimum holds when shrinking.
+    expect(resizeFloatRect(card, -1000, -1000, area)).toEqual({ ...card, width: 280, height: 240 });
   });
 });

@@ -1,7 +1,7 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import type { FloatingRect } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
-import { clampFloatRect, floatStep } from './layout-geometry';
+import { clampFloatRect, floatStep, moveFloatRect, resizeFloatRect } from './layout-geometry';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
 
@@ -23,13 +23,18 @@ interface Gesture {
   start: FloatingRect;
 }
 
+const sameRect = (a: FloatingRect, b: FloatingRect) =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
 const FLOAT_PROPERTIES = ['--wb-float-x', '--wb-float-y', '--wb-float-w', '--wb-float-h'];
 
 /**
  * Moves the floating structure card by the viewer's header and resizes it from its corner grip;
  * the arrow keys do the same on the focused card and grip (design decision 2). The card stays
  * inside the plot area, also when the plot area shrinks, without rewriting the stored rect; the
- * layout is written once per gesture, on release or keyup. Only the section's --wb-float-*
+ * layout is written once per gesture, on release or keyup, and only when the card really moved or
+ * changed size (a stored null, the default corner, stays null until then). A cancelled gesture puts
+ * the card back where it started. Only the section's --wb-float-*
  * properties change: the plot's box never does, and the viewer is never re-parented.
  */
 export function useFloatingCard(
@@ -49,7 +54,8 @@ export function useFloatingCard(
     const grip = () => section.querySelector<HTMLElement>('[data-workbench="float-grip"]');
     let rect = clampFloatRect(stored, bounds());
     let gesture: Gesture | null = null;
-    let keyed = false;
+    // The card's rect before the arrow keys that are down; null when none is.
+    let keyStart: FloatingRect | null = null;
 
     const paint = (next: FloatingRect) => {
       rect = next;
@@ -68,20 +74,6 @@ export function useFloatingCard(
           height: Math.round(rect.height),
         },
       });
-    // Resizing keeps the top-left corner where it is.
-    const resized = (from: FloatingRect, width: number, height: number) => {
-      const area = bounds();
-      return clampFloatRect(
-        {
-          ...from,
-          width: Math.min(width, area.width - from.x),
-          height: Math.min(height, area.height - from.y),
-        },
-        area,
-      );
-    };
-    const moved = (from: FloatingRect, dx: number, dy: number) =>
-      clampFloatRect({ ...from, x: from.x + dx, y: from.y + dy }, bounds());
 
     paint(rect);
     // The window and the sidebar resize the plot area: keep the stored card inside it.
@@ -117,14 +109,17 @@ export function useFloatingCard(
       const { start } = gesture;
       paint(
         gesture.kind === 'move'
-          ? moved(start, dx, dy)
-          : resized(start, start.width + dx, start.height + dy),
+          ? moveFloatRect(start, dx, dy, bounds())
+          : resizeFloatRect(start, dx, dy, bounds()),
       );
     };
     const onPointerEnd = (event: PointerEvent) => {
       if (!gesture || event.pointerId !== gesture.pointerId) return;
+      const { start } = gesture;
       gesture = null;
-      commit();
+      // pointerup releases the capture after it, so a lost capture here means no release came.
+      if (event.type !== 'pointerup') paint(start);
+      else if (!sameRect(rect, start)) commit();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       const { dx, dy } = floatStep(event.key, event.shiftKey);
@@ -134,13 +129,16 @@ export function useFloatingCard(
       // Only the card itself or its grip: keys inside the viewer belong to the viewer.
       if (!resizing && event.target !== section) return;
       event.preventDefault();
-      keyed = true;
-      paint(resizing ? resized(rect, rect.width + dx, rect.height + dy) : moved(rect, dx, dy));
+      keyStart ??= rect;
+      paint(
+        resizing ? resizeFloatRect(rect, dx, dy, bounds()) : moveFloatRect(rect, dx, dy, bounds()),
+      );
     };
     const onKeyUp = () => {
-      if (!keyed) return;
-      keyed = false;
-      commit();
+      if (!keyStart) return;
+      const start = keyStart;
+      keyStart = null;
+      if (!sameRect(rect, start)) commit();
     };
 
     section.addEventListener('pointerdown', onPointerDown);

@@ -137,6 +137,36 @@ export function clampFloatRect(
   };
 }
 
+/** The floating card moved by `dx`, `dy`, kept inside a plot area of `bounds`. */
+export function moveFloatRect(
+  rect: FloatingRect,
+  dx: number,
+  dy: number,
+  bounds: { width: number; height: number },
+): FloatingRect {
+  return clampFloatRect({ ...rect, x: rect.x + dx, y: rect.y + dy }, bounds);
+}
+
+/**
+ * The floating card grown by `dw`, `dh` (negative shrinks it). Resizing keeps the top-left corner
+ * where it is: the card grows at most to the plot area's right and bottom edges.
+ */
+export function resizeFloatRect(
+  rect: FloatingRect,
+  dw: number,
+  dh: number,
+  bounds: { width: number; height: number },
+): FloatingRect {
+  return clampFloatRect(
+    {
+      ...rect,
+      width: Math.min(rect.width + dw, bounds.width - rect.x),
+      height: Math.min(rect.height + dh, bounds.height - rect.y),
+    },
+    bounds,
+  );
+}
+
 /** The floating card's move (or resize) for an arrow key; zero for other keys. */
 export function floatStep(key: string, shift: boolean): { dx: number; dy: number } {
   const step = shift ? 4 * FLOAT_STEP : FLOAT_STEP;
