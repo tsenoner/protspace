@@ -102,10 +102,10 @@ beforeEach(() => {
   mocks.isCurrentRequest.mockReturnValue(true);
 });
 
-describe('dataset controller OPFS persistence', () => {
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Drain the microtask queue so every already-resolved await has run. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+describe('dataset controller OPFS persistence', () => {
   it('stores the imported bytes before the render starts', async () => {
     let finishSave = () => {};
     mocks.saveLastImportedFile.mockImplementation(
@@ -330,8 +330,6 @@ describe('dataset controller loading overlay', () => {
     vi.restoreAllMocks();
   });
 
-  /** Drain the microtask queue so every already-resolved await has run. */
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const opfsRestore: LoadMeta = { sequence: 3, kind: 'opfs', epoch: 1 };
   const lastCall = (fn: { mock: { invocationCallOrder: number[] } }) =>
     fn.mock.invocationCallOrder[fn.mock.invocationCallOrder.length - 1];
