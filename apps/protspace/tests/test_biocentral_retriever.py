@@ -9,7 +9,7 @@ import pytest
 import requests
 
 from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
-from src.protspace.data.annotations.retrievers.biocentral_retriever import (
+from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
 )
@@ -580,7 +580,7 @@ class TestUnknownModel:
     def test_every_model_the_retriever_names_is_one_the_client_lists(self):
         from biocentral_api import BiocentralPredictionModel
 
-        from src.protspace.data.annotations.retrievers.biocentral_retriever import (
+        from protspace.data.annotations.retrievers.biocentral_retriever import (
             _PREDICTION_MODELS,
         )
 

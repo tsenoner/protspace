@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from src.protspace.data.embedding.biocentral import (
+from protspace.data.embedding.biocentral import (
     EXTRA_SHORT_KEYS,
     MODEL_SHORT_KEYS,
     derive_h5_cache_path,
@@ -66,7 +66,7 @@ class TestResolveEmbedder:
         this module, and with it the offline backend that imports the package."""
         from enum import Enum
 
-        from src.protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import biocentral as bc
 
         renamed = Enum("CommonEmbedder", {"Renamed": "facebook/esm2_t6_8M_UR50D"})
         monkeypatch.setattr(bc, "CommonEmbedder", renamed)
@@ -166,7 +166,7 @@ class TestEmbedSequences:
         """If all sequences exist in HDF5, return immediately."""
         import h5py
 
-        from src.protspace.data.embedding.biocentral import embed_sequences
+        from protspace.data.embedding.biocentral import embed_sequences
 
         h5_path = tmp_path / "emb.h5"
         with h5py.File(h5_path, "w") as hf:
@@ -179,13 +179,13 @@ class TestEmbedSequences:
         )
         assert result == h5_path
 
-    @patch("src.protspace.data.embedding.biocentral.BiocentralAPI")
-    @patch("src.protspace.data.embedding.biocentral.batched")
+    @patch("protspace.data.embedding.biocentral.BiocentralAPI")
+    @patch("protspace.data.embedding.biocentral.batched")
     def test_embedding_flow(self, mock_batched, mock_api_cls):
         """Test the full embedding flow with mocked API."""
         import h5py
 
-        from src.protspace.data.embedding.biocentral import embed_sequences
+        from protspace.data.embedding.biocentral import embed_sequences
 
         # Setup fake BiocentralAPI
         fake_api = MagicMock()
@@ -224,7 +224,7 @@ class TestEmbedSequences:
         duplicates), and the representative's vector fans out to every ID."""
         import h5py
 
-        from src.protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import biocentral as bc
 
         sent: list[dict[str, str]] = []
 
@@ -303,7 +303,7 @@ class TestEmbedSequencesCompleteness:
 
     def _run(self, monkeypatch, tmp_path, **api_kwargs):
         """Drive embed_sequences against a stubbed API; return (h5_path, bar)."""
-        from src.protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import biocentral as bc
 
         seqs = {f"P{i:04d}": "A" * (10 + i) for i in range(self.N)}
         bar = {}
@@ -390,7 +390,7 @@ class TestEmbedSequencesCompleteness:
         """h5py turns an ID containing "/" into a group, so it can never become the
         requested dataset. Both backends refuse up front rather than paying for a
         full embedding run and then reporting a shortfall they cannot explain."""
-        from src.protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import biocentral as bc
 
         called = []
         monkeypatch.setattr(
@@ -409,8 +409,8 @@ class TestEmbedSequencesCompleteness:
     def test_both_backends_reject_the_same_id(self, tmp_path):
         """Both backends raise the same error for the same invalid identifier,
         because the rejection lives in the shared layer rather than in either."""
-        from src.protspace.data.embedding import biocentral as bc
-        from src.protspace.data.embedding import local
+        from protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import local
 
         bad = {"A/B": "MKV"}
         messages = []
@@ -426,7 +426,7 @@ class TestEmbedSequencesCompleteness:
         """The completeness gate reads the .h5, never a running total. A writer
         that under-delivers -- save_embeddings skips IDs already present -- must
         still be caught."""
-        from src.protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import biocentral as bc
 
         seqs, h5_path, _, bc_mod = self._run(
             monkeypatch, tmp_path, to_dict=lambda s: self._embeddings(s)
@@ -462,8 +462,8 @@ class TestEmbedSequencesCompleteness:
     def test_a_local_cache_is_refused_before_any_api_call(self, monkeypatch, tmp_path):
         """A Local-written vector satisfies this backend's resume check, so
         without ownership the two models are silently mixed in one dataset."""
-        from src.protspace.data.embedding import biocentral as bc
-        from src.protspace.data.embedding import store
+        from protspace.data.embedding import biocentral as bc
+        from protspace.data.embedding import store
 
         h5_path = tmp_path / "out.h5"
         store.save_embeddings(

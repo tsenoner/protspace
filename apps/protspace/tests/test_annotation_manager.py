@@ -5,30 +5,30 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from src.protspace.data.annotations.configuration import (
+from protspace.data.annotations.configuration import (
     ALL_ANNOTATIONS,
     ANNOTATION_GROUPS,
     AnnotationConfiguration,
     expand_annotation_groups,
 )
-from src.protspace.data.annotations.manager import ProteinAnnotationManager
-from src.protspace.data.annotations.merging import AnnotationMerger
-from src.protspace.data.annotations.retrievers.interpro_retriever import (
+from protspace.data.annotations.manager import ProteinAnnotationManager
+from protspace.data.annotations.merging import AnnotationMerger
+from protspace.data.annotations.retrievers.interpro_retriever import (
     INTERPRO_ANNOTATIONS,
 )
-from src.protspace.data.annotations.retrievers.taxonomy_retriever import (
+from protspace.data.annotations.retrievers.taxonomy_retriever import (
     TAXONOMY_ANNOTATIONS,
 )
-from src.protspace.data.annotations.retrievers.uniprot_retriever import (
+from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
 )
-from src.protspace.data.annotations.transformers.uniprot_transforms import (
+from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
-from src.protspace.data.io.formatters import DataFormatter
-from src.protspace.data.io.writers import AnnotationWriter
-from src.protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
+from protspace.data.io.formatters import DataFormatter
+from protspace.data.io.writers import AnnotationWriter
+from protspace.data.parsers.uniprot_parser import ECO_TO_SHORT, UniProtEntry
 
 # Use new name throughout tests
 ProteinAnnotationExtractor = ProteinAnnotationManager  # For test compatibility
@@ -373,7 +373,7 @@ class TestIntegration:
             ("", "---***", ""),  # a marker-only sequence has no residues to use
         ],
     )
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_fasta_sequence_length_fallback(
         self, mock_uniprot_retriever, uniprot_length, sequence, expected
     ):
@@ -394,7 +394,7 @@ class TestIntegration:
 
         assert result.loc[0, "length"] == expected
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_retains_length_column_when_uniprot_request_fails(
         self, mock_uniprot_retriever
     ):
@@ -411,7 +411,7 @@ class TestIntegration:
 
         assert result["length"].tolist() == ["", "8"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_does_not_cache_annotations_when_uniprot_request_fails(
         self, mock_uniprot_retriever, tmp_path
     ):
@@ -435,7 +435,7 @@ class TestIntegration:
         assert not cache_path.exists()
         assert result["identifier"].tolist() == ["custom_protein"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_cached_signal_peptide_states_survive_uniprot_refetch(
         self, mock_uniprot_retriever
     ):
@@ -510,10 +510,8 @@ class TestIntegration:
     def sample_retrievers(self):
         """Patch UniProt and Taxonomy to serve the module's sample proteins."""
         with (
-            patch("src.protspace.data.annotations.manager.UniProtRetriever") as uniprot,
-            patch(
-                "src.protspace.data.annotations.manager.TaxonomyRetriever"
-            ) as taxonomy,
+            patch("protspace.data.annotations.manager.UniProtRetriever") as uniprot,
+            patch("protspace.data.annotations.manager.TaxonomyRetriever") as taxonomy,
         ):
             uniprot.return_value.failed_batch_count = 0
             uniprot.return_value.fetch_annotations.return_value = (
@@ -1048,7 +1046,7 @@ class TestStripScores:
 
     def test_strips_uniprot_evidence_codes(self):
         """UniProt evidence codes like 'Cytoplasm|EXP;Nucleus|IEA' → 'Cytoplasm;Nucleus'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1061,7 +1059,7 @@ class TestStripScores:
 
     def test_strips_interpro_bit_scores(self):
         """InterPro bit scores like 'PF00001 (7tm_1)|50.2' → 'PF00001 (7tm_1)'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1074,7 +1072,7 @@ class TestStripScores:
 
     def test_leaves_non_score_columns_untouched(self):
         """Columns not in SCORE_BEARING_COLUMNS remain unchanged."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1089,7 +1087,7 @@ class TestStripScores:
 
     def test_handles_empty_and_nan_values(self):
         """Empty strings and NaN values are preserved."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1103,7 +1101,7 @@ class TestStripScores:
 
     def test_df_without_score_columns_unchanged(self):
         """A DataFrame with no score-bearing columns is returned unchanged."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1116,7 +1114,7 @@ class TestStripScores:
 
     def test_strips_all_score_bearing_columns(self):
         """All SCORE_BEARING_COLUMNS are stripped when present."""
-        from src.protspace.data.annotations.scores import (
+        from protspace.data.annotations.scores import (
             SCORE_BEARING_COLUMNS,
             strip_scores_from_df,
         )
@@ -1132,7 +1130,7 @@ class TestStripScores:
 
     def test_strips_ec_evidence(self):
         """EC numbers 2.7.11.1|EXP → 2.7.11.1."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1145,7 +1143,7 @@ class TestStripScores:
 
     def test_strips_protein_families_evidence(self):
         """Protein families 'Insulin family|ISS' → 'Insulin family'."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1158,7 +1156,7 @@ class TestStripScores:
 
     def test_strips_go_terms_evidence(self):
         """GO terms 'apoptotic process|TAS;signal transduction|IEA' stripped."""
-        from src.protspace.data.annotations.scores import strip_scores_from_df
+        from protspace.data.annotations.scores import strip_scores_from_df
 
         df = pd.DataFrame(
             {
@@ -1189,8 +1187,8 @@ class TestUniProtFailureCacheWrite:
         ]
         return retriever
 
-    @patch("src.protspace.data.annotations.manager.TedRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TedRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_source_is_dropped_without_discarding_the_others(
         self, mock_uniprot, mock_ted, tmp_path
     ):
@@ -1226,9 +1224,9 @@ class TestUniProtFailureCacheWrite:
         # The run itself still reports everything it fetched.
         assert result["length"].tolist() == ["110"]
 
-    @patch("src.protspace.data.annotations.manager.TedRetriever")
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TedRetriever")
+    @patch("protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_dropping_uniprot_also_drops_the_taxonomy_it_keys(
         self, mock_uniprot, mock_taxonomy, mock_ted, tmp_path
     ):
@@ -1276,7 +1274,7 @@ class TestUniProtFailureCacheWrite:
         )
 
     @pytest.mark.parametrize("failed_batches,cache_written", [(1, False), (0, True)])
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_cache_write_follows_batch_success(
         self, mock_retriever, tmp_path, failed_batches, cache_written
     ):
@@ -1290,7 +1288,7 @@ class TestUniProtFailureCacheWrite:
         assert cache_path.exists() is cache_written
         assert result["identifier"].tolist() == ["P01308"]
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_lost_batch_leaves_an_existing_cache_untouched(
         self, mock_retriever, tmp_path
     ):
@@ -1338,7 +1336,7 @@ class TestPerIdentifierReuse:
         mock_retriever.return_value.failed_batch_count = 0
         mock_retriever.return_value.fetch_annotations.return_value = annotations
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_only_the_missing_identifiers_are_fetched(self, mock_uniprot):
         self._fetched(
             mock_uniprot,
@@ -1359,7 +1357,7 @@ class TestPerIdentifierReuse:
             "P3": "30",
         }
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_cache_covering_the_run_fetches_nothing(self, mock_uniprot):
         result = ProteinAnnotationExtractor(
             headers=["P1", "P2"],
@@ -1371,8 +1369,8 @@ class TestPerIdentifierReuse:
         mock_uniprot.assert_not_called()
         assert set(result["identifier"]) >= {"P1", "P2"}
 
-    @patch("src.protspace.data.annotations.manager.TaxonomyRetriever")
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.TaxonomyRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_taxonomy_is_looked_up_only_for_organisms_the_cache_lacks(
         self, mock_uniprot, mock_taxonomy
     ):
@@ -1409,7 +1407,7 @@ class TestPerIdentifierReuse:
             "P3": "Mus",
         }
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_rows_outside_the_run_survive_a_fetch(self, mock_uniprot, tmp_path):
         self._fetched(
             mock_uniprot,
@@ -1430,7 +1428,7 @@ class TestPerIdentifierReuse:
 
         assert set(pd.read_parquet(cache_path)["identifier"]) == {"P1", "P2", "P3"}
 
-    @patch("src.protspace.data.annotations.manager.UniProtRetriever")
+    @patch("protspace.data.annotations.manager.UniProtRetriever")
     def test_a_failed_fill_in_does_not_cache_empty_values(self, mock_uniprot, tmp_path):
         mock_uniprot.return_value.fetch_annotations.side_effect = RuntimeError(
             "offline"
