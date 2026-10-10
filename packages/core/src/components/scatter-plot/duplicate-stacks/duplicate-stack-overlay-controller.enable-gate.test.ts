@@ -72,12 +72,15 @@ describe('DuplicateStackOverlayController — enableDuplicateStackUI gate', () =
       expect(layerCount()).toBe(2);
 
       controller.updateSelectionOverlays({ duplicateImmediate });
+      // The disabled path ignores the debounce and cleans up synchronously, so
+      // both variants must already be done before any timer or RAF runs.
+      expect(layerCount()).toBe(0);
+      expect(clearSpy).toHaveBeenCalled();
+
       vi.runAllTimers();
       drain();
-
       expect(layerCount()).toBe(0);
       expect(renderSpy).not.toHaveBeenCalled();
-      expect(clearSpy).toHaveBeenCalled();
       expect(controller.getStacks()).toHaveLength(0); // no viewport compute ran
     },
   );
