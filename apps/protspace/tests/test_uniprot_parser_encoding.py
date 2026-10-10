@@ -10,7 +10,7 @@ if the corresponding `encode_field` wrap is removed/reverted.
 import pytest
 
 from protspace.data.annotations.encoding import decode_field, encode_field
-from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+from protspace.data.parsers.uniprot_parser import UniProtEntry
 
 
 def test_keyword_name_with_semicolon_is_encoded():

@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from src.protspace.data.annotations.transformers.interpro_transforms import (
+from protspace.data.annotations.transformers.interpro_transforms import (
     InterProTransformer,
     _parse_pfam_clans_tsv,
 )

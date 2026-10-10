@@ -136,12 +136,18 @@ select = [
     "ARG001", # unused-function-args
     "F401", # unused-import
     "F841", # unused-variable
+    "TID251", # banned-api: see flake8-tidy-imports.banned-api below
 ]
 ignore = [
     "E501", # line too long, handled by black
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Importing through `src.` loads a second copy of every protspace module next to the
+# installed one, so a `patch("src.protspace...")` misses the copy the code under test uses.
+"src".msg = "Import from `protspace`, not `src.protspace`."
 
 [tool.ruff.lint.isort]
 # protlabel lives in the packages/protlabel workspace member (not src/), so

@@ -1,7 +1,7 @@
 import json
 from unittest.mock import patch
 
-from src.protspace.data.annotations.retrievers.uniprot_retriever import (
+from protspace.data.annotations.retrievers.uniprot_retriever import (
     UNIPROT_ANNOTATIONS,
     ProteinAnnotations,
     UniProtRetriever,
@@ -11,18 +11,16 @@ from src.protspace.data.annotations.retrievers.uniprot_retriever import (
 UniProtAnnotationRetriever = UniProtRetriever
 
 _FETCH_ONE_PATCH = (
-    "src.protspace.data.annotations.retrievers"
-    ".uniprot_retriever._fetch_one_with_timeout"
+    "protspace.data.annotations.retrievers.uniprot_retriever._fetch_one_with_timeout"
 )
 _UNIPARC_PATCH = (
-    "src.protspace.data.annotations.retrievers"
-    ".uniprot_retriever._fetch_uniparc_sequence"
+    "protspace.data.annotations.retrievers.uniprot_retriever._fetch_uniparc_sequence"
 )
 _FETCH_MANY_PATCH = (
-    "src.protspace.data.annotations.retrievers.uniprot_retriever._fetch_many_accessions"
+    "protspace.data.annotations.retrievers.uniprot_retriever._fetch_many_accessions"
 )
 _SEARCH_SEC_ACC_PATCH = (
-    "src.protspace.data.annotations.retrievers.uniprot_retriever._search_sec_acc"
+    "protspace.data.annotations.retrievers.uniprot_retriever._search_sec_acc"
 )
 
 
@@ -223,7 +221,7 @@ class TestExtractAnnotations:
 
     def test_extract_annotations_returns_all_keys(self):
         """All UNIPROT_ANNOTATIONS keys are present in the result."""
-        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+        from protspace.data.parsers.uniprot_parser import UniProtEntry
 
         record = _make_mock_record("P99999")
         entry = UniProtEntry(record)
@@ -233,7 +231,7 @@ class TestExtractAnnotations:
 
     def test_extract_annotations_values_are_strings(self):
         """All values should be strings (for CSV/Parquet compatibility)."""
-        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+        from protspace.data.parsers.uniprot_parser import UniProtEntry
 
         record = _make_mock_record("P99999")
         entry = UniProtEntry(record)
@@ -246,7 +244,7 @@ class TestExtractAnnotations:
 
     def test_extract_annotations_specific_values(self):
         """Spot-check specific annotation values."""
-        from src.protspace.data.parsers.uniprot_parser import UniProtEntry
+        from protspace.data.parsers.uniprot_parser import UniProtEntry
 
         record = _make_mock_record(
             "P99999", length=200, organism_id=9606, annotation_score=3.0

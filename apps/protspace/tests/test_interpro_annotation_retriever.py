@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from src.protspace.data.annotations.retrievers.interpro_retriever import (
+from protspace.data.annotations.retrievers.interpro_retriever import (
     CACHE_MAX_AGE_DAYS,
     INTERPRO_ANNOTATIONS,
     MAX_CONCURRENT_REQUESTS,
@@ -186,7 +186,7 @@ class TestInterProAnnotationRetrieverFetch:
 
         # Override MD5 calculation for predictable test
         with patch(
-            "src.protspace.data.annotations.retrievers.interpro_retriever.hashlib.md5"
+            "protspace.data.annotations.retrievers.interpro_retriever.hashlib.md5"
         ) as mock_md5:
             mock_md5.return_value.hexdigest.return_value = TEST_MD5_HELLO
 
@@ -424,9 +424,7 @@ def _make_name_map(**kwargs):
 class TestEntryNameResolution:
     """Test entry name resolution via InterPro XML-based name map."""
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     def test_resolve_cath_names_success(self, mock_cath_names):
         """Test successful CATH name resolution via CATH names file."""
         mock_cath_names.return_value = {
@@ -452,9 +450,7 @@ class TestEntryNameResolution:
 
         assert result == {"SSF53098": "Ribonuclease H-like"}
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     def test_resolve_entry_names_download_failure(self, mock_cath_names):
         """Test graceful handling when CATH names returns empty (download failed)."""
         mock_cath_names.return_value = {}
@@ -478,9 +474,7 @@ class TestEntryNameResolution:
 
         assert result == {}
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     def test_resolve_entry_names_multiple_accessions(self, mock_cath_names):
         """Test resolving multiple CATH accessions."""
         mock_cath_names.return_value = {
@@ -530,9 +524,7 @@ class TestEntryNameResolution:
 class TestParsingWithNameResolution:
     """Test that CATH and SUPERFAMILY names are injected into parsed results."""
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     def test_parse_cath_with_resolved_names(self, mock_cath_names):
         """Test that CATH annotations include resolved names."""
         md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
@@ -638,9 +630,7 @@ class TestParsingWithNameResolution:
             == "SSF53098 (Matches API name)|1.5e-20"
         )
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     def test_parse_cath_partial_name_resolution(self, mock_cath_names):
         """Test when only some CATH names can be resolved."""
         md5_to_identifiers = {TEST_MD5: [TEST_PROTEIN_ID]}
@@ -675,9 +665,7 @@ class TestParsingWithNameResolution:
 
         assert result[0].annotations["pfam"] == "PF00001 (7tm_1)|50.2"
 
-    @patch(
-        "src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names"
-    )
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
     @patch.object(InterProRetriever, "_get_member_db_name_map")
     def test_parse_both_cath_and_superfamily_resolved(
         self, mock_name_map, mock_cath_names
@@ -839,14 +827,14 @@ class TestMemberDbNameMapCaching:
             self._write_cache(cache_dir, expected, age_days=1)
 
             with patch(
-                "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
+                "protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
                 cache_dir,
             ):
                 result = InterProRetriever._get_member_db_name_map()
 
             assert result == expected
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.requests.get")
     def test_cache_miss_triggers_download(self, mock_get):
         """Test that missing cache triggers download and parse."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -872,7 +860,7 @@ class TestMemberDbNameMapCaching:
             mock_get.return_value = mock_resp
 
             with patch(
-                "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
+                "protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
                 cache_dir,
             ):
                 result = InterProRetriever._get_member_db_name_map()
@@ -883,7 +871,7 @@ class TestMemberDbNameMapCaching:
             assert (cache_dir / "member_db_names.json").exists()
             assert (cache_dir / "member_db_names.timestamp").exists()
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.requests.get")
     def test_download_failure_returns_empty(self, mock_get):
         """Test that download failure returns empty map when no cache exists."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -892,14 +880,14 @@ class TestMemberDbNameMapCaching:
             mock_get.side_effect = requests.exceptions.ConnectionError("No connection")
 
             with patch(
-                "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
+                "protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
                 cache_dir,
             ):
                 result = InterProRetriever._get_member_db_name_map()
 
             assert result == {}
 
-    @patch("src.protspace.data.annotations.retrievers.interpro_retriever.requests.get")
+    @patch("protspace.data.annotations.retrievers.interpro_retriever.requests.get")
     def test_download_failure_falls_back_to_stale_cache(self, mock_get):
         """Test that download failure falls back to stale cache if available."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -910,7 +898,7 @@ class TestMemberDbNameMapCaching:
             mock_get.side_effect = requests.exceptions.ConnectionError("No connection")
 
             with patch(
-                "src.protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
+                "protspace.data.annotations.retrievers.interpro_retriever.INTERPRO_CACHE_DIR",
                 cache_dir,
             ):
                 result = InterProRetriever._get_member_db_name_map()
@@ -988,7 +976,7 @@ class TestXmlParsing:
         assert all(len(v) == 0 for v in result.values())
 
 
-@patch("src.protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
+@patch("protspace.data.annotations.retrievers.interpro_retriever.get_cath_names")
 def test_cath_name_with_semicolon_is_encoded(mock_cath_names):
     """CATH names containing ';' must be percent-encoded by the real emit path.
 
@@ -1486,7 +1474,7 @@ class TestInterProNPredictions:
         retriever = InterProAnnotationRetriever(annotations=annotations)
         with (
             patch(
-                "src.protspace.data.annotations.retrievers.interpro_retriever"
+                "protspace.data.annotations.retrievers.interpro_retriever"
                 ".get_cath_names",
                 return_value={"3.40.50.150": "Vaccinia Virus protein VP39"},
             ),

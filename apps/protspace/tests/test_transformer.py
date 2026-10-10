@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 import pytest
 
-from src.protspace.data.annotations.transformers.transformer import (
+from protspace.data.annotations.transformers.transformer import (
     AnnotationTransformer,
     ProteinAnnotations,
 )
-from src.protspace.data.annotations.transformers.uniprot_transforms import (
+from protspace.data.annotations.transformers.uniprot_transforms import (
     UniProtTransformer,
 )
 

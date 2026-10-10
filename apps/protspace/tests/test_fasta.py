@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.protspace.data.io.fasta import is_fasta_file, parse_fasta
+from protspace.data.io.fasta import is_fasta_file, parse_fasta
 
 
 class TestParseFasta:
