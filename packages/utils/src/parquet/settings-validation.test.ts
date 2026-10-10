@@ -247,6 +247,7 @@ describe('settings-validation', () => {
     it.each([
       ['a string', 'invalid'],
       ['an array', [1, 2, 3]],
+      ['null', null], // typeof null === 'object'
     ])('rejects publishState that is %s', (_label, publishState) => {
       const settings = {
         legendSettings: {},
