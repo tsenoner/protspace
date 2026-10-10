@@ -64,6 +64,14 @@ describe('legend extract methods', () => {
       expect(el.maxVisibleValues).toBe(6);
     });
 
+    it('closes the Other dialog and clears its outside-press latch', () => {
+      // A latch left set would close the dialog on the next overlay mouseup once reopened.
+      el._mouseDownOutsideOther = true;
+      (el as AnyLegend)._handleExtractFromOther('cat1');
+      expect(el._showOtherDialog).toBe(false);
+      expect(el._mouseDownOutsideOther).toBe(false);
+    });
+
     it('dispatches extract event with the value', () => {
       const events: CustomEvent[] = [];
       el.addEventListener(LEGEND_EVENTS.ITEM_CLICK, ((e: CustomEvent) =>
@@ -119,6 +127,13 @@ describe('legend extract methods', () => {
       (el as AnyLegend)._handleExtractAllFromOther();
       // 2 non-Other legend items + 3 other items = 5
       expect(el.maxVisibleValues).toBe(5);
+    });
+
+    it('closes the Other dialog and clears its outside-press latch', () => {
+      el._mouseDownOutsideOther = true;
+      (el as AnyLegend)._handleExtractAllFromOther();
+      expect(el._showOtherDialog).toBe(false);
+      expect(el._mouseDownOutsideOther).toBe(false);
     });
 
     it('dispatches extract event for each other item', () => {
@@ -287,5 +302,30 @@ describe('extracting from Other in a mounted legend', () => {
     // The dialog itself closed: with Other emptied, no .other-item rows would render even if
     // it stayed open.
     expect(root.querySelector('#legend-other-dialog')).toBeNull();
+  });
+});
+
+describe('Other dialog focus trap', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('is never created when cleaned up before the dialog has rendered', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.set(++nextFrame, cb);
+      return nextFrame;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const el = createLegend();
+    el._setupFocusTrap('legend-other-dialog');
+
+    expect(frames.size).toBe(1);
+
+    // A disconnect (or the next dialog's setup) within that frame drops the pending setup.
+    el._cleanupFocusTrap();
+
+    expect(frames.size).toBe(0);
   });
 });
