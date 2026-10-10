@@ -121,7 +121,7 @@ export class ScatterplotSyncController implements ReactiveController {
     const currentData = this._scatterplotElement?.getCurrentData?.();
     const annotationData = currentData?.annotation_data?.[selectedAnnotation];
 
-    // Cached: this runs from `_renderColorPicker`, i.e. on every legend re-render
+    // Cached: this runs from `ColorPickerController.render`, i.e. on every legend re-render
     // while the picker is open, and dense storage makes the uncached form an O(N)
     // sweep over 573K proteins for an answer that cannot change without the
     // storage object changing.

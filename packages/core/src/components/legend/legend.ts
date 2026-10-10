@@ -37,7 +37,6 @@ import {
   NA_VALUE,
   toDisplayValue,
   toInternalValue,
-  SHAPE_PATH_GENERATORS,
 } from './config';
 
 import type { PointShape } from '@protspace/utils';
@@ -60,7 +59,12 @@ import {
   type LegendHeaderView,
 } from './legend-header';
 import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
-import { renderLegendList } from './legend-list';
+import {
+  LegendKeyboardController,
+  renderLegendList,
+  type LegendReorderSnapshot,
+} from './legend-list';
+import { ColorPickerController } from './legend-color-picker';
 import {
   deriveStripPoints,
   EMPTY_STRIP_POINTS,
@@ -185,9 +189,6 @@ export class ProtspaceLegend extends LitElement {
   private _preIsolationVisibleValues: Set<string> = new Set();
   @state() private _showSettingsDialog = false;
   @state() private _statusMessage = '';
-  @state() private _colorPickerItem: string | null = null;
-  @state() private _colorPickerPosition: { x: number; y: number } | null = null;
-  @state() private _showShapePicker = false;
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
@@ -217,15 +218,7 @@ export class ProtspaceLegend extends LitElement {
     values: (string | null)[];
     proteinCount: number;
   } | null = null;
-  @state() private _keyboardDragValue: string | null = null;
   private _announceManualPromotionOnNextReorder = false;
-  private _keyboardReorderSnapshot: {
-    annotation: string;
-    sortMode: LegendSortMode;
-    legendItems: LegendItem[];
-    otherItems: OtherItem[];
-    numericManualOrderIds?: string[];
-  } | null = null;
 
   // Pending extract/merge values for next update cycle.
   // undefined = no pending operation, string = value to extract/merge (including '__NA__' for N/A)
@@ -281,13 +274,11 @@ export class ProtspaceLegend extends LitElement {
   // Focus trap cleanup function (stored for proper cleanup)
   private _focusTrapCleanup: (() => void) | null = null;
 
-  // Debounce timer for color picker updates
-  private _colorChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   // Track where mousedown occurred for click-outside detection
-  private _mouseDownOutsideColorPicker = false;
   private _mouseDownOutsideSettings = false;
   private _mouseDownOutsideOther = false;
+  /** Whether `_onWindowKeydownCapture` is on the window (see `_listenForEscape`). */
+  private _escapeListening = false;
 
   // ─────────────────────────────────────────────────────────────────
   // Controllers
@@ -372,10 +363,39 @@ export class ProtspaceLegend extends LitElement {
         ...this._annotationSortModes,
         [this.selectedAnnotation]: mode,
       };
-      this._keyboardDragValue = null;
+      this._keyboard.clear();
       this._scatterplotController.syncNumericAnnotationSettings();
     },
     onDropComplete: (value) => this._highlightDroppedItem(value),
+  });
+
+  private _colorPicker = new ColorPickerController(this, {
+    getItem: (value) => this._legendItems.find((item) => item.value === value),
+    preview: (value, color) => this._previewColor(value, color),
+    commitColor: (value, color) => this._handleColorChange(value, color),
+    commitShape: (value, shape) => this._handleShapeChange(value, shape),
+    isMultilabel: () => this._isMultilabelAnnotation(),
+    isNumeric: () => this._isNumericAnnotation(),
+  });
+
+  private _keyboard = new LegendKeyboardController(this, {
+    getSortedItems: () => this._sortedLegendItems,
+    canDrag: (item) => this._canDragLegendItem(item),
+    toggle: (value) => this._handleItemClick(value),
+    isolate: (value) => this._handleItemDoubleClick(value),
+    snapshot: () => ({
+      annotation: this.selectedAnnotation,
+      sortMode: this._currentSortMode,
+      legendItems: this._legendItems.map((item) => ({ ...item })),
+      otherItems: this._otherItems.map((item) => ({ ...item })),
+      numericManualOrderIds: this._isNumericAnnotation()
+        ? [...(this._numericManualOrderIdsByAnnotation[this.selectedAnnotation] ?? [])]
+        : undefined,
+    }),
+    restore: (snapshot) => this._restoreKeyboardReorderSnapshot(snapshot),
+    move: (value, direction) => this._moveFocusedManualItem(value, direction),
+    announce: (message) => this._announceStatus(message),
+    annotationName: () => this.selectedAnnotation,
   });
 
   private _eatControls = new EatReliabilityController(this, {
@@ -397,27 +417,12 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _clearKeyboardReorderState(): void {
-    this._keyboardDragValue = null;
+    this._keyboard.clear();
     this._announceManualPromotionOnNextReorder = false;
-    this._keyboardReorderSnapshot = null;
   }
 
-  private _beginKeyboardReorder(itemValue: string): void {
-    this._keyboardDragValue = itemValue;
-    this._keyboardReorderSnapshot = {
-      annotation: this.selectedAnnotation,
-      sortMode: this._currentSortMode,
-      legendItems: this._legendItems.map((item) => ({ ...item })),
-      otherItems: this._otherItems.map((item) => ({ ...item })),
-      numericManualOrderIds: this._isNumericAnnotation()
-        ? [...(this._numericManualOrderIdsByAnnotation[this.selectedAnnotation] ?? [])]
-        : undefined,
-    };
-  }
-
-  private _restoreKeyboardReorderSnapshot(): void {
-    const snapshot = this._keyboardReorderSnapshot;
-    if (!snapshot || snapshot.annotation !== this.selectedAnnotation) {
+  private _restoreKeyboardReorderSnapshot(snapshot: LegendReorderSnapshot): void {
+    if (snapshot.annotation !== this.selectedAnnotation) {
       this._clearKeyboardReorderState();
       return;
     }
@@ -491,119 +496,40 @@ export class ProtspaceLegend extends LitElement {
   // ─────────────────────────────────────────────────────────────────
 
   private _onWindowKeydownCapture = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      // Close color picker first if open
-      if (this._colorPickerItem !== null) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._flushColorChangeDebounce();
-        this._colorPickerItem = null;
-        this._showShapePicker = false;
-        return;
-      }
-      // Close Other dialog second if open
-      if (this._showOtherDialog) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._showOtherDialog = false;
-        return;
-      }
-      // Then close Settings dialog if open
-      if (this._showSettingsDialog) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._handleSettingsClose();
-        return;
-      }
-      // Cancel active keyboard reorder. The drag-handle's own Escape handler
-      // works only while focus stays on that handle, but Lit re-renders during
-      // ArrowDown can briefly move focus to <body> before rAF restores it —
-      // catching Escape here makes cancel robust to that focus gap.
-      if (this._keyboardDragValue !== null) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        this._restoreKeyboardReorderSnapshot();
-        this._announceStatus('Reordering canceled.');
-        return;
-      }
+    if (e.key !== 'Escape') return;
+    // One thing per Escape, in this order: the colour picker, Other, settings, a keyboard reorder.
+    if (this._colorPicker.value !== null) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      this._colorPicker.close();
+      return;
+    }
+    if (this._showOtherDialog) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      this._showOtherDialog = false;
+      return;
+    }
+    if (this._showSettingsDialog) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      this._handleSettingsClose();
+      return;
+    }
+    // Caught here as well as on the handle: Lit re-renders during ArrowDown can leave focus on
+    // <body> until requestAnimationFrame puts it back on the handle.
+    if (this._keyboard.cancel()) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
     }
   };
 
-  private _onWindowMouseDown = (e: MouseEvent) => {
-    if (this._colorPickerItem === null) return;
-
-    // Check if mousedown is outside the color picker
-    const colorPicker = this.shadowRoot?.querySelector('.color-picker-popover');
-    if (colorPicker && !colorPicker.contains(e.target as Node)) {
-      this._mouseDownOutsideColorPicker = true;
-    } else {
-      this._mouseDownOutsideColorPicker = false;
-    }
-  };
-
-  private _onWindowMouseUp = () => {
-    // Only close if mousedown also occurred outside
-    if (this._colorPickerItem !== null && this._mouseDownOutsideColorPicker) {
-      this._flushColorChangeDebounce();
-      this._colorPickerItem = null;
-      this._showShapePicker = false;
-      this._mouseDownOutsideColorPicker = false;
-    }
-  };
-
-  private _handleItemKeyDown(e: KeyboardEvent, item: LegendItem, itemIndex: number): void {
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'ArrowRight': {
-        e.preventDefault();
-        const nextIndex = Math.min(itemIndex + 1, this._sortedLegendItems.length - 1);
-        this._focusItem(nextIndex);
-        break;
-      }
-      case 'ArrowUp':
-      case 'ArrowLeft': {
-        e.preventDefault();
-        const prevIndex = Math.max(itemIndex - 1, 0);
-        this._focusItem(prevIndex);
-        break;
-      }
-      case 'Home': {
-        e.preventDefault();
-        this._focusItem(0);
-        break;
-      }
-      case 'End': {
-        e.preventDefault();
-        this._focusItem(this._sortedLegendItems.length - 1);
-        break;
-      }
-      case 'Enter':
-      case ' ': {
-        e.preventDefault();
-        this._handleItemClick(item.value);
-        break;
-      }
-      case 'i':
-      case 'I': {
-        e.preventDefault();
-        this._handleItemDoubleClick(item.value);
-        break;
-      }
-    }
-  }
-
-  private _focusItem(index: number): void {
-    const items = this.shadowRoot?.querySelectorAll('.legend-item-main');
-    if (items?.[index]) {
-      (items[index] as HTMLElement).focus();
-    }
-  }
-
-  private _focusDragHandleForValue(value: string): void {
-    const handle = this.shadowRoot?.querySelector(
-      `.legend-item[data-value="${CSS.escape(value)}"] .drag-handle`,
-    ) as HTMLButtonElement | null;
-    handle?.focus();
+  /** Puts the Escape handler on the window while a legend overlay or a reorder is open. */
+  private _listenForEscape(on: boolean): void {
+    if (on === this._escapeListening) return;
+    this._escapeListening = on;
+    if (on) window.addEventListener('keydown', this._onWindowKeydownCapture, true);
+    else window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
   }
 
   private _dispatchLegendStateChange(): void {
@@ -651,7 +577,7 @@ export class ProtspaceLegend extends LitElement {
 
     this._announceManualPromotionOnNextReorder = didPromote;
     if (!options.preserveKeyboardDragValue) {
-      this._keyboardDragValue = null;
+      this._keyboard.clear();
     }
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchZOrderChange();
@@ -660,85 +586,29 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _moveFocusedManualItem(value: string, direction: -1 | 1): void {
-    const orderedItems = [...this._sortedLegendItems].filter(
+  private _moveFocusedManualItem(
+    value: string,
+    direction: -1 | 1,
+  ): { moved: LegendItem; promoted: boolean } | null {
+    const orderedItems = this._sortedLegendItems.filter(
       (item) => item.value !== LEGEND_VALUES.OTHER,
     );
     const currentIndex = orderedItems.findIndex((item) => item.value === value);
-    if (currentIndex === -1) {
-      return;
-    }
+    if (currentIndex === -1) return null;
 
     const nextIndex = Math.max(0, Math.min(orderedItems.length - 1, currentIndex + direction));
-    if (nextIndex === currentIndex) {
-      return;
-    }
+    if (nextIndex === currentIndex) return null;
 
     const reordered = [...orderedItems];
     const [moved] = reordered.splice(currentIndex, 1);
     reordered.splice(nextIndex, 0, moved);
     this._commitManualOrderFromVisibleValues(
       reordered.map((item) => item.value),
-      {
-        preserveKeyboardDragValue: true,
-      },
+      { preserveKeyboardDragValue: true },
     );
-
-    this._announceStatus(
-      this._announceManualPromotionOnNextReorder
-        ? `Moved ${moved.displayValue ?? toDisplayValue(moved.value)}. Switched ${this.selectedAnnotation} to Manual order.`
-        : `Moved ${moved.displayValue ?? toDisplayValue(moved.value)}.`,
-    );
+    const promoted = this._announceManualPromotionOnNextReorder;
     this._announceManualPromotionOnNextReorder = false;
-    requestAnimationFrame(() => this._focusDragHandleForValue(value));
-  }
-
-  private _handleDragHandleKeyDown(e: KeyboardEvent, item: LegendItem): void {
-    if (!this._canDragLegendItem(item)) {
-      return;
-    }
-
-    switch (e.key) {
-      case 'Enter':
-      case ' ': {
-        e.preventDefault();
-        const isDropping = this._keyboardDragValue === item.value;
-        if (isDropping) {
-          this._clearKeyboardReorderState();
-        } else {
-          this._beginKeyboardReorder(item.value);
-        }
-        this._announceStatus(
-          !isDropping
-            ? `Picked up ${item.displayValue ?? toDisplayValue(item.value)} for reordering`
-            : `Dropped ${item.displayValue ?? toDisplayValue(item.value)}`,
-        );
-        break;
-      }
-      case 'Escape': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._restoreKeyboardReorderSnapshot();
-          this._announceStatus('Reordering canceled.');
-          requestAnimationFrame(() => this._focusDragHandleForValue(item.value));
-        }
-        break;
-      }
-      case 'ArrowUp': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._moveFocusedManualItem(item.value, -1);
-        }
-        break;
-      }
-      case 'ArrowDown': {
-        if (this._keyboardDragValue === item.value) {
-          e.preventDefault();
-          this._moveFocusedManualItem(item.value, 1);
-        }
-        break;
-      }
-    }
+    return { moved, promoted };
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -837,34 +707,9 @@ export class ProtspaceLegend extends LitElement {
   }
 
   disconnectedCallback(): void {
-    window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
-    window.removeEventListener('mousedown', this._onWindowMouseDown);
-    window.removeEventListener('mouseup', this._onWindowMouseUp);
+    this._listenForEscape(false);
     this._cleanupFocusTrap();
-    this._cleanupColorChangeDebounce();
     super.disconnectedCallback();
-  }
-
-  private _cleanupColorChangeDebounce(): void {
-    if (this._colorChangeDebounceTimer !== null) {
-      clearTimeout(this._colorChangeDebounceTimer);
-      this._colorChangeDebounceTimer = null;
-    }
-  }
-
-  private _flushColorChangeDebounce(): void {
-    if (this._colorChangeDebounceTimer !== null) {
-      clearTimeout(this._colorChangeDebounceTimer);
-      this._colorChangeDebounceTimer = null;
-      // The color has already been updated in the UI by _handleColorChangeDebounced
-      // We just need to trigger the scatterplot sync
-      if (this._colorPickerItem !== null) {
-        const item = this._legendItems.find((i) => i.value === this._colorPickerItem);
-        if (item) {
-          this._handleColorChange(item.value, item.color);
-        }
-      }
-    }
   }
 
   private _cleanupFocusTrap(): void {
@@ -885,36 +730,14 @@ export class ProtspaceLegend extends LitElement {
   }
 
   updated(changedProperties: Map<string, unknown>): void {
-    // Handle keyboard events for dialogs, color picker, and active keyboard reorder
-    const dialogsChanged =
-      changedProperties.has('_showSettingsDialog') ||
-      changedProperties.has('_showOtherDialog') ||
-      changedProperties.has('_colorPickerItem') ||
-      changedProperties.has('_keyboardDragValue');
-    if (dialogsChanged) {
-      const anyDialogOpen =
-        this._showSettingsDialog ||
+    // The colour picker and a keyboard reorder live in controllers, whose state never shows in
+    // `changedProperties`, so whether anything Escape closes is open is recomputed every update.
+    this._listenForEscape(
+      this._showSettingsDialog ||
         this._showOtherDialog ||
-        this._colorPickerItem !== null ||
-        this._keyboardDragValue !== null;
-      if (anyDialogOpen) {
-        window.addEventListener('keydown', this._onWindowKeydownCapture, true);
-      } else {
-        window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
-      }
-    }
-
-    // Handle global mousedown/mouseup for color picker (close on press outside)
-    if (changedProperties.has('_colorPickerItem')) {
-      if (this._colorPickerItem !== null) {
-        window.addEventListener('mousedown', this._onWindowMouseDown);
-        window.addEventListener('mouseup', this._onWindowMouseUp);
-      } else {
-        window.removeEventListener('mousedown', this._onWindowMouseDown);
-        window.removeEventListener('mouseup', this._onWindowMouseUp);
-        this._mouseDownOutsideColorPicker = false;
-      }
-    }
+        this._colorPicker.value !== null ||
+        this._keyboard.pickedValue !== null,
+    );
 
     // Handle settings dialog focus trapping
     if (changedProperties.has('_showSettingsDialog')) {
@@ -1102,6 +925,9 @@ export class ProtspaceLegend extends LitElement {
    * @param datasetHash - The hash of the NEW dataset (used to clear its localStorage entries)
    */
   public clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
+    // A colour still waiting for its delay lands on the dataset it was picked on, not the next one.
+    this._colorPicker.close();
+
     // Reset visual encoding state
     this._processorContext.slotTracker.reset();
 
@@ -1121,7 +947,6 @@ export class ProtspaceLegend extends LitElement {
     // Reset UI state
     this._showSettingsDialog = false;
     this._showOtherDialog = false;
-    this._colorPickerItem = null;
     this._selectedPaletteId = 'kellys';
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
@@ -2094,36 +1919,6 @@ export class ProtspaceLegend extends LitElement {
     this._settingsDialogEl?.focus();
   }
 
-  private _handleSymbolClick(item: LegendItem, event: MouseEvent): void {
-    event.stopPropagation();
-
-    // Close if clicking the same item
-    if (this._colorPickerItem === item.value) {
-      this._flushColorChangeDebounce();
-      this._colorPickerItem = null;
-      this._showShapePicker = false;
-      return;
-    }
-
-    // Flush any pending changes when switching to a different item
-    this._flushColorChangeDebounce();
-
-    // Calculate position relative to the legend container
-    const container = this.shadowRoot?.querySelector('.legend-container');
-    if (!container) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-
-    this._colorPickerPosition = {
-      x: targetRect.left - containerRect.left + targetRect.width + 8,
-      y: targetRect.top - containerRect.top,
-    };
-    this._colorPickerItem = item.value;
-    this._showShapePicker = false; // Reset shape picker when opening new item
-    this.requestUpdate();
-  }
-
   private _handleSettingsSave(): void {
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
     const nextSelectedPaletteId = isNumericAnnotation
@@ -2148,7 +1943,7 @@ export class ProtspaceLegend extends LitElement {
     }
     this._annotationSortModes = nextAnnotationSortModes;
     if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
-      this._keyboardDragValue = null;
+      this._keyboard.clear();
     }
     this._selectedPaletteId = nextSelectedPaletteId;
     if (isNumericAnnotation) {
@@ -2194,22 +1989,16 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _handleColorChangeDebounced(value: string, newColor: string): void {
-    // Clear any pending debounce timer
-    this._cleanupColorChangeDebounce();
-
-    // Update the color in the UI immediately for visual feedback
+  /**
+   * Shows a colour while it is dragged: the row repaints now, the plot when the edit commits. The
+   * item is changed in place, as before the split, so a drag does not re-sort the list or
+   * re-derive the score strips on every tick.
+   */
+  private _previewColor(value: string, color: string): void {
     const item = this._legendItems.find((i) => i.value === value);
-    if (item) {
-      item.color = newColor;
-      this.requestUpdate();
-    }
-
-    // Debounce the expensive operations (scatterplot update)
-    this._colorChangeDebounceTimer = setTimeout(() => {
-      this._handleColorChange(value, newColor);
-      this._colorChangeDebounceTimer = null;
-    }, 150);
+    if (!item) return;
+    item.color = color;
+    this.requestUpdate();
   }
 
   private _handleShapeChange(value: string, newShape: PointShape): void {
@@ -2217,9 +2006,6 @@ export class ProtspaceLegend extends LitElement {
     this._legendItems = this._legendItems.map((item) =>
       item.value === value ? { ...item, shape: newShape } : item,
     );
-
-    // Close the shape picker dropdown
-    this._showShapePicker = false;
 
     // Sync to persistence
     this._syncLegendColorsToPersistence();
@@ -2400,15 +2186,7 @@ export class ProtspaceLegend extends LitElement {
     };
 
     return html`
-      <div
-        class="legend-container"
-        part="container"
-        @click=${() => {
-          this._flushColorChangeDebounce();
-          this._colorPickerItem = null;
-          this._showShapePicker = false;
-        }}
-      >
+      <div class="legend-container" part="container" @click=${() => this._colorPicker.close()}>
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
@@ -2420,7 +2198,7 @@ export class ProtspaceLegend extends LitElement {
         ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
-        ${this._renderColorPicker()}
+        ${this._colorPicker.render()}
       </div>
       ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
     `;
@@ -2506,12 +2284,16 @@ export class ProtspaceLegend extends LitElement {
         e.stopPropagation();
         this._showOtherDialog = true;
       },
-      onKeyDown: (e: KeyboardEvent) => this._handleItemKeyDown(e, item, sortedIndex),
-      onHandleKeyDown: (e: KeyboardEvent) => this._handleDragHandleKeyDown(e, item),
+      onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
+      onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
       onHover: (category) => this._setHoveredCategory(category),
       onSymbolClick:
         item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
-          ? (e: MouseEvent) => this._handleSymbolClick(item, e)
+          ? (e: MouseEvent) => {
+              // Keeps the container's click from closing the picker it opens.
+              e.stopPropagation();
+              this._colorPicker.toggle(item.value, e.currentTarget as HTMLElement);
+            }
           : undefined,
     };
     return renderLegendRow(item, view, handlers);
@@ -2605,161 +2387,6 @@ export class ProtspaceLegend extends LitElement {
     };
 
     return renderSettingsDialog(state, callbacks);
-  }
-
-  private _renderColorPicker() {
-    if (this._colorPickerItem === null || !this._colorPickerPosition) {
-      return html``;
-    }
-
-    const item = this._legendItems.find((i) => i.value === this._colorPickerItem);
-    if (!item) return html``;
-
-    const displayLabel = item.displayValue ?? toDisplayValue(item.value);
-    const isMultilabel = this._isMultilabelAnnotation();
-    const isNumeric = this._isNumericAnnotation();
-    const availableShapes: PointShape[] = [
-      'circle',
-      'square',
-      'diamond',
-      'triangle-up',
-      'triangle-down',
-      'plus',
-    ];
-
-    // Render shape swatch SVG (outline only, no fill)
-    const renderShapeSwatch = (shape: string, disabled: boolean = false) => {
-      const pathGenerator =
-        SHAPE_PATH_GENERATORS[shape as PointShape] || SHAPE_PATH_GENERATORS.circle;
-      const size = 20;
-      const canvasSize = 28;
-      const centerOffset = canvasSize / 2;
-      const path = pathGenerator(size);
-      const strokeColor = disabled ? '#999' : '#333';
-
-      return html`
-        <svg width="${canvasSize}" height="${canvasSize}" viewBox="0 0 ${canvasSize} ${canvasSize}">
-          <g transform="translate(${centerOffset}, ${centerOffset})">
-            <path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="1.5" />
-          </g>
-        </svg>
-      `;
-    };
-
-    return html`
-      <div
-        class="color-picker-popover"
-        style="left: ${this._colorPickerPosition.x}px; top: ${this._colorPickerPosition.y}px;"
-        @click=${(e: Event) => e.stopPropagation()}
-        @mousedown=${(e: Event) => e.stopPropagation()}
-      >
-        <div class="color-picker-header">${displayLabel}</div>
-        <div class="symbol-picker-sections">
-          <!-- Color Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Color</div>
-            <input
-              type="color"
-              class="color-picker-swatch"
-              .value=${item.color}
-              aria-label=${`Set color for ${displayLabel}`}
-              @input=${(e: Event) =>
-                this._handleColorChangeDebounced(item.value, (e.target as HTMLInputElement).value)}
-            />
-          </div>
-          <!-- Shape Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Shape</div>
-            <div class="shape-swatch-container">
-              ${isMultilabel || isNumeric
-                ? html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch disabled"
-                      aria-label="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      title="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      disabled
-                    >
-                      ${renderShapeSwatch(item.shape, true)}
-                    </button>
-                  `
-                : html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch ${this._showShapePicker ? 'active' : ''}"
-                      aria-label=${`Change shape for ${displayLabel}`}
-                      title="Click to change shape"
-                      @click=${(e: Event) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this._showShapePicker = !this._showShapePicker;
-                      }}
-                    >
-                      ${renderShapeSwatch(item.shape)}
-                    </button>
-                    ${this._showShapePicker
-                      ? html`
-                          <div class="shape-picker-dropdown">
-                            <div class="shape-picker-grid">
-                              ${availableShapes.map((shape) => {
-                                const isSelected = item.shape === shape;
-                                const pathGenerator = SHAPE_PATH_GENERATORS[shape];
-                                const size = 14;
-                                const canvasSize = 20;
-                                const centerOffset = canvasSize / 2;
-                                const path = pathGenerator(size);
-                                const isOutlineOnly = shape === 'plus';
-
-                                return html`
-                                  <button
-                                    type="button"
-                                    class="shape-picker-item ${isSelected ? 'selected' : ''}"
-                                    aria-label=${`Use ${shape} shape for ${displayLabel}`}
-                                    title="${shape}"
-                                    @click=${(e: Event) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      this._handleShapeChange(item.value, shape);
-                                    }}
-                                  >
-                                    <svg
-                                      width="${canvasSize}"
-                                      height="${canvasSize}"
-                                      viewBox="0 0 ${canvasSize} ${canvasSize}"
-                                    >
-                                      <g transform="translate(${centerOffset}, ${centerOffset})">
-                                        <path
-                                          d="${path}"
-                                          fill="${isOutlineOnly ? 'none' : 'currentColor'}"
-                                          stroke="currentColor"
-                                          stroke-width="${isOutlineOnly ? 1.5 : 1}"
-                                        />
-                                      </g>
-                                    </svg>
-                                  </button>
-                                `;
-                              })}
-                            </div>
-                          </div>
-                        `
-                      : null}
-                  `}
-            </div>
-          </div>
-        </div>
-        ${isMultilabel || isNumeric
-          ? html`<div class="symbol-picker-note">
-              ${isNumeric
-                ? 'Shapes unavailable for numeric annotations'
-                : 'Shapes unavailable for multilabel annotations'}
-            </div>`
-          : null}
-      </div>
-    `;
   }
 }
 

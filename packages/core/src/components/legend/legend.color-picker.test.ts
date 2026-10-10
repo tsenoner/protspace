@@ -4,6 +4,7 @@ import { generateDatasetHash, type LegendPersistedSettings } from '@protspace/ut
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { LEGEND_STYLES, SHAPE_PATH_GENERATORS } from './config';
+import { COLOR_COMMIT_DELAY_MS } from './legend-color-picker';
 import {
   categoricalData,
   legendStorageKey,
@@ -76,7 +77,7 @@ describe('legend colour and shape picker', () => {
     }
     expect(onMapping).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(150);
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS);
     expect(onMapping).toHaveBeenCalledOnce();
     expect(onMapping.mock.calls[0][0].detail.colorOnly).toBe(true);
   });
@@ -123,6 +124,22 @@ describe('legend colour and shape picker', () => {
     await settle(legend);
 
     expect(q(legend, '.color-picker-popover')).not.toBeNull();
+  });
+
+  it('lands a colour still waiting for its delay on the dataset it was picked on', async () => {
+    const { legend, plot, key } = await setup();
+    await openPicker(legend, 'B');
+    vi.useFakeTimers();
+    const onMapping = vi.fn();
+    plot.addEventListener('legend-colormapping-change', onMapping);
+    setColour(legend, '#ff0000');
+
+    legend.clearForNewDataset('next-dataset');
+    expect(onMapping).toHaveBeenCalledOnce();
+    expect(stored(key)!.categories.B.color).toBe('#ff0000');
+
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS);
+    expect(onMapping).toHaveBeenCalledOnce();
   });
 
   it('offers no symbol button on numeric rows', async () => {
