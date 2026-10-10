@@ -349,6 +349,11 @@ export class ProtspaceStructureViewer extends LitElement {
     );
   }
 
+  /** Focus scrolls a clipped link into the one-line list; leaving puts the line back. */
+  private _resetLinksScroll = (event: FocusEvent) => {
+    (event.currentTarget as HTMLElement).scrollTop = 0;
+  };
+
   private _handleClose() {
     this.close(); // Use internal close method
   }
@@ -407,10 +412,15 @@ export class ProtspaceStructureViewer extends LitElement {
             <div class="header" part="header">
               <div class="header-info">
                 <div class="header-title-row">
-                  <span class="title">${this.title}</span>
+                  <span class="title">${icon('box')}${this.title}</span>
                   <span class="protein-id">${proteinId}</span>
                 </div>
-                <ul class="header-links" role="list" aria-label="External resources">
+                <ul
+                  class="header-links"
+                  role="list"
+                  aria-label="External resources"
+                  @focusout=${this._resetLinksScroll}
+                >
                   ${RESOURCE_LINKS.map(
                     (resource) => html`
                       <li class="header-links-item">

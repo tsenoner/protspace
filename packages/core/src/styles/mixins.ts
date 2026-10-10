@@ -506,13 +506,14 @@ export const segmentedControlMixin = css`
     color: var(--segmented-hover-text, var(--text-primary));
   }
 
+  /* The accent pair keeps the selected label at 4.5:1 (design decision 6) */
   .segmented > .segmented-btn[aria-pressed='true'] {
-    background: var(--primary);
-    color: var(--text-light);
+    background: var(--ps-accent);
+    color: var(--ps-text-on-accent);
   }
 
   .segmented > .segmented-btn[aria-pressed='true']:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: var(--ps-accent-hover);
   }
 
   /* The library-wide focus ring, lifted above neighbours; the inner ring keeps it visible on the

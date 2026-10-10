@@ -50,9 +50,12 @@ const structureViewerStylesCore = css`
   }
 
   .title {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--protspace-viewer-text);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ps-space-2);
+    font-size: var(--ps-text-base);
+    font-weight: var(--ps-weight-semibold);
+    color: var(--ps-text);
     margin: 0;
   }
 
@@ -66,14 +69,14 @@ const structureViewerStylesCore = css`
 
   .header-title-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
 
   .protein-id {
-    font-size: 0.875rem;
-    color: var(--protspace-viewer-text-muted);
+    font-size: var(--ps-text-base);
+    color: var(--ps-text-muted);
   }
 
   /*
@@ -104,7 +107,7 @@ const structureViewerStylesCore = css`
     display: inline-flex;
     align-items: baseline;
     gap: 0.1rem;
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-accent-text);
     text-decoration: none;
     cursor: pointer;
     transition: color 0.2s;
@@ -116,11 +119,7 @@ const structureViewerStylesCore = css`
    * anchor would drag the arrow under the same line.
    */
   .header-link-label {
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-color: color-mix(in srgb, var(--protspace-viewer-text-muted) 45%, transparent);
     text-underline-offset: 2px;
-    transition: text-decoration-color 0.2s;
   }
 
   /*
@@ -146,20 +145,14 @@ const structureViewerStylesCore = css`
     opacity: 0.7;
   }
 
-  .header-link:hover,
-  .header-link:focus-visible {
-    color: var(--protspace-viewer-text);
-  }
-
   .header-link:hover .header-link-label,
   .header-link:focus-visible .header-link-label {
-    text-decoration-style: solid;
-    text-decoration-color: currentColor;
+    text-decoration: underline;
   }
 
   .header-link:focus-visible {
-    outline: 2px solid var(--protspace-viewer-loading);
-    outline-offset: 2px;
+    outline: var(--ps-focus-width) solid var(--ps-focus);
+    outline-offset: var(--ps-focus-offset);
     border-radius: 2px;
   }
 
