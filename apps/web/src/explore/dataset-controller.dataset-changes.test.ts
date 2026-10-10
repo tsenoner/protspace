@@ -469,14 +469,19 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     const loaded = dataLoadedEvent({ file: new File(['x'], '40K.parquetbundle') });
     mocks.persisted.isCurrentRequest
       .mockReturnValueOnce(true) // check before loadData: still current
-      .mockReturnValueOnce(false); // check after loadData: superseded meanwhile
-    const { controller, viewController, setCurrentExampleId, setCurrentDatasetName } =
-      createController(runningLoad(exampleMeta('url')));
+      .mockReturnValue(false); // checks after loadData and as it settles: superseded meanwhile
+    const {
+      controller,
+      viewController,
+      overlayController,
+      setCurrentExampleId,
+      setCurrentDatasetName,
+    } = createController(runningLoad(exampleMeta('url')));
     const changes = recordDatasetChanges(controller);
 
     await controller.handleDataLoaded(loaded);
 
-    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(2);
+    expect(mocks.persisted.isCurrentRequest).toHaveBeenCalledTimes(3);
     expect(mocks.loadData).toHaveBeenCalledTimes(1);
     expect(setCurrentDatasetName).toHaveBeenCalledWith(OTHER.label);
     expect(setCurrentExampleId).toHaveBeenCalledWith(OTHER.id);
@@ -484,6 +489,8 @@ describe('handleDataLoaded: example labeling keyed on load meta, not kind', () =
     expect(changes).toEqual([[OTHER.id, 'superseded']]);
     expect(viewController.applyLatestViewForDatasetLoad).not.toHaveBeenCalled();
     expect(viewController.setRequestedView).not.toHaveBeenCalled();
+    // The overlay is the newer request's too.
+    expect(overlayController.update).not.toHaveBeenCalledWith(false);
   });
 
   // Guards the exact regression the review flagged: the perf suite also

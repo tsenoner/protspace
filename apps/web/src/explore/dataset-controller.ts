@@ -297,9 +297,10 @@ export function createDatasetController({
     // result, or one a newer user request superseded, must leave that request's overlay
     // alone.
     let ownsOverlay = false;
-    // Set once a newer user request is known to have superseded this load (checked
-    // after the render, or on a failure): that request owns the overlay by then.
-    let superseded = false;
+    // Whether a newer user request has superseded this load, asked again once it has
+    // settled: that request owns the overlay by then. Until this load's own meta is
+    // known, the running load's check stands in.
+    let isOwnLoadSuperseded = isRunningLoadSuperseded;
 
     try {
       const customEvent = event as CustomEvent<DataLoadedEventDetail>;
@@ -336,6 +337,7 @@ export function createDatasetController({
       // `dataset=` from the entry a Back/Forward went to. The queue-level
       // check above can't see this (this load is still the running one).
       const isSuperseded = () => isLoadSuperseded(loadMeta);
+      isOwnLoadSuperseded = isSuperseded;
       if (isSuperseded()) {
         if (loadMeta.kind === 'opfs') {
           // The stored import decoded fine; only a newer request kept it off
@@ -426,7 +428,7 @@ export function createDatasetController({
       // while it runs. This dataset is on screen all the same, so it is
       // labelled and recorded as the one displayed; only the URL and the view
       // request, which that request owns, are left alone.
-      superseded = isSuperseded();
+      const superseded = isSuperseded();
 
       if (settings && loadMeta.kind !== 'opfs') {
         legendElement.setFileSettings(settings.legendSettings, datasetHash, true);
@@ -572,14 +574,14 @@ export function createDatasetController({
       // Nothing later would take the overlay down after a failure here, even one
       // thrown before the stale check could establish ownership.
       ownsOverlay = true;
-      superseded = isRunningLoadSuperseded();
     } finally {
       // The load has settled — rendered, settings and view restored, status recorded,
       // or failed along the way — so take the overlay down now, and before the next
       // queued load may start and show its own. Not when a newer user request has
-      // superseded this load meanwhile: that request owns the overlay (an example
-      // still downloading shows its progress there) and takes it down itself.
-      if (ownsOverlay && !superseded) {
+      // superseded this load by now, even during the post-load work: that request owns
+      // the overlay (an example still downloading shows its progress there) and takes
+      // it down itself.
+      if (ownsOverlay && !isOwnLoadSuperseded()) {
         overlayController.update(false);
       }
       if (loadSequence !== null) {
