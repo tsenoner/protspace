@@ -317,6 +317,8 @@ test('a window resize re-renders the workbench only when the sidebar cap changes
   await openExplore(page);
   // Past 1004 px the cap is 480 at every width, so these resizes change nothing on screen.
   const before = await commits();
+  // The hook counts: opening Explore committed.
+  expect(before).toBeGreaterThan(0);
   for (const width of [1290, 1300, 1310, 1320, 1330]) {
     await page.setViewportSize({ width, height: 720 });
     await page.evaluate(
@@ -324,6 +326,9 @@ test('a window resize re-renders the workbench only when the sidebar cap changes
     );
   }
   expect(await commits()).toBe(before);
+  // 1000 px lowers the cap to 476: a real re-render the hook must see.
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await expect.poll(commits).toBeGreaterThan(before);
 });
 
 test('a zoomed-in view keeps its centre protein across collapse and expand', async ({ page }) => {

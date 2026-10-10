@@ -136,6 +136,7 @@ async function sampleEncodedExportMarkers(
 ): Promise<{
   predicted: number[];
   predictedRing: number[][];
+  predictedRingSamples: number;
   densePredicted: number[];
   densePredictedNearestNeighbor: number;
   observed: number[];
@@ -266,22 +267,28 @@ async function sampleEncodedExportMarkers(
         plot._webglRenderer!.pointScale() *
         Math.sqrt((width * height) / (live.width * live.height));
       const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
-      const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
-      const predictedRingOffsets = [
-        [-ringOffset, 0],
-        [ringOffset, 0],
-        [0, -ringOffset],
-        [0, ringOffset],
-        [-diagonalOffset, -diagonalOffset],
-        [diagonalOffset, -diagonalOffset],
-        [-diagonalOffset, diagonalOffset],
-        [diagonalOffset, diagonalOffset],
-      ];
+      // Sixteen directions: at large point sizes neighbours cover much of the ring, and only
+      // samples clear of them count (below).
+      const predictedRingOffsets = Array.from({ length: 16 }, (_, i) => [
+        Math.round(ringOffset * Math.cos((i * Math.PI) / 8)),
+        Math.round(ringOffset * Math.sin((i * Math.PI) / 8)),
+      ]);
+      // Only ring samples clear of every other marker: one inside a neighbour's marker reads that
+      // marker's colour, and would pass for the ring when the ring is lost.
+      const clear = ([dx, dy]: number[]) =>
+        positions.every(
+          (other) =>
+            other.slot === predictedPoint.slot ||
+            Math.hypot(other.x - predictedPoint.x - dx, other.y - predictedPoint.y - dy) >
+              exportRadius + 1,
+        );
+      const ringOffsets = predictedRingOffsets.filter(clear);
       const result = {
         predicted: sample(predictedPoint),
-        predictedRing: predictedRingOffsets.map(([dx, dy]) =>
+        predictedRing: ringOffsets.map(([dx, dy]) =>
           sample({ x: predictedPoint.x + dx, y: predictedPoint.y + dy }),
         ),
+        predictedRingSamples: ringOffsets.length,
         densePredicted: sample(densePredictedPoint),
         densePredictedNearestNeighbor: densePredictedPoint.nearestNeighbor,
         observed: sample(observedPoint),
@@ -734,8 +741,9 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   // Measured at a 1280x720 window: predicted nearest neighbour 8.36 px, observed 10.93 px, export
   // radius 5.36 px, ring offset 4 px. The ring sample that faces the predicted point's nearest
   // neighbour lands 4.36 px from that neighbour's centre, 1 px inside its marker, so the stricter
-  // `> exportRadius + ringOffset` does not hold for this data. The predicted centre (the hollow
-  // check) is 3 px clear of every neighbour's marker and the observed centre 5.6 px.
+  // `> exportRadius + ringOffset` does not hold for this data; the sampler drops such samples and
+  // keeps the ones clear of every other marker. The predicted centre (the hollow check) is 3 px
+  // clear of every neighbour's marker and the observed centre 5.6 px.
   expect(exportMarkers.predictedNearestNeighbor).toBeGreaterThan(8);
   expect(exportMarkers.observedNearestNeighbor).toBeGreaterThan(8);
   // Predicted interiors are hollow (Task 3: #3+#4) — `captureAtResolution` fills the export
@@ -746,6 +754,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(exportMarkers.predicted[3]).toBe(255);
   expect(exportMarkers.observed[3]).toBe(255);
   expect(distanceFromWhite(exportMarkers.predicted)).toBeLessThan(20);
+  expect(exportMarkers.predictedRingSamples).toBeGreaterThanOrEqual(3);
   expect(Math.max(...exportMarkers.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   expect(distanceFromWhite(exportMarkers.observed)).toBeGreaterThan(60);
   expect(exportMarkers.densePredictedNearestNeighbor).toBeLessThan(0.5);
@@ -762,6 +771,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   // size instead — near-white over the white bg (above), the dark bg (below), and alpha 0 over a
   // transparent bg (below).
   for (const profile of markerProfiles) {
+    expect(profile.predictedRingSamples).toBeGreaterThanOrEqual(3);
     expect(Math.max(...profile.predictedRing.map(distanceFromWhite))).toBeGreaterThan(60);
   }
   const darkExport = await sampleEncodedExportMarkers(page, 240, '#102030');
