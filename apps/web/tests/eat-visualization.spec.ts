@@ -6,10 +6,9 @@ import {
   clearSelection,
   colorByTrigger,
   dismissTourIfPresent,
-  exportMenu,
+  exportAction,
   filterButton,
   isolateSelection,
-  openExportMenu,
   openFilter,
   plotStatus,
   projectionTrigger,
@@ -804,9 +803,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   expect(transparentExport.predicted[3]).toBe(0);
   expect(transparentExport.corner[3]).toBe(0);
 
-  await openExportMenu(page);
   const downloadPromise = page.waitForEvent('download');
-  await exportMenu(page).getByRole('button', { name: 'Quick Export PNG' }).click();
+  await exportAction(page, 'Quick PNG');
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.png$/);
   const downloadPath = await download.path();

@@ -483,7 +483,7 @@ test('with the sidebar open, the legend settings popover and the Import and Expo
       openImportMenu,
       (p: Page) => importMenu(p).getByRole('dialog', { name: 'Import', exact: true }),
     ],
-    [openExportMenu, (p: Page) => exportMenu(p).locator('.panel')],
+    [openExportMenu, (p: Page) => exportMenu(p).getByRole('menu', { name: 'Export', exact: true })],
   ] as const) {
     await open(page);
     const panel = panelOf(page);

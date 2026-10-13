@@ -7,11 +7,11 @@ The Figure Editor is a full-screen tool for creating publication-ready figures f
 ## Opening the Figure Editor
 
 1. Click **Export** in the control bar
-2. With **PNG** or **PDF** selected, click **Figure Editor**
+2. Choose **Figure editor…**
 
 The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
 
-To download immediately without opening the editor, use **Quick Export**. It always exports your
+To download immediately without opening the editor, use **Quick PNG** or **Quick PDF**. It always exports your
 current view at 2048 × 1024 px and does not use the editor's settings.
 
 The editor always renders the full view, what a double-click on the plot shows, not your current

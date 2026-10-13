@@ -381,14 +381,36 @@ export async function pickExample(page: Page, id: string): Promise<void> {
   await importMenu(page).locator(`[data-example-id="${id}"]`).click();
 }
 
-/** Opens the Export menu unless it is open; resolves once its formats show. */
+/** The Export menu: a menu named "Export" in the Export button's popover. */
+const exportMenuList = (page: Page): Locator =>
+  exportMenu(page).getByRole('menu', { name: 'Export', exact: true });
+
+/**
+ * Opens the Export menu unless it is open; resolves once it shows. "Open" is read from the
+ * trigger's aria-expanded, not the menu's visibility: a closing ps-popover fades out over 120 ms,
+ * so a menu just closed would still count as visible and the click that reopens it be skipped.
+ */
 export async function openExportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const png = exportMenu(page).getByRole('button', { name: 'PNG', exact: true });
-  if (!(await png.isVisible().catch(() => false))) {
-    await exportMenu(page).getByRole('button', { name: 'Export', exact: true }).click();
+  const trigger = exportMenu(page).getByRole('button', { name: 'Export', exact: true });
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+    await trigger.click();
   }
-  await expect(png).toBeVisible();
+  await expect(exportMenuList(page)).toBeVisible();
+}
+
+/** Opens the Export menu and chooses one of its exports. */
+export async function exportAction(
+  page: Page,
+  name:
+    | 'Figure editor…'
+    | 'Quick PNG'
+    | 'Quick PDF'
+    | 'Protein IDs (.txt)'
+    | 'Data bundle (.parquetbundle)',
+): Promise<void> {
+  await openExportMenu(page);
+  await exportMenu(page).getByRole('menuitem', { name, exact: true }).click();
 }
 
 /** Opens the Filter panel, from the view bar or from More, unless it shows already. */

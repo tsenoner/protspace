@@ -194,14 +194,14 @@ describe('N/A handling in export', () => {
 });
 
 /**
- * Helper to call exportProteinIds via the real exporter and capture the downloaded IDs.
- * Mocks the private downloadFile method to intercept the data URI.
+ * Helper to call exportProteinIds via the real exporter and capture the downloaded IDs: the
+ * export writes a Blob through an object URL, so the Blob is read back here.
  */
-function callExportProteinIds(
+async function callExportProteinIds(
   data: ExportableData,
   annotation: string,
   hiddenAnnotationValues: string[] = [],
-): string[] {
+): Promise<string[]> {
   const el = createMockElement({
     getCurrentData: () => data,
     selectedAnnotation: annotation,
@@ -209,21 +209,27 @@ function callExportProteinIds(
   });
   const exporter = createExporter(el);
 
-  let capturedUri = '';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.spyOn(exporter as any, 'downloadFile').mockImplementation((uri: string) => {
-    capturedUri = uri;
+  const captured: { blob?: Blob } = {};
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    captured.blob = blob as Blob;
+    return 'blob:protein-ids';
   });
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
 
   exporter.exportProteinIds();
 
-  if (!capturedUri) return [];
-  const encoded = capturedUri.replace('data:text/plain;charset=utf-8,', '');
-  const decoded = decodeURIComponent(encoded);
-  return decoded ? decoded.split('\n') : [];
+  if (!captured.blob) return [];
+  const text = await captured.blob.text();
+  return text ? text.split('\n') : [];
 }
 
 describe('exportProteinIds integration', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const baseData: ExportableData = {
     protein_ids: ['P1', 'P2', 'P3', 'P4'],
     annotations: {
@@ -236,34 +242,34 @@ describe('exportProteinIds integration', () => {
     annotation_data: { species: [[0], [1], [2], [0]] },
   };
 
-  it('exports all IDs when nothing is hidden', () => {
-    const ids = callExportProteinIds(baseData, 'species', []);
+  it('exports all IDs when nothing is hidden', async () => {
+    const ids = await callExportProteinIds(baseData, 'species', []);
     expect(ids).toEqual(['P1', 'P2', 'P3', 'P4']);
   });
 
-  it('excludes N/A proteins when __NA__ is hidden', () => {
-    const ids = callExportProteinIds(baseData, 'species', [NA_VALUE]);
+  it('excludes N/A proteins when __NA__ is hidden', async () => {
+    const ids = await callExportProteinIds(baseData, 'species', [NA_VALUE]);
     expect(ids).toEqual(['P1', 'P2', 'P4']);
     expect(ids).not.toContain('P3');
   });
 
-  it('excludes proteins matching a hidden regular value', () => {
-    const ids = callExportProteinIds(baseData, 'species', ['mouse']);
+  it('excludes proteins matching a hidden regular value', async () => {
+    const ids = await callExportProteinIds(baseData, 'species', ['mouse']);
     expect(ids).toEqual(['P1', 'P3', 'P4']);
     expect(ids).not.toContain('P2');
   });
 
-  it('excludes multiple hidden values including N/A', () => {
-    const ids = callExportProteinIds(baseData, 'species', ['mouse', NA_VALUE]);
+  it('excludes multiple hidden values including N/A', async () => {
+    const ids = await callExportProteinIds(baseData, 'species', ['mouse', NA_VALUE]);
     expect(ids).toEqual(['P1', 'P4']);
   });
 
-  it('returns no visible IDs when all values are hidden', () => {
-    const ids = callExportProteinIds(baseData, 'species', ['human', 'mouse', NA_VALUE]);
+  it('returns no visible IDs when all values are hidden', async () => {
+    const ids = await callExportProteinIds(baseData, 'species', ['human', 'mouse', NA_VALUE]);
     expect(ids).toEqual([]);
   });
 
-  it('treats proteins with empty annotation arrays as N/A', () => {
+  it('treats proteins with empty annotation arrays as N/A', async () => {
     const data: ExportableData = {
       protein_ids: ['P1', 'P2'],
       annotations: {
@@ -276,16 +282,16 @@ describe('exportProteinIds integration', () => {
       annotation_data: { species: [[0], []] },
     };
 
-    const ids = callExportProteinIds(data, 'species', [NA_VALUE]);
+    const ids = await callExportProteinIds(data, 'species', [NA_VALUE]);
     expect(ids).toEqual(['P1']);
   });
 
-  it('exports all IDs when annotation does not exist (fallback)', () => {
-    const ids = callExportProteinIds(baseData, 'nonexistent', [NA_VALUE]);
+  it('exports all IDs when annotation does not exist (fallback)', async () => {
+    const ids = await callExportProteinIds(baseData, 'nonexistent', [NA_VALUE]);
     expect(ids).toEqual(['P1', 'P2', 'P3', 'P4']);
   });
 
-  it('handles multi-value annotations — visible if any value is not hidden', () => {
+  it('handles multi-value annotations — visible if any value is not hidden', async () => {
     const data: ExportableData = {
       protein_ids: ['P1', 'P2'],
       annotations: {
@@ -299,7 +305,7 @@ describe('exportProteinIds integration', () => {
     };
 
     // P1 has both 'alpha' and N/A — hiding N/A still keeps P1 because 'alpha' is visible
-    const ids = callExportProteinIds(data, 'tags', [NA_VALUE]);
+    const ids = await callExportProteinIds(data, 'tags', [NA_VALUE]);
     expect(ids).toEqual(['P1', 'P2']);
   });
 });
@@ -362,5 +368,112 @@ describe('exportCanvasAsPdf', () => {
 
     expect(jsPdfCtor).toHaveBeenCalledWith(expect.objectContaining({ orientation: 'portrait' }));
     vi.doUnmock('jspdf');
+  });
+});
+
+describe('exporters report the file they wrote', () => {
+  const fakeCanvas = { width: 20, height: 10, toDataURL: () => 'data:image/png;base64,AAA=' };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-15T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('exportProteinIds returns its file name and downloads a Blob URL, not a data: URI', () => {
+    const exporter = createExporter(createMockElement());
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:protein-ids');
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const download = vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+
+    expect(exporter.exportProteinIds()).toBe('protein_ids.txt');
+    expect(created).toHaveBeenCalledWith(expect.any(Blob));
+    expect((created.mock.calls[0][0] as Blob).type).toBe('text/plain;charset=utf-8');
+    expect(download).toHaveBeenCalledWith('blob:protein-ids', 'protein_ids.txt');
+    expect(String(download.mock.calls[0][0]).startsWith('data:')).toBe(false);
+    expect(revoked).toHaveBeenCalledWith('blob:protein-ids');
+  });
+
+  it('exportProteinIds returns null with no data', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exporter = createExporter(createMockElement({ getCurrentData: () => null }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const download = vi.spyOn(exporter as any, 'downloadFile').mockImplementation(() => {});
+
+    expect(exporter.exportProteinIds()).toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('exportPNG returns the generated file name', async () => {
+    const exporter = createExporter(createMockElement());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const internals = exporter as any;
+    vi.spyOn(internals, 'getScatterplotElement').mockReturnValue({});
+    vi.spyOn(internals, 'captureScatterplotCanvas').mockResolvedValue(fakeCanvas);
+    const download = vi.spyOn(internals, 'downloadFile').mockImplementation(() => {});
+
+    const name = await exporter.exportPNG({ includeLegend: false });
+
+    expect(name).toBe('protspace_pca_species_2024-01-15.png');
+    expect(download).toHaveBeenCalledWith('data:image/png;base64,AAA=', name);
+    expect(await exporter.exportPNG({ includeLegend: false, exportName: 'mine.png' })).toBe(
+      'mine.png',
+    );
+  });
+
+  it('exportPNG returns null with no data or no scatterplot', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const empty = createExporter(createMockElement({ getCurrentData: () => null }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const emptyDownload = vi.spyOn(empty as any, 'downloadFile').mockImplementation(() => {});
+    expect(await empty.exportPNG()).toBeNull();
+    expect(emptyDownload).not.toHaveBeenCalled();
+
+    const detached = createExporter(createMockElement());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(detached as any, 'getScatterplotElement').mockReturnValue(null);
+    expect(await detached.exportPNG()).toBeNull();
+  });
+});
+
+describe('exportPDF reports the file it saved', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-15T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.doUnmock('jspdf');
+  });
+
+  it('exportPDF returns the file it saved', async () => {
+    const save = vi.fn();
+    const jsPdfCtor = vi.fn().mockImplementation(function () {
+      return { addImage: vi.fn(), setProperties: vi.fn(), save };
+    });
+    vi.doMock('jspdf', () => ({ default: jsPdfCtor }));
+    const fresh = await import('./export-utils');
+    const exporter = fresh.createExporter(createMockElement());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const internals = exporter as any;
+    vi.spyOn(internals, 'getScatterplotElement').mockReturnValue({});
+    vi.spyOn(internals, 'captureScatterplotCanvas').mockResolvedValue({
+      width: 20,
+      height: 10,
+      toDataURL: () => 'data:image/png;base64,AAA=',
+    });
+
+    const name = await exporter.exportPDF({ includeLegend: false });
+
+    expect(name).toBe('protspace_pca_species_2024-01-15.pdf');
+    expect(save).toHaveBeenCalledWith(name);
   });
 });

@@ -469,20 +469,24 @@ Each fires inside the user's click, after the panel has closed: call the data lo
 
 ### Export Menu
 
+A menu named "Export": **Figure editor…**, **Quick PNG**, **Quick PDF**, **Protein IDs (.txt)** and
+**Data bundle (.parquetbundle)**, then an **Include legend settings** checkbox (checked by default;
+toggling it keeps the menu open) and the note "Quick exports leave out contours."
+
 | Property          | Type      | Description                                                                     |
 | ----------------- | --------- | ------------------------------------------------------------------------------- |
 | `hasFileSettings` | `boolean` | The loaded file carries settings a Parquet export can keep; `has-file-settings` |
 
-Methods: `reset()` returns the menu to PNG.
+Methods: `reset()` checks **Include legend settings** again, as for a new dataset.
 
-| Event                 | Detail              | Description             |
-| --------------------- | ------------------- | ----------------------- |
-| `export`              | `ExportEventDetail` | Export requested        |
-| `open-publish-editor` | `{}`                | Figure editor requested |
+| Event                 | Detail              | Description                 |
+| --------------------- | ------------------- | --------------------------- |
+| `export`              | `ExportEventDetail` | A quick export was chosen   |
+| `open-publish-editor` | `{}`                | "Figure editor…" was chosen |
 
 `ExportEventDetail` is `{ type: 'png' | 'pdf' | 'ids' | 'parquet', imageWidth, imageHeight,
 legendWidthPercent, legendFontSizePx, includeLegend, includeLegendSettings }`; `EXPORT_DEFAULTS`
-holds the default sizes.
+holds the default sizes. The quick exports always send `EXPORT_DEFAULTS`' sizes; `includeLegendSettings` is the checkbox.
 
 ### Plot Tools
 

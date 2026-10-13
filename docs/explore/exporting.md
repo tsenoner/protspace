@@ -4,22 +4,26 @@ ProtSpace allows you to export publication-ready figures, raw data, and protein 
 
 ## Export Button
 
-Click **Export** in the control bar to see available formats:
+Click **Export** in the top bar to open its menu:
 
-| Format          | Description                                               |
-| --------------- | --------------------------------------------------------- |
-| **PNG**         | Raster image of the current view with legend              |
-| **PDF**         | PDF document of the current view with legend              |
-| **Protein IDs** | Text file with newline-separated identifiers              |
-| **Parquet**     | `.parquetbundle` file with all data and optional settings |
+| Item                             | What it does                                                     |
+| -------------------------------- | ---------------------------------------------------------------- |
+| **Figure editor…**               | Opens the full-screen editor for publication figures             |
+| **Quick PNG**                    | Downloads a raster image of the current view with legend         |
+| **Quick PDF**                    | Downloads a PDF of the current view with legend                  |
+| **Protein IDs (.txt)**           | Downloads the visible proteins' identifiers, one per line        |
+| **Data bundle (.parquetbundle)** | Downloads a `.parquetbundle` with all data and optional settings |
+
+**Include legend settings**, below them, decides whether a data bundle carries your legend
+settings. Every export confirms with a message naming the downloaded file.
 
 ## Image Export (PNG / PDF)
 
-When PNG or PDF is selected, you have two export paths:
+Images have two paths:
 
 ### Figure Editor (Recommended)
 
-Click **Figure Editor** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
+Choose **Figure editor…** to open a full-screen editor with live preview. This is the primary workflow for creating publication-quality figures. See the [Figure Editor guide](./figure-editor) for full documentation.
 
 Key features:
 
@@ -34,7 +38,7 @@ Key features:
 
 ### Quick Export
 
-Click **Quick Export** to download an image immediately, with no preview. It always uses fixed
+Choose **Quick PNG** or **Quick PDF** to download an image immediately, with no preview. It always uses fixed
 defaults, a 2048 × 1024 px image with the legend on the right, and keeps your current zoom and pan;
 it does not use Figure Editor settings. For another size or layout, or for the full plot, use the
 Figure Editor.

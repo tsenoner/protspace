@@ -149,17 +149,14 @@ test.describe('explore helpers', () => {
     await expectUrlParam(page, 'dataset', other.id);
   });
 
-  test('openExportMenu shows the export formats', async ({ page }) => {
+  test('openExportMenu shows the export menu', async ({ page }) => {
     await openExplore(page);
     await openExportMenu(page);
-    for (const format of ['PNG', 'PDF', 'IDs', 'Parquet']) {
-      await expect(
-        exportMenu(page).getByRole('button', { name: format, exact: true }),
-      ).toBeVisible();
-    }
+    const quickPng = exportMenu(page).getByRole('menuitem', { name: 'Quick PNG', exact: true });
+    await expect(quickPng).toBeVisible();
     // An open menu stays open.
     await openExportMenu(page);
-    await expect(exportMenu(page).getByRole('button', { name: 'PNG', exact: true })).toBeVisible();
+    await expect(quickPng).toBeVisible();
   });
 
   test('openFilter opens the Filter panel with its query builder', async ({ page }) => {

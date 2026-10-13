@@ -235,16 +235,17 @@ Use **Filter** for structured queries. Use **Isolate** for ad-hoc selections.
 
 ## 8. Export
 
-Click **Export** to save your visualization:
+Click **Export** to save your visualization or its data:
 
 ![Export options](./images/control-bar-export.png)
 
-| Format          | Description                                               |
-| --------------- | --------------------------------------------------------- |
-| **PNG**         | Raster image with legend                                  |
-| **PDF**         | PDF document with legend                                  |
-| **Protein IDs** | Text file with newline-separated identifiers              |
-| **Parquet**     | `.parquetbundle` file with all data and optional settings |
+| Item                             | Saves                                                         |
+| -------------------------------- | ------------------------------------------------------------- |
+| **Figure editor…**               | A publication figure, laid out in the editor                  |
+| **Quick PNG**                    | A raster image of the current view with legend                |
+| **Quick PDF**                    | A PDF of the current view with legend                         |
+| **Protein IDs (.txt)**           | The visible proteins' identifiers, one per line               |
+| **Data bundle (.parquetbundle)** | All data and, with **Include legend settings**, your settings |
 
 See [Exporting Results](/explore/exporting) for image customization options (dimensions, legend size, font).
 

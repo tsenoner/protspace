@@ -511,3 +511,23 @@ describe('ps-menu inside another element’s shadow root', () => {
     });
   });
 });
+
+describe('ps-menu opening focus', () => {
+  it('a checked checkbox item does not take the opening focus', async () => {
+    document.body.innerHTML = `
+      <button id="anchor">Export</button>
+      <ps-menu label="Export">
+        <ps-menu-item value="png">Quick PNG</ps-menu-item>
+        <ps-menu-item value="settings" type="checkbox" checked>Include legend settings</ps-menu-item>
+      </ps-menu>`;
+    const anchor = document.getElementById('anchor')!;
+    const menu = document.querySelector('ps-menu') as PsMenu;
+    menu.anchor = anchor;
+    anchor.focus();
+    menu.open = true;
+    await menu.updateComplete;
+    await frame();
+    await frame();
+    expect(focused()).toBe('png');
+  });
+});

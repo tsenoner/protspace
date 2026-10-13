@@ -519,12 +519,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     datasetController.beginUserRequest();
   });
 
-  const handleExport = createExportHandler({
+  createExportHandler({
     exportMenu,
+    listen(type, listener) {
+      addTrackedEventListener(lifecycle, exportMenu, type, listener);
+    },
     getSelectedProteins: interactionController.getSelectedProteins,
     getUnplacedProteinCount: datasetController.getUnplacedProteinCount,
     legendElement,
     plotElement,
+    notify,
   });
 
   addTrackedEventListener(
@@ -595,9 +599,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     if (file) {
       void dataLoader.loadFromFile(file);
     }
-  });
-  addTrackedEventListener(lifecycle, exportMenu, 'export', (event: Event) => {
-    void handleExport(event);
   });
   const importMenuBinding = bindImportMenu({
     listen(type, listener) {

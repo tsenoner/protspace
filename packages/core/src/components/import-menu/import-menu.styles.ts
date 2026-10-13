@@ -1,11 +1,8 @@
 import { css } from 'lit';
 import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
-/**
- * The trigger, the panel and the panel's buttons, shared by the Import and Export menus until
- * phase 4.8 rebuilds both on the kit. Token values only; the app bar does the layout.
- */
-export const dataMenuStyles = [
+/** The Import button. Its panel is a ps-popover; the app bar does the layout. */
+const triggerStyles = [
   kitHost,
   focusRing,
   reducedMotion,
@@ -41,75 +38,11 @@ export const dataMenuStyles = [
       flex: none;
       color: var(--ps-text-muted);
     }
-
-    /* Over the plot and the sidebar it overlaps (100, as the other dropdowns), under the
-       loading overlay. Not in the top layer: an example's position: fixed info bubble must not get
-       a containing block. */
-    .panel {
-      position: absolute;
-      top: calc(100% + var(--ps-space-1));
-      right: 0;
-      z-index: 100;
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      width: 280px;
-      max-width: calc(100vw - 2 * var(--ps-space-3));
-      max-height: 50vh;
-      overflow-x: hidden;
-      overflow-y: auto;
-      padding: var(--ps-space-3);
-      border: 1px solid var(--ps-border);
-      border-radius: var(--ps-radius-lg);
-      background: var(--ps-surface-raised);
-      box-shadow: var(--ps-shadow-lg);
-      text-align: left;
-      scrollbar-width: thin;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--ps-space-1);
-      min-height: var(--ps-control-sm);
-      padding: var(--ps-space-1) var(--ps-space-3);
-      border: 1px solid transparent;
-      border-radius: var(--ps-radius);
-      font: inherit;
-      font-weight: var(--ps-weight-medium);
-      cursor: pointer;
-      transition: background-color var(--ps-duration-fast) var(--ps-ease);
-    }
-
-    .btn-primary {
-      background: var(--ps-accent);
-      color: var(--ps-text-on-accent);
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: var(--ps-accent-hover);
-    }
-
-    .btn-secondary {
-      border-color: var(--ps-border-strong);
-      background: var(--ps-surface);
-      color: var(--ps-text);
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: var(--ps-surface-hover);
-    }
-
-    .btn:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
   `,
 ];
 
 export const importMenuStyles = [
-  dataMenuStyles,
+  triggerStyles,
   css`
     .import-menu {
       display: flex;

@@ -215,7 +215,11 @@ export class PsMenu extends LitElement {
     this.applyFilter();
     queueMicrotask(() => {
       if (this.searchable) this.searchInput?.focus();
-      else this.focusItem(this.navigable.find((i) => i.checked) ?? this.navigable[0]);
+      // The checked radio is where the user is; a checked checkbox is a setting, not a position.
+      else
+        this.focusItem(
+          this.navigable.find((i) => i.type === 'radio' && i.checked) ?? this.navigable[0],
+        );
     });
   };
 

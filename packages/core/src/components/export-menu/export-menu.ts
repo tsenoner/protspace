@@ -1,9 +1,10 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { deepActiveElement, flatContains } from '../kit/focus';
+import '../kit/button';
 import { icon } from '../kit/icon';
-import { pushLayer } from '../kit/layers';
+import '../kit/menu';
+import type { PsMenu } from '../kit/menu';
 import '../kit/tooltip';
 import { EXPORT_DEFAULTS } from './export-defaults';
 import { exportMenuStyles } from './export-menu.styles';
@@ -19,164 +20,102 @@ export interface ExportEventDetail {
   includeLegendSettings: boolean;
 }
 
-const FORMATS: ReadonlyArray<{ value: ExportEventDetail['type']; label: string }> = [
-  { value: 'png', label: 'PNG' },
-  { value: 'pdf', label: 'PDF' },
-  { value: 'ids', label: 'IDs' },
-  { value: 'parquet', label: 'Parquet' },
+/** The exports that run at once, with fixed sizes, in menu order. */
+const QUICK_EXPORTS: ReadonlyArray<{ value: ExportEventDetail['type']; label: string }> = [
+  { value: 'png', label: 'Quick PNG' },
+  { value: 'pdf', label: 'Quick PDF' },
+  { value: 'ids', label: 'Protein IDs (.txt)' },
+  { value: 'parquet', label: 'Data bundle (.parquetbundle)' },
 ];
 
+const FIGURE_EDITOR = 'figure';
+const INCLUDE_SETTINGS = 'include-settings';
+
 /**
- * The Export menu: a format, then the figure editor or a quick export (design decisions 1, 9 and
- * 15). Its panel is a layer of the kit's layer stack, so Escape and a press outside close it and
- * focus returns to the trigger. It only asks: `export` and `open-publish-editor` are the host's to
- * act on. Phase 4.8 rebuilds the panel on the kit.
+ * The Export menu (design decisions 1 and 15): the figure editor, the four quick exports and
+ * whether a data bundle carries the legend settings, as one ps-menu. It only asks: `export` and
+ * `open-publish-editor` are the host's to act on, and the host confirms every export.
  */
 @customElement('protspace-export-menu')
 export class ProtspaceExportMenu extends LitElement {
   static styles = exportMenuStyles;
 
-  /** The loaded file carries saved settings, which a Parquet export can carry on. */
+  /** The loaded file carries saved settings, which a data bundle export can carry on. */
   @property({ type: Boolean, attribute: 'has-file-settings' }) hasFileSettings = false;
 
   @state() private open = false;
-  @state() private format: ExportEventDetail['type'] = EXPORT_DEFAULTS.FORMAT;
   @state() private includeLegendSettings = true;
-  @query('.trigger') private trigger!: HTMLButtonElement;
-  private releaseLayer?: () => void;
+  @query('.trigger') private trigger!: HTMLElement;
+  @query('ps-menu') private menu!: PsMenu;
 
-  /** Back to PNG with the legend settings included, as for a new dataset. */
+  /** Checks "Include legend settings" again, as for a new dataset. */
   reset(): void {
-    this.format = EXPORT_DEFAULTS.FORMAT;
     this.includeLegendSettings = true;
   }
 
-  connectedCallback(): void {
-    super.connectedCallback();
-    this.addEventListener('focusout', this.onFocusOut);
-  }
-
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    this.removeEventListener('focusout', this.onFocusOut);
-    this.releaseLayer?.();
-    this.releaseLayer = undefined;
-    this.open = false;
+  protected firstUpdated(): void {
+    // Set once the trigger exists, so the menu marks it as its menu button before any opening.
+    this.menu.anchor = this.trigger;
   }
 
   render() {
-    return html`<button
-        class="trigger"
-        type="button"
-        aria-label="Export"
-        aria-expanded=${String(this.open)}
-        @click=${this.toggle}
-      >
-        ${icon('download', 16)}<span part="trigger-label">Export</span>${icon('chevron-down', 14)}
-      </button>
+    return html`<ps-button class="trigger" variant="secondary" @click=${this.toggle}>
+        <span slot="start" class="trigger-icon">${icon('download', 16)}</span>
+        <span part="trigger-label">Export</span>
+        <span slot="end" class="trigger-icon">${icon('chevron-down', 14)}</span>
+      </ps-button>
       ${this.hasFileSettings
         ? html`<ps-tooltip text="File contains custom settings"></ps-tooltip>`
         : nothing}
-      ${this.open ? this.renderPanel() : nothing}`;
+      <ps-menu
+        label="Export"
+        placement="bottom-end"
+        .open=${this.open}
+        @ps-close=${this.onClose}
+        @ps-select=${this.onSelect}
+      >
+        <ps-menu-item value=${FIGURE_EDITOR}>Figure editor…</ps-menu-item>
+        ${QUICK_EXPORTS.map(
+          ({ value, label }) => html`<ps-menu-item value=${value}>${label}</ps-menu-item>`,
+        )}
+        <ps-menu-item
+          type="checkbox"
+          value=${INCLUDE_SETTINGS}
+          .checked=${this.includeLegendSettings}
+          >Include legend settings</ps-menu-item
+        >
+        <ps-menu-label class="export-note">Quick exports leave out contours.</ps-menu-label>
+      </ps-menu>`;
   }
-
-  private renderPanel() {
-    const image = this.format === 'png' || this.format === 'pdf';
-    const formatName = this.format.toUpperCase();
-    return html`<div class="panel export-menu">
-      <div class="export-menu-header"><span>Export Options</span></div>
-      <div class="export-option-group">
-        <span class="export-option-label" id="export-format-label">Format</span>
-        <div class="export-format-options" role="group" aria-labelledby="export-format-label">
-          ${FORMATS.map(
-            ({ value, label }) =>
-              html`<button
-                type="button"
-                class="btn btn-secondary btn-compact ${value === this.format ? 'active' : ''}"
-                aria-pressed=${String(value === this.format)}
-                @click=${() => (this.format = value)}
-              >
-                ${label}
-              </button>`,
-          )}
-        </div>
-      </div>
-      ${this.format === 'parquet'
-        ? html`<div class="export-option-group">
-            <label class="export-checkbox-label">
-              <input
-                type="checkbox"
-                class="export-checkbox"
-                .checked=${this.includeLegendSettings}
-                @change=${(event: Event) =>
-                  (this.includeLegendSettings = (event.target as HTMLInputElement).checked)}
-              />
-              <span>Include legend settings</span>
-            </label>
-            <div class="export-parquet-help">
-              Legend customizations can be saved in the file and restored when loading.
-            </div>
-          </div>`
-        : nothing}
-      ${image
-        ? html`<div class="export-image-actions">
-              <button type="button" class="btn btn-primary" @click=${this.openFigureEditor}>
-                ${icon('square-pen', 16)} Figure Editor
-              </button>
-              <button type="button" class="btn btn-secondary" @click=${this.exportNow}>
-                ${icon('download', 16)} Quick Export ${formatName}
-              </button>
-            </div>
-            <div class="export-image-hint">
-              Figure Editor offers live preview, journal presets, annotations, and more.
-            </div>`
-        : html`<button
-            type="button"
-            class="btn btn-primary export-action-btn"
-            @click=${this.exportNow}
-          >
-            ${icon('download', 16)} Export ${formatName}
-          </button>`}
-    </div>`;
-  }
-
-  /**
-   * Tab out of the panel closes it, as ps-menu does. Focus moving inside the shadow root reaches
-   * this host listener retargeted to the host itself; a null target (a press on the panel's
-   * background, or the window losing focus) leaves it open.
-   */
-  private onFocusOut = (event: FocusEvent) => {
-    const next = event.relatedTarget as Node | null;
-    if (this.open && next && !flatContains(this, next)) this.close();
-  };
 
   private toggle = () => {
-    if (this.open) this.close();
-    else this.show();
+    this.open = !this.open;
   };
 
-  private show(): void {
-    this.open = true;
-    this.releaseLayer = pushLayer({ close: () => this.close(), elements: [this] });
-    // Keyboard users land on the first format, as in the other menus.
-    void this.updateComplete.then(() =>
-      this.renderRoot.querySelector<HTMLButtonElement>('.export-format-options button')?.focus(),
-    );
-  }
-
-  /** Closes the panel; focus that was inside the menu goes back to the trigger. */
-  private close(): void {
-    if (!this.open) return;
-    const focusWasInside = flatContains(this, deepActiveElement());
+  /** The menu closed itself (Escape, a press outside, Tab, or a chosen item) and refocused. */
+  private onClose = (event: Event) => {
+    event.stopPropagation();
     this.open = false;
-    this.releaseLayer?.();
-    this.releaseLayer = undefined;
-    if (focusWasInside) this.trigger.focus();
-  }
+  };
 
-  private exportNow = () => {
+  private onSelect = (event: Event) => {
+    event.stopPropagation();
+    const { value, checked } = (event as CustomEvent<{ value: string; checked: boolean }>).detail;
+    if (value === INCLUDE_SETTINGS) {
+      // A checkbox item keeps the menu open.
+      this.includeLegendSettings = checked;
+      return;
+    }
+    if (value === FIGURE_EDITOR) {
+      this.dispatchEvent(
+        new CustomEvent('open-publish-editor', { detail: {}, bubbles: true, composed: true }),
+      );
+      return;
+    }
+    const quick = QUICK_EXPORTS.find((entry) => entry.value === value);
+    if (!quick) return;
     const detail: ExportEventDetail = {
-      type: this.format,
+      type: quick.value,
       imageWidth: EXPORT_DEFAULTS.IMAGE_WIDTH,
       imageHeight: EXPORT_DEFAULTS.IMAGE_HEIGHT,
       legendWidthPercent: EXPORT_DEFAULTS.LEGEND_WIDTH_PERCENT,
@@ -187,14 +126,6 @@ export class ProtspaceExportMenu extends LitElement {
     this.dispatchEvent(
       new CustomEvent<ExportEventDetail>('export', { detail, bubbles: true, composed: true }),
     );
-    this.close();
-  };
-
-  private openFigureEditor = () => {
-    this.dispatchEvent(
-      new CustomEvent('open-publish-editor', { detail: {}, bubbles: true, composed: true }),
-    );
-    this.close();
   };
 }
 

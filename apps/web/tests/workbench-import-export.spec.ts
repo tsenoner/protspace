@@ -4,6 +4,7 @@ import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import {
   appBar,
   datasetSwitcher,
+  exportAction,
   exportMenu,
   expectUrlParam,
   getCurrentDatasetName,
@@ -43,10 +44,11 @@ test.describe('Import and Export menus', () => {
     const exportTrigger = exportMenu(page).getByRole('button', { name: 'Export', exact: true });
     await exportTrigger.focus();
     await page.keyboard.press('Enter');
-    const png = exportMenu(page).getByRole('button', { name: 'PNG', exact: true });
-    await expect(png).toBeFocused();
+    const figureEditor = exportMenu(page).getByRole('menuitem', { name: 'Figure editor…' });
+    await expect(figureEditor).toBeFocused();
+    await expect(exportTrigger).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Escape');
-    await expect(png).toHaveCount(0);
+    await expect(exportMenu(page).getByRole('menu', { name: 'Export' })).toBeHidden();
     await expect(exportTrigger).toBeFocused();
   });
 
@@ -177,21 +179,56 @@ test.describe('Import and Export menus', () => {
     await expectUrlParam(page, 'dataset', null);
   });
 
-  test('Quick export PNG downloads a file', async ({ page }) => {
+  test('Quick PNG downloads a file and shows Export ready.', async ({ page }) => {
+    await openExplore(page);
+
+    const download = page.waitForEvent('download');
+    await exportAction(page, 'Quick PNG');
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/\.png$/);
+    await expect(exportMenu(page).getByRole('menu', { name: 'Export' })).toBeHidden();
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: 'Export ready.' });
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(file.suggestedFilename());
+  });
+
+  test('Protein IDs downloads a .txt', async ({ page }) => {
+    await openExplore(page);
+
+    const download = page.waitForEvent('download');
+    await exportAction(page, 'Protein IDs (.txt)');
+    expect((await download).suggestedFilename()).toBe('protein_ids.txt');
+    await expect(
+      page.locator('[data-sonner-toast]').filter({ hasText: 'protein_ids.txt' }),
+    ).toBeVisible();
+  });
+
+  test('the menu names its five exports and the contours note', async ({ page }) => {
     await openExplore(page);
     await openExportMenu(page);
 
-    const download = page.waitForEvent('download');
-    await exportMenu(page).getByRole('button', { name: 'Quick Export PNG' }).click();
-    expect((await download).suggestedFilename()).toMatch(/\.png$/);
-    await expect(exportMenu(page).getByRole('button', { name: 'PNG', exact: true })).toHaveCount(0);
+    // The items are the menu's slotted children, outside its shadow [role=menu] in the DOM, so
+    // they are found from the element, not chained from the menu.
+    const menu = exportMenu(page);
+    await expect(menu.getByRole('menu', { name: 'Export' })).toBeVisible();
+    for (const name of [
+      'Figure editor…',
+      'Quick PNG',
+      'Quick PDF',
+      'Protein IDs (.txt)',
+      'Data bundle (.parquetbundle)',
+    ]) {
+      await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+    }
+    await expect(
+      menu.getByRole('menuitemcheckbox', { name: 'Include legend settings' }),
+    ).toHaveAttribute('aria-checked', 'true');
+    await expect(exportMenu(page).getByText('Quick exports leave out contours.')).toBeVisible();
   });
 
   test('the figure editor opens from Export', async ({ page }) => {
     await openExplore(page);
-    await openExportMenu(page);
-
-    await exportMenu(page).getByRole('button', { name: 'Figure Editor' }).click();
+    await exportAction(page, 'Figure editor…');
     await expect(page.locator('protspace-publish-modal')).toBeAttached();
   });
 });

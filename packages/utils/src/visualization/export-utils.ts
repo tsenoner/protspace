@@ -436,11 +436,11 @@ export class ProtSpaceExporter {
   /**
    * Export protein IDs as text file
    */
-  exportProteinIds(_options: ExportOptions = {}): void {
+  exportProteinIds(_options: ExportOptions = {}): string | null {
     const data = this.element.getCurrentData();
     if (!data) {
       console.error('No data available for export');
-      return;
+      return null;
     }
 
     // Compute visibility based on the scatterplot's current hidden annotation values
@@ -476,19 +476,26 @@ export class ProtSpaceExporter {
       visibleIds = data.protein_ids || [];
     }
 
-    const idsStr = visibleIds.join('\n');
-    const idsUri = `data:text/plain;charset=utf-8,${encodeURIComponent(idsStr)}`;
+    // A Blob, not a data: URI: hundreds of thousands of IDs URI-encoded into one string cost
+    // several megabytes of string building before the download even starts.
     const fileName = 'protein_ids.txt';
-
-    this.downloadFile(idsUri, fileName);
+    const blob = new Blob([visibleIds.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    try {
+      this.downloadFile(url, fileName);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    return fileName;
   }
 
   /**
    * Export visualization as a single PNG with a programmatic legend on the right (legend width = 1/5 of total)
    */
-  async exportPNG(options: ExportOptions = {}): Promise<void> {
+  /** Resolves with the file name it downloaded, or null when there was nothing to export. */
+  async exportPNG(options: ExportOptions = {}): Promise<string | null> {
     try {
-      await this.exportCombinedPNG(options);
+      return await this.exportCombinedPNG(options);
     } catch (error) {
       console.error('PNG export failed:', error);
       throw error;
@@ -498,9 +505,13 @@ export class ProtSpaceExporter {
   /**
    * Create a combined PNG with scatterplot and legend side-by-side
    */
-  private async exportCombinedPNG(options: ExportOptions = {}): Promise<void> {
+  private async exportCombinedPNG(options: ExportOptions = {}): Promise<string | null> {
+    if (!this.element.getCurrentData()) {
+      console.error('No data available for export');
+      return null;
+    }
     const scatterplotElement = this.getScatterplotElement();
-    if (!scatterplotElement) return;
+    if (!scatterplotElement) return null;
 
     const opts = this.getOptionsWithDefaults(options);
 
@@ -527,7 +538,7 @@ export class ProtSpaceExporter {
       const ctx = outCanvas.getContext('2d');
       if (!ctx) {
         console.error('Could not get 2D context for output canvas');
-        return;
+        return null;
       }
 
       ctx.fillStyle = opts.backgroundColor;
@@ -543,6 +554,7 @@ export class ProtSpaceExporter {
     const dataUrl = outCanvas.toDataURL('image/png');
     const fileName = opts.exportName || this.generateExportFileName('png');
     this.downloadFile(dataUrl, fileName);
+    return fileName;
   }
 
   /**
@@ -817,9 +829,10 @@ export class ProtSpaceExporter {
   /**
    * Export visualization as a single PDF file (scatterplot on first page, legend on second if present)
    */
-  async exportPDF(options: ExportOptions = {}): Promise<void> {
+  /** Resolves with the file name it saved, or null when there was nothing to export. */
+  async exportPDF(options: ExportOptions = {}): Promise<string | null> {
     try {
-      await this.exportCombinedPDF(options);
+      return await this.exportCombinedPDF(options);
     } catch (error) {
       console.error('PDF export failed:', error);
       throw error;
@@ -829,9 +842,13 @@ export class ProtSpaceExporter {
   /**
    * Create a single-page PDF with scatterplot and legend side-by-side
    */
-  private async exportCombinedPDF(options: ExportOptions = {}): Promise<void> {
+  private async exportCombinedPDF(options: ExportOptions = {}): Promise<string | null> {
+    if (!this.element.getCurrentData()) {
+      console.error('No data available for export');
+      return null;
+    }
     const scatterplotElement = this.getScatterplotElement();
-    if (!scatterplotElement) return;
+    if (!scatterplotElement) return null;
 
     const opts = this.getOptionsWithDefaults(options);
     const { default: jsPDF } = await import('jspdf');
@@ -881,7 +898,7 @@ export class ProtSpaceExporter {
       pdf.addImage(scatterImg, 'PNG', xScatter, margin, scatterTargetW, scatterTargetH);
       pdf.addImage(legendImg, 'PNG', xLegend, margin, legendTargetW, legendTargetH);
 
-      this.savePdf(pdf, opts.exportName);
+      return this.savePdf(pdf, opts.exportName);
     } else {
       // Export scatterplot only (no legend)
       const scatterTargetW = maxWidth;
@@ -894,7 +911,7 @@ export class ProtSpaceExporter {
 
       pdf.addImage(scatterImg, 'PNG', margin, margin, scatterTargetW, scatterTargetH);
 
-      this.savePdf(pdf, opts.exportName);
+      return this.savePdf(pdf, opts.exportName);
     }
   }
 
@@ -916,9 +933,10 @@ export class ProtSpaceExporter {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private savePdf(pdf: any, exportName?: string): void {
+  private savePdf(pdf: any, exportName?: string): string {
     const fileName = exportName || this.generateExportFileName('pdf');
     pdf.save(fileName);
+    return fileName;
   }
 
   /**
@@ -955,7 +973,7 @@ export const exportUtils = {
     options?: ExportOptions,
   ) => {
     const exporter = createExporter(element, selectedProteins);
-    exporter.exportProteinIds(options);
+    return exporter.exportProteinIds(options);
   },
 
   /**
