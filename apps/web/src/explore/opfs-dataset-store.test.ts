@@ -387,4 +387,16 @@ describe('readStoredImportSummary', () => {
 
     await expect(readStoredImportSummary()).resolves.toBeNull();
   });
+
+  it('leaves a corrupt store for the startup restore to clear and report', async () => {
+    const root = new MockDirectoryHandle();
+    const store = await root.getDirectoryHandle('protspace-last-import', { create: true });
+    await store.writeTextFile('metadata.json', '{not-json');
+    stubNavigator(root);
+
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+    expect(root.hasDirectory('protspace-last-import')).toBe(true);
+    await expect(loadLastImportedFile()).rejects.toBeInstanceOf(StoredDatasetCorruptError);
+    expect(root.hasDirectory('protspace-last-import')).toBe(false);
+  });
 });
