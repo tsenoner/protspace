@@ -7,6 +7,8 @@ import {
 } from './helpers/explore';
 
 const search = (page: Page) => page.locator('protspace-protein-search');
+/** The report under the field; its one-sentence summary is in the search's live region. */
+const report = (page: Page) => search(page).locator('.search-report');
 
 /** The first `count` protein ids of the loaded dataset. */
 function proteinIds(page: Page, count: number): Promise<string[]> {
@@ -53,6 +55,7 @@ test.describe('protein search feedback', () => {
     await searchInput(page).fill('NOT_A_PROTEIN_ZZZ');
     await searchInput(page).press('Enter');
 
+    await expect(report(page)).toHaveText('No protein NOT_A_PROTEIN_ZZZ in this dataset');
     await expect(search(page).getByRole('status')).toHaveText(
       'No protein NOT_A_PROTEIN_ZZZ in this dataset',
     );
@@ -61,7 +64,7 @@ test.describe('protein search feedback', () => {
 
     // One Escape closes the report and keeps the text; the next empties the box.
     await searchInput(page).press('Escape');
-    await expect(search(page).getByRole('status')).toHaveCount(0);
+    await expect(report(page)).toHaveCount(0);
     await expect(searchInput(page)).toHaveValue('NOT_A_PROTEIN_ZZZ');
     await searchInput(page).press('Escape');
     await expect(searchInput(page)).toHaveValue('');
@@ -77,17 +80,19 @@ test.describe('protein search feedback', () => {
 
     await paste(page, `${a}, ${b.toLowerCase()}; MISSING_ONE\nMISSING_TWO`);
 
-    const report = search(page).getByRole('status');
-    await expect(report).toContainText('2 of 4 found');
-    await expect(report.getByRole('listitem')).toHaveText(['MISSING_ONE', 'MISSING_TWO']);
+    const shown = report(page);
+    await expect(shown).toContainText('2 of 4 found');
+    await expect(shown.getByRole('listitem')).toHaveText(['MISSING_ONE', 'MISSING_TWO']);
+    await expect(search(page).getByRole('status')).toHaveText('2 of 4 found, 2 not found');
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([a, b]);
 
-    await report.getByRole('button', { name: 'Copy missing IDs' }).click();
+    await shown.getByRole('button', { name: 'Copy missing IDs' }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       'MISSING_ONE\nMISSING_TWO',
     );
-    // Copying keeps the report on screen.
-    await expect(report).toBeVisible();
+    // Copying keeps the report on screen and says so.
+    await expect(shown).toBeVisible();
+    await expect(shown.getByRole('button', { name: 'Copied' })).toBeVisible();
   });
 
   test('a single hit moves the protein to the plot centre ±2 px', async ({ page }) => {
@@ -126,7 +131,7 @@ test.describe('protein search feedback', () => {
     await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids);
     expect(await readTransform(page)).toEqual(before);
     // Everything was found: the selection bar carries the result, the search reports nothing.
-    await expect(search(page).getByRole('status')).toHaveCount(0);
+    await expect(report(page)).toHaveCount(0);
 
     await selectionBarAction(page, 'Zoom to them').click();
     await expect.poll(() => readTransform(page)).not.toEqual(before);

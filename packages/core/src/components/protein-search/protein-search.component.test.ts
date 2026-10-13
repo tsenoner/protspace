@@ -63,6 +63,13 @@ const rowText = (row: HTMLElement): string => row.textContent!.trim();
 const reportOf = (element: ProteinSearchElement): HTMLElement | null =>
   element.shadowRoot!.querySelector('.search-report');
 
+/** The search's one live region, rendered whether or not a report shows. */
+const liveOf = (element: ProteinSearchElement): HTMLElement | null =>
+  element.shadowRoot!.querySelector('.search-live');
+
+const copyOf = (element: ProteinSearchElement): HTMLElement =>
+  reportOf(element)!.querySelector('.search-report-copy') as HTMLElement;
+
 /** A paste of `text` into the input, as a browser fires it. */
 function paste(element: ProteinSearchElement, text: string): Event {
   const event = new Event('paste', { bubbles: true, cancelable: true, composed: true });
@@ -574,14 +581,40 @@ describe('protspace-protein-search reports what happened', () => {
     press(element, 'Enter');
     await element.updateComplete;
 
-    expect(reportOf(element)?.getAttribute('role')).toBe('status');
     expect(reportOf(element)?.textContent?.trim()).toBe('No protein ZZZ1 in this dataset');
+    expect(liveOf(element)?.textContent?.trim()).toBe('No protein ZZZ1 in this dataset');
     expect(inputOf(element).value).toBe('ZZZ1');
     expect(added).toEqual([]);
-    // The combobox names the popup on screen: the report.
-    const popup = element.shadowRoot!.querySelector('#protein-search-report')!;
-    expect(inputOf(element).getAttribute('aria-controls')).toBe(popup.id);
-    expect(inputOf(element).getAttribute('aria-expanded')).toBe('true');
+    // A combobox may only control a listbox: the report describes the field instead.
+    expect(element.shadowRoot!.querySelector('#protein-search-report')).not.toBeNull();
+    expect(inputOf(element).getAttribute('aria-expanded')).toBe('false');
+    expect(inputOf(element).hasAttribute('aria-controls')).toBe(false);
+    expect(inputOf(element).getAttribute('aria-describedby')).toBe('protein-search-report');
+  });
+
+  it('one live region is always rendered and carries only the summary sentence', async () => {
+    const element = await setupSearch(FIVE, []);
+    const live = liveOf(element)!;
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent!.trim()).toBe('');
+    // The visible report is not a live region itself, or its whole list would be read out.
+    expect(element.shadowRoot!.querySelectorAll('[role="status"]')).toHaveLength(1);
+
+    paste(element, 'P00595, p00596\nX1;X2 X3');
+    await element.updateComplete;
+    expect(liveOf(element)).toBe(live);
+    expect(live.textContent!.trim()).toBe('2 of 5 found, 3 not found');
+    expect(live.querySelector('li')).toBeNull();
+    expect(element.shadowRoot!.querySelectorAll('[role="status"]')).toHaveLength(1);
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await element.updateComplete;
+    expect(reportOf(element)).toBeNull();
+    expect(liveOf(element)).toBe(live);
+    expect(live.textContent!.trim()).toBe('');
+    expect(inputOf(element).hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('an already-selected ID reports it', async () => {
@@ -656,9 +689,41 @@ describe('protspace-protein-search reports what happened', () => {
     paste(element, missing.join(' '));
     await element.updateComplete;
 
-    (reportOf(element)!.querySelector('.search-report-copy') as HTMLElement).click();
+    copyOf(element).click();
 
     expect(writeText).toHaveBeenCalledWith(missing.join('\n'));
+  });
+
+  it("Copy missing IDs confirms with 'Copied' for 2 s", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const element = await setupSearch(FIVE, []);
+    paste(element, 'X1 X2');
+    await element.updateComplete;
+
+    copyOf(element).click();
+    await vi.advanceTimersByTimeAsync(0);
+    await element.updateComplete;
+    expect(copyOf(element).textContent!.trim()).toBe('Copied');
+    expect(liveOf(element)!.textContent!.trim()).toBe('Copied');
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await element.updateComplete;
+    expect(copyOf(element).textContent!.trim()).toBe('Copy missing IDs');
+  });
+
+  it("a refused clipboard says 'Could not copy'", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const element = await setupSearch(FIVE, []);
+    paste(element, 'X1 X2');
+    await element.updateComplete;
+
+    copyOf(element).click();
+    await vi.advanceTimersByTimeAsync(0);
+    await element.updateComplete;
+    expect(copyOf(element).textContent!.trim()).toBe('Could not copy');
+    expect(liveOf(element)!.textContent!.trim()).toBe('Could not copy');
   });
 
   it('the report closes on Escape, keeping the text, and on typing', async () => {

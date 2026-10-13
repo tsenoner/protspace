@@ -8,10 +8,18 @@ import { icon } from '../kit/icon';
 import { pushLayer } from '../kit/layers';
 import { searchStyles } from './protein-search.styles';
 import { parsePastedIds, resolveProteinIds } from './resolve-ids';
-import { renderSearchReport, type SearchReport } from './search-report';
+import {
+  copyAnnouncement,
+  renderSearchReport,
+  reportSummary,
+  type CopyState,
+  type SearchReport,
+} from './search-report';
 import { computeSearchSuggestions, type SearchSuggestion } from './search-suggestions';
 
 const SEARCH_DEBOUNCE_MS = 120;
+/** How long Copy missing IDs shows "Copied" or "Could not copy" before its label returns. */
+const COPY_FEEDBACK_MS = 2000;
 
 /**
  * `aria-activedescendant` needs a stable id per row so assistive tech can announce the
@@ -44,9 +52,12 @@ export class ProtspaceProteinSearch extends LitElement {
   @state() private isSuggestionDropdownOpen: boolean = false;
   /** What the last Enter, paste or hidden pick came to; shown in the popup in place of the list. */
   @state() private _report: SearchReport | null = null;
+  /** The outcome of the last Copy missing IDs, shown on the button for a moment. */
+  @state() private _copyState: CopyState = 'idle';
 
   private _suggestionDebounceId: ReturnType<typeof setTimeout> | null = null;
   private _blurTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private _copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   /** Releases the popup's layer; set while the list or the report is on screen. */
   private _releaseLayer?: () => void;
   private _layerFor: 'suggestions' | 'report' | null = null;
@@ -58,8 +69,9 @@ export class ProtspaceProteinSearch extends LitElement {
 
   /**
    * True whenever `render()` emits a popup at all — the listbox, the no-match message or the
-   * report. `aria-expanded` tracks this: a combobox whose popup is on screen must report itself
-   * expanded.
+   * report. Without a report, `aria-expanded` tracks this: a combobox whose popup is on screen
+   * must report itself expanded. The report is not a listbox, which is all a combobox may
+   * control, so it describes the field instead.
    */
   private get _isPopupRendered(): boolean {
     return (
@@ -70,7 +82,12 @@ export class ProtspaceProteinSearch extends LitElement {
   }
 
   render() {
-    const popupId = this._report ? REPORT_ID : SUGGESTIONS_LIST_ID;
+    const expanded = !this._report && this._isPopupRendered;
+    // Always rendered and holding one sentence, so a screen reader announces each report (a live
+    // region inserted together with its text often goes unheard).
+    const announcement = this._report
+      ? copyAnnouncement(this._copyState) || reportSummary(this._report)
+      : '';
     return html`
       <div class="search-container">
         <div class="search-chips" @click=${this._focusSearchInput}>
@@ -85,8 +102,9 @@ export class ProtspaceProteinSearch extends LitElement {
             aria-keyshortcuts="Control+K Meta+K"
             role="combobox"
             aria-autocomplete="list"
-            aria-expanded=${this._isPopupRendered}
-            aria-controls=${this._isPopupRendered ? popupId : nothing}
+            aria-expanded=${expanded}
+            aria-controls=${expanded ? SUGGESTIONS_LIST_ID : nothing}
+            aria-describedby=${this._report ? REPORT_ID : nothing}
             aria-activedescendant=${!this._report && this.highlightedSuggestionIndex >= 0
               ? suggestionRowId(this.highlightedSuggestionIndex)
               : nothing}
@@ -103,6 +121,7 @@ export class ProtspaceProteinSearch extends LitElement {
         </div>
 
         ${this._renderPopup()}
+        <p class="search-live sr-only" role="status">${announcement}</p>
       </div>
     `;
   }
@@ -115,7 +134,7 @@ export class ProtspaceProteinSearch extends LitElement {
   private _renderPopup() {
     if (this._report) {
       return html`<div class="search-popup" id=${REPORT_ID} @focusout=${this._onReportFocusOut}>
-        ${renderSearchReport(this._report, () => this._copyMissing())}
+        ${renderSearchReport(this._report, () => void this._copyMissing(), this._copyState)}
       </div>`;
     }
     if (this._isListboxRendered) {
@@ -177,12 +196,16 @@ export class ProtspaceProteinSearch extends LitElement {
     window.removeEventListener('keydown', this._handleBodyKeydown);
     this._clearSuggestionDebounce();
     this._clearBlurTimeout();
+    this._clearCopyFeedback();
     this._releaseLayer?.();
     this._releaseLayer = undefined;
     this._layerFor = null;
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
+    // A new report (or none) starts with Copy's own label. `_report` is private, which
+    // `PropertyValues<this>` cannot name.
+    if ((changed as Map<string, unknown>).has('_report')) this._clearCopyFeedback();
     // `searchSuggestions` is computed on a debounce, so a selection change made elsewhere
     // (including this component's own remove, which keeps the query) would otherwise leave
     // the open dropdown stale. Recomputing here cannot loop: it only writes
@@ -348,16 +371,44 @@ export class ProtspaceProteinSearch extends LitElement {
     return !!active?.closest('.search-popup');
   }
 
+  /** Closing the report takes its Copy button along, so focus on it goes back to the field. */
   private _dismissReport() {
+    const hadFocus = this._reportHasFocus();
     this._report = null;
+    if (!hadFocus) return;
+    this._focusSearchInput();
+    // Focusing the field opens its list; after Escape it stays closed.
+    this._closeDropdown();
   }
 
-  private _copyMissing() {
+  /** Copies every missing ID and says so on the button; a refusal leaves the list to copy by hand. */
+  private async _copyMissing() {
     const report = this._report;
     if (report?.kind !== 'bulk') return;
-    void navigator.clipboard?.writeText(report.missing.join('\n')).catch(() => {
-      // The browser refused the clipboard: the list stays on screen to copy by hand.
-    });
+    let outcome: CopyState = 'failed';
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(report.missing.join('\n'));
+        outcome = 'copied';
+      }
+    } catch {
+      // The browser refused the clipboard.
+    }
+    if (this._report !== report) return;
+    this._clearCopyFeedback();
+    this._copyState = outcome;
+    this._copyTimeoutId = setTimeout(() => {
+      this._copyTimeoutId = null;
+      this._copyState = 'idle';
+    }, COPY_FEEDBACK_MS);
+  }
+
+  private _clearCopyFeedback() {
+    if (this._copyTimeoutId !== null) {
+      clearTimeout(this._copyTimeoutId);
+      this._copyTimeoutId = null;
+    }
+    this._copyState = 'idle';
   }
 
   private _clearSuggestionDebounce() {

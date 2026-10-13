@@ -49,4 +49,32 @@ describe('protspace-protein-search report', () => {
     );
     expect(hit && report.contains(hit)).toBe(true);
   });
+
+  it('Escape on the report while Copy has focus returns focus to the field', async () => {
+    const element = document.createElement('protspace-protein-search') as HTMLElement & {
+      availableProteinIds: string[];
+      updateComplete: Promise<unknown>;
+    };
+    element.availableProteinIds = ['P1', 'P2'];
+    document.body.append(element);
+    await element.updateComplete;
+    const input = element.shadowRoot!.querySelector<HTMLInputElement>('#protein-search-input')!;
+    input.focus();
+    const data = new DataTransfer();
+    data.setData('text/plain', 'P1\nNOPE1\nNOPE2');
+    input.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+    await element.updateComplete;
+    element.shadowRoot!.querySelector<HTMLElement>('.search-report-copy')!.focus();
+    expect(element.shadowRoot!.activeElement?.closest('.search-popup')).not.toBeNull();
+
+    await userEvent.keyboard('{Escape}');
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('.search-report')).toBeNull();
+    expect(element.shadowRoot!.activeElement?.id).toBe('protein-search-input');
+    // Back in the field, not reopened: the suggestion list stays closed.
+    expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
 });
