@@ -136,8 +136,11 @@ export class ProtspaceAnnotationSelect extends LitElement {
     this.highlightIndex = flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()).indexOf(
       shown,
     );
-    if (this.highlightIndex >= 0) this.scrollToHighlighted();
     this.updateComplete.then(() => {
+      // At once, as a select opens on its value: a smooth scroll moves the rows for ~300 ms.
+      this.shadowRoot?.querySelector('.dropdown-item.highlighted')?.scrollIntoView?.({
+        block: 'nearest',
+      });
       const searchInput = this.shadowRoot?.querySelector(
         '#annotation-search-input',
       ) as HTMLInputElement | null;

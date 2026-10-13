@@ -32,6 +32,20 @@ async function openInClippingBox(): Promise<ProtspaceAnnotationSelect> {
 }
 
 describe('protspace-annotation-select panel', () => {
+  it('opens scrolled to the current annotation at once, not by a smooth scroll', async () => {
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    try {
+      const el = await openInClippingBox();
+      await vi.waitFor(() => expect(scroll).toHaveBeenCalled());
+      const [row] = scroll.mock.contexts as Element[];
+      expect(row.getAttribute('data-annotation')).toBe('pfam');
+      expect(scroll.mock.calls[0][0]).not.toMatchObject({ behavior: 'smooth' });
+      expect(el.shadowRoot!.contains(row)).toBe(true);
+    } finally {
+      scroll.mockRestore();
+    }
+  });
+
   it('the panel is topmost and an ⓘ bubble inside it is not clipped', async () => {
     const el = await openInClippingBox();
     const row = el.shadowRoot!.querySelector<HTMLElement>('.dropdown-item[data-annotation="ec"]')!;
