@@ -424,3 +424,51 @@ test.describe('figure editor — geometric inset zoom', () => {
     expect(finalRect.h).toBeCloseTo(0.295);
   });
 });
+
+test.describe('figure editor — a state saved on another projection', () => {
+  test('warns about its overlays, and Clear overlays clears them', async ({ page }) => {
+    // Each test gets a fresh browser context, so seed the stored state before the app reads it.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem(
+          'protspace_publishState',
+          JSON.stringify({
+            overlays: [
+              {
+                type: 'circle',
+                cx: 0.5,
+                cy: 0.5,
+                rx: 0.1,
+                ry: 0.1,
+                rotation: 0,
+                color: '#000',
+                strokeWidth: 2,
+              },
+            ],
+            viewFingerprint: { projection: 'not-this-one', dimensionality: 2 },
+          }),
+        );
+      } catch {
+        /* a document without storage, such as about:blank */
+      }
+    });
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await openFigureEditor(page);
+
+    const warning = page.locator('protspace-publish-modal .publish-warning');
+    await expect(warning).toContainText('not-this-one');
+    await warning.getByText('Clear overlays').click();
+    await expect(warning).toHaveCount(0);
+    const overlays = await page.evaluate(
+      () =>
+        (
+          document.querySelector('protspace-publish-modal') as unknown as {
+            _state: { overlays: unknown[] };
+          }
+        )._state.overlays.length,
+    );
+    expect(overlays).toBe(0);
+  });
+});
