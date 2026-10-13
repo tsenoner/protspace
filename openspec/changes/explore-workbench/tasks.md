@@ -59,19 +59,26 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 4. Workflows (plan: `plans/phase-4-workflows.md`)
 
-- [ ] 4.1 The Escape order wired through the app (layers, then EAT connectors, then selection)
-- [ ] 4.2 Selection bar and status chips
-- [ ] 4.3 Undo and redo for selection, "show only" steps and filter apply or reset
-- [ ] 4.4 Filter panel in the sidebar: draft and Apply, live count, disabled reason, chip, EAT slider
+- [ ] 4.1 The Escape order wired through the app (layers, then EAT connectors, then selection,
+      then the tool)
+- [ ] 4.2 Selection bar on the plot: Show only these, Zoom to them, Copy IDs, Clear
+- [ ] 4.3 Status corner: protein count and filter, isolation and hidden-category chips
+- [ ] 4.4 Query builder in its own folder, with the reason Apply is disabled
+- [ ] 4.5 Filter panel in the sidebar: draft and Apply, Cancel, live count, chip, EAT slider
       mirroring
-- [ ] 4.5 Search feedback: found and missing IDs, unknown ID message, zoom to a single hit
-- [ ] 4.6 Notifications: one style, close button, up to two actions; Undo on reset and new figure;
-      confirmation before clearing stored data
-- [ ] 4.7 Loading overlay restyled with honest copy; empty state; workbench-wide drop target
-- [ ] 4.8 Import menu shared with the dataset switcher; Export menu with confirmations
-- [ ] 4.9 Figure editor on `ps-dialog` (Escape, Close); `publish-modal.ts` split
-- [ ] 4.10 Structure: pick which selected protein to show; link row reachable in every placement
-- [ ] 4.11 Text: display names at every site, plural-aware counts, predicted-annotation icon
+- [ ] 4.6 Undo and redo for selection, "show only" steps and filter apply or reset
+- [ ] 4.7 Search feedback: found and missing IDs, unknown ID message, zoom to a single hit
+- [ ] 4.8 Notifications: one style, close button, up to two actions; Undo on a removed filter;
+      confirmation before deleting stored data
+- [ ] 4.9 Info popover on the kit's popover
+- [ ] 4.10 Import menu shared with the dataset switcher, remembering the last file
+- [ ] 4.11 Export menu with a confirmation for every export
+- [ ] 4.12 Loading overlay restyled with honest copy; empty state; workbench-wide drop target
+- [ ] 4.13 Figure editor split into section modules
+- [ ] 4.14 Figure editor on `ps-dialog` (Escape, Close, Undo for New figure and Reset)
+- [ ] 4.15 Structure: pick which selected protein to show; links reachable in every placement
+- [ ] 4.16 Text: display names at every site, plural-aware counts, predicted-annotation icon;
+      the annotation picker on the kit
 
 ## 5. Phones and tablets (plan: `plans/phase-5-mobile.md`)
 
