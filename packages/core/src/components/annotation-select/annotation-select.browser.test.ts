@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { ProtspaceAnnotationSelect } from './annotation-select';
 import './annotation-select';
@@ -84,5 +84,19 @@ describe('protspace-annotation-select panel', () => {
       'EAT predictions available',
     );
     expect(root.querySelector('.eat-badge')!.hasAttribute('title')).toBe(false);
+  });
+
+  it('Tab from the search closes the list onto the trigger, opening no ⓘ bubble', async () => {
+    const el = await openInClippingBox();
+    const root = el.shadowRoot!;
+    await vi.waitFor(() => expect(root.activeElement?.id).toBe('annotation-search-input'));
+
+    await userEvent.keyboard('{Tab}');
+    await el.updateComplete;
+
+    const trigger = root.querySelector('.dropdown-trigger')!;
+    await vi.waitFor(() => expect(root.activeElement).toBe(trigger));
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(root.querySelector('protspace-info-popover')).toBeNull();
   });
 });

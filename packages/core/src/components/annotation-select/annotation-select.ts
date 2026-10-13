@@ -131,6 +131,12 @@ export class ProtspaceAnnotationSelect extends LitElement {
 
   private openList() {
     this.open = true;
+    // Open on the annotation on screen, as a select does: it is highlighted and scrolled to.
+    const shown = this.pending ?? this.selectedAnnotation;
+    this.highlightIndex = flattenGroupedAnnotations(this.getFilteredGroupedAnnotations()).indexOf(
+      shown,
+    );
+    if (this.highlightIndex >= 0) this.scrollToHighlighted();
     this.updateComplete.then(() => {
       const searchInput = this.shadowRoot?.querySelector(
         '#annotation-search-input',
@@ -163,6 +169,15 @@ export class ProtspaceAnnotationSelect extends LitElement {
         event.preventDefault();
         this.toggleDropdown(event);
       }
+      return;
+    }
+
+    // Tab leaves the list, as a combobox's does: without this it walks every row's ⓘ. The
+    // default move runs before the panel is gone, so it is replaced by focusing the trigger.
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      this.closeList();
+      void this.updateComplete.then(() => this.trigger.focus());
       return;
     }
 
@@ -393,7 +408,10 @@ export class ProtspaceAnnotationSelect extends LitElement {
     const stats = this.hasStatistics(annotation);
     const hasDocs = meta.description.length > 0 || !!meta.docsUrl;
     const id = optionId(index);
-    const notes = [eat ? EAT_NOTE : '', stats ? STATS_NOTE : ''].filter(Boolean).join(' ');
+    // The ⓘ is not a Tab stop, so its description reaches the keyboard as the option's.
+    const notes = [meta.description, eat ? EAT_NOTE : '', stats ? STATS_NOTE : '']
+      .filter(Boolean)
+      .join(' ');
     return html`
       <div
         class="dropdown-item ${index === this.highlightIndex ? 'highlighted' : ''} ${isSelected

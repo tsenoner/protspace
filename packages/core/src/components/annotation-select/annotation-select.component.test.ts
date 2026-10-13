@@ -603,10 +603,53 @@ describe('protspace-annotation-select listbox', () => {
       expect(toggle.getAttribute('tabindex')).toBe('-1');
     }
 
-    expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+    // It opens on the shown annotation; the arrows move on from there.
+    const at = options.findIndex(
+      (option) => option.closest('.dropdown-item')!.getAttribute('data-annotation') === 'pfam',
+    );
+    expect(root.getElementById(search.getAttribute('aria-activedescendant')!)).toBe(options[at]);
     press(el, 'ArrowDown');
     await el.updateComplete;
-    expect(root.getElementById(search.getAttribute('aria-activedescendant')!)).toBe(options[0]);
+    expect(root.getElementById(search.getAttribute('aria-activedescendant')!)).toBe(
+      options[Math.min(at + 1, options.length - 1)],
+    );
+  });
+
+  it('opens with the shown annotation highlighted', async () => {
+    const el = await setup();
+    await openDropdown(el);
+    await el.updateComplete;
+    expect(highlighted(el)).toBe('pfam');
+  });
+
+  it("an option's description holds the annotation's description", async () => {
+    const el = await setup({ annotations: ['ec', 'pfam', 'my_column'], eatAnnotations: ['ec'] });
+    await openDropdown(el);
+    const notes = (annotation: string) => {
+      const option = getRowFor(el, annotation).querySelector('[role="option"]')!;
+      const id = option.getAttribute('aria-describedby');
+      return id ? el.shadowRoot!.getElementById(id)!.textContent : null;
+    };
+    expect(notes('pfam')).toBe('Protein family classification from Pfam, with bit scores.');
+    expect(notes('ec')).toMatch(/\. EAT predictions available\.$/);
+    // No description and no badges: nothing to describe.
+    expect(notes('my_column')).toBeNull();
+  });
+
+  it('Tab closes the list and gives focus back to the trigger', async () => {
+    const el = await setup();
+    const trigger = el.shadowRoot!.querySelector('.dropdown-trigger') as HTMLButtonElement;
+    await openDropdown(el);
+    input(el).focus();
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
+    input(el).dispatchEvent(tab);
+    await el.updateComplete;
+    await Promise.resolve();
+
+    expect(tab.defaultPrevented).toBe(true);
+    expect(el.shadowRoot!.querySelector('.dropdown-menu')).toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(el.shadowRoot!.activeElement).toBe(trigger);
   });
 
   it('Shift+Enter toggles the highlighted row in the tooltip', async () => {
