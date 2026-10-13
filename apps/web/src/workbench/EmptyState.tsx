@@ -1,5 +1,6 @@
 import { memo, type MouseEvent } from 'react';
-import { IMPORT_FORMAT_NOTE, type ProtspaceImportMenu } from '@protspace/core';
+import type { ProtspaceImportMenu } from '@protspace/core';
+import { IMPORT_FORMAT_NOTE } from '@protspace/utils';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 const importMenu = () => document.getElementById('myImportMenu') as ProtspaceImportMenu | null;

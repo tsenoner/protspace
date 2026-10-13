@@ -1,5 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
+import { IMPORT_FORMAT_NOTE } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../common/info-popover';
 import '../kit/button';
@@ -10,13 +11,6 @@ import type { PsPopover } from '../kit/popover';
 import type { Placement } from '../kit/position';
 import { importMenuStyles } from './import-menu.styles';
 import type { ExampleDatasetSummary } from './types';
-
-/**
- * Where each kind of file goes (design decision 15): said before anything is uploaded. Exported
- * for the host's empty plot, which says the same.
- */
-export const IMPORT_FORMAT_NOTE =
-  '.parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the server for embedding.';
 
 /**
  * The Import panel: "Open a file…", the last imported file and the host's example catalog
