@@ -507,8 +507,12 @@ test.describe('Example datasets: download progress and Cancel', () => {
 
     const overlay = page.locator('#progressive-loading');
     await expect(overlay).toBeVisible();
-    // Progress is measured against the decoded size the catalog records.
+    // The title names the example; the amounts, under the bar, are measured against the
+    // decoded size the catalog records.
     await expect(overlay.locator('#processing-text')).toHaveText(
+      `Downloading ${large.label.split(' · ')[0]}…`,
+    );
+    await expect(overlay.locator('#progress-text')).toHaveText(
       `0.0 / ${formatMegabytes(large.sizeBytes)}`,
     );
     const cancel = overlay.getByRole('button', { name: 'Cancel download' });

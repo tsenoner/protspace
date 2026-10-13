@@ -212,7 +212,9 @@ export function createPersistedDatasetController({
     // sub-message. The overlay, a polite live region, updates only once both
     // that text and the whole percent downloaded have changed: at most a
     // hundred times per download, never per chunk.
-    const downloadMessage = `Downloading ${entry.label}…`;
+    // The title names the example (its label reads "name · proteins · size"); the line under the
+    // bar holds the amounts, so the size is said once.
+    const downloadTitle = `Downloading ${entry.label.split(' · ')[0]}…`;
     const totalLabel = formatMegabytes(entry.sizeBytes);
     let shownAmount = '';
     let shownPercent = -1;
@@ -231,7 +233,7 @@ export function createPersistedDatasetController({
       }
       shownAmount = amount;
       shownPercent = percent;
-      overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, downloadMessage, amount);
+      overlayController.update(true, fraction * EXAMPLE_DOWNLOAD_SHARE, amount, downloadTitle);
     };
     showDownloadProgress(0);
     const pending: PendingExample = {

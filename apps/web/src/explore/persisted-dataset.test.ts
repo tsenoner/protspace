@@ -141,8 +141,8 @@ describe('loadExampleDataset', () => {
     expect(overlayController.update).toHaveBeenCalledWith(
       true,
       0,
-      `Downloading ${DEMO.label}…`,
       `0.0 / ${(DEMO.sizeBytes / 1e6).toFixed(1)} MB`,
+      `Downloading ${DEMO.label.split(' · ')[0]}…`,
     );
 
     await vi.waitFor(() => expect(dataLoader.loadFromFile).toHaveBeenCalled());
@@ -278,11 +278,11 @@ function streamedResponse(chunkSizes: number[], headers: Record<string, string> 
   return new Response(stream, { headers });
 }
 
-/** The download phase's overlay updates: `[progress, sub-message]`, while it downloads. */
+/** The download phase's overlay updates: `[progress, amount]`, while it downloads. */
 function downloadUpdates(update: ReturnType<typeof vi.fn>): Array<[number, string]> {
   return update.mock.calls
-    .filter(([show, , message]) => show === true && String(message).startsWith('Downloading '))
-    .map(([, progress, , subMessage]) => [progress as number, subMessage as string]);
+    .filter(([show, , , title]) => show === true && String(title).startsWith('Downloading '))
+    .map(([, progress, amount]) => [progress as number, amount as string]);
 }
 
 describe('example download progress', () => {
