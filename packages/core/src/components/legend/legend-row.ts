@@ -83,9 +83,13 @@ export interface LegendRowHandlers {
   onKeyDown(e: KeyboardEvent): void;
   onHandleKeyDown(e: KeyboardEvent): void;
   onHover(category: string | null): void;
+  /** Focus entered the row: it takes the list's Tab stop. */
+  onFocus(): void;
   onToggle(): void;
   onMenu(e: MouseEvent): void;
   onViewOther(e: Event): void;
+  /** The pointer reached the main button: a truncated name may show in full. */
+  onNamePointerEnter(e: PointerEvent): void;
 }
 
 /** A row's own controls keep their presses: the row and the container never see them. */
@@ -120,6 +124,7 @@ export function renderLegendRow(
       data-driver-id=${isOther ? 'other-row' : nothing}
       @mouseenter=${() => handlers.onHover(item.value)}
       @mouseleave=${() => handlers.onHover(null)}
+      @focusin=${() => handlers.onFocus()}
     >
       <button
         type="button"
@@ -132,6 +137,7 @@ export function renderLegendRow(
         @click=${handlers.onClick}
         @dblclick=${handlers.onDoubleClick}
         @keydown=${handlers.onKeyDown}
+        @pointerenter=${handlers.onNamePointerEnter}
       >
         <span class="legend-swatch" part="symbol"
           >${isOther

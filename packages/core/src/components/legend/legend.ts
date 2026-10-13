@@ -60,6 +60,7 @@ import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './l
 import {
   LegendKeyboardController,
   renderLegendList,
+  TruncatedNameTooltip,
   type LegendReorderSnapshot,
 } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
@@ -411,6 +412,8 @@ export class ProtspaceLegend extends LitElement {
     announce: (message) => this._announceStatus(message),
     annotationName: () => this._annotationDisplayName,
   });
+
+  private _nameTooltip = new TruncatedNameTooltip(this);
 
   private _eatControls = new EatReliabilityController(this, {
     getScatterplot: () => this._scatterplotController.scatterplot,
@@ -2022,7 +2025,7 @@ export class ProtspaceLegend extends LitElement {
         ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
-        ${this._colorPicker.render()} ${this._renderRowMenu()}
+        ${this._colorPicker.render()} ${this._renderRowMenu()} ${this._nameTooltip.render()}
       </div>
       ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
     `;
@@ -2112,8 +2115,7 @@ export class ProtspaceLegend extends LitElement {
       selected,
       symbolSize: LEGEND_STYLES.legendDisplaySize,
       otherCount: isOther ? this._otherItems.length : undefined,
-      // Today's rule: the first row holds the list's Tab stop (Task 3.7 makes it follow focus).
-      tabbable: sortedIndex === 0,
+      tabbable: this._keyboard.isTabbable(item.value),
       draggable: this._canDragLegendItem(item),
       picked,
       hasMenu: !isOther,
@@ -2124,12 +2126,16 @@ export class ProtspaceLegend extends LitElement {
       onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
       onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
       onHover: (category) => this._setHoveredCategory(category),
+      onFocus: () => {
+        this._keyboard.focusValue = item.value;
+      },
       onToggle: () => this._handleItemClick(item.value),
       onMenu: (e: MouseEvent) => this._toggleRowMenu(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => {
         e.stopPropagation();
         this._showOtherDialog = true;
       },
+      onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
     };
     return renderLegendRow(item, view, handlers);
   }

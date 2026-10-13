@@ -1,8 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// The legend helpers live in helpers/legend.ts; these three are re-exported for their old callers.
+export { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './legend';
 
 export async function dismissTourIfPresent(page: Page): Promise<void> {
   const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
@@ -569,44 +568,6 @@ export async function isolateSelection(page: Page): Promise<void> {
 export async function resetIsolation(page: Page): Promise<void> {
   await selectionAction(page, 'Reset').click();
   await expect.poll(() => isIsolated(page)).toBe(false);
-}
-
-export async function getFirstLegendItemValue(page: Page): Promise<string> {
-  const value = await page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const item = legend?.shadowRoot?.querySelector(
-      '.legend-item:not([data-value="Other"]):not([data-value="__NA__"])',
-    );
-    return item?.getAttribute('data-value') ?? null;
-  });
-
-  if (!value) {
-    throw new Error('No legend item found');
-  }
-
-  return value;
-}
-
-export async function clickLegendItem(page: Page, value: string): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  await page
-    .locator('protspace-legend')
-    .getByRole('button', { name: new RegExp(`^${escapeRegex(value)}:`) })
-    .click();
-}
-
-export async function isLegendItemHidden(page: Page, value: string): Promise<boolean> {
-  return page.evaluate((targetValue) => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const item = legend?.shadowRoot?.querySelector(
-      `.legend-item[data-value="${CSS.escape(targetValue)}"]`,
-    );
-    return item?.classList.contains('hidden') ?? false;
-  }, value);
 }
 
 export async function waitForPersistedExploreDataset(page: Page, timeout = 30_000): Promise<void> {

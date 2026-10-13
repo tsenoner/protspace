@@ -4,6 +4,8 @@ import {
   type ReactiveControllerHost,
   type TemplateResult,
 } from 'lit';
+import '../kit/tooltip';
+import type { PsTooltip } from '../kit/tooltip';
 import { toDisplayValue } from './config';
 import type { LegendItem, LegendSortMode, OtherItem } from './types';
 
@@ -61,6 +63,13 @@ export class LegendKeyboardController implements ReactiveController {
   private options: LegendKeyboardOptions;
   private _picked: string | null = null;
   private _snapshot: LegendReorderSnapshot | null = null;
+  private _focusValue: string | null = null;
+  /** The row holding the Tab stop, worked out once per item list and focus value. */
+  private _stop: {
+    items: readonly LegendItem[];
+    focus: string | null;
+    value: string | null;
+  } | null = null;
 
   constructor(host: ReactiveControllerHost & HTMLElement, options: LegendKeyboardOptions) {
     this.host = host;
@@ -71,6 +80,35 @@ export class LegendKeyboardController implements ReactiveController {
   /** The row picked up for a keyboard reorder, or null. */
   get pickedValue(): string | null {
     return this._picked;
+  }
+
+  /**
+   * The row with the list's one Tab stop, kept by value so a re-sort keeps it on the same
+   * category. The legend sets it when focus enters a row; null means the first row.
+   */
+  get focusValue(): string | null {
+    return this._focusValue;
+  }
+
+  set focusValue(value: string | null) {
+    if (value === this._focusValue) return;
+    this._focusValue = value;
+    this.host.requestUpdate();
+  }
+
+  /** Whether a row holds the Tab stop: the focused row while it is listed, else the first row. */
+  isTabbable(value: string): boolean {
+    const items = this.options.getSortedItems();
+    if (this._stop?.items !== items || this._stop.focus !== this._focusValue) {
+      const kept =
+        this._focusValue !== null && items.some((item) => item.value === this._focusValue);
+      this._stop = {
+        items,
+        focus: this._focusValue,
+        value: kept ? this._focusValue : (items[0]?.value ?? null),
+      };
+    }
+    return this._stop.value === value;
   }
 
   hostDisconnected(): void {
@@ -189,5 +227,81 @@ export class LegendKeyboardController implements ReactiveController {
     );
     // Lit re-renders the moved row in another slot; focus follows it after the paint.
     requestAnimationFrame(() => this.focusHandle(value));
+  }
+}
+
+/** A row name that ends in an ellipsis shows in full this long after the pointer reaches it. */
+export const NAME_TOOLTIP_DELAY_MS = 500;
+
+/**
+ * One shared tooltip for row names that end in an ellipsis: after NAME_TOOLTIP_DELAY_MS on a row's
+ * main button it shows the full name; a name that fits shows nothing. Keyboard and screen-reader
+ * users already get the full name from the button's accessible name, so the tooltip names nothing
+ * (`names-target`). The element is driven directly, never through the legend's template, so a
+ * hover never re-renders the legend.
+ */
+export class TruncatedNameTooltip implements ReactiveController {
+  private host: ReactiveControllerHost & HTMLElement;
+  private _timer: ReturnType<typeof setTimeout> | null = null;
+  private _trigger: HTMLElement | null = null;
+
+  constructor(host: ReactiveControllerHost & HTMLElement) {
+    this.host = host;
+    host.addController(this);
+  }
+
+  /** A row's main button `pointerenter` handler: hovers the button's `.legend-text`. */
+  onNamePointerEnter = (e: PointerEvent): void => {
+    const button = e.currentTarget as HTMLElement;
+    const text = button.querySelector<HTMLElement>('.legend-text');
+    if (text) this.hover(button, text);
+  };
+
+  hover(trigger: HTMLElement, textEl: HTMLElement): void {
+    this.leave();
+    if (textEl.scrollWidth <= textEl.clientWidth) return;
+    this._trigger = trigger;
+    trigger.addEventListener('pointerleave', this._onLeave);
+    const text = textEl.textContent?.trim() ?? '';
+    this._timer = setTimeout(() => {
+      this._timer = null;
+      void this._show(trigger, text);
+    }, NAME_TOOLTIP_DELAY_MS);
+  }
+
+  leave(): void {
+    if (this._timer !== null) clearTimeout(this._timer);
+    this._timer = null;
+    this._trigger?.removeEventListener('pointerleave', this._onLeave);
+    this._trigger = null;
+    const tooltip = this._tooltip();
+    if (!tooltip) return;
+    tooltip.hide();
+    // Empty text shows nothing: the tooltip stays bound to its last row, whose focus must not show it.
+    tooltip.text = '';
+  }
+
+  hostDisconnected(): void {
+    this.leave();
+  }
+
+  render(): TemplateResult {
+    return html`<ps-tooltip class="name-tooltip" names-target placement="top"></ps-tooltip>`;
+  }
+
+  private _onLeave = (): void => this.leave();
+
+  private async _show(trigger: HTMLElement, text: string): Promise<void> {
+    const tooltip = this._tooltip();
+    if (!tooltip || this._trigger !== trigger || !text) return;
+    tooltip.anchor = trigger;
+    tooltip.text = text;
+    // The tooltip binds to its new anchor in its own update; show() needs that target.
+    await tooltip.updateComplete;
+    if (this._trigger === trigger) tooltip.show();
+  }
+
+  private _tooltip(): PsTooltip | null {
+    return this.host.shadowRoot?.querySelector<PsTooltip>('ps-tooltip.name-tooltip') ?? null;
   }
 }

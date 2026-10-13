@@ -2,8 +2,10 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsMenu } from '../kit/menu';
+import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS } from './config';
+import { NAME_TOOLTIP_DELAY_MS } from './legend-list';
 import { categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -23,6 +25,7 @@ afterEach(() => {
 });
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function settle(legend: ProtspaceLegend): Promise<void> {
   await legend.updateComplete;
@@ -93,6 +96,22 @@ describe('legend rows in a browser', () => {
 
     part(legend, 'Short', '.legend-item-main').focus();
     await expect.poll(() => opacity(actions)).toBe('1');
+  });
+
+  it('hovering a truncated name shows its full text after 500 ms; a name that fits shows nothing', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const shown = () => tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open');
+
+    await userEvent.hover(part(legend, LONG, '.legend-item-main'));
+    expect(shown()).toBe(false);
+    await expect.poll(shown, { timeout: NAME_TOOLTIP_DELAY_MS + 1000 }).toBe(true);
+    expect(tooltip.text).toBe(LONG);
+
+    await userEvent.hover(part(legend, 'Short', '.legend-item-main'));
+    expect(shown()).toBe(false);
+    await pause(NAME_TOOLTIP_DELAY_MS + 200);
+    expect(shown()).toBe(false);
   });
 
   it('the ⋯ menu opens on its button, and Show only this isolates', async () => {

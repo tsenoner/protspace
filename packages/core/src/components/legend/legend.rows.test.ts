@@ -49,6 +49,10 @@ const rowValues = (legend: ProtspaceLegend) =>
   [...legend.shadowRoot!.querySelectorAll('.legend-item')].map((each) =>
     each.getAttribute('data-value'),
   );
+const tabbable = (legend: ProtspaceLegend, selector: string) =>
+  [...legend.shadowRoot!.querySelectorAll<HTMLElement>(selector)]
+    .filter((el) => el.getAttribute('tabindex') === '0')
+    .map((el) => el.closest('.legend-item')!.getAttribute('data-value'));
 
 async function openMenu(legend: ProtspaceLegend, value: string): Promise<void> {
   more(legend, value)!.click();
@@ -177,6 +181,19 @@ describe('legend rows', () => {
     expect(menuItems(legend)[0]).toBe('Show all');
   });
 
+  it('only one row is tabbable, and focusing row 3 moves the stop there', async () => {
+    const { legend } = await mount(TWELVE);
+    expect(tabbable(legend, '.legend-item-main')).toEqual(['A']);
+
+    main(legend, 'C').focus();
+    await settleLegend(legend);
+
+    expect(tabbable(legend, '.legend-item-main')).toEqual(['C']);
+    expect(tabbable(legend, '.legend-eye')).toEqual(['C']);
+    expect(tabbable(legend, '.drag-handle')).toEqual(['C']);
+    expect(tabbable(legend, '.legend-more')).toEqual(['C']);
+  });
+
   it('Space on the handle adds .picked and aria-pressed; Escape removes them', async () => {
     const { legend } = await mount(TWELVE);
     expect(handle(legend, 'A').getAttribute('aria-pressed')).toBe('false');
@@ -189,4 +206,24 @@ describe('legend rows', () => {
     expect(row(legend, 'A').classList.contains('picked')).toBe(false);
     expect(handle(legend, 'A').getAttribute('aria-pressed')).toBe('false');
   });
+
+  it('renders one ps-menu and one ps-tooltip whatever the row count (500 rows)', async () => {
+    const counts = Object.fromEntries(
+      Array.from({ length: 500 }, (_, index) => [`C${index}`, 500 - index]),
+    );
+    const { legend } = await mount(counts);
+    legend.maxVisibleValues = 500;
+    await vi.waitFor(
+      () => expect(legend.shadowRoot!.querySelectorAll('.legend-item')).toHaveLength(500),
+      { timeout: 10_000 },
+    );
+
+    const root = legend.shadowRoot!;
+    expect(root.querySelectorAll('ps-menu.row-menu')).toHaveLength(1);
+    expect(root.querySelectorAll('ps-tooltip.name-tooltip')).toHaveLength(1);
+    expect(root.querySelectorAll('.legend-items ps-menu, .legend-items ps-tooltip')).toHaveLength(
+      0,
+    );
+    // 500 rows in jsdom take about 2 s alone and several times that under the full suite's load.
+  }, 20_000);
 });
