@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { SIDEBAR_WIDTH } from '../src/explore/layout-defaults';
 import { getFirstLegendItemValue, openExplore, selectAnnotation } from './helpers/explore';
 import {
+  escapeRegex,
   isLegendItemHidden,
   legend,
   legendRow,
@@ -9,10 +10,6 @@ import {
   legendRowValues,
 } from './helpers/legend';
 import { seedLayout } from './helpers/workbench';
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 test.describe('workbench legend', () => {
   test('legend rows are 28 px with their actions hidden until hover', async ({ page }) => {

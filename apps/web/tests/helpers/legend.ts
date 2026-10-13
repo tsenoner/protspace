@@ -6,13 +6,17 @@ import { expect, type Locator, type Page } from '@playwright/test';
 // helpers/explore.ts re-exports three helpers from here; the two only call each other at run time.
 import { waitForExploreInteractionReady } from './explore';
 
-function escapeRegex(value: string): string {
+/** `value` as a literal inside a RegExp. */
+export function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** The start of a row's name, "{label}: …"; Other's label is "Other · N categories". */
+/**
+ * A row's name up to its count, "{label}: N proteins, "; Other's label is "Other · N categories".
+ * Anchoring on the count keeps "GO" from matching "GO:0005524: …", since values carry colons.
+ */
 function rowName(value: string): RegExp {
-  return new RegExp(`^${escapeRegex(value)}( · [^:]*)?:`);
+  return new RegExp(`^${escapeRegex(value)}( · [^:]*)?: [\\d,]+ proteins?, `);
 }
 
 export const legend = (page: Page): Locator => page.locator('protspace-legend');

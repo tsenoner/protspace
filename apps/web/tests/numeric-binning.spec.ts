@@ -11,6 +11,7 @@ import {
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { escapeRegex } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -2265,7 +2266,7 @@ test('long categorical legend labels end in an ellipsis on one line', async ({ p
   expect(label.textHeight).toBeLessThanOrEqual(label.lineHeight * 1.5);
   expect(label.truncated).toBe(true);
   await expect(row.locator('.legend-item-main')).toHaveAccessibleName(
-    new RegExp(`^${label.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `),
+    new RegExp(`^${escapeRegex(label.text)}: `),
   );
 });
 
