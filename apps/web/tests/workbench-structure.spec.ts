@@ -592,12 +592,14 @@ test('a box selection of several proteins lets the header pick which one shows',
   );
   const other = viewer.getByRole('menuitemradio', { checked: false }).first();
   const otherId = (await other.textContent())!.trim();
+  const selected = await getSelectedProteinIds(page);
   await other.click();
 
   await expect(viewer).toHaveJSProperty('proteinId', otherId);
   await expect(pick).toContainText(otherId);
-  // The pick is the protein the rest of the shell shows too, and the selection is unchanged.
-  expect((await getSelectedProteinIds(page)).length).toBeGreaterThan(1);
+  // Picking which one to show leaves the selection as it was.
+  expect(await getSelectedProteinIds(page)).toEqual(selected);
+  expect(selected).toContain(otherId);
 });
 
 test('the TED link is clickable docked at 240 px and floating at 280 px', async ({ page }) => {
