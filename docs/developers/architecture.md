@@ -34,16 +34,16 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 `legend.shadowRoot`. The element holds the state and the wiring; the rest lives beside it in
 `packages/core/src/components/legend/`:
 
-| Module                   | Holds                                                                                           |
-| ------------------------ | ----------------------------------------------------------------------------------------------- |
-| `legend.ts`              | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions |
-| `legend-header.ts`       | The header template                                                                             |
-| `legend-row.ts`          | The legend symbol and the row template                                                          |
-| `legend-list.ts`         | The list template and `LegendKeyboardController` (row keys and keyboard reorder)                |
-| `legend-score-strips.ts` | Score-strip points and the strips section                                                       |
-| `legend-eat-controls.ts` | `EatReliabilityController` and the EAT section                                                  |
-| `legend-color-picker.ts` | `ColorPickerController`: the colour and shape picker                                            |
-| `legend-items-state.ts`  | Pure functions: sort, palette and numeric helpers, and the reading of a stored record           |
+| Module                   | Holds                                                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `legend.ts`              | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions                                           |
+| `legend-header.ts`       | The header template                                                                                                                       |
+| `legend-row.ts`          | The legend symbol and the row template                                                                                                    |
+| `legend-list.ts`         | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip` |
+| `legend-score-strips.ts` | Score-strip points and the strips section                                                                                                 |
+| `legend-eat-controls.ts` | `EatReliabilityController` and the EAT section                                                                                            |
+| `legend-color-picker.ts` | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                   |
+| `legend-items-state.ts`  | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                     |
 
 Templates take explicit view models and handlers; controllers are Lit reactive controllers that
 keep their own transient state and timers; the pure functions return new arrays that `legend.ts`
