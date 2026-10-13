@@ -3,14 +3,18 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
   appBar,
+  datasetSwitcher,
+  dismissTourIfPresent,
   holdNextRequest,
   importMenu,
   importUserFile,
   openExplore,
   pickExample,
   sidebar,
+  waitForExploreDataLoad,
   waitForProteinCount,
 } from './helpers/explore';
+import { clearOpfs, seedOpfsState } from './helpers/opfs';
 import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import { STARTUP_URL_GLOB, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
 import {
@@ -85,14 +89,76 @@ test.describe('loading overlay', () => {
           ...(plot as unknown as { selectedProteinIds: string[] }).selectedProteinIds,
         ]);
     await expect.poll(selected).toEqual([picked]);
+    // The keys reach the undo controller here, so the check below means something. The app reads
+    // Mod from the user agent, which need not match the machine Playwright's ControlOrMeta reads.
+    const mod = await page.evaluate(() => {
+      const platform = (navigator as Navigator & { userAgentData?: { platform?: string } })
+        .userAgentData?.platform;
+      const mac = platform
+        ? platform === 'macOS' || platform === 'iOS'
+        : /Macintosh;.*Mac OS X|iPhone|iPad|iPod/.test(navigator.userAgent);
+      return mac ? 'Meta' : 'Control';
+    });
+    await page.keyboard.press(`${mod}+KeyZ`);
+    await expect.poll(selected).toEqual([]);
+    await page.keyboard.press(`${mod}+Shift+KeyZ`);
+    await expect.poll(selected).toEqual([picked]);
 
     const other = e2eExample('other');
     const release = await holdNextRequest(page, other.glob);
     await pickExample(page, other.id);
     await expect(page.locator('#progressive-loading')).toBeVisible();
 
-    await page.keyboard.press('ControlOrMeta+z');
+    await page.keyboard.press(`${mod}+KeyZ`);
     expect(await selected()).toEqual([picked]);
+
+    release();
+    await waitForProteinCount(page, other.count);
+  });
+
+  test('focus comes back to the app bar after a load, not to the page', async ({ page }) => {
+    await serveExampleFixtures(page);
+    await openExplore(page);
+    const other = e2eExample('other');
+    const release = await holdNextRequest(page, other.glob);
+
+    await datasetSwitcher(page).focus();
+    await page.keyboard.press('Enter');
+    const example = importMenu(page).locator(`[data-example-id="${other.id}"]`);
+    await expect(example).toBeVisible();
+    await example.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#progressive-loading')).toBeVisible();
+
+    release();
+    await waitForProteinCount(page, other.count);
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    await expect(datasetSwitcher(page)).toBeFocused();
+  });
+
+  test('a file dropped on the overlay during a load is not opened by the browser', async ({
+    page,
+  }) => {
+    await serveExampleFixtures(page);
+    await openExplore(page);
+    const other = e2eExample('other');
+    const release = await holdNextRequest(page, other.glob);
+    await pickExample(page, other.id);
+    await expect(page.locator('#progressive-loading')).toBeVisible();
+
+    // dispatchEvent returns false when a listener cancelled the event (the default never runs).
+    const notCancelled = await page.evaluate(() => {
+      const overlay = document.getElementById('progressive-loading')!;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(['>p\nMK'], 'stray.fasta'));
+      const init = { dataTransfer: transfer, bubbles: true, cancelable: true };
+      return [
+        overlay.dispatchEvent(new DragEvent('dragover', init)),
+        overlay.dispatchEvent(new DragEvent('drop', init)),
+      ];
+    });
+    expect(notCancelled).toEqual([false, false]);
+    expect(new URL(page.url()).pathname).toBe('/explore');
 
     release();
     await waitForProteinCount(page, other.count);
@@ -121,17 +187,19 @@ test.describe('empty state', () => {
 
   test('Pick an example opens the Import panel at the button', async ({ page }) => {
     const pick = emptyState(page).getByRole('button', { name: 'Pick an example' });
+    // It says it opens a dialog before it has opened one.
+    await expect(pick).toHaveAttribute('aria-haspopup', 'dialog');
     await pick.click();
     const panel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
     await expect(panel).toBeVisible();
     const anchor = (await pick.boundingBox())!;
     const box = (await panel.boundingBox())!;
-    // Under the button, or above it when the window leaves too little room below (it flips at 720).
+    // Under the button, or above it when the window leaves too little room below (it flips at
+    // 720); either way bottom-start or top-start, so the left edges line up.
     const below = box.y >= anchor.y + anchor.height;
     const above = box.y + box.height <= anchor.y;
     expect(below || above).toBe(true);
-    expect(box.x).toBeLessThan(anchor.x + anchor.width);
-    expect(box.x + box.width).toBeGreaterThan(anchor.x);
+    expect(Math.abs(box.x - anchor.x)).toBeLessThan(2);
     await expect(importMenu(page).locator('[data-example-id]').first()).toBeVisible();
   });
 
@@ -140,6 +208,41 @@ test.describe('empty state', () => {
     await dropFileOnWorkbench(page, page.locator('#myPlot'), BUNDLE);
     await waitForProteinCount(page, BUNDLE_COUNT);
     await expect(emptyState(page)).toBeHidden();
+  });
+});
+
+test.describe('recovery banner over the empty state', () => {
+  test("on a short plot the empty state never covers the banner's buttons", async ({ page }) => {
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await clearOpfs(page);
+    // A stored import whose last load never finished: startup ends with the banner and nothing on
+    // screen, so the empty state shows with it.
+    await seedOpfsState(page, {
+      fileName: 'fake.parquetbundle',
+      status: 'pending',
+      failedAttempts: 1,
+    });
+    await page.setViewportSize({ width: 1024, height: 420 });
+    await page.reload();
+    await dismissTourIfPresent(page);
+
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(emptyState(page)).toBeVisible();
+    for (const name of ['Try again', 'Load default', 'Clear stored data']) {
+      const button = banner.getByRole('button', { name, exact: true });
+      // A trial click fails when another element would take the click.
+      await button.click({ trial: true, timeout: 5_000 });
+      const box = (await button.boundingBox())!;
+      const hit = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x, y)?.closest('#protspace-recovery-banner') != null,
+        [box.x + box.width / 2, box.y + box.height / 2],
+      );
+      expect(hit, name).toBe(true);
+    }
+    await clearOpfs(page);
   });
 });
 
