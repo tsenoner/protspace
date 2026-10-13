@@ -93,6 +93,19 @@ Then `pnpm install` and import it from your entry module.
 </script>
 ```
 
+The legend draws no card (no border, radius or shadow) and has no height of its own: it takes the
+height its container gives it and scrolls its list inside that. Outside a sized flex or grid parent,
+give it a height, and a border if you want a card (see
+[Theming the legend](./style-architecture.md#theming-the-legend)):
+
+```css
+protspace-legend {
+  height: 480px;
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+}
+```
+
 ::: tip
 Every component is a Lit element, so every public property is settable from JavaScript. Lit also
 derives an HTML attribute for each reactive property: properties declared with an explicit

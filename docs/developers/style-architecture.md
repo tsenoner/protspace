@@ -6,47 +6,46 @@ ProtSpace uses a modular CSS architecture based on Lit's `css` tagged template l
 
 ### When to Split Files
 
-| Lines   | Pattern                           | Example                       |
-| ------- | --------------------------------- | ----------------------------- |
-| <150    | Single `.styles.ts` file          | `search`, `annotation-select` |
-| 150-300 | Monolithic or add `responsive.ts` | `structure-viewer`            |
-| 300+    | Modular `styles/` directory       | `legend`                      |
+| Lines   | Pattern                     | Example                       |
+| ------- | --------------------------- | ----------------------------- |
+| <150    | Single `.styles.ts` file    | `search`, `annotation-select` |
+| 150-300 | Monolithic                  | `structure-viewer`            |
+| 300+    | Modular `styles/` directory | `legend`                      |
 
 ### Modular Structure
 
 ```
 component-name/
-├── component-name.styles.ts    # Imports only
+├── component-name.styles.ts    # Composes the kit's shared sheets and the modules below; no rules
 └── styles/
-    ├── theme.ts                # CSS custom properties
-    ├── layout.ts               # Structure, containers
-    ├── [feature].ts            # Feature-specific styles
-    └── responsive.ts           # Media queries (always last)
+    ├── layout.ts               # The host and its frame
+    └── [piece].ts              # One module per piece of the element (header, row, picker, ...)
 ```
+
+A child element (a popover, a strip) has its own co-located `*.styles.ts` instead of a module here.
 
 ## Import Order
 
-**Always follow this order** (CSS cascade depends on it):
+Shared sheets first, then the component's own modules, broad to specific, since a later sheet
+wins a tie in specificity:
 
 ```typescript
 export const componentStyles = [
-  // 1. Foundation
-  tokens,
+  // 1. The kit's shared sheets (kit/kit-shared.styles.ts), only those needed
+  kitHost, // host font and colour
+  focusRing, // the one focus ring
+  reducedMotion,
+  srOnly,
 
-  // 2. Shared mixins (only what's needed)
-  buttonMixin,
-  dropdownMixin,
-  overlayMixins,
-
-  // 3. Component styles
-  themeStyles,
+  // 2. The component's modules: the frame, then its pieces
   layoutStyles,
   featureStyles,
-
-  // 4. Responsive (ALWAYS LAST)
-  responsiveStyles,
 ];
 ```
+
+New styles read `--ps-*` tokens (see Custom Properties) and do not compose the legacy `tokens`,
+`buttonMixin` or `overlayMixins`; only modules in `LEGACY` still use them, in the older order
+`tokens`, mixins, `themeStyles`, features, `responsiveStyles`.
 
 ## Responsive Design
 
@@ -65,7 +64,8 @@ Defined in `tokens.ts`:
 
 ### Media Query Rules
 
-- **Modular components**: All `@media` in `styles/responsive.ts` (imported last)
+- **Modular components**: a media query sits in the module whose rules it adapts (for example
+  `@media (pointer: coarse)` in the legend's `row.ts`), after that module's other rules
 - **Monolithic components**: All `@media` at end of file
 - **Always add breakpoint comments**:
 
@@ -186,15 +186,15 @@ export const legendStyles = [
 
 ### DO ✓
 
-- Keep files under 200 lines
+- Keep a module to one piece of the element
 - Use tokens for all values
 - Add breakpoint comments to media queries
-- Import only needed mixins
-- Follow standard import order
+- Compose only the kit sheets you need
+- Follow the import order above
 
 ### DON'T ✗
 
-- Scatter media queries throughout files
+- Put a media query away from the rules it adapts
 - Create custom properties for one-off values
 - Duplicate styles between files
 - Use hard-coded values
@@ -229,10 +229,10 @@ When refactoring a component:
 
 - [ ] Component >150 lines or has 3+ concerns?
 - [ ] Create `styles/` directory if needed
-- [ ] Extract theme, layout, features to separate files
-- [ ] Move all media queries to end (or `responsive.ts`)
+- [ ] Extract the frame (`layout.ts`) and one module per piece to `styles/`
+- [ ] Read only `--ps-*` tokens; remove the module from `LEGACY` in `style-lint.test.ts`
 - [ ] Add breakpoint comments
-- [ ] Update imports following standard order
+- [ ] Compose the kit's shared sheets first, then the modules
 - [ ] Test: `npm run dev`, verify visuals unchanged
 - [ ] Run: `npm run test && npm run lint && npm run type-check`
 
@@ -268,4 +268,4 @@ each ship their own co-located `.styles.ts`, so no single stylesheet grows large
 
 ---
 
-See implementations in `/packages/core/src/components/` and central tokens in `/packages/core/src/styles/tokens.ts`.
+See implementations in `/packages/core/src/components/` and the `--ps-*` tokens in `/packages/core/src/styles/theme.ts`.
