@@ -6,6 +6,17 @@ describe('isEditableEventPath', () => {
     expect(isEditableEventPath([{ tagName }, { tagName: 'BODY' }])).toBe(true);
   });
 
+  it.each(['checkbox', 'radio', 'range', 'button', 'color', 'file'])(
+    'an INPUT of type %s holds no text, so it is not',
+    (type) => {
+      expect(isEditableEventPath([{ tagName: 'INPUT', type }, { tagName: 'BODY' }])).toBe(false);
+    },
+  );
+
+  it.each(['text', 'number', 'search', 'email'])('an INPUT of type %s is', (type) => {
+    expect(isEditableEventPath([{ tagName: 'INPUT', type }])).toBe(true);
+  });
+
   it('a path through a contentEditable element is editable', () => {
     expect(isEditableEventPath([{ tagName: 'DIV', isContentEditable: true }])).toBe(true);
   });
