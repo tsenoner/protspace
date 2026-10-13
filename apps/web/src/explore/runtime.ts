@@ -4,9 +4,14 @@ import { onEscapeFallback } from '@protspace/core';
 import type { EatReliabilityState } from '@protspace/utils';
 import { isMacOrIos } from '@protspace/utils';
 import { notify } from '../lib/notify';
-import { getRendererDegradedNotification } from './notifications';
+import {
+  getClearStoredDataConfirm,
+  getFilterRemovedNotification,
+  getRendererDegradedNotification,
+} from './notifications';
 import { startProductTour } from '../tour/product-tour';
 import { createDatasetController } from './dataset-controller';
+import { confirmAction } from './confirm-dialog';
 import { getElements, waitForElements } from './elements';
 import { createExportHandler } from './export-handler';
 import type { ExploreControls } from './explore-controls';
@@ -36,7 +41,7 @@ import { createLoadingOverlayController } from './loading-overlay';
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
-import { createUndoController } from './undo-controller';
+import { createUndoController, type UndoEntry } from './undo-controller';
 import {
   handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
@@ -353,6 +358,35 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     const { panel, sidebarOpen } = getLayout();
     return panel === 'filter' && (sidebarOpen || !filterDesktopQuery.matches);
   };
+  // "Filter removed" with Undo (decisions 13 and 15): the toast is a shortcut to the history step
+  // it names, and goes as soon as a newer step would make its Undo take back something else.
+  let stopWatchingFilterUndo: (() => void) | null = null;
+  const offerFilterUndo = (entry: UndoEntry) => {
+    stopWatchingFilterUndo?.();
+    const { history } = interactionController;
+    let unsubscribe: () => void = () => {};
+    // Ends this toast's watch only: an older toast that closes late must not end a newer one's.
+    const stop = () => {
+      unsubscribe();
+      if (stopWatchingFilterUndo === stop) stopWatchingFilterUndo = null;
+    };
+    const toast = notify.undoable({
+      ...getFilterRemovedNotification(),
+      onUndo: () => {
+        stop();
+        undoController.undoEntry(entry);
+      },
+      // Dismissed or timed out: the watcher goes with the toast.
+      onClose: stop,
+    });
+    unsubscribe = history.subscribe(() => {
+      if (history.peekUndo() === entry) return;
+      stop();
+      toast.dismiss();
+    });
+    stopWatchingFilterUndo = stop;
+  };
+  lifecycle.addCleanup(() => stopWatchingFilterUndo?.());
   const filterController = createFilterController({
     plotElement,
     legendElement,
@@ -368,8 +402,12 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       };
     },
     // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).
-    onFilterCommitted: (commit) =>
-      interactionController.history.record({ kind: 'filter', ...commit }),
+    onFilterCommitted(commit) {
+      const entry: UndoEntry = { kind: 'filter', ...commit };
+      interactionController.history.record(entry);
+      // Apply needs no toast: the chip and the count show it. A removal offers Undo.
+      if (commit.cause !== 'apply') offerFilterUndo(entry);
+    },
   });
   lifecycle.addCleanup(() => filterController.dispose());
   const statusController = createStatusController({
@@ -436,6 +474,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
   };
 
+  // The recovery banner's "Clear stored data" and "Load default" delete the stored import: ask first.
+  const confirmClear = (fileName: string, action: 'clear' | 'load-default') =>
+    confirmAction(getClearStoredDataConfirm(fileName, action));
   const datasetController = createDatasetController({
     controls,
     dataLoader,
@@ -452,7 +493,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (lifecycle.isDisposed()) {
         return;
       }
-      handleCancelledExampleLoad(datasetController, viewController, cancel).catch(
+      handleCancelledExampleLoad(datasetController, viewController, cancel, confirmClear).catch(
         (error: unknown) => {
           console.error('Startup load after a cancelled download failed:', error);
         },
@@ -628,9 +669,15 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
           datasetController,
           plotElement,
           requestedExampleId: exampleId,
+          confirmClear,
         });
       } else {
-        request = loadDatasetAfterNavigation(datasetController, viewController, exampleId);
+        request = loadDatasetAfterNavigation(
+          datasetController,
+          viewController,
+          exampleId,
+          confirmClear,
+        );
       }
       // The URL sync hook only waits for this to settle; a failure has
       // already been reported to the user by the load itself.

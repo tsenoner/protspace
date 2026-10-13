@@ -8,12 +8,14 @@ import type {
 import type { NotifyOptions } from '../lib/notify';
 import * as notificationMappers from './notifications';
 import {
+  getClearStoredDataConfirm,
   getCorruptedPersistedDatasetNotification,
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
   getExampleLoadFailureNotification,
   getExportFailureNotification,
   getExportSuccessNotification,
+  getFilterRemovedNotification,
   getLegendErrorNotification,
   getRendererDegradedNotification,
   getSelectionCopiedNotification,
@@ -312,6 +314,30 @@ describe('selection copy notifications', () => {
     expect(getSelectionCopyFailedNotification()).toEqual({
       title: 'Could not copy the IDs',
       description: 'The browser did not allow access to the clipboard.',
+    });
+  });
+});
+
+describe('undo and confirmation copy', () => {
+  it('names a removed filter', () => {
+    expect(getFilterRemovedNotification()).toEqual({ title: 'Filter removed' });
+  });
+
+  it('asks before clearing the stored copy, naming the file and that it cannot be undone', () => {
+    expect(getClearStoredDataConfirm('mine.parquetbundle', 'clear')).toEqual({
+      heading: 'Clear stored data?',
+      body: 'This deletes the copy of "mine.parquetbundle" saved in this browser. It cannot be undone.',
+      confirmLabel: 'Clear data',
+      danger: true,
+    });
+  });
+
+  it('asks before "Load default" replaces the stored copy', () => {
+    expect(getClearStoredDataConfirm('mine.parquetbundle', 'load-default')).toEqual({
+      heading: 'Load the default dataset?',
+      body: 'Loading the default deletes the copy of "mine.parquetbundle" saved in this browser. It cannot be undone.',
+      confirmLabel: 'Load default',
+      danger: true,
     });
   });
 });

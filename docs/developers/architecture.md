@@ -4,7 +4,7 @@
 
 ProtSpace uses a layered messaging model instead of a single catch-all UI primitive.
 
-- Host-owned transient notifications: The host application decides how to surface recoverable warnings and errors. In the demo app, `apps/web/src/lib/notify.ts` is the only transient notification transport and it is backed by Sonner.
+- Host-owned transient notifications: The host application decides how to surface recoverable warnings and errors. In the demo app, `apps/web/src/lib/notify.ts` is the only transient notification transport and it is backed by Sonner. On `/explore` every toast goes to the workbench's own toaster (`apps/web/src/workbench/WorkbenchToaster.tsx`), centred at the plot's bottom edge with a close button and up to two actions; `notify.undoable` offers Undo for a step the undo history can take back, and an irreversible action asks first (`apps/web/src/explore/confirm-dialog.ts`).
 - Blocking and progress UI: Long-running operations use dedicated progress UI instead of toasts. The `/explore` app uses a full-screen loading overlay for dataset imports.
 - Component-owned workflow UI: Components keep their own popovers and focused workflow controls. The legend settings and "Other" popovers stay inside the legend component.
 - Component-owned inline states: Components keep inline empty/loading/error states when the message belongs to the component surface itself. The structure viewer keeps its own empty, loading, and error UI.

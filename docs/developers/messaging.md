@@ -17,6 +17,10 @@ entry point. It wraps the toast layer, applies per-severity durations, and de-du
 messages within a 5-second window via `dedupeKey`. `apps/web/src/explore/notifications.ts` maps
 normalized component events onto those `notify` calls.
 
+On `/explore` the workbench mounts its own toaster and routes every toast to it
+(`setNotifyTarget`), so notifications sit at the plot's bottom edge and never cover the legend. A
+removed filter offers Undo (`notify.undoable`) for as long as it is the latest undoable step.
+
 ### Blocking and progress UI
 
 Use dedicated progress UI for long-running or stateful operations.

@@ -341,3 +341,37 @@ export function getLoadRecoveryCopy(
     clearLabel: 'Clear stored data',
   };
 }
+
+/** Reset or the filter chip's ✕ removed the filter; the toast offers Undo (decision 13). */
+export function getFilterRemovedNotification(): { title: string } {
+  return { title: 'Filter removed' };
+}
+
+/**
+ * The question before the recovery banner's "Clear stored data" or "Load default" deletes the
+ * OPFS copy, which nothing can restore.
+ */
+export function getClearStoredDataConfirm(
+  fileName: string,
+  action: 'clear' | 'load-default',
+): {
+  heading: string;
+  body: string;
+  confirmLabel: string;
+  danger: true;
+} {
+  if (action === 'load-default') {
+    return {
+      heading: 'Load the default dataset?',
+      body: `Loading the default deletes the copy of "${fileName}" saved in this browser. It cannot be undone.`,
+      confirmLabel: 'Load default',
+      danger: true,
+    };
+  }
+  return {
+    heading: 'Clear stored data?',
+    body: `This deletes the copy of "${fileName}" saved in this browser. It cannot be undone.`,
+    confirmLabel: 'Clear data',
+    danger: true,
+  };
+}

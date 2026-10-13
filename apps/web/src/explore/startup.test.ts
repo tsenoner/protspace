@@ -39,7 +39,8 @@ import {
   loadRequestedDatasetOrFallback,
   startInitialExploreLoad,
 } from './startup';
-import { showRecoveryBanner } from './recovery-banner';
+import { dismissRecoveryBanner, showRecoveryBanner } from './recovery-banner';
+import { clearLastImportedFile } from './opfs-dataset-store';
 
 const DEMO = TEST_DEMO;
 
@@ -280,6 +281,7 @@ describe('startInitialExploreLoad', () => {
       datasetController: datasetController as never,
       plotElement,
       requestedExampleId: DEMO.id,
+      confirmClear: vi.fn(async () => true),
     });
 
     expect(datasetController.loadExampleDataset).not.toHaveBeenCalled();
@@ -295,6 +297,7 @@ describe('startInitialExploreLoad', () => {
       datasetController: datasetController as never,
       plotElement,
       requestedExampleId: DEMO.id,
+      confirmClear: vi.fn(async () => true),
     });
 
     expect(datasetController.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'url', { epoch: 5 });
@@ -314,6 +317,7 @@ describe('startInitialExploreLoad', () => {
       datasetController: datasetController as never,
       plotElement,
       requestedExampleId: null,
+      confirmClear: vi.fn(async () => true),
     });
 
     expect(datasetController.loadPersistedOrDefaultDataset).toHaveBeenCalledWith({ epoch: 5 });
@@ -387,5 +391,117 @@ describe("handleCancelledExampleLoad (the loading overlay's Cancel)", () => {
     );
 
     expect(showRecoveryBanner).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Clear stored data on the recovery banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Runs the startup flow into the banner and returns the banner's handlers. */
+  async function bannerHandlers(
+    confirmClear?: (fileName: string, action: 'clear' | 'load-default') => Promise<boolean>,
+  ) {
+    const datasetController = createDatasetController();
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({
+      kind: 'recovery-required',
+      file: new File(['x'], 'mine.parquetbundle'),
+      failedAttempts: 1,
+    });
+    await loadRequestedDatasetOrFallback(
+      datasetController as never,
+      null,
+      confirmClear ? { confirmClear } : {},
+    );
+    const [[params]] = vi.mocked(showRecoveryBanner).mock.calls;
+    return { datasetController, handlers: params.handlers };
+  }
+
+  it('Clear stored data with confirm false clears nothing and keeps the banner', async () => {
+    const confirmClear = vi.fn(async () => false);
+    const { datasetController, handlers } = await bannerHandlers(confirmClear);
+
+    await handlers.onClear();
+
+    expect(confirmClear).toHaveBeenCalledWith('mine.parquetbundle', 'clear');
+    expect(dismissRecoveryBanner).not.toHaveBeenCalled();
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
+    expect(datasetController.loadDefaultDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+  });
+
+  it('with confirm true it dismisses, clears, then loads the default', async () => {
+    const order: string[] = [];
+    vi.mocked(dismissRecoveryBanner).mockImplementationOnce(() => {
+      order.push('dismiss');
+    });
+    vi.mocked(clearLastImportedFile).mockImplementationOnce(async () => {
+      order.push('clear');
+    });
+    const { datasetController, handlers } = await bannerHandlers(vi.fn(async () => true));
+    datasetController.loadDefaultDatasetAndClearPersistedFile.mockImplementationOnce(async () => {
+      order.push('default');
+    });
+
+    await handlers.onClear();
+
+    expect(order).toEqual(['dismiss', 'clear', 'default']);
+  });
+
+  it('Load default with confirm false loads nothing and keeps the banner', async () => {
+    const confirmClear = vi.fn(async () => false);
+    const { datasetController, handlers } = await bannerHandlers(confirmClear);
+
+    await handlers.onLoadDefault();
+
+    expect(confirmClear).toHaveBeenCalledWith('mine.parquetbundle', 'load-default');
+    expect(dismissRecoveryBanner).not.toHaveBeenCalled();
+    expect(datasetController.loadDefaultDatasetAndClearPersistedFile).not.toHaveBeenCalled();
+  });
+
+  it('Load default with confirm true dismisses, then loads the default in place of the import', async () => {
+    const { datasetController, handlers } = await bannerHandlers(vi.fn(async () => true));
+
+    await handlers.onLoadDefault();
+
+    expect(dismissRecoveryBanner).toHaveBeenCalledTimes(1);
+    expect(datasetController.loadDefaultDatasetAndClearPersistedFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('without a confirmation to ask, the stored copy is never cleared', async () => {
+    const { handlers } = await bannerHandlers();
+
+    await handlers.onClear();
+
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
+  });
+
+  it('Back/Forward and a cancelled download pass the confirmation on to the banner', async () => {
+    const confirmClear = vi.fn(async () => false);
+    const datasetController = createDatasetController();
+    datasetController.hasDisplayedDataset.mockReturnValue(false);
+    datasetController.loadPersistedOrDefaultDataset.mockResolvedValue({
+      kind: 'recovery-required',
+      file: new File(['x'], 'nav.parquetbundle'),
+      failedAttempts: 1,
+    });
+
+    await loadDatasetAfterNavigation(
+      datasetController as never,
+      { recordCurrentView: vi.fn() },
+      null,
+      confirmClear,
+    );
+    await vi.mocked(showRecoveryBanner).mock.calls[0][0].handlers.onClear();
+    await handleCancelledExampleLoad(
+      datasetController as never,
+      { recordCurrentView: vi.fn() },
+      { epoch: 9, source: 'url' },
+      confirmClear,
+    );
+    await vi.mocked(showRecoveryBanner).mock.calls[1][0].handlers.onClear();
+
+    expect(confirmClear).toHaveBeenCalledTimes(2);
+    expect(clearLastImportedFile).not.toHaveBeenCalled();
   });
 });

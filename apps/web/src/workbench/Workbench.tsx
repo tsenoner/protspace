@@ -20,6 +20,7 @@ import { useLayoutMode } from './use-layout-mode';
 import { useSidebarTransition } from './use-sidebar-transition';
 import { useWorkbenchStatus } from './use-workbench-status';
 import { ViewBar } from './ViewBar';
+import { WorkbenchToaster } from './WorkbenchToaster';
 import './workbench.css';
 
 /** A slide target that is never there: the structure while it floats over the plot. */
@@ -99,6 +100,8 @@ export function Workbench() {
         }
       >
         <PlotArea ref={plotAreaRef} />
+        {/* Outside the plot area, whose isolation would trap the toasts under the sidebar. */}
+        <WorkbenchToaster />
         {/* Before the aside: the edge sits at the sidebar's left, so it is the sidebar's first Tab
             stop. Its z-index keeps it painted over the aside and the structure. */}
         <SidebarEdge

@@ -19,17 +19,29 @@ import type { ViewController } from './view-controller';
  */
 type DatasetRequestOutcome = ExampleLoadOutcome | 'fallback' | 'preempted';
 
+/** The recovery banner's two buttons that delete the stored import. */
+type StoredDataAction = 'clear' | 'load-default';
+
+/** Asks before a banner button deletes the stored import; resolves true to go ahead. */
+type ConfirmClear = (fileName: string, action: StoredDataAction) => Promise<boolean>;
+
+/** Without a confirmation to ask, the stored copy is never deleted. */
+const keepStoredData: ConfirmClear = async () => false;
+
 interface StartupOptions {
   dataLoader: ProtspaceDataLoader;
   datasetController: DatasetController;
   plotElement: ProtspaceScatterplot;
   /** The `dataset` URL param at the time startup runs, or null. */
   requestedExampleId: string | null;
+  /** Asks before the recovery banner's "Clear stored data" or "Load default" deletes the stored import. */
+  confirmClear: ConfirmClear;
 }
 
 async function runPersistedOrDefaultFlow(
   datasetController: DatasetController,
   epoch: number,
+  confirmClear: ConfirmClear,
 ): Promise<PersistedLoadOutcome['kind']> {
   const outcome = await datasetController.loadPersistedOrDefaultDataset({ epoch });
   // 'preempted': a user request made meanwhile owns the screen, so no banner.
@@ -49,10 +61,14 @@ async function runPersistedOrDefaultFlow(
         await datasetController.tryLoadPersistedAgain(outcome.file);
       },
       onLoadDefault: async () => {
+        // The demo replaces the stored import, which cannot be restored: ask first.
+        if (!(await confirmClear(outcome.file.name, 'load-default'))) return;
         dismissRecoveryBanner();
         await datasetController.loadDefaultDatasetAndClearPersistedFile();
       },
       onClear: async () => {
+        // The OPFS copy cannot be restored: ask first, and leave the banner up on a no.
+        if (!(await confirmClear(outcome.file.name, 'clear'))) return;
         dismissRecoveryBanner();
         await clearLastImportedFile();
         await datasetController.loadDefaultDatasetAndClearPersistedFile();
@@ -94,7 +110,8 @@ export async function loadRequestedDatasetOrFallback(
   {
     epoch = datasetController.currentRequestEpoch(),
     keepCurrentOnFailure = false,
-  }: { epoch?: number; keepCurrentOnFailure?: boolean } = {},
+    confirmClear = keepStoredData,
+  }: { epoch?: number; keepCurrentOnFailure?: boolean; confirmClear?: ConfirmClear } = {},
 ): Promise<DatasetRequestOutcome> {
   if (requestedExampleId) {
     const entry = findExampleDataset(requestedExampleId);
@@ -106,7 +123,7 @@ export async function loadRequestedDatasetOrFallback(
     }
   }
 
-  const kind = await runPersistedOrDefaultFlow(datasetController, epoch);
+  const kind = await runPersistedOrDefaultFlow(datasetController, epoch, confirmClear);
   if (kind === 'preempted') return 'preempted';
   return kind === 'default-failed' ? 'failed' : 'fallback';
 }
@@ -129,10 +146,12 @@ export async function loadDatasetAfterNavigation(
   datasetController: DatasetController,
   viewController: Pick<ViewController, 'recordCurrentView'>,
   requestedExampleId: string | null,
+  confirmClear: ConfirmClear = keepStoredData,
 ): Promise<void> {
   const outcome = await loadRequestedDatasetOrFallback(datasetController, requestedExampleId, {
     epoch: datasetController.beginUserRequest(),
     keepCurrentOnFailure: datasetController.hasDisplayedDataset(),
+    confirmClear,
   });
   if (outcome === 'failed' && datasetController.hasDisplayedDataset()) {
     viewController.recordCurrentView();
@@ -157,6 +176,7 @@ export async function handleCancelledExampleLoad(
   datasetController: DatasetController,
   viewController: Pick<ViewController, 'recordCurrentView'>,
   { epoch, source }: ExampleLoadCancel,
+  confirmClear: ConfirmClear = keepStoredData,
 ): Promise<void> {
   if (datasetController.hasDisplayedDataset()) {
     if (source === 'url') {
@@ -164,7 +184,7 @@ export async function handleCancelledExampleLoad(
     }
     return;
   }
-  await loadRequestedDatasetOrFallback(datasetController, null, { epoch });
+  await loadRequestedDatasetOrFallback(datasetController, null, { epoch, confirmClear });
 }
 
 export async function startInitialExploreLoad({
@@ -172,6 +192,7 @@ export async function startInitialExploreLoad({
   datasetController,
   plotElement,
   requestedExampleId,
+  confirmClear,
 }: StartupOptions): Promise<void> {
   // App-initiated: a user request made from here on (a menu click while the
   // perf check or the stored-import read is still running) wins.
@@ -179,5 +200,8 @@ export async function startInitialExploreLoad({
   const perfSuiteHandled = await maybeRunWebglPerfSuite({ plotElement, dataLoader });
   if (perfSuiteHandled) return;
 
-  await loadRequestedDatasetOrFallback(datasetController, requestedExampleId, { epoch });
+  await loadRequestedDatasetOrFallback(datasetController, requestedExampleId, {
+    epoch,
+    confirmClear,
+  });
 }

@@ -805,3 +805,139 @@
     transition-property: none;
   }
 }
+
+/* ── Notifications (Task 4.8, decision 15) ───────────────────────────────── */
+
+/* Sonner's light palette, from the tokens. */
+.wb-body [data-sonner-toaster][data-sonner-theme='light'] {
+  --normal-bg: var(--ps-surface-raised);
+  --normal-bg-hover: var(--ps-surface-hover);
+  --normal-border: var(--ps-border);
+  --normal-border-hover: var(--ps-border-strong);
+  --normal-text: var(--ps-text);
+  --border-radius: var(--ps-radius-lg);
+  font-family: var(--ps-font-sans);
+}
+
+/* Centred over the plot, not the window: the plot ends where the sidebar and its rail begin
+   (--wb-plot-right holds both). Below 951 px the plot is as wide as the window. */
+.workbench[data-layout='desktop'] .wb-body [data-sonner-toaster][data-x-position='center'] {
+  left: calc((100vw - var(--wb-plot-right)) / 2);
+}
+
+/* Above the selection bar while it shows: its 38 px and a 12 px gap. */
+.wb-body:has(#mySelectionBar:not([hidden])) [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--offset-bottom) + 50px);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  box-shadow: var(--ps-shadow-md);
+  font-size: var(--ps-text-sm);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-title] {
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--ps-text-muted);
+}
+
+/* Actions look like the kit's secondary button. */
+.wb-body [data-sonner-toaster] [data-sonner-toast] :is([data-button], [data-cancel]) {
+  height: var(--ps-control-sm);
+  padding: 0 var(--ps-space-2);
+  border: 1px solid var(--ps-border-control);
+  border-radius: var(--ps-radius);
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font-size: var(--ps-text-sm);
+  font-weight: var(--ps-weight-medium);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] :is([data-button], [data-cancel]):hover {
+  background: var(--ps-surface-hover);
+}
+
+.wb-body
+  [data-sonner-toaster]
+  [data-sonner-toast]
+  :is([data-button], [data-cancel], [data-close-button]):focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+  box-shadow: none;
+}
+
+/* The close button in the top-right corner. */
+.wb-body [data-sonner-toaster][dir='ltr'] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translate(35%, -35%);
+}
+
+.wb-body [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  border-color: var(--ps-border);
+  background: var(--ps-surface-raised);
+  color: var(--ps-text-muted);
+}
+
+/* ── The recovery banner (Task 4.8) ──────────────────────────────────────── */
+
+/* In the plot area, top-centre under the tool strip's row; it never takes focus. */
+#protspace-recovery-banner {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-space-2);
+  box-sizing: border-box;
+  width: min(560px, calc(100% - 2 * var(--ps-space-3)));
+  padding: var(--ps-space-3);
+  border: 1px solid var(--ps-border);
+  border-left: 3px solid var(--ps-warning);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-md);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.wb-recovery-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ps-space-2);
+}
+
+.wb-recovery-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-base);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-recovery-body {
+  margin: 0;
+  color: var(--ps-text-muted);
+}
+
+.wb-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ps-space-2);
+}
+
+/* ── The confirmation dialog's text (confirm-dialog.ts) ──────────────────── */
+
+.wb-confirm-body {
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-normal);
+}
