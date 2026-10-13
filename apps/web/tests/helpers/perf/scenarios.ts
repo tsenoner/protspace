@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_LAYOUT } from '../../../src/explore/layout-defaults';
 import {
+  annotationSelect,
+  colorByTrigger,
   dismissTourIfPresent,
   importMenu,
   openImportMenu,
@@ -208,6 +210,23 @@ export async function plotBackground(page: Page): Promise<{ x: number; y: number
   return point;
 }
 
+/**
+ * Opens Color by and waits until its popover is open and its entry transition has finished, so a
+ * timed pick measures the app's work, not Playwright waiting for the moving rows to hold still.
+ */
+async function openColorByMenu(page: Page): Promise<void> {
+  await colorByTrigger(page).click();
+  const host = await annotationSelect(page).elementHandle();
+  await page.waitForFunction((el) => {
+    const panel = el?.shadowRoot?.querySelector('ps-popover')?.shadowRoot?.querySelector('.panel');
+    return (
+      !!panel?.matches(':popover-open') &&
+      panel.getAnimations({ subtree: true }).every((a) => a.playState === 'finished')
+    );
+  }, host);
+  await host?.dispose();
+}
+
 async function plotCenter(page: Page): Promise<{ x: number; y: number }> {
   const box = await page.locator('#myPlot').boundingBox();
   if (!box) throw new Error('#myPlot has no bounding box');
@@ -249,6 +268,8 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
     },
     {
       name: 'annotation-switch',
+      // Opening the picker is not timed: its rows move during the popover's entry transition.
+      setup: () => openColorByMenu(page),
       act: () => selectAnnotation(page, state.switchTo),
       reset: () => selectAnnotation(page, state.annotation),
       pixels: true,
