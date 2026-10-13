@@ -28,13 +28,29 @@ const countText = (el: ProtspaceSelectionBar) =>
 describe('protspace-selection-bar', () => {
   it('hidden at 0, shown with a count', async () => {
     const el = await mount(0);
+    const bar = () => el.shadowRoot!.querySelector('.bar')!;
     expect(el.hidden).toBe(true);
-    expect(getComputedStyle(el).display).toBe('none');
+    expect(getComputedStyle(bar()).display).toBe('none');
 
     el.selectedCount = 2;
     await el.updateComplete;
     expect(el.hidden).toBe(false);
-    expect(getComputedStyle(el).display).not.toBe('none');
+    expect(getComputedStyle(bar()).display).not.toBe('none');
+  });
+
+  it('the count is announced from a live region that stays rendered while hidden', async () => {
+    const el = await mount(0);
+    const status = () => el.shadowRoot!.querySelector('[role="status"]');
+    expect(status()).not.toBeNull();
+    expect(status()!.textContent!.trim()).toBe('');
+
+    el.selectedCount = 2;
+    await el.updateComplete;
+    expect(status()!.textContent!.trim()).toBe('2 proteins selected');
+    // The visible count is not read a second time.
+    expect(el.shadowRoot!.querySelector('.selection-count')!.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
   });
 
   it('toolbar named Selection with the four buttons', async () => {
@@ -55,9 +71,6 @@ describe('protspace-selection-bar', () => {
   it('count text is plural-aware: 1 protein selected, 1,234 proteins selected', async () => {
     const el = await mount(1);
     expect(countText(el)).toBe('1 protein selected');
-    expect(el.shadowRoot!.querySelector('.selection-count')!.getAttribute('aria-live')).toBe(
-      'polite',
-    );
     el.selectedCount = 1234;
     await el.updateComplete;
     expect(countText(el)).toBe('1,234 proteins selected');
@@ -158,6 +171,36 @@ describe('protspace-selection-bar', () => {
     await userEvent.keyboard('{Enter}');
     await vi.waitFor(() => expect(calls).toEqual(['clear']));
     expect(deepActiveElement()).toBe(outside);
+  });
+
+  it('focus in the bar moves on when the selection empties without a press (Escape)', async () => {
+    const el = await mount(3);
+    const calls: string[] = [];
+    el.returnFocus = (action) => calls.push(action);
+    inner(button(el, 'Zoom to them')).focus();
+    el.selectedCount = 0;
+    await el.updateComplete;
+    expect(calls).toEqual(['clear']);
+  });
+
+  it('Show only these while focused calls returnFocus("isolate") once', async () => {
+    const el = await mount(3);
+    const calls: string[] = [];
+    el.returnFocus = (action) => calls.push(action);
+    el.addEventListener('isolate-data', () => (el.selectedCount = 0));
+    inner(button(el, 'Show only these')).focus();
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    expect(calls).toEqual(['isolate']);
+  });
+
+  it('an emptied selection without focus in the bar leaves focus alone', async () => {
+    const el = await mount(3);
+    const calls: string[] = [];
+    el.returnFocus = (action) => calls.push(action);
+    el.selectedCount = 0;
+    await el.updateComplete;
+    expect(calls).toEqual([]);
   });
 
   it('sits bottom-centre of its positioned parent, 38 px tall', async () => {

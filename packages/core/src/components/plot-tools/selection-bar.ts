@@ -34,8 +34,9 @@ export class ProtspaceSelectionBar extends LitElement {
   /** Show only these is off: the view holds too few points to isolate from. */
   @property({ type: Boolean, attribute: 'can-isolate' }) canIsolate = true;
   /**
-   * Called after Clear or Show only these hid the bar while it held focus, so focus lands on
-   * something useful instead of the page body.
+   * Called when the bar hides while it holds focus, so focus lands on something useful instead of
+   * the page body: with the pressed action for Clear or Show only these, else with 'clear' (Escape,
+   * a brush or a search emptied the selection).
    */
   @property({ attribute: false }) returnFocus: ((action: 'clear' | 'isolate') => void) | null =
     null;
@@ -43,8 +44,24 @@ export class ProtspaceSelectionBar extends LitElement {
   /** The toolbar's one Tab stop: the button focused last. */
   @state() private _tabStop: SelectionAction = 'isolate';
 
+  /** The pressed action, until the update the press scheduled has read it. */
+  private _pressed: 'clear' | 'isolate' | null = null;
+  /** Set by the update that hides the bar while it holds focus. */
+  private _refocus: 'clear' | 'isolate' | null = null;
+
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has('selectedCount')) this.hidden = this.selectedCount === 0;
+    const pressed = this._pressed;
+    this._pressed = null;
+    if (!changed.has('selectedCount')) return;
+    const hide = this.selectedCount === 0;
+    if (hide && !this.hidden && this.shadowRoot?.activeElement) this._refocus = pressed ?? 'clear';
+    this.hidden = hide;
+  }
+
+  protected updated(): void {
+    const action = this._refocus;
+    this._refocus = null;
+    if (action) this.returnFocus?.(action);
   }
 
   render() {
@@ -52,43 +69,47 @@ export class ProtspaceSelectionBar extends LitElement {
     const stop = enabled.some(({ action }) => action === this._tabStop)
       ? this._tabStop
       : enabled[0]?.action;
-    return html`<div
-      class="bar"
-      role="toolbar"
-      aria-label="Selection"
-      @keydown=${this._onKeydown}
-      @focusin=${this._onFocusIn}
-    >
-      <span class="selection-count" aria-live="polite"
-        >${countNoun(this.selectedCount, 'protein', 'proteins')} selected</span
+    // The live region stays rendered while the bar is hidden, so the first count is announced.
+    return html`<span class="sr-only" role="status"
+        >${this.selectedCount
+          ? `${countNoun(this.selectedCount, 'protein', 'proteins')} selected`
+          : ''}</span
       >
-      ${ACTIONS.map(
-        ({ action, label }) =>
-          html`<ps-button
-            size="sm"
-            variant="ghost"
-            data-action=${action}
-            tabindex=${action === stop ? '0' : '-1'}
-            ?disabled=${!this._isEnabled(action)}
-            @click=${() => this._press(action)}
-            >${label}</ps-button
-          >`,
-      )}
-    </div>`;
+      <div
+        class="bar"
+        role="toolbar"
+        aria-label="Selection"
+        @keydown=${this._onKeydown}
+        @focusin=${this._onFocusIn}
+      >
+        <span class="selection-count" aria-hidden="true"
+          >${countNoun(this.selectedCount, 'protein', 'proteins')} selected</span
+        >
+        ${ACTIONS.map(
+          ({ action, label }) =>
+            html`<ps-button
+              size="sm"
+              variant="ghost"
+              data-action=${action}
+              tabindex=${action === stop ? '0' : '-1'}
+              ?disabled=${!this._isEnabled(action)}
+              @click=${() => this._press(action)}
+              >${label}</ps-button
+            >`,
+        )}
+      </div>`;
   }
 
   private _isEnabled(action: SelectionAction): boolean {
     return action !== 'isolate' || this.canIsolate;
   }
 
-  private async _press(action: SelectionAction): Promise<void> {
-    const hadFocus = this.shadowRoot!.activeElement !== null;
+  private _press(action: SelectionAction): void {
     const { event } = ACTIONS.find((entry) => entry.action === action)!;
+    this._pressed = action === 'clear' || action === 'isolate' ? action : null;
     this.dispatchEvent(new CustomEvent(event, { detail: {}, bubbles: true, composed: true }));
-    if (!hadFocus || (action !== 'clear' && action !== 'isolate')) return;
-    // The host empties the selection while the event runs; the bar hides in the next update.
-    await this.updateComplete;
-    if (this.hidden) this.returnFocus?.(action);
+    // The host sets selectedCount inside the event; the update it schedules reads the press.
+    if (!this.isUpdatePending) this._pressed = null;
   }
 
   private _onFocusIn = (event: FocusEvent) => {

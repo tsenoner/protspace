@@ -1,9 +1,10 @@
 import { css } from 'lit';
-import { kitHost } from '../kit/kit-shared.styles';
+import { kitHost, srOnly } from '../kit/kit-shared.styles';
 
 /** A raised bar at the bottom-centre of the plot, like the tool strip in its corner. */
 export const selectionBarStyles = [
   kitHost,
+  srOnly,
   css`
     :host {
       position: absolute;
@@ -13,7 +14,8 @@ export const selectionBarStyles = [
       z-index: 5;
       display: block;
     }
-    :host([hidden]) {
+    /* Hidden keeps the host rendered so its live region stays in the accessibility tree. */
+    :host([hidden]) .bar {
       display: none;
     }
     .bar {
