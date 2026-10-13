@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as path from 'path';
-import type { CategoricalCondition } from '../../packages/core/src/components/control-bar/query-types';
+import type { CategoricalCondition } from '../../packages/core/src/components/query-builder/query-types';
 import { IMAGES_DIR } from './paths';
 import {
   awaitTwoFrames,

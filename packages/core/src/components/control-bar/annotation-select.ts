@@ -9,8 +9,8 @@ import {
   filterGroupedAnnotations,
   flattenGroupedAnnotations,
   type GroupedAnnotation,
-} from './annotation-categories';
-import { predictedBadge, renderAnnotationName } from './annotation-name';
+} from '../common/annotation-categories';
+import { predictedBadge, renderAnnotationName } from '../common/annotation-name';
 import {
   annotationLabel,
   annotationStatSummary,

@@ -17,19 +17,19 @@ export { ProtspacePlotStatus, type StatusChipKind } from './components/plot-tool
 export { ProtspaceProteinSearch } from './components/control-bar/search';
 export { AfterPaintCommit } from './utils/after-paint-commit';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.
-export { ProtspaceQueryBuilder } from './components/control-bar/query-builder';
-export { createCondition } from './components/control-bar/query-types';
-export type { FilterQuery } from './components/control-bar/query-types';
-export { evaluateQuery, hasConfiguredCondition } from './components/control-bar/query-evaluate';
+export { ProtspaceQueryBuilder } from './components/query-builder/query-builder';
+export { createCondition } from './components/query-builder/query-types';
+export type { FilterQuery } from './components/query-builder/query-types';
+export { evaluateQuery, hasConfiguredCondition } from './components/query-builder/query-evaluate';
 export {
   findConditionsForAnnotation,
   replaceConditionsForAnnotation,
-} from './components/control-bar/query-annotation-conditions';
+} from './components/query-builder/query-annotation-conditions';
 export {
   conditionsForReliability,
   reliabilityFromConditions,
   sameConditions,
-} from './components/control-bar/eat-reliability';
+} from './components/query-builder/eat-reliability';
 export { ProtspaceImportMenu } from './components/import-menu/import-menu';
 export { ProtspaceExportMenu, type ExportEventDetail } from './components/export-menu/export-menu';
 export { EXPORT_DEFAULTS } from './components/export-menu/export-defaults';

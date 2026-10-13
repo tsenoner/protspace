@@ -1,7 +1,6 @@
 /**
- * The dataset shape the annotation select, the search and the query builder read. The control bar
- * these types served is gone (design decision 9); 4.4, 4.5 and 4.11 move these modules out of
- * `control-bar/`.
+ * The dataset shape the query builder, its rows, the value picker and the numeric input read
+ * (design decision 9 split the control bar these types served).
  */
 
 import type {

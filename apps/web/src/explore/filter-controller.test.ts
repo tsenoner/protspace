@@ -18,25 +18,25 @@ import type {
 } from '@protspace/core';
 import { NA_VALUE, NEUTRAL_BOUND, type VisualizationData } from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { findConditionsForAnnotation } from '../../../../packages/core/src/components/control-bar/query-annotation-conditions';
+import { findConditionsForAnnotation } from '../../../../packages/core/src/components/query-builder/query-annotation-conditions';
 import {
   createCondition,
   type FilterQuery,
   type NumericCondition,
-} from '../../../../packages/core/src/components/control-bar/query-types';
+} from '../../../../packages/core/src/components/query-builder/query-types';
 import { createFilterController, type FilterController } from './filter-controller';
 import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
 
 // Lit cannot load in node: stand in for @protspace/core with its pure query helpers, read from
 // core's source.
 vi.mock('@protspace/core', async () => {
-  const types = await import('../../../../packages/core/src/components/control-bar/query-types');
+  const types = await import('../../../../packages/core/src/components/query-builder/query-types');
   const evaluate =
-    await import('../../../../packages/core/src/components/control-bar/query-evaluate');
+    await import('../../../../packages/core/src/components/query-builder/query-evaluate');
   const conditions =
-    await import('../../../../packages/core/src/components/control-bar/query-annotation-conditions');
+    await import('../../../../packages/core/src/components/query-builder/query-annotation-conditions');
   const reliability =
-    await import('../../../../packages/core/src/components/control-bar/eat-reliability');
+    await import('../../../../packages/core/src/components/query-builder/eat-reliability');
   return {
     createCondition: types.createCondition,
     evaluateQuery: evaluate.evaluateQuery,

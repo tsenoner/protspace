@@ -4,8 +4,11 @@ import { customElement } from '../../utils/safe-custom-element';
 import type { FilterCondition, LogicalOp, NumericCondition } from './query-types';
 import { ANY_VALUE, createCondition, createNumericCondition } from './query-types';
 import type { ProtspaceData } from './types';
-import { filterGroupedAnnotations, flattenGroupedAnnotations } from './annotation-categories';
-import { renderAnnotationName } from './annotation-name';
+import {
+  filterGroupedAnnotations,
+  flattenGroupedAnnotations,
+} from '../common/annotation-categories';
+import { renderAnnotationName } from '../common/annotation-name';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { pushLayer } from '../kit/layers';
 import { isNumericAnnotation } from '@protspace/utils';

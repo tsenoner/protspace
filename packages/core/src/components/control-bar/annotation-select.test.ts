@@ -4,7 +4,7 @@ import {
   flattenGroupedAnnotations,
   groupAnnotations,
   type GroupedAnnotation,
-} from './annotation-categories';
+} from '../common/annotation-categories';
 
 describe('annotation-select', () => {
   describe('groupAnnotations', () => {
