@@ -10,6 +10,10 @@ export const legendSettingsPopoverStyles = [
     :host {
       display: contents;
     }
+    /* Taller than the kit's 480 px cap: the numeric content is about 625 px, Reset at its foot. */
+    ps-popover::part(panel) {
+      max-height: min(640px, var(--available-height, calc(100vh - 16px)));
+    }
     .settings {
       box-sizing: border-box;
       display: flex;

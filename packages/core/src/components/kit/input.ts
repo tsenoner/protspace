@@ -16,6 +16,8 @@ export class PsInput extends LitElement {
   @property() label = '';
   @property({ type: Boolean, reflect: true }) invalid = false;
   @property({ type: Boolean, reflect: true }) disabled = false;
+  /** Elements that describe the field, such as a hint below it (they may sit outside its shadow root). */
+  @property({ attribute: false }) describedBy: readonly Element[] = [];
 
   render() {
     return html`<div class="field">
@@ -27,6 +29,7 @@ export class PsInput extends LitElement {
         placeholder=${this.placeholder || nothing}
         aria-label=${this.label || nothing}
         aria-invalid=${this.invalid ? 'true' : nothing}
+        .ariaDescribedByElements=${this.describedBy.length ? this.describedBy : null}
         ?disabled=${this.disabled}
         @input=${this.onInput}
         @change=${this.onChange}

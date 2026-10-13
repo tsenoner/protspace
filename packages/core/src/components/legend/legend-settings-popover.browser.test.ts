@@ -180,8 +180,9 @@ describe('protspace-legend-settings-popover', () => {
     await userEvent.keyboard('25');
     expect(input.value).toBe('25');
     expect(changes).toEqual([]);
-    await afterDebounce();
-    expect(changes).toEqual([{ maxVisibleValues: 25 }]);
+    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 25 }]);
+    await frame();
+    expect(changes).toHaveLength(1);
   });
 
   it('commits exactly SETTINGS_INPUT_DEBOUNCE_MS after the last input', async () => {
@@ -210,8 +211,9 @@ describe('protspace-legend-settings-popover', () => {
     await userEvent.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
     expect(input.value).toBe('13');
     expect(changes).toEqual([]);
-    await afterDebounce();
-    expect(changes).toEqual([{ maxVisibleValues: 13 }]);
+    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 13 }]);
+    await frame();
+    expect(changes).toHaveLength(1);
   });
 
   it('Enter or leaving the field fires at once', async () => {
@@ -234,8 +236,7 @@ describe('protspace-legend-settings-popover', () => {
     expect(input.placeholder).toBe('4');
     expect(root(el).textContent).toContain('Default for this dataset: 4');
     await userEvent.fill(input, '');
-    await afterDebounce();
-    expect(changes).toEqual([{ shapeSize: null }]);
+    await expect.poll(() => changes).toEqual([{ shapeSize: null }]);
     await settle(el);
     expect(input.value).toBe('');
   });
@@ -245,8 +246,7 @@ describe('protspace-legend-settings-popover', () => {
     const input = inner(field(el, 'shape-size-input'));
     await userEvent.fill(input, '640');
     expect(input.value).toBe('64');
-    await afterDebounce();
-    expect(changes).toEqual([{ shapeSize: 64 }]);
+    await expect.poll(() => changes).toEqual([{ shapeSize: 64 }]);
   });
 
   it('0, -5, an empty field and a bad entry fire nothing and mark the field invalid', async () => {
@@ -269,8 +269,7 @@ describe('protspace-legend-settings-popover', () => {
     await userEvent.fill(input, '12');
     await settle(el);
     expect(host.invalid).toBe(false);
-    await afterDebounce();
-    expect(changes).toEqual([{ maxVisibleValues: 12 }]);
+    await expect.poll(() => changes).toEqual([{ maxVisibleValues: 12 }]);
 
     const size = field(el, 'shape-size-input');
     await userEvent.fill(inner(size), '0');
@@ -278,6 +277,36 @@ describe('protspace-legend-settings-popover', () => {
     expect(size.invalid).toBe(true);
     await afterDebounce();
     expect(changes).toHaveLength(1);
+
+    // 1 is the smallest size the field takes.
+    await userEvent.fill(inner(size), '1');
+    await settle(el);
+    expect(size.invalid).toBe(false);
+    await expect.poll(() => changes.at(-1)).toEqual({ shapeSize: 1 });
+  });
+
+  it('each number field and Reset are described by the hint under them', async () => {
+    const { el } = await mount();
+    expect(inner(field(el, 'shape-size-input')).ariaDescribedByElements?.[0]?.textContent).toMatch(
+      /^Default for this dataset: 4; clear the field to use it\.$/,
+    );
+    expect(
+      inner(field(el, 'max-visible-input')).ariaDescribedByElements?.[0]?.textContent?.trim(),
+    ).toBeTruthy();
+    const reset = root(el).querySelector('ps-button')!.shadowRoot!.querySelector('button')!;
+    expect(reset.ariaDescribedByElements?.[0]?.textContent).toMatch(/^\s*Resets this annotation/);
+  });
+
+  it('the numeric panel shows its whole foot, Reset included, without scrolling', async () => {
+    const { el } = await mount({ numeric: true });
+    const panel = root(el)
+      .querySelector('ps-popover')!
+      .shadowRoot!.querySelector<HTMLElement>('.panel')!;
+    expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+    const reset = page.getByRole('button', { name: 'Reset', exact: true }).element();
+    expect(reset.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      panel.getBoundingClientRect().bottom,
+    );
   });
 
   it('logarithmic is disabled with its note when unavailable', async () => {

@@ -3,6 +3,7 @@ import { property, query, state } from 'lit/decorators.js';
 import { DEFAULT_NUMERIC_STRATEGY, type NumericBinningStrategy } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
+import type { PsButton } from '../kit/button';
 import '../kit/input';
 import type { PsInput } from '../kit/input';
 import '../kit/popover';
@@ -51,6 +52,14 @@ const SETTINGS_KEYS: readonly (keyof LegendDisplaySettings)[] = [
   'numericStrategy',
   'reverseGradient',
 ];
+
+/** Points a kit control's description at its hint, or at nothing; writes only on a change. */
+function describe(control: PsButton | PsInput | PsSelect, hint: Element | null): void {
+  const next: readonly Element[] = hint ? [hint] : [];
+  if (control.describedBy.length !== next.length || control.describedBy[0] !== next[0]) {
+    control.describedBy = next;
+  }
+}
 
 /** The legend derives `settings` afresh at every render; only a changed value re-renders this. */
 function sameSettings(next: LegendDisplaySettings, prev?: LegendDisplaySettings): boolean {
@@ -156,10 +165,15 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
           >Show duplicate counts and spread overlaps</ps-switch
         >
         <div class="footer">
-          <ps-button variant="ghost" size="sm" ?disabled=${!this.canReset} @click=${this._onReset}
+          <ps-button
+            id="reset-button"
+            variant="ghost"
+            size="sm"
+            ?disabled=${!this.canReset}
+            @click=${this._onReset}
             >Reset</ps-button
           >
-          <p class="hint">
+          <p class="hint" id="reset-hint">
             Resets this annotation's colours, order, hidden categories, palette and item count, and
             the dataset's point size
           </p>
@@ -175,13 +189,13 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
       this._syncFields();
     }
     const select = this._strategySelect;
-    if (select) {
-      const note = this._logNote;
-      const next: readonly Element[] = note ? [note] : [];
-      if (select.describedBy.length !== next.length || select.describedBy[0] !== next[0]) {
-        select.describedBy = next;
-      }
+    if (select) describe(select, this._logNote ?? null);
+    for (const field of NUMBER_FIELDS) {
+      const input = this.renderRoot.querySelector<PsInput>(`#${FIELD_IDS[field]}`);
+      if (input) describe(input, this.renderRoot.querySelector(`#${FIELD_IDS[field]}-hint`));
     }
+    const reset = this.renderRoot.querySelector<PsButton>('#reset-button');
+    if (reset) describe(reset, this.renderRoot.querySelector('#reset-hint'));
   }
 
   disconnectedCallback(): void {
@@ -259,7 +273,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
         @keydown=${this._onNumberKeydown}
         @focusout=${this._onNumberFocusOut}
       ></ps-input>
-      <p class="hint">${hint}</p>
+      <p class="hint" id="${FIELD_IDS[field]}-hint">${hint}</p>
     </div>`;
   }
 

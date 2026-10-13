@@ -59,6 +59,22 @@ describe('ps-input', () => {
   });
 });
 
+describe('ps-input describedBy', () => {
+  it('forwards describedBy to the native input', async () => {
+    document.body.innerHTML =
+      '<p id="hint">Clear the field to use the default.</p><ps-input label="Point size"></ps-input>';
+    const el = document.querySelector('ps-input')!;
+    const hint = document.getElementById('hint')!;
+    el.describedBy = [hint];
+    await el.updateComplete;
+    const native = el.shadowRoot!.querySelector('input')!;
+    expect(native.ariaDescribedByElements?.[0]).toBe(hint);
+    el.describedBy = [];
+    await el.updateComplete;
+    expect(native.ariaDescribedByElements ?? []).toHaveLength(0);
+  });
+});
+
 describe('ps-select', () => {
   it('renders a native select from options and reports the new value', async () => {
     const el = await mount<PsSelect>('<ps-select label="Palette"></ps-select>');
