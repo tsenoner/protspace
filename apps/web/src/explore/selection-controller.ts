@@ -105,6 +105,8 @@ export function createSelectionController({
   // the input, and the plot takes it after that frame is painted. A newer pick replaces one
   // still waiting, and a selection committed at once drops it.
   const commit = new AfterPaintCommit();
+  /** The waiting or landing commit's `afterLand`; a newer commit replaces it. */
+  let pendingAfterLand: (() => void) | undefined;
 
   const show = (ids: string[]) => {
     selected = ids;
@@ -114,17 +116,33 @@ export function createSelectionController({
 
   const commitSelection = (
     ids: string[],
-    { afterPaint = false, record = true }: { afterPaint?: boolean; record?: boolean } = {},
+    {
+      afterPaint = false,
+      record = true,
+      afterLand,
+    }: {
+      afterPaint?: boolean;
+      record?: boolean;
+      /**
+       * Runs once the selection has landed on the plot, after the paint for an afterPaint
+       * commit; a newer commit that replaces a waiting one drops it.
+       */
+      afterLand?: () => void;
+    } = {},
   ) => {
     // One undo step per change, recorded at commit time with the arrays as they are: every
     // caller hands over a fresh array, and nothing mutates one afterwards.
     if (record && ids !== selected && (ids.length > 0 || selected.length > 0)) {
       history.record({ kind: 'selection', before: selected, after: ids });
     }
+    pendingAfterLand = afterLand;
     const land = () => {
       show(ids);
       plotElement.selectedProteinIds = [...ids];
       interactionController.handleSelectionChange(ids);
+      const then = pendingAfterLand;
+      pendingAfterLand = undefined;
+      then?.();
     };
     if (afterPaint) {
       show(ids);
@@ -172,7 +190,15 @@ export function createSelectionController({
   const onSearchAdd = (event: Event) => {
     const { proteinId } = (event as CustomEvent<{ proteinId: string }>).detail;
     if (!proteinId || selected.includes(proteinId)) return;
-    commitSelection([...selected, proteinId], { afterPaint: true });
+    commitSelection([...selected, proteinId], {
+      afterPaint: true,
+      // One protein asked for by name: bring it into view (decision 15). A protein the filter,
+      // an isolation or a hidden category keeps out of view stays selected, and the search says
+      // why nothing moved.
+      afterLand: () => {
+        if (!plotElement.zoomToProteins([proteinId])) proteinSearch.reportNotInView(proteinId);
+      },
+    });
   };
 
   const onSearchRemove = (event: Event) => {
@@ -190,6 +216,7 @@ export function createSelectionController({
     const current = new Set(selected);
     const added = proteinIds.filter((id) => !current.has(id));
     if (added.length === 0) return;
+    // A pasted list never zooms: the selection bar's "Zoom to them" does that on request.
     commitSelection([...selected, ...added], { afterPaint: true });
   };
 
@@ -254,7 +281,9 @@ export function createSelectionController({
   };
 
   const onZoomToSelection = () => {
-    // Zoom to what the bar counts: land a search pick still waiting first.
+    // Zoom to what the bar counts: land a search pick still waiting first, without its own
+    // single-protein zoom, which this one replaces.
+    pendingAfterLand = undefined;
     commit.flush();
     plotElement.zoomToProteins(selected);
   };

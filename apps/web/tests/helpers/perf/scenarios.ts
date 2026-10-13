@@ -346,6 +346,14 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
         await input.press('Escape');
         await input.blur();
         await page.keyboard.press('Escape');
+        // The pick zoomed in on the protein (design decision 15): fit the view again and let the
+        // 750 ms transition finish, so the pixel check and the next segment start from the full
+        // view.
+        await page
+          .getByRole('toolbar', { name: 'Plot tools' })
+          .getByRole('button', { name: 'Fit to view', exact: true })
+          .click();
+        await settle(page);
         // Selecting a protein opens its structure viewer, and clearing the selection
         // leaves it open; close it so later segments start from the same layout.
         const viewer = page.locator('#myStructureViewer');

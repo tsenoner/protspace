@@ -1,10 +1,14 @@
 import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { isMacOrIos } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import { handleDropdownEscape, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
+import '../kit/button';
+import { icon } from '../kit/icon';
 import { pushLayer } from '../kit/layers';
-import { searchStyles } from './search.styles';
-import { isMacOrIos } from '@protspace/utils';
+import { searchStyles } from './protein-search.styles';
+import { parsePastedIds, resolveProteinIds } from './resolve-ids';
+import { renderSearchReport, type SearchReport } from './search-report';
 import { computeSearchSuggestions, type SearchSuggestion } from './search-suggestions';
 
 const SEARCH_DEBOUNCE_MS = 120;
@@ -15,10 +19,16 @@ const SEARCH_DEBOUNCE_MS = 120;
  * listbox — "this protein is in the selection" — rather than doubling as the cursor.
  */
 const SUGGESTIONS_LIST_ID = 'protein-search-suggestions';
+const REPORT_ID = 'protein-search-report';
 const suggestionRowId = (index: number) => `${SUGGESTIONS_LIST_ID}-${index}`;
 
+type AddSource = 'typed' | 'suggestion';
+
 /**
- * Protein search component with autocomplete suggestions and multi-select state (no chips UI)
+ * Protein search (design decision 15): suggestions while typing, a pasted list of IDs, and a
+ * report of what happened — an unknown ID, an ID already selected, a pasted list with missing IDs,
+ * or a pick hidden in the current view. It writes nothing to the plot: the host listens for its
+ * events.
  */
 @customElement('protspace-protein-search')
 export class ProtspaceProteinSearch extends LitElement {
@@ -32,46 +42,52 @@ export class ProtspaceProteinSearch extends LitElement {
   @state() private highlightedSuggestionIndex: number = -1;
   @state() private isInputFocused: boolean = false;
   @state() private isSuggestionDropdownOpen: boolean = false;
+  /** What the last Enter, paste or hidden pick came to; shown in the popup in place of the list. */
+  @state() private _report: SearchReport | null = null;
 
   private _suggestionDebounceId: ReturnType<typeof setTimeout> | null = null;
   private _blurTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  /** Releases the suggestion list's layer; set while the list is on screen. */
+  /** Releases the popup's layer; set while the list or the report is on screen. */
   private _releaseLayer?: () => void;
+  private _layerFor: 'suggestions' | 'report' | null = null;
 
   /** True exactly when `render()` emits the listbox that the combobox ARIA refers to. */
   private get _isListboxRendered(): boolean {
-    return this.isSuggestionDropdownOpen && this.searchSuggestions.length > 0;
+    return !this._report && this.isSuggestionDropdownOpen && this.searchSuggestions.length > 0;
   }
 
   /**
-   * True whenever `render()` emits a popup at all — the listbox *or* the no-match message.
-   * `aria-expanded` tracks this rather than `_isListboxRendered`: a combobox whose popup is
-   * on screen must report itself expanded, and the no-match state is a rendered popup.
+   * True whenever `render()` emits a popup at all — the listbox, the no-match message or the
+   * report. `aria-expanded` tracks this: a combobox whose popup is on screen must report itself
+   * expanded.
    */
   private get _isPopupRendered(): boolean {
     return (
+      this._report !== null ||
       this._isListboxRendered ||
       (this.isSuggestionDropdownOpen && this.searchQuery.trim().length > 0)
     );
   }
 
   render() {
+    const popupId = this._report ? REPORT_ID : SUGGESTIONS_LIST_ID;
     return html`
       <div class="search-container">
         <div class="search-chips" @click=${this._focusSearchInput}>
+          <span class="search-icon" aria-hidden="true">${icon('search', 14)}</span>
           <input
             id="protein-search-input"
             class="search-input"
             type="text"
             .value=${this.searchQuery}
-            placeholder="Search or paste protein IDs"
+            placeholder="Search proteins or paste IDs"
             aria-label="Search proteins"
             aria-keyshortcuts="Control+K Meta+K"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded=${this._isPopupRendered}
-            aria-controls=${this._isPopupRendered ? SUGGESTIONS_LIST_ID : nothing}
-            aria-activedescendant=${this.highlightedSuggestionIndex >= 0
+            aria-controls=${this._isPopupRendered ? popupId : nothing}
+            aria-activedescendant=${!this._report && this.highlightedSuggestionIndex >= 0
               ? suggestionRowId(this.highlightedSuggestionIndex)
               : nothing}
             @input=${this._onSearchInput}
@@ -86,17 +102,22 @@ export class ProtspaceProteinSearch extends LitElement {
           </div>
         </div>
 
-        ${this._renderSuggestions()}
+        ${this._renderPopup()}
       </div>
     `;
   }
 
   /**
-   * The listbox, the no-match message, or nothing — driven by the same open flag. The list is a
-   * scroll container, which Chrome makes a Tab stop; `tabindex="-1"` keeps focus in the input
-   * (the combobox pattern: `aria-activedescendant` moves instead).
+   * The report, the listbox, the no-match message, or nothing. The list is a scroll container,
+   * which Chrome makes a Tab stop; `tabindex="-1"` keeps focus in the input (the combobox
+   * pattern: `aria-activedescendant` moves instead).
    */
-  private _renderSuggestions() {
+  private _renderPopup() {
+    if (this._report) {
+      return html`<div class="search-popup" id=${REPORT_ID} @focusout=${this._onReportFocusOut}>
+        ${renderSearchReport(this._report, () => this._copyMissing())}
+      </div>`;
+    }
     if (this._isListboxRendered) {
       return html`
         <div
@@ -132,7 +153,6 @@ export class ProtspaceProteinSearch extends LitElement {
         id=${suggestionRowId(index)}
         role="option"
         aria-selected=${suggestion.isSelected}
-        title=${suggestion.isSelected ? 'Remove from selection' : nothing}
         aria-label=${suggestion.isSelected
           ? `${suggestion.id}, remove from selection`
           : suggestion.id}
@@ -159,6 +179,7 @@ export class ProtspaceProteinSearch extends LitElement {
     this._clearBlurTimeout();
     this._releaseLayer?.();
     this._releaseLayer = undefined;
+    this._layerFor = null;
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
@@ -177,9 +198,7 @@ export class ProtspaceProteinSearch extends LitElement {
 
   // `PropertyValues<this>` (as used by `willUpdate` above) types `.has()` against
   // `keyof this`, which TypeScript excludes private members from — so a private @state
-  // field like `highlightedSuggestionIndex` needs the untyped `Map<string, unknown>` form
-  // instead, matching the convention elsewhere in this package (e.g. scatter-plot.ts,
-  // legend.ts, query-numeric-input.ts).
+  // field like `highlightedSuggestionIndex` needs the untyped `Map<string, unknown>` form.
   protected updated(changed: Map<string, unknown>): void {
     this._syncLayer();
     // `.search-suggestions` is a fixed-height (max-height: 20rem) scroll container fitting
@@ -190,21 +209,28 @@ export class ProtspaceProteinSearch extends LitElement {
   }
 
   /**
-   * While the suggestions show they are a layer, so Escape resets the search before the page
-   * clears the selection (Review Focus 4). A press outside blurs the input, which closes the
-   * list and keeps the query, as before; the layer leaves outside presses to that.
+   * While a popup shows it is a layer, so Escape closes it before the page clears the selection
+   * (one step per press). The suggestion list closes and resets the search, and leaves outside
+   * presses to the input's blur, as before; the report closes on its own, keeps the typed text,
+   * and closes on a press outside too.
    */
   private _syncLayer(): void {
-    const open = this._isPopupRendered;
-    if (open && !this._releaseLayer) {
+    const want = this._report ? 'report' : this._isPopupRendered ? 'suggestions' : null;
+    if (want === this._layerFor) return;
+    this._releaseLayer?.();
+    this._releaseLayer = undefined;
+    this._layerFor = want;
+    if (want === 'report') {
+      this._releaseLayer = pushLayer({
+        close: () => this._dismissReport(),
+        elements: [this],
+      });
+    } else if (want === 'suggestions') {
       this._releaseLayer = pushLayer({
         close: () => this._resetSearch(),
         elements: [this],
         dismissOnOutsidePress: false,
       });
-    } else if (!open && this._releaseLayer) {
-      this._releaseLayer();
-      this._releaseLayer = undefined;
     }
   }
 
@@ -217,11 +243,10 @@ export class ProtspaceProteinSearch extends LitElement {
 
   /**
    * Bound to `.search-chips` — the input's own row — and deliberately not to
-   * `.search-container`. The suggestion list is absolutely positioned but is still a
-   * child of the container, so a container-level handler would refocus the input on
-   * every suggestion click. In the 200ms blur grace window the input is not focused, so
-   * that refocus fires `_onInputFocus` and reopens the dropdown against the query a
-   * click-add just cleared — the ~50 unrelated rows this component exists to suppress.
+   * `.search-container`. The popup is absolutely positioned but is still a child of the
+   * container, so a container-level handler would refocus the input on every suggestion click.
+   * In the 200ms blur grace window the input is not focused, so that refocus fires
+   * `_onInputFocus` and reopens the dropdown against the query a click-add just cleared.
    */
   private _focusSearchInput() {
     const input = this.shadowRoot?.querySelector(
@@ -232,17 +257,18 @@ export class ProtspaceProteinSearch extends LitElement {
 
   private _onPaste(e: ClipboardEvent) {
     const pastedText = e.clipboardData?.getData('text/plain') ?? '';
-    const ids = pastedText.trim().split(/\s+/);
+    const tokens = parsePastedIds(pastedText);
 
-    if (ids.length > 1 || pastedText.includes('\n')) {
+    if (tokens.length > 1 || pastedText.includes('\n')) {
       e.preventDefault();
-      this._addMultipleSelections(ids.filter(Boolean));
+      if (tokens.length > 0) this._addMultipleSelections(tokens);
     }
   }
 
   private _onSearchInput(event: Event) {
     const target = event.target as HTMLInputElement;
     this.searchQuery = target.value;
+    this._report = null;
     // Opening is deliberately left to `_updateSuggestions` on the debounce. Opening here
     // would render the previous close's empty `searchSuggestions` against a non-empty
     // query, i.e. flash `No matching protein IDs found` for SEARCH_DEBOUNCE_MS on the
@@ -267,7 +293,7 @@ export class ProtspaceProteinSearch extends LitElement {
       ) {
         this._activateSuggestion(this.searchSuggestions[this.highlightedSuggestionIndex]);
       } else if (this.searchQuery.trim()) {
-        this._addSelection(this.searchQuery.trim());
+        this._addSelection(this.searchQuery.trim(), 'typed');
       }
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -301,11 +327,37 @@ export class ProtspaceProteinSearch extends LitElement {
   private _onInputBlur() {
     this.isInputFocused = false;
     this._clearSuggestionDebounce();
-    // Delay clearing suggestions to allow mousedown to fire on suggestions
+    // Delay clearing suggestions to allow mousedown to fire on suggestions; a report keeps
+    // showing while focus is on its Copy button.
     this._blurTimeoutId = setTimeout(() => {
       this._blurTimeoutId = null;
       this._closeDropdown();
+      if (!this._reportHasFocus()) this._report = null;
     }, 200);
+  }
+
+  /** Focus left the report for somewhere other than this search: the report goes. */
+  private _onReportFocusOut = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && (this.shadowRoot?.contains(next) || this.contains(next))) return;
+    this._report = null;
+  };
+
+  private _reportHasFocus(): boolean {
+    const active = this.shadowRoot?.activeElement;
+    return !!active?.closest('.search-popup');
+  }
+
+  private _dismissReport() {
+    this._report = null;
+  }
+
+  private _copyMissing() {
+    const report = this._report;
+    if (report?.kind !== 'bulk') return;
+    void navigator.clipboard?.writeText(report.missing.join('\n')).catch(() => {
+      // The browser refused the clipboard: the list stays on screen to copy by hand.
+    });
   }
 
   private _clearSuggestionDebounce() {
@@ -382,7 +434,7 @@ export class ProtspaceProteinSearch extends LitElement {
     if (suggestion.isSelected) {
       this._removeSelection(suggestion.id);
     } else {
-      this._addSelection(suggestion.id);
+      this._addSelection(suggestion.id, 'suggestion');
     }
   }
 
@@ -418,61 +470,70 @@ export class ProtspaceProteinSearch extends LitElement {
     return this.availableProteinIds.find((p) => p.toLowerCase() === lowerId);
   }
 
-  private _addSelection(id: string) {
+  private _addSelection(id: string, source: AddSource) {
     if (!id) return;
 
-    // Unknown IDs and already-selected ones both just clear the box: there is nothing to add.
     const validId = this._canonicalProteinId(id);
+    // Nothing to add: say why, and keep the text so it can be corrected.
     if (!validId || this.selectedProteinIds.includes(validId)) {
-      this._resetSearch();
+      this._clearSuggestionDebounce();
+      this._closeDropdown();
+      this._report = validId
+        ? { kind: 'already-selected', id: validId }
+        : { kind: 'missing-one', id };
       return;
     }
 
     this._resetSearch();
+    this._report = null;
 
     this.dispatchEvent(
       new CustomEvent('add-selection', {
-        detail: { proteinId: validId },
+        detail: { proteinId: validId, source },
         bubbles: true,
         composed: true,
       }),
     );
   }
 
-  private _addMultipleSelections(ids: string[]) {
-    const availableIdsSet = new Set(this.availableProteinIds);
-    const lowerCaseAvailableMap = new Map<string, string>();
-    this.availableProteinIds.forEach((id) => lowerCaseAvailableMap.set(id.toLowerCase(), id));
+  private _addMultipleSelections(tokens: string[]) {
+    const { found, alreadySelected, missing } = resolveProteinIds(
+      tokens,
+      this.availableProteinIds,
+      this.selectedProteinIds,
+    );
 
-    const newValidIds = new Set<string>();
+    this._resetSearch();
 
-    for (const id of ids) {
-      if (!id) continue;
-
-      if (availableIdsSet.has(id)) {
-        newValidIds.add(id);
-      } else {
-        const lowerId = id.toLowerCase();
-        if (lowerCaseAvailableMap.has(lowerId)) {
-          newValidIds.add(lowerCaseAvailableMap.get(lowerId)!);
-        }
-      }
-    }
-
-    const currentSelectedSet = new Set(this.selectedProteinIds);
-    const uniqueNewIds = [...newValidIds].filter((id) => !currentSelectedSet.has(id));
-
-    if (uniqueNewIds.length > 0) {
+    if (found.length > 0) {
       this.dispatchEvent(
         new CustomEvent('add-selection-multiple', {
-          detail: { proteinIds: uniqueNewIds },
+          detail: { proteinIds: found, missing },
           bubbles: true,
           composed: true,
         }),
       );
     }
 
-    this._resetSearch();
+    // All found and new: the selection bar carries the result, so no report.
+    this._report =
+      missing.length > 0 || alreadySelected.length > 0
+        ? {
+            kind: 'bulk',
+            found: found.length + alreadySelected.length,
+            total: tokens.length,
+            missing,
+          }
+        : null;
+  }
+
+  /**
+   * Public API: the host could not show `proteinId` after selecting it (the filter, an
+   * isolation or a hidden category keeps it out of view), so the search says so.
+   */
+  public reportNotInView(proteinId: string): void {
+    this._closeDropdown();
+    this._report = { kind: 'not-in-view', id: proteinId };
   }
 
   /**

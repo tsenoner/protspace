@@ -3,11 +3,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pushLayer, topLayer } from '../kit/layers';
-import './search';
+import './protein-search';
 
 type ProteinSearchElement = HTMLElement & {
   availableProteinIds: string[];
   selectedProteinIds: string[];
+  reportNotInView(proteinId: string): void;
   updateComplete: Promise<unknown>;
 };
 
@@ -58,6 +59,24 @@ const rowsOf = (element: ProteinSearchElement): HTMLElement[] =>
   Array.from(element.shadowRoot!.querySelectorAll('.search-suggestion'));
 
 const rowText = (row: HTMLElement): string => row.textContent!.trim();
+
+const reportOf = (element: ProteinSearchElement): HTMLElement | null =>
+  element.shadowRoot!.querySelector('.search-report');
+
+/** A paste of `text` into the input, as a browser fires it. */
+function paste(element: ProteinSearchElement, text: string): Event {
+  const event = new Event('paste', { bubbles: true, cancelable: true, composed: true });
+  Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
+  inputOf(element).dispatchEvent(event);
+  return event;
+}
+
+/** Record the detail of every `type` event the element emits, in order. */
+const captureDetails = <T>(element: ProteinSearchElement, type: string): T[] => {
+  const seen: T[] = [];
+  element.addEventListener(type, (event) => seen.push((event as CustomEvent<T>).detail));
+  return seen;
+};
 
 describe('protspace-protein-search feedback', () => {
   // jsdom does not implement scrollIntoView, so it is assigned rather than spied on.
@@ -197,11 +216,10 @@ describe('protspace-protein-search feedback', () => {
 
     const rows = rowsOf(element);
     expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['true', 'false']);
-    expect(rows[0].getAttribute('title')).toBe('Remove from selection');
     expect(rows[0].getAttribute('aria-label')).toBe('GT4, remove from selection');
     expect(rows[1].getAttribute('aria-label')).toBe('GT40');
-    // Selectable rows carry no tooltip rather than an empty one.
-    expect(rows[1].hasAttribute('title')).toBe(false);
+    // No row carries a native title tooltip.
+    expect(rows.some((row) => row.hasAttribute('title'))).toBe(false);
   });
 
   it('points aria-activedescendant at the keyboard-highlighted row', async () => {
@@ -533,5 +551,162 @@ describe('protspace-protein-search and the layer stack', () => {
     await element.updateComplete;
 
     expect(opened).not.toHaveBeenCalled();
+  });
+});
+
+describe('protspace-protein-search reports what happened', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+    // jsdom has no clipboard; the copy test defines one on the navigator for itself.
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  });
+
+  it("an unknown ID shows 'No protein X in this dataset', keeps the input and dispatches nothing", async () => {
+    const element = await setupSearch(FIVE, []);
+    const added = captureIds(element, 'add-selection');
+    await typeQuery(element, 'ZZZ1');
+
+    press(element, 'Enter');
+    await element.updateComplete;
+
+    expect(reportOf(element)?.getAttribute('role')).toBe('status');
+    expect(reportOf(element)?.textContent?.trim()).toBe('No protein ZZZ1 in this dataset');
+    expect(inputOf(element).value).toBe('ZZZ1');
+    expect(added).toEqual([]);
+    // The combobox names the popup on screen: the report.
+    const popup = element.shadowRoot!.querySelector('#protein-search-report')!;
+    expect(inputOf(element).getAttribute('aria-controls')).toBe(popup.id);
+    expect(inputOf(element).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('an already-selected ID reports it', async () => {
+    const element = await setupSearch(['OLD1'], []);
+    await typeQuery(element, 'new1');
+    // The protein arrives, already selected; the absent cursor is preserved, so Enter resolves
+    // the typed text instead of activating (and removing) a row.
+    element.availableProteinIds = ['NEW1'];
+    element.selectedProteinIds = ['NEW1'];
+    await element.updateComplete;
+    const removed = captureIds(element, 'remove-selection');
+
+    press(element, 'Enter');
+    await element.updateComplete;
+
+    expect(reportOf(element)?.textContent?.trim()).toBe('NEW1 is already selected');
+    expect(removed).toEqual([]);
+    expect(inputOf(element).value).toBe('new1');
+  });
+
+  it("a paste with 3 missing of 5 shows '2 of 5 found', lists the 3 and dispatches add-selection-multiple with 2", async () => {
+    const element = await setupSearch(FIVE, []);
+    const added = captureDetails<{ proteinIds: string[]; missing: string[] }>(
+      element,
+      'add-selection-multiple',
+    );
+
+    const event = paste(element, 'P00595, p00596\nX1;X2 X3');
+    await element.updateComplete;
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(added).toEqual([{ proteinIds: ['P00595', 'P00596'], missing: ['X1', 'X2', 'X3'] }]);
+    const report = reportOf(element)!;
+    expect(report.querySelector('.search-report-line')!.textContent!.trim()).toBe('2 of 5 found');
+    expect([...report.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'X1',
+      'X2',
+      'X3',
+    ]);
+    expect(report.querySelector('.search-report-copy')!.textContent!.trim()).toBe(
+      'Copy missing IDs',
+    );
+  });
+
+  it('a paste where everything is found shows no report', async () => {
+    const element = await setupSearch(FIVE, []);
+    paste(element, 'P00595 P00596');
+    await element.updateComplete;
+    expect(reportOf(element)).toBeNull();
+  });
+
+  it("more than 50 missing shows 50 and 'and N more'", async () => {
+    const element = await setupSearch(FIVE, []);
+    const missing = Array.from({ length: 1_234 }, (_, i) => `M${i}`);
+
+    paste(element, ['P00595', ...missing].join('\n'));
+    await element.updateComplete;
+
+    const report = reportOf(element)!;
+    expect(report.querySelector('.search-report-line')!.textContent!.trim()).toBe(
+      '1 of 1,235 found',
+    );
+    expect(report.querySelectorAll('li')).toHaveLength(50);
+    expect(report.querySelector('.search-report-more')!.textContent!.trim()).toBe('and 1,184 more');
+  });
+
+  it('Copy missing IDs writes all of them, one per line', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const element = await setupSearch(FIVE, []);
+    const missing = Array.from({ length: 60 }, (_, i) => `M${i}`);
+    paste(element, missing.join(' '));
+    await element.updateComplete;
+
+    (reportOf(element)!.querySelector('.search-report-copy') as HTMLElement).click();
+
+    expect(writeText).toHaveBeenCalledWith(missing.join('\n'));
+  });
+
+  it('the report closes on Escape, keeping the text, and on typing', async () => {
+    const element = await setupSearch(FIVE, []);
+    await typeQuery(element, 'ZZZ1');
+    press(element, 'Enter');
+    await element.updateComplete;
+    expect(reportOf(element)).not.toBeNull();
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await element.updateComplete;
+    expect(reportOf(element)).toBeNull();
+    expect(inputOf(element).value).toBe('ZZZ1');
+
+    press(element, 'Enter');
+    await element.updateComplete;
+    expect(reportOf(element)).not.toBeNull();
+    await typeQuery(element, 'ZZZ12');
+    expect(reportOf(element)).toBeNull();
+  });
+
+  it('reportNotInView shows its line', async () => {
+    const element = await setupSearch(FIVE, ['P00595']);
+    element.reportNotInView('P00595');
+    await element.updateComplete;
+    expect(reportOf(element)?.textContent?.trim()).toBe(
+      'P00595 is selected but hidden in this view',
+    );
+  });
+
+  it('add-selection carries its source', async () => {
+    // A highlighted suggestion: Enter activates the row.
+    const listed = await setupSearch(['GT4', 'GT40'], []);
+    const fromList = captureDetails<{ proteinId: string; source: string }>(listed, 'add-selection');
+    await typeQuery(listed, 'GT40');
+    press(listed, 'Enter');
+    expect(fromList).toEqual([{ proteinId: 'GT40', source: 'suggestion' }]);
+
+    // No row highlighted: Enter resolves the typed text (the sequence of
+    // 'resolves a typed ID case-insensitively when Enter has no highlighted row').
+    const typed = await setupSearch(['OLD1'], []);
+    const fromText = captureDetails<{ proteinId: string; source: string }>(typed, 'add-selection');
+    await typeQuery(typed, 'new1');
+    typed.availableProteinIds = ['NEW1'];
+    await typed.updateComplete;
+    press(typed, 'Enter');
+    expect(fromText).toEqual([{ proteinId: 'NEW1', source: 'typed' }]);
   });
 });

@@ -87,6 +87,7 @@ function setup() {
   const search = Object.assign(new EventTarget(), {
     availableProteinIds: [] as string[],
     selectedProteinIds: [] as string[],
+    reportNotInView: vi.fn(),
   });
   const interaction = { handleSelectionChange: vi.fn() };
   const escape = fakeEscape();
@@ -211,6 +212,53 @@ describe('selection controller: the search box', () => {
     await afterPaint();
 
     expect(m.interaction.handleSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('add-selection zooms once after paint', async () => {
+    const m = setup();
+
+    fire(m.search, 'add-selection', { proteinId: 'P1', source: 'typed' });
+    expect(m.plot.zoomToProteins).not.toHaveBeenCalled();
+
+    await afterPaint();
+
+    expect(m.plot.zoomToProteins).toHaveBeenCalledOnce();
+    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P1']);
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+    expect(m.search.reportNotInView).not.toHaveBeenCalled();
+  });
+
+  it('a newer pick replaces a waiting one, and only it zooms', async () => {
+    const m = setup();
+    fire(m.search, 'add-selection', { proteinId: 'P1', source: 'typed' });
+    fire(m.search, 'add-selection', { proteinId: 'P2', source: 'suggestion' });
+
+    await afterPaint();
+
+    expect(m.plot.zoomToProteins).toHaveBeenCalledOnce();
+    expect(m.plot.zoomToProteins).toHaveBeenCalledWith(['P2']);
+  });
+
+  it('a false zoom reports not in view', async () => {
+    const m = setup();
+    m.plot.zoomToProteins.mockReturnValue(false);
+
+    fire(m.search, 'add-selection', { proteinId: 'P1', source: 'typed' });
+    await afterPaint();
+
+    expect(m.search.reportNotInView).toHaveBeenCalledWith('P1');
+    // Selected anyway: the report says why nothing moved.
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+  });
+
+  it('add-selection-multiple does not zoom', async () => {
+    const m = setup();
+
+    fire(m.search, 'add-selection-multiple', { proteinIds: ['P1', 'P2'], missing: ['X'] });
+    await afterPaint();
+
+    expect(m.plot.selectedProteinIds).toEqual(['P1', 'P2']);
+    expect(m.plot.zoomToProteins).not.toHaveBeenCalled();
   });
 });
 

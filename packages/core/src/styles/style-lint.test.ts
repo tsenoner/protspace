@@ -24,7 +24,6 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
 const LEGACY = new Set<string>([
   '../components/common/info-popover.styles.ts',
   '../components/control-bar/annotation-select.styles.ts',
-  '../components/control-bar/search.styles.ts',
   '../components/publish/publish-modal.styles.ts',
   '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',

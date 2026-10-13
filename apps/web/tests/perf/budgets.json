@@ -1,6 +1,6 @@
 {
   "$comment": "Max allowed per segment on data.parquetbundle. null = report only. Update: PERF_UPDATE_BUDGETS=1 pnpm perf:counts, review the diff, commit.",
-  "recordedAt": "959fde47",
+  "recordedAt": "8a9530b0",
   "segments": {
     "load": {
       "restage": 2,
@@ -136,7 +136,7 @@
       "restage": 0,
       "restagePos": 0,
       "restageStyle": 0,
-      "render": 1,
+      "render": 2,
       "processData": 0,
       "gridRebuild": 0,
       "legendUpdate": 0,

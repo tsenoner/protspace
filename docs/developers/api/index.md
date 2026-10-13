@@ -368,15 +368,27 @@ beside the Projection picker.
 | `availableProteinIds` | `string[]` | IDs it suggests               |
 | `selectedProteinIds`  | `string[]` | The selection, shown as chips |
 
-⌘K (Ctrl+K elsewhere) focuses it, and pasting several IDs selects them all. It writes nothing to
-the plot: set `plot.selectedProteinIds` and `search.selectedProteinIds` from its events.
+⌘K (Ctrl+K elsewhere) focuses it, and pasting several IDs (separated by spaces, commas, semicolons
+or new lines) selects every one it finds. It writes nothing to the plot: set
+`plot.selectedProteinIds` and `search.selectedProteinIds` from its events.
 
-| Event                    | Detail           | Description           |
-| ------------------------ | ---------------- | --------------------- |
-| `selection-change`       | `{ proteinIds }` | Replace the selection |
-| `add-selection`          | `{ proteinId }`  | Add one protein       |
-| `add-selection-multiple` | `{ proteinIds }` | Add several proteins  |
-| `remove-selection`       | `{ proteinId }`  | Remove one protein    |
+It says what happened in its popup: "No protein P12345 in this dataset" for an unknown ID (the text
+stays), "P12345 is already selected", and for a pasted list "12 of 15 found" with the missing IDs
+(the first 50, then "and N more") and a Copy missing IDs button.
+
+| Event                    | Detail                    | Description                                              |
+| ------------------------ | ------------------------- | -------------------------------------------------------- |
+| `selection-change`       | `{ proteinIds }`          | Replace the selection                                    |
+| `add-selection`          | `{ proteinId, source }`   | Add one protein; `source` is `'typed'` or `'suggestion'` |
+| `add-selection-multiple` | `{ proteinIds, missing }` | Add the pasted proteins it found; `missing` as pasted    |
+| `remove-selection`       | `{ proteinId }`           | Remove one protein                                       |
+
+| Method                       | Description                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `reportNotInView(proteinId)` | Say that a protein it added is selected but hidden in this view (filter, isolation) |
+
+The app zooms to a single added protein with the scatterplot's `zoomToProteins([id])` and calls
+`reportNotInView` when that returns false; a pasted list never zooms.
 
 ### Query Builder
 

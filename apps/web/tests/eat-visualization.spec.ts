@@ -464,6 +464,18 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       }),
     )
     .toEqual({ length: 1, ids: ['A0JMF6'] });
+  // The search zoomed in on A0JMF6; isolating fits the view again over a transition. Read the
+  // position once it has settled.
+  await expect
+    .poll(() =>
+      page.locator('#myPlot').evaluate((element) => {
+        const { k, x, y } = (
+          element as unknown as Element & { _transform: { k: number; x: number; y: number } }
+        )._transform;
+        return [k, x, y];
+      }),
+    )
+    .toEqual([1, 0, 0]);
   const isolatedPosition = await getProteinScreenPosition(page, 'A0JMF6');
   await page.mouse.move(isolatedPosition.x, isolatedPosition.y);
   const isolatedTooltip = plot.locator('protspace-protein-tooltip');

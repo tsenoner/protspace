@@ -9,16 +9,16 @@ the monorepo (or have added the workspace package as a local dependency). There 
 
 ## Components Overview
 
-| Component        | Tag                                                                                           | Purpose                           |
-| ---------------- | --------------------------------------------------------------------------------------------- | --------------------------------- |
-| Scatterplot      | `<protspace-scatterplot>`                                                                     | Main projection visualization     |
-| Legend           | `<protspace-legend>`                                                                          | Category filtering                |
-| View controls    | `<protspace-projection-select>`, `<protspace-annotation-select>`, `<protspace-contours-menu>` | Projection, Color by and contours |
-| Plot tools       | `<protspace-plot-tools>`                                                                      | Move, box and lasso selection     |
-| Search           | `<protspace-protein-search>`                                                                  | Find and select proteins by ID    |
-| Import, Export   | `<protspace-import-menu>`, `<protspace-export-menu>`                                          | Load data, export figures         |
-| Structure Viewer | `<protspace-structure-viewer>`                                                                | 3D protein structures             |
-| Data Loader      | `<protspace-data-loader>`                                                                     | `.parquetbundle` / FASTA loading  |
+| Component        | Tag                                                                                           | Purpose                                             |
+| ---------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Scatterplot      | `<protspace-scatterplot>`                                                                     | Main projection visualization                       |
+| Legend           | `<protspace-legend>`                                                                          | Category filtering                                  |
+| View controls    | `<protspace-projection-select>`, `<protspace-annotation-select>`, `<protspace-contours-menu>` | Projection, Color by and contours                   |
+| Plot tools       | `<protspace-plot-tools>`                                                                      | Move, box and lasso selection                       |
+| Search           | `<protspace-protein-search>`                                                                  | Find and select proteins by ID; reports missing IDs |
+| Import, Export   | `<protspace-import-menu>`, `<protspace-export-menu>`                                          | Load data, export figures                           |
+| Structure Viewer | `<protspace-structure-viewer>`                                                                | 3D protein structures                               |
+| Data Loader      | `<protspace-data-loader>`                                                                     | `.parquetbundle` / FASTA loading                    |
 
 Importing `@protspace/core` once registers every element.
 
