@@ -15,18 +15,17 @@ import {
   numericData,
   TWELVE,
 } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
 
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(data: VisualizationData, annotation: string): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(data, annotation);
-  await settle(legend);
+  await settleLegend(legend);
   return legend;
 }
 
@@ -63,7 +62,7 @@ describe('legend header', () => {
     expect(reverseButton(legend).getAttribute('aria-label')).toBe('Show high to low');
 
     reverseButton(legend).click();
-    await settle(legend);
+    await settleLegend(legend);
     expect(reverseButton(legend).getAttribute('aria-label')).toBe('Show low to high');
   });
 
@@ -93,7 +92,7 @@ describe('legend header', () => {
     legend
       .shadowRoot!.querySelector<HTMLButtonElement>('button[aria-label="Legend settings"]')!
       .click();
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(onCustomize).toHaveBeenCalledOnce();
     expect(legend.shadowRoot!.activeElement?.id).toBe('legend-settings-dialog');

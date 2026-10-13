@@ -12,7 +12,10 @@ import {
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { createDefaultSettings } from './legend-helpers';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 // These tests seed and read the persisted settings through `localStorage` directly.
@@ -457,10 +460,6 @@ function makeData(count: number, prefix = 'p'): VisualizationData {
 }
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 function showView(plot: MockPlot, view: VisualizationData): void {
   plot.getCurrentData = () => view;
   plot.dispatchEvent(new CustomEvent('data-change', { detail: { data: view } }));
@@ -475,7 +474,7 @@ describe('legend default shape size with a scatterplot', () => {
   async function mount(count: number) {
     const data = makeData(count);
     const { legend, plot } = await mountLegendWithScatterplot(data, 'group');
-    await settle(legend);
+    await settleLegend(legend);
     return { data, legend: legend as ResettableLegend, plot };
   }
 
@@ -487,7 +486,7 @@ describe('legend default shape size with a scatterplot', () => {
     expect(pointSize(plot)).toBe(32);
 
     legend._handleItemClick('A');
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
@@ -499,12 +498,12 @@ describe('legend default shape size with a scatterplot', () => {
     plot.filtersActive = true;
     plot.filteredProteinIds = view.protein_ids;
     showView(plot, view);
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.proteinIds).toHaveLength(1_000);
 
     plot.selectedAnnotation = 'kind';
     legend.selectedAnnotation = 'kind';
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
 
     legend._handleSettingsReset();
@@ -520,7 +519,7 @@ describe('legend default shape size with a scatterplot', () => {
     legend.clearForNewDataset(generateDatasetHash(next));
     plot.data = next;
     showView(plot, next);
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);
   });
@@ -531,7 +530,7 @@ describe('legend default shape size with a scatterplot', () => {
     expect(pointSize(plot)).toBe(80);
 
     await legend._handleCustomize();
-    await settle(legend);
+    await settleLegend(legend);
     const input = legend.shadowRoot!.querySelector<HTMLInputElement>('#shape-size-input')!;
     expect(input.value).toBe('10');
     expect(input.placeholder).toBe('4');
@@ -541,7 +540,7 @@ describe('legend default shape size with a scatterplot', () => {
     input.value = '';
     input.dispatchEvent(new Event('input'));
     legend.shadowRoot!.querySelector<HTMLButtonElement>('.modal-footer .btn-primary')!.click();
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(legend.shapeSize).toBe(4);
     expect(pointSize(plot)).toBe(32);

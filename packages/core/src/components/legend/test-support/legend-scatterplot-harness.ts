@@ -76,3 +76,8 @@ export async function mountLegendWithScatterplot(
 
   return { legend, plot: scatterplot, picker };
 }
+
+/** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
+export async function settleLegend(legend: ProtspaceLegend): Promise<void> {
+  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+}

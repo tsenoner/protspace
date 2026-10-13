@@ -9,7 +9,10 @@ import { LEGEND_VALUES, NA_VALUE, LEGEND_EVENTS } from './config';
 // Import the component to register the custom element
 import './legend';
 import type { ProtspaceLegend } from './legend';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 
 type AnyLegend = HTMLElement & Record<string, unknown>;
 
@@ -234,10 +237,6 @@ function makeExtractData(): VisualizationData {
 }
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 describe('extracting from Other in a mounted legend', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -246,7 +245,7 @@ describe('extracting from Other in a mounted legend', () => {
   it('renders the extracted item as a row, not the largest Other item', async () => {
     const { legend } = await mountLegendWithScatterplot(makeExtractData(), 'family');
     legend.maxVisibleValues = 2;
-    await settle(legend);
+    await settleLegend(legend);
 
     const root = legend.shadowRoot!;
     const rowValues = () =>
@@ -256,12 +255,12 @@ describe('extracting from Other in a mounted legend', () => {
     expect(rowValues()).toEqual(['a', 'b', LEGEND_VALUES.OTHER]);
 
     root.querySelector<HTMLButtonElement>('.view-button')!.click();
-    await settle(legend);
+    await settleLegend(legend);
     const otherRow = Array.from(root.querySelectorAll('.other-item')).find(
       (row) => row.querySelector('.other-item-name')?.textContent === 'd',
     )!;
     otherRow.querySelector<HTMLButtonElement>('.extract-button')!.click();
-    await settle(legend);
+    await settleLegend(legend);
 
     // The cap grows by one and the extract decides who fills it: d, not the larger c.
     expect(rowValues()).toEqual(['a', 'b', 'd', LEGEND_VALUES.OTHER]);
@@ -272,14 +271,14 @@ describe('extracting from Other in a mounted legend', () => {
   it('renders every Other item as a row after Extract All and closes the dialog', async () => {
     const { legend } = await mountLegendWithScatterplot(makeExtractData(), 'family');
     legend.maxVisibleValues = 2;
-    await settle(legend);
+    await settleLegend(legend);
 
     const root = legend.shadowRoot!;
     root.querySelector<HTMLButtonElement>('.view-button')!.click();
-    await settle(legend);
+    await settleLegend(legend);
     expect(root.querySelectorAll('.other-item')).toHaveLength(2);
     root.querySelector<HTMLButtonElement>('.extract-all-button')!.click();
-    await settle(legend);
+    await settleLegend(legend);
 
     const rowValues = Array.from(root.querySelectorAll<HTMLElement>('.legend-item')).map(
       (row) => row.dataset.value,

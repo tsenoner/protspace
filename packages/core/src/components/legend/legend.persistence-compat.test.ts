@@ -17,7 +17,10 @@ import {
   numericData,
   TWELVE,
 } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
@@ -33,13 +36,9 @@ const CATEGORICAL_FIELDS = [
   'selectedPaletteId',
 ];
 
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(data: VisualizationData, annotation: string): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(data, annotation);
-  await settle(legend);
+  await settleLegend(legend);
   return legend;
 }
 
@@ -100,7 +99,7 @@ describe('legend settings stored before phase 3', () => {
 
     toggle(legend, 'A');
     toggle(legend, 'A');
-    await settle(legend);
+    await settleLegend(legend);
 
     const written = stored(key)!;
     expect(Object.keys(written).sort()).toEqual([...CATEGORICAL_FIELDS].sort());
@@ -130,7 +129,7 @@ describe('legend settings stored before phase 3', () => {
     const bins = rowValues(legend);
     expect(bins.length).toBeGreaterThan(1);
     toggle(legend, bins[0]);
-    await settle(legend);
+    await settleLegend(legend);
     const written = stored(key)!;
     expect(written.hiddenValues).toEqual([bins[0]]);
     expect(written.numericSettings?.signature).toEqual(expect.any(String));
@@ -143,7 +142,7 @@ describe('legend settings stored before phase 3', () => {
     expect(hiddenRows(legend)).toEqual([bins[0]]);
     toggle(legend, bins[1]);
     toggle(legend, bins[1]);
-    await settle(legend);
+    await settleLegend(legend);
     expect(stored(key)).toEqual(written);
 
     // A record binned another way keeps its sort mode but not its hidden bins or manual order.
@@ -164,6 +163,7 @@ describe('legend settings stored before phase 3', () => {
     legend = await mount(data, 'length');
     expect(hiddenRows(legend)).toEqual([]);
     expect(rowValues(legend)).toEqual(bins);
+    expect(legend.getAllPersistedSettings().length.sortMode).toBe('manual');
   });
 
   it('writes the same key and field set', async () => {
@@ -172,15 +172,17 @@ describe('legend settings stored before phase 3', () => {
     let legend = await mount(categorical, 'family');
     expect(localStorage.getItem(categoricalKey)).toBeNull();
     toggle(legend, 'A');
-    await settle(legend);
-    expect(Object.keys(stored(categoricalKey)!)).toEqual(CATEGORICAL_FIELDS);
+    await settleLegend(legend);
+    expect(Object.keys(stored(categoricalKey)!).sort()).toEqual([...CATEGORICAL_FIELDS].sort());
 
     document.body.innerHTML = '';
     const numeric = numericData(Array.from({ length: 20 }, (_, i) => i + 1));
     const numericKey = legendStorageKey(generateDatasetHash(numeric), 'length');
     legend = await mount(numeric, 'length');
     toggle(legend, rowValues(legend)[0]);
-    await settle(legend);
-    expect(Object.keys(stored(numericKey)!)).toEqual([...CATEGORICAL_FIELDS, 'numericSettings']);
+    await settleLegend(legend);
+    expect(Object.keys(stored(numericKey)!).sort()).toEqual(
+      [...CATEGORICAL_FIELDS, 'numericSettings'].sort(),
+    );
   });
 });

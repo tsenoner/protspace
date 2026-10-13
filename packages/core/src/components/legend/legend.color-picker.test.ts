@@ -11,19 +11,18 @@ import {
   numericData,
   TWELVE,
 } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
 
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function setup() {
   const data = categoricalData(TWELVE);
   const { legend, plot } = await mountLegendWithScatterplot(data, 'family');
-  await settle(legend);
+  await settleLegend(legend);
   return { legend, plot, key: legendStorageKey(generateDatasetHash(data), 'family') };
 }
 
@@ -35,7 +34,7 @@ async function openPicker(legend: ProtspaceLegend, value: string): Promise<HTMLE
     legend,
     `.legend-item[data-value="${value}"] .legend-symbol-button`,
   )!.click();
-  await settle(legend);
+  await settleLegend(legend);
   return q(legend, '.color-picker-popover')!;
 }
 
@@ -65,7 +64,7 @@ describe('legend colour and shape picker', () => {
   });
 
   it('turns three colour inputs within 150 ms into one legend-colormapping-change', async () => {
-    const { legend, plot } = await setup();
+    const { legend, plot, key } = await setup();
     await openPicker(legend, 'B');
     vi.useFakeTimers();
     const onMapping = vi.fn();
@@ -80,18 +79,57 @@ describe('legend colour and shape picker', () => {
     vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS);
     expect(onMapping).toHaveBeenCalledOnce();
     expect(onMapping.mock.calls[0][0].detail.colorOnly).toBe(true);
+    expect(stored(key)!.categories.B.color).toBe('#0000ff');
+  });
+
+  it("lands a pending colour on its own row when another row's picker opens", async () => {
+    const { legend, plot, key } = await setup();
+    await openPicker(legend, 'B');
+    vi.useFakeTimers();
+    const onMapping = vi.fn();
+    plot.addEventListener('legend-colormapping-change', onMapping);
+    setColour(legend, '#ff0000');
+
+    q<HTMLButtonElement>(legend, '.legend-item[data-value="C"] .legend-symbol-button')!.click();
+    expect(onMapping).toHaveBeenCalledOnce();
+    expect(stored(key)!.categories.B.color).toBe('#ff0000');
+    expect(stored(key)!.categories.C.color).not.toBe('#ff0000');
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS);
+    expect(onMapping).toHaveBeenCalledOnce();
+  });
+
+  it('flushes the pending colour when Escape closes the picker', async () => {
+    const { legend, plot, key } = await setup();
+    await openPicker(legend, 'B');
+    vi.useFakeTimers();
+    const onMapping = vi.fn();
+    plot.addEventListener('legend-colormapping-change', onMapping);
+    setColour(legend, '#ff0000');
+
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      }),
+    );
+    expect(onMapping).toHaveBeenCalledOnce();
+    expect(stored(key)!.categories.B.color).toBe('#ff0000');
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS);
+    expect(onMapping).toHaveBeenCalledOnce();
   });
 
   it('stores a shape pick', async () => {
     const { legend, key } = await setup();
     await openPicker(legend, 'B');
     q<HTMLButtonElement>(legend, '.shape-picker-swatch')!.click();
-    await settle(legend);
+    await settleLegend(legend);
     q<HTMLButtonElement>(
       legend,
       '.shape-picker-item[aria-label="Use diamond shape for B"]',
     )!.click();
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(stored(key)!.categories.B.shape).toBe('diamond');
     expect(q(legend, '.legend-item[data-value="B"] .legend-symbol path')!.getAttribute('d')).toBe(
@@ -111,7 +149,7 @@ describe('legend colour and shape picker', () => {
     document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
     expect(onMapping).toHaveBeenCalledOnce();
-    await settle(legend);
+    await settleLegend(legend);
     expect(q(legend, '.color-picker-popover')).toBeNull();
   });
 
@@ -129,7 +167,7 @@ describe('legend colour and shape picker', () => {
     legend.remove();
     parent.append(legend);
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(q(legend, '.color-picker-popover')).toBeNull();
 
     await openPicker(legend, 'C');
@@ -137,7 +175,7 @@ describe('legend colour and shape picker', () => {
     parent.append(legend);
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    await settle(legend);
+    await settleLegend(legend);
     expect(q(legend, '.color-picker-popover')).toBeNull();
   });
 
@@ -147,7 +185,7 @@ describe('legend colour and shape picker', () => {
 
     picker.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
     document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(q(legend, '.color-picker-popover')).not.toBeNull();
   });
@@ -173,7 +211,7 @@ describe('legend colour and shape picker', () => {
       numericData(Array.from({ length: 20 }, (_, i) => i + 1)),
       'length',
     );
-    await settle(legend);
+    await settleLegend(legend);
     expect(legend.shadowRoot!.querySelectorAll('.legend-item').length).toBeGreaterThan(1);
     expect(legend.shadowRoot!.querySelector('.legend-symbol-button')).toBeNull();
   });

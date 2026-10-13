@@ -3,20 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { categoricalData, TWELVE } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
 // jsdom has no CSS.escape; the reorder's frame callbacks refocus a handle through it.
 vi.stubGlobal('CSS', { escape: (value: string) => value });
 
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
-  await settle(legend);
+  await settleLegend(legend);
   return legend;
 }
 
@@ -59,25 +58,25 @@ describe('legend Escape order', () => {
   it('closes the picker, then Other, then cancels a keyboard reorder, one per Escape', async () => {
     const legend = await mount();
     pickUp(legend, 'B');
-    await settle(legend);
+    await settleLegend(legend);
     click(legend, 'button.view-button');
-    await settle(legend);
+    await settleLegend(legend);
     click(legend, '.legend-item[data-value="A"] .legend-symbol-button');
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: true, other: true, settings: false });
     expect(status(legend)).toBe('Picked up B for reordering');
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: false, other: true, settings: false });
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: false, other: false, settings: false });
     expect(status(legend)).toBe('Picked up B for reordering');
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(status(legend)).toBe('Reordering canceled.');
   });
 
@@ -85,23 +84,23 @@ describe('legend Escape order', () => {
     const legend = await mount();
     // Opening settings clears a keyboard reorder, so settings is tested without one.
     click(legend, 'button[aria-label="Legend settings"]');
-    await settle(legend);
+    await settleLegend(legend);
     click(legend, 'button.view-button');
-    await settle(legend);
+    await settleLegend(legend);
     click(legend, '.legend-item[data-value="A"] .legend-symbol-button');
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: true, other: true, settings: true });
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: false, other: true, settings: true });
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: false, other: false, settings: true });
 
     escape();
-    await settle(legend);
+    await settleLegend(legend);
     expect(open(legend)).toEqual({ picker: false, other: false, settings: false });
   });
 
@@ -112,7 +111,7 @@ describe('legend Escape order', () => {
     document.addEventListener('keydown', onKeyDown);
     try {
       escape();
-      await settle(legend);
+      await settleLegend(legend);
       expect(seen).toEqual([false]);
     } finally {
       document.removeEventListener('keydown', onKeyDown);

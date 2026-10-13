@@ -5,7 +5,10 @@ import { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS } from './config';
 import { LegendDataProcessor } from './legend-data-processor';
 import { categoricalData, TWELVE } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
@@ -25,13 +28,9 @@ const METHODS: Record<string, number> = {
 };
 const GETTERS = ['hasFileSettings', 'reliabilityThreshold', 'pickedShapeSize', 'reliabilityState'];
 
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
-  await settle(legend);
+  await settleLegend(legend);
   return legend;
 }
 
@@ -61,7 +60,7 @@ describe('legend public API', () => {
     legend
       .shadowRoot!.querySelector<HTMLButtonElement>('button[aria-label="Legend settings"]')!
       .click();
-    await settle(legend);
+    await settleLegend(legend);
     expect(onCustomize).toHaveBeenCalledOnce();
   });
 
@@ -85,7 +84,7 @@ describe('legend public API', () => {
     });
 
     legend.maxVisibleValues = 5;
-    await settle(legend);
+    await settleLegend(legend);
 
     expect(onError.mock.calls[0][0].detail).toEqual(
       expect.objectContaining({

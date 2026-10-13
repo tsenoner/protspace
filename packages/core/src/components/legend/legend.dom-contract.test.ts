@@ -4,20 +4,19 @@ import type { VisualizationData } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { categoricalData, TWELVE } from './test-support/legend-fixtures';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  settleLegend,
+} from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
 
 // Hidden values persist per dataset: an in-memory store keeps one test's clicks out of the next.
 vi.stubGlobal('localStorage', createLocalStorageMock());
 
 /** Wait until the legend stops re-rendering: `updated()` sets state that schedules another pass. */
-async function settle(legend: ProtspaceLegend): Promise<void> {
-  for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
-}
-
 async function mount(data: VisualizationData, annotation = 'family'): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(data, annotation);
-  await settle(legend);
+  await settleLegend(legend);
   return legend;
 }
 
@@ -80,7 +79,7 @@ describe('legend DOM contract', () => {
     row(legend, 'A')
       .querySelector<HTMLButtonElement>('.legend-item-main')!
       .dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 1 }));
-    await settle(legend);
+    await settleLegend(legend);
 
     const main = row(legend, 'A').querySelector<HTMLButtonElement>('.legend-item-main')!;
     expect(row(legend, 'A').classList.contains('hidden')).toBe(true);
@@ -94,7 +93,7 @@ describe('legend DOM contract', () => {
     row(legend, 'A')
       .querySelector<HTMLButtonElement>('.legend-item-main')!
       .dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 1 }));
-    await settle(legend);
+    await settleLegend(legend);
     expect(render).toHaveBeenCalledTimes(1);
   });
 
