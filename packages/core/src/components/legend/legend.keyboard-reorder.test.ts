@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { annotationLabel } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import { categoricalData, TWELVE } from './test-support/legend-fixtures';
@@ -69,8 +70,7 @@ describe('legend keyboard reorder', () => {
     expect(order(legend).slice(0, 4)).toEqual(['__NA__', 'A', 'C', 'B']);
     expect(sortMode(legend)).toBe('manual');
     expect(onZOrder).toHaveBeenCalledOnce();
-    // Task 3.6 changes this line to the display name.
-    expect(status(legend)).toBe('Moved B. Switched family to Manual order.');
+    expect(status(legend)).toBe(`Moved B. Switched ${annotationLabel('family')} to Manual order.`);
 
     // The switch to manual order is announced once, not on every later move.
     handleKey(legend, 'B', 'ArrowDown');
@@ -122,7 +122,7 @@ describe('legend keyboard reorder', () => {
     await settleLegend(legend);
     expect(order(legend).slice(0, 4)).toEqual(['__NA__', 'A', 'C', 'B']);
     expect(sortMode(legend)).toBe('manual');
-    expect(status(legend)).toBe('Moved C. Switched family to Manual order.');
+    expect(status(legend)).toBe(`Moved C. Switched ${annotationLabel('family')} to Manual order.`);
   });
 
   it('moves focus between rows with the arrows, Home and End', async () => {

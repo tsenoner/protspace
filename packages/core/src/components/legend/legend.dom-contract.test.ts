@@ -66,13 +66,16 @@ describe('legend DOM contract', () => {
     expect(na.querySelector('.legend-text')!.textContent!.trim()).toBe('N/A');
   });
 
-  it('names each main button "{label}: N items, shown|hidden" and toggles .hidden on click', async () => {
+  it('names each main button "{label}: N proteins, shown|hidden" and toggles .hidden on click', async () => {
     const legend = await mount(categoricalData({ ...TWELVE, __NA__: 20 }));
     for (const item of rows(legend)) {
       const main = item.querySelector<HTMLButtonElement>('button.legend-item-main')!;
       expect(main.getAttribute('aria-pressed')).toBe('true');
       expect(main.getAttribute('aria-label')).toMatch(
-        new RegExp(`^${escapeRegExp(item.dataset.displayValue!)}: \\d+ items, (shown|hidden)$`),
+        // Other's label adds " · N categories" after its display value.
+        new RegExp(
+          `^${escapeRegExp(item.dataset.displayValue!)}( · [^:]*)?: [\\d,]+ proteins?, (shown|hidden)$`,
+        ),
       );
     }
 
@@ -84,7 +87,7 @@ describe('legend DOM contract', () => {
     const main = row(legend, 'A').querySelector<HTMLButtonElement>('.legend-item-main')!;
     expect(row(legend, 'A').classList.contains('hidden')).toBe(true);
     expect(main.getAttribute('aria-pressed')).toBe('false');
-    expect(main.getAttribute('aria-label')).toBe('A: 12 items, hidden');
+    expect(main.getAttribute('aria-label')).toBe('A: 12 proteins, hidden');
   });
 
   it('renders once per toggle', async () => {
@@ -109,7 +112,7 @@ describe('legend DOM contract', () => {
       expect(item.querySelector('.legend-count')!.getAttribute('part')).toBe('count');
       // Two steps: jsdom's selector engine misses `[part="symbol"] .legend-symbol path` on every
       // row after the first, although the DOM matches it.
-      const symbol = item.querySelector('[part="symbol"]')!;
+      const symbol = item.querySelector('.legend-item-main [part="symbol"]')!;
       expect(symbol.querySelector('.legend-symbol path')!.getAttribute('fill')).toBeTruthy();
       expect(item.querySelector('button.drag-handle')).not.toBeNull();
     }
@@ -119,6 +122,7 @@ describe('legend DOM contract', () => {
     expect(otherHandle.classList.contains('drag-handle-disabled')).toBe(true);
     expect(otherHandle.disabled).toBe(true);
     expect(row(legend, 'A').querySelector('.drag-handle-disabled')).toBeNull();
+    expect(root.querySelector('.legend-symbol-button')).toBeNull();
   });
 
   it('shows the empty part when there is no data', async () => {

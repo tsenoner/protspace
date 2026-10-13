@@ -2218,7 +2218,7 @@ test('categorical drag-promoted manual order persists after re-import', async ({
   await waitForDialogClosed(page);
 });
 
-test('long categorical legend labels wrap instead of clipping', async ({ page }) => {
+test('long categorical legend labels end in an ellipsis on one line', async ({ page }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
@@ -2240,53 +2240,32 @@ test('long categorical legend labels wrap instead of clipping', async ({ page })
   await selectAnnotation(page, 'ec');
   await waitForLegendAnnotation(page, 'ec');
 
-  const wrappedLabel = await page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const items = Array.from(legend?.shadowRoot?.querySelectorAll('.legend-item') ?? []);
-    const target = items.find((item) => {
-      const label = item.querySelector('.legend-text')?.textContent?.trim() ?? '';
-      return label.includes('phosphatidylinositol') || label.includes('protein-serine/threonine');
-    }) as HTMLElement | undefined;
+  const row = page
+    .locator('protspace-legend .legend-item')
+    .filter({ hasText: /phosphatidylinositol|protein-serine\/threonine/ })
+    .first();
+  await expect(row).toBeVisible();
 
-    if (!target) {
-      return null;
-    }
-
-    const button = target.querySelector('.legend-item-main') as HTMLElement | null;
-    const text = target.querySelector('.legend-text') as HTMLElement | null;
-    const count = target.querySelector('.legend-count') as HTMLElement | null;
-
-    if (!button || !text || !count) {
-      return null;
-    }
-
-    const style = window.getComputedStyle(text);
-    const lineHeight = Number.parseFloat(style.lineHeight) || 0;
-
+  const label = await row.evaluate((element) => {
+    const text = element.querySelector('.legend-text') as HTMLElement;
+    const count = element.querySelector('.legend-count') as HTMLElement;
     return {
-      label: text.textContent?.trim() ?? '',
-      rowHeight: target.getBoundingClientRect().height,
+      text: text.textContent?.trim() ?? '',
       textHeight: text.getBoundingClientRect().height,
-      lineHeight,
-      textScrollWidth: text.scrollWidth,
-      textClientWidth: text.clientWidth,
-      buttonScrollWidth: button.scrollWidth,
-      buttonClientWidth: button.clientWidth,
+      lineHeight: Number.parseFloat(getComputedStyle(text).lineHeight) || 0,
+      truncated: text.scrollWidth > text.clientWidth,
       countText: count.textContent?.trim() ?? '',
+      countFits: count.scrollWidth <= count.clientWidth + 1,
     };
   });
 
-  expect(wrappedLabel).not.toBeNull();
-  expect(wrappedLabel?.label ?? '').toContain('phosphat');
-  expect(wrappedLabel?.countText ?? '').not.toBe('');
-  expect(wrappedLabel?.textHeight ?? 0).toBeGreaterThan((wrappedLabel?.lineHeight ?? 0) * 1.5);
-  expect(wrappedLabel?.textScrollWidth ?? 0).toBeLessThanOrEqual(
-    (wrappedLabel?.textClientWidth ?? 0) + 1,
-  );
-  expect(wrappedLabel?.buttonScrollWidth ?? 0).toBeLessThanOrEqual(
-    (wrappedLabel?.buttonClientWidth ?? 0) + 1,
+  expect(label.text).toContain('phosphat');
+  expect(label.countText).not.toBe('');
+  expect(label.countFits).toBe(true);
+  expect(label.textHeight).toBeLessThanOrEqual(label.lineHeight * 1.5);
+  expect(label.truncated).toBe(true);
+  await expect(row.locator('.legend-item-main')).toHaveAccessibleName(
+    new RegExp(`^${label.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `),
   );
 });
 

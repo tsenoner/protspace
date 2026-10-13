@@ -1,4 +1,4 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, nothing } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { perfCounters } from '../../utils/perf-counters';
@@ -39,6 +39,7 @@ import {
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
+import '../kit/menu';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -199,6 +200,13 @@ export class ProtspaceLegend extends LitElement {
   private _preIsolationVisibleValues: Set<string> = new Set();
   @state() private _showSettingsDialog = false;
   @state() private _statusMessage = '';
+  /** The row whose "⋯" menu is open, and the button it hangs from. */
+  @state() private _rowMenu: { value: string; anchor: HTMLElement } | null = null;
+  /**
+   * The row the menu last opened for. ps-menu closes itself (ps-close) before it dispatches
+   * ps-select, so the choice is read from here, not from `_rowMenu`.
+   */
+  private _rowMenuTarget: string | null = null;
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
@@ -401,7 +409,7 @@ export class ProtspaceLegend extends LitElement {
     restore: (snapshot) => this._restoreKeyboardReorderSnapshot(snapshot),
     move: (value, direction) => this._moveFocusedManualItem(value, direction),
     announce: (message) => this._announceStatus(message),
-    annotationName: () => this.selectedAnnotation,
+    annotationName: () => this._annotationDisplayName,
   });
 
   private _eatControls = new EatReliabilityController(this, {
@@ -602,6 +610,12 @@ export class ProtspaceLegend extends LitElement {
       this.selectedAnnotation,
       this._annotationSortModes[this.selectedAnnotation],
     );
+  }
+
+  /** The selected annotation's display name, never its key (decision 15). */
+  private get _annotationDisplayName(): string {
+    const name = this.selectedAnnotation;
+    return name ? annotationLabel(name, this.data?.annotations?.[name] ?? this.annotationData) : '';
   }
 
   /** `autoSync` is off; its doc lists what that changes. */
@@ -1603,13 +1617,14 @@ export class ProtspaceLegend extends LitElement {
       const htmlEl = el as HTMLElement;
       if (htmlEl.getAttribute('data-value') === value) {
         htmlEl.classList.add('legend-item-just-dropped');
-        const focusTarget = htmlEl.querySelector(
-          '.drag-handle, .legend-item-main',
-        ) as HTMLElement | null;
+        // The handle, as before the main button moved ahead of it in the row; Other has no usable one.
+        const focusTarget =
+          htmlEl.querySelector<HTMLElement>('.drag-handle:not(:disabled)') ??
+          htmlEl.querySelector<HTMLElement>('.legend-item-main');
         focusTarget?.focus();
         this._announceStatus(
           this._announceManualPromotionOnNextReorder
-            ? `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}. Switched ${this.selectedAnnotation} to Manual order.`
+            ? `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}. Switched ${this._annotationDisplayName} to Manual order.`
             : `Moved ${htmlEl.dataset.displayValue ?? toDisplayValue(value)}.`,
         );
         this._announceManualPromotionOnNextReorder = false;
@@ -2007,7 +2022,7 @@ export class ProtspaceLegend extends LitElement {
         ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
-        ${this._colorPicker.render()}
+        ${this._colorPicker.render()} ${this._renderRowMenu()}
       </div>
       ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
     `;
@@ -2061,6 +2076,10 @@ export class ProtspaceLegend extends LitElement {
       );
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
+    // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
+    if (changedProperties.has('_sortedLegendItems') && this._rowMenu !== null) {
+      this._rowMenu = null;
+    }
   }
 
   private _renderScoreStrips() {
@@ -2080,38 +2099,96 @@ export class ProtspaceLegend extends LitElement {
 
   private _renderLegendItem(item: LegendItem, sortedIndex: number) {
     const selected = isItemSelected(item, this.selectedItems);
+    const picked = this._keyboard.pickedValue === item.value;
+    const isOther = item.value === LEGEND_VALUES.OTHER;
+    const classes = `${getItemClasses(item, selected, picked)}${
+      this._categoryScores.length > 0 && item.value === this._hoveredCategory
+        ? ' legend-item-score-hover'
+        : ''
+    }`;
+
     const view: LegendRowView = {
-      classes: `${getItemClasses(item, selected, false)}${
-        this._categoryScores.length > 0 && item.value === this._hoveredCategory
-          ? ' legend-item-score-hover'
-          : ''
-      }`,
+      classes,
       selected,
       symbolSize: LEGEND_STYLES.legendDisplaySize,
-      otherCount: item.value === LEGEND_VALUES.OTHER ? this._otherItems.length : undefined,
-      index: sortedIndex,
+      otherCount: isOther ? this._otherItems.length : undefined,
+      // Today's rule: the first row holds the list's Tab stop (Task 3.7 makes it follow focus).
+      tabbable: sortedIndex === 0,
       draggable: this._canDragLegendItem(item),
+      picked,
+      hasMenu: !isOther,
     };
     const handlers: LegendRowHandlers = {
       onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
       onDoubleClick: () => this._handleItemMouseDoubleClick(item.value),
+      onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
+      onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
+      onHover: (category) => this._setHoveredCategory(category),
+      onToggle: () => this._handleItemClick(item.value),
+      onMenu: (e: MouseEvent) => this._toggleRowMenu(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => {
         e.stopPropagation();
         this._showOtherDialog = true;
       },
-      onKeyDown: (e: KeyboardEvent) => this._keyboard.onItemKeyDown(e, item, sortedIndex),
-      onHandleKeyDown: (e: KeyboardEvent) => this._keyboard.onHandleKeyDown(e, item),
-      onHover: (category) => this._setHoveredCategory(category),
-      onSymbolClick:
-        item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation()
-          ? (e: MouseEvent) => {
-              // Keeps the container's click from closing the picker it opens.
-              e.stopPropagation();
-              this._colorPicker.toggle(item.value, e.currentTarget as HTMLElement);
-            }
-          : undefined,
     };
     return renderLegendRow(item, view, handlers);
+  }
+
+  private _toggleRowMenu(value: string, anchor: HTMLElement): void {
+    if (this._rowMenu?.value === value) {
+      this._rowMenu = null;
+      return;
+    }
+    this._rowMenuTarget = value;
+    this._rowMenu = { value, anchor };
+  }
+
+  private _onRowMenuClose = (event: Event): void => {
+    event.stopPropagation();
+    this._rowMenu = null;
+  };
+
+  private _onRowMenuSelect = (event: CustomEvent<{ value: string }>): void => {
+    event.stopPropagation();
+    const value = this._rowMenuTarget;
+    this._rowMenu = null;
+    if (value === null) return;
+    if (event.detail.value === 'isolate') {
+      this._handleItemDoubleClick(value);
+    } else if (event.detail.value === 'customize') {
+      // Found by its dataset rather than a selector: a value can hold any character.
+      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
+        (each) => each.dataset.value === value,
+      );
+      // Chosen again for the row whose picker is open, the picker stays open.
+      if (row && this._colorPicker.value !== value) this._colorPicker.toggle(value, row);
+    }
+  };
+
+  /** The one "⋯" menu, shared by every row; it hangs from the row that opened it. */
+  private _renderRowMenu() {
+    const open = this._rowMenu;
+    const item = open ? this._legendItems.find((each) => each.value === open.value) : undefined;
+    const label = item ? (item.displayValue ?? toDisplayValue(item.value)) : '';
+    const visible = this._legendItems.filter((each) => each.isVisible);
+    const onlyVisible = !!item && visible.length === 1 && visible[0].value === item.value;
+    const canCustomize =
+      !!item && item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation();
+    return html`<ps-menu
+      class="row-menu"
+      label=${item ? `Actions for ${label}` : 'Row actions'}
+      placement="bottom-end"
+      .anchor=${open?.anchor ?? null}
+      .open=${item !== undefined}
+      @ps-select=${this._onRowMenuSelect}
+      @ps-close=${this._onRowMenuClose}
+      @click=${(e: Event) => e.stopPropagation()}
+    >
+      <ps-menu-item value="isolate">${onlyVisible ? 'Show all' : 'Show only this'}</ps-menu-item>
+      ${canCustomize
+        ? html`<ps-menu-item value="customize">Colour and shape</ps-menu-item>`
+        : nothing}
+    </ps-menu>`;
   }
 
   private _renderOtherDialog() {

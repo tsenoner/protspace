@@ -16,8 +16,13 @@ import {
   settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
+import type { PsMenu } from '../kit/menu';
+import type { PsPopover } from '../kit/popover';
+import { stubPopoverApi } from './test-support/popover-stub';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
+// "Colour and shape" lives in the row's "⋯" menu, which opens a ps-popover.
+stubPopoverApi();
 
 async function setup() {
   const data = categoricalData(TWELVE);
@@ -30,11 +35,21 @@ const q = <T extends Element = HTMLElement>(legend: ProtspaceLegend, selector: s
   legend.shadowRoot!.querySelector<T>(selector);
 
 async function openPicker(legend: ProtspaceLegend, value: string): Promise<HTMLElement> {
-  q<HTMLButtonElement>(
-    legend,
-    `.legend-item[data-value="${value}"] .legend-symbol-button`,
-  )!.click();
+  q<HTMLButtonElement>(legend, `.legend-item[data-value="${value}"] .legend-more`)!.click();
   await settleLegend(legend);
+  // jsdom cannot show the menu to click its item, so the choice is dispatched as the menu does.
+  const menu = q<PsMenu>(legend, 'ps-menu.row-menu')!;
+  menu.dispatchEvent(
+    new CustomEvent('ps-select', {
+      bubbles: true,
+      composed: true,
+      detail: { value: 'customize', checked: false },
+    }),
+  );
+  await settleLegend(legend);
+  // The closed menu releases its layer in its popover's own update.
+  await menu.updateComplete;
+  await menu.shadowRoot!.querySelector<PsPopover>('ps-popover')!.updateComplete;
   return q(legend, '.color-picker-popover')!;
 }
 
@@ -54,7 +69,7 @@ describe('legend colour and shape picker', () => {
     document.body.innerHTML = '';
   });
 
-  it("opens from a categorical row's symbol, headed by the row's label", async () => {
+  it('opens from a categorical row\'s "Colour and shape", headed by the row\'s label', async () => {
     const { legend } = await setup();
     const picker = await openPicker(legend, 'B');
     expect(picker.querySelector('.color-picker-header')!.textContent!.trim()).toBe('B');
@@ -90,7 +105,7 @@ describe('legend colour and shape picker', () => {
     plot.addEventListener('legend-colormapping-change', onMapping);
     setColour(legend, '#ff0000');
 
-    q<HTMLButtonElement>(legend, '.legend-item[data-value="C"] .legend-symbol-button')!.click();
+    await openPicker(legend, 'C');
     expect(onMapping).toHaveBeenCalledOnce();
     expect(stored(key)!.categories.B.color).toBe('#ff0000');
     expect(stored(key)!.categories.C.color).not.toBe('#ff0000');
@@ -206,13 +221,19 @@ describe('legend colour and shape picker', () => {
     expect(onMapping).toHaveBeenCalledOnce();
   });
 
-  it('offers no symbol button on numeric rows', async () => {
+  it('offers no Colour and shape on numeric rows', async () => {
     const { legend } = await mountLegendWithScatterplot(
       numericData(Array.from({ length: 20 }, (_, i) => i + 1)),
       'length',
     );
     await settleLegend(legend);
     expect(legend.shadowRoot!.querySelectorAll('.legend-item').length).toBeGreaterThan(1);
+
+    q<HTMLButtonElement>(legend, '.legend-item:not(.legend-item-other) .legend-more')!.click();
+    await settleLegend(legend);
+
+    expect(q(legend, 'ps-menu.row-menu ps-menu-item[value="isolate"]')).not.toBeNull();
+    expect(q(legend, 'ps-menu.row-menu ps-menu-item[value="customize"]')).toBeNull();
     expect(legend.shadowRoot!.querySelector('.legend-symbol-button')).toBeNull();
   });
 });

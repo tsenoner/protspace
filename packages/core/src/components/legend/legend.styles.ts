@@ -1,8 +1,10 @@
 import { tokens } from '../../styles/tokens';
 import { buttonMixin } from '../../styles/mixins';
 import { overlayMixins } from '../../styles/overlay-mixins';
+import { reducedMotion } from '../kit/kit-shared.styles';
 import { themeStyles } from './styles/theme';
 import { layoutStyles } from './styles/layout';
+import { rowStyles } from './styles/row';
 import { itemStyles } from './styles/item';
 import { modalStyles } from './styles/modal';
 import { responsiveStyles } from './styles/responsive';
@@ -23,12 +25,16 @@ export const legendStyles = [
   buttonMixin,
   overlayMixins,
 
-  // 3. Component-specific (modular)
+  // 3. Component-specific (modular). Rows come after layout, whose list box they adjust.
   themeStyles,
   layoutStyles,
+  rowStyles,
   itemStyles,
   modalStyles,
 
-  // 4. Responsive (ALWAYS LAST)
+  // 4. Transitions and animations stop for people who asked for less motion.
+  reducedMotion,
+
+  // 5. Responsive (ALWAYS LAST)
   responsiveStyles,
 ];

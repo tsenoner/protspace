@@ -162,11 +162,12 @@ export function getDefaultSortMode(annotationName: string): LegendSortMode {
 /**
  * Determines CSS classes for a legend item.
  */
-export function getItemClasses(item: LegendItem, isSelected: boolean, isDragging: boolean): string {
+export function getItemClasses(item: LegendItem, isSelected: boolean, isPicked: boolean): string {
   const classes = ['legend-item'];
 
   if (!item.isVisible) classes.push('hidden');
-  if (isDragging) classes.push('dragging');
+  // Picked up with the keyboard (Space on its handle) and moving with the arrow keys.
+  if (isPicked) classes.push('picked');
   if (isSelected) classes.push('selected');
   // Add class for "Other" item to prevent dragging (used by Sortable filter)
   if (item.value === LEGEND_VALUES.OTHER) classes.push('legend-item-other');

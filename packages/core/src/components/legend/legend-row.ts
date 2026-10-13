@@ -1,4 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { countNoun, formatCount } from '../../utils/count-text';
+import { icon } from '../kit/icon';
 import {
   LEGEND_DEFAULTS,
   LEGEND_STYLES,
@@ -8,35 +10,13 @@ import {
 } from './config';
 import type { LegendItem } from './types';
 
-/** What a row shows besides its item. */
-export interface LegendRowView {
-  /** The row's class list: `getItemClasses` plus the score-hover class. */
-  classes: string;
-  selected: boolean;
-  /** The legend symbol's size in px. */
-  symbolSize: number;
-  /** How many categories the Other row groups; undefined on every other row. */
-  otherCount?: number;
-  /** The row's place in display order; the first row's main button is the tab stop. */
-  index: number;
-  /** Whether the row's handle can move it (every row but Other). */
-  draggable: boolean;
-}
-
-/** What a row's controls do. */
-export interface LegendRowHandlers {
-  onClick(e: MouseEvent): void;
-  onDoubleClick(): void;
-  onViewOther(e: Event): void;
-  onKeyDown(e: KeyboardEvent): void;
-  onHandleKeyDown(e: KeyboardEvent): void;
-  onHover(category: string | null): void;
-  /** Opens the colour and shape picker; absent for Other and for numeric rows. */
-  onSymbolClick?(e: MouseEvent): void;
-}
+/** Other's dot. A literal until phase 6 adds the neutral point tokens. */
+const OTHER_SYMBOL_COLOR = '#888';
 
 /**
- * Render a symbol using custom SVG paths that match WebGL shader geometry.
+ * A legend symbol drawn with the same paths as the WebGL shader's shapes. The SVG is the size plus
+ * 3 px on each side, room for the selected outline. The outline colour of a selected row comes from
+ * CSS (`.legend-item.selected .legend-symbol path`), which beats these attributes.
  */
 export function renderLegendSymbol(
   shape: string | null,
@@ -44,34 +24,20 @@ export function renderLegendSymbol(
   size: number = LEGEND_DEFAULTS.symbolSize,
   selected: boolean = false,
 ): TemplateResult {
-  // Add padding to accommodate shapes that extend beyond circles
-  const padding = 6;
+  const padding = 3;
   const canvasSize = size + padding * 2;
   const centerOffset = canvasSize / 2;
-
-  // Safely handle null or undefined shape
   const shapeKey = (shape || 'circle').toLowerCase();
-
-  // Get the path generator (default to circle if not found)
   const pathGenerator = SHAPE_PATH_GENERATORS[shapeKey] || SHAPE_PATH_GENERATORS.circle;
-
-  // Generate the SVG path
   const path = pathGenerator(size);
-
-  // Some symbol types should be rendered as outlines only (plus sign)
+  // Some symbol types are drawn as outlines only.
   const isOutlineOnly = LEGEND_STYLES.outlineShapes.has(shapeKey);
-
-  // Determine stroke width based on selection state
   const strokeWidth = selected
     ? LEGEND_STYLES.strokeWidth.selected
     : LEGEND_STYLES.strokeWidth.default;
-
-  // Determine stroke color based on selection state
   const strokeColor = selected
     ? LEGEND_STYLES.colors.selectedStroke
     : LEGEND_STYLES.colors.defaultStroke;
-
-  // Ensure we have a valid color
   const validColor = color || '#888888';
 
   return html`
@@ -95,146 +61,153 @@ export function renderLegendSymbol(
   `;
 }
 
-/**
- * Render the drag handle icon
- */
-function renderDragHandle(
-  enabled: boolean,
-  itemLabel: string,
-  onKeyDown: (e: KeyboardEvent) => void,
-): TemplateResult {
-  const ariaLabel = enabled ? `Reorder ${itemLabel}` : `${itemLabel} cannot be reordered`;
-  return html`
-    <button
-      type="button"
-      class="drag-handle ${enabled ? '' : 'drag-handle-disabled'}"
-      ?disabled=${!enabled}
-      aria-label=${ariaLabel}
-      @click=${(e: Event) => e.stopPropagation()}
-      @mousedown=${(e: Event) => e.stopPropagation()}
-      @keydown=${(e: KeyboardEvent) => {
-        e.stopPropagation();
-        onKeyDown(e);
-      }}
-    >
-      <svg
-        width="16"
-        height="16"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
-      </svg>
-    </button>
-  `;
+/** What one row shows, decided by the legend. */
+export interface LegendRowView {
+  classes: string;
+  selected: boolean;
+  symbolSize: number;
+  /** The number of categories in Other; only the Other row has it. */
+  otherCount?: number;
+  /** The list's one Tab stop is in this row. */
+  tabbable: boolean;
+  draggable: boolean;
+  /** Picked up for a keyboard reorder. */
+  picked: boolean;
+  /** Shows "⋯" (every row but Other). */
+  hasMenu: boolean;
 }
 
-/**
- * Render the item symbol (either "Other" default or annotation-specific symbol)
- */
-function renderItemSymbol(
-  item: LegendItem,
-  isItemSelected: boolean,
-  size: number,
-  onSymbolClick?: (e: MouseEvent) => void,
-): TemplateResult {
-  // Always render the item's stored shape. Categories default to circle;
-  // user-assigned shapes flow through unchanged.
-  const symbolContent =
-    item.value === LEGEND_VALUES.OTHER
-      ? renderLegendSymbol('circle', '#888', size)
-      : renderLegendSymbol(item.shape, item.color, size, isItemSelected);
-
-  if (onSymbolClick) {
-    return html`
-      <button
-        type="button"
-        class="mr-2 legend-symbol-button legend-symbol-clickable"
-        part="symbol"
-        aria-label=${`Customize ${toDisplayValue(item.value)}`}
-        @click=${onSymbolClick}
-      >
-        ${symbolContent}
-      </button>
-    `;
-  }
-
-  return html` <div class="mr-2" part="symbol">${symbolContent}</div> `;
+export interface LegendRowHandlers {
+  onClick(e: MouseEvent): void;
+  onDoubleClick(): void;
+  onKeyDown(e: KeyboardEvent): void;
+  onHandleKeyDown(e: KeyboardEvent): void;
+  onHover(category: string | null): void;
+  onToggle(): void;
+  onMenu(e: MouseEvent): void;
+  onViewOther(e: Event): void;
 }
 
-/**
- * Render the item text label.
- * N/A items have '__NA__' as value and display as 'N/A'.
- */
-function renderItemText(item: LegendItem, otherItemsCount?: number): TemplateResult {
-  const displayText = item.displayValue ?? toDisplayValue(item.value, otherItemsCount);
-  return html`<span class="legend-text" part="text">${displayText}</span>`;
-}
+/** A row's own controls keep their presses: the row and the container never see them. */
+const stop = (e: Event) => e.stopPropagation();
 
 /**
- * Render item actions (like "view" button for "Other" category)
- */
-function renderItemActions(item: LegendItem, onViewOther: (e: Event) => void): TemplateResult {
-  if (item.value === LEGEND_VALUES.OTHER) {
-    return html`
-      <span class="legend-item-actions">
-        <button
-          class="btn-link view-button"
-          @click=${onViewOther}
-          title="View items grouped under Other"
-          aria-label="View items grouped under Other"
-        >
-          View
-        </button>
-      </span>
-    `;
-  }
-
-  return html``;
-}
-
-/**
- * Render a complete legend item.
- * N/A items have '__NA__' as value and display as 'N/A'.
+ * One legend row (design decision 12). The main button holds the swatch and the name and toggles
+ * the category; its accessible name carries the full name, the count and the state. The eye, the
+ * drag handle and "⋯" sit in an overlay the stylesheet reveals on hover and focus, so they never
+ * reflow the name. Rows stay plain elements in the legend's shadow root: Sortable needs them as
+ * direct children of the list, and a list can hold hundreds.
  */
 export function renderLegendRow(
   item: LegendItem,
   view: LegendRowView,
   handlers: LegendRowHandlers,
 ): TemplateResult {
-  const displayLabel = item.displayValue ?? toDisplayValue(item.value);
+  const isOther = item.value === LEGEND_VALUES.OTHER;
+  const displayValue = item.displayValue ?? toDisplayValue(item.value);
+  const label = isOther
+    ? `Other · ${countNoun(view.otherCount ?? 0, 'category', 'categories')}`
+    : displayValue;
+  const tabindex = view.tabbable ? '0' : '-1';
 
   return html`
     <div
-      class="${view.classes}"
+      class=${view.classes}
       part="item"
       role="listitem"
-      data-value="${item.value}"
-      data-display-value="${displayLabel}"
-      data-driver-id=${item.value === LEGEND_VALUES.OTHER ? 'other-row' : nothing}
+      data-value=${item.value}
+      data-display-value=${displayValue}
+      data-driver-id=${isOther ? 'other-row' : nothing}
       @mouseenter=${() => handlers.onHover(item.value)}
       @mouseleave=${() => handlers.onHover(null)}
     >
-      <div class="legend-item-content">
-        ${renderDragHandle(view.draggable, displayLabel, handlers.onHandleKeyDown)}
-        ${renderItemSymbol(item, view.selected, view.symbolSize, handlers.onSymbolClick)}
+      <button
+        type="button"
+        class="legend-item-main"
+        aria-label=${`${label}: ${countNoun(item.count, 'protein', 'proteins')}, ${
+          item.isVisible ? 'shown' : 'hidden'
+        }`}
+        aria-pressed=${item.isVisible ? 'true' : 'false'}
+        tabindex=${tabindex}
+        @click=${handlers.onClick}
+        @dblclick=${handlers.onDoubleClick}
+        @keydown=${handlers.onKeyDown}
+      >
+        <span class="legend-swatch" part="symbol"
+          >${isOther
+            ? renderLegendSymbol('circle', OTHER_SYMBOL_COLOR, view.symbolSize)
+            : renderLegendSymbol(item.shape, item.color, view.symbolSize, view.selected)}</span
+        >
+        <span class="legend-text" part="text">${label}</span>
+      </button>
+      ${isOther
+        ? html`<button
+            type="button"
+            class="view-button"
+            aria-label="View items grouped under Other"
+            tabindex=${tabindex}
+            @click=${handlers.onViewOther}
+            @dblclick=${stop}
+            @mousedown=${stop}
+          >
+            View
+          </button>`
+        : nothing}
+      ${item.isVisible
+        ? nothing
+        : html`<span class="legend-hidden-mark" aria-hidden="true">${icon('eye-off', 14)}</span>`}
+      <span class="legend-count" part="count">${formatCount(item.count)}</span>
+      <span class="legend-item-actions">
         <button
           type="button"
-          class="legend-item-main"
-          aria-label="${displayLabel}: ${item.count} items, ${item.isVisible ? 'shown' : 'hidden'}"
-          aria-pressed="${item.isVisible ? 'true' : 'false'}"
-          tabindex="${view.index === 0 ? '0' : '-1'}"
-          @click=${handlers.onClick}
-          @dblclick=${handlers.onDoubleClick}
-          @keydown=${handlers.onKeyDown}
+          class="legend-action legend-eye"
+          aria-label=${`${item.isVisible ? 'Hide' : 'Show'} ${displayValue}`}
+          tabindex=${tabindex}
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            handlers.onToggle();
+          }}
+          @dblclick=${stop}
+          @mousedown=${stop}
         >
-          ${renderItemText(item, view.otherCount)}
+          ${icon(item.isVisible ? 'eye' : 'eye-off', 14)}
         </button>
-        ${renderItemActions(item, handlers.onViewOther)}
-      </div>
-      <span class="legend-count" part="count">${item.count}</span>
+        <button
+          type="button"
+          class="drag-handle${view.draggable ? '' : ' drag-handle-disabled'}"
+          ?disabled=${!view.draggable}
+          aria-label=${view.draggable
+            ? `Reorder ${displayValue}`
+            : `${displayValue} cannot be reordered`}
+          aria-pressed=${view.draggable ? (view.picked ? 'true' : 'false') : nothing}
+          tabindex=${tabindex}
+          @click=${stop}
+          @dblclick=${stop}
+          @mousedown=${stop}
+          @keydown=${(e: KeyboardEvent) => {
+            e.stopPropagation();
+            handlers.onHandleKeyDown(e);
+          }}
+        >
+          ${icon('grip-vertical', 14)}
+        </button>
+        ${view.hasMenu
+          ? html`<button
+              type="button"
+              class="legend-action legend-more"
+              aria-label=${`More actions for ${displayValue}`}
+              tabindex=${tabindex}
+              @click=${(e: MouseEvent) => {
+                e.stopPropagation();
+                handlers.onMenu(e);
+              }}
+              @dblclick=${stop}
+              @mousedown=${stop}
+            >
+              ${icon('ellipsis', 14)}
+            </button>`
+          : nothing}
+      </span>
     </div>
   `;
 }

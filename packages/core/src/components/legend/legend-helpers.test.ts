@@ -244,13 +244,13 @@ describe('legend-helpers', () => {
       expect(getItemClasses(baseItem, true, false)).toBe('legend-item selected');
     });
 
-    it('adds dragging class when dragging', () => {
-      expect(getItemClasses(baseItem, false, true)).toBe('legend-item dragging');
+    it('adds picked class while the item is picked up for a keyboard reorder', () => {
+      expect(getItemClasses(baseItem, false, true)).toBe('legend-item picked');
     });
 
     it('combines multiple classes', () => {
       const item = { ...baseItem, isVisible: false };
-      expect(getItemClasses(item, true, true)).toBe('legend-item hidden dragging selected');
+      expect(getItemClasses(item, true, true)).toBe('legend-item hidden picked selected');
     });
   });
 

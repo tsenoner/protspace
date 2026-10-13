@@ -8,10 +8,15 @@ import {
   settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
+import type { PsMenu } from '../kit/menu';
+import type { PsPopover } from '../kit/popover';
+import { stubPopoverApi } from './test-support/popover-stub';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
 // jsdom has no CSS.escape; the reorder's frame callbacks refocus a handle through it.
 vi.stubGlobal('CSS', { escape: (value: string) => value });
+// "Colour and shape" lives in the row's "⋯" menu, which opens a ps-popover.
+stubPopoverApi();
 
 async function mount(): Promise<ProtspaceLegend> {
   const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
@@ -23,6 +28,23 @@ const q = (legend: ProtspaceLegend, selector: string) =>
   legend.shadowRoot!.querySelector<HTMLElement>(selector);
 const click = (legend: ProtspaceLegend, selector: string) => q(legend, selector)!.click();
 const status = (legend: ProtspaceLegend) => q(legend, '[role="status"]')!.textContent!.trim();
+
+/** "⋯", then "Colour and shape", dispatched as the menu does; the menu's layer is released after. */
+async function openPicker(legend: ProtspaceLegend, value: string): Promise<void> {
+  click(legend, `.legend-item[data-value="${value}"] .legend-more`);
+  await settleLegend(legend);
+  const menu = legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
+  menu.dispatchEvent(
+    new CustomEvent('ps-select', {
+      bubbles: true,
+      composed: true,
+      detail: { value: 'customize', checked: false },
+    }),
+  );
+  await settleLegend(legend);
+  await menu.updateComplete;
+  await menu.shadowRoot!.querySelector<PsPopover>('ps-popover')!.updateComplete;
+}
 
 function pickUp(legend: ProtspaceLegend, value: string): void {
   q(legend, `.legend-item[data-value="${value}"] .drag-handle`)!.dispatchEvent(
@@ -61,8 +83,7 @@ describe('legend Escape order', () => {
     await settleLegend(legend);
     click(legend, 'button.view-button');
     await settleLegend(legend);
-    click(legend, '.legend-item[data-value="A"] .legend-symbol-button');
-    await settleLegend(legend);
+    await openPicker(legend, 'A');
     expect(open(legend)).toEqual({ picker: true, other: true, settings: false });
     expect(status(legend)).toBe('Picked up B for reordering');
 
@@ -87,8 +108,7 @@ describe('legend Escape order', () => {
     await settleLegend(legend);
     click(legend, 'button.view-button');
     await settleLegend(legend);
-    click(legend, '.legend-item[data-value="A"] .legend-symbol-button');
-    await settleLegend(legend);
+    await openPicker(legend, 'A');
     expect(open(legend)).toEqual({ picker: true, other: true, settings: true });
 
     escape();
