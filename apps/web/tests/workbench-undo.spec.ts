@@ -151,6 +151,10 @@ test.describe('undo and redo', () => {
       .toBe(false);
     await twoFrames(page);
     expect(await getSelectedProteinIds(page)).toEqual([id]);
+    // Outside the field the same keys undo the pick, so the check above is not vacuous.
+    await searchInput(page).blur();
+    await undo(page);
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
   });
 
   test('a new dataset clears the history', async ({ page }) => {
@@ -167,5 +171,9 @@ test.describe('undo and redo', () => {
     await undo(page);
     await twoFrames(page);
     expect(await getSelectedProteinIds(page)).toEqual([]);
+    // The keys do reach the undo controller: a step taken in the new dataset undoes.
+    await selectFirstBySearch(page, 1);
+    await undo(page);
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
   });
 });
