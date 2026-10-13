@@ -12,6 +12,13 @@ const STORED = {
   storedAt: '2026-10-01T00:00:00.000Z',
 };
 
+/** A `ps-open` from a popover whose root node is `root` (the menu's shadow root, or an ⓘ's). */
+function psOpenFrom(root: object): Event {
+  const event = new CustomEvent('ps-open', { bubbles: true, composed: true });
+  Object.defineProperty(event, 'composedPath', { value: () => [{ getRootNode: () => root }] });
+  return event;
+}
+
 /** Binds the Import menu to a plain event target, with spied loaders and an example on screen. */
 function bind(
   overrides: {
@@ -19,7 +26,10 @@ function bind(
     loadLastFile?: () => Promise<File | null>;
   } = {},
 ) {
-  const importMenu = Object.assign(new EventTarget(), { lastFile: null as LastFile });
+  const importMenu = Object.assign(new EventTarget(), {
+    lastFile: null as LastFile,
+    shadowRoot: {} as ShadowRoot,
+  });
   const dataLoader = { openFilePicker: vi.fn() };
   const datasetController = {
     loadChosenExample: vi.fn().mockResolvedValue('loaded'),
@@ -169,9 +179,20 @@ describe('the Import menu', () => {
 
     // A newer import was saved over it after the change that announced it.
     stored = { name: 'newer.parquetbundle', size: 2_000_000, storedAt: '2026-10-02T00:00:00.000Z' };
-    importMenu.dispatchEvent(new CustomEvent('ps-open', { bubbles: true, composed: true }));
+    importMenu.dispatchEvent(psOpenFrom(importMenu.shadowRoot));
 
     await vi.waitFor(() => expect(importMenu.lastFile?.name).toBe('newer.parquetbundle'));
+  });
+
+  it("an example ⓘ's ps-open does not read the stored import again", async () => {
+    const { importMenu, readSummary } = bind();
+    await vi.waitFor(() => expect(readSummary).toHaveBeenCalledOnce());
+    // The ⓘ's own popover lives in the info popover's shadow root, not the menu's.
+    importMenu.dispatchEvent(psOpenFrom({}));
+    importMenu.dispatchEvent(psOpenFrom(importMenu.shadowRoot));
+    await vi.waitFor(() => expect(readSummary).toHaveBeenCalledTimes(2));
+    await Promise.resolve();
+    expect(readSummary).toHaveBeenCalledTimes(2);
   });
 
   it('dispose stops the refreshes', async () => {

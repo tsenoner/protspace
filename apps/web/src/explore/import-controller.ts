@@ -14,7 +14,7 @@ interface StoredImportSummary {
 interface ImportMenuOptions {
   /** Adds a listener on the Import menu for as long as the runtime lives. */
   listen(type: string, listener: EventListener): void;
-  importMenu: Pick<ProtspaceImportMenu, 'lastFile'>;
+  importMenu: Pick<ProtspaceImportMenu, 'lastFile' | 'shadowRoot'>;
   dataLoader: Pick<ProtspaceDataLoader, 'openFilePicker'>;
   datasetController: Pick<DatasetController, 'loadChosenExample' | 'tryLoadPersistedAgain'>;
   /** The stored import's metadata (`readStoredImportSummary`), never its bytes. */
@@ -93,6 +93,8 @@ export function bindImportMenu({
       console.warn(`Unknown example dataset id: ${id}`);
       return;
     }
+    // A menu choice keeps the stored import, even one whose last load failed (recovery-required):
+    // the recovery banner then returns on the next bare /explore until "Clear stored data".
     void datasetController.loadChosenExample(entry, 'menu');
   });
   // Runs inside the menu's click, so the browser lets the picker open.
@@ -102,8 +104,11 @@ export function bindImportMenu({
   });
   // The stored import can change after the dataset change that announced it (the save step runs
   // after the render, so a second import is announced while the first is still stored): read it
-  // again whenever the panel opens. `ps-open` from the inner `ps-popover` bubbles and is composed.
-  listen('ps-open', () => {
+  // again whenever the panel opens. `ps-open` from the inner `ps-popover` bubbles and is composed,
+  // and so does each example ⓘ's: only the panel's own popover, in the menu's shadow root, counts.
+  listen('ps-open', (event) => {
+    const origin = event.composedPath()[0] as Node | undefined;
+    if (!origin || origin.getRootNode() !== importMenu.shadowRoot) return;
     void refreshLastFile();
   });
 
