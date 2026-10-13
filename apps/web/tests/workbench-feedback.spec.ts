@@ -18,12 +18,12 @@ import { clearOpfs, seedOpfsState } from './helpers/opfs';
 const toast = (page: Page, text: string): Locator =>
   page.locator('[data-sonner-toast]').filter({ hasText: text });
 
-/** The first protein the search box offers: one in view, so the filter does not hide it. */
+/** The dataset's first protein. */
 function firstProteinId(page: Page): Promise<string> {
   return page
-    .locator('protspace-protein-search')
+    .locator('#myPlot')
     .evaluate(
-      (search) => (search as unknown as { availableProteinIds: string[] }).availableProteinIds[0],
+      (plot) => (plot as unknown as { data: { protein_ids: string[] } }).data.protein_ids[0],
     );
 }
 
@@ -58,10 +58,8 @@ test.describe('notifications', () => {
 
   test('with a selection the toast sits above the selection bar', async ({ page }) => {
     await openExplore(page);
-    // Filter first: with a protein selected first, a condition row covered the filter helper's
-    // click target in the Filter panel.
-    await applyFirstCategoryFilter(page);
     await selectBySearch(page, await firstProteinId(page));
+    await applyFirstCategoryFilter(page);
 
     await filterResetButton(page).click();
 
@@ -134,6 +132,8 @@ test.describe('clearing stored data', () => {
 
     await banner.getByRole('button', { name: 'Clear stored data' }).click();
     await expect(confirm).toBeVisible();
+    // Cancel takes focus first, so a reflexive Enter destroys nothing.
+    await expect(confirmContent.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
     await expect(confirmContent).toContainText(
       'This deletes the copy of "broken.parquetbundle" saved in this browser. It cannot be undone.',
     );

@@ -426,8 +426,10 @@ export async function applyFirstCategoryFilter(page: Page): Promise<void> {
     .locator(`.value-picker-item[data-value="${quoted(value)}"]`)
     .first()
     .click();
-  // A click elsewhere in the builder closes the value picker.
-  await queryBuilder(page).locator('.match-count').click();
+  // Escape closes the value picker (a layer), wherever it overlaps the panel: one step.
+  await page.keyboard.press('Escape');
+  await expect(queryBuilder(page).locator('.value-picker-item').first()).toBeHidden();
+  await expect(filterApplyButton(page)).toBeEnabled();
   await filterApplyButton(page).click();
   await expect(filterApplyButton(page)).toBeDisabled();
 }

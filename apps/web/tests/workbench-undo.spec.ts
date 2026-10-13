@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  applyFirstCategoryFilter,
   chooseTool,
   getSelectedProteinIds,
   importUserFile,
@@ -67,30 +68,6 @@ async function selectFirstBySearch(page: Page, count: number): Promise<string[]>
   return ids;
 }
 
-/**
- * A one-condition filter keeping the first ten proteins, reported as the Filter's Apply reports
- * it: the filter controller hears the builder's query-changed and query-apply.
- */
-async function applyOneConditionFilter(page: Page): Promise<void> {
-  await page.locator('#myQueryBuilder').evaluate((builder) => {
-    const plot = document.querySelector('#myPlot') as Element & { selectedAnnotation: string };
-    const query = [
-      {
-        id: 'e2e-filter',
-        kind: 'categorical',
-        annotation: plot.selectedAnnotation,
-        values: ['e2e'],
-      },
-    ];
-    builder.dispatchEvent(new CustomEvent('query-changed', { detail: { query } }));
-    builder.dispatchEvent(
-      new CustomEvent('query-apply', {
-        detail: { matchedIndices: new Set(Array.from({ length: 10 }, (_, i) => i)) },
-      }),
-    );
-  });
-}
-
 const filtersActive = (page: Page) =>
   page
     .locator('#myPlot')
@@ -133,7 +110,8 @@ test.describe('undo and redo', () => {
     page,
   }) => {
     await openExplore(page);
-    await applyOneConditionFilter(page);
+    // Through the Filter panel, so the test fails if the builder stops reporting its Apply.
+    await applyFirstCategoryFilter(page);
     await expect(statusChip(page, 'filter')).toContainText('Filtered · 1 condition');
     expect(await filtersActive(page)).toBe(true);
 
@@ -146,7 +124,9 @@ test.describe('undo and redo', () => {
     expect(await filtersActive(page)).toBe(true);
   });
 
-  test('Ctrl+Z in the search box edits the text and leaves the selection', async ({ page }) => {
+  test('Ctrl+Z in the search box is left to the browser and leaves the selection', async ({
+    page,
+  }) => {
     await openExplore(page);
     const [id] = await selectFirstBySearch(page, 1);
     await searchInput(page).click();
