@@ -406,15 +406,25 @@
 /* App bar (Task 2.9): three columns, so search stays centred while both sides fit. A side
    column never shrinks below its content, so the dataset name (truncated only past 200 px) keeps
    its width and search narrows toward 200 px first. A plain 1fr would size search to 420 px before
-   the sides and cut the name instead. */
+   the sides and cut the name instead. Search also leaves room for two columns as wide as the wider
+   side (`--wb-app-bar-side`, from use-app-bar-sides.ts), so the sides come out equal and search
+   centred; only once search is down to 200 px does the wider side push it off centre. */
 .workbench header[data-workbench='app-bar'] {
   display: grid;
-  grid-template-columns: minmax(max-content, 1fr) minmax(200px, 420px) minmax(max-content, 1fr);
+  grid-template-columns:
+    minmax(max-content, 1fr)
+    minmax(
+      200px,
+      clamp(200px, calc(100% - 2 * var(--wb-app-bar-side, 0px) - 2 * var(--ps-space-3)), 420px)
+    )
+    minmax(max-content, 1fr);
   align-items: center;
   column-gap: var(--ps-space-3);
 }
 
+/* Sized to its content, not stretched to its column, so use-app-bar-sides.ts can measure it. */
 .wb-app-bar-start {
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: var(--ps-space-2);
