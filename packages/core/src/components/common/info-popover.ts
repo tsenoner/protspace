@@ -1,56 +1,41 @@
 import { LitElement, html, nothing } from 'lit';
-import { property, state } from 'lit/decorators.js';
+import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { handleDropdownEscape } from '../../utils/dropdown-helpers';
+import { icon } from '../kit/icon';
+import '../kit/popover';
+import type { Placement } from '../kit/position';
 import { infoPopoverStyles } from './info-popover.styles';
-
-/** Computed viewport coordinates for a `placement="side"` popover (escapes overflow clipping). */
-interface SideCoords {
-  left: number;
-  top: number;
-  /** Vertical offset of the arrow within the popover, so it points at the icon. */
-  arrowTop: number;
-  /** True when there was no room on the preferred side and the popover flipped to the other side. */
-  flipped: boolean;
-}
 
 let infoPopoverSequence = 0;
 
-/**
- * Marks the element a `placement="side"` popover should sit beside, when the containing panel is
- * not itself a scroll container. Put it on the panel, not on the row.
- *
- * Written literally by the panels that opt in (`projection-metadata.ts`) rather than imported:
- * Lit can interpolate an attribute's value but not its name. `info-popover.test.ts` spells it
- * out too, so renaming it here without updating the panels fails that test rather than silently
- * dropping the anchoring.
- */
-const POPOVER_BOUNDARY_ATTRIBUTE = 'data-info-popover-boundary';
+/** How long the bubble stays after the pointer leaves: enough to cross the gap to it. */
+const CLOSE_GRACE_MS = 140;
 
 /**
- * Small reusable "ⓘ" information control that opens a popover with an annotation description and an
- * optional "Learn more" link.
+ * Small reusable "ⓘ" information control that opens a bubble with an annotation description, an
+ * optional second paragraph and an optional "Learn more" link.
  *
  * Interaction model:
  * - Opens on **hover** (pointer over the icon) and on **keyboard focus**, so the brief summary is
  *   one hover away while scanning the annotation dropdown.
- * - The popover is **hoverable**: it stays open while the pointer is over the icon *or* the popover
- *   itself (a short grace period bridges the small gap between them), so you can move into it to
- *   click "Learn more ↗" without it disappearing.
- * - **Click** still toggles a pinned state. Escape or an outside click closes it.
+ * - The bubble is **hoverable**: it stays open while the pointer is over the icon *or* the bubble
+ *   (a short grace period bridges the gap between them), so you can move into it to click
+ *   "Learn more" without it disappearing.
+ * - **Click** toggles a pinned state.
  *
- * The button carries no `title`. A native tooltip would repeat the `aria-label` it was set
- * from, and the browser renders it on its own schedule and in its own place — so it surfaced
- * *on top of* this component's popover, which is the one thing on screen already explaining
- * the icon. Assistive tech reads `aria-label`; sighted users get the popover.
+ * The bubble is a `ps-popover` (design decisions 8 and 11): it renders in the top layer, so no
+ * panel's `translate`, `overflow` or stacking context clips it, and it is a layer of the kit's
+ * layer stack, so Escape and a press outside close it before anything beneath it.
+ *
+ * The button carries no `title`. A native tooltip would repeat the `aria-label` it was set from,
+ * and the browser renders it on its own schedule and in its own place, on top of this bubble.
  *
  * Placement:
- * - `"bottom"` (default) drops the popover below the icon, used by the legend header.
- * - `"side"` floats it beside the dropdown *panel* (left by default, flipping right near the
- *   viewport edge), level with the hovered row and with an arrow pointing at it, rendered
- *   `position: fixed` so it escapes the dropdown's `overflow` clipping. Anchoring to the panel
- *   edge keeps the bubble out of the list entirely, so every row's label stays visible while you
- *   move the pointer up and down the column of ⓘ icons.
+ * - `"bottom"` (default) drops the bubble below the icon, used by the legend header; `align="right"`
+ *   aligns its right edge to the icon.
+ * - `"side"` puts it beside the icon (right, flipping left near the viewport edge), used by the
+ *   rows of a list. The whole row (this element's parent) keeps it open, so the pointer can cross
+ *   the row towards the bubble.
  *
  * Renders nothing when there is neither a description, a detail nor a docs URL.
  */
@@ -58,7 +43,7 @@ const POPOVER_BOUNDARY_ATTRIBUTE = 'data-info-popover-boundary';
 class ProtspaceInfoPopover extends LitElement {
   static styles = infoPopoverStyles;
 
-  /** Short description text shown in the popover. */
+  /** Short description text shown in the bubble. */
   @property({ type: String }) description = '';
   /**
    * Optional second paragraph, below the description: the Import menu puts an example's
@@ -69,42 +54,31 @@ class ProtspaceInfoPopover extends LitElement {
   @property({ type: String, attribute: 'docs-url' }) docsUrl = '';
   /** Human-readable annotation label, used for accessible button labelling. */
   @property({ type: String }) label = '';
-  /**
-   * Preferred horizontal open direction for `placement="bottom"`. `'left'` (default) opens the
-   * popover rightward from the icon; `'right'` opens it leftward (align its right edge to the icon).
-   * A viewport overflow check still flips it as a safety net. Ignored for `placement="side"`.
-   */
+  /** For `placement="bottom"`: `'left'` opens rightward from the icon, `'right'` leftward. */
   @property({ type: String }) align: 'left' | 'right' = 'left';
-  /**
-   * Where the popover opens. `'bottom'` drops it below the icon (legend); `'side'` floats it beside
-   * the icon with an arrow (annotation dropdown), so it never covers the row below.
-   */
+  /** `'bottom'` drops the bubble below the icon; `'side'` puts it beside the icon. */
   @property({ type: String }) placement: 'bottom' | 'side' = 'bottom';
 
-  /** Pointer is over the icon or the popover. */
+  /** Pointer is over the icon or the bubble. */
   @state() private hovering = false;
   /** Click-pinned open (survives pointer leave; primary path on touch). */
   @state() private pinned = false;
   /** Opened via keyboard focus (not a pointer click). */
   @state() private kbFocused = false;
-  @state() private flipLeft = false;
-  /** Horizontal correction for bottom popovers when neither opening direction fits unshifted. */
-  @state() private bottomShiftX = 0;
-  /** Computed fixed coordinates for side placement (null until measured). */
-  @state() private sideCoords: SideCoords | null = null;
+
+  @query('.info-button') private infoButton!: HTMLButtonElement | null;
 
   private readonly popoverId = `protspace-info-popover-${++infoPopoverSequence}`;
 
   /**
-   * `aria-describedby` targets. They are the description and detail paragraphs, never the popover
-   * itself: the popover carries an `aria-label`, and accname step 2C returns that label rather
-   * than descending into the contents, which would silently empty the description for every
-   * consumer.
+   * `aria-describedby` targets. They are the description and detail paragraphs, never the dialog
+   * itself: the dialog carries an `aria-label`, and accname step 2C returns that label rather
+   * than descending into the contents, which would silently empty the description.
    */
   private readonly descriptionId = `${this.popoverId}-description`;
   private readonly detailId = `${this.popoverId}-detail`;
 
-  /** Whether the popover is currently visible (any of the three triggers). */
+  /** Whether the bubble is open (any of the three triggers). */
   private get isOpen(): boolean {
     return this.hovering || this.pinned || this.kbFocused;
   }
@@ -112,8 +86,6 @@ class ProtspaceInfoPopover extends LitElement {
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
   /** True briefly around a pointerdown so the ensuing focus is not treated as keyboard focus. */
   private pointerInitiatedFocus = false;
-  private docListenerAttached = false;
-  private repositionListenerAttached = false;
   /** Parent row used as the keep-open region for side placement (see `firstUpdated`). */
   private _row: HTMLElement | null = null;
 
@@ -125,11 +97,9 @@ class ProtspaceInfoPopover extends LitElement {
   }
 
   firstUpdated() {
-    // In side placement the bubble floats outside the dropdown panel, so the path from the icon to
-    // the bubble crosses the row. Treat the whole row (this popover's parent) as the keep-open
-    // region (the bubble is a DOM descendant of it), so the user can glide from the ⓘ into the
-    // bubble to click "Learn more" without it closing, while only the tiny panel↔bubble gap relies
-    // on the grace period.
+    // In side placement the path from the icon to the bubble crosses the row. The whole row (this
+    // element's parent) is the keep-open region: the bubble is a DOM descendant of it, so gliding
+    // from the ⓘ into the bubble never leaves it.
     if (this.placement === 'side' && this.parentElement) {
       this._row = this.parentElement;
       this._row.addEventListener('pointerleave', this._onRowPointerLeave);
@@ -144,30 +114,27 @@ class ProtspaceInfoPopover extends LitElement {
     this._row?.removeEventListener('pointerleave', this._onRowPointerLeave);
     this._row = null;
     this._clearCloseTimer();
-    this._detachDocListener();
-    this._detachRepositionListener();
   }
 
   private _onPointerEnter = () => {
-    // Fires for the icon and (since the bubble is a descendant of the host) when the pointer
-    // re-enters the bubble after crossing the panel↔bubble gap.
+    // Fires for the icon and, since the bubble is a descendant of the host, when the pointer
+    // re-enters the bubble after crossing the gap.
     this._clearCloseTimer();
     this.hovering = true;
   };
 
-  /** Start the close grace period: long enough to bridge the gap between the trigger and the bubble. */
+  /** Start the close grace period: long enough to bridge the gap between the icon and the bubble. */
   private _scheduleClose() {
     this._clearCloseTimer();
     this.closeTimer = setTimeout(() => {
       this.hovering = false;
       this.closeTimer = null;
-    }, 140);
+    }, CLOSE_GRACE_MS);
   }
 
   private _onPointerLeave = () => {
-    // For side placement, closing is driven by leaving the whole row (see `_onRowPointerLeave`), so
-    // leaving just the icon must not start the close timer; otherwise crossing the row toward the
-    // bubble would dismiss it.
+    // For side placement leaving the row closes it (`_onRowPointerLeave`); leaving just the icon
+    // must not, or crossing the row towards the bubble would dismiss it.
     if (this.placement === 'side') return;
     this._scheduleClose();
   };
@@ -179,7 +146,7 @@ class ProtspaceInfoPopover extends LitElement {
 
   private _onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
-    // Only drop keyboard-open state when focus leaves the whole component (icon + popover link).
+    // Only drop keyboard-open state when focus leaves the whole component (icon + bubble link).
     if (!next || !this.contains(next)) {
       this.kbFocused = false;
     }
@@ -192,44 +159,6 @@ class ProtspaceInfoPopover extends LitElement {
     }
   }
 
-  private _onDocumentClick = (event: MouseEvent) => {
-    if (!event.composedPath().includes(this)) {
-      this._closeAll();
-    }
-  };
-
-  private _attachDocListener() {
-    if (this.docListenerAttached) return;
-    document.addEventListener('click', this._onDocumentClick, true);
-    this.docListenerAttached = true;
-  }
-
-  private _detachDocListener() {
-    if (!this.docListenerAttached) return;
-    document.removeEventListener('click', this._onDocumentClick, true);
-    this.docListenerAttached = false;
-  }
-
-  // Reposition the side popover when the dropdown list scrolls or the window resizes (its fixed
-  // coordinates are viewport-relative, so the icon can move out from under it otherwise).
-  private _onScrollOrResize = () => {
-    if (this.isOpen && this.placement === 'side') this._computeSidePosition();
-  };
-
-  private _attachRepositionListener() {
-    if (this.repositionListenerAttached) return;
-    window.addEventListener('scroll', this._onScrollOrResize, true);
-    window.addEventListener('resize', this._onScrollOrResize);
-    this.repositionListenerAttached = true;
-  }
-
-  private _detachRepositionListener() {
-    if (!this.repositionListenerAttached) return;
-    window.removeEventListener('scroll', this._onScrollOrResize, true);
-    window.removeEventListener('resize', this._onScrollOrResize);
-    this.repositionListenerAttached = false;
-  }
-
   private _closeAll() {
     this._clearCloseTimer();
     this.hovering = false;
@@ -238,141 +167,17 @@ class ProtspaceInfoPopover extends LitElement {
   }
 
   /**
-   * Walk the composed ancestry from the icon to the nearest clipping container (the dropdown
-   * panel). Its left/right edges are the anchor for the side popover, so the bubble sits beside the
-   * whole list instead of over a row's label.
+   * The layer closed the bubble (Escape or a press outside). The event stops here: a host that
+   * listens for its own overlays' `ps-close` must not take this one for theirs.
    */
-  private _nearestClipRect(start: Element): DOMRect | null {
-    let node: Node | null = start.parentNode;
-    while (node) {
-      if (node instanceof ShadowRoot) {
-        node = node.host;
-        continue;
-      }
-      if (node instanceof Element) {
-        // An explicit opt-in comes first. A panel can want the bubble anchored to its edge
-        // without being a scroll container — the projection-metadata card is a short, fully
-        // visible list, so nothing about it clips, yet dropping the bubble under an icon
-        // still buries the rows below. Overflow detection alone cannot express that.
-        if (node.hasAttribute(POPOVER_BOUNDARY_ATTRIBUTE)) return node.getBoundingClientRect();
-        const s = getComputedStyle(node);
-        const clips = /(auto|scroll|hidden|clip)/;
-        if (clips.test(s.overflowX) || clips.test(s.overflowY)) {
-          return node.getBoundingClientRect();
-        }
-      }
-      node = node.parentNode;
-    }
-    return null;
-  }
-
-  /**
-   * Place the popover beside the dropdown panel (not the icon), vertically level with the hovered
-   * row, flipping/clamping to fit. Anchoring to the panel's edge keeps every row's label visible
-   * while you move the pointer up and down the column of ⓘ icons.
-   */
-  private _computeSidePosition() {
-    const button = this.shadowRoot?.querySelector('.info-button') as HTMLElement | null;
-    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
-    if (!button || !popover) return;
-
-    const icon = button.getBoundingClientRect();
-    // Anchor to the panel's left edge (its clipping container); fall back to the icon if there
-    // isn't one (e.g. when used outside a scrolling list).
-    const clip = this._nearestClipRect(button);
-    const boundaryLeft = clip ? clip.left : icon.left;
-    const boundaryRight = clip ? clip.right : icon.right;
-    const w = popover.offsetWidth;
-    const h = popover.offsetHeight;
-    const GAP = 12; // space between the panel and the bubble (room for the arrow)
-    const MARGIN = 8; // keep clear of the viewport edge
-    const HALF_ARROW = 5;
-    const iconCenterY = icon.top + icon.height / 2;
-
-    // Prefer the left of the panel; flip to the right only if there's no room.
-    let left = boundaryLeft - GAP - w;
-    let flipped = false;
-    if (left < MARGIN) {
-      left = boundaryRight + GAP;
-      flipped = true;
-      if (left + w > window.innerWidth - MARGIN) {
-        left = Math.max(MARGIN, window.innerWidth - MARGIN - w);
-      }
-    }
-
-    let top = iconCenterY - h / 2;
-    top = Math.min(Math.max(MARGIN, top), Math.max(MARGIN, window.innerHeight - h - MARGIN));
-
-    const arrowTop = Math.min(
-      Math.max(HALF_ARROW + 2, iconCenterY - top - HALF_ARROW),
-      Math.max(HALF_ARROW + 2, h - 2 * HALF_ARROW - 2),
-    );
-
-    const cur = this.sideCoords;
-    if (
-      !cur ||
-      cur.left !== left ||
-      cur.top !== top ||
-      cur.arrowTop !== arrowTop ||
-      cur.flipped !== flipped
-    ) {
-      this.sideCoords = { left, top, arrowTop, flipped };
-    }
-  }
-
-  /** Clamp a bottom popover to both viewport edges after its preferred direction is resolved. */
-  private _computeBottomShift() {
-    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
-    if (!popover || this.bottomShiftX !== 0) return;
-
-    const rect = popover.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const MARGIN = 8;
-    let nextShift = 0;
-    if (rect.left < MARGIN) {
-      nextShift = MARGIN - rect.left;
-    } else if (rect.right > window.innerWidth - MARGIN) {
-      nextShift = window.innerWidth - MARGIN - rect.right;
-    }
-    if (nextShift !== this.bottomShiftX) this.bottomShiftX = nextShift;
-  }
-
-  updated() {
-    // Keep the outside-click listener attached only while open.
-    if (!this.isOpen) {
-      this._detachDocListener();
-      this._detachRepositionListener();
-      if (this.flipLeft) this.flipLeft = false;
-      if (this.bottomShiftX) this.bottomShiftX = 0;
-      if (this.sideCoords) this.sideCoords = null;
-      return;
-    }
-    this._attachDocListener();
-
-    if (this.placement === 'side') {
-      this._attachRepositionListener();
-      if (!this.sideCoords) this._computeSidePosition();
-      return;
-    }
-
-    // Bottom placement: flip leftward if it would overflow the right edge of the viewport
-    // (safety net on top of the `align` preference).
-    const popover = this.shadowRoot?.querySelector('.popover') as HTMLElement | null;
-    if (
-      !this.flipLeft &&
-      this.align !== 'right' &&
-      popover &&
-      popover.getBoundingClientRect().right > window.innerWidth - 8
-    ) {
-      this.flipLeft = true;
-      return;
-    }
-    this._computeBottomShift();
-  }
+  private _onLayerClose = (event: Event) => {
+    event.stopPropagation();
+    this._closeAll();
+  };
 
   private _onPointerDown = () => {
-    // A focus that immediately follows a pointerdown is a mouse/touch focus, not keyboard tabbing, so
-    // don't open via `kbFocused` in that case (click handles the pinned state instead).
+    // A focus that immediately follows a pointerdown is a mouse/touch focus, not keyboard tabbing,
+    // so don't open via `kbFocused` in that case (click handles the pinned state instead).
     this.pointerInitiatedFocus = true;
     setTimeout(() => {
       this.pointerInitiatedFocus = false;
@@ -386,6 +191,7 @@ class ProtspaceInfoPopover extends LitElement {
   };
 
   private _onClick = (event: Event) => {
+    // A row around the icon (an annotation or an example) must not act on this click.
     event.stopPropagation();
     event.preventDefault();
     this.pinned = !this.pinned;
@@ -396,14 +202,9 @@ class ProtspaceInfoPopover extends LitElement {
     }
   };
 
-  private _onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && this.isOpen) {
-      handleDropdownEscape(event, () => {
-        this._closeAll();
-        const button = this.shadowRoot?.querySelector('.info-button') as HTMLElement | null;
-        button?.blur();
-      });
-    }
+  private get bubblePlacement(): Placement {
+    if (this.placement === 'side') return 'right-start';
+    return this.align === 'right' ? 'bottom-end' : 'bottom-start';
   }
 
   render() {
@@ -414,23 +215,9 @@ class ProtspaceInfoPopover extends LitElement {
       ...(this.description ? [this.descriptionId] : []),
       ...(this.detail ? [this.detailId] : []),
     ].join(' ');
-
     const ariaLabel = this.label ? `Information about ${this.label}` : 'Annotation information';
+    const dialogLabel = this.label ? `${this.label} information` : 'Annotation information';
     const open = this.isOpen;
-    const side = this.placement === 'side';
-
-    const popoverClass = side
-      ? `popover placement-side ${this.sideCoords ? '' : 'measuring'} ${
-          this.sideCoords?.flipped ? 'flipped' : ''
-        }`
-      : `popover ${this.align === 'right' || this.flipLeft ? 'flip-left' : ''}`;
-    const popoverStyle = side
-      ? this.sideCoords
-        ? `left:${this.sideCoords.left}px;top:${this.sideCoords.top}px;`
-        : ''
-      : this.bottomShiftX
-        ? `transform:translateX(${this.bottomShiftX}px);`
-        : '';
 
     return html`
       <button
@@ -443,59 +230,43 @@ class ProtspaceInfoPopover extends LitElement {
         @pointerdown=${this._onPointerDown}
         @focus=${this._onFocus}
         @click=${this._onClick}
-        @keydown=${this._onKeydown}
       >
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4" />
-          <path d="M12 8h.01" />
-        </svg>
+        ${icon('info', 14)}
       </button>
-      ${open
-        ? html`<div
-            id=${this.popoverId}
-            class=${popoverClass}
-            style=${popoverStyle}
-            role="dialog"
-            aria-label=${this.label ? `${this.label} information` : 'Annotation information'}
-            @keydown=${this._onKeydown}
-          >
-            ${side
-              ? html`<span
-                  class="popover-arrow"
-                  style=${this.sideCoords ? `top:${this.sideCoords.arrowTop}px` : ''}
-                ></span>`
-              : nothing}
-            ${this.description
-              ? html`<p id=${this.descriptionId} class="popover-description">
-                  ${this.description}
-                </p>`
-              : nothing}
-            ${this.detail
-              ? html`<p id=${this.detailId} class="popover-detail">${this.detail}</p>`
-              : nothing}
-            ${this.docsUrl
-              ? html`<a
-                  class="popover-link"
-                  href=${this.docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  @click=${(e: Event) => e.stopPropagation()}
-                  >Learn more ↗</a
-                >`
-              : nothing}
-          </div>`
-        : nothing}
+      <ps-popover
+        id=${this.popoverId}
+        .anchor=${this.infoButton}
+        .open=${open}
+        placement=${this.bubblePlacement}
+        panel-role="dialog"
+        panel-label=${dialogLabel}
+        @ps-close=${this._onLayerClose}
+      >
+        ${open
+          ? html`<div class="popover">
+              ${this.description
+                ? html`<p id=${this.descriptionId} class="popover-description">
+                    ${this.description}
+                  </p>`
+                : nothing}
+              ${this.detail
+                ? html`<p id=${this.detailId} class="popover-detail">${this.detail}</p>`
+                : nothing}
+              ${this.docsUrl
+                ? html`<a
+                    class="popover-link"
+                    href=${this.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click=${(e: Event) => e.stopPropagation()}
+                    >Learn more${icon('external-link', 14)}<span class="popover-link-hint">
+                      (opens in a new tab)</span
+                    ></a
+                  >`
+                : nothing}
+            </div>`
+          : nothing}
+      </ps-popover>
     `;
   }
 }

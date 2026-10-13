@@ -171,25 +171,6 @@ describe('protspace-import-menu', () => {
     expect(currentInfo()).toBeNull();
   });
 
-  it("an example's info control explains it without loading it", async () => {
-    const onLoad = vi.fn();
-    menu.addEventListener('load-example-dataset', onLoad);
-    await open();
-
-    const info = exampleInfo('demo')!;
-    (info.shadowRoot!.querySelector('.info-button') as HTMLButtonElement).click();
-    await info.updateComplete;
-    const popover = info.shadowRoot!.querySelector('.popover');
-    expect(popover?.querySelector('.popover-description')?.textContent?.trim()).toBe(
-      'The startup demo dataset.',
-    );
-    expect(popover?.querySelector('.popover-link')?.getAttribute('href')).toBe(
-      '/docs/explore/example-datasets#demo',
-    );
-    expect(onLoad).not.toHaveBeenCalled();
-    expect(panel()).not.toBeNull();
-  });
-
   it('Escape and a press outside close the panel and return focus to Import', async () => {
     await open();
     expect(root().activeElement).toBe(

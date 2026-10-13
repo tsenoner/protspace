@@ -275,7 +275,6 @@ export class ProtspaceProjectionMetadata extends LitElement {
         class="content ${this._pinned ? 'is-pinned' : ''}"
         id="projection-metadata-content"
         role="tooltip"
-        data-info-popover-boundary
       >
         <!-- The projection's own name, which the panel never showed: _splitMetadata skips
              the "name" key, so a card describing one projection out of several did not say

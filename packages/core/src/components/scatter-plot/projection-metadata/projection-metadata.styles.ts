@@ -61,8 +61,8 @@ export const projectionMetadataStyles = [
          and the scatter-plot host is overflow:hidden (scatter-plot.styles.ts), so the
          overrun was hard-clipped and unreachable rather than merely spilling. The clipped
          region was the annotation-stats block: exactly what the dropdown's STATS badge
-         sends people here to read. Safe for the side-placed info popovers, which are
-         position:fixed and anchor to this element via data-info-popover-boundary. */
+         sends people here to read. The info popovers' bubbles sit in the top layer, so
+         this overflow never clips them. */
       /* Fallback only: _updateMaxHeight() measures the room left below the card in the
          viewport and sets the real cap inline. */
       max-height: calc(100vh - 8rem);
@@ -82,10 +82,7 @@ export const projectionMetadataStyles = [
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
-      /* Deliberately NOT animated with a transform. Any non-none transform makes this element
-         the containing block for position:fixed descendants, which is how the side-placed
-         info popovers escape the card to sit beside it — a slide-in here would silently
-         anchor them to this box instead of the viewport. Fade only. */
+      /* Fade only. */
       transition:
         opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
         visibility 0.2s;
