@@ -413,7 +413,7 @@ export class LegendDataProcessor {
           }
         });
 
-        newItems.sort((a, b) => b.targetIndex - a.targetIndex);
+        newItems.sort((a, b) => a.targetIndex - b.targetIndex);
         for (const newItem of newItems) {
           existingZOrders.forEach((zOrder, key) => {
             if (zOrder >= newItem.targetIndex) {
@@ -435,12 +435,7 @@ export class LegendDataProcessor {
       claimedColors.add((persisted?.color || existing?.color) ?? '');
     }
 
-    // A categorical "Your order, reversed" is reversed in its zOrders already (the legend's
-    // `_reverseZOrder`), so they are kept as in "Your order"; renumbering them by this pass's
-    // reversed list would flip the rows back on every update. A numeric one is ordered from its
-    // manual bin ids each pass, so it takes the reversed list's positions.
-    const keepsZOrder =
-      sortMode === 'manual' || (sortMode === 'manual-reverse' && !isNumericSource);
+    const keepsZOrder = sortMode === 'manual';
     const items: LegendItem[] = topItems.map(([value, count], index) => {
       const displayName = toDisplayValue(value);
       const zOrder = keepsZOrder ? (existingZOrders.get(value) ?? index) : index;
@@ -557,11 +552,17 @@ export class LegendDataProcessor {
       }
     });
 
+    // A categorical "Your order, reversed" holds its zOrders in display order (the legend's
+    // `_reverseZOrder` writes them so): it buckets and numbers exactly as "Your order". A numeric
+    // one re-derives from its manual bin ids each pass.
+    const orderMode: LegendSortMode =
+      sortMode === 'manual-reverse' && !isNumericSource ? 'manual' : sortMode;
+
     const { topItems, otherItems, otherCount } = this.sortAndLimitItems(
       frequencyMap,
       maxVisibleValues,
       isolationMode,
-      sortMode,
+      orderMode,
       existingZOrders,
       visibleValues,
       numericOrderValues,
@@ -576,11 +577,18 @@ export class LegendDataProcessor {
       topItems,
       otherCount,
       existingLegendItems,
-      sortMode,
+      orderMode,
       new Map(existingZOrders),
       persistedCategories,
       isNumericSource,
     );
+
+    // The palette colours rows by list position: list a reversed order bottom-up, as its sort
+    // did before, so each row keeps the colour it had in "Your order". Other stays last.
+    if (orderMode !== sortMode) {
+      const isOther = (item: LegendItem) => Number(item.value === LEGEND_VALUES.OTHER);
+      items.sort((a, b) => isOther(a) - isOther(b) || b.zOrder - a.zOrder);
+    }
 
     // Filter "Other" items to exclude any that are already shown
     const shownValues = new Set(items.map((i) => i.value).filter((v) => v !== LEGEND_VALUES.OTHER));

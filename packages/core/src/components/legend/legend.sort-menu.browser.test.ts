@@ -183,6 +183,30 @@ describe('legend sort menu', () => {
     expect(rowValues(numeric)).toEqual([...lowToHigh].reverse());
   });
 
+  it('Your order, reversed keeps its top rows and Other last as Max legend items shrinks and grows', async () => {
+    const legend = await mount(categoricalData(TWELVE), 'family');
+    internals(legend)._applySortMode('manual');
+    await settle(legend);
+    await openSortMenu(legend);
+    await pick(legend, 'reverse');
+    await escape(legend);
+    const reversed = rowValues(legend);
+
+    legend.maxVisibleValues = 5;
+    await settle(legend);
+    expect(rowValues(legend)).toEqual([...reversed.slice(0, 5), LEGEND_VALUES.OTHER]);
+
+    legend.maxVisibleValues = 8;
+    await settle(legend);
+    const grown = rowValues(legend);
+    expect(grown.slice(0, 5)).toEqual(reversed.slice(0, 5));
+    expect(grown).toHaveLength(9);
+    expect(grown.at(-1)).toBe(LEGEND_VALUES.OTHER);
+    const items = (legend as unknown as { _legendItems: Array<{ zOrder: number }> })._legendItems;
+    const zOrders = items.map((item) => item.zOrder);
+    expect(new Set(zOrders).size).toBe(zOrders.length);
+  });
+
   it('By separation appears only with scores or while active', async () => {
     const legend = await mount(categoricalData(TWELVE), 'family');
     await openSortMenu(legend);
