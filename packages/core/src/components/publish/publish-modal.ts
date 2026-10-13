@@ -53,7 +53,8 @@ import { renderDimensions } from './sections/dimensions-section';
 import { renderLegendSection } from './sections/legend-section';
 import { renderOptions, renderPresets } from './sections/presets-options-section';
 import { renderToolbar } from './sections/toolbar';
-import { renderFooter, type UndoMessage } from './sections/footer';
+import { renderFooter } from './sections/footer';
+import { PublishUndoOffer } from './publish-undo-offer';
 
 // ── Component ────────────────────────────────────────────────
 
@@ -86,8 +87,6 @@ export class ProtspacePublishModal extends LitElement {
   @state() private _showResampleNote = false;
   @state() private _legendItems: LegendItem[] = [];
   @state() private _legendTitle = 'Legend';
-  /** New figure or Reset, undoable from the footer until the next edit or for 8 s. */
-  @state() private _undo: { message: UndoMessage; state: PublishState } | null = null;
   /** Why the last export failed, said inside the dialog: a toast would sit under the modal. */
   @state() private _exportError: string | null = null;
 
@@ -102,6 +101,7 @@ export class ProtspacePublishModal extends LitElement {
   /** Per-inset WebGL renders; a burst of updates reuses them, then asks for one more redraw. */
   private _insetRenders = new InsetRenderCache(() => this._scheduleRedraw());
   private _disposed = false;
+  private readonly _undo = new PublishUndoOffer(this);
 
   // What each sidebar section may change. Built once: a render hands the same objects down.
   private readonly _toolbarHandlers = { setTool: (tool: OverlayTool) => this._setTool(tool) };
@@ -135,16 +135,11 @@ export class ProtspacePublishModal extends LitElement {
     newFigure: () => this._handleNewFigure(),
     reset: () => this._handleReset(),
     undo: () => this._undoLast(),
-    holdUndo: () => this._holdUndo(),
-    releaseUndo: () => this._releaseUndo(),
+    holdUndo: () => this._undo.hold(),
+    releaseUndo: () => this._undo.release(),
     close: () => this._dialog?.dismiss(),
     exportFigure: () => void this._handleExport(),
   };
-  /** The state New figure or Reset produced; any other state ends the Undo offer. */
-  private _undoAfter: PublishState | null = null;
-  private _undoTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The button whose Undo is on offer; focus goes back to it when the strip leaves with focus. */
-  private _undoFrom: 'New figure' | 'Reset' | null = null;
   /** Escape deselects a selected overlay or inset before it closes the dialog. */
   private _releaseSelectionLayer: (() => void) | null = null;
 
@@ -173,8 +168,6 @@ export class ProtspacePublishModal extends LitElement {
     this._insetRenders.clear();
     this._releaseSelectionLayer?.();
     this._releaseSelectionLayer = null;
-    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
-    this._undoTimer = null;
   }
 
   /**
@@ -201,10 +194,7 @@ export class ProtspacePublishModal extends LitElement {
     if (changed.has('legendElement')) {
       this._readLegend();
     }
-    // Any state but the one New figure or Reset produced is an edit after it: Undo would lose it.
-    if (changed.has('_state') && this._undo && this._state !== this._undoAfter) {
-      this._dropUndo();
-    }
+    if (changed.has('_state')) this._undo.dropIfEdited(this._state);
   }
 
   override updated(changed: Map<string, unknown>) {
@@ -628,7 +618,7 @@ export class ProtspacePublishModal extends LitElement {
       ...state,
       viewFingerprint: this.currentProjection ?? undefined,
     });
-    this._offerUndo('Settings reset', before);
+    this._undo.start('Settings reset', before, this._state);
   }
 
   private _handleNewFigure() {
@@ -639,60 +629,15 @@ export class ProtspacePublishModal extends LitElement {
       insets: [],
       viewFingerprint: this.currentProjection ?? undefined,
     });
-    if (hasPlaced(before)) this._offerUndo('Overlays and insets cleared', before);
-  }
-
-  /**
-   * Shows what New figure or Reset did, with Undo, until the next edit or for 8 s. The 8 s wait
-   * while focus is in the strip, so it never leaves from under a keyboard user.
-   */
-  private _offerUndo(message: UndoMessage, before: PublishState) {
-    this._undo = { message, state: before };
-    this._undoAfter = this._state;
-    this._undoFrom = message === 'Settings reset' ? 'Reset' : 'New figure';
-    this._startUndoTimer();
-  }
-
-  private _startUndoTimer() {
-    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
-    this._undoTimer = setTimeout(() => this._dropUndo(), 8_000);
-  }
-
-  private _holdUndo() {
-    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
-    this._undoTimer = null;
-  }
-
-  private _releaseUndo() {
-    if (this._undo) this._startUndoTimer();
-  }
-
-  private _dropUndo() {
-    const strip = this.renderRoot.querySelector('.publish-undo');
-    const active = (this.renderRoot as ShadowRoot).activeElement;
-    const hadFocus = !!strip && !!active && strip.contains(active);
-    const from = this._undoFrom;
-    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
-    this._undoTimer = null;
-    this._undo = null;
-    this._undoAfter = null;
-    this._undoFrom = null;
-    if (!hadFocus || !from) return;
-    void this.updateComplete.then(() => {
-      if (this._disposed) return;
-      [...this.renderRoot.querySelectorAll<HTMLElement>('ps-button')]
-        .find((each) => each.textContent?.trim() === from)
-        ?.focus();
-    });
+    if (hasPlaced(before)) this._undo.start('Overlays and insets cleared', before, this._state);
   }
 
   private _undoLast() {
-    const undo = this._undo;
-    if (!undo) return;
-    this._dropUndo();
-    this._applyStateAndRebuild(undo.state);
+    const before = this._undo.take();
+    if (!before) return;
+    this._applyStateAndRebuild(before);
     // The restored overlays may sit on another projection, like on open.
-    this._showFingerprintWarning = this._isMisplaced(undo.state);
+    this._showFingerprintWarning = this._isMisplaced(before);
   }
 
   /** Whether `state` has overlays or insets placed on a view other than the current one. */
@@ -790,7 +735,7 @@ export class ProtspacePublishModal extends LitElement {
         </div>
         ${renderFooter(
           {
-            undo: this._undo?.message ?? null,
+            undo: this._undo.message,
             exportError: this._exportError,
             format: s.format,
           },
