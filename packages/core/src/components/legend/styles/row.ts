@@ -164,11 +164,14 @@ export const rowStyles = css`
     background: var(--ps-accent-tint);
   }
 
-  /* Other's short label leaves room: its actions keep their place, so they never cover View. */
-  .legend-item-other .legend-item-actions {
-    position: static;
-    padding-left: 0;
-    background: transparent;
+  /* Other has no handle to show: its strip is just the eye, over the count and never over View. */
+  .legend-item-other .drag-handle-disabled {
+    display: none;
+  }
+
+  .legend-item-other .legend-count {
+    min-width: var(--ps-space-3);
+    text-align: end;
   }
 
   .legend-action,

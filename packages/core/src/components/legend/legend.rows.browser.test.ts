@@ -4,9 +4,9 @@ import { adoptTheme } from '../kit/adopt-theme';
 import type { PsMenu } from '../kit/menu';
 import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspaceLegend } from './legend';
-import { LEGEND_EVENTS } from './config';
+import { LEGEND_EVENTS, LEGEND_VALUES } from './config';
 import { NAME_TOOLTIP_DELAY_MS } from './legend-list';
-import { categoricalData } from './test-support/legend-fixtures';
+import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
 /** A 70-character family name, the kind Pfam and Swiss-Prot hand the legend. */
@@ -77,6 +77,52 @@ describe('legend rows in a browser', () => {
     expect(part(legend, LONG, '.legend-item-main').getAttribute('aria-label')).toBe(
       `${LONG}: 123,456 proteins, shown`,
     );
+  });
+
+  it('at 240 px the Other row keeps the count column and room for its label, and View stays reachable on hover', async () => {
+    const { legend } = await mountLegendWithScatterplot(
+      categoricalData({ a: 61729, b: 61728, c: 61728 }),
+      'family',
+    );
+    legend.style.width = '240px';
+    legend.maxVisibleValues = 1;
+    await settle(legend);
+    await settle(legend);
+    const other = row(legend, LEGEND_VALUES.OTHER);
+    const right = (value: string, selector: string) =>
+      part(legend, value, selector).getBoundingClientRect().right;
+    expect(part(legend, LEGEND_VALUES.OTHER, '.legend-count').textContent!.trim()).toBe('123,456');
+
+    await userEvent.hover(part(legend, LEGEND_VALUES.OTHER, '.legend-item-main'));
+    await expect
+      .poll(() => opacity(part(legend, LEGEND_VALUES.OTHER, '.legend-item-actions')))
+      .toBe('1');
+
+    expect(right(LEGEND_VALUES.OTHER, '.legend-count')).toBeCloseTo(right('a', '.legend-count'), 0);
+    expect(right(LEGEND_VALUES.OTHER, '.legend-count')).toBeLessThanOrEqual(
+      other.getBoundingClientRect().right,
+    );
+    expect(part(legend, LEGEND_VALUES.OTHER, '.legend-text').clientWidth).toBeGreaterThanOrEqual(
+      60,
+    );
+
+    const view = part(legend, LEGEND_VALUES.OTHER, '.view-button');
+    const box = view.getBoundingClientRect();
+    const y = box.top + box.height / 2;
+    for (const x of [box.left + box.width / 2, box.right - 1]) {
+      expect(legend.shadowRoot!.elementFromPoint(x, y)?.closest('.view-button')).toBe(view);
+    }
+    await userEvent.unhover(part(legend, LEGEND_VALUES.OTHER, '.legend-item-main'));
+  });
+
+  it('at 240 px "Other · 2 categories" fits beside a short count', async () => {
+    const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
+    legend.style.width = '240px';
+    await settle(legend);
+    await settle(legend);
+    const text = part(legend, LEGEND_VALUES.OTHER, '.legend-text');
+    expect(text.textContent).toMatch(/2 categories/);
+    expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
   });
 
   it('the actions are transparent at rest and opaque on hover and focus-within, and never move the label', async () => {
