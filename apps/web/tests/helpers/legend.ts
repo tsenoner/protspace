@@ -97,3 +97,34 @@ export async function isLegendItemHidden(page: Page, value: string): Promise<boo
   if ((await main.count()) === 0) return false;
   return (await main.first().getAttribute('aria-pressed')) === 'false';
 }
+
+type LegendSortChoice = 'By count' | 'By name' | 'By value' | 'By separation' | 'Your order';
+
+/** The header's sort button; its name reads "Sort: {active order}". */
+export function legendSortButton(page: Page): Locator {
+  return legend(page).getByRole('button', { name: /^Sort: / });
+}
+
+/** The active order as the sort button names it, e.g. "By count, largest first". */
+export async function legendSortLabel(page: Page): Promise<string> {
+  const name = (await legendSortButton(page).getAttribute('aria-label')) ?? '';
+  return name.replace(/^Sort: /, '');
+}
+
+/** Picks an order from the header's sort menu and waits until the button shows it. */
+export async function setLegendSort(page: Page, choice: LegendSortChoice): Promise<void> {
+  await legendSortButton(page).click();
+  await legend(page).getByRole('menuitemradio', { name: choice, exact: true }).click();
+  await expect(legendSortButton(page)).toHaveAccessibleName(new RegExp(`^Sort: ${choice}`));
+}
+
+/** Runs "Reverse order" from the sort menu, closes the menu and waits for the order to flip. */
+export async function toggleLegendReverse(page: Page): Promise<void> {
+  const before = await legendSortLabel(page);
+  await legendSortButton(page).click();
+  await legend(page).getByRole('menuitemcheckbox', { name: 'Reverse order' }).click();
+  // A checkbox item keeps the menu open.
+  await page.keyboard.press('Escape');
+  await expect(legend(page).getByRole('menu', { name: 'Sort legend' })).toHaveCount(0);
+  await expect.poll(() => legendSortLabel(page)).not.toBe(before);
+}

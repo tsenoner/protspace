@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LitElement } from 'lit';
 import './legend';
 import { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS } from './config';
@@ -57,9 +58,11 @@ describe('legend public API', () => {
     const legend = await mount();
     const onCustomize = vi.fn();
     legend.addEventListener(LEGEND_EVENTS.CUSTOMIZE, onCustomize);
-    legend
-      .shadowRoot!.querySelector<HTMLButtonElement>('button[aria-label="Legend settings"]')!
-      .click();
+    const settings = legend.shadowRoot!.querySelector<LitElement>(
+      'ps-icon-button.settings-button',
+    )!;
+    await settings.updateComplete;
+    settings.shadowRoot!.querySelector('button')!.click();
     await settleLegend(legend);
     expect(onCustomize).toHaveBeenCalledOnce();
   });

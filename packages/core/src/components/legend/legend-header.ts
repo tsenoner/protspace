@@ -1,98 +1,173 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
+import '../kit/button';
+import '../kit/menu';
+import '../kit/tooltip';
+import { icon, type IconName } from '../kit/icon';
 import type { LegendSortMode } from './types';
 
-/** What the header shows. */
-export interface LegendHeaderView {
-  /** The annotation's display name, or "Legend" with no annotation. */
+/** What the legend header shows (design decision 12). */
+export interface LegendHeaderModel {
+  /** The annotation's display name, never its key. */
   title: string;
-  /** A predicted annotation: shows the badge and the note line. */
   predicted: boolean;
-  /** The annotation's documentation popover, when it has any. */
+  /** The annotation's info popover, when it has docs. */
   info?: TemplateResult;
-  /** The reverse button's accessible name, from `legendReverseLabel`. */
-  reverseLabel: string;
+  sortMode: LegendSortMode;
+  isNumeric: boolean;
+  hasScores: boolean;
+  /** More than one row. With one there is nothing to order, and the sort button hides. */
+  canSort: boolean;
 }
 
-/** What the header's buttons do. */
-export interface LegendHeaderActions {
-  onReverse(): void;
-  onCustomize(): void;
+export interface LegendHeaderHandlers {
+  onSortMenu(anchor: HTMLElement): void;
+  onSettings(anchor: HTMLElement): void;
+  onTitlePointerEnter(e: PointerEvent): void;
 }
 
-const PREDICTED_NOTE = 'Computationally predicted, not experimentally curated.';
+export interface SortMenuModel {
+  open: boolean;
+  anchor: HTMLElement | null;
+  sortMode: LegendSortMode;
+  isNumeric: boolean;
+  hasScores: boolean;
+}
+
+const SORT_LABELS: Record<LegendSortMode, string> = {
+  'size-desc': 'By count, largest first',
+  'size-asc': 'By count, smallest first',
+  'alpha-asc': 'By name, A to Z',
+  'alpha-desc': 'By name, Z to A',
+  manual: 'Your order',
+  'manual-reverse': 'Your order, reversed',
+  'silhouette-desc': 'By separation, best first',
+  'silhouette-asc': 'By separation, worst first',
+};
+
+const SORT_ICONS: Record<LegendSortMode, IconName> = {
+  'size-desc': 'arrow-down-wide-narrow',
+  'size-asc': 'arrow-down-narrow-wide',
+  'alpha-asc': 'arrow-down-a-z',
+  'alpha-desc': 'arrow-down-z-a',
+  manual: 'arrow-up-down',
+  'manual-reverse': 'arrow-up-down',
+  'silhouette-desc': 'arrow-down-wide-narrow',
+  'silhouette-asc': 'arrow-down-narrow-wide',
+};
+
+const PREDICTED_NOTE = 'Predicted: computational, not experimentally curated';
+
+/** The active order in words: the sort button's name and tooltip ("Sort: By count, largest first"). */
+export function sortLabel(mode: LegendSortMode, isNumeric: boolean): string {
+  if (isNumeric && mode === 'alpha-asc') return 'By value, low to high';
+  if (isNumeric && mode === 'alpha-desc') return 'By value, high to low';
+  return SORT_LABELS[mode];
+}
+
+/** The sort button's icon: it shows the active order, largest or best first pointing down-wide. */
+export function sortIcon(mode: LegendSortMode, isNumeric: boolean): IconName {
+  if (isNumeric && mode === 'alpha-asc') return 'arrow-down-0-1';
+  if (isNumeric && mode === 'alpha-desc') return 'arrow-down-1-0';
+  return SORT_ICONS[mode];
+}
+
+/** The radio a mode checks: the mode with its direction dropped. */
+function sortBase(mode: LegendSortMode): LegendSortMode {
+  if (mode.startsWith('size')) return 'size-desc';
+  if (mode.startsWith('alpha')) return 'alpha-asc';
+  if (mode.startsWith('silhouette')) return 'silhouette-desc';
+  return 'manual';
+}
+
+/** "Reverse order" is checked when the mode runs against its base's direction. */
+function isReversed(mode: LegendSortMode): boolean {
+  return (
+    mode === 'size-asc' ||
+    mode === 'alpha-desc' ||
+    mode === 'manual-reverse' ||
+    mode === 'silhouette-asc'
+  );
+}
 
 /**
- * The reverse button's name. A categorical legend reverses its rows and keeps Other last; a
- * numeric one flips between low-to-high and high-to-low, or reverses a manual order.
- */
-export function legendReverseLabel(isNumeric: boolean, sortMode: LegendSortMode): string {
-  if (!isNumeric) return 'Reverse z-order (keep Other last)';
-  if (sortMode.startsWith('manual')) return 'Reverse manual order';
-  return sortMode === 'alpha-desc' ? 'Show low to high' : 'Show high to low';
-}
-
-/**
- * The legend header: title, the "⚡ Predicted" badge and the info popover, then the reverse and
- * settings buttons; a predicted annotation adds a note line beneath the header.
+ * The 44 px legend header: title, predicted mark, info, then sort and settings. The title is
+ * one line ending in an ellipsis; the legend's shared name tooltip shows it in full.
  */
 export function renderLegendHeader(
-  view: LegendHeaderView,
-  actions: LegendHeaderActions,
+  model: LegendHeaderModel,
+  handlers: LegendHeaderHandlers,
 ): TemplateResult {
-  return html`
-    <div class="legend-header" part="header">
-      <div class="legend-title-row">
-        <h3 class="legend-title">${view.title}</h3>
-        ${view.predicted
-          ? html`<span
-              class="legend-predicted-badge"
-              title="Computationally predicted, not experimentally curated"
-              >⚡ Predicted</span
-            >`
-          : nothing}
-        ${view.info ?? nothing}
-      </div>
-      <div class="legend-header-actions">
-        <button
-          class="btn-icon customize-button reverse-button"
-          title=${view.reverseLabel}
-          aria-label=${view.reverseLabel}
-          @click=${actions.onReverse}
-        >
-          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M7 16V4m0 0L3 8m4-4l4 4m6-2v12m0 0l4-4m-4 4l-4-4"
-            />
-          </svg>
-        </button>
-        <button
-          class="btn-icon customize-button"
-          title="Legend settings"
-          aria-label="Legend settings"
-          @click=${actions.onCustomize}
-        >
-          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            />
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-          </svg>
-        </button>
-      </div>
-    </div>
-    ${view.predicted
-      ? html`<p class="legend-predicted-note" part="predicted-note">${PREDICTED_NOTE}</p>`
+  const sortName = `Sort: ${sortLabel(model.sortMode, model.isNumeric)}`;
+  // aria-haspopup and aria-expanded are static: the sort menu exists only while open, and
+  // ps-menu records these closed-state values when it mounts and restores them when it goes.
+  return html`<div class="legend-header" part="header">
+    <h3 class="legend-title" @pointerenter=${handlers.onTitlePointerEnter}>${model.title}</h3>
+    ${model.predicted
+      ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
+            >${icon('sparkles', 14)}</span
+          ><ps-tooltip text=${PREDICTED_NOTE}></ps-tooltip>`
       : nothing}
-  `;
+    ${model.info ?? nothing}
+    <span class="legend-header-spacer"></span>
+    <ps-icon-button
+      class="sort-button"
+      icon=${sortIcon(model.sortMode, model.isNumeric)}
+      label=${sortName}
+      size="sm"
+      aria-haspopup="menu"
+      aria-expanded="false"
+      ?hidden=${!model.canSort}
+      @click=${(e: Event) => handlers.onSortMenu(e.currentTarget as HTMLElement)}
+    ></ps-icon-button>
+    <ps-icon-button
+      class="settings-button"
+      icon="sliders-horizontal"
+      label="Legend settings"
+      size="sm"
+      @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
+    ></ps-icon-button>
+  </div>`;
+}
+
+/**
+ * The sort menu, rendered only while open. A radio pick applies its order; "Reverse order" is a
+ * checkbox, so the menu stays open and shows the new direction.
+ */
+export function renderSortMenu(
+  model: SortMenuModel,
+  handlers: { onPick(mode: LegendSortMode): void; onReverse(): void; onClose(): void },
+): TemplateResult {
+  if (!model.open || !model.anchor) return html``;
+  const base = sortBase(model.sortMode);
+  const showSeparation = !model.isNumeric && (model.hasScores || base === 'silhouette-desc');
+  const radio = (value: LegendSortMode, label: string) =>
+    html`<ps-menu-item type="radio" value=${value} .checked=${live(base === value)}
+      >${label}</ps-menu-item
+    >`;
+  const onSelect = (e: Event) => {
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === 'reverse') handlers.onReverse();
+    // A re-pick of the checked radio keeps the order, direction included (phase 2 ruling M1).
+    else if (value !== base) handlers.onPick(value as LegendSortMode);
+  };
+  return html`<ps-menu
+    class="sort-menu"
+    label="Sort legend"
+    placement="bottom-end"
+    .anchor=${model.anchor}
+    .open=${true}
+    @ps-select=${onSelect}
+    @ps-close=${handlers.onClose}
+  >
+    <ps-menu-group label="Sort by">
+      ${model.isNumeric ? nothing : radio('size-desc', 'By count')}
+      ${radio('alpha-asc', model.isNumeric ? 'By value' : 'By name')}
+      ${showSeparation ? radio('silhouette-desc', 'By separation') : nothing}
+      ${radio('manual', 'Your order')}
+    </ps-menu-group>
+    <ps-menu-item type="checkbox" value="reverse" .checked=${live(isReversed(model.sortMode))}
+      >Reverse order</ps-menu-item
+    >
+  </ps-menu>`;
 }

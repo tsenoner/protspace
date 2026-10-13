@@ -37,8 +37,9 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 | Module                   | Holds                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `legend.ts`              | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions                                           |
-| `legend-header.ts`       | The header template                                                                                                                       |
+| `legend-header.ts`       | The header template, the sort button's label and icon, and the sort menu                                                                  |
 | `legend-row.ts`          | The legend symbol and the row template                                                                                                    |
+| `legend-row-menu.ts`     | `LegendRowMenu`: the one "⋯" menu every row shares                                                                                        |
 | `legend-list.ts`         | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip` |
 | `legend-score-strips.ts` | Score-strip points and the strips section                                                                                                 |
 | `legend-eat-controls.ts` | `EatReliabilityController` and the EAT section                                                                                            |

@@ -10,6 +10,7 @@ import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
   applyPaletteColors,
+  displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
@@ -181,6 +182,14 @@ describe('reverseKeepingOtherLast', () => {
 
   it('reverses a legend without Other', () => {
     expect(values(reverseKeepingOtherLast([item('A', 0), item('B', 1)]))).toEqual(['B', 'A']);
+  });
+});
+
+describe('displayedOrder', () => {
+  it('lists the rows as shown, leaving out Other, and N/A only for a numeric legend', () => {
+    const shown = [item('B', 2), item(NA_VALUE, 0), item('A', 1), item(OTHER, 3)];
+    expect(displayedOrder(shown, false)).toEqual(['B', NA_VALUE, 'A']);
+    expect(displayedOrder(shown, true)).toEqual(['B', 'A']);
   });
 });
 

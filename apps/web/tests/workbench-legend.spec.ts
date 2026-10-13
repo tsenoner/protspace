@@ -8,8 +8,13 @@ import {
   legendRow,
   legendRowAction,
   legendRowValues,
+  legendSortButton,
+  setLegendSort,
 } from './helpers/legend';
 import { seedLayout } from './helpers/workbench';
+
+const byName = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 test.describe('workbench legend', () => {
   test('legend rows are 28 px with their actions hidden until hover', async ({ page }) => {
@@ -82,5 +87,33 @@ test.describe('workbench legend', () => {
     await expect(legendRow(page, longest.value)).toHaveAccessibleName(
       new RegExp(`^${escapeRegex(longest.label)}: `),
     );
+  });
+
+  test('the header shows the display name and the active sort; picking By name reorders the list and stores it', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    // 'order' is a plain Taxonomy annotation with no stored order in the demo bundle.
+    await selectAnnotation(page, 'order');
+    await expect(legend(page).locator('.legend-title')).toHaveText('Order');
+    await expect(legendSortButton(page)).toHaveAccessibleName('Sort: By count, largest first');
+
+    await setLegendSort(page, 'By name');
+    const named = (await legendRowValues(page)).filter(
+      (value) => value !== 'Other' && value !== '__NA__',
+    );
+    expect(named.length).toBeGreaterThan(1);
+    expect(named).toEqual([...named].sort(byName));
+    // Stored at once under the same key. (A reload of the demo would clear it: a default load
+    // resets stored settings in dataset-controller.ts. Task 3.13 checks the reload on a user import.)
+    const stored = await page.evaluate(() =>
+      Object.keys(localStorage)
+        .filter((key) => /^protspace:legend:[^:]+:order$/.test(key))
+        .map(
+          (key) =>
+            (JSON.parse(localStorage.getItem(key) ?? 'null') as { sortMode?: string })?.sortMode,
+        ),
+    );
+    expect(stored).toEqual(['alpha-asc']);
   });
 });

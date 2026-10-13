@@ -192,6 +192,12 @@ Category filtering and color mapping with automatic settings persistence.
 
 `scatterplot-selector`, `auto-sync`, `auto-hide`.
 
+### CSS parts
+
+`container`, `header`, `items`, `item`, `symbol`, `text`, `count` and `empty`. The
+`predicted-note` part is gone: a predicted annotation shows a sparkles icon in the header, with
+its note in the icon's tooltip.
+
 ### Events
 
 | Event                        | Detail                                                    | Description                           |

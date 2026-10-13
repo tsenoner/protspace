@@ -1,6 +1,13 @@
 import type { TemplateResult } from 'lit';
 import { html, unsafeStatic } from 'lit/static-html.js';
 import {
+  ArrowDown01,
+  ArrowDown10,
+  ArrowDownAZ,
+  ArrowDownNarrowWide,
+  ArrowDownWideNarrow,
+  ArrowDownZA,
+  ArrowUpDown,
   Box,
   Check,
   ChevronDown,
@@ -21,6 +28,8 @@ import {
   PanelRightOpen,
   PictureInPicture2,
   Search,
+  SlidersHorizontal,
+  Sparkles,
   SquareDashed,
   SquarePen,
   Target,
@@ -31,6 +40,13 @@ import {
 
 // The curated set. Each phase adds the icons it first needs; explicit imports keep the bundle to them.
 const ICONS = {
+  'arrow-down-0-1': ArrowDown01,
+  'arrow-down-1-0': ArrowDown10,
+  'arrow-down-a-z': ArrowDownAZ,
+  'arrow-down-narrow-wide': ArrowDownNarrowWide,
+  'arrow-down-wide-narrow': ArrowDownWideNarrow,
+  'arrow-down-z-a': ArrowDownZA,
+  'arrow-up-down': ArrowUpDown,
   box: Box,
   check: Check,
   'chevron-down': ChevronDown,
@@ -51,6 +67,8 @@ const ICONS = {
   'panel-right-open': PanelRightOpen,
   'picture-in-picture-2': PictureInPicture2,
   search: Search,
+  'sliders-horizontal': SlidersHorizontal,
+  sparkles: Sparkles,
   'square-dashed': SquareDashed,
   'square-pen': SquarePen,
   target: Target,

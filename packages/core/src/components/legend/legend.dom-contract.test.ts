@@ -135,12 +135,15 @@ describe('legend DOM contract', () => {
     expect(empty.textContent!.trim()).toBe('No data available');
   });
 
-  it('adds the predicted-note part for a predicted annotation (Task 3.9 removes it)', async () => {
+  it('marks a predicted annotation with the predicted mark, not the predicted-note part', async () => {
     const legend = await mount(
       categoricalData({ yes: 3, no: 1 }, 'predicted_membrane'),
       'predicted_membrane',
     );
-    const note = legend.shadowRoot!.querySelector('[part="predicted-note"]')!;
-    expect(note.textContent!.trim()).toBe('Computationally predicted, not experimentally curated.');
+    const root = legend.shadowRoot!;
+    expect(root.querySelector('[part="predicted-note"]')).toBeNull();
+    expect(root.querySelector('.legend-predicted')?.getAttribute('aria-label')).toBe(
+      'Predicted annotation',
+    );
   });
 });

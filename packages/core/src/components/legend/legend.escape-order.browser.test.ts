@@ -175,9 +175,7 @@ describe('legend Escape order', () => {
       other: root.querySelector('#legend-other-dialog') !== null,
       settings: root.querySelector('#legend-settings-dialog') !== null,
     });
-    root
-      .querySelector<HTMLElement>('.settings-button, button[aria-label="Legend settings"]')!
-      .click();
+    root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
     await settle(legend);
     root.querySelector<HTMLButtonElement>('.legend-item-other .view-button')!.click();
     await settle(legend);
@@ -229,10 +227,7 @@ describe('legend Escape order', () => {
     await settle(legend);
     expect(root.querySelector('#legend-other-dialog')).toBeNull();
 
-    // Today's header button, or 3.9's ps-icon-button: both are named "Legend settings".
-    root
-      .querySelector<HTMLElement>('.settings-button, button[aria-label="Legend settings"]')!
-      .click();
+    root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
     await settle(legend);
     expect(root.querySelector('#legend-settings-dialog')).not.toBeNull();
     await userEvent.keyboard('{Escape}');

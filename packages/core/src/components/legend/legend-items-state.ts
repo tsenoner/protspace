@@ -119,6 +119,16 @@ export function reorderByValues(
   return reordered;
 }
 
+/**
+ * The order on screen, which "Your order" starts from: the displayed rows' values without Other,
+ * and for a numeric legend without N/A too (both have no position of their own).
+ */
+export function displayedOrder(sorted: readonly LegendItem[], isNumeric: boolean): string[] {
+  return sorted
+    .map((each) => each.value)
+    .filter((value) => (isNumeric ? !isSpecial(value) : value !== LEGEND_VALUES.OTHER));
+}
+
 /** A categorical palette over the rows by position; Other and N/A keep their fixed colours. */
 export function applyPaletteColors(items: readonly LegendItem[], paletteId: string): LegendItem[] {
   const palette = COLOR_SCHEMES[paletteId as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.kellys;

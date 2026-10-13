@@ -11,7 +11,13 @@ import {
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
-import { escapeRegex } from './helpers/legend';
+import {
+  escapeRegex,
+  legendSortButton,
+  legendSortLabel,
+  setLegendSort,
+  toggleLegendReverse,
+} from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -332,7 +338,6 @@ async function readLegendSettingsDialog(page: Page) {
     const sortingSection = root?.querySelector(
       '#legend-sorting-section-title',
     ) as HTMLElement | null;
-    const reverseButton = root?.querySelector('button.reverse-button') as HTMLButtonElement | null;
     const maxVisibleLabel = (root?.querySelector('#max-visible-input') as HTMLInputElement | null)
       ?.closest('.other-items-list-item')
       ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
@@ -370,8 +375,6 @@ async function readLegendSettingsDialog(page: Page) {
       hasGradientPreview: Boolean(gradientBar),
       hasSortingSection: Boolean(sortingSection),
       sortingSectionTitle: sortingSection?.textContent?.trim() ?? '',
-      hasReverseButton: Boolean(reverseButton),
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
       maxVisibleLabel: maxVisibleLabel?.textContent?.trim() ?? '',
       shapeSizeLabel: shapeSizeLabel?.textContent?.trim() ?? '',
       sortingLabels,
@@ -388,9 +391,6 @@ async function readLegendDisplay(page: Page) {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {
       shadowRoot: ShadowRoot;
     };
-    const reverseButton = legend?.shadowRoot?.querySelector(
-      'button.reverse-button',
-    ) as HTMLButtonElement | null;
     const items = Array.from(legend?.shadowRoot?.querySelectorAll('.legend-item') ?? []).map(
       (item) => {
         const element = item as HTMLElement;
@@ -405,15 +405,8 @@ async function readLegendDisplay(page: Page) {
         };
       },
     );
-    return {
-      items,
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
-    };
+    return { items };
   });
-}
-
-async function clickLegendReverseButton(page: Page): Promise<void> {
-  await page.locator('protspace-legend button.reverse-button').click();
 }
 
 // ─── Query-builder filter helpers ───────────────────────────────────────────
@@ -847,14 +840,6 @@ async function readCategoricalPreviewRows(page: Page): Promise<{
   });
 }
 
-async function setSortMode(page: Page, annotation: string, mode: 'size' | 'alpha' | 'manual') {
-  const legend = page.locator('protspace-legend');
-  const inputs = legend.locator(`input[name="sort-type-${annotation}"][type="radio"]`);
-  const count = await inputs.count();
-  const index = mode === 'size' ? 0 : mode === 'alpha' ? 1 : count - 1;
-  await inputs.nth(index).click();
-}
-
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
   const targets = await page.evaluate(() => {
     const plot = document.querySelector('protspace-scatterplot') as HTMLElement & {
@@ -1031,6 +1016,7 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
     })
     .toEqual({ rawKind: 'numeric', hasBins: true });
 
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
   await openLegendSettings(page);
   const initialDialog = await readLegendSettingsDialog(page);
   await expect(
@@ -1041,8 +1027,6 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   expect(initialDialog.distribution).toBe('quantile');
   expect(initialDialog.hasDistributionSelect).toBe(true);
   expect(initialDialog.hasSortingSection).toBe(true);
-  expect(initialDialog.hasReverseButton).toBe(true);
-  expect(initialDialog.reverseButtonLabel).toBe('Show high to low');
   expect(initialDialog.title).toBe('Legend settings: length');
   expect(initialDialog.maxVisibleLabel).toBe('Max legend items');
   expect(initialDialog.shapeSizeLabel).toBe('Point size');
@@ -1403,6 +1387,8 @@ test('categorical annotations do not expose gradient palettes or gradient previe
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
+  await expect(legendSortButton(page)).toBeVisible();
+  expect(await legendSortLabel(page)).not.toMatch(/^By value/);
   await openLegendSettings(page);
 
   const dialog = await readLegendSettingsDialog(page);
@@ -1412,8 +1398,6 @@ test('categorical annotations do not expose gradient palettes or gradient previe
   expect(dialog.hasGradientPreview).toBe(false);
   expect(dialog.hasDistributionSelect).toBe(false);
   expect(dialog.hasSortingSection).toBe(true);
-  expect(dialog.hasReverseButton).toBe(true);
-  expect(dialog.reverseButtonLabel).toBe('Reverse z-order (keep Other last)');
   expect(dialog.title).toBe('Legend settings: family');
   expect(dialog.maxVisibleLabel).toBe('Max legend items');
   expect(dialog.shapeSizeLabel).toBe('Shape size');
@@ -1671,9 +1655,9 @@ test('numeric header toggle reverses rendered bin order without changing color a
   await selectAnnotation(page, 'length');
 
   const initialLegend = await readLegendDisplay(page);
-  expect(initialLegend.reverseButtonLabel).toBe('Show high to low');
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   await page.waitForFunction((firstValue) => {
     const legend = document.querySelector('protspace-legend') as HTMLElement & {
@@ -1684,7 +1668,7 @@ test('numeric header toggle reverses rendered bin order without changing color a
   }, initialLegend.items[0]?.value ?? '');
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Show low to high');
+  expect(await legendSortLabel(page)).toBe('By value, high to low');
   expect(reversedLegend.items.map((item) => item.value)).toEqual(
     [...initialLegend.items.map((item) => item.value)].reverse(),
   );
@@ -1757,7 +1741,7 @@ test('categorical pointer drag from size-asc keeps Other fixed and promotes to m
 }) => {
   await loadDemoDataset(page);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
   const ascendingLegend = await readLegendDisplay(page);
   expect(ascendingLegend.items.at(-1)?.label.startsWith('Other')).toBe(true);
 
@@ -1780,11 +1764,8 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
   page,
 }) => {
   await loadDemoDataset(page);
-  await openLegendSettings(page);
-  await setSortMode(page, 'order', 'alpha');
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-  await clickLegendReverseButton(page);
+  await setLegendSort(page, 'By name');
+  await toggleLegendReverse(page);
 
   const reversedAlphaLegend = await readLegendDisplay(page);
   await dragLegendHandle(page, 0, 1);
@@ -1898,6 +1879,7 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   await selectAnnotation(page, 'length');
 
   const initialLegend = await readLegendDisplay(page);
+  expect(await legendSortLabel(page)).toBe('By value, low to high');
   await dragLegendHandle(page, 0, 1);
 
   await page.waitForFunction((previousFirstValue) => {
@@ -1909,7 +1891,6 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   }, initialLegend.items[0]?.value ?? '');
 
   const manuallyReorderedLegend = await readLegendDisplay(page);
-  expect(initialLegend.reverseButtonLabel).toBe('Show high to low');
 
   await openLegendSettings(page);
   const reorderedDialog = await readLegendSettingsDialog(page);
@@ -1917,14 +1898,14 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   await clickDialogButton(page, 'Cancel');
   await waitForDialogClosed(page);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual([...manuallyReorderedLegend.items.map((item) => item.value)].reverse());
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Reverse manual order');
+  expect(await legendSortLabel(page)).toBe('Your order, reversed');
   expect(Object.fromEntries(reversedLegend.items.map((item) => [item.value, item.color]))).toEqual(
     Object.fromEntries(manuallyReorderedLegend.items.map((item) => [item.value, item.color])),
   );
@@ -1933,10 +1914,10 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
 test('numeric pointer drag from high-to-low value order promotes to manual', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
 
   const reversedLegend = await readLegendDisplay(page);
-  expect(reversedLegend.reverseButtonLabel).toBe('Show low to high');
+  expect(await legendSortLabel(page)).toBe('By value, high to low');
   await dragLegendHandle(page, 0, 1);
 
   await expect
@@ -2144,10 +2125,7 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
   await selectAnnotation(page, 'length');
 
   const reloadedLegend = await readLegendDisplay(page);
-  await openLegendSettings(page);
-  await setSortMode(page, 'length', 'alpha');
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await setLegendSort(page, 'By value');
 
   const numericOrderLegend = await readLegendDisplay(page);
   expect(reloadedLegend.items.map((item) => item.label)).toEqual(
@@ -2177,7 +2155,7 @@ test('categorical manual reorder and reverse continue to work', async ({ page })
   await clickDialogButton(page, 'Cancel');
   await waitForDialogClosed(page);
 
-  await clickLegendReverseButton(page);
+  await toggleLegendReverse(page);
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual([...afterReorder.items.map((item) => item.value)].reverse());

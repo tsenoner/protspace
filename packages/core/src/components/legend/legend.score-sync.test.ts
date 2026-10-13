@@ -217,17 +217,9 @@ describe('legend score column', () => {
     // below cannot pass by coincidence.
     expect(rowOrder().indexOf('Viperidae')).toBeLessThan(rowOrder().indexOf('Elapidae'));
 
-    const internals = el as unknown as {
-      _dialogSettings: { annotationSortModes: Record<string, string> } & Record<string, unknown>;
-      _handleSettingsSave: () => void;
-    };
-    internals._dialogSettings = {
-      ...internals._dialogSettings,
-      annotationSortModes: { major_group: 'silhouette-desc' },
-    };
-    internals._handleSettingsSave();
-    // Same two-cycle wait as the click-toggle test above: _handleSettingsSave sets
-    // _legendItems; _sortedLegendItems only re-derives from it in the next updated().
+    (el as unknown as { _applySortMode(mode: string): void })._applySortMode('silhouette-desc');
+    // Same two-cycle wait as the click-toggle test above: _applySortMode sets _legendItems;
+    // _sortedLegendItems only re-derives from it in the next updated().
     await el.updateComplete;
     await el.updateComplete;
 

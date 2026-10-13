@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from 'lit';
+import { LitElement, html, type TemplateResult } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { perfCounters } from '../../utils/perf-counters';
@@ -39,7 +39,6 @@ import {
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
-import '../kit/menu';
 import { topLayer } from '../kit/layers';
 
 // Controllers
@@ -52,10 +51,11 @@ import {
   type LegendProcessorContext,
 } from './legend-data-processor';
 import {
-  legendReverseLabel,
   renderLegendHeader,
-  type LegendHeaderActions,
-  type LegendHeaderView,
+  renderSortMenu,
+  type LegendHeaderHandlers,
+  type LegendHeaderModel,
+  type SortMenuModel,
 } from './legend-header';
 import { renderLegendRow, type LegendRowHandlers, type LegendRowView } from './legend-row';
 import {
@@ -65,6 +65,7 @@ import {
   type LegendReorderSnapshot,
 } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
+import { LegendRowMenu } from './legend-row-menu';
 import {
   deriveStripPoints,
   EMPTY_STRIP_POINTS,
@@ -96,6 +97,7 @@ import {
   applyDerivedNumericColors,
   applyNumericDisplayLabels,
   applyPaletteColors,
+  displayedOrder,
   normalizeCategoricalPaletteId,
   normalizeSortModeForType,
   numericOrderFromItems,
@@ -198,17 +200,12 @@ export class ProtspaceLegend extends LitElement {
   @state() private _otherItems: OtherItem[] = [];
   @state() private _hiddenValues: string[] = [];
   @state() private _annotationSortModes: Record<string, LegendSortMode> = {};
+  /** The sort button while its menu is open (the menu's anchor); null when closed. */
+  @state() private _sortMenu: HTMLElement | null = null;
   @state() private _showOtherDialog = false;
   private _preIsolationVisibleValues: Set<string> = new Set();
   @state() private _showSettingsDialog = false;
   @state() private _statusMessage = '';
-  /** The row whose "⋯" menu is open, and the button it hangs from. */
-  @state() private _rowMenu: { value: string; anchor: HTMLElement } | null = null;
-  /**
-   * The row the menu last opened for. ps-menu closes itself (ps-close) before it dispatches
-   * ps-select, so the choice is read from here, not from `_rowMenu`.
-   */
-  private _rowMenuTarget: string | null = null;
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
@@ -385,6 +382,26 @@ export class ProtspaceLegend extends LitElement {
     onDropComplete: (value) => this._highlightDroppedItem(value),
   });
 
+  private _headerHandlers: LegendHeaderHandlers = {
+    onSortMenu: (anchor) => {
+      this._sortMenu = this._sortMenu ? null : anchor;
+    },
+    // 3.12 anchors the settings popover on the button; until then it opens the dialog.
+    onSettings: () => void this._handleCustomize(),
+    onTitlePointerEnter: (e) => {
+      const title = e.currentTarget as HTMLElement;
+      this._nameTooltip.hover(title, title);
+    },
+  };
+
+  private _sortMenuHandlers: Parameters<typeof renderSortMenu>[1] = {
+    onPick: (mode) => this._applySortMode(mode),
+    onReverse: () => this._toggleLegendOrderDirection(),
+    onClose: () => {
+      this._sortMenu = null;
+    },
+  };
+
   private _colorPicker = new ColorPickerController(this, {
     getItem: (value) => this._legendItems.find((item) => item.value === value),
     preview: (value, color) => this._previewColor(value, color),
@@ -414,6 +431,20 @@ export class ProtspaceLegend extends LitElement {
   });
 
   private _nameTooltip = new TruncatedNameTooltip(this);
+
+  private _rowMenu = new LegendRowMenu(this, {
+    getItems: () => this._legendItems,
+    isNumeric: () => this._isNumericAnnotation(),
+    isolate: (value) => this._handleItemDoubleClick(value),
+    customize: (value) => {
+      // Found by its dataset rather than a selector: a value can hold any character.
+      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
+        (each) => each.dataset.value === value,
+      );
+      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
+      if (row) this._colorPicker.open(value, row);
+    },
+  });
 
   private _eatControls = new EatReliabilityController(this, {
     getScatterplot: () => this._scatterplotController.scatterplot,
@@ -896,6 +927,7 @@ export class ProtspaceLegend extends LitElement {
 
     // Reset UI state
     this._showSettingsDialog = false;
+    this._sortMenu = null;
     this._showOtherDialog = false;
     this._selectedPaletteId = 'kellys';
     this._numericSettingsByAnnotation = {};
@@ -1665,6 +1697,27 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
+  /**
+   * Applies a sort-menu pick at once and stores it, as the settings dialog's Save applied an
+   * order. "Your order" starts from the order on screen, whatever sorted it.
+   */
+  private _applySortMode(mode: LegendSortMode): void {
+    const isNumeric = this._isCurrentAnnotationNumeric();
+    const next = normalizeSortModeForType(mode, isNumeric);
+    this._keyboard.clear();
+    if (next === 'manual' && !this._currentSortMode.startsWith('manual')) {
+      const shown = displayedOrder(this._sortedLegendItems, isNumeric);
+      if (isNumeric) this._setNumericManualOrderIds(this.selectedAnnotation, shown);
+      else this._legendItems = reorderByValues(this._legendItems, shown);
+    }
+    this._annotationSortModes = { ...this._annotationSortModes, [this.selectedAnnotation]: next };
+    this._updateLegendItems();
+    this._scatterplotController.syncNumericAnnotationSettings();
+    this._scatterplotController.dispatchZOrderChange();
+    this._persistenceController.saveSettings();
+    this._dispatchLegendStateChange();
+  }
+
   private _toggleLegendOrderDirection(): void {
     if (this._legendItems.length <= 1) return;
     this._clearKeyboardReorderState();
@@ -1984,26 +2037,21 @@ export class ProtspaceLegend extends LitElement {
     const predicted = activeName ? isPredictedAnnotation(activeName) : false;
     const meta = activeName ? getAnnotationMeta(activeName, activeAnnotation) : undefined;
     const hasDocs = !!meta && (meta.description.length > 0 || !!meta.docsUrl);
-    const header: LegendHeaderView = {
-      title,
-      predicted,
-      info:
-        meta && hasDocs
-          ? html`<protspace-info-popover
-              .description=${meta.description}
-              docs-url=${meta.docsUrl ?? ''}
-              label=${title}
-            ></protspace-info-popover>`
-          : undefined,
-      reverseLabel: legendReverseLabel(this._isNumericAnnotation(), this._currentSortMode),
-    };
+    const info =
+      meta && hasDocs
+        ? html`<protspace-info-popover
+            .description=${meta.description}
+            docs-url=${meta.docsUrl ?? ''}
+            label=${title}
+          ></protspace-info-popover>`
+        : undefined;
 
     return html`
       <div class="legend-container" part="container">
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
-        ${renderLegendHeader(header, this._headerActions)}
+        ${renderLegendHeader(this._headerModel(title, predicted, info), this._headerHandlers)}
         ${this._hasSelectedEatAnnotation()
           ? renderEatSection(this._eatControls, { counts: this._eatCounts })
           : ''}
@@ -2011,10 +2059,38 @@ export class ProtspaceLegend extends LitElement {
         ${renderLegendList(this._sortedLegendItems, (item, index) =>
           this._renderLegendItem(item, index),
         )}
-        ${this._colorPicker.render()} ${this._renderRowMenu()} ${this._nameTooltip.render()}
+        ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
+        ${this._renderSortMenu()}
       </div>
       ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
     `;
+  }
+
+  private _headerModel(
+    title: string,
+    predicted: boolean,
+    info: TemplateResult | undefined,
+  ): LegendHeaderModel {
+    return {
+      title,
+      predicted,
+      info,
+      sortMode: this._currentSortMode,
+      isNumeric: this._isNumericAnnotation(),
+      hasScores: this._categoryScores.length > 0,
+      canSort: this._legendItems.length > 1,
+    };
+  }
+
+  private _renderSortMenu() {
+    const model: SortMenuModel = {
+      open: this._sortMenu !== null,
+      anchor: this._sortMenu,
+      sortMode: this._currentSortMode,
+      isNumeric: this._isNumericAnnotation(),
+      hasScores: this._categoryScores.length > 0,
+    };
+    return renderSortMenu(model, this._sortMenuHandlers);
   }
 
   private _setHoveredCategory(category: string | null): void {
@@ -2025,12 +2101,6 @@ export class ProtspaceLegend extends LitElement {
     // if the scores go away mid-hover.
     this._hoveredCategory = this._categoryScores.length === 0 ? null : category;
   }
-
-  /** The header's buttons. Built once: their handlers never change. */
-  private _headerActions: LegendHeaderActions = {
-    onReverse: () => this._toggleLegendOrderDirection(),
-    onCustomize: () => this._handleCustomize(),
-  };
 
   /**
    * Strip geometry, derived in `willUpdate` rather than in render: it depends only on the legend
@@ -2056,6 +2126,8 @@ export class ProtspaceLegend extends LitElement {
   };
 
   protected willUpdate(changedProperties: Map<string, unknown>): void {
+    // One row has nothing to order: the sort button hides, so its menu closes too.
+    if (this._sortMenu && this._legendItems.length <= 1) this._sortMenu = null;
     // Derived before render, so a change to the items renders the rows once, in their new order.
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
       this._sortedLegendItems = sortItemsForDisplay(
@@ -2066,9 +2138,7 @@ export class ProtspaceLegend extends LitElement {
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
     // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
-    if (changedProperties.has('_sortedLegendItems') && this._rowMenu !== null) {
-      this._rowMenu = null;
-    }
+    if (changedProperties.has('_sortedLegendItems')) this._rowMenu.close();
   }
 
   private _renderScoreStrips() {
@@ -2115,7 +2185,7 @@ export class ProtspaceLegend extends LitElement {
         this._keyboard.focusValue = item.value;
       },
       onToggle: () => this._handleItemClick(item.value),
-      onMenu: (e: MouseEvent) => this._toggleRowMenu(item.value, e.currentTarget as HTMLElement),
+      onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => {
         e.stopPropagation();
         this._showOtherDialog = true;
@@ -2123,64 +2193,6 @@ export class ProtspaceLegend extends LitElement {
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
     };
     return renderLegendRow(item, view, handlers);
-  }
-
-  private _toggleRowMenu(value: string, anchor: HTMLElement): void {
-    if (this._rowMenu?.value === value) {
-      this._rowMenu = null;
-      return;
-    }
-    this._rowMenuTarget = value;
-    this._rowMenu = { value, anchor };
-  }
-
-  private _onRowMenuClose = (event: Event): void => {
-    event.stopPropagation();
-    this._rowMenu = null;
-  };
-
-  private _onRowMenuSelect = (event: CustomEvent<{ value: string }>): void => {
-    event.stopPropagation();
-    const value = this._rowMenuTarget;
-    this._rowMenu = null;
-    if (value === null) return;
-    if (event.detail.value === 'isolate') {
-      this._handleItemDoubleClick(value);
-    } else if (event.detail.value === 'customize') {
-      // Found by its dataset rather than a selector: a value can hold any character.
-      const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
-        (each) => each.dataset.value === value,
-      );
-      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
-      if (row) this._colorPicker.open(value, row);
-    }
-  };
-
-  /** The one "⋯" menu, shared by every row; it hangs from the row that opened it. */
-  private _renderRowMenu() {
-    const open = this._rowMenu;
-    const item = open ? this._legendItems.find((each) => each.value === open.value) : undefined;
-    const label = item ? (item.displayValue ?? toDisplayValue(item.value)) : '';
-    const onlyVisible =
-      !!item &&
-      item.isVisible &&
-      this._legendItems.every((each) => each.isVisible === (each.value === item.value));
-    const canCustomize =
-      !!item && item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation();
-    return html`<ps-menu
-      class="row-menu"
-      label=${item ? `Actions for ${label}` : 'Row actions'}
-      placement="bottom-end"
-      .anchor=${open?.anchor ?? null}
-      .open=${item !== undefined}
-      @ps-select=${this._onRowMenuSelect}
-      @ps-close=${this._onRowMenuClose}
-    >
-      <ps-menu-item value="isolate">${onlyVisible ? 'Show all' : 'Show only this'}</ps-menu-item>
-      ${canCustomize
-        ? html`<ps-menu-item value="customize">Colour and shape</ps-menu-item>`
-        : nothing}
-    </ps-menu>`;
   }
 
   private _renderOtherDialog() {
