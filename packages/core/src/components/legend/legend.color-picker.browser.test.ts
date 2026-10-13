@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import type { LegendPersistedSettings, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
@@ -19,6 +19,7 @@ beforeAll(async () => {
   await page.viewport(1280, 800);
 });
 afterEach(() => {
+  vi.useRealTimers();
   document.body.replaceChildren();
   localStorage.clear();
 });
@@ -177,7 +178,11 @@ describe('legend colour and shape picker', () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');
     const commits = colourCommits(plot);
+    // The commit delay must not run out while the pointer moves to B.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     inputColour(legend, '#ff0000');
+    // The colour is still waiting: opening B, not the timer, must land it.
+    expect(vi.getTimerCount()).toBe(1);
 
     await openPicker(legend, 'B');
 
@@ -185,7 +190,7 @@ describe('legend colour and shape picker', () => {
     expect(panel(legend).getAttribute('aria-label')).toBe('Colour and shape: B');
     expect(storedFamilyRecord().categories.A.color).toBe('#ff0000');
     expect(storedFamilyRecord().categories.B.color).not.toBe('#ff0000');
-    await pause(COLOR_COMMIT_DELAY_MS + 50);
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS + 50);
     expect(commits()).toBe(1);
   });
 
@@ -193,6 +198,8 @@ describe('legend colour and shape picker', () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');
     const commits = colourCommits(plot);
+    // The commit delay must not run out during the frames below.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     inputColour(legend, '#00ff00');
 
     // A synthetic click fires no pointerdown, so A's picker is not closed by an outside press:
@@ -200,6 +207,7 @@ describe('legend colour and shape picker', () => {
     more(legend, 'B').click();
     await settle(legend);
     expect(picker(legend).open).toBe(true);
+    // Fake timers only fire when advanced: the colour is still waiting, so open() must land it.
     expect(commits()).toBe(0);
     legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!.dispatchEvent(
       new CustomEvent('ps-select', {
@@ -214,7 +222,7 @@ describe('legend colour and shape picker', () => {
 
     expect(panel(legend).getAttribute('aria-label')).toBe('Colour and shape: B');
     expect(storedFamilyRecord().categories.A.color).toBe('#00ff00');
-    await pause(COLOR_COMMIT_DELAY_MS + 50);
+    vi.advanceTimersByTime(COLOR_COMMIT_DELAY_MS + 50);
     expect(commits()).toBe(1);
   });
 
