@@ -402,13 +402,24 @@ export interface SegmentSpec {
 
 /**
  * setup → settle → snapshot → act → settle → snapshot → reset → settle, with a pixel
- * round-trip check when asked. Real Playwright input happens inside `act`.
+ * round-trip check from before the setup to after the reset when asked. Real Playwright input
+ * happens inside `act`.
  */
 export async function segment(page: Page, spec: SegmentSpec): Promise<SegmentResult> {
   const settleSegment = () => settle(page, spec.capMs);
+  // With a setup, the pixels to come back to are from before it: the reset returns the page to how
+  // the segment found it, and a setup may cover the plot (an open menu).
+  let restoreTo: Buffer | null = null;
+  if (spec.setup && spec.pixels) {
+    await settleSegment();
+    restoreTo = await plotPixels(page);
+  }
   await spec.setup?.();
   await settleSegment();
-  const pixelsBefore = spec.pixels ? await plotPixels(page) : null;
+  // Every pixel segment opens its timing window right after this screenshot, as the baselines did.
+  // Without it the window reads ~10 ms more busy time (annotation-switch at 573K: 79 vs 69).
+  const shot = spec.pixels ? await plotPixels(page) : null;
+  const pixelsBefore = restoreTo ?? shot;
   const before = await readSnapshot(page, !!spec.timing);
   const closeTiming = spec.timing ? await openTimingWindow(page, spec.timing, spec.frames) : null;
 
