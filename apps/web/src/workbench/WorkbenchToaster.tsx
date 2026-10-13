@@ -27,7 +27,7 @@ export function WorkbenchToaster() {
       theme="light"
       offset={{ bottom: 12 }}
       style={TOASTER_STYLE}
-      toastOptions={{ closeButtonAriaLabel: 'Dismiss notification', className: 'wb-toast' }}
+      toastOptions={{ closeButtonAriaLabel: 'Dismiss notification' }}
     />
   );
 }

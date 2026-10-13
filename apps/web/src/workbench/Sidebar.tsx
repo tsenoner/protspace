@@ -14,7 +14,8 @@ interface SidebarProps {
  * The flush right sidebar (design decisions 2 and 14): the legend or the Filter panel, above the
  * structure section that StructurePanel renders as the aside's sibling, so placing the structure
  * never moves either element. Memoised: it re-renders only when the sidebar becomes inert or
- * interactive again, and the legend and the query builder are never re-created or moved. The ref is the slide's target (use-sidebar-transition).
+ * interactive again, and the legend and the query builder are never re-created or moved. The ref
+ * is the slide's target (use-sidebar-transition).
  */
 export const Sidebar = memo(function Sidebar({ ref, inert }: SidebarProps) {
   return (

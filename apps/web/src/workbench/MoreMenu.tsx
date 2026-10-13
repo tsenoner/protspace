@@ -20,7 +20,8 @@ const FILTER_VALUE = 'filter';
  * The view bar's More menu (design decision 1): from stage 2 it offers the contour modes, at
  * stage 3 Filter too. A pick goes through the inline control, which stays mounted while hidden:
  * the contours menu's pick() (shown at once, applied after the paint; re-picking the mode on
- * screen applies nothing) or a click on the Filter button, which opens the sidebar's Filter panel. A dot marks an active item inside.
+ * screen applies nothing) or a click on the Filter button, which opens the sidebar's Filter
+ * panel. A dot marks an active item inside.
  */
 export function MoreMenu({ stage }: { stage: ViewBarStage }) {
   const trigger = useRef<HTMLElement>(null);

@@ -2,8 +2,8 @@ import { memo, type Ref } from 'react';
 
 /**
  * The plot, its tool strip in the top-left corner, the status corner at the bottom-left and the
- * selection bar at the bottom-centre, in that order so Tab reads left to right. Memoised, with a stable ref as its only prop, so the
- * scatterplot renders once and is never re-created.
+ * selection bar at the bottom-centre, in that order so Tab reads left to right. Memoised, with a
+ * stable ref as its only prop, so the scatterplot renders once and is never re-created.
  */
 export const PlotArea = memo(function PlotArea({ ref }: { ref?: Ref<HTMLElement> }) {
   return (

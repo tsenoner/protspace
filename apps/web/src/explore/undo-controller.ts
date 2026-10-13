@@ -101,7 +101,10 @@ export function createUndoController({
   return {
     undo,
     redo,
-    /** Undoes `entry` only while it is still the latest step: an Undo button never undoes a newer one. */
+    /**
+     * Undoes `entry` only while it is still the latest step: an Undo button never undoes a newer
+     * one.
+     */
     undoEntry(entry: UndoEntry): boolean {
       return history.peekUndo() === entry ? undo() : false;
     },
