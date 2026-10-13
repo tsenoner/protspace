@@ -582,7 +582,7 @@ test.describe('Unified app notifications', () => {
     });
 
     await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
+    await expect(page.getByText('Selection mode disabled: Only 1 protein remaining')).toBeVisible();
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
@@ -614,8 +614,9 @@ test.describe('Unified app notifications', () => {
 
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toContain('.parquetbundle');
-    await expect(page.getByText('Export ready.')).toBeVisible();
-    await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: 'Export ready.' });
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(/\.parquetbundle/i);
     expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 

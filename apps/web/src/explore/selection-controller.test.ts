@@ -399,7 +399,7 @@ describe('selection controller: plot events', () => {
     expect(m.notify.warning).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Selection mode disabled.',
-        description: 'Selection mode disabled: Only 1 point remaining',
+        description: 'Selection mode disabled: Only 1 protein remaining',
       }),
     );
 
