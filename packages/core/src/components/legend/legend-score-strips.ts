@@ -7,6 +7,9 @@ import type { LegendItem } from './types';
 /** A scored category grouped under Other has no row colour; its dot is grey. */
 const OTHER_POINT_COLOR = '#888';
 
+/** Silhouette's fixed axis. One array, so the strip's `.domain` binding does not change per render. */
+const SILHOUETTE_DOMAIN: [number, number] = [-1, 1];
+
 /** The dots of both strips and the Davies-Bouldin axis. */
 export interface StripPoints {
   silhouette: ScoreStripPoint[];
@@ -155,7 +158,7 @@ export function renderScoreStrips(
       @strip-click=${(event: CustomEvent<{ category: string }>) =>
         handlers.onToggle(event.detail.category)}
     >
-      ${renderScoreStrip('silhouette', silhouette, [-1, 1], view.highlighted)}
+      ${renderScoreStrip('silhouette', silhouette, SILHOUETTE_DOMAIN, view.highlighted)}
       ${daviesBouldin.length > 0
         ? renderScoreStrip('davies_bouldin', daviesBouldin, daviesBouldinDomain, view.highlighted)
         : nothing}

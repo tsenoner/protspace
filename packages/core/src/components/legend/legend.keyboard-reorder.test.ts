@@ -72,6 +72,11 @@ describe('legend keyboard reorder', () => {
     expect(onZOrder).toHaveBeenCalledOnce();
     // Task 3.6 changes this line to the display name.
     expect(status(legend)).toBe('Moved B. Switched family to Manual order.');
+
+    // The switch to manual order is announced once, not on every later move.
+    handleKey(legend, 'B', 'ArrowDown');
+    await settle(legend);
+    expect(status(legend)).toBe('Moved B.');
   });
 
   it('restores the order and the sort mode on Escape and announces it', async () => {
@@ -87,6 +92,27 @@ describe('legend keyboard reorder', () => {
     expect(order(legend).slice(0, 4)).toEqual(['__NA__', 'A', 'B', 'C']);
     expect(sortMode(legend)).toBe('size-desc');
     expect(status(legend)).toBe('Reordering canceled.');
+  });
+
+  it("puts focus back on the picked row's handle after Escape", async () => {
+    const { legend } = await setup();
+    const handle = (v: string) =>
+      legend.shadowRoot!.querySelector<HTMLElement>(
+        `.legend-item[data-value="${v}"] .drag-handle`,
+      )!;
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    handle('B').focus();
+    handleKey(legend, 'B', ' ');
+    await settle(legend);
+    handleKey(legend, 'B', 'ArrowDown');
+    await settle(legend);
+    await frame();
+    expect(legend.shadowRoot!.activeElement).toBe(handle('B'));
+
+    handleKey(legend, 'B', 'Escape');
+    await settle(legend);
+    await frame();
+    expect(legend.shadowRoot!.activeElement).toBe(handle('B'));
   });
 
   it('drops the row where it is on Enter and announces it', async () => {

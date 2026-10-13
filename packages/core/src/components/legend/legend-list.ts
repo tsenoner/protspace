@@ -129,7 +129,6 @@ export class LegendKeyboardController implements ReactiveController {
         if (this._picked === item.value) {
           e.preventDefault();
           this.cancel();
-          requestAnimationFrame(() => this.focusHandle(item.value));
         }
         break;
       case 'ArrowUp':
@@ -144,11 +143,14 @@ export class LegendKeyboardController implements ReactiveController {
 
   /** Puts a picked-up row back where it started. False when no row is picked up. */
   cancel(): boolean {
-    if (this._picked === null) return false;
+    const picked = this._picked;
+    if (picked === null) return false;
     const snapshot = this._snapshot;
     if (snapshot) this.options.restore(snapshot);
     this.clear();
     this.options.announce('Reordering canceled.');
+    // The restore re-renders the rows by index, so the focused handle now belongs to another row.
+    requestAnimationFrame(() => this.focusHandle(picked));
     return true;
   }
 

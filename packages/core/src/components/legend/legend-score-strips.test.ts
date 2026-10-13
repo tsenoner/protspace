@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
+import { render } from 'lit';
 import type { CategoryScore } from '@protspace/utils';
-import { deriveStripPoints, EMPTY_STRIP_POINTS } from './legend-score-strips';
+import {
+  deriveStripPoints,
+  EMPTY_STRIP_POINTS,
+  renderScoreStrips,
+  type ScoreStripsView,
+} from './legend-score-strips';
 import type { LegendItem } from './types';
 
 const item = (value: string, color: string): LegendItem => ({
@@ -57,5 +63,28 @@ describe('deriveStripPoints', () => {
     );
     expect(points.silhouette.map((point) => point.category)).toEqual(['B']);
     expect(points.daviesBouldin.map((point) => point.category)).toEqual(['A']);
+  });
+});
+
+describe('renderScoreStrips', () => {
+  it("keeps the silhouette strip's domain across renders, so a hover does not re-render it", () => {
+    const view: ScoreStripsView = {
+      hasScores: true,
+      filtered: false,
+      points: deriveStripPoints([item('A', '#ff0000')], [score('A', 0.2, null)]),
+      highlighted: null,
+      clusterCaveat: false,
+    };
+    const handlers = { onHover: () => {}, onToggle: () => {} };
+    const host = document.createElement('div');
+    render(renderScoreStrips(view, handlers), host);
+    const strip = host.querySelector('protspace-score-strip') as unknown as {
+      domain: [number, number];
+    };
+    const firstDomain = strip.domain;
+
+    render(renderScoreStrips({ ...view, highlighted: 'A' }, handlers), host);
+    expect(firstDomain).toEqual([-1, 1]);
+    expect(strip.domain).toBe(firstDomain);
   });
 });
