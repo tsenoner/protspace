@@ -498,10 +498,6 @@ export class ProtspaceScatterplot extends LitElement {
 
     this.addEventListener('legend-zorder-change', this._handleZOrderChange);
     this.addEventListener('legend-colormapping-change', this._handleColorMappingChange);
-    this.addEventListener('dragover', this.handleDragOver);
-    this.addEventListener('dragenter', this.handleDragEnter);
-    this.addEventListener('dragleave', this.handleDragLeave);
-    this.addEventListener('drop', this.handleDrop);
     // After the top layer and before the host's own fallbacks (the selection, the tool).
     this._releaseConnectorEscape ??= onEscapeFallback(ESCAPE_ORDER.connectors, () => {
       if (!this.hasActiveProvenanceConnectors()) return false;
@@ -555,10 +551,6 @@ export class ProtspaceScatterplot extends LitElement {
     super.disconnectedCallback();
     this.removeEventListener('legend-zorder-change', this._handleZOrderChange);
     this.removeEventListener('legend-colormapping-change', this._handleColorMappingChange);
-    this.removeEventListener('dragover', this.handleDragOver);
-    this.removeEventListener('dragenter', this.handleDragEnter);
-    this.removeEventListener('dragleave', this.handleDragLeave);
-    this.removeEventListener('drop', this.handleDrop);
     this._releaseConnectorEscape?.();
     this._releaseConnectorEscape = null;
     this._syncSpiderLayer(false);
@@ -571,37 +563,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._shiftDown = false;
     this._focusedValues = null;
   }
-
-  private handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = 'copy';
-    this.setAttribute('dragging', '');
-  };
-
-  private handleDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    this.setAttribute('dragging', '');
-  };
-
-  private handleDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    this.removeAttribute('dragging');
-  };
-
-  private handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    this.removeAttribute('dragging');
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      this.dispatchEvent(
-        new CustomEvent('file-dropped', {
-          detail: { file: files[0] },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  };
 
   private _handleZOrderChange = (event: Event) => {
     const { detail } = event as LegendZOrderChangeEvent;

@@ -14,6 +14,7 @@ import { PlotArea } from './PlotArea';
 import { Rail } from './Rail';
 import { Sidebar, SidebarEdge } from './Sidebar';
 import { StructurePanel } from './StructurePanel';
+import { useFileDrop } from './use-file-drop';
 import { useFloatingCard } from './use-floating-card';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
@@ -43,7 +44,7 @@ const getSidebarCap = () => clampSidebarToWindow(SIDEBAR_WIDTH.max, window.inner
 export function Workbench() {
   const layout = useLayout();
   const mode = useLayoutMode();
-  const { structureProteinId, appliedFilterConditions } = useWorkbenchStatus();
+  const { structureProteinId, appliedFilterConditions, datasetPhase } = useWorkbenchStatus();
   // The divider's drag or key preview; null while the stored fraction shows.
   const [legendFractionPreview, setLegendFractionPreview] = useState<number | null>(null);
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
@@ -70,6 +71,9 @@ export function Workbench() {
   useFloatingCard(structureRef, plotAreaRef);
   // On desktop a collapsed or collapsing sidebar is inert; below 951 px it always shows.
   const sidebarHidden = desktop && (phase === 'collapsed' || phase === 'closing');
+  // A file dragged anywhere over the workbench shows the drop area; a drop loads it.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dragging = useFileDrop(rootRef);
   return (
     <div
       className="workbench"
@@ -78,6 +82,10 @@ export function Workbench() {
       data-sidebar={phase}
       data-panel={layout.panel}
       data-sidebar-resizing={sidebarWidthPreview !== null ? '' : undefined}
+      ref={rootRef}
+      data-dragging={dragging ? '' : undefined}
+      // The loading overlay blocks the pointer; inert keeps Tab from reaching the bars behind it.
+      inert={datasetPhase === 'loading'}
     >
       <AppBar />
       <ViewBar />
@@ -133,6 +141,9 @@ export function Workbench() {
           toggleRef={railToggleRef}
           structureRef={structureRef}
         />
+        <div className="wb-drop-area" aria-hidden="true">
+          Drop to open this file
+        </div>
       </div>
       <protspace-data-loader id="myDataLoader"></protspace-data-loader>
     </div>

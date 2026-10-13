@@ -356,21 +356,39 @@ and options for the host to act on. See [Exporting](/explore/exporting).
 
 ## Drag and Drop Pattern
 
-The scatterplot re-emits dropped files as a bubbling `file-dropped` event, so you can handle drops
-without wiring DOM drag listeners yourself:
+::: warning BREAKING
+The scatterplot no longer handles drops or emits `file-dropped`, and the data loader's `allowDrop`
+(`allow-drop`) is gone. A drop belongs to the host page, which knows its own layout.
+:::
+
+Listen on the element that should accept a file, act only on drags that carry files, and load what
+is dropped:
 
 ```javascript
+const area = document.getElementById('app');
 const plot = document.getElementById('plot');
+const carriesFiles = (event) => [...event.dataTransfer.types].includes('Files');
 
-plot.addEventListener('file-dropped', async (e) => {
-  const file = e.detail.file;
-  if (!file.name.endsWith('.parquetbundle')) return;
+area.addEventListener('dragover', (event) => {
+  if (!carriesFiles(event)) return;
+  event.preventDefault(); // allows the drop
+  event.dataTransfer.dropEffect = 'copy';
+});
+
+area.addEventListener('drop', async (event) => {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (!file?.name.endsWith('.parquetbundle')) return;
 
   const arrayBuffer = await readFileOptimized(file);
   const { data } = await decodeParquetBundle(arrayBuffer);
   plot.data = data;
 });
 ```
+
+Checking for `Files` leaves text drags and in-page drags (the legend's row reordering) alone. The
+ProtSpace app does the same over its whole workbench and hands the file to its data loader.
 
 ## Loading from URL
 

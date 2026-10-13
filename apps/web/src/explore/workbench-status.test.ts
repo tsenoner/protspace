@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DENSITY_DEFAULT } from '@protspace/utils';
 import {
   createDatasetNamePublisher,
+  datasetPhaseFor,
   getWorkbenchStatus,
   resetWorkbenchStatusForTests,
   setWorkbenchStatus,
@@ -20,6 +21,7 @@ describe('workbench status', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
   });
 
@@ -36,6 +38,7 @@ describe('workbench status', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
@@ -74,6 +77,12 @@ describe('workbench status', () => {
     setWorkbenchStatus({ structureProteinId: 'P12345' });
     expect(getWorkbenchStatus().structureProteinId).toBe('P12345');
   });
+
+  it('datasetPhase starts at starting, so the empty state never flashes before startup ends', () => {
+    expect(getWorkbenchStatus().datasetPhase).toBe('starting');
+    setWorkbenchStatus({ datasetPhase: 'empty' });
+    expect(getWorkbenchStatus().datasetPhase).toBe('empty');
+  });
 });
 
 describe('createDatasetNamePublisher', () => {
@@ -90,6 +99,7 @@ describe('createDatasetNamePublisher', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
   });
 
@@ -107,6 +117,7 @@ describe('createDatasetNamePublisher', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
 
     data = ids(3);
@@ -117,6 +128,7 @@ describe('createDatasetNamePublisher', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
   });
 
@@ -138,6 +150,33 @@ describe('createDatasetNamePublisher', () => {
       appliedFilterConditions: 0,
       densityLayer: 'off',
       structureProteinId: null,
+      datasetPhase: 'starting',
     });
+  });
+});
+
+describe('datasetPhaseFor', () => {
+  it('is loading while the overlay shows, whatever is on screen', () => {
+    expect(datasetPhaseFor({ overlayShown: true, displayed: false, startupSettled: false })).toBe(
+      'loading',
+    );
+    expect(datasetPhaseFor({ overlayShown: true, displayed: true, startupSettled: true })).toBe(
+      'loading',
+    );
+  });
+
+  it('is ready with a dataset on screen and no overlay', () => {
+    expect(datasetPhaseFor({ overlayShown: false, displayed: true, startupSettled: false })).toBe(
+      'ready',
+    );
+  });
+
+  it('is starting until startup has ended, then empty with nothing on screen', () => {
+    expect(datasetPhaseFor({ overlayShown: false, displayed: false, startupSettled: false })).toBe(
+      'starting',
+    );
+    expect(datasetPhaseFor({ overlayShown: false, displayed: false, startupSettled: true })).toBe(
+      'empty',
+    );
   });
 });

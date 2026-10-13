@@ -205,7 +205,11 @@ async function queueUserLoads(
   );
 }
 
-async function dropBundleOnScatterplot(
+/**
+ * As the shell's drop handler hands a dropped file to the runtime: the drag itself is covered in
+ * Chromium by workbench-loading.spec.ts.
+ */
+async function dropBundleOnDataLoader(
   page: Page,
   filePath: string,
   fileName: string,
@@ -214,20 +218,19 @@ async function dropBundleOnScatterplot(
 
   await page.evaluate(
     async ({ byteValues, nextFileName }) => {
-      const plot = document.getElementById('myPlot');
       const loader = document.querySelector('protspace-data-loader') as
         | (Element & {
             addEventListener: EventTarget['addEventListener'];
           })
         | null;
 
-      if (!plot) {
-        throw new Error('ProtSpace scatterplot was not found');
+      if (!loader) {
+        throw new Error('ProtSpace data loader was not found');
       }
 
       await new Promise<void>((resolve, reject) => {
-        loader?.addEventListener('data-loaded', () => resolve(), { once: true });
-        loader?.addEventListener(
+        loader.addEventListener('data-loaded', () => resolve(), { once: true });
+        loader.addEventListener(
           'data-error',
           (event: Event) => {
             const detail = (event as CustomEvent<{ error?: string; message?: string }>).detail;
@@ -240,7 +243,7 @@ async function dropBundleOnScatterplot(
           type: 'application/octet-stream',
         });
 
-        plot.dispatchEvent(
+        loader.dispatchEvent(
           new CustomEvent('file-dropped', {
             detail: { file },
           }),
@@ -733,12 +736,12 @@ test.describe('URL-backed explore view state', () => {
   });
 
   test(
-    'scatterplot file-drop imports still flow through the runtime',
+    'a dropped file still flows through the runtime',
     { tag: '@cross-browser' },
     async ({ page }) => {
       await openExplore(page);
 
-      await dropBundleOnScatterplot(
+      await dropBundleOnDataLoader(
         page,
         RAW_NUMERIC_BUNDLE_FIXTURE_PATH,
         'raw_numeric_test.parquetbundle',

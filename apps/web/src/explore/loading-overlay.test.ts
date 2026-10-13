@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DOWNLOAD_SHARE,
+  LOADING_COPY,
   createLoadingOverlayController,
+  loadingCopyFor,
   progressAfterExampleDownload,
   type OverlayNote,
 } from './loading-overlay';
@@ -23,6 +25,41 @@ describe('progressAfterExampleDownload', () => {
   });
 });
 
+describe('loading copy', () => {
+  it('the copy picks the source kind', () => {
+    expect(loadingCopyFor({ kind: 'user', fileName: 'mine.parquetbundle' })).toEqual({
+      title: 'Reading your file in the browser',
+      detail: 'Reading mine.parquetbundle…',
+    });
+    expect(
+      loadingCopyFor({
+        kind: 'default',
+        example: { entry: { label: 'Swiss-Prot · 573K · 45 MB' } },
+      }),
+    ).toEqual({ title: 'Opening Swiss-Prot', detail: '' });
+    expect(loadingCopyFor({ kind: 'opfs', fileName: 'mine.parquetbundle' })).toEqual({
+      title: 'Reopening mine.parquetbundle from this browser',
+      detail: '',
+    });
+    // A load the app starts with no example and no name (the perf suite's) still says "browser".
+    expect(loadingCopyFor(null)).toEqual({ title: 'Reading your file in the browser', detail: '' });
+    for (const copy of [
+      loadingCopyFor({ kind: 'user', fileName: 'x' }),
+      loadingCopyFor({ kind: 'opfs', fileName: 'x' }),
+    ]) {
+      expect(`${copy.title} ${copy.detail}`).not.toMatch(/upload/i);
+    }
+  });
+
+  it('counts the proteins it draws', () => {
+    expect(LOADING_COPY.drawing(1)).toBe('Drawing 1 protein');
+    expect(LOADING_COPY.drawing(1500)).toBe('Drawing 1,500 proteins');
+    expect(LOADING_COPY.saving).toBe('Saving a copy in this browser');
+    expect(LOADING_COPY.fastaTitle).toBe('Preparing FASTA…');
+    expect(LOADING_COPY.fastaUploading).toBe('Uploading to the embedding server…');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Minimal fake DOM — avoids needing jsdom/happy-dom as a dependency.
 // The controller accepts a `doc` parameter so we pass this in instead of
@@ -32,12 +69,13 @@ describe('progressAfterExampleDownload', () => {
 interface FakeEl {
   _tag: string;
   id: string;
+  className: string;
   textContent: string;
   href: string;
   target: string;
   rel: string;
   type: string;
-  style: { cssText: string };
+  style: { cssText: string; width?: string };
   children: FakeEl[];
   _attrs: Record<string, string>;
   setAttribute(k: string, v: string): void;
@@ -53,6 +91,8 @@ interface FakeEl {
 }
 
 function makeDoc() {
+  let innerHtmlWrites = 0;
+
   function findById(root: FakeEl, id: string): FakeEl | null {
     if (root.id === id) return root;
     for (const child of root.children) {
@@ -75,6 +115,7 @@ function makeDoc() {
     const el: FakeEl = {
       _tag: tag,
       id: '',
+      className: '',
       textContent: '',
       href: '',
       target: '',
@@ -128,16 +169,9 @@ function makeDoc() {
       get innerHTML() {
         return '';
       },
-      set innerHTML(html: string) {
-        // Seed child elements from id attributes in the HTML template.
-        this.children = [];
-        const idRe = /id="([^"]+)"/g;
-        let m: RegExpExecArray | null;
-        while ((m = idRe.exec(html)) !== null) {
-          const child = createElement('div');
-          child.id = m[1];
-          this.children.push(child);
-        }
+      set innerHTML(_html: string) {
+        // The overlay must never parse a string as markup: count every attempt.
+        innerHtmlWrites++;
       },
     };
     return el;
@@ -153,6 +187,8 @@ function makeDoc() {
     },
     // expose body as FakeEl for test introspection
     _body: body,
+    _byId: (id: string) => findById(body, id),
+    innerHtmlWrites: () => innerHtmlWrites,
   };
 }
 
@@ -164,23 +200,78 @@ beforeEach(() => {
   doc = makeDoc();
 });
 
-afterEach(() => {
-  // nothing to clean up — new doc per test
+const getNoteEl = () => doc._byId('loading-note');
+
+function hasTag(root: FakeEl, tag: string): boolean {
+  return root._tag === tag || root.children.some((child) => hasTag(child, tag));
+}
+
+describe('loading-overlay rendering', () => {
+  it('builds the card from classes, with the ids the e2e reads', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 30, 'Reading mine.parquetbundle…', 'Reading your file in the browser');
+
+    const overlay = doc._byId('progressive-loading')!;
+    expect(overlay.className).toBe('ps-loading');
+    expect(overlay.getAttribute('role')).toBe('status');
+    expect(overlay.getAttribute('aria-live')).toBe('polite');
+    expect(overlay.getAttribute('aria-busy')).toBe('true');
+    expect(overlay.getAttribute('aria-label')).toBe(
+      'Reading your file in the browser. Reading mine.parquetbundle…',
+    );
+    // No inline styling: workbench.css styles the classes from tokens.
+    expect(overlay.style.cssText).toBe('');
+    const card = overlay.firstElementChild!;
+    expect(card.className).toBe('ps-loading__card');
+    expect(doc._byId('processing-text')!.className).toBe('ps-loading__title');
+    expect(doc._byId('processing-text')!.textContent).toBe('Reading your file in the browser');
+    expect(doc._byId('progress-text')!.className).toBe('ps-loading__detail');
+    expect(doc._byId('progress-text')!.textContent).toBe('Reading mine.parquetbundle…');
+    expect(doc._byId('progress-bar')!.className).toBe('ps-loading__fill');
+    expect(doc._byId('progress-bar')!.style.width).toBe('30%');
+    ctrl.dispose();
+  });
+
+  it('never sets innerHTML', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 10, 'msg', 'sub', { text: 'A note', href: 'https://example.com' });
+    ctrl.setCancelHandler(() => {}, 'Cancel download');
+    ctrl.update(true, 20, 'msg2', 'sub2');
+    expect(doc.innerHtmlWrites()).toBe(0);
+    ctrl.dispose();
+  });
+
+  it('a message with <img> stays text', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 10, '<img src=x onerror=alert(1)>', '<b>sub</b>');
+    expect(doc._byId('progress-text')!.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(doc._byId('processing-text')!.textContent).toBe('<b>sub</b>');
+    expect(hasTag(doc._body, 'img')).toBe(false);
+    expect(hasTag(doc._body, 'b')).toBe(false);
+    ctrl.dispose();
+  });
+
+  it('Cancel keeps its id and label', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 10, 'msg', 'sub');
+    ctrl.setCancelHandler(() => {}, 'Cancel download');
+    const button = doc._byId('progressive-loading-cancel')!;
+    expect(button._tag).toBe('button');
+    expect(button.type).toBe('button');
+    expect(button.className).toBe('ps-loading__cancel');
+    expect(button.textContent).toBe('Cancel download');
+    expect(button.style.cssText).toBe('');
+    ctrl.setCancelHandler(null);
+    expect(doc._byId('progressive-loading-cancel')).toBeNull();
+    ctrl.dispose();
+  });
 });
-
-function getNote() {
-  return doc.getElementById('loading-note');
-}
-
-function getNoteEl() {
-  return doc._body.children.flatMap((c) => c.children).find((c) => c.id === 'loading-note') ?? null;
-}
 
 describe('loading-overlay note rendering', () => {
   it('renders no #loading-note when update is called without a note arg', () => {
     const ctrl = createLoadingOverlayController(doc as unknown as Document);
     ctrl.update(true, 10, 'msg', 'sub');
-    expect(getNote()).toBeNull();
+    expect(getNoteEl()).toBeNull();
     ctrl.dispose();
   });
 
@@ -194,12 +285,14 @@ describe('loading-overlay note rendering', () => {
     ctrl.update(true, 10, 'msg', 'sub', note);
     const noteEl = getNoteEl();
     expect(noteEl).not.toBeNull();
+    expect(noteEl!.className).toBe('ps-loading__note');
     const span = noteEl!.children.find((c) => c._tag === 'span');
     expect(span?.textContent).toBe('Got a larger dataset?');
     const anchor = noteEl!.children.find((c) => c._tag === 'a');
     expect(anchor?.textContent).toBe('Open in Colab');
     expect(anchor?.target).toBe('_blank');
     expect(anchor?.rel).toBe('noopener noreferrer');
+    expect(anchor?.style.cssText).toBe('');
     ctrl.dispose();
   });
 
@@ -228,11 +321,7 @@ describe('loading-overlay note rendering', () => {
     const span = noteEl!.children.find((c) => c._tag === 'span');
     // textContent assignment — no script element is created
     expect(span?.textContent).toBe('<script>alert(1)</script>');
-    const hasScript = (function walk(el: FakeEl): boolean {
-      if (el._tag === 'script') return true;
-      return el.children.some(walk);
-    })(doc._body);
-    expect(hasScript).toBe(false);
+    expect(hasTag(doc._body, 'script')).toBe(false);
     ctrl.dispose();
   });
 

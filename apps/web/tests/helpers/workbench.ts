@@ -179,3 +179,34 @@ export async function readLayout(page: Page): Promise<LayoutState | null> {
     }
   }, LAYOUT_STORAGE_KEY);
 }
+
+/** The empty plot's invitation: "Drop a file or pick an example". */
+export function emptyState(page: Page): Locator {
+  return page.locator('[data-workbench="empty"]');
+}
+
+/**
+ * Drags `file` over `target` and drops it, as the operating system would: synthetic drag events
+ * carrying a DataTransfer with the file. The drop area must show while the file is over the
+ * workbench and go after the drop.
+ */
+export async function dropFileOnWorkbench(
+  page: Page,
+  target: Locator,
+  file: { name: string; mimeType: string; buffer: Buffer },
+): Promise<void> {
+  const dataTransfer = await page.evaluateHandle(
+    ({ bytes, name, mimeType }) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(bytes)], name, { type: mimeType }));
+      return transfer;
+    },
+    { bytes: Array.from(file.buffer), name: file.name, mimeType: file.mimeType },
+  );
+  await target.dispatchEvent('dragenter', { dataTransfer });
+  await target.dispatchEvent('dragover', { dataTransfer });
+  await expect(page.locator('.wb-drop-area')).toBeVisible();
+  await target.dispatchEvent('drop', { dataTransfer });
+  await expect(page.locator('.wb-drop-area')).toBeHidden();
+  await dataTransfer.dispose();
+}

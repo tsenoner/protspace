@@ -59,10 +59,6 @@ export class DataLoader extends LitElement {
   @property({ type: Boolean, attribute: 'auto-load' })
   autoLoad = false;
 
-  /** Accept drag and drop */
-  @property({ type: Boolean, attribute: 'allow-drop' })
-  allowDrop = true;
-
   /** Required column mappings for Arrow data */
   @property({ type: Object, attribute: 'column-mappings' })
   columnMappings: {

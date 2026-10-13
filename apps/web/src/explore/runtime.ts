@@ -37,7 +37,11 @@ import {
 } from './fasta-prep-limits';
 import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
-import { createLoadingOverlayController } from './loading-overlay';
+import {
+  LOADING_COPY,
+  createLoadingOverlayController,
+  type LoadingOverlayController,
+} from './loading-overlay';
 import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-store';
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
@@ -53,6 +57,7 @@ import { createViewBarController } from './view-bar-controller';
 import { createViewController } from './view-controller';
 import {
   createDatasetNamePublisher,
+  datasetPhaseFor,
   getWorkbenchStatus,
   setWorkbenchStatus,
   subscribeWorkbenchStatus,
@@ -122,10 +127,41 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     importMenu.currentExampleId = id;
   };
 
-  // A remounted page starts from an empty app bar until its own first load names a dataset.
-  lifecycle.addCleanup(() => setWorkbenchStatus({ datasetName: null, proteinCount: null }));
+  // A remounted page starts from an empty app bar, and no empty state, until its own first load.
+  lifecycle.addCleanup(() =>
+    setWorkbenchStatus({ datasetName: null, proteinCount: null, datasetPhase: 'starting' }),
+  );
 
-  const overlayController = createLoadingOverlayController();
+  // What the plot area shows (workbench-status.ts): the overlay while a load runs, the plot once a
+  // dataset is on screen, the empty state once startup has ended with nothing to show.
+  let overlayShown = false;
+  let startupSettled = false;
+  const syncDatasetPhase = () => {
+    if (lifecycle.isDisposed()) return;
+    setWorkbenchStatus({
+      datasetPhase: datasetPhaseFor({
+        overlayShown,
+        // `datasetController` is declared below; this runs only once a load has begun.
+        displayed: datasetController.hasDisplayedDataset(),
+        startupSettled,
+      }),
+    });
+  };
+  const loadingOverlay = createLoadingOverlayController();
+  const overlayController: LoadingOverlayController = {
+    update(show, progress, message, subMessage, note) {
+      loadingOverlay.update(show, progress, message, subMessage, note);
+      if (show !== overlayShown) {
+        overlayShown = show;
+        syncDatasetPhase();
+      }
+    },
+    setCancelHandler: (handler, label) => loadingOverlay.setCancelHandler(handler, label),
+    dispose() {
+      overlayShown = false;
+      loadingOverlay.dispose();
+    },
+  };
   lifecycle.addCleanup(() => overlayController.dispose());
 
   const loadQueue = createLoadQueue({
@@ -211,12 +247,19 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (abandonIfSuperseded()) {
         return;
       }
-      const showProgress = (progress: number, subMessage: string) => {
+      // The title stays "Preparing FASTA…"; the line under the bar says what the server is doing.
+      const showProgress = (progress: number, detail: string) => {
         if (preparation.isCurrent()) {
-          overlayController.update(true, progress, 'Preparing FASTA…', subMessage);
+          overlayController.update(true, progress, detail, LOADING_COPY.fastaTitle);
         }
       };
-      overlayController.update(true, 5, 'Preparing FASTA…', 'Uploading…', colabNote);
+      overlayController.update(
+        true,
+        5,
+        LOADING_COPY.fastaUploading,
+        LOADING_COPY.fastaTitle,
+        colabNote,
+      );
       let lastProgress = 5;
       let creep = 0;
 
@@ -446,10 +489,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     history: interactionController.history,
     root: document,
     isMac: isMacOrIos,
-    // Every open dialog owns its keys. The figure editor's dialog lives in its element's shadow
-    // root (from Task 4.14), where `ps-dialog[open]` cannot see it, so the element itself counts
-    // while it is in the page (the export handler removes it on close).
+    // A modal or a load owns the keys. The figure editor's dialog lives in its element's shadow
+    // root, where `ps-dialog[open]` cannot see it, so the element itself counts while it is in the
+    // page; during a load, an undo would act on the dataset being replaced.
     isModalOpen: () =>
+      getWorkbenchStatus().datasetPhase === 'loading' ||
       document.querySelector('dialog[open], ps-dialog[open], protspace-publish-modal') !== null,
     apply(entry, direction) {
       if (entry.kind === 'filter') {
@@ -503,11 +547,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       if (lifecycle.isDisposed()) {
         return;
       }
-      handleCancelledExampleLoad(datasetController, viewController, cancel, confirmClear).catch(
-        (error: unknown) => {
+      handleCancelledExampleLoad(datasetController, viewController, cancel, confirmClear)
+        .catch((error: unknown) => {
           console.error('Startup load after a cancelled download failed:', error);
-        },
-      );
+        })
+        .finally(syncDatasetPhase);
     },
   });
   // An example fetch/decode still in flight when the page is torn down (a
@@ -594,7 +638,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     const detail = (event as CustomEvent<RendererDegradedDetail>).detail;
     notify.warning(getRendererDegradedNotification(detail));
   });
-  addTrackedEventListener(lifecycle, plotElement, 'file-dropped', (event: Event) => {
+  // The shell's drop handler (use-file-drop.ts) dispatches dropped files on the data loader.
+  addTrackedEventListener(lifecycle, dataLoader, 'file-dropped', (event: Event) => {
     const file = (event as CustomEvent<{ file?: File }>).detail.file;
     if (file) {
       void dataLoader.loadFromFile(file);
@@ -629,10 +674,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     datasetController.handleLoadingProgress,
   );
   addTrackedEventListener(lifecycle, dataLoader, 'data-loaded', (event: Event) => {
-    void datasetController.handleDataLoaded(event);
+    void datasetController.handleDataLoaded(event).finally(syncDatasetPhase);
   });
   addTrackedEventListener(lifecycle, dataLoader, 'data-error', (event: Event) => {
-    void datasetController.handleDataError(event);
+    void datasetController.handleDataError(event).finally(syncDatasetPhase);
   });
   addTrackedEventListener(
     lifecycle,
@@ -700,9 +745,15 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
       }
       // The URL sync hook only waits for this to settle; a failure has
       // already been reported to the user by the load itself.
-      return request.catch((error: unknown) => {
-        console.error('Dataset request failed:', error);
-      });
+      return request
+        .catch((error: unknown) => {
+          console.error('Dataset request failed:', error);
+        })
+        .finally(() => {
+          // Startup has ended: with nothing on screen now, the plot invites a drop.
+          startupSettled = true;
+          syncDatasetPhase();
+        });
     },
     cancelPendingMenuLoad() {
       if (lifecycle.isDisposed()) {

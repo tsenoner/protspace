@@ -23,7 +23,12 @@ import { DEFAULT_EXAMPLE_DATASET, type ExampleDataset } from './example-datasets
 import type { ExploreControls } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
 import type { LoadQueue } from './load-queue';
-import { progressAfterExampleDownload, type LoadingOverlayController } from './loading-overlay';
+import {
+  LOADING_COPY,
+  loadingCopyFor,
+  progressAfterExampleDownload,
+  type LoadingOverlayController,
+} from './loading-overlay';
 import { createPersistedDatasetController } from './persisted-dataset';
 import type {
   ExampleLoadCancel,
@@ -374,12 +379,7 @@ export function createDatasetController({
         (loadMeta.kind === 'user' && file ? beginSaveImportedFile(file) : undefined);
       loadMeta.pendingSave = undefined;
       if (pendingSave) {
-        overlayController.update(
-          true,
-          20,
-          'Saving imported dataset...',
-          'Preparing reload support...',
-        );
+        overlayController.update(true, 20, '', LOADING_COPY.saving);
         try {
           await pendingSave.commit();
         } catch (error) {
@@ -713,7 +713,8 @@ export function createDatasetController({
         return;
       }
       console.log('Data loading started');
-      phaseOverlayController.update(true, 5, 'Analyzing file structure...', 'Starting upload...');
+      const copy = loadingCopyFor(loadQueue.getRunningLoadMeta());
+      phaseOverlayController.update(true, 5, copy.detail, copy.title);
     },
     handleLoadingProgress(event: Event) {
       if (isRunningLoadSuperseded()) {
@@ -722,12 +723,8 @@ export function createDatasetController({
       const customEvent = event as CustomEvent<{ percentage?: number }>;
       const percentage = Number(customEvent.detail.percentage ?? 0);
       const visualProgress = Math.min(20, Math.max(5, percentage * 0.2));
-      phaseOverlayController.update(
-        true,
-        visualProgress,
-        'Reading protein data...',
-        'Uploading...',
-      );
+      const copy = loadingCopyFor(loadQueue.getRunningLoadMeta());
+      phaseOverlayController.update(true, visualProgress, copy.detail, copy.title);
     },
     handleDataLoaded,
     handleDataError,

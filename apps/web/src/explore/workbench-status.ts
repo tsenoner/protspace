@@ -4,6 +4,8 @@ import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
  * Transient facts the explore runtime publishes for the React shell, which never reads them off the
  * runtime's elements. Nothing here is persisted. Later tasks add fields.
  */
+type DatasetPhase = 'starting' | 'loading' | 'ready' | 'empty';
+
 export interface WorkbenchStatus {
   /** The dataset on screen: an example's label or a file's name; null before a load. */
   datasetName: string | null;
@@ -15,6 +17,11 @@ export interface WorkbenchStatus {
   densityLayer: DensityLayerMode;
   /** The protein the structure viewer shows or waits to show (the rail's dot); null for none. */
   structureProteinId: string | null;
+  /**
+   * What the plot area shows: nothing yet before startup ends (`starting`), the loading overlay
+   * (`loading`, the workbench is inert), a dataset (`ready`), or the empty state (`empty`).
+   */
+  datasetPhase: DatasetPhase;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -23,6 +30,7 @@ const EMPTY: WorkbenchStatus = {
   appliedFilterConditions: 0,
   densityLayer: DENSITY_DEFAULT,
   structureProteinId: null,
+  datasetPhase: 'starting',
 };
 
 let status: WorkbenchStatus = EMPTY;
@@ -47,6 +55,24 @@ export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
   if (keys.every((key) => Object.is(next[key], status[key]))) return;
   status = next;
   for (const listener of [...listeners]) listener();
+}
+
+/**
+ * The plot area's phase from three runtime facts. Startup must have ended before the empty state
+ * shows, so "Drop a file…" never flashes before the startup load has even begun.
+ */
+export function datasetPhaseFor({
+  overlayShown,
+  displayed,
+  startupSettled,
+}: {
+  overlayShown: boolean;
+  displayed: boolean;
+  startupSettled: boolean;
+}): DatasetPhase {
+  if (overlayShown) return 'loading';
+  if (displayed) return 'ready';
+  return startupSettled ? 'empty' : 'starting';
 }
 
 /**

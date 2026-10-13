@@ -144,10 +144,14 @@ All scatterplot events bubble.
 | `data-isolation`         | `{ isolationHistory, isolationMode, dataSize }`  | Isolation applied                               |
 | `data-isolation-reset`   | `{ isolationHistory, isolationMode, dataSize? }` | Isolation cleared                               |
 | `auto-disable-selection` | `{ reason, dataSize }`                           | Selection mode turned itself off                |
-| `file-dropped`           | `{ file }`                                       | A file was dropped on the plot                  |
 | `renderer-degraded`      | `{ message, severity, source, context }`         | A rendering capability was reduced              |
 | `view-status-change`     | `{ count, zoomedIn }`                            | The visible count or the zoomed-in flag changed |
 | `hidden-values-change`   | `{ count }`                                      | The number of hidden category values changed    |
+
+::: warning BREAKING
+`file-dropped` is removed: the scatterplot no longer handles drops. Drops belong to the host page,
+which knows its own layout; see [Drag and Drop Pattern](/developers/embedding#drag-and-drop-pattern).
+:::
 
 `modifierKeys` on `protein-click` is `{ ctrl, meta, shift, alt }`. `view` is the tooltip-friendly
 projection of the protein's annotations; `point` is the bare plot point.
@@ -639,7 +643,6 @@ File-picker and drag/drop loading component used by the Explore app.
 | --------------------- | --------- | ------- | ---------------------------------------------------- |
 | `src`                 | `string`  | `''`    | URL to load from                                     |
 | `autoLoad`            | `boolean` | `false` | Load automatically when `src` is set                 |
-| `allowDrop`           | `boolean` | `true`  | Accept drag and drop                                 |
 | `columnMappings`      | `object`  | `{}`    | Override protein-id / coordinate column names        |
 | `loadFromFileHandler` | function  | -       | Host hook that can intercept or replace file loading |
 
@@ -649,7 +652,7 @@ the host installs a `loadFromFileHandler` that prepares them, see
 
 ### HTML attributes
 
-`src`, `auto-load`, `allow-drop`, `column-mappings`. `loadFromFileHandler` is JavaScript-only.
+`src`, `auto-load`, `column-mappings`. `loadFromFileHandler` is JavaScript-only. `allow-drop` (`allowDrop`) is removed — **BREAKING**: it never did anything; drops are the host page's.
 
 ### Methods
 

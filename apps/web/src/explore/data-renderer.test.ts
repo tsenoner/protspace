@@ -181,6 +181,20 @@ describe('loadData overlay handling', () => {
     expect(messages).not.toContain('Ready to explore!');
   });
 
+  it('a large dataset says it is drawing its proteins', async () => {
+    const { loadData, overlayUpdate } = buildRenderer();
+    const pending = loadData(datasetOf(1500));
+    await vi.runAllTimersAsync();
+    await pending;
+
+    const shown = overlayUpdate.mock.calls.filter(([show]) => show === true);
+    expect(shown.length).toBeGreaterThan(0);
+    for (const [, , message, subMessage] of shown) {
+      expect(message).toBe('');
+      expect(subMessage).toBe('Drawing 1,500 proteins');
+    }
+  });
+
   it('a new dataset resets the controls and shows its initial view', async () => {
     const calls: string[] = [];
     const { loadData } = buildRenderer({

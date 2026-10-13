@@ -973,3 +973,180 @@
   font-size: var(--ps-text-base);
   line-height: var(--ps-leading-normal);
 }
+
+/* ── Loading, the empty plot and the drop area (Task 4.12) ─────────────────── */
+
+/* The overlay is appended to <body>, outside the workbench; it reads the same tokens. It stays at
+   9999, over every shell z-index. */
+.ps-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--ps-scrim);
+  color: var(--ps-text);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-base);
+  line-height: var(--ps-leading-tight);
+}
+
+.ps-loading__card {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  padding: var(--ps-space-5) var(--ps-space-6);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-raised);
+  box-shadow: var(--ps-shadow-lg);
+  text-align: center;
+}
+
+.ps-loading__title {
+  margin: 0;
+  font-size: var(--ps-text-md);
+  font-weight: var(--ps-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ps-loading__bar {
+  height: 4px;
+  margin: var(--ps-space-3) 0;
+  overflow: hidden;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-surface-muted);
+}
+
+.ps-loading__fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ps-accent);
+  transition: width var(--ps-duration-fast) var(--ps-ease);
+}
+
+.ps-loading__detail {
+  min-height: 1lh;
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ps-loading__note {
+  margin-top: var(--ps-space-3);
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.ps-loading__note a {
+  margin-inline-start: var(--ps-space-1);
+  border-radius: var(--ps-radius-sm);
+  color: var(--ps-accent-text);
+}
+
+/* As ps-button secondary: a native button, so the e2e and the FASTA flow keep its id. */
+.ps-loading__cancel {
+  height: var(--ps-control-md);
+  margin-top: var(--ps-space-5);
+  padding: 0 var(--ps-space-3);
+  border: 1px solid var(--ps-border-strong);
+  border-radius: var(--ps-radius);
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  font: inherit;
+  font-weight: var(--ps-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
+}
+
+.ps-loading__cancel:hover {
+  background: var(--ps-surface-hover);
+}
+
+.ps-loading__cancel:focus-visible,
+.ps-loading__note a:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-loading__fill,
+  .ps-loading__cancel {
+    transition: none;
+  }
+}
+
+/* Over the plot, under its tool strip (5); it never changes #myPlot's box. The plot under it
+   stays reachable: only the text and buttons take the pointer. */
+.wb-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ps-space-2);
+  padding: var(--ps-space-6);
+  text-align: center;
+  pointer-events: none;
+}
+
+.wb-empty[hidden] {
+  display: none;
+}
+
+.wb-empty > * {
+  pointer-events: auto;
+}
+
+.wb-empty-title {
+  margin: 0;
+  color: var(--ps-text);
+  font-size: var(--ps-text-lg);
+  font-weight: var(--ps-weight-semibold);
+}
+
+.wb-empty-note {
+  max-width: 360px;
+  margin: 0;
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
+  line-height: var(--ps-leading-normal);
+}
+
+.wb-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--ps-space-2);
+  margin-top: var(--ps-space-2);
+}
+
+/* Over the plot and the sidebar while a file is dragged over the workbench. It takes no pointer
+   events, so the drop lands on what is under it and the workbench's capture listener takes it. */
+.wb-drop-area {
+  position: absolute;
+  inset: var(--ps-space-2);
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--ps-accent);
+  border-radius: var(--ps-radius-lg);
+  background: color-mix(in srgb, var(--ps-accent-tint) 85%, transparent);
+  color: var(--ps-accent-text);
+  font-size: var(--ps-text-lg);
+  font-weight: var(--ps-weight-semibold);
+  pointer-events: none;
+}
+
+.workbench[data-dragging] .wb-drop-area {
+  display: flex;
+}

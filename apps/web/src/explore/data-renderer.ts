@@ -3,7 +3,7 @@ import type { VisualizationData } from '@protspace/utils';
 import { DENSITY_DEFAULT, isEatConfidenceAnnotation } from '@protspace/utils';
 import type { ExploreControls } from './explore-controls';
 import type { InteractionController } from './interaction-controller';
-import type { LoadingOverlayController } from './loading-overlay';
+import { LOADING_COPY, type LoadingOverlayController } from './loading-overlay';
 import type { EffectiveExploreView } from './view-state';
 
 interface DataRendererOptions {
@@ -68,14 +68,13 @@ function updateOverlayForStep(
   overlayController: DataRendererOptions['overlayController'],
   isLargeDataset: boolean,
   progress: number,
-  message: string,
-  subMessage: string,
+  proteinCount: number,
 ) {
   if (!isLargeDataset) {
     return;
   }
 
-  overlayController.update(true, progress, message, subMessage);
+  overlayController.update(true, progress, '', LOADING_COPY.drawing(proteinCount));
 }
 
 function applyPlotState(
@@ -145,13 +144,7 @@ export function createDataRenderer({
     const initialView = resolveInitialView(newData);
     const resolvedInitialView = resolveRenderableView(newData, initialView);
 
-    updateOverlayForStep(
-      overlayController,
-      isLargeDataset,
-      20,
-      'Rendering scatterplot points...',
-      `Visualizing ${dataSize.toLocaleString()} proteins`,
-    );
+    updateOverlayForStep(overlayController, isLargeDataset, 20, dataSize);
 
     await yieldToBrowser();
 
@@ -168,24 +161,12 @@ export function createDataRenderer({
       tooltip: resolvedInitialView.tooltip,
     });
 
-    updateOverlayForStep(
-      overlayController,
-      isLargeDataset,
-      40,
-      'Configuring controls and filters...',
-      `Visualizing ${dataSize.toLocaleString()} proteins`,
-    );
+    updateOverlayForStep(overlayController, isLargeDataset, 40, dataSize);
 
     await yieldToBrowser();
     await yieldToBrowser();
 
-    updateOverlayForStep(
-      overlayController,
-      isLargeDataset,
-      60,
-      'Organizing color categories...',
-      `Visualizing ${dataSize.toLocaleString()} proteins`,
-    );
+    updateOverlayForStep(overlayController, isLargeDataset, 60, dataSize);
 
     await yieldToBrowser();
     // The legend sync pushes the colour and z-order mappings into the plot, so

@@ -74,6 +74,8 @@ export interface ExampleLoadContext {
 export interface LoadMeta {
   sequence: number;
   kind: DatasetLoadKind;
+  /** The loaded file's name: the overlay names a user file and a stored import by it. */
+  fileName?: string;
   example?: ExampleLoadContext;
   /**
    * The request epoch the load began under (see `beginUserRequest` in
