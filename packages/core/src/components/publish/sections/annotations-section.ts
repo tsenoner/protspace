@@ -1,4 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { icon } from '../../kit/icon';
+import '../../kit/tooltip';
 import type { Inset, Overlay } from '../publish-state';
 import { renderSliderInput } from './legend-section';
 
@@ -18,11 +20,29 @@ interface AnnotationsHandlers {
   updateInset(index: number, partial: Partial<Inset>): void;
 }
 
+/** A row's ✕: removes that item whether or not it is selected, and does not select it. */
+function removeButton(onRemove: () => void) {
+  return html`
+    <button
+      type="button"
+      class="delete-btn"
+      aria-label="Remove"
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        onRemove();
+      }}
+    >
+      ${icon('x', 14)}
+    </button>
+    <ps-tooltip text="Remove" names-target></ps-tooltip>
+  `;
+}
+
 function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers) {
   switch (a.type) {
     case 'circle':
       return html`
-        <div class="publish-row" style="margin-bottom: 0;">
+        <div class="publish-row publish-row-tight">
           <label>Stroke</label>
           ${renderSliderInput({
             min: 0.5,
@@ -36,7 +56,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
       `;
     case 'arrow':
       return html`
-        <div class="publish-row" style="margin-bottom: 0;">
+        <div class="publish-row publish-row-tight">
           <label>Stroke</label>
           ${renderSliderInput({
             min: 0.5,
@@ -50,12 +70,11 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
       `;
     case 'label':
       return html`
-        <div class="publish-row" style="margin-bottom: 2px;">
+        <div class="publish-row publish-row-text">
           <label>Text</label>
           <input
             type="text"
-            class="publish-row-input"
-            style="width: 8rem; text-align: left;"
+            class="publish-row-input publish-label-input"
             .value=${a.text}
             @change=${(e: Event) => {
               handlers.updateOverlay(i, {
@@ -64,7 +83,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
             }}
           />
         </div>
-        <div class="publish-row" style="margin-bottom: 0;">
+        <div class="publish-row publish-row-tight">
           <label>Size</label>
           ${renderSliderInput({
             min: 8,
@@ -88,31 +107,19 @@ function renderOverlays(model: AnnotationsModel, handlers: AnnotationsHandlers) 
         return html`
           <div
             class="publish-overlay-item ${isSel ? 'selected' : ''}"
-            style="flex-direction: column; align-items: stretch; gap: 4px;"
             data-publish-item="overlay-${i}"
             @click=${() => handlers.select({ kind: 'overlay', index: i })}
           >
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="publish-item-head">
               <span>${a.type}${a.type === 'label' ? `: ${a.text}` : ''}</span>
-              <button
-                class="delete-btn"
-                @click=${(e: Event) => {
-                  e.stopPropagation();
-                  handlers.removeOverlay(i);
-                }}
-                title="Remove"
-              >
-                <svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              ${removeButton(() => handlers.removeOverlay(i))}
             </div>
             ${renderOverlayProps(a, i, handlers)}
           </div>
         `;
       })}
       ${anns.length === 0
-        ? html`<span style="font-size: var(--text-xs); color: var(--muted)"
-            >Use toolbar to add</span
-          >`
+        ? html`<span class="publish-empty-hint">Use toolbar to add</span>`
         : nothing}
     </div>
   `;
@@ -130,27 +137,18 @@ function renderInsets(model: AnnotationsModel, handlers: AnnotationsHandlers) {
             model.selected.index === i
               ? 'selected'
               : ''}"
-            style="flex-direction: column; align-items: stretch; gap: 4px;"
             data-publish-item="inset-${i}"
             @click=${() => handlers.select({ kind: 'inset', index: i })}
           >
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="publish-item-head">
               <span>Inset ${i + 1}</span>
-              <button
-                class="delete-btn"
-                @click=${(e: Event) => {
-                  e.stopPropagation();
-                  handlers.removeInset(i);
-                }}
-                title="Remove"
-              >
-                <svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              ${removeButton(() => handlers.removeInset(i))}
             </div>
-            <div class="publish-row" style="margin-bottom: 0;">
-              <label title="Dot size in the zoomed view, relative to the main plot. 1× matches.">
-                Dot size
-              </label>
+            <div class="publish-row publish-row-tight">
+              <label>Dot size</label>
+              <ps-tooltip
+                text="Dot size in the zoomed view, relative to the main plot. 1× matches."
+              ></ps-tooltip>
               ${renderSliderInput({
                 min: 0.5,
                 max: 20,
@@ -160,7 +158,7 @@ function renderInsets(model: AnnotationsModel, handlers: AnnotationsHandlers) {
                 onChange: (v) => handlers.updateInset(i, { pointSizeScale: v }),
               })}
             </div>
-            <div class="publish-row" style="margin-bottom: 0;">
+            <div class="publish-row publish-row-tight">
               <label>Border</label>
               ${renderSliderInput({
                 min: 0.5,
@@ -175,15 +173,13 @@ function renderInsets(model: AnnotationsModel, handlers: AnnotationsHandlers) {
         `,
       )}
       ${ins.length === 0
-        ? html`<span style="font-size: var(--text-xs); color: var(--muted)"
-            >Use toolbar to add</span
-          >`
+        ? html`<span class="publish-empty-hint">Use toolbar to add</span>`
         : nothing}
     </div>
   `;
 }
 
-/** The overlays, then the zoom insets: each listed with its own controls and a delete button. */
+/** The overlays, then the zoom insets: each listed with its own controls and a remove button. */
 export function renderAnnotations(
   model: AnnotationsModel,
   handlers: AnnotationsHandlers,

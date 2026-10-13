@@ -9,6 +9,7 @@ import {
   computePresetApplication,
   shouldShowFingerprintWarning,
   readLegendExportState,
+  isFormControlEventPath,
 } from './publish-modal-helpers';
 import { createDefaultPublishState, type PublishState } from './publish-state';
 
@@ -320,5 +321,28 @@ describe('readLegendExportState', () => {
     expect(readLegendExportState(throwing)).toBeNull();
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe('isFormControlEventPath', () => {
+  const path = (...nodes: object[]) => nodes as unknown as EventTarget[];
+
+  it('counts every form control, whatever its input type, and contentEditable', () => {
+    for (const type of ['text', 'number', 'range', 'checkbox']) {
+      expect(isFormControlEventPath(path({ tagName: 'INPUT', type }, { tagName: 'BODY' }))).toBe(
+        true,
+      );
+    }
+    for (const tagName of ['SELECT', 'TEXTAREA', 'BUTTON']) {
+      expect(isFormControlEventPath(path({ tagName }))).toBe(true);
+    }
+    expect(isFormControlEventPath(path({ tagName: 'DIV', isContentEditable: true }))).toBe(true);
+  });
+
+  it('ignores the rest of the page', () => {
+    expect(isFormControlEventPath(path({ tagName: 'CANVAS' }, { tagName: 'BODY' }, {}))).toBe(
+      false,
+    );
+    expect(isFormControlEventPath([])).toBe(false);
   });
 });

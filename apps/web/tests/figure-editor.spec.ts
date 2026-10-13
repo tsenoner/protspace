@@ -294,38 +294,11 @@ test.describe('figure editor — geometric inset zoom', () => {
 
     const downloadPromise = page.waitForEvent('download', { timeout: 15_000 });
 
-    // Click the Export button. The modal renders it as
-    //   <button class="btn-primary" @click=${this._handleExport}>Export</button>
-    // so the text-based fallback is the reliable identifier; we still try
-    // a few data attributes first in case future commits add one.
-    await page.evaluate(() => {
-      const m = document.querySelector('protspace-publish-modal') as
-        | (HTMLElement & { shadowRoot: ShadowRoot })
-        | null;
-      const root = m?.shadowRoot;
-      if (!root) throw new Error('modal shadow root missing');
-      const candidates = [
-        'button[data-action="export"]',
-        'button.publish-export-btn',
-        'button.publish-action-export',
-        '[data-testid="export-btn"]',
-      ];
-      for (const sel of candidates) {
-        const btn = root.querySelector(sel) as HTMLButtonElement | null;
-        if (btn) {
-          btn.click();
-          return;
-        }
-      }
-      // Match the actual primary button by text — current implementation.
-      const buttons = Array.from(root.querySelectorAll('button')) as HTMLButtonElement[];
-      const exportBtn = buttons.find((b) => b.textContent?.trim() === 'Export');
-      if (exportBtn) {
-        exportBtn.click();
-        return;
-      }
-      throw new Error('Export button not found in publish-modal shadow DOM');
-    });
+    // Export is the footer's primary ps-button inside the editor's dialog.
+    await page
+      .locator('protspace-publish-modal')
+      .getByRole('button', { name: 'Export', exact: true })
+      .click();
 
     const download = await downloadPromise;
     const path = await download.path();

@@ -1,4 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { icon } from '../../kit/icon';
+import '../../kit/tooltip';
 import { cmToMm, inToMm, mmToCm, mmToIn, pxToMm } from '../dimension-utils';
 import { getActivePresetMaxHeightPx, getActivePresetWidthPx } from '../publish-modal-helpers';
 import type { PublishState } from '../publish-state';
@@ -67,11 +69,7 @@ function renderAspectLink(locked: boolean, disabled: boolean, onToggle: () => vo
       @click=${() => {
         if (!disabled) onToggle();
       }}
-      title=${disabled
-        ? 'Width is fixed by the journal preset; only height is adjustable.'
-        : effectiveLocked
-          ? 'Linked: editing one rescales the other. Click to unlink.'
-          : 'Unlinked: width and height are independent. Click to link.'}
+      aria-label="Link width and height"
       aria-pressed=${effectiveLocked}
     >
       <svg
@@ -104,6 +102,13 @@ function renderAspectLink(locked: boolean, disabled: boolean, onToggle: () => vo
         </g>
       </svg>
     </button>
+    <ps-tooltip
+      text=${disabled
+        ? 'Width is fixed by the journal preset; only height is adjustable.'
+        : effectiveLocked
+          ? 'Linked: editing one rescales the other. Click to unlink.'
+          : 'Unlinked: width and height are independent. Click to link.'}
+    ></ps-tooltip>
   `;
 }
 
@@ -156,11 +161,13 @@ export function renderDimensions(
             class="publish-row-input publish-dim-value"
             data-publish-input="width"
             ?disabled=${dimsReadOnly || widthLocked}
-            title=${widthLocked ? 'Width is fixed by the active journal preset.' : ''}
             .value=${String(widthDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
             @change=${(e: Event) => readSize(e, s.unit, handlers.widthPx, handlers.widthMm)}
           />
+          ${widthLocked
+            ? html`<ps-tooltip text="Width is fixed by the active journal preset."></ps-tooltip>`
+            : nothing}
         </div>
         ${renderAspectLink(s.aspectLocked, widthLocked, handlers.toggleAspectLock)}
         <select
@@ -232,7 +239,9 @@ export function renderDimensions(
           @change=${() => handlers.toggleResample()}
         />
         Resample
-        <span class="publish-info" title=${RESAMPLE_TOOLTIP}>ⓘ</span>
+        <span class="publish-info" role="img" aria-label="About Resample" tabindex="0"
+          >${icon('info', 14)}</span
+        ><ps-tooltip text=${RESAMPLE_TOOLTIP}></ps-tooltip>
       </label>
       ${model.showResampleNote
         ? html`<div class="publish-resample-note">Resample turned on to apply preset.</div>`

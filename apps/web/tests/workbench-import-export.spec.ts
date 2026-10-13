@@ -8,6 +8,7 @@ import {
   exportMenu,
   expectUrlParam,
   getCurrentDatasetName,
+  getSelectedProteinIds,
   importMenu,
   importTrigger,
   importUserFile,
@@ -20,6 +21,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
+import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
 /** The Import and Export menus in the app bar (Task 2.5). */
 
@@ -237,5 +239,21 @@ test.describe('Import and Export menus', () => {
     await openExplore(page);
     await exportAction(page, 'Figure editor…');
     await expect(page.locator('protspace-publish-modal')).toBeAttached();
+  });
+
+  test('Escape closes the figure editor and the selection stays', async ({ page }) => {
+    await stubStructureRequests(page);
+    await openExplore(page);
+    const id = await clickProteinNearPlotCentre(page);
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
+
+    await exportAction(page, 'Figure editor…');
+    const editor = page.getByRole('dialog', { name: 'Figure editor' });
+    await expect(editor).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('protspace-publish-modal')).toHaveCount(0);
+    // The editor took the press: the plot's selection fallback did not run.
+    expect(await getSelectedProteinIds(page)).toEqual([id]);
   });
 });

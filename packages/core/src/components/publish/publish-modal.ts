@@ -7,11 +7,12 @@
 
 import { LitElement, html, nothing } from 'lit';
 import { property, state, query } from 'lit/decorators.js';
-import { isEditableEventPath } from '@protspace/utils';
+import { annotationLabel, type Annotation } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
-import { tokens } from '../../styles/tokens';
-import { buttonMixin } from '../../styles/mixins';
 import { publishModalStyles } from './publish-modal.styles';
+import '../kit/button';
+import '../kit/dialog';
+import type { PsDialog } from '../kit/dialog';
 import { pushLayer } from '../kit/layers';
 import { getPreset, type PresetId } from './journal-presets';
 import {
@@ -42,6 +43,7 @@ import {
   getActivePresetMaxHeightPx,
   getActivePresetWidthPx,
   readLegendExportState,
+  isFormControlEventPath,
   shouldShowFingerprintWarning,
   type LegendExportState,
 } from './publish-modal-helpers';
@@ -51,12 +53,13 @@ import { renderDimensions } from './sections/dimensions-section';
 import { renderLegendSection } from './sections/legend-section';
 import { renderOptions, renderPresets } from './sections/presets-options-section';
 import { renderToolbar } from './sections/toolbar';
+import { renderFooter, type UndoMessage } from './sections/footer';
 
 // ── Component ────────────────────────────────────────────────
 
 @customElement('protspace-publish-modal')
 export class ProtspacePublishModal extends LitElement {
-  static override styles = [tokens, buttonMixin, publishModalStyles];
+  static override styles = publishModalStyles;
 
   /** Plot element to capture from */
   @property({ attribute: false }) plotElement: HTMLElement | null = null;
@@ -83,6 +86,12 @@ export class ProtspacePublishModal extends LitElement {
   @state() private _showResampleNote = false;
   @state() private _legendItems: LegendItem[] = [];
   @state() private _legendTitle = 'Legend';
+  /** New figure or Reset, undoable from the footer until the next edit or for 8 s. */
+  @state() private _undo: { message: UndoMessage; state: PublishState } | null = null;
+  /** Why the last export failed, said inside the dialog: a toast would sit under the modal. */
+  @state() private _exportError: string | null = null;
+
+  @query('ps-dialog') private _dialog?: PsDialog;
 
   @query('.publish-preview-canvas') private _previewCanvas!: HTMLCanvasElement;
 
@@ -122,8 +131,18 @@ export class ProtspacePublishModal extends LitElement {
     removeInset: (index: number) => this._removeInset(index),
     updateInset: (index: number, partial: Partial<Inset>) => this._updateInset(index, partial),
   };
-  /** The editor's Escape layer while it is in the page (until it moves onto ps-dialog). */
-  private _releaseEscapeLayer: (() => void) | null = null;
+  private readonly _footerHandlers = {
+    newFigure: () => this._handleNewFigure(),
+    reset: () => this._handleReset(),
+    undo: () => this._undoLast(),
+    close: () => this._dialog?.dismiss(),
+    exportFigure: () => void this._handleExport(),
+  };
+  /** The state New figure or Reset produced; any other state ends the Undo offer. */
+  private _undoAfter: PublishState | null = null;
+  private _undoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Escape deselects a selected overlay or inset before it closes the dialog. */
+  private _releaseSelectionLayer: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -142,50 +161,36 @@ export class ProtspacePublishModal extends LitElement {
     );
     this._readLegend();
     window.addEventListener('keydown', this._onKeyDown);
-    // A layer: Escape deselects, then closes the editor, and never reaches the page's own Escape
-    // (the plot's selection) underneath. A press outside is the backdrop's own click.
-    this._releaseEscapeLayer ??= pushLayer({
-      close: () => this._onEscapeLayer(),
-      elements: [this],
-      dismissOnOutsidePress: false,
-    });
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._disposed = true;
     window.removeEventListener('keydown', this._onKeyDown);
-    this._releaseEscapeLayer?.();
-    this._releaseEscapeLayer = null;
     this._overlayController?.destroy();
     this._overlayController = null;
     if (this._redrawHandle !== null) cancelAnimationFrame(this._redrawHandle);
     this._insetRenders.clear();
+    this._releaseSelectionLayer?.();
+    this._releaseSelectionLayer = null;
+    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
+    this._undoTimer = null;
   }
 
   /**
-   * Delete/Backspace removes the selected overlay or inset. Skipped while focus is in an editable
-   * element so typing Backspace inside the label-text input still erases characters instead of
-   * deleting the overlay. Escape is the layer's (`_onEscapeLayer`).
+   * Delete/Backspace removes the selected overlay or inset. Skipped while focus is on any form
+   * control, so Backspace in a text or number field edits it and a focused slider or checkbox
+   * never removes the overlay. Escape is the selection layer's (`_syncSelectionLayer`).
    */
   private _onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-    if (isEditableEventPath(e.composedPath())) return;
+    if (isFormControlEventPath(e.composedPath())) return;
     const sel = this._selectedItem;
     if (!sel) return;
     if (sel.kind === 'overlay') this._removeOverlay(sel.index);
     else this._removeInset(sel.index);
     e.preventDefault();
   };
-
-  /** Escape: the first press deselects an overlay or inset, the next closes the editor. */
-  private _onEscapeLayer(): void {
-    if (this._selectedItem) {
-      this._setSelection(null);
-      return;
-    }
-    this._handleClose();
-  }
 
   override firstUpdated() {
     this._setupOverlay();
@@ -196,11 +201,34 @@ export class ProtspacePublishModal extends LitElement {
     if (changed.has('legendElement')) {
       this._readLegend();
     }
+    // Any state but the one New figure or Reset produced is an edit after it: Undo would lose it.
+    if (changed.has('_state') && this._undo && this._state !== this._undoAfter) {
+      this._dropUndo();
+    }
   }
 
   override updated(changed: Map<string, unknown>) {
     if (changed.has('_state') || changed.has('_tool') || changed.has('_selectedItem')) {
       this._scheduleRedraw();
+    }
+    if (changed.has('_selectedItem')) this._syncSelectionLayer();
+  }
+
+  /** While an overlay or inset is selected, Escape deselects it; the next Escape closes. */
+  private _syncSelectionLayer() {
+    if (this._selectedItem && !this._releaseSelectionLayer && this.isConnected) {
+      this._releaseSelectionLayer = pushLayer({
+        close: () => {
+          this._releaseSelectionLayer?.();
+          this._releaseSelectionLayer = null;
+          this._setSelection(null);
+        },
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
+    } else if (!this._selectedItem && this._releaseSelectionLayer) {
+      this._releaseSelectionLayer();
+      this._releaseSelectionLayer = null;
     }
   }
 
@@ -216,7 +244,13 @@ export class ProtspacePublishModal extends LitElement {
         | null);
     const legendState = readLegendExportState(el);
     if (legendState) {
-      this._legendTitle = legendState.annotation;
+      // The figure names the annotation as the app does; the legend's data defines runtime ones.
+      const definitions = (el as { data?: { annotations?: Record<string, Annotation> } } | null)
+        ?.data?.annotations;
+      this._legendTitle = annotationLabel(
+        legendState.annotation,
+        definitions?.[legendState.annotation],
+      );
       this._legendItems = legendState.items.map((it) => ({
         value: it.value,
         displayValue: it.displayValue,
@@ -533,6 +567,7 @@ export class ProtspacePublishModal extends LitElement {
   // ── Export ─────────────────────────────────────────
 
   private async _handleExport() {
+    this._exportError = null;
     // Re-render at full resolution for export
     if (!this.plotElement) return;
     await waitForFonts();
@@ -587,20 +622,51 @@ export class ProtspacePublishModal extends LitElement {
   }
 
   private _handleReset() {
+    const before = this._state;
     const state = createDefaultPublishState();
     this._applyStateAndRebuild({
       ...state,
       viewFingerprint: this.currentProjection ?? undefined,
     });
+    this._offerUndo('Settings reset', before);
   }
 
   private _handleNewFigure() {
+    const before = this._state;
     this._applyStateAndRebuild({
       ...this._state,
       overlays: [],
       insets: [],
       viewFingerprint: this.currentProjection ?? undefined,
     });
+    this._offerUndo('Overlays and insets cleared', before);
+  }
+
+  /** Shows what New figure or Reset did, with Undo, until the next edit or for 8 s. */
+  private _offerUndo(message: UndoMessage, before: PublishState) {
+    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
+    this._undo = { message, state: before };
+    this._undoAfter = this._state;
+    this._undoTimer = setTimeout(() => this._dropUndo(), 8_000);
+  }
+
+  private _dropUndo() {
+    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
+    this._undoTimer = null;
+    this._undo = null;
+    this._undoAfter = null;
+  }
+
+  private _undoLast() {
+    const undo = this._undo;
+    if (!undo) return;
+    this._dropUndo();
+    this._applyStateAndRebuild(undo.state);
+  }
+
+  /** Says inside the dialog why an export failed; the next export attempt clears it. */
+  showExportError(message: string): void {
+    this._exportError = message;
   }
 
   private _applyStateAndRebuild(newState: PublishState) {
@@ -634,30 +700,22 @@ export class ProtspacePublishModal extends LitElement {
   override render() {
     const s = this._state;
     return html`
-      <div class="publish-overlay" @mousedown=${this._onOverlayClick}>
-        <div class="publish-container" @mousedown=${(e: Event) => e.stopPropagation()}>
-          <!-- Preview area -->
+      <ps-dialog
+        size="full"
+        heading="Figure editor"
+        open
+        dismissible="false"
+        @ps-close=${this._handleClose}
+      >
+        <div class="publish-container">
           <div class="publish-preview">
-            <div class="publish-preview-header">
-              <h2>Figure Editor</h2>
-            </div>
-
             <div class="publish-preview-canvas-container">
               <canvas class="publish-preview-canvas"></canvas>
             </div>
-
             ${renderToolbar({ tool: this._tool }, this._toolbarHandlers)}
           </div>
 
-          <!-- Sidebar -->
           <div class="publish-sidebar">
-            <div class="publish-sidebar-header">
-              <h3>Settings</h3>
-              <button class="publish-close-btn" @click=${this._handleClose} title="Close">
-                <svg viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-
             <div class="publish-sidebar-content">
               ${this._showFingerprintWarning
                 ? html`
@@ -689,40 +747,19 @@ export class ProtspacePublishModal extends LitElement {
               )}
               ${renderOptions({ format: s.format, background: s.background }, this._optionHandlers)}
             </div>
-
-            <div class="publish-sidebar-footer">
-              <button
-                class="btn-danger"
-                @click=${this._handleNewFigure}
-                title="Clear overlays and insets, keep layout"
-              >
-                New Figure
-              </button>
-              <button
-                class="btn-danger"
-                @click=${this._handleReset}
-                title="Reset all settings to defaults"
-              >
-                Reset
-              </button>
-              <button class="btn-secondary" @click=${this._handleClose}>Cancel</button>
-              <button
-                class="btn-primary"
-                @click=${this._handleExport}
-                title=${`Export ${s.format.toUpperCase()}`}
-              >
-                Export
-              </button>
-            </div>
           </div>
         </div>
-      </div>
+        ${renderFooter(
+          {
+            undo: this._undo?.message ?? null,
+            exportError: this._exportError,
+            format: s.format,
+          },
+          this._footerHandlers,
+        )}
+      </ps-dialog>
     `;
   }
-
-  private _onOverlayClick = () => {
-    this._handleClose();
-  };
 }
 
 declare global {

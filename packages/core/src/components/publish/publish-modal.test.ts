@@ -1,10 +1,22 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
 import { topLayer } from '../kit/layers';
+
+// jsdom 27 has no HTMLDialogElement.showModal or close. The editor's ps-dialog only needs the
+// calls to exist here; what the dialog does is pinned in publish-modal.browser.test.ts.
+beforeAll(() => {
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal ??= function (this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  proto.close ??= function (this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 interface PublishInternals {
   _state: {
@@ -46,9 +58,44 @@ describe('<protspace-publish-modal> legend reader', () => {
     await modal.updateComplete;
 
     const internals = modal as unknown as PublishInternals;
-    expect(internals._legendTitle).toBe('family');
+    expect(internals._legendTitle).toBe('Family');
     expect(internals._legendItems).toHaveLength(1);
     expect(internals._legendItems[0].value).toBe('A');
+  });
+
+  it('the default legend title is the display name', async () => {
+    const legend = document.createElement('div') as unknown as HTMLElement & {
+      getLegendExportData: () => unknown;
+      data: { annotations: Record<string, unknown> };
+    };
+    legend.getLegendExportData = () => ({
+      annotation: 'ec',
+      otherItemsCount: 0,
+      items: [{ value: 'A', color: '#fff', shape: 'circle', count: 1, isVisible: true }],
+    });
+    legend.data = { annotations: {} };
+
+    const modal = makeModal();
+    (modal as unknown as { legendElement: HTMLElement }).legendElement = legend;
+    await modal.updateComplete;
+    expect((modal as unknown as PublishInternals)._legendTitle).toBe('EC number');
+
+    // A user's column named like an EAT confidence one is labelled by its own name.
+    legend.getLegendExportData = () => ({
+      annotation: 'score__eat_confidence',
+      otherItemsCount: 0,
+      items: [],
+    });
+    legend.data = {
+      annotations: {
+        score__eat_confidence: { kind: 'numeric', values: [], colors: [], shapes: [] },
+      },
+    };
+    (modal as unknown as { legendElement: HTMLElement | null }).legendElement = null;
+    await modal.updateComplete;
+    (modal as unknown as { legendElement: HTMLElement }).legendElement = legend;
+    await modal.updateComplete;
+    expect((modal as unknown as PublishInternals)._legendTitle).toBe('Score eat confidence');
   });
 });
 
@@ -298,7 +345,7 @@ describe('<protspace-publish-modal> dimensions section', () => {
     expect(internals._state.aspectLocked).toBe(true);
     expect(chainBtn.disabled).toBe(true);
     expect(chainBtn.classList.contains('locked')).toBe(false);
-    expect(chainBtn.title).toMatch(/journal preset/i);
+    expect(chainBtn.nextElementSibling?.getAttribute('text')).toMatch(/journal preset/i);
 
     // Clicking the disabled chain must not flip aspectLocked.
     chainBtn.click();
@@ -763,7 +810,7 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
   });
 
-  it('Escape with an item selected deselects it and keeps the editor open; the next Escape fires close', async () => {
+  it('Delete with a slider, checkbox or button focused keeps the selected overlay', async () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as SelectionInternals;
@@ -771,28 +818,25 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     internals._selectedItem = { kind: 'overlay', index: 0 };
     internals.requestUpdate();
     await modal.updateComplete;
-    const onClose = vi.fn();
-    modal.addEventListener('close', onClose);
-    // As a key press reaches the page: the layer stack hears it on window in the capture phase.
-    const escape = () =>
-      document.body.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'Escape',
-          bubbles: true,
-          composed: true,
-          cancelable: true,
-        }),
-      );
 
-    escape();
+    const root = modal.shadowRoot!;
+    const controls = [
+      root.querySelector('[data-publish-item="overlay-0"] input[type="range"]'),
+      root.querySelector('input[type="checkbox"]'),
+      root.querySelector('[data-publish-item="overlay-0"] .delete-btn'),
+    ];
+    for (const control of controls) {
+      expect(control).not.toBeNull();
+      for (const key of ['Delete', 'Backspace']) {
+        control!.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, composed: true }),
+        );
+      }
+    }
     await modal.updateComplete;
-    expect(internals._state.overlays).toHaveLength(1);
-    expect(internals._selectedItem).toBeNull();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(topLayer()).toBeDefined();
 
-    escape();
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(internals._state.overlays).toHaveLength(1);
+    expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
   });
 
   it('is a layer while connected and releases it on removal', async () => {

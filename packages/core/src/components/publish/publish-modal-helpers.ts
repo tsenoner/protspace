@@ -176,3 +176,18 @@ export function readLegendExportState(
   }
   return null;
 }
+
+const FORM_CONTROL_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON']);
+
+/**
+ * Whether a key event's composed path runs through any form control (an input of any type, a
+ * select, textarea or button) or a contentEditable element. Wider than utils'
+ * `isEditableEventPath`, which lets undo work on a slider: Delete on a focused slider or checkbox
+ * must not remove the selected overlay.
+ */
+export function isFormControlEventPath(path: readonly EventTarget[]): boolean {
+  return path.some((node) => {
+    const { tagName, isContentEditable } = node as Partial<HTMLElement>;
+    return (tagName !== undefined && FORM_CONTROL_TAGS.has(tagName)) || isContentEditable === true;
+  });
+}

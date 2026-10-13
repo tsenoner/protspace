@@ -79,6 +79,11 @@ export function createExportHandler(options: ExportHandlerOptions): void {
       modal.legendElement = legendElement;
       // Restore the last saved publish state (localStorage), else the modal's defaults.
       modal.savedPublishState = loadPublishState();
+      // The editor compares it with the projection its overlays were placed on.
+      const projection = plotElement.data?.projections[plotElement.selectedProjectionIndex];
+      modal.currentProjection = projection
+        ? { projection: projection.name, dimensionality: projection.dimension }
+        : null;
 
       // Handle export from the figure editor
       modal.addEventListener('publish-export', (async (e: CustomEvent) => {
@@ -114,7 +119,11 @@ export function createExportHandler(options: ExportHandlerOptions): void {
           modal.remove();
         } catch (err) {
           console.error('Publish export failed:', err);
-          notify.error(getExportFailureNotification(err));
+          // A toast would sit under the modal dialog, hidden and inert: say it in the editor.
+          const failure = getExportFailureNotification(err);
+          modal.showExportError(
+            failure.description ? `${failure.title} ${failure.description}` : failure.title,
+          );
           // Leave the modal open so the user can retry without losing context.
         }
       }) as EventListener);

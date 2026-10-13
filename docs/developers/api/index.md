@@ -492,6 +492,29 @@ Methods: `reset()` checks **Include legend settings** again, as for a new datase
 legendWidthPercent, legendFontSizePx, includeLegend, includeLegendSettings }`; `EXPORT_DEFAULTS`
 holds the default sizes. The quick exports always send `EXPORT_DEFAULTS`' sizes; `includeLegendSettings` is the checkbox.
 
+### Figure Editor
+
+`<protspace-publish-modal>`, loaded on demand from `@protspace/core/publish`, is the figure editor.
+It opens as a full-screen modal dialog named "Figure editor" as soon as it is connected, so the host
+appends it to open it and removes it on `close`. Escape first deselects a selected overlay or inset,
+then closes the dialog; a press on the backdrop never closes it. Close, the dialog's ✕ and Escape keep
+the editor's state. New figure and Reset offer Undo in the footer until the next edit.
+
+| Property            | Type                                                     | Description                                                          |
+| ------------------- | -------------------------------------------------------- | -------------------------------------------------------------------- |
+| `plotElement`       | `HTMLElement \| null`                                    | The plot it renders from                                             |
+| `legendElement`     | `HTMLElement \| null`                                    | The legend it reads; its annotation's display name titles the legend |
+| `savedPublishState` | `Record<string, unknown> \| null`                        | A stored state to start from                                         |
+| `currentProjection` | `{ projection: string; dimensionality: number } \| null` | Set before connecting; warns when overlays were placed on another    |
+
+Method: `showExportError(message)` shows why an export failed inside the dialog (a toast would sit
+under it); the next export attempt clears it.
+
+| Event            | Detail              | Description                                  |
+| ---------------- | ------------------- | -------------------------------------------- |
+| `publish-export` | `{ canvas, state }` | Export pressed; the host writes the file     |
+| `close`          | `{ state }`         | Closed by Close, ✕ or Escape; save the state |
+
 ### Plot Tools
 
 The plot's tool strip.

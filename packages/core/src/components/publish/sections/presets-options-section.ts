@@ -1,4 +1,5 @@
 import { html, type TemplateResult } from 'lit';
+import '../../kit/tooltip';
 import { JOURNAL_PRESETS, type PresetId } from '../journal-presets';
 import type { PublishState } from '../publish-state';
 
@@ -35,10 +36,11 @@ export function renderPresets(model: PresetsModel, handlers: PresetsHandlers): T
             <button
               class="publish-toggle-btn publish-preset-btn ${model.preset === p.id ? 'active' : ''}"
               @click=${() => handlers.applyPreset(p.id)}
-              title="${p.label} (${dims})"
+              type="button"
             >
               ${p.label}<span class="publish-preset-dims">${dims}</span>
             </button>
+            <ps-tooltip text="${p.label} (${dims})"></ps-tooltip>
           `;
         })}
       </div>
@@ -56,13 +58,17 @@ export function renderOptions(model: OptionsModel, handlers: OptionsHandlers): T
         <label>Format</label>
         <div class="publish-format-toggle">
           <button
-            class="btn-secondary btn-compact ${model.format === 'png' ? 'active' : ''}"
+            type="button"
+            class="publish-toggle-btn ${model.format === 'png' ? 'active' : ''}"
+            aria-pressed=${model.format === 'png' ? 'true' : 'false'}
             @click=${() => handlers.update({ format: 'png' })}
           >
             PNG
           </button>
           <button
-            class="btn-secondary btn-compact ${model.format === 'pdf' ? 'active' : ''}"
+            type="button"
+            class="publish-toggle-btn ${model.format === 'pdf' ? 'active' : ''}"
+            aria-pressed=${model.format === 'pdf' ? 'true' : 'false'}
             @click=${() => handlers.update({ format: 'pdf' })}
           >
             PDF

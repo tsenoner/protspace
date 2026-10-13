@@ -36,6 +36,7 @@ import {
   SquareDashed,
   SquarePen,
   Target,
+  Undo2,
   Upload,
   X,
   type IconNode,
@@ -78,6 +79,7 @@ const ICONS = {
   'square-dashed': SquareDashed,
   'square-pen': SquarePen,
   target: Target,
+  'undo-2': Undo2,
   upload: Upload,
   x: X,
 } satisfies Record<string, IconNode>;

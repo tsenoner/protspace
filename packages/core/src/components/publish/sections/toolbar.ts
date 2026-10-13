@@ -1,4 +1,5 @@
 import { html, svg, type SVGTemplateResult, type TemplateResult } from 'lit';
+import '../../kit/tooltip';
 import type { OverlayTool } from '../publish-state';
 
 interface ToolbarModel {
@@ -51,15 +52,18 @@ const INSET_TOOL: ToolButton = {
 };
 
 function toolButton(entry: ToolButton, model: ToolbarModel, handlers: ToolbarHandlers) {
+  const active = model.tool === entry.tool;
   return html`
     <button
-      class="publish-toggle-btn publish-tool-btn ${model.tool === entry.tool ? 'active' : ''}"
+      type="button"
+      class="publish-toggle-btn publish-tool-btn ${active ? 'active' : ''}"
+      aria-pressed=${active ? 'true' : 'false'}
       @click=${() => handlers.setTool(entry.tool)}
-      title=${entry.title}
     >
-      <svg viewBox="0 0 24 24">${entry.glyph}</svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true">${entry.glyph}</svg>
       ${entry.label}
     </button>
+    <ps-tooltip text=${entry.title}></ps-tooltip>
   `;
 }
 

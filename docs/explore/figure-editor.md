@@ -134,11 +134,11 @@ The selected item is highlighted in the sidebar and gets resize/rotate handles o
 
 ### Removing items
 
-| Key                           | Effect                                            |
-| ----------------------------- | ------------------------------------------------- |
-| **Delete** or **Backspace**   | Remove the currently selected overlay or inset    |
-| **Escape**                    | Clear the selection (item stays)                  |
-| **× button on a sidebar row** | Remove that specific row, regardless of selection |
+| Key                           | Effect                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| **Delete** or **Backspace**   | Remove the currently selected overlay or inset                            |
+| **Escape**                    | Clear the selection (item stays); with nothing selected, close the editor |
+| **× button on a sidebar row** | Remove that specific row, regardless of selection                         |
 
 While focus is inside an editable input (e.g. a label's text field), Delete/Backspace edit text as usual, they don't remove the overlay.
 
@@ -235,12 +235,12 @@ The PDF page size is computed exactly from the configured Width/Height in mm at 
 
 ## Footer buttons
 
-| Button         | Action                                                                                                                                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **New Figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. |
-| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background.                                                                                |
-| **Cancel**     | Closes the editor. Your current state is saved to localStorage.                                                                                                                      |
-| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                              |
+| Button         | Action                                                                                                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. **Undo** in the footer brings the previous state back until your next edit. |
+| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background. **Undo** in the footer brings the previous state back until your next edit.                                                                                |
+| **Close**      | Closes the editor (so do the dialog's **×** and **Escape**). Your current state is saved to localStorage.                                                                                                                                                        |
+| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                                                                                                          |
 
 ## State persistence
 
@@ -282,16 +282,15 @@ Pixel-based properties (stroke width, font size) are scaled proportionally when 
 
 ## Keyboard and mouse
 
-| Action                          | Effect                                          |
-| ------------------------------- | ----------------------------------------------- |
-| Click overlay backdrop          | Close the editor                                |
-| Click × in sidebar header       | Close the editor                                |
-| Click toolbar button            | Switch active tool                              |
-| Click sidebar overlay/inset row | Select that item                                |
-| Click an item on the canvas     | Select that item                                |
-| **Delete** / **Backspace**      | Remove the selected item (skipped while typing) |
-| **Escape**                      | Clear the selection                             |
-| Drag on canvas (drawing tool)   | Create overlay/inset                            |
-| Drag on canvas (select tool)    | Move selected item                              |
-| Drag handle (select tool)       | Resize/rotate selected item                     |
-| Drag legend (free position)     | Move legend on canvas                           |
+| Action                          | Effect                                                                |
+| ------------------------------- | --------------------------------------------------------------------- |
+| Click × in the dialog header    | Close the editor                                                      |
+| Click toolbar button            | Switch active tool                                                    |
+| Click sidebar overlay/inset row | Select that item                                                      |
+| Click an item on the canvas     | Select that item                                                      |
+| **Delete** / **Backspace**      | Remove the selected item (skipped while a field or control has focus) |
+| **Escape**                      | Clear the selection, then close the editor                            |
+| Drag on canvas (drawing tool)   | Create overlay/inset                                                  |
+| Drag on canvas (select tool)    | Move selected item                                                    |
+| Drag handle (select tool)       | Resize/rotate selected item                                           |
+| Drag legend (free position)     | Move legend on canvas                                                 |

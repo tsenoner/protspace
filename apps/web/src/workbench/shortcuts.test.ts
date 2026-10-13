@@ -63,4 +63,12 @@ describe('shortcuts', () => {
     expect(formatKeys(['Shift', 'Mod', 'Z'], true)).toBe('⇧⌘Z');
     expect(formatKeys(['Shift', 'Mod', 'Z'], false)).toBe('Shift+Ctrl+Z');
   });
+
+  it('the Figure editor group lists Delete, then Escape that deselects before it closes', () => {
+    const editor = SHORTCUT_GROUPS.find((group) => group.title === 'Figure editor');
+    expect(editor?.items).toEqual([
+      { keys: ['Delete'], action: 'Remove the selected overlay or inset' },
+      { keys: ['Escape'], action: 'Deselect the overlay or inset, then close the editor' },
+    ]);
+  });
 });
