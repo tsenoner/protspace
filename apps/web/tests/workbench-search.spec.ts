@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  applyFirstCategoryFilter,
+  closeFilterPanel,
   getSelectedProteinIds,
   openExplore,
   searchInput,
@@ -117,6 +119,31 @@ test.describe('protein search feedback', () => {
     expect(at).not.toBeNull();
     expect(Math.abs(at!.x - (plot.x + plot.width / 2))).toBeLessThanOrEqual(2);
     expect(Math.abs(at!.y - (plot.y + plot.height / 2))).toBeLessThanOrEqual(2);
+  });
+
+  test('a protein the filter hides is selected, and the report says it is hidden', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await applyFirstCategoryFilter(page);
+    await closeFilterPanel(page);
+    const id = await page.locator('#myPlot').evaluate((element) => {
+      const plot = element as unknown as {
+        data: { protein_ids: string[] };
+        getCurrentData(): { protein_ids: string[] } | null;
+      };
+      const inView = new Set(plot.getCurrentData()?.protein_ids ?? []);
+      return plot.data.protein_ids.find((proteinId) => !inView.has(proteinId)) ?? null;
+    });
+    expect(id).not.toBeNull();
+    const before = await readTransform(page);
+
+    await searchInput(page).fill(id!);
+    await searchInput(page).press('Enter');
+
+    await expect(report(page)).toHaveText(`${id} is selected but hidden in this view`);
+    await expect.poll(() => getSelectedProteinIds(page)).toContain(id);
+    expect(await readTransform(page)).toEqual(before);
   });
 
   test('a pasted list selects without zooming and the selection bar offers Zoom to them', async ({

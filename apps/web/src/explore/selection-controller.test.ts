@@ -65,6 +65,7 @@ const click = (proteinId: string, modifierKeys?: { ctrl?: boolean; meta?: boolea
 function setup() {
   const plot = Object.assign(new EventTarget(), {
     selectedProteinIds: [] as string[],
+    data: null as { protein_ids: string[] } | null,
     selectionMode: false,
     selectionTool: 'rectangle' as 'rectangle' | 'lasso',
     isolateSelection: vi.fn(),
@@ -418,6 +419,32 @@ describe('selection controller: plot events', () => {
     expect(m.search.selectedProteinIds).toEqual(['P2']);
     expect(m.bar.selectedCount).toBe(1);
   });
+
+  it('the search offers the whole dataset, not only the proteins in view', () => {
+    const m = setup();
+    m.plot.data = { protein_ids: ['P1', 'P2', 'P3'] };
+
+    fire(m.plot, 'data-change', { data: { protein_ids: ['P1'] } }); // a filtered view
+
+    expect(m.search.availableProteinIds).toEqual(['P1', 'P2', 'P3']);
+  });
+
+  it('undoing a Show only that left one protein re-enables the tools', () => {
+    const m = setup();
+    fire(m.plot, 'auto-disable-selection', { reason: 'insufficient-data', dataSize: 1 });
+    expect(m.tools.selectionDisabled).toBe(true);
+
+    fire(m.plot, 'data-isolation', {
+      isolationHistory: [['P1', 'P2'], ['P1']],
+      isolationMode: true,
+      dataSize: 2,
+    });
+
+    expect(m.tools.selectionDisabled).toBe(false);
+    expect(m.bar.canIsolate).toBe(true);
+    expect(m.tools.tool).toBe('pan');
+    expect(m.plot.selectionMode).toBe(false);
+  });
 });
 
 describe('selection controller: Escape', () => {
@@ -724,9 +751,11 @@ describe('selection controller: undo history', () => {
     undo(m);
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
     expect(m.interaction.handleSelectionChange).toHaveBeenLastCalledWith(['P1']);
-    // The pick's own landing, after the paint, does not come back over the undo.
+    // The pick's own landing, after the paint, does not come back over the undo, and its zoom
+    // never runs: the undo took the pick back.
     await afterPaint();
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
     expect(m.search.selectedProteinIds).toEqual(['P1']);
+    expect(m.plot.zoomToProteins).not.toHaveBeenCalled();
   });
 });

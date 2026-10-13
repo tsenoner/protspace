@@ -99,7 +99,7 @@ export function createSelectionController({
   notify,
 }: SelectionControllerOptions): SelectionController {
   /** The selection the search box and the tools show, a search pick still waiting included. */
-  let selected: string[] = [];
+  let selected: readonly string[] = [];
   let tool: PlotTool = 'pan';
   // A search pick or Clear re-stages every point: the box and the tools show it in the frame of
   // the input, and the plot takes it after that frame is painted. A newer pick replaces one
@@ -108,14 +108,15 @@ export function createSelectionController({
   /** The waiting or landing commit's `afterLand`; a newer commit replaces it. */
   let pendingAfterLand: (() => void) | undefined;
 
-  const show = (ids: string[]) => {
+  const show = (ids: readonly string[]) => {
     selected = ids;
-    proteinSearch.selectedProteinIds = ids;
+    // The element only reads it; `readonly` lets the compiler guard the arrays history holds.
+    proteinSearch.selectedProteinIds = ids as string[];
     selectionBar.selectedCount = ids.length;
   };
 
   const commitSelection = (
-    ids: string[],
+    ids: readonly string[],
     {
       afterPaint = false,
       record = true,
@@ -259,10 +260,11 @@ export function createSelectionController({
     entry: Exclude<UndoEntry, { kind: 'filter' }>,
     direction: 'undo' | 'redo',
   ) => {
-    // A search pick still waiting lands first, so the step applies to what the user sees.
+    // A search pick still waiting lands first, so the step applies to what the user sees, but
+    // without its zoom: the step is about to take it back.
+    pendingAfterLand = undefined;
     commit.flush();
-    // History entries hold arrays nothing mutates; the commit only reads them.
-    const restore = (ids: readonly string[]) => commitSelection(ids as string[], { record: false });
+    const restore = (ids: readonly string[]) => commitSelection(ids, { record: false });
     if (entry.kind === 'selection') {
       restore(direction === 'undo' ? entry.before : entry.after);
     } else if (entry.kind === 'isolate') {
@@ -328,11 +330,15 @@ export function createSelectionController({
     notify.warning(getSelectionDisabledNotification({ reason, dataSize }));
   };
 
-  /** The search box offers the proteins in view; the tools show the plot's selection. */
+  /**
+   * The search box offers the whole dataset, not only the proteins in view: a protein the filter
+   * or an isolation hides is still selectable (R3 Q3). The tools show the plot's selection.
+   */
   const onDataChange = (event: Event) => {
     const data = (event as CustomEvent<{ data?: { protein_ids?: string[] } | null }>).detail?.data;
     if (!data) return;
-    proteinSearch.availableProteinIds = Array.isArray(data.protein_ids) ? data.protein_ids : [];
+    const all = plotElement.data?.protein_ids ?? data.protein_ids;
+    proteinSearch.availableProteinIds = Array.isArray(all) ? all : [];
     show(Array.isArray(plotElement.selectedProteinIds) ? plotElement.selectedProteinIds : []);
   };
 
