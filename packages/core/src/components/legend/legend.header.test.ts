@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { annotationLabel } from '@protspace/utils';
 import type { PsIconButton } from '../kit/button';
-import { LEGEND_EVENTS } from './config';
 import type { ProtspaceLegend } from './legend';
 import { sortIcon, sortLabel } from './legend-header';
 import type { LegendSortMode } from './types';
@@ -12,9 +11,11 @@ import {
   settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
+import { stubPopoverApi } from './test-support/popover-stub';
 
 // Settings persist per dataset: an in-memory store keeps one test's sort out of the next.
 vi.stubGlobal('localStorage', createLocalStorageMock());
+stubPopoverApi();
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -128,14 +129,25 @@ describe('legend header', () => {
   });
 
   it('the settings button is named Legend settings and dispatches legend-customize', async () => {
-    const legend = await mount(categoricalData(TWELVE), 'family');
-    const settings = await headerButton(legend, 'settings-button');
-    expect(settings.icon).toBe('sliders-horizontal');
-    expect(inner(settings).getAttribute('aria-label')).toBe('Legend settings');
-    const onCustomize = vi.fn();
-    legend.addEventListener(LEGEND_EVENTS.CUSTOMIZE, onCustomize);
-    inner(settings).click();
-    expect(onCustomize).toHaveBeenCalledOnce();
+    const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
+    await legend.updateComplete;
+    const customize = vi.fn();
+    legend.addEventListener('legend-customize', customize);
+    const button = legend.shadowRoot!.querySelector<HTMLElement & { label: string }>(
+      '.settings-button',
+    )!;
+    expect(button.label).toBe('Legend settings');
+    const popover = () => legend.shadowRoot!.querySelector('protspace-legend-settings-popover')!;
+
+    button.click();
+    for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+    expect(customize).toHaveBeenCalledOnce();
+    expect(popover().open).toBe(true);
+
+    button.click();
+    await legend.updateComplete;
+    expect(popover().open).toBe(false);
+    expect(customize).toHaveBeenCalledOnce();
   });
 
   it('with one row the sort button is hidden', async () => {

@@ -4,16 +4,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'lit';
 import {
-  renderSettingsDialog,
-  type SettingsDialogCallbacks,
-  type SettingsDialogState,
-} from './legend-settings-dialog';
-import type { LegendPersistedSettings, LegendSortMode } from './types';
-import {
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   type NumericBinningStrategy,
 } from '@protspace/utils';
+import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
+import type { LegendDisplaySettings, LegendPersistedSettings, LegendSortMode } from './types';
 
 // Import the component to register the custom element for integration coverage.
 import './legend';
@@ -29,19 +25,8 @@ type LegendTestElement = HTMLElement & {
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
   maxVisibleValues: number;
   updated: (changedProperties: Map<string, unknown>) => void;
-  _showSettingsDialog: boolean;
-  _dialogSettings: {
-    maxVisibleValues: number;
-    shapeSize: number;
-    enableDuplicateStackUI: boolean;
-    annotationSortModes: Record<string, LegendSortMode>;
-    selectedPaletteId: string;
-    numericStrategy: NumericBinningStrategy;
-    reverseGradient: boolean;
-  };
-  _renderSettingsDialog: () => unknown;
-  _handlePaletteChange: (paletteId: string) => void;
-  _handleSettingsSave: () => void;
+  _renderSettingsPopover: (label: string) => unknown;
+  _applyDisplaySettings: (patch: Partial<LegendDisplaySettings>) => void;
   _handleSettingsReset: () => void;
   _applyPersistedSettings: (settings: LegendPersistedSettings) => void;
   _syncNumericSettingsFromPersistence: () => void;
@@ -85,146 +70,17 @@ type LegendTestElement = HTMLElement & {
   getAllPersistedSettings: () => Record<string, LegendPersistedSettings>;
 };
 
-function renderSettingsDialogToContainer(overrides = {}) {
-  const callbacks = {
-    onMaxVisibleValuesChange: vi.fn(),
-    onShapeSizeChange: vi.fn(),
-    onEnableDuplicateStackUIChange: vi.fn(),
-    onSortModeChange: vi.fn<(annotation: string, mode: LegendSortMode) => void>(),
-    onPaletteChange: vi.fn(),
-    onNumericStrategyChange: vi.fn<(strategy: NumericBinningStrategy) => void>(),
-    onReverseGradientChange: vi.fn(),
-    onSave: vi.fn(),
-    onClose: vi.fn(),
-    onReset: vi.fn(),
-    onKeydown: vi.fn(),
-    onOverlayMouseDown: vi.fn(),
-    onOverlayMouseUp: vi.fn(),
-  } as SettingsDialogCallbacks;
-
-  const container = document.createElement('div');
-  render(
-    renderSettingsDialog(
-      {
-        maxVisibleValues: 25,
-        shapeSize: 12,
-        defaultShapeSize: 10,
-        enableDuplicateStackUI: false,
-        selectedAnnotation: 'score',
-        annotationSortModes: {},
-        isNumericAnnotation: true,
-        selectedNumericStrategy: 'linear',
-        logBinningAvailable: true,
-        hasPersistedSettings: false,
-        selectedPaletteId: 'viridis',
-        reverseGradient: false,
-        hasCategoryScores: false,
-        ...overrides,
-      },
-      callbacks,
-    ),
-    container,
-  );
-
-  return { container, callbacks };
-}
-
-describe('renderSettingsDialog', () => {
-  it('keeps "By separation" checked on reload, before this projection\'s scores arrive', () => {
-    // The deliberate reload case: hasCategoryScores is false (statistics have not synced
-    // yet) but the persisted sort mode is still 'silhouette-desc'. Dropping the option here
-    // would render the radio group with nothing checked.
-    const { container } = renderSettingsDialogToContainer({
-      selectedAnnotation: 'major_group',
-      isNumericAnnotation: false,
-      annotationSortModes: { major_group: 'silhouette-desc' },
-      hasCategoryScores: false,
-    });
-
-    const labels = [...container.querySelectorAll('label')].map((label) =>
-      label.textContent?.trim(),
-    );
-    expect(labels).toContain('By separation');
-
-    const checkedLabel = [...container.querySelectorAll('input[type="radio"]')]
-      .find((input) => (input as HTMLInputElement).checked)
-      ?.closest('label')
-      ?.textContent?.trim();
-    expect(checkedLabel).toBe('By separation');
-  });
-});
-
-describe('shape size input', () => {
-  function typeSize(value: string) {
-    const { container, callbacks } = renderSettingsDialogToContainer();
-    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
-    input.value = value;
-    input.dispatchEvent(new Event('input'));
-    return { input, callbacks };
-  }
-
-  function renderSize(state: Partial<SettingsDialogState>) {
-    const { container } = renderSettingsDialogToContainer(state);
-    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
-    const hint = input.parentElement?.querySelector('.settings-note')?.textContent ?? '';
-    return { input, hint };
-  }
-
-  it('accepts sizes down to 1', () => {
-    const { input, callbacks } = typeSize('1');
-    expect(input.min).toBe('1');
-    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
-  });
-
-  it("suggests the dataset's own default and names it in a hint", () => {
-    const { input, hint } = renderSize({ shapeSize: 2, defaultShapeSize: 2 });
-    expect(input.value).toBe('2');
-    expect(input.placeholder).toBe('2');
-    expect(hint).toContain('Default for this dataset: 2');
-  });
-
-  it('caps typed sizes at 64', () => {
-    const { input, callbacks } = typeSize('100');
-    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
-    expect(input.value).toBe('64');
-  });
-
-  it('reports an emptied field as no size, so Save applies the default', () => {
-    const { callbacks } = typeSize('');
-    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(null);
-  });
-
-  it('ignores a size below 1', () => {
-    const { callbacks } = typeSize('0');
-    expect(callbacks.onShapeSizeChange).not.toHaveBeenCalled();
-  });
-
-  it('shows an emptied field as empty, with the default as placeholder', () => {
-    const { input, hint } = renderSize({ shapeSize: null, defaultShapeSize: 2 });
-    expect(input.value).toBe('');
-    expect(input.placeholder).toBe('2');
-    expect(hint).toContain('clear the field to use it');
-  });
-});
-
-describe('ProtspaceLegend settings dialog numeric inference integration', () => {
+describe('ProtspaceLegend numeric settings inference', () => {
   function createLegend(): LegendTestElement {
     return document.createElement('protspace-legend') as LegendTestElement;
   }
 
-  function configureOpenSettingsDialog(el: LegendTestElement, selectedPaletteId = 'kellys') {
+  /** A detached legend on the inferred numeric annotation `score`, with its redraws stubbed. */
+  function configureNumeric(el: LegendTestElement): void {
     el.selectedAnnotation = 'score';
     el.annotationData = { name: 'score', values: ['1', '2'], kind: 'numeric' };
-    el._showSettingsDialog = true;
-    el._dialogSettings = {
-      maxVisibleValues: 5,
-      shapeSize: 12,
-      enableDuplicateStackUI: false,
-      annotationSortModes: {},
-      selectedPaletteId,
-      numericStrategy: 'linear',
-      reverseGradient: false,
-    };
+    el._updateLegendItems = vi.fn();
+    el._dispatchLegendStateChange = vi.fn();
   }
 
   function setSourceAnnotationKind(el: LegendTestElement, kind: 'categorical' | 'numeric'): void {
@@ -240,47 +96,46 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
     });
   }
 
-  it('renders numeric-dependent controls for inferred numeric annotations', () => {
+  it('renders the settings popover as numeric for inferred numeric annotations', () => {
     const el = createLegend();
-    configureOpenSettingsDialog(el, DEFAULT_NUMERIC_PALETTE_ID);
-    el._dialogSettings.annotationSortModes = { score: 'alpha-asc' };
+    configureNumeric(el);
     const container = document.createElement('div');
 
-    render(el._renderSettingsDialog(), container);
+    render(el._renderSettingsPopover('Score'), container);
 
-    expect(container.querySelector('#numeric-distribution-select')).not.toBeNull();
-    expect(
-      [...container.querySelectorAll('.settings-section-title')].map((section) =>
-        section.textContent?.trim(),
-      ),
-    ).toContain('Bin order');
+    const popover = container.querySelector(
+      'protspace-legend-settings-popover',
+    ) as ProtspaceLegendSettingsPopover;
+    expect(popover.numeric).toBe(true);
+    expect(popover.settings.paletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
+    expect(popover.annotationLabel).toBe('Score');
   });
 
-  it('normalizes palette changes using the inferred numeric annotation type', () => {
+  it('normalizes palette edits using the inferred numeric annotation type', () => {
     const el = createLegend();
-    configureOpenSettingsDialog(el);
+    configureNumeric(el);
 
-    el._handlePaletteChange('kellys');
+    el._applyDisplaySettings({ paletteId: 'kellys' });
 
-    expect(el._dialogSettings.selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
-  });
-
-  it('saves numeric-only settings for inferred numeric annotations', () => {
-    const el = createLegend();
-    configureOpenSettingsDialog(el);
-    el._updateLegendItems = vi.fn();
-    el._dispatchLegendStateChange = vi.fn();
-
-    el._handleSettingsSave();
-
-    expect(el._annotationSortModes.score).toBe('alpha-asc');
     expect(el._selectedPaletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
+    expect(el._numericSettingsByAnnotation.score.paletteId).toBe(DEFAULT_NUMERIC_PALETTE_ID);
+  });
+
+  it('applies numeric edits live for inferred numeric annotations', () => {
+    const el = createLegend();
+    configureNumeric(el);
+
+    el._applyDisplaySettings({ maxVisibleValues: 5 });
+    el._applyDisplaySettings({ numericStrategy: 'linear' });
+
+    expect(el.maxVisibleValues).toBe(5);
     expect(el._numericSettingsByAnnotation.score).toMatchObject({
       binCount: 5,
       strategy: 'linear',
       paletteId: DEFAULT_NUMERIC_PALETTE_ID,
       reverseGradient: false,
     });
+    expect(el._updateLegendItems).toHaveBeenCalledTimes(2);
   });
 
   it('resets to numeric defaults when the source annotation is numeric', () => {

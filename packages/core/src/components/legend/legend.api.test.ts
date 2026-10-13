@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LitElement } from 'lit';
 import './legend';
 import { ProtspaceLegend } from './legend';
 import { LEGEND_EVENTS } from './config';
@@ -11,8 +10,10 @@ import {
   settleLegend,
 } from './test-support/legend-scatterplot-harness';
 import { createLocalStorageMock } from './test-support/local-storage-mock';
+import { stubPopoverApi } from './test-support/popover-stub';
 
 vi.stubGlobal('localStorage', createLocalStorageMock());
+stubPopoverApi();
 
 /** Public methods (docs/developers/api/index.md) and their arity today. */
 const METHODS: Record<string, number> = {
@@ -55,16 +56,25 @@ describe('legend public API', () => {
   });
 
   it('dispatches legend-customize from the settings button', async () => {
-    const legend = await mount();
-    const onCustomize = vi.fn();
-    legend.addEventListener(LEGEND_EVENTS.CUSTOMIZE, onCustomize);
-    const settings = legend.shadowRoot!.querySelector<LitElement>(
-      'ps-icon-button.settings-button',
+    const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
+    await legend.updateComplete;
+    const customize = vi.fn();
+    legend.addEventListener('legend-customize', customize);
+    const button = legend.shadowRoot!.querySelector<HTMLElement & { label: string }>(
+      '.settings-button',
     )!;
-    await settings.updateComplete;
-    settings.shadowRoot!.querySelector('button')!.click();
-    await settleLegend(legend);
-    expect(onCustomize).toHaveBeenCalledOnce();
+    expect(button.label).toBe('Legend settings');
+    const popover = () => legend.shadowRoot!.querySelector('protspace-legend-settings-popover')!;
+
+    button.click();
+    for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+    expect(customize).toHaveBeenCalledOnce();
+    expect(popover().open).toBe(true);
+
+    button.click();
+    await legend.updateComplete;
+    expect(popover().open).toBe(false);
+    expect(customize).toHaveBeenCalledOnce();
   });
 
   it('dispatches legend-item-click with the value and the action', async () => {

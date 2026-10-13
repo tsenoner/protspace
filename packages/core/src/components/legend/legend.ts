@@ -39,7 +39,6 @@ import {
 import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
-import { topLayer } from '../kit/layers';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -67,6 +66,8 @@ import {
 import { ColorPickerController } from './legend-color-picker';
 import { LegendRowMenu } from './legend-row-menu';
 import { OtherPopoverControl } from './legend-other-control';
+import './legend-settings-popover';
+import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
 import {
   deriveStripPoints,
   EMPTY_STRIP_POINTS,
@@ -110,14 +111,6 @@ import {
   type ResolvedLegendSettings,
 } from './legend-items-state';
 
-// Dialogs
-import {
-  renderSettingsDialog,
-  initializeAnnotationSortMode,
-  type SettingsDialogState,
-  type SettingsDialogCallbacks,
-} from './legend-settings-dialog';
-import { createFocusTrap } from './focus-trap';
 import { createLegendErrorEventDetail } from './legend.events';
 import {
   EatReliabilityController,
@@ -138,6 +131,7 @@ import type {
   PersistedCategoryData,
   LegendErrorEventDetail,
   LegendErrorSource,
+  LegendDisplaySettings,
 } from './types';
 
 /**
@@ -146,7 +140,7 @@ import type {
  * @fires legend-item-click - When a legend item is clicked (toggled, isolated, extracted, or merged)
  * @fires legend-zorder-change - When the z-order of legend items changes
  * @fires legend-colormapping-change - When color/shape mappings change
- * @fires legend-customize - When the customize dialog is opened
+ * @fires legend-customize - When the settings popover is opened
  * @fires legend-download - When download is requested
  * @fires legend-error - When an error occurs during data processing, persistence, or syncing
  *
@@ -203,7 +197,13 @@ export class ProtspaceLegend extends LitElement {
   /** The sort button while its menu is open (the menu's anchor); null when closed. */
   @state() private _sortMenu: HTMLElement | null = null;
   private _preIsolationVisibleValues: Set<string> = new Set();
-  @state() private _showSettingsDialog = false;
+  /** The settings button while the settings popover is open under it (design decision 12). */
+  @state() private _settingsAnchor: HTMLElement | null = null;
+  /**
+   * "Show duplicate counts and spread overlaps" for the selected annotation. Live state: the
+   * stored record reads it, so an unrelated save never writes false over a stored true.
+   */
+  @state() private _enableDuplicateStackUI = false;
   @state() private _statusMessage = '';
   @state() private _selectedPaletteId = 'kellys';
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
@@ -258,42 +258,14 @@ export class ProtspaceLegend extends LitElement {
   // Kept until its dblclick arrives, which isolates from `isolationBase`.
   private _firstClick: FirstClick | null = null;
 
-  // Settings dialog temporary state (consolidated into single object)
-  @state() private _dialogSettings: {
-    maxVisibleValues: number;
-    /** null once the user empties the size field: Save then returns to the dataset's default. */
-    shapeSize: number | null;
-    enableDuplicateStackUI: boolean;
-    annotationSortModes: Record<string, LegendSortMode>;
-    selectedPaletteId: string;
-    numericStrategy: NumericBinningStrategy;
-    reverseGradient: boolean;
-  } = {
-    maxVisibleValues: LEGEND_DEFAULTS.maxVisibleValues,
-    shapeSize: LEGEND_DEFAULTS.symbolSize,
-    enableDuplicateStackUI: false,
-    annotationSortModes: {},
-    selectedPaletteId: 'kellys',
-    numericStrategy: DEFAULT_NUMERIC_STRATEGY,
-    reverseGradient: false,
-  };
-
-  @query('#legend-settings-dialog')
-  private _settingsDialogEl?: HTMLDivElement;
-
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
 
+  @query('protspace-legend-settings-popover')
+  private _settingsPopover?: ProtspaceLegendSettingsPopover;
+
   // Instance-specific processor context (avoids global state conflicts)
   private _processorContext: LegendProcessorContext = createProcessorContext();
-
-  // Focus trap cleanup function (stored for proper cleanup)
-  private _focusTrapCleanup: (() => void) | null = null;
-
-  // Track where mousedown occurred for click-outside detection
-  private _mouseDownOutsideSettings = false;
-  /** Whether `_onWindowKeydownCapture` is on the window (see `_listenForEscape`). */
-  private _escapeListening = false;
 
   // ─────────────────────────────────────────────────────────────────
   // Controllers
@@ -329,7 +301,7 @@ export class ProtspaceLegend extends LitElement {
           this._annotationSortModes[this.selectedAnnotation],
           isNumericAnnotation,
         ),
-        enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
+        enableDuplicateStackUI: this._enableDuplicateStackUI,
         selectedPaletteId: isNumericAnnotation
           ? normalizeNumericPaletteId(this._selectedPaletteId)
           : normalizeCategoricalPaletteId(this._selectedPaletteId),
@@ -384,8 +356,7 @@ export class ProtspaceLegend extends LitElement {
     onSortMenu: (anchor) => {
       this._sortMenu = this._sortMenu ? null : anchor;
     },
-    // 3.12 anchors the settings popover on the button; until then it opens the dialog.
-    onSettings: () => void this._handleCustomize(),
+    onSettings: (anchor) => this._openSettings(anchor),
     onTitlePointerEnter: (e) => {
       const title = e.currentTarget as HTMLElement;
       this._nameTooltip.hover(title, title);
@@ -549,29 +520,6 @@ export class ProtspaceLegend extends LitElement {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Keyboard Handler
-  // ─────────────────────────────────────────────────────────────────
-
-  // The settings dialog is not on the layer stack yet (3.12 moves it). An open layer (the picker, a
-  // menu, the Other popover, a keyboard reorder) takes Escape first, whichever listener ran first.
-  private _onWindowKeydownCapture = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || topLayer()) return;
-    if (this._showSettingsDialog) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      this._handleSettingsClose();
-    }
-  };
-
-  /** Puts the Escape handler on the window while the settings dialog is open. */
-  private _listenForEscape(on: boolean): void {
-    if (on === this._escapeListening) return;
-    this._escapeListening = on;
-    if (on) window.addEventListener('keydown', this._onWindowKeydownCapture, true);
-    else window.removeEventListener('keydown', this._onWindowKeydownCapture, true);
-  }
-
   private _dispatchLegendStateChange(): void {
     window.dispatchEvent(
       new CustomEvent('protspace-legend-state-change', {
@@ -689,50 +637,9 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
-    // Lit schedules no update on reconnect, so an open dialog's Escape handler comes back here.
-    this._listenForEscape(this._escapeTargetOpen);
-  }
-
-  /** The old settings dialog is open: every other legend overlay is a layer instead. */
-  private get _escapeTargetOpen(): boolean {
-    return this._showSettingsDialog;
-  }
-
-  disconnectedCallback(): void {
-    this._listenForEscape(false);
-    this._cleanupFocusTrap();
-    super.disconnectedCallback();
-  }
-
-  private _cleanupFocusTrap(): void {
-    if (this._focusTrapCleanup) {
-      this._focusTrapCleanup();
-      this._focusTrapCleanup = null;
-    }
-  }
-
-  private _setupFocusTrap(dialogId: string): void {
-    this._cleanupFocusTrap();
-    requestAnimationFrame(() => {
-      const dialog = this.shadowRoot?.querySelector(`#${dialogId}`) as HTMLElement | null;
-      if (dialog) {
-        this._focusTrapCleanup = createFocusTrap(dialog);
-      }
-    });
   }
 
   updated(changedProperties: Map<string, unknown>): void {
-    this._listenForEscape(this._escapeTargetOpen);
-
-    // Handle settings dialog focus trapping
-    if (changedProperties.has('_showSettingsDialog')) {
-      if (this._showSettingsDialog) {
-        this._setupFocusTrap('legend-settings-dialog');
-      } else {
-        this._cleanupFocusTrap();
-      }
-    }
-
     // Update dataset hash when protein IDs change.
     // Skip during isolation mode: isolation filters protein IDs to a subset,
     // which would produce a different hash and cause settings (maxVisibleValues,
@@ -897,6 +804,8 @@ export class ProtspaceLegend extends LitElement {
    * @param datasetHash - The hash of the NEW dataset (used to clear its localStorage entries)
    */
   public clearForNewDataset(datasetHash: string, clearPersistedState: boolean = true): void {
+    // A value typed into the settings popover belongs to the dataset it was typed for.
+    this._closeSettings();
     // A colour still waiting for its delay lands on the dataset it was picked on, not the next one.
     this._colorPicker.close();
 
@@ -917,7 +826,7 @@ export class ProtspaceLegend extends LitElement {
     this._annotationShapeSize = null;
 
     // Reset UI state
-    this._showSettingsDialog = false;
+    this._enableDuplicateStackUI = false;
     this._sortMenu = null;
     this._otherPopover.close();
     this._selectedPaletteId = 'kellys';
@@ -1083,6 +992,8 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _handleAnnotationChange(annotation: string): void {
+    // A value still being typed belongs to the annotation it was typed for.
+    this._closeSettings();
     this._clearKeyboardReorderState();
     this.selectedAnnotation = annotation;
     this._hiddenValues = [];
@@ -1411,9 +1322,10 @@ export class ProtspaceLegend extends LitElement {
         [this.selectedAnnotation]: resolved.sortMode,
       };
 
+      this._enableDuplicateStackUI = resolved.enableDuplicateStackUI === true;
       this._scatterplotController.updateConfig({
         pointSize: calculatePointSize(this.shapeSize),
-        enableDuplicateStackUI: resolved.enableDuplicateStackUI,
+        enableDuplicateStackUI: this._enableDuplicateStackUI,
       });
       this._scatterplotController.syncNumericAnnotationSettings();
     } catch (error) {
@@ -1568,14 +1480,6 @@ export class ProtspaceLegend extends LitElement {
   private _handleExtractAllFromOther(): void {
     const nonOtherCount = this._legendItems.filter((i) => i.value !== LEGEND_VALUES.OTHER).length;
     const targetMaxVisibleValues = nonOtherCount + this._otherItems.length;
-
-    // Keep settings dialog in sync if it's open.
-    if (this._showSettingsDialog) {
-      this._dialogSettings = {
-        ...this._dialogSettings,
-        maxVisibleValues: targetMaxVisibleValues,
-      };
-    }
 
     this._otherPopover.close();
 
@@ -1753,93 +1657,176 @@ export class ProtspaceLegend extends LitElement {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Settings Dialog
+  // Settings Popover
   // ─────────────────────────────────────────────────────────────────
 
-  private async _handleCustomize(): Promise<void> {
+  /** The header's settings button: opens the settings popover under it, or closes it. */
+  private _openSettings(anchor: HTMLElement): void {
+    if (this._settingsAnchor) {
+      this._closeSettings();
+      return;
+    }
+    // One legend overlay at a time; a keyboard reorder in progress is dropped, as the dialog did.
     this._clearKeyboardReorderState();
-    const scatterplot = this._scatterplotController.scatterplot;
-    const numericSettings = this._numericSettingsByAnnotation[this.selectedAnnotation];
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const selectedPaletteId = isNumericAnnotation
-      ? normalizeNumericPaletteId(numericSettings?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID)
-      : normalizeCategoricalPaletteId(this._selectedPaletteId);
-    this._dialogSettings = {
-      maxVisibleValues: this.maxVisibleValues,
-      // `shapeSize` is a public property, so a host can set it past the dialog's bound.
-      shapeSize: Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize),
-      annotationSortModes: this._annotationSortModes,
-      enableDuplicateStackUI: Boolean(
-        scatterplot &&
-        'config' in scatterplot &&
-        (scatterplot as { config?: Record<string, unknown> }).config?.enableDuplicateStackUI,
-      ),
-      selectedPaletteId,
-      numericStrategy: numericSettings?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
-      reverseGradient: numericSettings?.reverseGradient ?? false,
-    };
-
-    this._showSettingsDialog = true;
+    this._colorPicker.close();
+    this._rowMenu.close();
+    this._sortMenu = null;
+    this._otherPopover.close();
+    this._settingsAnchor = anchor;
     this.dispatchEvent(new CustomEvent(LEGEND_EVENTS.CUSTOMIZE, { bubbles: true, composed: true }));
-
-    this.requestUpdate();
-    await this.updateComplete;
-    this._settingsDialogEl?.focus();
   }
 
-  private _handleSettingsSave(): void {
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const nextSelectedPaletteId = isNumericAnnotation
-      ? normalizeNumericPaletteId(this._dialogSettings.selectedPaletteId)
-      : normalizeCategoricalPaletteId(this._dialogSettings.selectedPaletteId);
-    const nextAnnotationSortModes = {
-      ...this._dialogSettings.annotationSortModes,
-      [this.selectedAnnotation]: normalizeSortModeForType(
-        this._dialogSettings.annotationSortModes[this.selectedAnnotation],
-        isNumericAnnotation,
-      ),
-    };
+  private _closeSettings(): void {
+    if (!this._settingsAnchor) return;
+    // A value typed but not yet committed is kept, not lost with the popover.
+    this._settingsPopover?.flush();
+    this._settingsAnchor = null;
+  }
 
-    this.maxVisibleValues = this._dialogSettings.maxVisibleValues;
-    const dialogShapeSize = this._dialogSettings.shapeSize;
-    if (dialogShapeSize === null) {
-      // An emptied size field returns the dataset to its default, as Reset does for the size.
-      this._clearShapeSize();
-    } else if (dialogShapeSize !== this.shapeSize) {
-      this._persistenceController.saveShapeSize(dialogShapeSize);
-      this.shapeSize = dialogShapeSize;
+  /**
+   * Applies one edit from the settings popover at once (design decision 12), then runs the tail
+   * the dialog's Save ran, once: the items, the plot and the stored record follow.
+   */
+  private _applyDisplaySettings(patch: Partial<LegendDisplaySettings>): void {
+    const annotation = this.selectedAnnotation;
+    const current = this._numericSettingsByAnnotation[annotation];
+    const numeric = this._isCurrentAnnotationNumeric()
+      ? {
+          binCount: current?.binCount ?? this.maxVisibleValues,
+          strategy: current?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
+          paletteId: normalizeNumericPaletteId(current?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID),
+          reverseGradient: current?.reverseGradient ?? false,
+        }
+      : null;
+
+    if (patch.maxVisibleValues !== undefined) {
+      this.maxVisibleValues = patch.maxVisibleValues;
+      if (numeric) numeric.binCount = patch.maxVisibleValues;
     }
-    this._annotationSortModes = nextAnnotationSortModes;
-    if (!nextAnnotationSortModes[this.selectedAnnotation]?.startsWith('manual')) {
-      this._keyboard.clear();
+    if (patch.shapeSize !== undefined) {
+      if (patch.shapeSize === null) {
+        // An emptied size field returns the dataset to its default, as Reset does for the size.
+        this._clearShapeSize();
+      } else {
+        const size = Math.min(patch.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+        if (size !== this.shapeSize) {
+          this._persistenceController.saveShapeSize(size);
+          this.shapeSize = size;
+        }
+      }
     }
-    this._selectedPaletteId = nextSelectedPaletteId;
-    if (isNumericAnnotation) {
+    if (patch.paletteId !== undefined) {
+      if (numeric) {
+        numeric.paletteId = normalizeNumericPaletteId(patch.paletteId);
+        this._selectedPaletteId = numeric.paletteId;
+      } else {
+        this._selectedPaletteId = normalizeCategoricalPaletteId(patch.paletteId);
+        this._legendItems = applyPaletteColors(this._legendItems, this._selectedPaletteId);
+        // Ahead of the update below, which keeps stored colours over palette ones.
+        this._syncLegendColorsToPersistence();
+      }
+    }
+    if (numeric && patch.numericStrategy !== undefined) numeric.strategy = patch.numericStrategy;
+    if (numeric && patch.reverseGradient !== undefined) {
+      numeric.reverseGradient = patch.reverseGradient;
+    }
+    if (patch.enableDuplicateStackUI !== undefined) {
+      this._enableDuplicateStackUI = patch.enableDuplicateStackUI;
+    }
+    if (numeric) {
       this._numericSettingsByAnnotation = {
         ...this._numericSettingsByAnnotation,
-        [this.selectedAnnotation]: {
-          binCount: this._dialogSettings.maxVisibleValues,
-          strategy: this._dialogSettings.numericStrategy,
-          paletteId: nextSelectedPaletteId,
-          reverseGradient: this._dialogSettings.reverseGradient,
-        },
+        [annotation]: numeric,
       };
     }
-    this._showSettingsDialog = false;
 
-    // Don't clear _legendItems - we want to preserve current zOrders when switching sort modes.
-    // This ensures switching to manual mode keeps the current display order.
     this._updateLegendItems();
     this._syncLegendColorsToPersistence();
     this._scatterplotController.syncHiddenValues();
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.updateConfig({
       pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
+      enableDuplicateStackUI: this._enableDuplicateStackUI,
     });
     this._persistenceController.saveSettings();
     this._dispatchLegendStateChange();
     this.requestUpdate();
+  }
+
+  /** Reset from the popover: today's scope, and the popover stays open on the defaults. */
+  private async _resetSettingsKeepingOpen(): Promise<void> {
+    this._handleSettingsReset();
+    await this.updateComplete;
+    const popover = this._settingsPopover;
+    // Closed meanwhile, or removed with the legend: there is nothing to focus.
+    if (!popover || this._settingsAnchor === null || !this.isConnected) return;
+    await popover.updateComplete;
+    // Reset disables itself once nothing is stored; focus moves to the palette, not the body.
+    popover.focusFirst();
+  }
+
+  /** Something to reset: a record stored for the annotation, or a size picked for the dataset. */
+  private _canResetSettings(): boolean {
+    return (
+      this._persistenceController.hasPersistedSettings() ||
+      this._persistenceController.loadShapeSize() !== null
+    );
+  }
+
+  /**
+   * The size the size field shows: the live one, capped at the field's bound, or null while it
+   * is the dataset's default, which the empty field stands for (its placeholder names it).
+   */
+  private _fieldShapeSize(): number | null {
+    const isDefault =
+      this._persistenceController.loadShapeSize() === null &&
+      this._annotationShapeSize === null &&
+      this.shapeSize === defaultShapeSize(this._datasetProteinCount);
+    return isDefault ? null : Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+  }
+
+  /**
+   * The popover's view of the live state; there is no draft. A fresh object at each render is
+   * fine: the popover's `settings` compares field by field, so an unchanged one re-renders nothing.
+   */
+  private _displaySettings(isNumeric: boolean): LegendDisplaySettings {
+    const numeric = this._numericSettingsByAnnotation[this.selectedAnnotation];
+    return {
+      maxVisibleValues: this.maxVisibleValues,
+      shapeSize: this._fieldShapeSize(),
+      enableDuplicateStackUI: this._enableDuplicateStackUI,
+      paletteId: isNumeric
+        ? normalizeNumericPaletteId(numeric?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID)
+        : normalizeCategoricalPaletteId(this._selectedPaletteId),
+      numericStrategy: numeric?.strategy ?? DEFAULT_NUMERIC_STRATEGY,
+      reverseGradient: numeric?.reverseGradient ?? false,
+    };
+  }
+
+  /**
+   * The settings popover, rendered once as the last child of `.legend-container` and never keyed:
+   * it flushes a pending edit when removed, so a remount would send a stale `settings-change`.
+   */
+  private _renderSettingsPopover(label: string) {
+    const open = this._settingsAnchor !== null;
+    const isNumeric = this._isCurrentAnnotationNumeric();
+    return html`<protspace-legend-settings-popover
+      .anchor=${this._settingsAnchor}
+      .open=${open}
+      .settings=${this._displaySettings(isNumeric)}
+      .numeric=${isNumeric}
+      .defaultShapeSize=${defaultShapeSize(this._datasetProteinCount)}
+      .logBinningAvailable=${this.annotationData.numericMetadata?.logSupported ?? true}
+      .canReset=${open && this._canResetSettings()}
+      .annotationLabel=${label}
+      @settings-change=${(event: CustomEvent<Partial<LegendDisplaySettings>>) =>
+        this._applyDisplaySettings(event.detail)}
+      @settings-reset=${() => void this._resetSettingsKeepingOpen()}
+      @ps-open=${() => this._settingsPopover?.focusFirst()}
+      @ps-close=${() => {
+        this._settingsAnchor = null;
+      }}
+    ></protspace-legend-settings-popover>`;
   }
 
   private _handleColorChange(value: string, newColor: string): void {
@@ -1884,38 +1871,6 @@ export class ProtspaceLegend extends LitElement {
     this.requestUpdate();
   }
 
-  private _handlePaletteChange(paletteId: string): void {
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    this._dialogSettings = {
-      ...this._dialogSettings,
-      selectedPaletteId: isNumericAnnotation
-        ? normalizeNumericPaletteId(paletteId)
-        : normalizeCategoricalPaletteId(paletteId),
-    };
-  }
-
-  private _handleSettingsClose(): void {
-    this._showSettingsDialog = false;
-    this._mouseDownOutsideSettings = false;
-  }
-
-  private _handleSettingsOverlayMouseDown(e: MouseEvent): void {
-    // Check if mousedown is on the overlay (not inside dialog content)
-    const dialogContent = this.shadowRoot?.querySelector('#legend-settings-dialog');
-    if (dialogContent && !dialogContent.contains(e.target as Node)) {
-      this._mouseDownOutsideSettings = true;
-    } else {
-      this._mouseDownOutsideSettings = false;
-    }
-  }
-
-  private _handleSettingsOverlayMouseUp(): void {
-    // Only close if mousedown also occurred outside the dialog content
-    if (this._mouseDownOutsideSettings) {
-      this._handleSettingsClose();
-    }
-  }
-
   private _handleSettingsReset(): void {
     // Remove localStorage and clear pending categories
     this._persistenceController.removeSettings();
@@ -1949,6 +1904,7 @@ export class ProtspaceLegend extends LitElement {
     };
 
     this._hiddenValues = [];
+    this._enableDuplicateStackUI = false;
 
     // Reset slot tracker so colors are reassigned from scratch
     this._processorContext.slotTracker.reset();
@@ -1956,25 +1912,15 @@ export class ProtspaceLegend extends LitElement {
     // Clear legend items so processor creates fresh ones with default colors
     this._legendItems = [];
 
-    this._showSettingsDialog = false;
-
     this._scatterplotController.updateConfig({
       pointSize: calculatePointSize(this.shapeSize),
-      enableDuplicateStackUI: false,
+      enableDuplicateStackUI: this._enableDuplicateStackUI,
     });
 
     this._updateLegendItems();
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchColorMappingChange();
     this.requestUpdate();
-  }
-
-  private _handleDialogKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Enter') {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      this._handleSettingsSave();
-    }
   }
 
   private _syncLegendColorsToPersistence(): void {
@@ -2029,8 +1975,8 @@ export class ProtspaceLegend extends LitElement {
         )}
         ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
         ${this._renderSortMenu()} ${this._otherPopover.render()}
+        ${this._renderSettingsPopover(title)}
       </div>
-      ${this._renderSettingsDialog()}
     `;
   }
 
@@ -2047,6 +1993,7 @@ export class ProtspaceLegend extends LitElement {
       isNumeric: this._isNumericAnnotation(),
       hasScores: this._categoryScores.length > 0,
       canSort: this._legendItems.length > 1,
+      settingsOpen: this._settingsAnchor !== null,
     };
   }
 
@@ -2111,6 +2058,8 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('_otherItems'),
       changedProperties.has('selectedAnnotation'),
     );
+    // Settings are the annotation's own: a new one closes them (the sync path flushes first).
+    if (changedProperties.has('selectedAnnotation')) this._settingsAnchor = null;
   }
 
   private _renderScoreStrips() {
@@ -2163,81 +2112,6 @@ export class ProtspaceLegend extends LitElement {
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
     };
     return renderLegendRow(item, view, handlers);
-  }
-
-  private _renderSettingsDialog() {
-    if (!this._showSettingsDialog) return html``;
-
-    // Initialize sort mode for current annotation if needed
-    const initializedSortModes = initializeAnnotationSortMode(
-      this._dialogSettings.annotationSortModes,
-      this.selectedAnnotation,
-      this._annotationSortModes,
-    );
-    const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-    const annotationSortModes = this.selectedAnnotation
-      ? {
-          ...initializedSortModes,
-          [this.selectedAnnotation]: normalizeSortModeForType(
-            initializedSortModes[this.selectedAnnotation],
-            isNumericAnnotation,
-          ),
-        }
-      : initializedSortModes;
-    this._dialogSettings = {
-      ...this._dialogSettings,
-      annotationSortModes,
-    };
-
-    const state: SettingsDialogState = {
-      maxVisibleValues: this._dialogSettings.maxVisibleValues,
-      shapeSize: this._dialogSettings.shapeSize,
-      defaultShapeSize: defaultShapeSize(this._datasetProteinCount),
-      enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
-      selectedAnnotation: this.selectedAnnotation,
-      annotationSortModes: this._dialogSettings.annotationSortModes,
-      isNumericAnnotation,
-      selectedNumericStrategy: this._dialogSettings.numericStrategy,
-      reverseGradient: this._dialogSettings.reverseGradient,
-      logBinningAvailable: this.annotationData.numericMetadata?.logSupported ?? true,
-      hasPersistedSettings: this._persistenceController.hasPersistedSettings(),
-      selectedPaletteId: this._dialogSettings.selectedPaletteId,
-      hasCategoryScores: this._categoryScores.length > 0,
-    };
-
-    const callbacks: SettingsDialogCallbacks = {
-      onMaxVisibleValuesChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, maxVisibleValues: v };
-      },
-      onShapeSizeChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, shapeSize: v };
-      },
-      onEnableDuplicateStackUIChange: (v) => {
-        this._dialogSettings = { ...this._dialogSettings, enableDuplicateStackUI: v };
-      },
-      onSortModeChange: (annotation, mode) => {
-        this._clearKeyboardReorderState();
-        this._dialogSettings = {
-          ...this._dialogSettings,
-          annotationSortModes: { ...this._dialogSettings.annotationSortModes, [annotation]: mode },
-        };
-      },
-      onPaletteChange: (paletteId) => this._handlePaletteChange(paletteId),
-      onNumericStrategyChange: (strategy) => {
-        this._dialogSettings = { ...this._dialogSettings, numericStrategy: strategy };
-      },
-      onReverseGradientChange: (checked) => {
-        this._dialogSettings = { ...this._dialogSettings, reverseGradient: checked };
-      },
-      onSave: () => this._handleSettingsSave(),
-      onClose: () => this._handleSettingsClose(),
-      onReset: () => this._handleSettingsReset(),
-      onKeydown: (e) => this._handleDialogKeydown(e),
-      onOverlayMouseDown: (e) => this._handleSettingsOverlayMouseDown(e),
-      onOverlayMouseUp: () => this._handleSettingsOverlayMouseUp(),
-    };
-
-    return renderSettingsDialog(state, callbacks);
   }
 }
 

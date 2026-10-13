@@ -435,9 +435,15 @@ export class LegendDataProcessor {
       claimedColors.add((persisted?.color || existing?.color) ?? '');
     }
 
+    // A categorical "Your order, reversed" is reversed in its zOrders already (the legend's
+    // `_reverseZOrder`), so they are kept as in "Your order"; renumbering them by this pass's
+    // reversed list would flip the rows back on every update. A numeric one is ordered from its
+    // manual bin ids each pass, so it takes the reversed list's positions.
+    const keepsZOrder =
+      sortMode === 'manual' || (sortMode === 'manual-reverse' && !isNumericSource);
     const items: LegendItem[] = topItems.map(([value, count], index) => {
       const displayName = toDisplayValue(value);
-      const zOrder = sortMode === 'manual' ? (existingZOrders.get(value) ?? index) : index;
+      const zOrder = keepsZOrder ? (existingZOrders.get(value) ?? index) : index;
       const slot = ctx.slotTracker.getSlot(displayName);
 
       let encoding = getVisualEncoding(slot, displayName);
@@ -500,8 +506,7 @@ export class LegendDataProcessor {
     // Add "Other" if there are items beyond the cap
     if (otherCount > 0) {
       const encoding = getVisualEncoding(-1, LEGEND_VALUES.OTHER);
-      const otherZOrder =
-        sortMode === 'manual' ? (existingOtherZOrder ?? items.length) : items.length;
+      const otherZOrder = keepsZOrder ? (existingOtherZOrder ?? items.length) : items.length;
 
       items.push({
         value: LEGEND_VALUES.OTHER,

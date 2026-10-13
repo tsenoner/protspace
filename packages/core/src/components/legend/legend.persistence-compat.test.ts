@@ -8,6 +8,7 @@ import {
 } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
+import type { LegendDisplaySettings } from './types';
 import { LEGEND_STYLES, SHAPE_PATH_GENERATORS } from './config';
 import { defaultShapeSize, SHAPE_SIZE_FILLER } from './legend-helpers';
 import {
@@ -184,5 +185,123 @@ describe('legend settings stored before phase 3', () => {
     expect(Object.keys(stored(numericKey)!).sort()).toEqual(
       [...CATEGORICAL_FIELDS, 'numericSettings'].sort(),
     );
+  });
+});
+
+describe('legend settings applied live keep the stored format (Task 3.12)', () => {
+  const FIELDS = [
+    'maxVisibleValues',
+    'shapeSize',
+    'sortMode',
+    'hiddenValues',
+    'categories',
+    'enableDuplicateStackUI',
+    'selectedPaletteId',
+  ];
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    localStorage.clear();
+  });
+
+  function record(hash: string, annotation: string): Record<string, unknown> {
+    return JSON.parse(localStorage.getItem(legendStorageKey(hash, annotation)) ?? 'null');
+  }
+
+  function legendKeys(): string[] {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (key.startsWith('protspace:legend:')) keys.push(key);
+    }
+    return keys;
+  }
+
+  /** What the settings popover dispatches for one edit; jsdom cannot open it, nor needs to. */
+  function edit(legend: ProtspaceLegend, detail: Partial<LegendDisplaySettings>): void {
+    legend
+      .shadowRoot!.querySelector('protspace-legend-settings-popover')!
+      .dispatchEvent(new CustomEvent('settings-change', { detail }));
+  }
+
+  function firstShownRow(legend: ProtspaceLegend): string {
+    return legend
+      .shadowRoot!.querySelector('.legend-item:not(.legend-item-other):not(.hidden)')!
+      .getAttribute('data-value')!;
+  }
+
+  function clickRow(legend: ProtspaceLegend, value: string): void {
+    legend
+      .shadowRoot!.querySelector(`.legend-item[data-value="${value}"] .legend-item-main`)!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 1 }));
+  }
+
+  async function mountWith(seed: Record<string, unknown> | null) {
+    const data = categoricalData(TWELVE);
+    const hash = generateDatasetHash(data);
+    if (seed) localStorage.setItem(legendStorageKey(hash, 'family'), JSON.stringify(seed));
+    const mounted = await mountLegendWithScatterplot(data, 'family');
+    await settleLegend(mounted.legend);
+    return { ...mounted, hash };
+  }
+
+  it('keeps a stored enableDuplicateStackUI: true across an unrelated save', async () => {
+    const { legend, plot, hash } = await mountWith({
+      ...legacyLegendRecord(),
+      enableDuplicateStackUI: true,
+    });
+    expect((plot.config as Record<string, unknown>).enableDuplicateStackUI).toBe(true);
+
+    const value = firstShownRow(legend);
+    clickRow(legend, value);
+    await settleLegend(legend);
+
+    const saved = record(hash, 'family');
+    expect(saved.hiddenValues).toContain(value);
+    expect(saved.enableDuplicateStackUI).toBe(true);
+    expect(
+      legend.shadowRoot!.querySelector('protspace-legend-settings-popover')!.settings
+        .enableDuplicateStackUI,
+    ).toBe(true);
+  });
+
+  it('a live palette change writes the same key and field set', async () => {
+    const { legend, hash } = await mountWith(null);
+    edit(legend, { paletteId: 'okabeIto' });
+    await settleLegend(legend);
+
+    expect(legendKeys()).toEqual([legendStorageKey(hash, 'family')]);
+    const saved = record(hash, 'family');
+    expect(Object.keys(saved)).toEqual(FIELDS);
+    expect(saved.selectedPaletteId).toBe('okabeIto');
+  });
+
+  it('a live numeric edit writes the same field set with numericSettings', async () => {
+    const data = numericData([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const hash = generateDatasetHash(data);
+    const { legend } = await mountLegendWithScatterplot(data, 'length');
+    await settleLegend(legend);
+    edit(legend, { numericStrategy: 'linear' });
+    await settleLegend(legend);
+
+    const saved = record(hash, 'length');
+    expect(Object.keys(saved)).toEqual([...FIELDS, 'numericSettings']);
+    expect((saved.numericSettings as { strategy: string }).strategy).toBe('linear');
+  });
+
+  it('a live edit keeps every field it did not touch', async () => {
+    const { legend, hash } = await mountWith(legacyLegendRecord());
+    // An unrelated save first, so the baseline is the record as this code writes it.
+    const value = firstShownRow(legend);
+    clickRow(legend, value);
+    await settleLegend(legend);
+    clickRow(legend, value);
+    await settleLegend(legend);
+    const baseline = record(hash, 'family');
+
+    edit(legend, { enableDuplicateStackUI: true });
+    await settleLegend(legend);
+
+    expect(record(hash, 'family')).toEqual({ ...baseline, enableDuplicateStackUI: true });
   });
 });

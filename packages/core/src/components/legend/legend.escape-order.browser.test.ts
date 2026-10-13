@@ -7,6 +7,7 @@ import type { PsPopover } from '../kit/popover';
 import type { ProtspaceLegend } from './legend';
 import { COLOR_COMMIT_DELAY_MS } from './legend-color-picker';
 import type { ProtspaceLegendOtherPopover } from './legend-other-popover';
+import type { ProtspaceLegendSettingsPopover } from './legend-settings-popover';
 import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -49,6 +50,12 @@ const viewButton = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<HTMLButtonElement>('.legend-item-other .view-button')!;
 const other = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<ProtspaceLegendOtherPopover>('protspace-legend-other-popover')!;
+const settings = (legend: ProtspaceLegend) =>
+  legend.shadowRoot!.querySelector<ProtspaceLegendSettingsPopover>(
+    'protspace-legend-settings-popover',
+  )!;
+const settingsButton = (legend: ProtspaceLegend) =>
+  legend.shadowRoot!.querySelector<HTMLElement>('ps-icon-button.settings-button')!;
 const order = (legend: ProtspaceLegend) =>
   [...legend.shadowRoot!.querySelectorAll('.legend-item')].map((each) =>
     each.getAttribute('data-value'),
@@ -212,29 +219,19 @@ describe('legend Escape order', () => {
     expect(order(legend).slice(0, 2)).toEqual(['A', 'B']);
   });
 
-  it('the picker closes before the settings dialog, one per Escape', async () => {
+  it('with the settings popover open and the picker over it, each Escape closes one: picker, then settings, then it passes through', async () => {
     const legend = await mount();
-    const root = legend.shadowRoot!;
-    const open = () => ({
-      picker: picker(legend).open,
-      settings: root.querySelector('#legend-settings-dialog') !== null,
-    });
-    root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
+    const open = () => ({ picker: picker(legend).open, settings: settings(legend).open });
+    await userEvent.click(settingsButton(legend));
     await settle(legend);
-    // The dialog's overlay covers the rows, so the picker is opened as the menu would open it.
+    expect(open()).toEqual({ picker: false, settings: true });
+    // Opened as the row menu opens it, without a press outside the settings popover.
     await openPickerFromMenu(legend, 'A');
     expect(open()).toEqual({ picker: true, settings: true });
 
-    // The layer stack's window listener is installed on the first layer push, so in this file it
-    // usually runs before the legend's. Drive the legend's handler directly so the guard that
-    // leaves Escape to an open layer is pinned whatever the install order.
-    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
-    (
-      legend as unknown as { _onWindowKeydownCapture(e: KeyboardEvent): void }
-    )._onWindowKeydownCapture(escape);
-    await settle(legend);
-    expect(escape.defaultPrevented).toBe(false);
-    expect(open()).toEqual({ picker: true, settings: true });
+    const onKey = vi.fn();
+    document.addEventListener('keydown', onKey);
+    cleanups.push(() => document.removeEventListener('keydown', onKey));
 
     await userEvent.keyboard('{Escape}');
     await settle(legend);
@@ -243,18 +240,67 @@ describe('legend Escape order', () => {
     await userEvent.keyboard('{Escape}');
     await settle(legend);
     expect(open()).toEqual({ picker: false, settings: false });
+    expect(onKey).not.toHaveBeenCalled();
+
+    await userEvent.keyboard('{Escape}');
+    expect(onKey).toHaveBeenCalledOnce();
   });
 
-  it('the settings dialog still closes on Escape', async () => {
+  it('a keyboard reorder started over the settings popover takes Escape first, then the popover', async () => {
     const legend = await mount();
-    const root = legend.shadowRoot!;
-
-    root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
+    await userEvent.click(settingsButton(legend));
     await settle(legend);
-    expect(root.querySelector('#legend-settings-dialog')).not.toBeNull();
+    await key(legend, handle(legend, 'A'), ' ');
+    await key(legend, handle(legend, 'A'), 'ArrowDown');
+    expect([settings(legend).open, picked(legend)]).toEqual([true, 'A']);
+
     await userEvent.keyboard('{Escape}');
     await settle(legend);
-    expect(root.querySelector('#legend-settings-dialog')).toBeNull();
+    expect([settings(legend).open, picked(legend)]).toEqual([true, null]);
+    expect(order(legend).slice(0, 2)).toEqual(['A', 'B']);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect(settings(legend).open).toBe(false);
+  });
+
+  it('opening the settings popover drops a keyboard reorder in progress', async () => {
+    const legend = await mount();
+    await key(legend, handle(legend, 'A'), ' ');
+    expect(picked(legend)).toBe('A');
+
+    await userEvent.click(settingsButton(legend));
+    await settle(legend);
+
+    expect([settings(legend).open, picked(legend)]).toEqual([true, null]);
+  });
+
+  it('the settings popover closes on Escape, and the next Escape passes through', async () => {
+    const { legend } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
+    await legend.updateComplete;
+    const button = legend
+      .shadowRoot!.querySelector('.settings-button')!
+      .shadowRoot!.querySelector('button')!;
+    button.focus();
+    button.click();
+    const popover = legend.shadowRoot!.querySelector('protspace-legend-settings-popover')!;
+    for (let i = 0; i < 10 && !(await legend.updateComplete); i++);
+    await popover.updateComplete;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(popover.open).toBe(true);
+
+    const onKey = vi.fn();
+    document.addEventListener('keydown', onKey);
+    try {
+      await userEvent.keyboard('{Escape}');
+      await legend.updateComplete;
+      expect(popover.open).toBe(false);
+      expect(onKey).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+      expect(onKey).toHaveBeenCalledOnce();
+    } finally {
+      document.removeEventListener('keydown', onKey);
+    }
   });
 
   it('the Other popover closes on the first Escape; the next reaches the document', async () => {

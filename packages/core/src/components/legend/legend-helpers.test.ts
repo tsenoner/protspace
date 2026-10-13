@@ -20,7 +20,6 @@ import {
   isolationBase,
   type FirstClick,
 } from './legend-helpers';
-import { initializeAnnotationSortMode } from './legend-settings-dialog';
 
 describe('legend-helpers', () => {
   describe('expandHiddenValues', () => {
@@ -289,32 +288,6 @@ describe('legend-helpers', () => {
         zOrder: 0,
       };
       expect(isItemSelected(item, ['Other'])).toBe(false);
-    });
-  });
-
-  describe('initializeAnnotationSortMode', () => {
-    it('returns unchanged modes if annotation already has a mode', () => {
-      const existing = { annotation1: 'alpha-asc' as const };
-      const result = initializeAnnotationSortMode(existing, 'annotation1', {});
-      expect(result).toEqual({ annotation1: 'alpha-asc' });
-    });
-
-    it('returns unchanged modes if no selected annotation', () => {
-      const existing = { annotation1: 'size-desc' as const };
-      const result = initializeAnnotationSortMode(existing, '', {});
-      expect(result).toEqual({ annotation1: 'size-desc' });
-    });
-
-    it('uses existing mode from current modes if exists', () => {
-      const existing = {};
-      const current = { newAnnotation: 'alpha-desc' as const };
-      const result = initializeAnnotationSortMode(existing, 'newAnnotation', current);
-      expect(result).toEqual({ newAnnotation: 'alpha-desc' });
-    });
-
-    it('defaults to size-desc for regular annotations', () => {
-      const result = initializeAnnotationSortMode({}, 'some_annotation', {});
-      expect(result).toEqual({ some_annotation: 'size-desc' });
     });
   });
 

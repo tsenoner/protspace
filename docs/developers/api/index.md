@@ -205,9 +205,14 @@ its note in the icon's tooltip.
 | `legend-item-click`          | `{ value, action }`                                       | Item clicked (toggle/isolate/extract) |
 | `legend-zorder-change`       | `{ zOrderMapping }`                                       | Drawing order changed                 |
 | `legend-colormapping-change` | `{ colorMapping, shapeMapping }`                          | Color/shape assignments changed       |
-| `legend-customize`           | none                                                      | Settings dialog opened                |
+| `legend-customize`           | none                                                      | Settings popover opened               |
 | `legend-download`            | none                                                      | Download requested                    |
 | `legend-error`               | `{ message, severity, source, context?, originalError? }` | Host-consumed error event             |
+
+Settings and the "Other" categories open as popovers (`protspace-legend-settings-popover`,
+`protspace-legend-other-popover`) in the top layer, inside the legend's shadow root. Settings
+apply as they are edited: a typed number commits 300 ms after the last keystroke, or at once on
+Enter or when the field loses focus. The parts `dialog-overlay` and `dialog-content` are gone.
 
 ### Methods
 
@@ -228,9 +233,8 @@ exported. The legend resolves `shapeSize` from the picked or applied size, then 
 User customizations (visibility, colors, ordering, settings) are saved to `localStorage` per dataset
 and annotation. Per-category state is not persisted for numeric annotations, whose legend entries
 are generated bin IDs. The shape size is stored per dataset instead: once picked, it applies to
-every annotation. Reset in the settings dialog clears it, and every annotation's own size, so the
-default applies again; saving the dialog with the size field emptied does the same for the size
-alone.
+every annotation. Reset in the settings popover clears it, and every annotation's own size, so
+the default applies again; emptying the size field does the same for the size alone, at once.
 
 ### Example
 

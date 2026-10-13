@@ -18,6 +18,8 @@ export interface LegendHeaderModel {
   hasScores: boolean;
   /** More than one row. With one there is nothing to order, and the sort button hides. */
   canSort: boolean;
+  /** The settings popover is open: the settings button reports it (ps-popover does not). */
+  settingsOpen?: boolean;
 }
 
 export interface LegendHeaderHandlers {
@@ -125,6 +127,8 @@ export function renderLegendHeader(
       icon="sliders-horizontal"
       label="Legend settings"
       size="sm"
+      aria-haspopup="dialog"
+      aria-expanded=${model.settingsOpen ? 'true' : 'false'}
       @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
     ></ps-icon-button>
   </div>`;

@@ -995,7 +995,7 @@ describe('legend-data-processor', () => {
       expect(cat2?.zOrder).toBe(1); // Second in sorted order
     });
 
-    it('reassigns z-order based on reversed position in manual-reverse mode', () => {
+    it('reassigns z-order based on reversed position in numeric manual-reverse mode', () => {
       // Items are passed in reverse order (as sortAndLimitItems would sort them)
       const topItems: Array<[string, number]> = [
         ['category2', 5], // Was at zOrder 1, now first
@@ -1019,7 +1019,47 @@ describe('legend-data-processor', () => {
           zOrder: 1,
         },
       ];
-      // In manual-reverse mode, zOrder should be based on sorted index (reversed position)
+      // Numeric manual-reverse orders from the manual bin ids each pass: zOrder is the reversed position
+      const items = LegendDataProcessor.createLegendItems(
+        ctx,
+        topItems,
+        0,
+        existing,
+        'manual-reverse',
+        new Map(),
+        {},
+        true,
+      );
+      const cat1 = items.find((i) => i.value === 'category1');
+      const cat2 = items.find((i) => i.value === 'category2');
+      expect(cat2?.zOrder).toBe(0); // First in reversed order
+      expect(cat1?.zOrder).toBe(1); // Second in reversed order
+    });
+
+    it('keeps z-order in categorical manual-reverse mode, which the reverse already wrote', () => {
+      // The legend's reverse renumbers the rows itself; renumbering again would flip them back.
+      const topItems: Array<[string, number]> = [
+        ['category2', 5],
+        ['category1', 10],
+      ];
+      const existing: LegendItem[] = [
+        {
+          value: 'category1',
+          color: '#000',
+          shape: 'circle',
+          count: 10,
+          isVisible: true,
+          zOrder: 0,
+        },
+        {
+          value: 'category2',
+          color: '#000',
+          shape: 'circle',
+          count: 5,
+          isVisible: true,
+          zOrder: 1,
+        },
+      ];
       const items = LegendDataProcessor.createLegendItems(
         ctx,
         topItems,
@@ -1027,10 +1067,8 @@ describe('legend-data-processor', () => {
         existing,
         'manual-reverse',
       );
-      const cat1 = items.find((i) => i.value === 'category1');
-      const cat2 = items.find((i) => i.value === 'category2');
-      expect(cat2?.zOrder).toBe(0); // First in reversed order
-      expect(cat1?.zOrder).toBe(1); // Second in reversed order
+      expect(items.find((i) => i.value === 'category1')?.zOrder).toBe(0);
+      expect(items.find((i) => i.value === 'category2')?.zOrder).toBe(1);
     });
 
     it('applies colors from persistedCategories', () => {

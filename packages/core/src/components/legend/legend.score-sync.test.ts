@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from 'lit';
 import type { ProjectionStatisticRow, VisualizationData } from '@protspace/utils';
 import './legend';
 import type { ProtspaceLegend } from './legend';
@@ -224,46 +223,5 @@ describe('legend score column', () => {
     await el.updateComplete;
 
     expect(rowOrder().indexOf('Elapidae')).toBeLessThan(rowOrder().indexOf('Viperidae'));
-  });
-});
-
-describe('legend settings dialog: sort by separation', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  function renderDialog(el: ProtspaceLegend): HTMLDivElement {
-    const internals = el as unknown as {
-      _showSettingsDialog: boolean;
-      _renderSettingsDialog: () => unknown;
-    };
-    internals._showSettingsDialog = true;
-    const container = document.createElement('div');
-    render(internals._renderSettingsDialog(), container);
-    return container;
-  }
-
-  function radioLabels(container: HTMLDivElement): (string | undefined)[] {
-    return [...container.querySelectorAll('label')].map((label) => label.textContent?.trim());
-  }
-
-  it('offers "By separation" sorting when the annotation has per-category scores', async () => {
-    const el = await setup(makeData());
-
-    expect(radioLabels(renderDialog(el))).toContain('By separation');
-  });
-
-  it('omits "By separation" sorting when the dataset has no statistics', async () => {
-    const el = await setup({ ...makeData(), statisticsRows: [] });
-
-    const labels = radioLabels(renderDialog(el));
-    // Proves the dialog actually rendered its other options (not an empty template
-    // that would vacuously satisfy the assertion below).
-    expect(labels).toContain('By category size');
-    expect(labels).not.toContain('By separation');
   });
 });

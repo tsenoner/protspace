@@ -158,37 +158,6 @@ describe('legend extract methods', () => {
       expect(eventValues).toHaveLength(3);
     });
 
-    it('syncs settings dialog when it is open', () => {
-      el._showSettingsDialog = true;
-      el._dialogSettings = {
-        maxVisibleValues: 10,
-        shapeSize: 1,
-        enableDuplicateStackUI: false,
-        annotationSortModes: {},
-        selectedPaletteId: 'kellys',
-      };
-
-      (el as AnyLegend)._handleExtractAllFromOther();
-
-      expect(el._dialogSettings.maxVisibleValues).toBe(5);
-    });
-
-    it('does not modify _dialogSettings when settings dialog is closed', () => {
-      el._showSettingsDialog = false;
-      const original = {
-        maxVisibleValues: 10,
-        shapeSize: 1,
-        enableDuplicateStackUI: false,
-        annotationSortModes: {},
-        selectedPaletteId: 'kellys',
-      };
-      el._dialogSettings = { ...original };
-
-      (el as AnyLegend)._handleExtractAllFromOther();
-
-      expect(el._dialogSettings.maxVisibleValues).toBe(10);
-    });
-
     it('schedules settings save after update completes', async () => {
       const resolved = Promise.resolve(true);
       vi.spyOn(el, 'updateComplete', 'get').mockReturnValue(resolved);

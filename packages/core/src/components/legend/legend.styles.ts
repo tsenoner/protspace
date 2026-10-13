@@ -1,13 +1,11 @@
 import { tokens } from '../../styles/tokens';
 import { buttonMixin } from '../../styles/mixins';
-import { overlayMixins } from '../../styles/overlay-mixins';
 import { reducedMotion } from '../kit/kit-shared.styles';
 import { themeStyles } from './styles/theme';
 import { layoutStyles } from './styles/layout';
 import { headerStyles } from './styles/header';
 import { rowStyles } from './styles/row';
 import { pickerStyles } from './styles/picker';
-import { modalStyles } from './styles/modal';
 import { responsiveStyles } from './styles/responsive';
 
 /**
@@ -24,7 +22,6 @@ export const legendStyles = [
 
   // 2. Shared mixins
   buttonMixin,
-  overlayMixins,
 
   // 3. Component-specific (modular). Rows come after layout, whose list box they adjust.
   themeStyles,
@@ -32,7 +29,6 @@ export const legendStyles = [
   headerStyles,
   rowStyles,
   pickerStyles,
-  modalStyles,
 
   // 4. Transitions and animations stop for people who asked for less motion.
   reducedMotion,
