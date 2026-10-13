@@ -1,5 +1,5 @@
 import { html, nothing, type TemplateResult } from 'lit';
-import { countNoun, formatCount } from '../../utils/count-text';
+import { countNoun, formatCount } from '@protspace/utils';
 import { icon } from '../kit/icon';
 import {
   LEGEND_DEFAULTS,

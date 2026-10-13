@@ -7,6 +7,7 @@ import type {
   ProtspacePlotTools,
   ProtspaceProteinSearch,
   ProtspaceScatterplot,
+  ProtspaceSelectionBar,
 } from '@protspace/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -67,12 +68,18 @@ function setup() {
     isolateSelection: vi.fn(),
     resetIsolation: vi.fn(),
     resetZoom: vi.fn(),
+    zoomToProteins: vi.fn(() => true),
   });
   const tools = Object.assign(new EventTarget(), {
     tool: 'pan',
     selectionDisabled: false,
-    selectedCount: 0,
     isolated: false,
+    focusTool: vi.fn(),
+  });
+  const bar = Object.assign(new EventTarget(), {
+    selectedCount: 0,
+    canIsolate: true,
+    returnFocus: null as ((action: 'clear' | 'isolate') => void) | null,
   });
   const search = Object.assign(new EventTarget(), {
     availableProteinIds: [] as string[],
@@ -80,20 +87,22 @@ function setup() {
   });
   const interaction = { handleSelectionChange: vi.fn() };
   const escape = fakeEscape();
-  const warn = vi.fn();
+  const notify = { success: vi.fn(), warning: vi.fn(), error: vi.fn() };
   const controller = createSelectionController({
     plotElement: plot as unknown as ProtspaceScatterplot,
     plotTools: tools as unknown as ProtspacePlotTools,
+    selectionBar: bar as unknown as ProtspaceSelectionBar,
     proteinSearch: search as unknown as ProtspaceProteinSearch,
     interactionController: interaction,
     registerEscape: escape.register,
-    warn,
+    notify,
   });
-  return { controller, plot, tools, search, interaction, escape, warn };
+  return { controller, plot, tools, bar, search, interaction, escape, notify };
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('selection controller: clicks and brushes', () => {
@@ -103,7 +112,7 @@ describe('selection controller: clicks and brushes', () => {
     fire(m.plot, 'protein-click', click('P1', {}));
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
     expect(m.search.selectedProteinIds).toEqual(['P1']);
-    expect(m.tools.selectedCount).toBe(1);
+    expect(m.bar.selectedCount).toBe(1);
     expect(m.interaction.handleSelectionChange).toHaveBeenLastCalledWith(['P1']);
 
     fire(m.plot, 'protein-click', click('P2', {}));
@@ -162,7 +171,7 @@ describe('selection controller: the search box', () => {
 
     // Shown at once, so each pick builds on the last…
     expect(m.search.selectedProteinIds).toEqual(['P1', 'P3']);
-    expect(m.tools.selectedCount).toBe(2);
+    expect(m.bar.selectedCount).toBe(2);
     // …and pushed to the plot once, after the paint.
     expect(m.plot.selectedProteinIds).toEqual([]);
     expect(m.interaction.handleSelectionChange).not.toHaveBeenCalled();
@@ -200,16 +209,16 @@ describe('selection controller: the search box', () => {
   });
 });
 
-describe('selection controller: the plot tools', () => {
+describe('selection controller: the selection bar and the plot tools', () => {
   it('Clear empties the selection', async () => {
     const m = setup();
     fire(m.search, 'add-selection', { proteinId: 'P1' });
     await afterPaint();
 
-    fire(m.tools, 'clear-selections');
+    fire(m.bar, 'clear-selections');
 
     expect(m.search.selectedProteinIds).toEqual([]);
-    expect(m.tools.selectedCount).toBe(0);
+    expect(m.bar.selectedCount).toBe(0);
     expect(m.plot.selectedProteinIds).toEqual(['P1']);
     await afterPaint();
     expect(m.plot.selectedProteinIds).toEqual([]);
@@ -224,10 +233,62 @@ describe('selection controller: the plot tools', () => {
     });
     fire(m.search, 'add-selection', { proteinId: 'P1' });
 
-    fire(m.tools, 'isolate-data');
+    fire(m.bar, 'isolate-data');
 
     expect(m.plot.isolateSelection).toHaveBeenCalledOnce();
     expect(selectedAtIsolate).toEqual(['P1']);
+  });
+
+  it('zoom-to-selection flushes a waiting pick, then zooms to the selection', () => {
+    const m = setup();
+    fire(m.search, 'add-selection', { proteinId: 'P1' });
+
+    fire(m.bar, 'zoom-to-selection');
+
+    // Landed before the zoom: the plot frames what the bar counts.
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+    expect(m.plot.zoomToProteins).toHaveBeenCalledExactlyOnceWith(['P1']);
+  });
+
+  it('copy-selection writes the ids one per line and notifies success', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const m = setup();
+    fire(m.search, 'selection-change', { proteinIds: ['P1', 'P2'] });
+
+    fire(m.bar, 'copy-selection');
+
+    await vi.waitFor(() => expect(m.notify.success).toHaveBeenCalledOnce());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('P1\nP2');
+    expect(m.notify.success.mock.calls[0][0].title).toBe('Copied 2 protein IDs');
+    expect(m.notify.error).not.toHaveBeenCalled();
+  });
+
+  it('a clipboard rejection notifies an error', async () => {
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText: vi.fn(() => Promise.reject(new Error('denied'))) },
+    });
+    const m = setup();
+    fire(m.search, 'selection-change', { proteinIds: ['P1'] });
+
+    fire(m.bar, 'copy-selection');
+
+    await vi.waitFor(() => expect(m.notify.error).toHaveBeenCalledOnce());
+    expect(m.notify.error.mock.calls[0][0].title).toBe('Could not copy the IDs');
+    expect(m.notify.success).not.toHaveBeenCalled();
+  });
+
+  it("the bar's count follows every commit, and Clear and Show only hand focus to the tools", () => {
+    const m = setup();
+    fire(m.plot, 'protein-click', click('P1', {}));
+    expect(m.bar.selectedCount).toBe(1);
+    fire(m.plot, 'brush-selection', { proteinIds: ['P1', 'P2', 'P3'] });
+    expect(m.bar.selectedCount).toBe(3);
+    fire(m.search, 'remove-selection', { proteinId: 'P2' });
+    expect(m.bar.selectedCount).toBe(2);
+
+    m.bar.returnFocus!('clear');
+    expect(m.tools.focusTool).toHaveBeenCalledOnce();
   });
 
   it('Reset resets isolation', () => {
@@ -273,7 +334,7 @@ describe('selection controller: plot events', () => {
     fire(m.plot, 'data-isolation', { isolationMode: true, isolationHistory: [['P1']] });
 
     expect(m.search.selectedProteinIds).toEqual([]);
-    expect(m.tools.selectedCount).toBe(0);
+    expect(m.bar.selectedCount).toBe(0);
     expect(m.tools.isolated).toBe(true);
     // The plot cleared its own selection when it isolated.
     expect(m.interaction.handleSelectionChange).not.toHaveBeenCalled();
@@ -288,7 +349,8 @@ describe('selection controller: plot events', () => {
     expect(m.tools.tool).toBe('pan');
     expect(m.plot.selectionMode).toBe(false);
     expect(m.tools.selectionDisabled).toBe(true);
-    expect(m.warn).toHaveBeenCalledWith(
+    expect(m.bar.canIsolate).toBe(false);
+    expect(m.notify.warning).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Selection mode disabled.',
         description: 'Selection mode disabled: Only 1 point remaining',
@@ -298,6 +360,7 @@ describe('selection controller: plot events', () => {
     // Back to the full data: the tools work again.
     fire(m.plot, 'data-isolation-reset', { isolationMode: false, isolationHistory: [] });
     expect(m.tools.selectionDisabled).toBe(false);
+    expect(m.bar.canIsolate).toBe(true);
     expect(m.tools.isolated).toBe(false);
   });
 
@@ -309,7 +372,7 @@ describe('selection controller: plot events', () => {
 
     expect(m.search.availableProteinIds).toEqual(['P1', 'P2']);
     expect(m.search.selectedProteinIds).toEqual(['P2']);
-    expect(m.tools.selectedCount).toBe(1);
+    expect(m.bar.selectedCount).toBe(1);
   });
 });
 
@@ -355,7 +418,7 @@ describe('selection controller: lifecycle', () => {
     expect(m.plot.selectedProteinIds).toEqual([]);
     expect(m.interaction.handleSelectionChange).not.toHaveBeenCalled();
     expect(m.search.selectedProteinIds).toEqual([]);
-    expect(m.tools.selectedCount).toBe(0);
+    expect(m.bar.selectedCount).toBe(0);
     expect(m.tools.tool).toBe('pan');
   });
 
@@ -365,6 +428,8 @@ describe('selection controller: lifecycle', () => {
 
     fire(m.plot, 'protein-click', click('P1', {}));
     expect(m.escape.press()).toBe(false);
+    fire(m.bar, 'clear-selections');
+    expect(m.bar.returnFocus).toBeNull();
 
     expect(m.plot.selectedProteinIds).toEqual([]);
   });

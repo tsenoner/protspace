@@ -122,21 +122,6 @@ const scatterplotStylesCore = css`
     height: 3rem;
   }
 
-  .mode-indicator {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: var(--z-overlay);
-    padding: 0.5rem;
-    background: var(--primary);
-    color: white;
-    font-size: 0.75rem;
-    border-radius: 0.375rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
   /* Small status chips overlaid on the plot (visible point count bottom-left,
      numeric recompute notice bottom-right). Same card look as the top-left
      projection-metadata trigger. */
@@ -206,7 +191,7 @@ const scatterplotStylesCore = css`
 
   .connector-status {
     position: absolute;
-    bottom: 0.5rem;
+    top: var(--ps-space-2);
     left: 50%;
     z-index: var(--z-overlay);
     display: flex;

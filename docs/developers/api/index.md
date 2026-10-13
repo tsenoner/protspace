@@ -10,21 +10,22 @@ it exists on `main`.
 
 ## Components
 
-| Component                                   | Tag                               | Purpose                                          |
-| ------------------------------------------- | --------------------------------- | ------------------------------------------------ |
-| [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                    |
-| [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                    |
-| [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                                |
-| [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations                 |
-| [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                             |
-| [Projection Metadata](#projection-metadata) | `<protspace-projection-metadata>` | Details of the projection on screen              |
-| [Protein Search](#protein-search)           | `<protspace-protein-search>`      | Find and select proteins by ID                   |
-| [Query Builder](#query-builder)             | `<protspace-query-builder>`       | Filter conditions                                |
-| [Import Menu](#import-menu)                 | `<protspace-import-menu>`         | Load a file or an example dataset                |
-| [Export Menu](#export-menu)                 | `<protspace-export-menu>`         | Image, ID and Parquet export                     |
-| [Plot Tools](#plot-tools)                   | `<protspace-plot-tools>`          | Move, box and lasso tools; Clear, Isolate, Reset |
-| [Structure Viewer](#structure-viewer)       | `<protspace-structure-viewer>`    | 3D protein structures via Mol\*                  |
-| [Data Loader](#data-loader)                 | `<protspace-data-loader>`         | `.parquetbundle` / FASTA loading                 |
+| Component                                   | Tag                               | Purpose                                         |
+| ------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                   |
+| [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                   |
+| [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                               |
+| [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations                |
+| [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                            |
+| [Projection Metadata](#projection-metadata) | `<protspace-projection-metadata>` | Details of the projection on screen             |
+| [Protein Search](#protein-search)           | `<protspace-protein-search>`      | Find and select proteins by ID                  |
+| [Query Builder](#query-builder)             | `<protspace-query-builder>`       | Filter conditions                               |
+| [Import Menu](#import-menu)                 | `<protspace-import-menu>`         | Load a file or an example dataset               |
+| [Export Menu](#export-menu)                 | `<protspace-export-menu>`         | Image, ID and Parquet export                    |
+| [Plot Tools](#plot-tools)                   | `<protspace-plot-tools>`          | Move, box and lasso tools; Reset while isolated |
+| [Selection Bar](#selection-bar)             | `<protspace-selection-bar>`       | The selection's count and actions               |
+| [Structure Viewer](#structure-viewer)       | `<protspace-structure-viewer>`    | 3D protein structures via Mol\*                 |
+| [Data Loader](#data-loader)                 | `<protspace-data-loader>`         | `.parquetbundle` / FASTA loading                |
 
 Importing `@protspace/core` registers all of them as side effects.
 
@@ -111,19 +112,20 @@ points.
 
 ### Methods
 
-| Method                          | Returns                     | Description                                                      |
-| ------------------------------- | --------------------------- | ---------------------------------------------------------------- |
-| `resetZoom()`                   | `void`                      | Snap back to the full view                                       |
-| `isolateSelection()`            | `void`                      | Isolate the currently selected proteins                          |
-| `resetIsolation()`              | `void`                      | Exit isolation and restore the full dataset                      |
-| `clearIsolationState(options?)` | `void`                      | Clear isolation state; pass `{ silent: true }` to skip the event |
-| `isIsolationMode()`             | `boolean`                   | Whether the plot is currently isolated                           |
-| `getIsolationHistory()`         | `string[][]`                | Stack of isolation steps                                         |
-| `getCurrentData(options?)`      | `VisualizationData \| null` | The dataset as currently displayed (filtered/isolated)           |
-| `getMaterializedData()`         | `VisualizationData \| null` | Dataset with numeric annotations materialized into bins          |
-| `pickInteractivePointAt(x, y)`  | `PlotDataPoint \| null`     | Hit-test at client-relative pixel coordinates                    |
-| `hasExpandedDuplicateStack()`   | `boolean`                   | Whether a duplicate stack is expanded                            |
-| `closeExpandedDuplicateStack()` | `void`                      | Collapse the expanded duplicate stack                            |
+| Method                          | Returns                     | Description                                                                                                                                                             |
+| ------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resetZoom()`                   | `void`                      | Snap back to the full view                                                                                                                                              |
+| `zoomToProteins(ids)`           | `boolean`                   | Pan and zoom, untweened, to frame the plotted, visible proteins among `ids`: one at the centre at 8× or more, several inside a 40 px margin; false when none is plotted |
+| `isolateSelection()`            | `void`                      | Isolate the currently selected proteins                                                                                                                                 |
+| `resetIsolation()`              | `void`                      | Exit isolation and restore the full dataset                                                                                                                             |
+| `clearIsolationState(options?)` | `void`                      | Clear isolation state; pass `{ silent: true }` to skip the event                                                                                                        |
+| `isIsolationMode()`             | `boolean`                   | Whether the plot is currently isolated                                                                                                                                  |
+| `getIsolationHistory()`         | `string[][]`                | Stack of isolation steps                                                                                                                                                |
+| `getCurrentData(options?)`      | `VisualizationData \| null` | The dataset as currently displayed (filtered/isolated)                                                                                                                  |
+| `getMaterializedData()`         | `VisualizationData \| null` | Dataset with numeric annotations materialized into bins                                                                                                                 |
+| `pickInteractivePointAt(x, y)`  | `PlotDataPoint \| null`     | Hit-test at client-relative pixel coordinates                                                                                                                           |
+| `hasExpandedDuplicateStack()`   | `boolean`                   | Whether a duplicate stack is expanded                                                                                                                                   |
+| `closeExpandedDuplicateStack()` | `void`                      | Collapse the expanded duplicate stack                                                                                                                                   |
 
 ### Events
 
@@ -159,6 +161,10 @@ registered at `ESCAPE_ORDER.connectors` while it is connected, hides the EAT pro
 A host registers its own steps at higher orders (the app clears the selection at
 `ESCAPE_ORDER.selection` and returns to Move at `ESCAPE_ORDER.tool`), and each press takes only one
 step.
+
+The plot no longer draws its own "Selection Mode" and "N proteins selected" badge; a host shows
+the selection with `<protspace-selection-bar>`. A brush or lasso that starts ends a pinned tooltip.
+The EAT connector status chip sits at the top-centre of the plot.
 
 ### Example
 
@@ -436,26 +442,46 @@ holds the default sizes.
 
 ### Plot Tools
 
-The plot's tool strip, and beside it, while they apply, Clear and Isolate (with a selection) and
-Reset (while isolated).
+The plot's tool strip, and beside it, while the plot is isolated, Reset.
 
-| Property            | Type                              | Description                                            |
-| ------------------- | --------------------------------- | ------------------------------------------------------ |
-| `tool`              | `'pan' \| 'rectangle' \| 'lasso'` | Pressed tool (`PlotTool`)                              |
-| `selectionDisabled` | `boolean`                         | Box and Lasso are off; `selection-disabled`            |
-| `selectedCount`     | `number`                          | Clear and Isolate show while above 0; `selected-count` |
-| `isolated`          | `boolean`                         | Reset shows while true                                 |
+| Property            | Type                              | Description                                 |
+| ------------------- | --------------------------------- | ------------------------------------------- |
+| `tool`              | `'pan' \| 'rectangle' \| 'lasso'` | Pressed tool (`PlotTool`)                   |
+| `selectionDisabled` | `boolean`                         | Box and Lasso are off; `selection-disabled` |
+| `isolated`          | `boolean`                         | Reset shows while true                      |
 
 | Event              | Detail     | Description             |
 | ------------------ | ---------- | ----------------------- |
 | `plot-tool-change` | `{ tool }` | A tool was chosen       |
 | `fit-view`         | `{}`       | Fit to view was pressed |
-| `clear-selections` | `{}`       | Clear was pressed       |
-| `isolate-data`     | `{}`       | Isolate was pressed     |
 | `reset-isolation`  | `{}`       | Reset was pressed       |
 
-On the scatterplot, `pan` is `selectionMode = false`; `rectangle` and `lasso` are
-`selectionMode = true` with that `selectionTool`. `fit-view` maps to `resetZoom()`.
+`focusTool()` focuses the strip's one Tab stop (the current tool). On the scatterplot, `pan` is
+`selectionMode = false`; `rectangle` and `lasso` are `selectionMode = true` with that
+`selectionTool`. `fit-view` maps to `resetZoom()`.
+
+**BREAKING:** `selectedCount` (`selected-count`), Clear and Isolate, and their `clear-selections`
+and `isolate-data` events moved to the selection bar.
+
+### Selection Bar
+
+`<protspace-selection-bar>` shows at the bottom-centre of its positioned parent while proteins are
+selected: the count, then Show only these, Zoom to them, Copy IDs and Clear, in a toolbar named
+"Selection" with one Tab stop (the arrow keys move between the buttons). It hides itself at 0 and
+reports presses; the host acts and sets `selectedCount`.
+
+| Property        | Type                                               | Description                                                                           |
+| --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `selectedCount` | `number`                                           | How many proteins are selected; `selected-count`                                      |
+| `canIsolate`    | `boolean`                                          | Show only these is enabled (default `true`); `can-isolate`                            |
+| `returnFocus`   | `((action: 'clear' \| 'isolate') => void) \| null` | Called when Clear or Show only these hid the bar while it held focus; JavaScript only |
+
+| Event               | Detail | Description                 |
+| ------------------- | ------ | --------------------------- |
+| `isolate-data`      | `{}`   | Show only these was pressed |
+| `zoom-to-selection` | `{}`   | Zoom to them was pressed    |
+| `copy-selection`    | `{}`   | Copy IDs was pressed        |
+| `clear-selections`  | `{}`   | Clear was pressed           |
 
 ### Example
 

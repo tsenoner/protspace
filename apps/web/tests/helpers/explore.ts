@@ -307,12 +307,21 @@ export const annotationSelect = (page: Page): Locator =>
 export const searchInput = (page: Page): Locator =>
   page.locator('protspace-protein-search #protein-search-input');
 
-/**
- * Clear, Isolate or Reset, beside the plot's tool strip. Clear and Isolate show only with a
- * selection; Reset only while isolated.
- */
-export const selectionAction = (page: Page, name: 'Clear' | 'Isolate' | 'Reset'): Locator =>
-  page.getByRole('group', { name: 'Selection' }).getByRole('button', { name, exact: true });
+/** The selection bar at the bottom of the plot; it shows while proteins are selected. */
+export const selectionBar = (page: Page): Locator =>
+  page.getByRole('toolbar', { name: 'Selection', exact: true });
+
+/** One of the selection bar's actions. */
+export const selectionBarAction = (
+  page: Page,
+  name: 'Show only these' | 'Zoom to them' | 'Copy IDs' | 'Clear',
+): Locator => selectionBar(page).getByRole('button', { name, exact: true });
+
+/** Reset, beside the plot's tool strip while the plot is isolated. */
+const isolationReset = (page: Page): Locator =>
+  page
+    .getByRole('group', { name: 'Isolation', exact: true })
+    .getByRole('button', { name: 'Reset', exact: true });
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 
@@ -551,22 +560,22 @@ async function isIsolated(page: Page): Promise<boolean> {
   });
 }
 
-/** Clears the selection with Clear and waits until the plot holds none; a no-op with none. */
+/** Clears the selection with the bar's Clear and waits until the plot holds none; a no-op with none. */
 export async function clearSelection(page: Page): Promise<void> {
   if ((await getSelectedProteinIds(page)).length === 0) return;
-  await selectionAction(page, 'Clear').click();
+  await selectionBarAction(page, 'Clear').click();
   await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
 }
 
-/** Isolates the selected proteins with Isolate and waits until the plot is isolated. */
+/** Isolates the selected proteins with Show only these and waits until the plot is isolated. */
 export async function isolateSelection(page: Page): Promise<void> {
-  await selectionAction(page, 'Isolate').click();
+  await selectionBarAction(page, 'Show only these').click();
   await expect.poll(() => isIsolated(page)).toBe(true);
 }
 
 /** Leaves isolation with Reset and waits until the plot shows the full dataset again. */
 export async function resetIsolation(page: Page): Promise<void> {
-  await selectionAction(page, 'Reset').click();
+  await isolationReset(page).click();
   await expect.poll(() => isIsolated(page)).toBe(false);
 }
 

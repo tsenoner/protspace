@@ -12,6 +12,7 @@ export { DENSITY_MODE_LABELS } from '@protspace/utils';
 // The plot's tool strip and the app bar's search (design decision 9).
 export { ProtspacePlotTools } from './components/plot-tools/plot-tools';
 export type { PlotTool } from './components/plot-tools/plot-tools';
+export { ProtspaceSelectionBar } from './components/plot-tools/selection-bar';
 export { ProtspaceProteinSearch } from './components/control-bar/search';
 export { AfterPaintCommit } from './utils/after-paint-commit';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.

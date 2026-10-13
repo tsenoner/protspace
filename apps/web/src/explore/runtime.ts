@@ -77,6 +77,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     contoursMenu,
     projectionMetadata,
     plotTools,
+    selectionBar,
     proteinSearch,
   } = elements;
   const lifecycle = createLifecycle();
@@ -303,10 +304,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const selectionController = createSelectionController({
     plotElement,
     plotTools,
+    selectionBar,
     proteinSearch,
     interactionController,
     registerEscape: onEscapeFallback,
-    warn: (options) => notify.warning(options),
+    notify,
   });
   lifecycle.addCleanup(() => selectionController.dispose());
 

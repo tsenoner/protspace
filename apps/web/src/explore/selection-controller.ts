@@ -7,10 +7,15 @@ import {
   type ProtspacePlotTools,
   type ProtspaceProteinSearch,
   type ProtspaceScatterplot,
+  type ProtspaceSelectionBar,
 } from '@protspace/core';
-import type { NotifyOptions } from '../lib/notify';
+import type { notify as Notify } from '../lib/notify';
 import type { InteractionController } from './interaction-controller';
-import { getSelectionDisabledNotification } from './notifications';
+import {
+  getSelectionCopiedNotification,
+  getSelectionCopyFailedNotification,
+  getSelectionDisabledNotification,
+} from './notifications';
 
 /** Adds `proteinId` to the selection, or removes it when it is already there. */
 export function toggleProteinSelection(
@@ -50,6 +55,8 @@ export function mergeProteinSelections(
 interface SelectionControllerOptions {
   plotElement: ProtspaceScatterplot;
   plotTools: ProtspacePlotTools;
+  /** The bar at the bottom of the plot: the count, Show only these, Zoom to them, Copy IDs, Clear. */
+  selectionBar: ProtspaceSelectionBar;
   proteinSearch: ProtspaceProteinSearch;
   interactionController: Pick<InteractionController, 'handleSelectionChange'>;
   /**
@@ -57,8 +64,8 @@ interface SelectionControllerOptions {
    * no layer open, after the plot's EAT connectors; returns its release.
    */
   registerEscape(order: number, handle: (event: KeyboardEvent) => boolean): () => void;
-  /** Shows a warning toast: `notify.warning` in the app. */
-  warn(options: NotifyOptions): void;
+  /** The app's toasts (`notify`): Copy IDs confirms, selection mode turning itself off warns. */
+  notify: Pick<typeof Notify, 'success' | 'warning' | 'error'>;
 }
 
 interface SelectionController {
@@ -69,16 +76,17 @@ interface SelectionController {
 
 /**
  * The selection (design decision 9, moved from the control bar): plot clicks and brushes, the
- * search box's picks, the plot tools, isolation and its two Escape steps (the selection, then the tool). Every change lands through
+ * search box's picks, the selection bar, the plot tools, isolation and its two Escape steps (the selection, then the tool). Every change lands through
  * one commit, which writes the plot, the search box and the tools, then tells the app.
  */
 export function createSelectionController({
   plotElement,
   plotTools,
+  selectionBar,
   proteinSearch,
   interactionController,
   registerEscape,
-  warn,
+  notify,
 }: SelectionControllerOptions): SelectionController {
   /** The selection the search box and the tools show, a search pick still waiting included. */
   let selected: string[] = [];
@@ -91,7 +99,7 @@ export function createSelectionController({
   const show = (ids: string[]) => {
     selected = ids;
     proteinSearch.selectedProteinIds = ids;
-    plotTools.selectedCount = ids.length;
+    selectionBar.selectedCount = ids.length;
   };
 
   const commitSelection = (ids: string[], { afterPaint = false } = {}) => {
@@ -181,6 +189,24 @@ export function createSelectionController({
     plotElement.isolateSelection();
   };
 
+  const onZoomToSelection = () => {
+    // Zoom to what the bar counts: land a search pick still waiting first.
+    commit.flush();
+    plotElement.zoomToProteins(selected);
+  };
+
+  const onCopySelection = () => {
+    const ids = selected;
+    if (ids.length === 0) return;
+    // Through a promise: in a page that is not a secure context `navigator.clipboard` is missing.
+    void Promise.resolve()
+      .then(() => navigator.clipboard.writeText(ids.join('\n')))
+      .then(
+        () => notify.success(getSelectionCopiedNotification(ids.length)),
+        () => notify.error(getSelectionCopyFailedNotification()),
+      );
+  };
+
   const onResetIsolation = () => {
     plotElement.resetIsolation();
     plotTools.isolated = false;
@@ -197,14 +223,18 @@ export function createSelectionController({
     show([]);
     // Back to the full data: selection works again.
     plotTools.selectionDisabled = false;
+    selectionBar.canIsolate = true;
   };
 
   const onAutoDisableSelection = (event: Event) => {
     const { reason, dataSize } = (event as CustomEvent<{ reason: string; dataSize: number }>)
       .detail;
     setTool('pan');
-    if (reason === 'insufficient-data' && dataSize <= 1) plotTools.selectionDisabled = true;
-    warn(getSelectionDisabledNotification({ reason, dataSize }));
+    if (reason === 'insufficient-data' && dataSize <= 1) {
+      plotTools.selectionDisabled = true;
+      selectionBar.canIsolate = false;
+    }
+    notify.warning(getSelectionDisabledNotification({ reason, dataSize }));
   };
 
   /** The search box offers the proteins in view; the tools show the plot's selection. */
@@ -239,8 +269,12 @@ export function createSelectionController({
   proteinSearch.addEventListener('remove-selection', onSearchRemove);
   plotTools.addEventListener('plot-tool-change', onToolChange);
   plotTools.addEventListener('fit-view', onFitView);
-  plotTools.addEventListener('clear-selections', onClear);
-  plotTools.addEventListener('isolate-data', onIsolate);
+  selectionBar.addEventListener('clear-selections', onClear);
+  selectionBar.addEventListener('isolate-data', onIsolate);
+  selectionBar.addEventListener('zoom-to-selection', onZoomToSelection);
+  selectionBar.addEventListener('copy-selection', onCopySelection);
+  // Clear and Show only these hide the bar they were pressed in: focus goes to the tool strip.
+  selectionBar.returnFocus = () => plotTools.focusTool();
   plotTools.addEventListener('reset-isolation', onResetIsolation);
 
   return {
@@ -265,8 +299,11 @@ export function createSelectionController({
       proteinSearch.removeEventListener('remove-selection', onSearchRemove);
       plotTools.removeEventListener('plot-tool-change', onToolChange);
       plotTools.removeEventListener('fit-view', onFitView);
-      plotTools.removeEventListener('clear-selections', onClear);
-      plotTools.removeEventListener('isolate-data', onIsolate);
+      selectionBar.removeEventListener('clear-selections', onClear);
+      selectionBar.removeEventListener('isolate-data', onIsolate);
+      selectionBar.removeEventListener('zoom-to-selection', onZoomToSelection);
+      selectionBar.removeEventListener('copy-selection', onCopySelection);
+      selectionBar.returnFocus = null;
       plotTools.removeEventListener('reset-isolation', onResetIsolation);
       releaseSelectionEscape();
       releaseToolEscape();

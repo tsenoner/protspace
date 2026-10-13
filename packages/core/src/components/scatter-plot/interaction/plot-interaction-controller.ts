@@ -30,6 +30,8 @@ export interface PlotInteractionHost {
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
   onHoverEnd(): void;
   onClick(event: MouseEvent): void;
+  /** A brush or lasso gesture started: the host ends a pinned tooltip so none floats over it. */
+  onSelectStart(): void;
   renderWebGL(trigger: RenderWebGLTrigger): void;
   updateSelectionOverlays(opts?: { duplicateImmediate?: boolean }): void;
 }
@@ -292,8 +294,10 @@ export class PlotInteractionController {
     this._brush = d3
       .brush()
       .handleSize(0)
-      .on('start', () => {
+      .on('start', (event: d3.D3BrushEvent<unknown>) => {
         this._isBrushing = true;
+        // A user's press, not a programmatic brush.move.
+        if (event.sourceEvent) this.host.onSelectStart();
       })
       .on('end', (event) => {
         this._isBrushing = false;
@@ -358,6 +362,7 @@ export class PlotInteractionController {
   }
 
   beginLasso(start: [number, number]): void {
+    this.host.onSelectStart();
     this._isLassoing = true;
     this._lassoVertices = [start];
 

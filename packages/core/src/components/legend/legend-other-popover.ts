@@ -1,7 +1,7 @@
 import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { countNoun, formatCount } from '../../utils/count-text';
+import { countNoun, formatCount } from '@protspace/utils';
 import '../kit/button';
 import '../kit/input';
 import '../kit/popover';

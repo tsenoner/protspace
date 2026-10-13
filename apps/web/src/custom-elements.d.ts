@@ -84,6 +84,10 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
         HTMLElement
       >;
+      'protspace-selection-bar': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
       'protspace-protein-search': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
         HTMLElement

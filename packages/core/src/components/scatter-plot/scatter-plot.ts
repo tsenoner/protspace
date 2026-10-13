@@ -68,6 +68,7 @@ import {
 } from './provenance/connector-overlay-controller';
 import { RenderLoop } from './render-loop';
 import { DataViews } from './data-views';
+import { zoomTransformFor } from './interaction/zoom-to-points';
 
 export type {
   ProvenanceConnectorPair,
@@ -1235,6 +1236,8 @@ export class ProtspaceScatterplot extends LitElement {
       onHover: (event) => this._handleCanvasMouseMove(event),
       onHoverEnd: () => this._handleCanvasMouseOut(),
       onClick: (event) => this._handleCanvasClick(event),
+      // A brush or lasso start ends a pin, as a click does (phase 4 ruling).
+      onSelectStart: () => this._unpinTooltip(),
       renderWebGL: (trigger) => this._renderWebGL(trigger),
       updateSelectionOverlays: (opts) => this._updateSelectionOverlays(opts),
     };
@@ -1747,6 +1750,62 @@ export class ProtspaceScatterplot extends LitElement {
     this._interaction?.resetZoom();
   }
 
+  /**
+   * Pans and zooms, untweened, to frame the plotted, visible proteins among `ids`: one lands at
+   * the plot centre at 8× or more, several are fitted inside a 40 px margin. Returns false and
+   * leaves the view alone when none of them is plotted and visible (unknown, filtered out,
+   * isolated away or hidden by the legend).
+   */
+  zoomToProteins(ids: readonly string[]): boolean {
+    const scales = this._scales;
+    const plotData = this._plotData;
+    if (!scales || !this._interaction || plotData.length === 0 || ids.length === 0) return false;
+    const { visible } = this._style.interactable(plotData);
+    const originalIndices = plotData.originalIndices;
+    let found = 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const include = (slot: number) => {
+      if (slot < 0 || slot >= plotData.length || visible[slot] !== 1) return;
+      const x = scales.x(plotData.xs[slot]);
+      const y = scales.y(plotData.ys[slot]);
+      found++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    };
+    if (ids.length === 1) {
+      // A search hit: one indexOf, never a set over every plotted protein.
+      const proteinIndex = plotData.proteinIds.indexOf(ids[0]);
+      if (proteinIndex >= 0) {
+        include(originalIndices ? originalIndices.indexOf(proteinIndex) : proteinIndex);
+      }
+    } else {
+      const wanted = new Set(ids);
+      for (let slot = 0; slot < plotData.length; slot++) {
+        if (visible[slot] !== 1) continue;
+        const id = plotData.proteinIds[originalIndices ? originalIndices[slot] : slot];
+        if (wanted.has(id)) include(slot);
+      }
+    }
+    if (found === 0) return false;
+    const { width, height, zoomExtent } = this._mergedConfig;
+    // The box's two corners stand for every point in it.
+    const t = zoomTransformFor(
+      [
+        [minX, minY],
+        [maxX, maxY],
+      ],
+      { width, height, margin: 40, currentK: this._transform.k, extent: zoomExtent, singleK: 8 },
+    );
+    if (!t) return false;
+    this._interaction.setTransform(d3.zoomIdentity.translate(t.x, t.y).scale(t.k));
+    return true;
+  }
+
   /** The tooltip on screen: the pinned one, at its protein, else the hovered protein's. */
   private _shownTooltip(): { x: number; y: number; view: TooltipView } | null {
     const pinned = this._pinnedTooltip;
@@ -1887,25 +1946,6 @@ export class ProtspaceScatterplot extends LitElement {
         ></svg>
 
         ${this._renderTooltip()}
-        ${this.selectionMode || this.selectedProteinIds.length > 0
-          ? html`
-              <div
-                class="mode-indicator"
-                style="z-index: 10; display: flex; flex-direction: column; gap: 4px;"
-              >
-                ${this.selectionMode
-                  ? html`<div>
-                      Selection Mode (${this.selectionTool === 'lasso' ? 'Lasso' : 'Rectangle'})
-                    </div>`
-                  : ''}
-                ${this.selectedProteinIds.length > 0
-                  ? html`<div style="font-size: 11px; opacity: 0.8;">
-                      ${this.selectedProteinIds.length} proteins selected
-                    </div>`
-                  : ''}
-              </div>
-            `
-          : ''}
         ${this.data
           ? html`
               <div class="plot-indicator" role="status" aria-live="polite">

@@ -8,6 +8,7 @@ import {
   annotationLabel,
   clampReliabilityBound,
   DEFAULT_EAT_RELIABILITY,
+  formatCount,
   isSameReliability,
   NEUTRAL_BOUND,
   normalizeReliability,
@@ -21,7 +22,6 @@ import '../kit/checkbox';
 import '../kit/select';
 import type { PsCheckbox } from '../kit/checkbox';
 import type { PsSelect, SelectOption } from '../kit/select';
-import { formatCount } from '../../utils/count-text';
 
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's

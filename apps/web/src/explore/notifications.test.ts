@@ -16,6 +16,8 @@ import {
   getExportSuccessNotification,
   getLegendErrorNotification,
   getRendererDegradedNotification,
+  getSelectionCopiedNotification,
+  getSelectionCopyFailedNotification,
   getSelectionDisabledNotification,
 } from './notifications';
 import { TEST_EXAMPLE } from './example-catalog.fixtures';
@@ -297,5 +299,19 @@ describe('getRendererDegradedNotification', () => {
 
     expect(n.title).toBe('Rendering quality reduced.');
     expect(n.dedupeKey).toBe('renderer-degraded:gamma-pipeline-unavailable');
+  });
+});
+
+describe('selection copy notifications', () => {
+  it('counts the copied IDs, plural-aware', () => {
+    expect(getSelectionCopiedNotification(1).title).toBe('Copied 1 protein ID');
+    expect(getSelectionCopiedNotification(1234).title).toBe('Copied 1,234 protein IDs');
+  });
+
+  it('says when the clipboard refused', () => {
+    expect(getSelectionCopyFailedNotification()).toEqual({
+      title: 'Could not copy the IDs',
+      description: 'The browser did not allow access to the clipboard.',
+    });
   });
 });

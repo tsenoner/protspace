@@ -150,6 +150,43 @@ describe('scatterplot tooltip actions', () => {
     expect(pinned(plot)).toBeNull();
   });
 
+  it('a box-select drag start ends the pin', async () => {
+    const plot = await mountPlot();
+    plot.selectionMode = true;
+    plot.selectionTool = 'rectangle';
+    await plot.updateComplete;
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+
+    // The press that starts a drag, as d3's brush hears it on its overlay.
+    const start = at(plot, 'P1');
+    const press = (type: string) =>
+      new MouseEvent(type, { clientX: start.x, clientY: start.y, bubbles: true, view: window });
+    plot.shadowRoot!.querySelector('.brush-container .overlay')!.dispatchEvent(press('mousedown'));
+    await plot.updateComplete;
+    expect(pinned(plot)).toBeNull();
+    window.dispatchEvent(press('mouseup'));
+  });
+
+  it('a lasso start ends the pin', async () => {
+    const plot = await mountPlot();
+    plot.selectionMode = true;
+    plot.selectionTool = 'lasso';
+    await plot.updateComplete;
+    mouse(plot, 'click', at(plot, 'P2'));
+    await plot.updateComplete;
+    expect(pinned(plot)).not.toBeNull();
+
+    // The lasso's pointer press calls beginLasso, then captures the pointer, which a synthetic
+    // pointer cannot be: start it as that handler does.
+    (
+      plot as unknown as { _interaction: { beginLasso(start: [number, number]): void } }
+    )._interaction.beginLasso([10, 10]);
+    await plot.updateComplete;
+    expect(pinned(plot)).toBeNull();
+  });
+
   it('new data ends the pin', async () => {
     const plot = await mountPlot();
     mouse(plot, 'click', at(plot, 'P2'));

@@ -26,7 +26,6 @@ import {
   resetIsolation,
   searchInput,
   selectAnnotation,
-  selectionAction,
   selectProjection,
   setContours,
   sidebar,
@@ -205,9 +204,9 @@ test.describe('explore helpers', () => {
 
     await selectBoth();
     await isolateSelection(page);
-    await expect(selectionAction(page, 'Reset')).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toBeVisible();
     await resetIsolation(page);
-    await expect(selectionAction(page, 'Reset')).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toHaveCount(0);
 
     await selectBoth();
     await clearSelection(page);

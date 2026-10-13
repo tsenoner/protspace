@@ -9,7 +9,8 @@ import {
   plotArea,
   resetIsolation,
   searchInput,
-  selectionAction,
+  selectionBar,
+  selectionBarAction,
 } from './helpers/explore';
 
 const toolStrip = (page: Page) => page.getByRole('toolbar', { name: 'Plot tools' });
@@ -102,7 +103,7 @@ test.describe('plot tools and selection', () => {
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
-    await expect(selectionAction(page, 'Clear')).toBeVisible();
+    await expect(selectionBar(page)).toBeVisible();
     expect(await getSelectedProteinIds(page)).toEqual([id]);
 
     // Nothing left to close: the next Escape clears the selection.
@@ -110,21 +111,82 @@ test.describe('plot tools and selection', () => {
     await expect.poll(async () => (await getSelectedProteinIds(page)).length).toBe(0);
   });
 
-  test('Clear, Isolate and Reset appear when they apply', async ({ page }) => {
+  test('Show only these isolates and the bar hides', async ({ page }) => {
     await openExplore(page);
-    await expect(page.getByRole('group', { name: 'Selection' })).toHaveCount(0);
+    await expect(selectionBar(page)).toBeHidden();
 
     await selectBySearch(page, await proteinIds(page, 2));
-    await expect(selectionAction(page, 'Clear')).toBeVisible();
-    await expect(selectionAction(page, 'Isolate')).toBeVisible();
-    await expect(selectionAction(page, 'Reset')).toHaveCount(0);
+    await expect(selectionBar(page)).toBeVisible();
+    await expect(selectionBar(page)).toContainText('2 proteins selected');
+    for (const name of ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear'] as const) {
+      await expect(selectionBarAction(page, name)).toBeVisible();
+    }
 
     await isolateSelection(page);
-    await expect(selectionAction(page, 'Reset')).toBeVisible();
-    await expect(selectionAction(page, 'Clear')).toHaveCount(0);
+    await expect(selectionBar(page)).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toBeVisible();
 
     await resetIsolation(page);
-    await expect(page.getByRole('group', { name: 'Selection' })).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toHaveCount(0);
+  });
+
+  test('a box selection shows the bar with its count; Clear empties it and focus stays on the tool strip', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await chooseTool(page, 'Box select');
+    const plot = (await page.locator('#myPlot').boundingBox())!;
+    await page.mouse.move(plot.x + plot.width * 0.25, plot.y + plot.height * 0.25);
+    await page.mouse.down();
+    await page.mouse.move(plot.x + plot.width * 0.75, plot.y + plot.height * 0.75, {
+      steps: 10,
+    });
+    await page.mouse.up();
+    await expect.poll(async () => (await getSelectedProteinIds(page)).length).toBeGreaterThan(0);
+    const n = (await getSelectedProteinIds(page)).length;
+    await expect(selectionBar(page)).toContainText(
+      `${n.toLocaleString('en-US')} ${n === 1 ? 'protein' : 'proteins'} selected`,
+    );
+
+    // Bottom-centre of the plot, 12 px up, 38 px tall; the plot keeps its box.
+    const bar = (await selectionBar(page).boundingBox())!;
+    expect(Math.abs(bar.x + bar.width / 2 - (plot.x + plot.width / 2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(plot.y + plot.height - (bar.y + bar.height) - 12)).toBeLessThanOrEqual(1);
+    expect(Math.abs(bar.height - 38)).toBeLessThanOrEqual(1);
+    expect(await page.locator('#myPlot').boundingBox()).toEqual(plot);
+
+    await selectionBarAction(page, 'Clear').click();
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
+    await expect(selectionBar(page)).toBeHidden();
+    await expect(toolButton(page, 'Box select')).toBeFocused();
+  });
+
+  test('Copy IDs writes the ids to the clipboard and says so', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openExplore(page);
+    const ids = await proteinIds(page, 2);
+    await selectBySearch(page, ids);
+
+    await selectionBarAction(page, 'Copy IDs').click();
+
+    await expect(page.getByText('Copied 2 protein IDs')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(ids.join('\n'));
+  });
+
+  test("Zoom to them changes the plot's transform", async ({ page }) => {
+    await openExplore(page);
+    await selectBySearch(page, await proteinIds(page, 2));
+    const transform = () =>
+      page.locator('#myPlot').evaluate((plot) => {
+        const t = (plot as unknown as { _transform: { k: number; x: number; y: number } })
+          ._transform;
+        return { k: t.k, x: t.x, y: t.y };
+      });
+    const before = await transform();
+
+    await selectionBarAction(page, 'Zoom to them').click();
+
+    await expect.poll(transform).not.toEqual(before);
   });
 
   test('search sits in the app bar and Ctrl+K focuses it', async ({ page }) => {

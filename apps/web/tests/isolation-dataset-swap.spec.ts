@@ -4,7 +4,6 @@ import {
   importMenu,
   importUserFile,
   openExplore,
-  selectionAction,
   waitForExploreInteractionReady,
   waitForProteinCount,
 } from './helpers/explore';
@@ -87,7 +86,9 @@ async function readIsolationMode(page: Page): Promise<boolean> {
 }
 
 function resetButton(page: Page) {
-  return selectionAction(page, 'Reset');
+  return page
+    .getByRole('group', { name: 'Isolation', exact: true })
+    .getByRole('button', { name: 'Reset', exact: true });
 }
 
 test.describe('Dataset swap clears isolation state (#222)', () => {

@@ -27,4 +27,5 @@ export * from './structure/structure-service';
 export * from './message';
 export * from './storage';
 export * from './platform';
+export * from './count-text';
 export * from './parquet';

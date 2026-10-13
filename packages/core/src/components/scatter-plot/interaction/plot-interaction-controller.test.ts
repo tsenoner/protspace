@@ -43,6 +43,7 @@ function makeHostBridge(svg: SVGSVGElement) {
       onHover: () => {},
       onHoverEnd: () => {},
       onClick: () => {},
+      onSelectStart: () => {},
       renderWebGL: () => {},
       updateSelectionOverlays: () => {},
     },

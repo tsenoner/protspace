@@ -73,28 +73,15 @@ describe('protspace-plot-tools', () => {
     expect(onFit).toHaveBeenCalledOnce();
   });
 
-  it('Clear and Isolate show only with a selection, Reset only when isolated', async () => {
+  it('Reset shows in the Isolation group while isolated', async () => {
     const el = await mount();
     expect(el.shadowRoot!.querySelector('[role="group"]')).toBeNull();
 
-    el.selectedCount = 2;
-    await el.updateComplete;
-    await expect.element(page.getByRole('group', { name: 'Selection' })).toBeInTheDocument();
-    expect(textButtons(el)).toEqual(['Clear', 'Isolate']);
-
-    const onClear = vi.fn();
-    const onIsolate = vi.fn();
-    el.addEventListener('clear-selections', onClear);
-    el.addEventListener('isolate-data', onIsolate);
-    inner(el.shadowRoot!.querySelectorAll('.selection ps-button')[0]).click();
-    inner(el.shadowRoot!.querySelectorAll('.selection ps-button')[1]).click();
-    expect(onClear).toHaveBeenCalledOnce();
-    expect(onIsolate).toHaveBeenCalledOnce();
-
-    el.selectedCount = 0;
     el.isolated = true;
     await el.updateComplete;
+    await expect.element(page.getByRole('group', { name: 'Isolation' })).toBeInTheDocument();
     expect(textButtons(el)).toEqual(['Reset']);
+
     const onReset = vi.fn();
     el.addEventListener('reset-isolation', onReset);
     inner(el.shadowRoot!.querySelector('.selection ps-button')!).click();
@@ -159,40 +146,26 @@ describe('protspace-plot-tools', () => {
     expect(deepActiveElement()).toBe(inner(tool(el, 'Fit to view')));
   });
 
-  it('Clear, Isolate and Reset hand focus on when they disappear', async () => {
+  it('Reset hands focus to the current tool when it disappears', async () => {
     const el = await mount();
     el.tool = 'rectangle';
-    el.selectedCount = 2;
-    el.addEventListener('clear-selections', () => (el.selectedCount = 0));
-    el.addEventListener('isolate-data', () => {
-      el.selectedCount = 0;
-      el.isolated = true;
-    });
+    el.isolated = true;
     el.addEventListener('reset-isolation', () => (el.isolated = false));
     await el.updateComplete;
-    const selectionButton = (text: string) =>
-      [...el.shadowRoot!.querySelectorAll('.selection ps-button')].find(
-        (b) => b.textContent!.trim() === text,
-      )!;
+    const reset = el.shadowRoot!.querySelector<PsButton>('.selection ps-button')!;
+    await reset.updateComplete;
 
-    // Clear: back to the current tool.
-    inner(selectionButton('Clear')).focus();
+    inner(reset).focus();
     await userEvent.keyboard('{Enter}');
     await el.updateComplete;
     expect(deepActiveElement()).toBe(inner(tool(el, 'Box select')));
+  });
 
-    // Isolate: on to Reset.
-    el.selectedCount = 2;
+  it('focusTool focuses the current tool', async () => {
+    const el = await mount();
+    el.tool = 'lasso';
     await el.updateComplete;
-    inner(selectionButton('Isolate')).focus();
-    await userEvent.keyboard('{Enter}');
-    await el.updateComplete;
-    await (selectionButton('Reset') as PsButton).updateComplete;
-    expect(deepActiveElement()).toBe(inner(selectionButton('Reset')));
-
-    // Reset: back to the current tool.
-    await userEvent.keyboard('{Enter}');
-    await el.updateComplete;
-    expect(deepActiveElement()).toBe(inner(tool(el, 'Box select')));
+    el.focusTool();
+    expect(deepActiveElement()).toBe(inner(tool(el, 'Lasso select')));
   });
 });

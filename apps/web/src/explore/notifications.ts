@@ -3,6 +3,7 @@ import type {
   LegendErrorEventDetail,
   RendererDegradedDetail,
 } from '@protspace/core';
+import { countNoun } from '@protspace/utils';
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
 import type { ExampleDataset } from './example-datasets';
@@ -245,6 +246,19 @@ export function getSelectionDisabledNotification({
         : 'Selection mode disabled',
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,
+  };
+}
+
+/** Copy IDs put the selection on the clipboard, one ID per line. */
+export function getSelectionCopiedNotification(count: number): NotifyOptions {
+  return { title: `Copied ${countNoun(count, 'protein ID', 'protein IDs')}` };
+}
+
+/** The clipboard refused Copy IDs (permission, or a page that is not a secure context). */
+export function getSelectionCopyFailedNotification(): NotifyOptions {
+  return {
+    title: 'Could not copy the IDs',
+    description: 'The browser did not allow access to the clipboard.',
   };
 }
 
