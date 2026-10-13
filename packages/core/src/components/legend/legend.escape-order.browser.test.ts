@@ -194,6 +194,17 @@ describe('legend Escape order', () => {
     await settle(legend);
     expect(open()).toEqual({ picker: true, other: true, settings: true });
 
+    // The layer stack's window listener is installed on the first layer push, so in this file it
+    // usually runs before the legend's. Drive the legend's handler directly so the guard that
+    // leaves Escape to an open layer is pinned whatever the install order.
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    (
+      legend as unknown as { _onWindowKeydownCapture(e: KeyboardEvent): void }
+    )._onWindowKeydownCapture(escape);
+    await settle(legend);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(open()).toEqual({ picker: true, other: true, settings: true });
+
     await userEvent.keyboard('{Escape}');
     await settle(legend);
     expect(open()).toEqual({ picker: false, other: true, settings: true });

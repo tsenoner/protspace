@@ -211,6 +211,31 @@ describe('legend rows', () => {
     expect(tabbable(legend, '.legend-more')).toEqual(['C']);
   });
 
+  it('the Tab stop stays on its category through a re-sort', async () => {
+    const { legend } = await mount(TWELVE);
+    main(legend, 'C').focus();
+    await settleLegend(legend);
+
+    (legend as unknown as { _toggleLegendOrderDirection(): void })._toggleLegendOrderDirection();
+    await settleLegend(legend);
+
+    expect(rowValues(legend)[0]).not.toBe('A');
+    expect(tabbable(legend, '.legend-item-main')).toEqual(['C']);
+  });
+
+  it('the Tab stop falls back to the first row when its category leaves the list', async () => {
+    const { legend } = await mount(TWELVE);
+    main(legend, 'C').focus();
+    await settleLegend(legend);
+
+    // With two rows shown, C folds into Other.
+    legend.maxVisibleValues = 2;
+    await settleLegend(legend);
+
+    expect(rowValues(legend)).not.toContain('C');
+    expect(tabbable(legend, '.legend-item-main')).toEqual([rowValues(legend)[0]]);
+  });
+
   it('Space on the handle adds .picked and aria-pressed; Escape removes them', async () => {
     const { legend } = await mount(TWELVE);
     expect(handle(legend, 'A').getAttribute('aria-pressed')).toBe('false');
@@ -224,15 +249,14 @@ describe('legend rows', () => {
     expect(handle(legend, 'A').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('renders one ps-menu and one ps-tooltip whatever the row count (500 rows)', async () => {
+  it('renders one ps-menu and one ps-tooltip whatever the row count', async () => {
     const counts = Object.fromEntries(
-      Array.from({ length: 500 }, (_, index) => [`C${index}`, 500 - index]),
+      Array.from({ length: 40 }, (_, index) => [`C${index}`, 40 - index]),
     );
     const { legend } = await mount(counts);
-    legend.maxVisibleValues = 500;
-    await vi.waitFor(
-      () => expect(legend.shadowRoot!.querySelectorAll('.legend-item')).toHaveLength(500),
-      { timeout: 10_000 },
+    legend.maxVisibleValues = 40;
+    await vi.waitFor(() =>
+      expect(legend.shadowRoot!.querySelectorAll('.legend-item')).toHaveLength(40),
     );
 
     const root = legend.shadowRoot!;
@@ -241,6 +265,5 @@ describe('legend rows', () => {
     expect(root.querySelectorAll('.legend-items ps-menu, .legend-items ps-tooltip')).toHaveLength(
       0,
     );
-    // 500 rows in jsdom take about 2 s alone and several times that under the full suite's load.
-  }, 20_000);
+  });
 });

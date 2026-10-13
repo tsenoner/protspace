@@ -172,6 +172,35 @@ describe('legend colour and shape picker', () => {
     expect(commits()).toBe(1);
   });
 
+  it("opening another row's picker without a press lands the pending colour first", async () => {
+    const { legend, plot } = await mount();
+    await openPicker(legend, 'A');
+    const commits = colourCommits(plot);
+    inputColour(legend, '#00ff00');
+
+    // A synthetic click fires no pointerdown, so A's picker is not closed by an outside press:
+    // the keyboard path, where only open() can land the pending colour.
+    more(legend, 'B').click();
+    await settle(legend);
+    expect(picker(legend).open).toBe(true);
+    expect(commits()).toBe(0);
+    legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!.dispatchEvent(
+      new CustomEvent('ps-select', {
+        bubbles: true,
+        composed: true,
+        detail: { value: 'customize', checked: false },
+      }),
+    );
+    // Synchronously, before the commit delay could have run out.
+    expect(commits()).toBe(1);
+    await settle(legend);
+
+    expect(panel(legend).getAttribute('aria-label')).toBe('Colour and shape: B');
+    expect(storedFamilyRecord().categories.A.color).toBe('#00ff00');
+    await pause(COLOR_COMMIT_DELAY_MS + 50);
+    expect(commits()).toBe(1);
+  });
+
   it('lands a colour still waiting for its delay on the dataset it was picked on', async () => {
     const { legend, plot } = await mount();
     await openPicker(legend, 'A');
