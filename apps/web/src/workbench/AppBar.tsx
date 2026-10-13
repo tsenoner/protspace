@@ -13,8 +13,18 @@ function shownName(datasetName: string): string {
   return datasetName.split(' · ')[0];
 }
 
-function proteinCountText(count: number): string {
-  return `· ${count.toLocaleString()} ${count === 1 ? 'protein' : 'proteins'}`;
+function proteinsText(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? 'protein' : 'proteins'}`;
+}
+
+/**
+ * The dataset button's name starts with what it shows, the name and the count (WCAG 2.5.3, so a
+ * spoken "click {name}" finds it), then says what it does.
+ */
+function datasetButtonLabel(datasetName: string, count: number | null): string {
+  return [shownName(datasetName), count === null ? null : proteinsText(count), 'switch dataset']
+    .filter(Boolean)
+    .join(', ');
 }
 
 /**
@@ -60,7 +70,7 @@ export function AppBar() {
           data-dataset-name={datasetName ?? ''}
           aria-haspopup="dialog"
           aria-label={
-            datasetName === null ? undefined : `Switch dataset: ${shownName(datasetName)}`
+            datasetName === null ? undefined : datasetButtonLabel(datasetName, proteinCount)
           }
           hidden={datasetName === null}
           onClick={toggleImportMenu}
@@ -70,7 +80,7 @@ export function AppBar() {
             <span className="wb-dataset-name">{shownName(datasetName)}</span>
           )}
           {proteinCount !== null && (
-            <span className="wb-dataset-count">{proteinCountText(proteinCount)}</span>
+            <span className="wb-dataset-count">· {proteinsText(proteinCount)}</span>
           )}
           <ChevronDown
             className="wb-dataset-chevron"

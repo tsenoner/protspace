@@ -296,9 +296,12 @@ export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu')
 const importPanel = (page: Page): Locator =>
   importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
 
-/** The app bar's dataset name, which opens the Import panel (the dataset switcher). */
+/**
+ * The app bar's dataset name, which opens the Import panel (the dataset switcher). Its name reads
+ * "{name}, {count} proteins, switch dataset".
+ */
 export const datasetSwitcher = (page: Page): Locator =>
-  appBar(page).getByRole('button', { name: /^Switch dataset/ });
+  appBar(page).getByRole('button', { name: /, switch dataset$/ });
 
 /** The view bar's Filter button; its name reads "Filter" or "Filter, N conditions applied". */
 export const filterButton = (page: Page): Locator =>
