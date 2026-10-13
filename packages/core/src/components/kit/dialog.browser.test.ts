@@ -222,6 +222,21 @@ describe('ps-dialog', () => {
     expect(dialog.shadowRoot!.activeElement).toBe(dialog.shadowRoot!.querySelector('.frame'));
   });
 
+  it('focuses an autofocus button in the footer when built and opened in one go', async () => {
+    const dialog = document.createElement('ps-dialog') as PsDialog;
+    dialog.heading = 'Clear stored data?';
+    const cancel = document.createElement('ps-button');
+    cancel.slot = 'footer';
+    cancel.setAttribute('autofocus', '');
+    cancel.textContent = 'Cancel';
+    dialog.append(cancel);
+    document.body.append(dialog);
+    dialog.open = true;
+    await settle(dialog);
+    expect(dialog.shadowRoot!.querySelector('footer')!.hidden).toBe(false);
+    expect(document.activeElement).toBe(cancel);
+  });
+
   it('sizes by the dynamic viewport, so a full dialog fits under a phone toolbar', () => {
     const cssText = dialogStyles.map((sheet) => sheet.cssText).join('');
     expect(cssText).not.toMatch(/100vh/);

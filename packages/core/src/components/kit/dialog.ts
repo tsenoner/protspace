@@ -95,6 +95,12 @@ export class PsDialog extends LitElement {
     if (this.hasUpdated && this.open) this.requestUpdate();
   }
 
+  // Read the footer before rendering, not on the later slotchange: show() focuses an [autofocus]
+  // footer button, which a still-hidden footer cannot give focus to.
+  protected willUpdate(): void {
+    if (this.open) this.hasFooter = this.querySelector(':scope > [slot="footer"]') !== null;
+  }
+
   protected updated(changed: PropertyValues<this>): void {
     if (this.open) this.show();
     else if (changed.has('open')) this.hide();
@@ -138,7 +144,15 @@ export class PsDialog extends LitElement {
         return dialog.dismissible;
       },
     });
-    (this.querySelector<HTMLElement>('[autofocus]') ?? this.frame).focus();
+    this.frame.focus();
+    const target = this.querySelector<HTMLElement>('[autofocus]');
+    target?.focus();
+    // A kit button built with the dialog renders after it, with nothing to delegate focus to yet.
+    if (target && !target.matches(':focus') && 'updateComplete' in target) {
+      void (target.updateComplete as Promise<unknown>).then(() => {
+        if (this.shown && this.shadowRoot!.activeElement === this.frame) target.focus();
+      });
+    }
   }
 
   private hide(): void {
