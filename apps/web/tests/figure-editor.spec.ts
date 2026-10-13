@@ -363,9 +363,9 @@ test.describe('figure editor — geometric inset zoom', () => {
 
     const initialInsetRenderSize = await page.evaluate(() => {
       const modal = document.querySelector('protspace-publish-modal') as unknown as
-        | (HTMLElement & { _lastInsetCanvases: HTMLCanvasElement[] })
+        | (HTMLElement & { _insetRenders: { lastCanvases: HTMLCanvasElement[] } })
         | null;
-      const insetCanvas = modal?._lastInsetCanvases[0];
+      const insetCanvas = modal?._insetRenders.lastCanvases[0];
       if (!insetCanvas) throw new Error('initial inset render missing');
       return { width: insetCanvas.width, height: insetCanvas.height };
     });
@@ -410,17 +410,19 @@ test.describe('figure editor — geometric inset zoom', () => {
           const modal = document.querySelector('protspace-publish-modal') as unknown as
             | (HTMLElement & {
                 shadowRoot: ShadowRoot;
-                _lastInsetCanvases: HTMLCanvasElement[];
-                _settleTimer: ReturnType<typeof setTimeout> | null;
+                _insetRenders: {
+                  lastCanvases: HTMLCanvasElement[];
+                  settleTimer: ReturnType<typeof setTimeout> | null;
+                };
               })
             | null;
           const canvas = modal?.shadowRoot?.querySelector(
             '.publish-preview-canvas',
           ) as HTMLCanvasElement | null;
-          const insetCanvas = modal?._lastInsetCanvases[0];
+          const insetCanvas = modal?._insetRenders.lastCanvases[0];
           return {
             previewReady: Boolean(canvas && canvas.width > 0 && canvas.height > 0),
-            settled: modal?._settleTimer === null,
+            settled: modal?._insetRenders.settleTimer === null,
             finalInsetRendered: Boolean(
               insetCanvas &&
               insetCanvas.width > initialSize.width * 1.4 &&

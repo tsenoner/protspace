@@ -347,16 +347,18 @@ interface InsetInternals {
       pointSizeScale?: number;
     }>;
   };
-  _captureInsetRenders: (
-    plotEl: unknown,
-    state: unknown,
-    plotRect: { w: number; h: number },
-    bgColor: string,
-  ) => Array<HTMLCanvasElement | null>;
-  _lastInsetCanvases: Array<HTMLCanvasElement | null>;
-  _lastInsetRenderAt: number;
-  _insetRenderCache: Map<string, HTMLCanvasElement>;
-  _settleTimer: ReturnType<typeof setTimeout> | null;
+  _insetRenders: {
+    capture: (
+      plotEl: unknown,
+      state: unknown,
+      plotRect: { w: number; h: number },
+      bgColor: string,
+    ) => Array<HTMLCanvasElement | null>;
+    lastCanvases: Array<HTMLCanvasElement | null>;
+    lastRenderAt: number;
+    renders: Map<string, HTMLCanvasElement>;
+    settleTimer: ReturnType<typeof setTimeout> | null;
+  };
 }
 
 /**
@@ -444,7 +446,7 @@ describe('<protspace-publish-modal> Dot size slider', () => {
   });
 });
 
-describe('<protspace-publish-modal> _captureInsetRenders', () => {
+describe('<protspace-publish-modal> inset renders', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -454,7 +456,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
     const plot = makeStubPlot();
-    const renders = internals._captureInsetRenders(
+    const renders = internals._insetRenders.capture(
       plot.element,
       { insets: [] },
       { w: 1000, h: 800 },
@@ -476,7 +478,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    const [canvas] = internals._captureInsetRenders(
+    const [canvas] = internals._insetRenders.capture(
       plot.element,
       { insets: [inset] },
       { w: 1000, h: 800 },
@@ -501,9 +503,9 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       pointSizeScale: 1,
     };
     const args = [plot.element, { insets: [inset] }, { w: 1000, h: 800 }, '#ffffff'] as const;
-    internals._captureInsetRenders(...args);
+    internals._insetRenders.capture(...args);
     expect(plot.callCount()).toBe(1);
-    internals._captureInsetRenders(...args);
+    internals._insetRenders.capture(...args);
     expect(plot.callCount()).toBe(1); // cache hit, no new WebGL pass
   });
 
@@ -519,8 +521,8 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    // First call: full render establishes _lastInsetRenderAt
-    internals._captureInsetRenders(
+    // First call: full render establishes lastRenderAt
+    internals._insetRenders.capture(
       plot.element,
       { insets: [baseInset] },
       { w: 1000, h: 800 },
@@ -529,10 +531,10 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     expect(plot.callCount()).toBe(1);
 
     // Within the 80 ms fast-path window, simulate the user dragging — change
-    // target dims a few times. Each call should reuse _lastInsetCanvases[0]
+    // target dims a few times. Each call should reuse lastCanvases[0]
     // instead of triggering a fresh WebGL pass.
     for (let i = 0; i < 5; i++) {
-      internals._captureInsetRenders(
+      internals._insetRenders.capture(
         plot.element,
         {
           insets: [
@@ -554,8 +556,8 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
 
-    // Inject a far-past _lastInsetRenderAt so the next call is NOT fastPath
-    // (we want a real first render to seed _lastInsetCanvases).
+    // Inject a far-past lastRenderAt so the next call is NOT fastPath
+    // (we want a real first render to seed lastCanvases).
     const plot = makeStubPlot();
     const baseInset = {
       sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
@@ -564,7 +566,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       connector: 'lines',
       pointSizeScale: 1,
     };
-    internals._captureInsetRenders(
+    internals._insetRenders.capture(
       plot.element,
       { insets: [baseInset] },
       { w: 1000, h: 800 },
@@ -573,8 +575,8 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     expect(plot.callCount()).toBe(1);
 
     // Trigger fastPath: change target dims while we're still inside the
-    // 80 ms window since the fresh render. This should arm _settleTimer.
-    internals._captureInsetRenders(
+    // 80 ms window since the fresh render. This should arm settleTimer.
+    internals._insetRenders.capture(
       plot.element,
       {
         insets: [{ ...baseInset, targetRect: { x: 0.5, y: 0.5, w: 0.25, h: 0.25 } }],
@@ -582,7 +584,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
       { w: 1000, h: 800 },
       '#ffffff',
     );
-    expect(internals._settleTimer).not.toBeNull();
+    expect(internals._insetRenders.settleTimer).not.toBeNull();
   });
 
   it('returns null per inset when plotEl lacks captureAtResolution / getDataExtent', async () => {
@@ -590,7 +592,7 @@ describe('<protspace-publish-modal> _captureInsetRenders', () => {
     await modal.updateComplete;
     const internals = modal as unknown as InsetInternals;
     const stub = document.createElement('div'); // no API surface
-    const renders = internals._captureInsetRenders(
+    const renders = internals._insetRenders.capture(
       stub,
       {
         insets: [
@@ -920,26 +922,28 @@ describe('<protspace-publish-modal> plot cache key', () => {
     const modal = document.createElement('protspace-publish-modal') as HTMLElement & {
       plotElement: HTMLElement;
       _state: Record<string, unknown>;
-      _lastInsetRenderAt: number;
-      _lastInsetCanvases: Array<HTMLCanvasElement | undefined>;
-      _captureInsetRenders: (
-        plotEl: unknown,
-        state: unknown,
-        plotRect: { w: number; h: number },
-        bgColor: string,
-        opts?: { forExport?: boolean },
-      ) => Array<HTMLCanvasElement | null>;
+      _insetRenders: {
+        lastRenderAt: number;
+        lastCanvases: Array<HTMLCanvasElement | null>;
+        capture: (
+          plotEl: unknown,
+          state: unknown,
+          plotRect: { w: number; h: number },
+          bgColor: string,
+          opts?: { forExport?: boolean },
+        ) => Array<HTMLCanvasElement | null>;
+      };
     };
     modal.plotElement = fakePlotEl;
     document.body.appendChild(modal);
-    modal._lastInsetRenderAt = performance.now();
+    modal._insetRenders.lastRenderAt = performance.now();
     // Simulate a prior preview-resolution render sitting in the cache. Without
     // the export bypass this is what _handleExport would silently return at
     // tiny preview dims instead of a fresh export-resolution render.
     const previewCanvas = document.createElement('canvas');
     previewCanvas.width = 100;
     previewCanvas.height = 60;
-    modal._lastInsetCanvases = [previewCanvas];
+    modal._insetRenders.lastCanvases = [previewCanvas];
     modal._state = {
       ...(modal._state as Record<string, unknown>),
       insets: [
@@ -953,7 +957,7 @@ describe('<protspace-publish-modal> plot cache key', () => {
     };
     captures.length = 0;
 
-    modal._captureInsetRenders(fakePlotEl, modal._state, { w: 1000, h: 600 }, '#ffffff', {
+    modal._insetRenders.capture(fakePlotEl, modal._state, { w: 1000, h: 600 }, '#ffffff', {
       forExport: true,
     });
 

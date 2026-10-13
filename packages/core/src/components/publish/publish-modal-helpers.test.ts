@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getActivePresetConstraints,
   computeWidthPxUpdate,
@@ -8,6 +8,7 @@ import {
   computeDpiUpdate,
   computePresetApplication,
   shouldShowFingerprintWarning,
+  readLegendExportState,
 } from './publish-modal-helpers';
 import { createDefaultPublishState, type PublishState } from './publish-state';
 
@@ -293,5 +294,31 @@ describe('publish-modal-helpers', () => {
       const saved = { projection: 'UMAP', dimensionality: 2 };
       expect(shouldShowFingerprintWarning(saved, null)).toBe(false);
     });
+  });
+});
+
+describe('readLegendExportState', () => {
+  const state = {
+    annotation: 'family',
+    otherItemsCount: 0,
+    items: [{ value: 'A', color: '#fff', shape: 'circle', count: 1, isVisible: true, zOrder: 0 }],
+  };
+
+  it('reads the legend, and returns null without the method, with no items, or when it throws', () => {
+    const legend = { getLegendExportData: () => state } as unknown as Element;
+    expect(readLegendExportState(legend)).toBe(state);
+    expect(readLegendExportState(null)).toBeNull();
+    expect(readLegendExportState({} as Element)).toBeNull();
+    const noItems = { getLegendExportData: () => ({ annotation: 'family' }) } as unknown as Element;
+    expect(readLegendExportState(noItems)).toBeNull();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = {
+      getLegendExportData: () => {
+        throw new Error('not ready');
+      },
+    } as unknown as Element;
+    expect(readLegendExportState(throwing)).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });
