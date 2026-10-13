@@ -1341,10 +1341,9 @@ test('categorical palette swatches fit the settings popover at 1280 and 1100 px 
       const box = (await swatch.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(panel.x);
       expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
-      // Up to eight chips: Tol Bright has seven colours.
-      const chips = await swatch.locator('.chip').count();
-      expect(chips).toBeGreaterThan(0);
-      expect(chips).toBeLessThanOrEqual(8);
+      // Eight chips each; Tol Bright has only seven colours.
+      const name = ((await swatch.textContent()) ?? '').trim();
+      await expect(swatch.locator('.chip')).toHaveCount(name === 'Tol Bright' ? 7 : 8);
     }
     await closeLegendSettings(page);
   }
@@ -1739,6 +1738,16 @@ test('categorical manual reorder and reverse continue to work', async ({ page })
   await closeLegendSettings(page);
   expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(reversed);
   expect(await legendSortLabel(page)).toMatch(/^Your order/);
+
+  // Capping the list keeps the top rows and puts Other last; it used to keep the bottom ones.
+  await setLegendSetting(page, 'Max legend items', String(reversed.length - 1));
+  await closeLegendSettings(page);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+    .toEqual([...reversed.slice(0, -1), expect.any(String)]);
+  const capped = (await readLegendDisplay(page)).items;
+  expect(capped[0]?.value).toBe(reversed[0]);
+  expect(capped.at(-1)?.label.startsWith('Other')).toBe(true);
 });
 
 test('categorical drag-promoted manual order persists after re-import', async ({ page }) => {

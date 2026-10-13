@@ -168,12 +168,17 @@ export async function openLegendSettings(page: Page): Promise<Locator> {
   return legend(page).locator('protspace-legend-settings-popover');
 }
 
-/** Every `protspace:` entry in localStorage, to wait for an edit to be stored. */
+/**
+ * The legend's entries in localStorage (its record and the dataset's point size), to wait for an
+ * edit to be stored. Other `protspace:` keys, such as the layout, would end the wait early.
+ */
 function storedState(page: Page): Promise<string> {
   return page.evaluate(() =>
     JSON.stringify(
       Object.keys(localStorage)
-        .filter((key) => key.startsWith('protspace:'))
+        .filter(
+          (key) => key.startsWith('protspace:legend:') || key.startsWith('protspace:shape-size:'),
+        )
         .sort()
         .map((key) => [key, localStorage.getItem(key)]),
     ),
