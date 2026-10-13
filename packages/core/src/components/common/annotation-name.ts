@@ -10,7 +10,7 @@ import { icon } from '../kit/icon';
  */
 export function predictedMark(column: string): TemplateResult | typeof nothing {
   return isPredictedAnnotation(column)
-    ? html`<span class="predicted-badge" role="img" aria-label="Predicted annotation"
+    ? html`<span class="predicted-mark" role="img" aria-label="Predicted annotation"
         >${icon('sparkles', 14)}</span
       >`
     : nothing;

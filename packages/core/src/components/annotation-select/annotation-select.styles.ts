@@ -80,7 +80,7 @@ export const annotationSelectStyles = [
     }
 
     /* The predicted mark beside a name (renderAnnotationName and the rows). */
-    .predicted-badge {
+    .predicted-mark {
       display: inline-flex;
       flex: none;
       color: var(--ps-text-muted);

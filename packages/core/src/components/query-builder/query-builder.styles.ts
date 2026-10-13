@@ -248,14 +248,10 @@ export const queryBuilderStyles = [
       white-space: nowrap;
     }
 
-    .predicted-badge {
+    .predicted-mark {
       display: inline-flex;
       flex: none;
-      align-items: center;
-      font-size: var(--ps-text-xs);
-      line-height: 1;
-      cursor: default;
-      user-select: none;
+      color: var(--ps-text-muted);
     }
 
     /* ── Value chips ─────────────────────────────────────────────────────── */

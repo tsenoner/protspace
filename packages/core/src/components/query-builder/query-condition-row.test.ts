@@ -424,7 +424,7 @@ describe('query-condition-row annotation names', () => {
       (item) => [
         item.dataset.annotation!,
         item.querySelector('.dropdown-item-label')!.textContent!.trim(),
-        item.querySelector('.predicted-badge') !== null,
+        item.querySelector('.predicted-mark') !== null,
       ],
     );
   }
@@ -444,14 +444,14 @@ describe('query-condition-row annotation names', () => {
   it('names the chosen annotation by label on the button', async () => {
     const el = await mountNamed('cath');
     expect(trigger(el).textContent!.trim()).toBe('CATH-Gene3D');
-    expect(trigger(el).querySelector('.predicted-badge')).toBeNull();
+    expect(trigger(el).querySelector('.predicted-mark')).toBeNull();
 
     el.condition = { ...el.condition, annotation: 'predicted_subcellular_location' };
     await el.updateComplete;
     expect(trigger(el).querySelector('.dropdown-trigger-text')!.textContent!.trim()).toBe(
       'Subcellular location',
     );
-    expect(trigger(el).querySelector('.predicted-badge')).not.toBeNull();
+    expect(trigger(el).querySelector('.predicted-mark')).not.toBeNull();
   });
 
   it('keeps the placeholder until an annotation is chosen', async () => {
@@ -477,7 +477,7 @@ describe('query-condition-row annotation names', () => {
 
   it('marks the predicted annotation with the sparkles icon, named Predicted annotation', async () => {
     const el = await mountNamed('predicted_subcellular_location');
-    const mark = trigger(el).querySelector('.predicted-badge')!;
+    const mark = trigger(el).querySelector('.predicted-mark')!;
     expect(mark.getAttribute('role')).toBe('img');
     expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
     expect(mark.hasAttribute('title')).toBe(false);

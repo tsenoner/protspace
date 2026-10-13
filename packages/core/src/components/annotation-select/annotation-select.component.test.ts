@@ -207,7 +207,7 @@ describe('protspace-annotation-select annotation names', () => {
     expect(trigger.querySelector('.dropdown-trigger-text')!.textContent!.trim()).toBe(
       'Subcellular location',
     );
-    const mark = trigger.querySelector('.predicted-badge')!;
+    const mark = trigger.querySelector('.predicted-mark')!;
     expect(mark.getAttribute('role')).toBe('img');
     expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
     expect(mark.hasAttribute('title')).toBe(false);
@@ -216,7 +216,7 @@ describe('protspace-annotation-select annotation names', () => {
 
     el.selectedAnnotation = 'cc_subcellular_location';
     await el.updateComplete;
-    expect(trigger.querySelector('.predicted-badge')).toBeNull();
+    expect(trigger.querySelector('.predicted-mark')).toBeNull();
   });
 });
 
