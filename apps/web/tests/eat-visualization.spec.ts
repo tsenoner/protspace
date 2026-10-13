@@ -375,10 +375,11 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
 
   // The info popover explains predictions are filtered out while curated stays.
   await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
-  await expect(eatGroup.getByRole('dialog')).toContainText(
-    'Predictions below this reliability are hidden',
-  );
-  await expect(eatGroup.getByRole('dialog')).toContainText('EC number — EAT confidence');
+  // The bubble's text is slotted into ps-popover's dialog panel, so it is read from the bubble.
+  const eatInfo = eatGroup.locator('protspace-info-popover .popover');
+  await expect(eatGroup.getByRole('dialog')).toBeVisible();
+  await expect(eatInfo).toContainText('Predictions below this reliability are hidden');
+  await expect(eatInfo).toContainText('EC number — EAT confidence');
 
   const legendSummary = eatGroup.getByRole('region', {
     name: 'Transferred annotation counts',
@@ -475,6 +476,15 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
       }),
     )
     .toEqual([1, 0, 0]);
+  // The aborted demo's error toast and the others stack up over the plot's centre, where the
+  // isolated protein sits; close them so the hover reaches the plot.
+  const dismiss = page
+    .locator('[data-sonner-toast]:not([data-removed="true"])')
+    .getByRole('button', {
+      name: 'Dismiss notification',
+    });
+  while ((await dismiss.count()) > 0) await dismiss.first().click();
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   const isolatedPosition = await getProteinScreenPosition(page, 'A0JMF6');
   await page.mouse.move(isolatedPosition.x, isolatedPosition.y);
   const isolatedTooltip = plot.locator('protspace-protein-tooltip');

@@ -526,11 +526,11 @@ async function pickFromMenu(
   item: Locator,
   event: 'annotation-change' | 'projection-change',
 ): Promise<void> {
-  // Projection marks its radio item; Color by marks the row's indicator.
+  // Projection marks its radio item; Color by marks the row's option as selected.
   const checked = await item.evaluate(
     (el) =>
       el.getAttribute('aria-checked') === 'true' ||
-      el.querySelector('[data-active="true"]') !== null,
+      el.querySelector('[role="option"][aria-selected="true"]') !== null,
   );
   if (checked) {
     await item.click();
