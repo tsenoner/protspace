@@ -23,6 +23,9 @@ export const fieldStyles = [
       background: var(--ps-surface);
       color: var(--ps-text-muted);
     }
+    :host([size='sm']) .field {
+      height: var(--ps-control-sm);
+    }
     /* Faint reaches only decorative icons; slotted text and typed text stay readable. */
     ::slotted(svg) {
       color: var(--ps-text-faint);

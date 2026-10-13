@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cdp, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import type { VisualizationData } from '@protspace/utils';
 import type { ProtspaceLegend } from './legend';
 import { categoricalData, TWELVE } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
@@ -122,5 +123,37 @@ describe('legend styles', () => {
     } finally {
       await session.send('Emulation.setEmulatedMedia', { features: [] });
     }
+  });
+
+  it('draws the EAT mode select as tall as the percent box beside it', async () => {
+    const data: VisualizationData = {
+      protein_ids: ['observed', 'predicted'],
+      projections: [{ name: 'pca', dimension: 2, data: new Float32Array(4) }],
+      annotations: {
+        ec: {
+          kind: 'categorical',
+          values: ['observed', 'predicted'],
+          colors: ['#111111', '#555555'],
+          shapes: ['circle', 'circle'],
+        },
+      },
+      annotation_data: { ec: new Int32Array([0, 1]) },
+      annotation_predicted: {
+        ec: [null, { value: 'predicted', confidence: 0.8, source: 'observed' }],
+      },
+    };
+    const { legend } = await mountLegendWithScatterplot(data, 'ec');
+    await settle(legend);
+    const root = legend.shadowRoot!;
+    const mode = root.querySelector<HTMLElement & { updateComplete: Promise<boolean> }>(
+      'ps-select.eat-threshold-mode',
+    )!;
+    await mode.updateComplete;
+    await frame();
+
+    const field = mode.shadowRoot!.querySelector('.field')!.getBoundingClientRect();
+    const percent = root.querySelector('.eat-threshold-percent')!.getBoundingClientRect();
+    expect(field.height).toBe(28);
+    expect(percent.height).toBe(field.height);
   });
 });

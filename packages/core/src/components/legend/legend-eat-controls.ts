@@ -443,6 +443,7 @@ function renderReliabilityModeSelect(ctrl: EatReliabilityController): TemplateRe
   return html`
     <ps-select
       class="eat-threshold-mode"
+      size="sm"
       label="EAT reliability filter mode"
       .options=${EAT_MODE_OPTIONS}
       .value=${ctrl.reliability.mode}

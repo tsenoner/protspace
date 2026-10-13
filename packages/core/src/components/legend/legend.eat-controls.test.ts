@@ -7,10 +7,16 @@ import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './legend-eat-controls';
 import type { PsCheckbox } from '../kit/checkbox';
 import type { PsSelect } from '../kit/select';
 
-function makeData(): VisualizationData {
+/** One predicted and one missing protein after `observed` observed ones. */
+function makeData(observed = 1): VisualizationData {
+  const ids = [
+    ...Array.from({ length: observed }, (_, i) => (i ? `observed-${i}` : 'observed')),
+    'predicted',
+    'missing',
+  ];
   return {
-    protein_ids: ['observed', 'predicted', 'missing'],
-    projections: [{ name: 'pca', dimension: 2, data: new Float32Array(6) }],
+    protein_ids: ids,
+    projections: [{ name: 'pca', dimension: 2, data: new Float32Array(ids.length * 2) }],
     annotations: {
       ec: {
         kind: 'categorical',
@@ -26,17 +32,21 @@ function makeData(): VisualizationData {
       },
     },
     annotation_data: {
-      ec: new Int32Array([0, 2, 2]),
-      family: new Int32Array([0, 0, 0]),
+      ec: new Int32Array([...Array<number>(observed).fill(0), 2, 2]),
+      family: new Int32Array(ids.length),
     },
     annotation_predicted: {
-      ec: [null, { value: 'predicted', confidence: 0.8, source: 'observed' }, null],
+      ec: [
+        ...Array<null>(observed).fill(null),
+        { value: 'predicted', confidence: 0.8, source: 'observed' },
+        null,
+      ],
     },
   };
 }
 
-async function setup() {
-  const data = makeData();
+async function setup(observed = 1) {
+  const data = makeData(observed);
   const { legend, plot } = await mountLegendWithScatterplot(data, 'ec');
   return { data, legend, plot };
 }
@@ -62,6 +72,12 @@ describe('legend-owned EAT controls', () => {
     expect(root.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value).toBe('0');
   });
 
+  it('groups the EAT counts in thousands', async () => {
+    const { legend } = await setup(1234);
+    const counts = legend.shadowRoot!.querySelector('.eat-legend-counts')!.textContent!;
+    expect(counts).toMatch(/Observed\s*1,234/);
+  });
+
   it('puts the switch and the mode on the kit, keeping their names', async () => {
     const { legend } = await setup();
     const root = legend.shadowRoot!;
@@ -78,6 +94,8 @@ describe('legend-owned EAT controls', () => {
 
     const mode = root.querySelector<PsSelect>('ps-select.eat-threshold-mode')!;
     expect(mode.label).toBe('EAT reliability filter mode');
+    // The small field, so it matches the percent box beside it.
+    expect(mode.getAttribute('size')).toBe('sm');
     expect(mode.value).toBe('atLeast');
     expect(mode.disabled).toBe(false);
 

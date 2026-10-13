@@ -175,8 +175,10 @@ export const eatStyles = css`
     color: var(--ps-text-muted);
   }
 
+  /* As tall as the small mode select in the same row. */
   .eat-threshold-percent {
     box-sizing: border-box;
+    height: var(--ps-control-sm);
     width: 2.8rem;
     padding: var(--ps-space-0-5) var(--ps-space-1);
     border: 1px solid var(--ps-border-strong);

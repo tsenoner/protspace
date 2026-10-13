@@ -25,6 +25,8 @@ export class PsSelect extends LitElement {
   @property() value = '';
   @property() label = '';
   @property({ type: Boolean, reflect: true }) disabled = false;
+  /** `sm` fits a dense row, as `ps-button`'s `sm` does. */
+  @property({ reflect: true }) size: 'sm' | 'md' = 'md';
 
   /** Elements that describe the select; an id reference cannot reach into the shadow root. */
   @property({ attribute: false }) describedBy: readonly Element[] = [];
