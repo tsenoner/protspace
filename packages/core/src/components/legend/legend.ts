@@ -543,10 +543,8 @@ export class ProtspaceLegend extends LitElement {
     );
   }
 
-  private _commitManualOrderFromVisibleValues(
-    orderedValues: string[],
-    options: { preserveKeyboardDragValue?: boolean } = {},
-  ): void {
+  /** Returns whether the move switched the annotation to manual order. */
+  private _commitManualOrderFromVisibleValues(orderedValues: string[]): boolean {
     const visibleOrder = [...orderedValues];
     const didPromote = !this._currentSortMode.startsWith('manual');
     this._annotationSortModes = {
@@ -575,15 +573,12 @@ export class ProtspaceLegend extends LitElement {
       this._legendItems = reorderedItems;
     }
 
-    this._announceManualPromotionOnNextReorder = didPromote;
-    if (!options.preserveKeyboardDragValue) {
-      this._keyboard.clear();
-    }
     this._scatterplotController.syncNumericAnnotationSettings();
     this._scatterplotController.dispatchZOrderChange();
     this._persistenceController.saveSettings();
     this._dispatchLegendStateChange();
     this.requestUpdate();
+    return didPromote;
   }
 
   private _moveFocusedManualItem(
@@ -602,12 +597,7 @@ export class ProtspaceLegend extends LitElement {
     const reordered = [...orderedItems];
     const [moved] = reordered.splice(currentIndex, 1);
     reordered.splice(nextIndex, 0, moved);
-    this._commitManualOrderFromVisibleValues(
-      reordered.map((item) => item.value),
-      { preserveKeyboardDragValue: true },
-    );
-    const promoted = this._announceManualPromotionOnNextReorder;
-    this._announceManualPromotionOnNextReorder = false;
+    const promoted = this._commitManualOrderFromVisibleValues(reordered.map((item) => item.value));
     return { moved, promoted };
   }
 
@@ -704,6 +694,18 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
+    // Controllers re-listen in hostConnected; Lit schedules no update on reconnect.
+    this._listenForEscape(this._escapeTargetOpen);
+  }
+
+  /** Something Escape closes is open: the picker, Other, settings or a keyboard reorder. */
+  private get _escapeTargetOpen(): boolean {
+    return (
+      this._showSettingsDialog ||
+      this._showOtherDialog ||
+      this._colorPicker.value !== null ||
+      this._keyboard.pickedValue !== null
+    );
   }
 
   disconnectedCallback(): void {
@@ -732,12 +734,7 @@ export class ProtspaceLegend extends LitElement {
   updated(changedProperties: Map<string, unknown>): void {
     // The colour picker and a keyboard reorder live in controllers, whose state never shows in
     // `changedProperties`, so whether anything Escape closes is open is recomputed every update.
-    this._listenForEscape(
-      this._showSettingsDialog ||
-        this._showOtherDialog ||
-        this._colorPicker.value !== null ||
-        this._keyboard.pickedValue !== null,
-    );
+    this._listenForEscape(this._escapeTargetOpen);
 
     // Handle settings dialog focus trapping
     if (changedProperties.has('_showSettingsDialog')) {
@@ -829,11 +826,6 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('isolationHistory')
     ) {
       this._rebuildLegendItems();
-    }
-
-    // Update sorted items cache when legend items or their scores change
-    if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._sortedLegendItems = this._sortLegendItemsForDisplay();
     }
 
     // Initialize Sortable when container becomes available
@@ -1747,8 +1739,8 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private async _highlightDroppedItem(value: string): Promise<void> {
-    // Wait for Lit to complete rendering with the new item order.
-    // Two chained awaits: first for _legendItems update, second for _sortedLegendItems.
+    // Wait for Lit to render the new item order. The second await covers an update that the
+    // first one's `updated()` schedules (the data pipeline still writes state there).
     await this.updateComplete;
     await this.updateComplete;
 
@@ -2243,7 +2235,9 @@ export class ProtspaceLegend extends LitElement {
   };
 
   protected willUpdate(changedProperties: Map<string, unknown>): void {
+    // Derived before render, so a change to the items renders the rows once, in their new order.
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
+      this._sortedLegendItems = this._sortLegendItemsForDisplay();
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
   }

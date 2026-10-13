@@ -88,6 +88,16 @@ describe('legend DOM contract', () => {
     expect(main.getAttribute('aria-label')).toBe('A: 12 items, hidden');
   });
 
+  it('renders once per toggle', async () => {
+    const legend = await mount(categoricalData({ ...TWELVE, __NA__: 20 }));
+    const render = vi.spyOn(legend as unknown as { render(): unknown }, 'render');
+    row(legend, 'A')
+      .querySelector<HTMLButtonElement>('.legend-item-main')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 1 }));
+    await settle(legend);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the parts and classes the e2e, perf, tour and docs scripts read', async () => {
     const legend = await mount(categoricalData({ ...TWELVE, __NA__: 20 }));
     const root = legend.shadowRoot!;

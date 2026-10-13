@@ -115,6 +115,32 @@ describe('legend colour and shape picker', () => {
     expect(q(legend, '.color-picker-popover')).toBeNull();
   });
 
+  it('still closes on Escape and on a press outside straight after the legend is moved', async () => {
+    const { legend } = await setup();
+    const parent = legend.parentElement!;
+    const escape = () =>
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+      );
+
+    // No await between the move and the key: the listeners must be back on reconnect, not on
+    // whatever update happens to follow it.
+    await openPicker(legend, 'B');
+    legend.remove();
+    parent.append(legend);
+    escape();
+    await settle(legend);
+    expect(q(legend, '.color-picker-popover')).toBeNull();
+
+    await openPicker(legend, 'C');
+    legend.remove();
+    parent.append(legend);
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    await settle(legend);
+    expect(q(legend, '.color-picker-popover')).toBeNull();
+  });
+
   it('stays open when a press starts inside and ends outside', async () => {
     const { legend } = await setup();
     const picker = await openPicker(legend, 'B');
