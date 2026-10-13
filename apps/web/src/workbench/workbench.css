@@ -149,6 +149,12 @@
   background: var(--ps-surface);
 }
 
+/* While the selection bar shows, the status corner rises above it (38 px tall), so a wide chip
+   row never covers the bar's buttons on a narrow plot. */
+[data-workbench='plot']:has(> protspace-selection-bar:not([hidden])) > protspace-plot-status {
+  bottom: calc(var(--ps-space-3) + 38px + var(--ps-space-2));
+}
+
 #myPlot {
   display: block;
   width: 100%;

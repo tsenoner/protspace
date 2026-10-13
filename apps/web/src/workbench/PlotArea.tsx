@@ -1,8 +1,8 @@
 import { memo, type Ref } from 'react';
 
 /**
- * The plot, its tool strip in the top-left corner, the selection bar at the bottom-centre and the
- * status corner at the bottom-left. Memoised, with a stable ref as its only prop, so the
+ * The plot, its tool strip in the top-left corner, the status corner at the bottom-left and the
+ * selection bar at the bottom-centre, in that order so Tab reads left to right. Memoised, with a stable ref as its only prop, so the
  * scatterplot renders once and is never re-created.
  */
 export const PlotArea = memo(function PlotArea({ ref }: { ref?: Ref<HTMLElement> }) {
@@ -14,8 +14,8 @@ export const PlotArea = memo(function PlotArea({ ref }: { ref?: Ref<HTMLElement>
         hide-status=""
       ></protspace-scatterplot>
       <protspace-plot-tools id="myPlotTools" data-driver-id="selection"></protspace-plot-tools>
-      <protspace-selection-bar id="mySelectionBar"></protspace-selection-bar>
       <protspace-plot-status id="myPlotStatus"></protspace-plot-status>
+      <protspace-selection-bar id="mySelectionBar"></protspace-selection-bar>
     </main>
   );
 });

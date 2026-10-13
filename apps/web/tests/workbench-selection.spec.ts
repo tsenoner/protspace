@@ -349,6 +349,39 @@ test.describe('plot tools and selection', () => {
     ).toBe(false);
   });
 
+  test('with the isolation chip and a selection showing, the corner sits above the bar and Tab reaches it first', async ({
+    page,
+  }) => {
+    // A narrow plot, where a centred bar reaches under the chip row.
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await openExplore(page);
+    const ids = await proteinIds(page, 2);
+    await selectBySearch(page, ids);
+    await isolateSelection(page);
+    await selectBySearch(page, ids.slice(0, 1));
+    await expect(selectionBar(page)).toBeVisible();
+
+    const chip = (await statusChip(page, 'isolation').boundingBox())!;
+    const bar = (await selectionBar(page).boundingBox())!;
+    expect(chip.y + chip.height).toBeLessThanOrEqual(bar.y);
+
+    // Tab reads left to right: the chip's ✕ comes before the bar's first action.
+    const chipClear = statusChip(page, 'isolation').getByRole('button', {
+      name: 'Show all proteins',
+      exact: true,
+    });
+    const showOnly = selectionBarAction(page, 'Show only these');
+    const isFocused = (locator: typeof chipClear) => locator.evaluate((el) => el.matches(':focus'));
+    await toolButton(page, 'Move and zoom').focus();
+    let first: 'chip' | 'bar' | null = null;
+    for (let i = 0; i < 10 && !first; i++) {
+      await page.keyboard.press('Tab');
+      if (await isFocused(chipClear)) first = 'chip';
+      else if (await isFocused(showOnly)) first = 'bar';
+    }
+    expect(first).toBe('chip');
+  });
+
   test('the status corner shows the protein count; the plot draws none of its own', async ({
     page,
   }) => {
