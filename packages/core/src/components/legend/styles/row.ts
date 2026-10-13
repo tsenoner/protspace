@@ -164,6 +164,13 @@ export const rowStyles = css`
     background: var(--ps-accent-tint);
   }
 
+  /* Other's short label leaves room: its actions keep their place, so they never cover View. */
+  .legend-item-other .legend-item-actions {
+    position: static;
+    padding-left: 0;
+    background: transparent;
+  }
+
   .legend-action,
   .drag-handle {
     display: inline-flex;

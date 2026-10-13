@@ -146,4 +146,16 @@ describe('legend DOM contract', () => {
       'Predicted annotation',
     );
   });
+
+  it('the View button announces the Other popover it opens', async () => {
+    const legend = await mount(categoricalData(TWELVE));
+    const root = legend.shadowRoot!;
+    const view = root.querySelector('.legend-item-other button.view-button')!;
+    expect(view.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(view.getAttribute('aria-expanded')).toBe('false');
+    const popover = root.querySelector('.legend-container > protspace-legend-other-popover');
+    expect(popover).not.toBeNull();
+    expect(root.querySelector('.legend-items protspace-legend-other-popover')).toBeNull();
+    expect(root.querySelector('[part="dialog-overlay"]')).toBeNull();
+  });
 });

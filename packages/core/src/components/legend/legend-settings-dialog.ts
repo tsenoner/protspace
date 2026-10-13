@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { LEGEND_DEFAULTS } from './config';
 import type { LegendSortMode } from './types';
-import { renderCloseIcon } from './legend-other-dialog';
+import { icon } from '../kit/icon';
 import {
   GRADIENT_COLOR_SCHEME_IDS,
   COLOR_SCHEMES,
@@ -487,7 +487,7 @@ function renderDialogHeader(title: string, onClose: () => void): TemplateResult 
         aria-label="Close settings"
         @click=${onClose}
       >
-        ${renderCloseIcon()}
+        ${icon('x', 20)}
       </button>
     </div>
   `;

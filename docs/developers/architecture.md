@@ -6,7 +6,7 @@ ProtSpace uses a layered messaging model instead of a single catch-all UI primit
 
 - Host-owned transient notifications: The host application decides how to surface recoverable warnings and errors. In the demo app, `apps/web/src/lib/notify.ts` is the only transient notification transport and it is backed by Sonner.
 - Blocking and progress UI: Long-running operations use dedicated progress UI instead of toasts. The `/explore` app uses a full-screen loading overlay for dataset imports.
-- Component-owned workflow UI: Components keep their own dialogs and focused workflow controls. The legend settings and "Other" extraction dialogs stay inside the legend component.
+- Component-owned workflow UI: Components keep their own dialogs, popovers and focused workflow controls. The legend settings dialog and the "Other" popover (`protspace-legend-other-popover`: search, "Add to legend", "Add all") stay inside the legend component.
 - Component-owned inline states: Components keep inline empty/loading/error states when the message belongs to the component surface itself. The structure viewer keeps its own empty, loading, and error UI.
 - Accessibility-only announcements: Components may expose `aria-live` status updates for assistive technologies without mirroring them as global toasts.
 - Host-consumed semantic events: Components emit normalized warning and error events such as `data-error`, `legend-error`, and `structure-error`. Hosts decide whether to surface those as toasts, inline UI, or silent recovery.
@@ -34,17 +34,19 @@ children of one list for drag-and-drop, and the e2e, perf and tour code reach ro
 `legend.shadowRoot`. The element holds the state and the wiring; the rest lives beside it in
 `packages/core/src/components/legend/`:
 
-| Module                   | Holds                                                                                                                                     |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `legend.ts`              | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions                                           |
-| `legend-header.ts`       | The header template, the sort button's label and icon, and the sort menu                                                                  |
-| `legend-row.ts`          | The legend symbol and the row template                                                                                                    |
-| `legend-row-menu.ts`     | `LegendRowMenu`: the one "⋯" menu every row shares                                                                                        |
-| `legend-list.ts`         | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip` |
-| `legend-score-strips.ts` | Score-strip points and the strips section                                                                                                 |
-| `legend-eat-controls.ts` | `EatReliabilityController` and the EAT section                                                                                            |
-| `legend-color-picker.ts` | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                   |
-| `legend-items-state.ts`  | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                     |
+| Module                    | Holds                                                                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `legend.ts`               | Properties, state, controller wiring, lifecycle, public API, the data pipeline and item actions                                           |
+| `legend-header.ts`        | The header template, the sort button's label and icon, and the sort menu                                                                  |
+| `legend-row.ts`           | The legend symbol and the row template                                                                                                    |
+| `legend-row-menu.ts`      | `LegendRowMenu`: the one "⋯" menu every row shares                                                                                        |
+| `legend-other-popover.ts` | `protspace-legend-other-popover`, the searchable list of the categories under Other                                                       |
+| `legend-other-control.ts` | `OtherPopoverControl`: the legend's side of the Other popover (its anchor, opening and closing, focus when Other empties)                 |
+| `legend-list.ts`          | The list template, `LegendKeyboardController` (row keys, the list's one Tab stop, keyboard reorder as a layer) and `TruncatedNameTooltip` |
+| `legend-score-strips.ts`  | Score-strip points and the strips section                                                                                                 |
+| `legend-eat-controls.ts`  | `EatReliabilityController` and the EAT section                                                                                            |
+| `legend-color-picker.ts`  | `ColorPickerController`: the colour and shape picker, a `ps-popover` on the layer stack                                                   |
+| `legend-items-state.ts`   | Pure functions: sort, palette and numeric helpers, and the reading of a stored record                                                     |
 
 Templates take explicit view models and handlers; controllers are Lit reactive controllers that
 keep their own transient state and timers; the pure functions return new arrays that `legend.ts`

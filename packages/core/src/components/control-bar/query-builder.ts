@@ -6,7 +6,7 @@ import type { FilterQuery, FilterCondition, FilterGroup, LogicalOp } from './que
 import { clearLeadingOpInList, createCondition, createGroup, isFilterGroup } from './query-types';
 import { evaluateQuery, evaluateQueryExcluding, hasConfiguredCondition } from './query-evaluate';
 import { queryBuilderHostStyles, queryBuilderStyles } from './query-builder.styles';
-import { renderCloseIcon } from '../legend/legend-other-dialog';
+import { icon } from '../kit/icon';
 import './query-condition-row';
 
 /**
@@ -294,7 +294,7 @@ export class ProtspaceQueryBuilder extends LitElement {
                 aria-label="Close filter query builder"
                 @click=${this._handleClose}
               >
-                ${renderCloseIcon()}
+                ${icon('x', 20)}
               </button>`}
         </div>
 

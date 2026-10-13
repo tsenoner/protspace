@@ -69,6 +69,8 @@ export interface LegendRowView {
   picked: boolean;
   /** Shows "⋯" (every row but Other). */
   hasMenu: boolean;
+  /** The Other popover is open: the View button's `aria-expanded`. */
+  otherExpanded?: boolean;
 }
 
 export interface LegendRowHandlers {
@@ -145,6 +147,8 @@ export function renderLegendRow(
             type="button"
             class="view-button"
             aria-label="View items grouped under Other"
+            aria-haspopup="dialog"
+            aria-expanded=${view.otherExpanded ? 'true' : 'false'}
             tabindex=${tabindex}
             @click=${handlers.onViewOther}
             @dblclick=${stop}

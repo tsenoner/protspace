@@ -30,7 +30,7 @@ Do not replace this layer with toasts.
 Keep dialogs and focused workflow surfaces inside the component that owns the workflow.
 
 - Example: legend settings dialog
-- Example: legend "Other" extraction dialog
+- Example: legend "Other" popover (search and "Add to legend")
 
 ### Component-owned inline states
 

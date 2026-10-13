@@ -279,38 +279,6 @@ export const modalStyles = css`
     margin: 0 0 1.15rem;
   }
 
-  .other-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem;
-    border-bottom: 1px solid var(--legend-border);
-    transition: background-color 0.2s ease;
-  }
-
-  .other-item:last-child {
-    border-bottom: none;
-  }
-
-  .other-item:hover {
-    background: var(--legend-hover-bg);
-  }
-
-  .other-item-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .other-item-name {
-    color: var(--legend-text-color);
-  }
-
-  .other-item-count {
-    font-size: 0.75rem;
-    color: var(--legend-text-secondary);
-  }
-
   .modal-footer {
     display: flex;
     justify-content: flex-end;

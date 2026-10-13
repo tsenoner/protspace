@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
+import { deepActiveElement } from '../kit/focus';
 import type { PsMenu } from '../kit/menu';
 import type { PsPopover } from '../kit/popover';
 import type { ProtspaceLegend } from './legend';
 import { COLOR_COMMIT_DELAY_MS } from './legend-color-picker';
+import type { ProtspaceLegendOtherPopover } from './legend-other-popover';
 import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -43,6 +45,10 @@ const rowMenu = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<PsMenu>('ps-menu.row-menu')!;
 const picker = (legend: ProtspaceLegend) =>
   legend.shadowRoot!.querySelector<PsPopover>('ps-popover.color-picker')!;
+const viewButton = (legend: ProtspaceLegend) =>
+  legend.shadowRoot!.querySelector<HTMLButtonElement>('.legend-item-other .view-button')!;
+const other = (legend: ProtspaceLegend) =>
+  legend.shadowRoot!.querySelector<ProtspaceLegendOtherPopover>('protspace-legend-other-popover')!;
 const order = (legend: ProtspaceLegend) =>
   [...legend.shadowRoot!.querySelectorAll('.legend-item')].map((each) =>
     each.getAttribute('data-value'),
@@ -70,6 +76,20 @@ async function choose(legend: ProtspaceLegend, label: string): Promise<void> {
     (each) => each.textContent!.trim() === label,
   )!;
   await userEvent.click(item);
+  await settle(legend);
+}
+
+/** Opens the picker as "Colour and shape" in the row menu does, without a press outside. */
+async function openPickerFromMenu(legend: ProtspaceLegend, value: string): Promise<void> {
+  row(legend, value).querySelector<HTMLButtonElement>('.legend-more')!.click();
+  await settle(legend);
+  rowMenu(legend).dispatchEvent(
+    new CustomEvent('ps-select', {
+      bubbles: true,
+      composed: true,
+      detail: { value: 'customize', checked: false },
+    }),
+  );
   await settle(legend);
 }
 
@@ -167,30 +187,43 @@ describe('legend Escape order', () => {
     expect((seen.mock.calls[0][0] as KeyboardEvent).key).toBe('Escape');
   });
 
-  it('the picker closes before the Other dialog, and Other before settings, one per Escape', async () => {
+  it('with a reorder in progress, the Other popover open and the picker over it, each Escape closes one: picker, then Other, then the reorder', async () => {
+    const legend = await mount();
+    await key(legend, handle(legend, 'A'), ' ');
+    await key(legend, handle(legend, 'A'), 'ArrowDown');
+    expect(picked(legend)).toBe('A');
+
+    await userEvent.click(viewButton(legend));
+    await settle(legend);
+    await openPickerFromMenu(legend, 'A');
+    expect([picker(legend).open, other(legend).open, picked(legend)]).toEqual([true, true, 'A']);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect([picker(legend).open, other(legend).open, picked(legend)]).toEqual([false, true, 'A']);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect([picker(legend).open, other(legend).open, picked(legend)]).toEqual([false, false, 'A']);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect(picked(legend)).toBeNull();
+    expect(order(legend).slice(0, 2)).toEqual(['A', 'B']);
+  });
+
+  it('the picker closes before the settings dialog, one per Escape', async () => {
     const legend = await mount();
     const root = legend.shadowRoot!;
     const open = () => ({
       picker: picker(legend).open,
-      other: root.querySelector('#legend-other-dialog') !== null,
       settings: root.querySelector('#legend-settings-dialog') !== null,
     });
     root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
     await settle(legend);
-    root.querySelector<HTMLButtonElement>('.legend-item-other .view-button')!.click();
-    await settle(legend);
-    // The dialogs' overlay covers the rows, so the picker is opened as the menu would open it.
-    row(legend, 'A').querySelector<HTMLButtonElement>('.legend-more')!.click();
-    await settle(legend);
-    rowMenu(legend).dispatchEvent(
-      new CustomEvent('ps-select', {
-        bubbles: true,
-        composed: true,
-        detail: { value: 'customize', checked: false },
-      }),
-    );
-    await settle(legend);
-    expect(open()).toEqual({ picker: true, other: true, settings: true });
+    // The dialog's overlay covers the rows, so the picker is opened as the menu would open it.
+    await openPickerFromMenu(legend, 'A');
+    expect(open()).toEqual({ picker: true, settings: true });
 
     // The layer stack's window listener is installed on the first layer push, so in this file it
     // usually runs before the legend's. Drive the legend's handler directly so the guard that
@@ -201,31 +234,20 @@ describe('legend Escape order', () => {
     )._onWindowKeydownCapture(escape);
     await settle(legend);
     expect(escape.defaultPrevented).toBe(false);
-    expect(open()).toEqual({ picker: true, other: true, settings: true });
+    expect(open()).toEqual({ picker: true, settings: true });
 
     await userEvent.keyboard('{Escape}');
     await settle(legend);
-    expect(open()).toEqual({ picker: false, other: true, settings: true });
+    expect(open()).toEqual({ picker: false, settings: true });
 
     await userEvent.keyboard('{Escape}');
     await settle(legend);
-    expect(open()).toEqual({ picker: false, other: false, settings: true });
-
-    await userEvent.keyboard('{Escape}');
-    await settle(legend);
-    expect(open()).toEqual({ picker: false, other: false, settings: false });
+    expect(open()).toEqual({ picker: false, settings: false });
   });
 
-  it('the Other dialog and the settings dialog still close on Escape', async () => {
+  it('the settings dialog still closes on Escape', async () => {
     const legend = await mount();
     const root = legend.shadowRoot!;
-
-    root.querySelector<HTMLButtonElement>('.legend-item-other .view-button')!.click();
-    await settle(legend);
-    expect(root.querySelector('#legend-other-dialog')).not.toBeNull();
-    await userEvent.keyboard('{Escape}');
-    await settle(legend);
-    expect(root.querySelector('#legend-other-dialog')).toBeNull();
 
     root.querySelector<HTMLElement>('ps-icon-button.settings-button')!.click();
     await settle(legend);
@@ -233,5 +255,36 @@ describe('legend Escape order', () => {
     await userEvent.keyboard('{Escape}');
     await settle(legend);
     expect(root.querySelector('#legend-settings-dialog')).toBeNull();
+  });
+
+  it('the Other popover closes on the first Escape; the next reaches the document', async () => {
+    const legend = await mount();
+    const view = viewButton(legend);
+    view.focus();
+    view.click();
+    await settle(legend);
+    expect(other(legend).open).toBe(true);
+
+    const onDocumentKey = vi.fn();
+    document.addEventListener('keydown', onDocumentKey);
+    cleanups.push(() => document.removeEventListener('keydown', onDocumentKey));
+    const pressEscape = () =>
+      (deepActiveElement() ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        }),
+      );
+
+    pressEscape();
+    await settle(legend);
+    expect(other(legend).open).toBe(false);
+    expect(onDocumentKey).not.toHaveBeenCalled();
+    expect(deepActiveElement()).toBe(view);
+
+    pressEscape();
+    expect(onDocumentKey).toHaveBeenCalledOnce();
   });
 });

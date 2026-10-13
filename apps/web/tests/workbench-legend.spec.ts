@@ -2,13 +2,16 @@ import { expect, test } from '@playwright/test';
 import { SIDEBAR_WIDTH } from '../src/explore/layout-defaults';
 import { getFirstLegendItemValue, openExplore, selectAnnotation } from './helpers/explore';
 import {
+  addFromOther,
   escapeRegex,
   isLegendItemHidden,
   legend,
   legendRow,
   legendRowAction,
+  legendOtherDialog,
   legendRowValues,
   legendSortButton,
+  openLegendOther,
   setLegendSort,
 } from './helpers/legend';
 import { seedLayout } from './helpers/workbench';
@@ -116,4 +119,27 @@ test.describe('workbench legend', () => {
     );
     expect(stored).toEqual(['alpha-asc']);
   });
+});
+
+test('View opens Other; a search and Add to legend bring a category back', async ({ page }) => {
+  await openExplore(page);
+  // 'order' has 18 values, so the default 10 rows leave eight under Other.
+  await selectAnnotation(page, 'order');
+  const other = await openLegendOther(page);
+  const search = other.getByRole('searchbox', { name: 'Search Other categories' });
+  await expect(search).toBeFocused();
+
+  const names = await other.locator('.other-item-name').allTextContents();
+  expect(names.length).toBeGreaterThan(1);
+  const target = names.at(-1)!.trim();
+  await search.fill(target.slice(0, 4));
+  await expect(
+    other.getByRole('button', { name: `Add to legend: ${target}`, exact: true }),
+  ).toBeVisible();
+
+  await addFromOther(page, target);
+
+  // Still open: an add keeps the popover open on the next row.
+  await expect(legendOtherDialog(page)).toBeVisible();
+  expect(await legendRowValues(page)).toContain(target);
 });

@@ -128,3 +128,25 @@ export async function toggleLegendReverse(page: Page): Promise<void> {
   await expect(legend(page).getByRole('menu', { name: 'Sort legend' })).toHaveCount(0);
   await expect.poll(() => legendSortLabel(page)).not.toBe(before);
 }
+
+/** The Other popover's panel (role dialog), for visibility and boxes; its content is slotted. */
+export const legendOtherDialog = (page: Page): Locator =>
+  legend(page).getByRole('dialog', { name: 'Other categories' });
+
+/**
+ * Opens the Other popover from the Other row's View button; returns the popover element, the scope
+ * for its controls (the panel's content is slotted, so a locator scoped to the panel finds nothing).
+ */
+export async function openLegendOther(page: Page): Promise<Locator> {
+  await legend(page).getByRole('button', { name: 'View items grouped under Other' }).click();
+  await expect(legendOtherDialog(page)).toBeVisible();
+  return legend(page).locator('protspace-legend-other-popover');
+}
+
+/** Adds one category from the open Other popover and waits for its legend row. */
+export async function addFromOther(page: Page, name: string): Promise<void> {
+  await legend(page)
+    .getByRole('button', { name: `Add to legend: ${name}`, exact: true })
+    .click();
+  await expect(legendRow(page, name)).toBeVisible();
+}

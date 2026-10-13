@@ -282,7 +282,7 @@ const steps: DriveStep[] = [
   shadowStep(LEGEND, 'other-row', {
     title: 'Expand Hidden Categories',
     description:
-      'When there are many annotation values, the least frequent are grouped into <strong>Other</strong>. Click <strong>(view)</strong> to see them and <strong>extract</strong> individual items back into the legend.',
+      'When there are many annotation values, the least frequent are grouped into <strong>Other</strong>. Click <strong>View</strong> to list them and add any back to the legend.',
   }),
 
   // ── Step 10 – Finish (centred, no element) ──────────────────

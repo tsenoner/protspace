@@ -66,6 +66,7 @@ import {
 } from './legend-list';
 import { ColorPickerController } from './legend-color-picker';
 import { LegendRowMenu } from './legend-row-menu';
+import { OtherPopoverControl } from './legend-other-control';
 import {
   deriveStripPoints,
   EMPTY_STRIP_POINTS,
@@ -116,7 +117,6 @@ import {
   type SettingsDialogState,
   type SettingsDialogCallbacks,
 } from './legend-settings-dialog';
-import { renderOtherDialog } from './legend-other-dialog';
 import { createFocusTrap } from './focus-trap';
 import { createLegendErrorEventDetail } from './legend.events';
 import {
@@ -202,7 +202,6 @@ export class ProtspaceLegend extends LitElement {
   @state() private _annotationSortModes: Record<string, LegendSortMode> = {};
   /** The sort button while its menu is open (the menu's anchor); null when closed. */
   @state() private _sortMenu: HTMLElement | null = null;
-  @state() private _showOtherDialog = false;
   private _preIsolationVisibleValues: Set<string> = new Set();
   @state() private _showSettingsDialog = false;
   @state() private _statusMessage = '';
@@ -293,7 +292,6 @@ export class ProtspaceLegend extends LitElement {
 
   // Track where mousedown occurred for click-outside detection
   private _mouseDownOutsideSettings = false;
-  private _mouseDownOutsideOther = false;
   /** Whether `_onWindowKeydownCapture` is on the window (see `_listenForEscape`). */
   private _escapeListening = false;
 
@@ -446,6 +444,13 @@ export class ProtspaceLegend extends LitElement {
     },
   });
 
+  private _otherPopover = new OtherPopoverControl(this, {
+    getItems: () => this._otherItems,
+    add: (value) => this._handleExtractFromOther(value),
+    addAll: () => this._handleExtractAllFromOther(),
+    focusFirstRow: () => this._keyboard.focusItem(0),
+  });
+
   private _eatControls = new EatReliabilityController(this, {
     getScatterplot: () => this._scatterplotController.scatterplot,
     isHostDriven: () => this._hostDriven,
@@ -548,16 +553,10 @@ export class ProtspaceLegend extends LitElement {
   // Keyboard Handler
   // ─────────────────────────────────────────────────────────────────
 
-  // The Other and settings dialogs are not on the layer stack yet (3.10 and 3.12 move them). An open
-  // layer (the picker, a menu, a keyboard reorder) takes Escape first, whichever listener ran first.
+  // The settings dialog is not on the layer stack yet (3.12 moves it). An open layer (the picker, a
+  // menu, the Other popover, a keyboard reorder) takes Escape first, whichever listener ran first.
   private _onWindowKeydownCapture = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || topLayer()) return;
-    if (this._showOtherDialog) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      this._showOtherDialog = false;
-      return;
-    }
     if (this._showSettingsDialog) {
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -565,7 +564,7 @@ export class ProtspaceLegend extends LitElement {
     }
   };
 
-  /** Puts the Escape handler on the window while the Other or the settings dialog is open. */
+  /** Puts the Escape handler on the window while the settings dialog is open. */
   private _listenForEscape(on: boolean): void {
     if (on === this._escapeListening) return;
     this._escapeListening = on;
@@ -694,9 +693,9 @@ export class ProtspaceLegend extends LitElement {
     this._listenForEscape(this._escapeTargetOpen);
   }
 
-  /** An old dialog is open: the picker, the row menu and a keyboard reorder are layers instead. */
+  /** The old settings dialog is open: every other legend overlay is a layer instead. */
   private get _escapeTargetOpen(): boolean {
-    return this._showSettingsDialog || this._showOtherDialog;
+    return this._showSettingsDialog;
   }
 
   disconnectedCallback(): void {
@@ -729,16 +728,7 @@ export class ProtspaceLegend extends LitElement {
     if (changedProperties.has('_showSettingsDialog')) {
       if (this._showSettingsDialog) {
         this._setupFocusTrap('legend-settings-dialog');
-      } else if (!this._showOtherDialog) {
-        this._cleanupFocusTrap();
-      }
-    }
-
-    // Handle other dialog focus trapping
-    if (changedProperties.has('_showOtherDialog')) {
-      if (this._showOtherDialog) {
-        this._setupFocusTrap('legend-other-dialog');
-      } else if (!this._showSettingsDialog) {
+      } else {
         this._cleanupFocusTrap();
       }
     }
@@ -822,6 +812,7 @@ export class ProtspaceLegend extends LitElement {
     if (this._legendItemsEl && this._sortedLegendItems.length > 0) {
       this._dragController.initialize(this._legendItemsEl, true);
     }
+    this._otherPopover.updated();
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -928,7 +919,7 @@ export class ProtspaceLegend extends LitElement {
     // Reset UI state
     this._showSettingsDialog = false;
     this._sortMenu = null;
-    this._showOtherDialog = false;
+    this._otherPopover.close();
     this._selectedPaletteId = 'kellys';
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
@@ -1565,7 +1556,6 @@ export class ProtspaceLegend extends LitElement {
     // updated() which calls it. If we call it here, it will be called twice and the
     // pending value will be cleared after the first call, causing the second call to not
     // respect the extract operation.
-    this._closeOtherDialog();
 
     this._announceStatus(`Extracted ${toDisplayValue(value)} from Other category`);
     this._dispatchItemAction(value, 'extract');
@@ -1573,11 +1563,6 @@ export class ProtspaceLegend extends LitElement {
     this.updateComplete.then(() => {
       this._persistenceController.saveSettings();
     });
-  }
-
-  private _closeOtherDialog(): void {
-    this._showOtherDialog = false;
-    this._mouseDownOutsideOther = false;
   }
 
   private _handleExtractAllFromOther(): void {
@@ -1592,7 +1577,7 @@ export class ProtspaceLegend extends LitElement {
       };
     }
 
-    this._closeOtherDialog();
+    this._otherPopover.close();
 
     this._announceStatus('Extracted all items from Other category');
     for (const item of this._otherItems) {
@@ -1931,23 +1916,6 @@ export class ProtspaceLegend extends LitElement {
     }
   }
 
-  private _handleOtherOverlayMouseDown(e: MouseEvent): void {
-    // Check if mousedown is on the overlay (not inside dialog content)
-    const dialogContent = this.shadowRoot?.querySelector('#legend-other-dialog');
-    if (dialogContent && !dialogContent.contains(e.target as Node)) {
-      this._mouseDownOutsideOther = true;
-    } else {
-      this._mouseDownOutsideOther = false;
-    }
-  }
-
-  private _handleOtherOverlayMouseUp(): void {
-    // Only close if mousedown also occurred outside the dialog content
-    if (this._mouseDownOutsideOther) {
-      this._closeOtherDialog();
-    }
-  }
-
   private _handleSettingsReset(): void {
     // Remove localStorage and clear pending categories
     this._persistenceController.removeSettings();
@@ -2060,9 +2028,9 @@ export class ProtspaceLegend extends LitElement {
           this._renderLegendItem(item, index),
         )}
         ${this._colorPicker.render()} ${this._rowMenu.render()} ${this._nameTooltip.render()}
-        ${this._renderSortMenu()}
+        ${this._renderSortMenu()} ${this._otherPopover.render()}
       </div>
-      ${this._renderOtherDialog()} ${this._renderSettingsDialog()}
+      ${this._renderSettingsDialog()}
     `;
   }
 
@@ -2139,6 +2107,10 @@ export class ProtspaceLegend extends LitElement {
     }
     // Rows render by position, so after a re-sort the menu's anchor would be another row's "⋯".
     if (changedProperties.has('_sortedLegendItems')) this._rowMenu.close();
+    this._otherPopover.willUpdate(
+      changedProperties.has('_otherItems'),
+      changedProperties.has('selectedAnnotation'),
+    );
   }
 
   private _renderScoreStrips() {
@@ -2174,6 +2146,7 @@ export class ProtspaceLegend extends LitElement {
       draggable: this._canDragLegendItem(item),
       picked,
       hasMenu: !isOther,
+      otherExpanded: isOther && this._otherPopover.isOpen,
     };
     const handlers: LegendRowHandlers = {
       onClick: (e: MouseEvent) => this._handleItemMouseClick(item.value, e),
@@ -2186,28 +2159,10 @@ export class ProtspaceLegend extends LitElement {
       },
       onToggle: () => this._handleItemClick(item.value),
       onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
-      onViewOther: (e: Event) => {
-        e.stopPropagation();
-        this._showOtherDialog = true;
-      },
+      onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
     };
     return renderLegendRow(item, view, handlers);
-  }
-
-  private _renderOtherDialog() {
-    if (!this._showOtherDialog) return html``;
-
-    return renderOtherDialog(
-      { otherItems: this._otherItems },
-      {
-        onExtract: (value) => this._handleExtractFromOther(value),
-        onExtractAll: () => this._handleExtractAllFromOther(),
-        onClose: () => this._closeOtherDialog(),
-        onOverlayMouseDown: (e) => this._handleOtherOverlayMouseDown(e),
-        onOverlayMouseUp: () => this._handleOtherOverlayMouseUp(),
-      },
-    );
   }
 
   private _renderSettingsDialog() {
