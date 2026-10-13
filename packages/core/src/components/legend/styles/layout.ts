@@ -1,65 +1,69 @@
 import { css } from 'lit';
-import { srOnlyMixin } from '../../../styles/mixins';
 
 /**
- * Legend Layout Styles
- *
- * Structural styles for the Legend component including:
- * - Host container layout
- * - Legend container
- * - Header and title
- * - Items list container
+ * The legend's frame. The host has no card of its own: it fills the height its container gives
+ * it (the workbench sidebar draws the edges), and the list scrolls in what the header, the EAT
+ * block and the score strips leave.
  */
 export const layoutStyles = css`
   :host {
     display: flex;
-    user-select: none;
     flex-direction: column;
-    width: 100%;
-
-    border: 1px solid var(--legend-border);
-    background: var(--legend-bg);
-    border-radius: var(--legend-border-radius);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     box-sizing: border-box;
-    padding: 5px 2px 9px 2px;
-    flex-shrink: 1;
-    flex-grow: 1;
-    height: calc(50% - 1rem);
+    width: 100%;
+    min-height: 0;
+    background: var(--ps-surface);
+    color: var(--ps-text);
+    user-select: none;
   }
 
   .legend-container {
+    position: relative;
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
+    flex: 1;
     flex-direction: column;
     width: 100%;
-    height: 100%;
-    padding-bottom: 8px;
-    flex-shrink: 1;
-    position: relative;
+    min-height: 0;
   }
-
-  ${srOnlyMixin}
 
   .legend-items {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    gap: var(--legend-item-gap);
-    width: 100%;
-    max-height: calc(100vh - 10rem);
-    overflow-y: scroll;
-    scrollbar-width: thin;
-    padding: 5px 6px 4px 9px;
     box-sizing: border-box;
-    flex-grow: 1;
-    flex-shrink: 1;
+    width: 100%;
+    min-height: 0;
+    padding: var(--ps-space-1) 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
   }
 
   .legend-empty {
+    padding: var(--ps-space-5) var(--ps-space-3);
+    color: var(--ps-text-muted);
     text-align: center;
-    color: var(--legend-text-secondary);
-    font-style: italic;
-    padding: 1rem 0;
+  }
+
+  /*
+   * The base every button in the legend's root starts from; the row, its actions and the
+   * picker style their own on top. It keeps the neutral part of what the old button mixin set
+   * on every button here (no border or background, a centred flex box that ends long text in an
+   * ellipsis), on tokens, so none falls back to the browser's grey button.
+   */
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ps-space-1);
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: hidden;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
   }
 `;

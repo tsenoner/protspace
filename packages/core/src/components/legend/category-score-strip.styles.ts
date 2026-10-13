@@ -1,8 +1,8 @@
 import { css } from 'lit';
-import { srOnlyMixin } from '../../styles/mixins';
+import { srOnly } from '../kit/kit-shared.styles';
 
 export const categoryScoreStripStyles = [
-  srOnlyMixin,
+  srOnly,
   css`
     :host {
       display: block;

@@ -26,9 +26,6 @@ const LEGACY = new Set<string>([
   '../components/control-bar/annotation-select.styles.ts',
   '../components/control-bar/query-builder.styles.ts',
   '../components/control-bar/search.styles.ts',
-  '../components/legend/legend.styles.ts',
-  '../components/legend/styles/layout.ts',
-  '../components/legend/styles/theme.ts',
   '../components/publish/publish-modal.styles.ts',
   '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',
@@ -110,10 +107,10 @@ describe('style lint', () => {
     ).toEqual([]);
     expect(
       cssViolations(
-        ':host { --legend-bg: #1e3a8a; } .a { color: oklch(0.7 0.1 200); background: color(srgb 1 0 0); border-color: lab(50% 0 0); gap: var(--spacing-sm); max-height: var(--available-height); } /* was: #fff */',
+        ':host { --card-bg: #1e3a8a; } .a { color: oklch(0.7 0.1 200); background: color(srgb 1 0 0); border-color: lab(50% 0 0); gap: var(--spacing-sm); max-height: var(--available-height); } /* was: #fff */',
       ),
     ).toEqual([
-      '--legend-bg: #1e3a8a',
+      '--card-bg: #1e3a8a',
       'color: oklch(0.7 0.1 200)',
       'background: color(srgb 1 0 0)',
       'border-color: lab(50% 0 0)',

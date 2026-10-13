@@ -80,7 +80,18 @@ Defined in `tokens.ts`:
 
 ## Custom Properties
 
-### Naming Convention
+### Design tokens
+
+Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, declared only in
+`packages/core/src/styles/theme.ts` (light values on `:root`, dark values under
+`[data-theme='dark']`). New styles read these tokens and declare none:
+`packages/core/src/styles/style-lint.test.ts` fails a stylesheet that hard-codes a colour or a
+font size, declares a `--ps-*` token, or reads a variable `theme.ts` does not define. Modules
+written before the tokens are listed in its `LEGACY` set, which only shrinks.
+
+### Component properties
+
+Older components still expose custom properties of their own:
 
 ```
 --[component-prefix]-[category]-[property]-[modifier?]
@@ -89,28 +100,40 @@ Defined in `tokens.ts`:
 **Examples:**
 
 ```css
---legend-bg                     /* component background */
---legend-item-padding           /* element spacing */
---legend-text-secondary         /* semantic color */
+--protspace-bg-color            /* component background */
+--protspace-viewer-height       /* element sizing */
 ```
 
-### Rules
+Rules for these:
 
-1. **Always reference tokens**: `--legend-bg: var(--surface)`
-2. **Define in `:host` only** (or `theme.ts` if modular)
-3. **Use only when**:
-   - Runtime override needed, OR
-   - Used 3+ times
+1. **Always reference tokens**: `--protspace-bg-color: var(--ps-surface)`
+2. **Define in `:host` only**
+3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`
 
 ### Component Prefixes
 
 | Component            | Prefix                 |
 | -------------------- | ---------------------- |
-| Legend               | `--legend-*`           |
+| Legend               | `--ps-*` tokens only   |
 | Scatter-plot         | `--protspace-*`        |
 | Structure-viewer     | `--protspace-viewer-*` |
 | Kit and new elements | `--ps-*` tokens only   |
+
+### Theming the legend
+
+The legend reads `--ps-*` tokens only; its former legend-specific custom properties are gone.
+To restyle it, set the `--ps-*` tokens on `:root`. The legend draws no card of its own (no border, radius
+or shadow) and fills the height its container gives it, as the workbench sidebar does. An
+embedder that wants a card adds one on the host:
+
+```css
+protspace-legend {
+  height: 480px;
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+}
+```
 
 ## Examples
 
@@ -137,22 +160,25 @@ export const searchStyles = [tokens, searchStylesCore];
 
 ```typescript
 // legend.styles.ts
-import { tokens } from '../../styles/tokens';
-import { buttonMixin } from '../../styles/mixins';
-import { themeStyles } from './styles/theme';
+import { focusRing, kitHost, reducedMotion, srOnly } from '../kit/kit-shared.styles';
 import { layoutStyles } from './styles/layout';
+import { headerStyles } from './styles/header';
 import { rowStyles } from './styles/row';
 import { pickerStyles } from './styles/picker';
-import { responsiveStyles } from './styles/responsive';
+import { eatStyles } from './styles/eat';
+import { stripStyles } from './styles/strips';
 
 export const legendStyles = [
-  tokens,
-  buttonMixin,
-  themeStyles,
+  kitHost,
+  focusRing,
+  reducedMotion,
+  srOnly,
   layoutStyles,
+  headerStyles,
   rowStyles,
   pickerStyles,
-  responsiveStyles, // Always last
+  eatStyles,
+  stripStyles,
 ];
 ```
 
@@ -181,17 +207,21 @@ Study **legend** as the modular pattern:
 ```typescript
 // legend.styles.ts
 export const legendStyles = [
-  tokens,
-  buttonMixin,
-  overlayMixins,
-  themeStyles,
-  layoutStyles,
+  kitHost, // shared kit sheets first: host font and colour,
+  focusRing, // the one focus ring,
+  reducedMotion, // no motion when the user asked for less,
+  srOnly, // the visually hidden class
+  layoutStyles, // then one module per piece of the element
+  headerStyles,
   rowStyles,
   pickerStyles,
-  modalStyles,
-  responsiveStyles, // Always last
+  eatStyles,
+  stripStyles,
 ];
 ```
+
+The Other and settings popovers are child elements (`legend-other-popover.ts`,
+`legend-settings-popover.ts`), each with its own `*.styles.ts`.
 
 ## Migration Checklist
 

@@ -7,6 +7,7 @@ import {
   openExplore,
   openImportMenu,
   selectAnnotation,
+  sidebar,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
@@ -217,4 +218,31 @@ test('settings and the sort apply live and survive a reload under the same prots
   expect(await legendSortLabel(page)).toBe('By name, A to Z');
   expect(await readLegendSettings(page)).toMatchObject({ palette: 'Okabe-Ito', maxItems: '5' });
   await closeLegendSettings(page);
+});
+
+test('the legend fills the sidebar column flush, with no card border', async ({ page }) => {
+  await openExplore(page);
+  const host = legend(page);
+
+  const chrome = await host.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      border: [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ],
+      radius: style.borderTopLeftRadius,
+      shadow: style.boxShadow,
+    };
+  });
+  expect(chrome).toEqual({ border: ['0px', '0px', '0px', '0px'], radius: '0px', shadow: 'none' });
+
+  // The sidebar's 1 px left border is its edge; the legend spans the rest of the column.
+  const column = (await sidebar(page).boundingBox())!;
+  const box = (await host.boundingBox())!;
+  expect(Math.abs(box.x - (column.x + 1))).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.x + box.width - (column.x + column.width))).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.y - column.y)).toBeLessThanOrEqual(1);
 });

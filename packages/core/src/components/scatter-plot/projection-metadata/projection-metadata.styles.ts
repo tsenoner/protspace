@@ -11,13 +11,6 @@ export const projectionMetadataStyles = [
       display: inline-flex;
       z-index: 10;
 
-      /* protspace-info-popover is shared with the legend and themes itself from these two
-         hooks, defaulting to a neutral grey. Set them from the tokens so its info icon and
-         text match the label beside it; the component already exposes the seam, and the
-         legend keeps its own values. */
-      --legend-text-secondary: var(--ps-text-muted);
-      --legend-text-color: var(--ps-text);
-
       /* Gap between the trigger and the card. Read by the card's top offset and by the
          invisible hover bridge that spans it. */
       --card-gap: 0.5rem;

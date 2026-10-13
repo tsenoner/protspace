@@ -16,14 +16,14 @@ export const infoPopoverStyles = css`
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: var(--legend-text-secondary, #6b7280);
+    color: var(--ps-text-muted);
     cursor: pointer;
     line-height: 1;
   }
 
   .info-button:hover,
   .info-button.open {
-    color: var(--legend-text-color, #111827);
+    color: var(--ps-text);
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
 

@@ -173,14 +173,10 @@
   background: var(--ps-surface);
 }
 
-/* The legend fills the column; the sidebar draws the edges, so the host's own card goes. */
+/* The legend fills the column; the sidebar draws the edges (the legend has no card of its own). */
 #myLegend {
   flex: 1 1 0;
   min-height: 0;
-  height: auto;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
 }
 
 /* ── Narrow fallback below 951 px: the plot, then the sidebar; the page scrolls ── */
