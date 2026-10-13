@@ -471,10 +471,9 @@ test.describe('Example datasets: Import menu info', () => {
     expect(await getProteinCount(page)).toBe(DEMO_COUNT);
     expect(await getUrlParam(page, 'dataset')).toBeNull();
 
-    // The loaded example's info sits next to the current dataset name.
-    await expect(
-      menu.locator('.import-current-dataset-row [data-example-info="demo"]'),
-    ).toHaveCount(1);
+    // The loaded example keeps its info in the list, beside its disabled item.
+    await expect(menu.locator('.import-examples [data-example-info="demo"]')).toHaveCount(1);
+    await expect(menu.locator('[data-example-id="demo"]')).toBeDisabled();
   });
 });
 

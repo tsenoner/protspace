@@ -355,6 +355,26 @@ export async function readLastLoadStatus(): Promise<{
   };
 }
 
+/**
+ * The stored import's name, size and save time, for the Import menu's "Last file" row. Reads the
+ * metadata only, never the bytes: it runs on every dataset change. Null when nothing is stored,
+ * OPFS is missing, or the metadata is corrupt (which `readMetadata` also clears).
+ */
+export async function readStoredImportSummary(): Promise<{
+  name: string;
+  size: number;
+  storedAt: string;
+} | null> {
+  try {
+    const metadata = await readMetadata();
+    return metadata
+      ? { name: metadata.name, size: metadata.size, storedAt: metadata.storedAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function clearLastImportedFile(): Promise<void> {
   await clearStoreDirectory();
 }

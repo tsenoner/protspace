@@ -1,14 +1,24 @@
 import { expect, test } from '@playwright/test';
 import { EXAMPLE_DATASETS } from '../src/explore/example-datasets';
+import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
 import {
   appBar,
+  datasetSwitcher,
   exportMenu,
+  expectUrlParam,
+  getCurrentDatasetName,
   importMenu,
   importTrigger,
+  importUserFile,
   openExplore,
   openExportMenu,
   openImportMenu,
+  pickExample,
+  supportsExplorePersistedDataset,
+  waitForPersistedExploreDataset,
+  waitForProteinCount,
 } from './helpers/explore';
+import { PHOSPHATASE_1587_FIXTURE, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 /** The Import and Export menus in the app bar (Task 2.5). */
 
@@ -40,7 +50,7 @@ test.describe('Import and Export menus', () => {
     await expect(exportTrigger).toBeFocused();
   });
 
-  test('Load your dataset opens the file chooser', async ({ page }) => {
+  test('Open a file… opens the file chooser', async ({ page }) => {
     await openExplore(page);
     await openImportMenu(page);
 
@@ -81,6 +91,90 @@ test.describe('Import and Export menus', () => {
       };
     });
     expect(placement).toEqual({ onScreen: true, topmost: true });
+  });
+
+  test('the dataset name opens the Import panel and an example switches the dataset', async ({
+    page,
+  }) => {
+    await serveExampleFixtures(page);
+    const other = e2eExample('other');
+    await openExplore(page);
+
+    const switcher = datasetSwitcher(page);
+    await expect(switcher).toHaveAttribute('aria-haspopup', 'dialog');
+    await switcher.click();
+    const panel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
+    await expect(panel).toBeVisible();
+    await expect(switcher).toHaveAttribute('aria-expanded', 'true');
+    await expect(importTrigger(page)).toHaveAttribute('aria-expanded', 'false');
+    const anchor = (await switcher.boundingBox())!;
+    const box = (await panel.boundingBox())!;
+    expect(Math.abs(box.x - anchor.x)).toBeLessThan(2);
+    expect(box.y).toBeGreaterThanOrEqual(anchor.y + anchor.height);
+
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(switcher).toBeFocused();
+    await expect(switcher).toHaveAttribute('aria-expanded', 'false');
+
+    await switcher.click();
+    await importMenu(page).locator(`[data-example-id="${other.id}"]`).click();
+    await waitForProteinCount(page, other.count);
+    await expectUrlParam(page, 'dataset', other.id);
+  });
+
+  test('after a user import then an example, Last file reopens the import', async ({ page }) => {
+    await serveExampleFixtures(page);
+    const other = e2eExample('other');
+    await openExplore(page);
+    test.skip(!(await supportsExplorePersistedDataset(page)), 'This browser has no usable OPFS.');
+
+    await importUserFile(page, TOXPROT_5181_FIXTURE);
+    await waitForProteinCount(page, 5181);
+    await waitForPersistedExploreDataset(page);
+    // A second import replaces the stored copy after its render announced it, so the panel must
+    // read the store again when it opens (not offer "Reopen" for the first file).
+    await importUserFile(page, PHOSPHATASE_1587_FIXTURE);
+    await waitForProteinCount(page, 1587);
+    const importedName = await getCurrentDatasetName(page);
+    expect(importedName).not.toBeNull();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            try {
+              const root = await navigator.storage.getDirectory();
+              const dir = await root.getDirectoryHandle('protspace-last-import');
+              const meta = await (await dir.getFileHandle('metadata.json')).getFile();
+              const parsed = JSON.parse(await meta.text()) as {
+                name?: string;
+                lastLoadStatus?: string;
+              };
+              return parsed.lastLoadStatus === 'success' ? (parsed.name ?? null) : null;
+            } catch {
+              return null;
+            }
+          }),
+        { timeout: 30_000 },
+      )
+      .toBe(importedName);
+
+    // While the import is on screen, the panel offers no "Last file".
+    await openImportMenu(page);
+    await expect(importMenu(page).getByRole('button', { name: /^Reopen / })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // The example has as many proteins as the second import (1587): wait on the URL, not the count.
+    await pickExample(page, other.id);
+    await expectUrlParam(page, 'dataset', other.id);
+    await expect.poll(() => getCurrentDatasetName(page)).not.toBe(importedName);
+
+    await datasetSwitcher(page).click();
+    const reopen = importMenu(page).getByRole('button', { name: `Reopen ${importedName}` });
+    await expect(reopen).toBeVisible();
+    await reopen.click();
+    await expect.poll(() => getCurrentDatasetName(page), { timeout: 30_000 }).toBe(importedName);
+    await expectUrlParam(page, 'dataset', null);
   });
 
   test('Quick export PNG downloads a file', async ({ page }) => {

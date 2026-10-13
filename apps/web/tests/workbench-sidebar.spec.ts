@@ -477,12 +477,16 @@ test('with the sidebar open, the legend settings popover and the Import and Expo
   expect(await isTopmost(dialog)).toBe(true);
   await closeLegendSettings(page);
 
-  for (const [open, menu] of [
-    [openImportMenu, importMenu],
-    [openExportMenu, exportMenu],
+  for (const [open, panelOf] of [
+    // The Import panel's ps-popover holds the examples' info popovers, each a .panel of its own.
+    [
+      openImportMenu,
+      (p: Page) => importMenu(p).getByRole('dialog', { name: 'Import', exact: true }),
+    ],
+    [openExportMenu, (p: Page) => exportMenu(p).locator('.panel')],
   ] as const) {
     await open(page);
-    const panel = menu(page).locator('.panel');
+    const panel = panelOf(page);
     const box = (await panel.boundingBox())!;
     // The panel reaches over the sidebar column, and nothing of the shell paints over it.
     const sidebarBox = (await sidebar(page).boundingBox())!;

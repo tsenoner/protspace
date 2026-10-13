@@ -250,31 +250,32 @@ See [Exporting Results](/explore/exporting) for image customization options (dim
 
 ## 9. Import
 
-Click **Import** to open the menu:
+Click **Import**, or the dataset name at the left of the top bar, to open the menu:
 
-- **Load your dataset** opens a file picker for a `.parquetbundle` or FASTA file from your
+- **Open a file…** opens a file picker for a `.parquetbundle` or FASTA file from your
   computer. The picker also accepts FASTA files (`.fasta`, `.fa`, `.fna`): ProtSpace sends the
   sequences to the prep service, which computes embeddings and projections and then opens the
   resulting bundle automatically. See [Importing Data](/explore/importing-data) for the full flow,
   size limits, and privacy implications. You can also drag & drop either file type directly onto
   the scatterplot.
+- **Last file** reopens the file you imported last, which ProtSpace keeps in your browser. It
+  shows only while another dataset is on screen.
 - **Examples** lists the startup demo and the datasets behind the ProtSpace paper's figures;
   [Example Datasets](/explore/example-datasets) describes each one. Each item's label gives the
   protein count and download size, and its **ⓘ** icon says what the example is and what its
   curated view shows, with a link to its section of that page; **About these examples** above the
   list links to the whole page. Large examples carry a **Large** badge, and their ⓘ also gives the
   download size and the memory and time they take to open. The example currently loaded is
-  disabled, and its ⓘ also appears next to the current dataset's name.
+  disabled and marked with a check; its ⓘ still opens.
 
-Choosing an example loads it, replaces the dataset stored in your browser (see
-[Data & Settings Persistence](/explore/importing-data#data-settings-persistence)), and puts
-`dataset=<id>` in the URL, so the link is shareable and the browser's **Back** button returns to
-whatever was shown before. The exception is your own import: the menu choice clears it, so **Back**
-goes to the entry with no `dataset` parameter, which loads the demo rather than restoring your
-import. A link such as `/explore?dataset=<id>`, with the id from the example's section of
-[Example Datasets](/explore/example-datasets), loads the example without touching the stored
-dataset; visiting the app again without the parameter brings the stored dataset back. An unknown
-id shows a warning and the app starts up normally.
+Choosing an example loads it and puts `dataset=<id>` in the URL, so the link is shareable and the
+browser's **Back** button returns to whatever was shown before. The file you imported stays stored
+in your browser (see
+[Data & Settings Persistence](/explore/importing-data#data-settings-persistence)): **Last file**
+reopens it, and visiting the app again without a `dataset` parameter brings it back. A link such as
+`/explore?dataset=<id>`, with the id from the example's section of
+[Example Datasets](/explore/example-datasets), loads the example the same way. An unknown id shows
+a warning and the app starts up normally.
 
 An example opens on its curated view: the projection, colour-by annotation and tooltip fields
 chosen for it. A menu choice always opens that view with contours off, so the previous dataset's

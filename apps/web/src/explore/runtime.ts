@@ -38,6 +38,7 @@ import {
 import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './example-datasets';
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
+import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-store';
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
@@ -108,12 +109,16 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
 
   // The app bar names the dataset on screen and its size.
   const publishDatasetName = createDatasetNamePublisher(() => plotElement.data);
+  // What is on screen, for the Import menu's "Last file" (hidden while that file shows).
+  let currentDatasetName = '';
+  let currentExampleId: string | null = null;
   const setCurrentDatasetName = (name: string) => {
-    importMenu.currentDatasetName = name;
+    currentDatasetName = name;
     publishDatasetName(name);
   };
 
   const setCurrentExampleId = (id: string | null) => {
+    currentExampleId = id;
     importMenu.currentExampleId = id;
   };
 
@@ -594,13 +599,21 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   addTrackedEventListener(lifecycle, exportMenu, 'export', (event: Event) => {
     void handleExport(event);
   });
-  bindImportMenu({
+  const importMenuBinding = bindImportMenu({
     listen(type, listener) {
       addTrackedEventListener(lifecycle, importMenu, type, listener);
     },
+    importMenu,
     dataLoader,
     datasetController,
+    readSummary: readStoredImportSummary,
+    loadLastFile: loadLastImportedFile,
+    subscribeToDatasetChanges: (callback) => datasetController.subscribeToDatasetChanges(callback),
+    getCurrentExampleId: () => currentExampleId,
+    getShownName: () => currentDatasetName,
+    warn: (title) => notify.warning({ title }),
   });
+  lifecycle.addCleanup(() => importMenuBinding.dispose());
 
   addTrackedEventListener(
     lifecycle,

@@ -63,11 +63,8 @@ interface DatasetControllerOptions {
 
 export interface DatasetController {
   loadDefaultDatasetAndClearPersistedFile(): Promise<void>;
-  /**
-   * Loads an example in place of the stored import (a menu choice), which
-   * `handleDataLoaded` clears once the example has decoded and is current.
-   */
-  loadExampleDatasetAndClearPersistedFile(
+  /** Loads an example chosen from the Import menu; the stored import stays. */
+  loadChosenExample(
     entry: ExampleDataset,
     source: DatasetChangeSource,
   ): Promise<ExampleLoadOutcome>;
@@ -243,11 +240,12 @@ export function createDatasetController({
   // Name, id and the dataset-change emit for a successful example load happen
   // in `handleDataLoaded`, keyed on the example in load meta, so a load that
   // later fails to parse never announces success.
+  // The recovery banner's "Load default" (and "Clear stored data"): the demo replaces the stored
+  // import, which `handleDataLoaded` clears once the demo has decoded and is current.
   const loadDefaultDatasetAndClearPersistedFile = async (): Promise<void> => {
-    await persistedDatasetController.loadExampleDatasetAndClearPersistedFile(
-      DEFAULT_EXAMPLE_DATASET,
-      'startup',
-    );
+    await persistedDatasetController.loadExampleDataset(DEFAULT_EXAMPLE_DATASET, 'startup', {
+      replacesStoredImport: true,
+    });
   };
 
   const loadPersistedOrDefaultDataset = async (
@@ -389,7 +387,7 @@ export function createDatasetController({
           notify.warning(getDatasetPersistenceFailureNotification(error));
         }
       } else if (loadMeta.example?.replacesStoredImport) {
-        // A menu choice replaces the stored import only now that the example
+        // "Load default" replaces the stored import only now that the demo
         // has downloaded, decoded and is still current — never before the
         // fetch, which deleted the import still on screen whenever the
         // download or parse failed or the request was superseded. Running
@@ -689,8 +687,7 @@ export function createDatasetController({
 
   return {
     loadDefaultDatasetAndClearPersistedFile,
-    loadExampleDatasetAndClearPersistedFile:
-      persistedDatasetController.loadExampleDatasetAndClearPersistedFile,
+    loadChosenExample: persistedDatasetController.loadChosenExample,
     loadExampleDataset: persistedDatasetController.loadExampleDataset,
     loadPersistedOrDefaultDataset,
     tryLoadPersistedAgain: persistedDatasetController.tryLoadPersistedAgain,

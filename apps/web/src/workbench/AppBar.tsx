@@ -1,6 +1,7 @@
-import { memo } from 'react';
-import { Database, Github, MessageSquare } from 'lucide-react';
+import { memo, type MouseEvent } from 'react';
+import { ChevronDown, Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
+import type { ProtspaceImportMenu } from '@protspace/core';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
 import { HelpMenu } from './HelpMenu';
 import { useWorkbenchStatus } from './use-workbench-status';
@@ -14,6 +15,16 @@ function shownName(datasetName: string): string {
 
 function proteinCountText(count: number): string {
   return `· ${count.toLocaleString()} ${count === 1 ? 'protein' : 'proteins'}`;
+}
+
+/**
+ * The dataset name opens the shared Import panel under itself (design decision 1): the import menu
+ * marks it as the panel's disclosure button and returns focus to it on close.
+ */
+function toggleImportMenu(event: MouseEvent<HTMLButtonElement>): void {
+  (document.getElementById('myImportMenu') as ProtspaceImportMenu | null)?.toggleFrom(
+    event.currentTarget,
+  );
 }
 
 /**
@@ -42,24 +53,34 @@ export function AppBar() {
           <img src="/wordmark.svg" alt="" />
         </Link>
         <span className="wb-separator" aria-hidden="true" />
-        <div data-workbench="dataset" data-dataset-name={datasetName ?? ''}>
+        <button
+          type="button"
+          className="wb-dataset"
+          data-workbench="dataset"
+          data-dataset-name={datasetName ?? ''}
+          aria-haspopup="dialog"
+          aria-label={
+            datasetName === null ? undefined : `Switch dataset: ${shownName(datasetName)}`
+          }
+          hidden={datasetName === null}
+          onClick={toggleImportMenu}
+        >
+          <Database className="wb-dataset-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
           {datasetName !== null && (
-            <>
-              <Database
-                className="wb-dataset-icon"
-                size={16}
-                strokeWidth={1.75}
-                aria-hidden="true"
-              />
-              <span className="wb-dataset-name">{shownName(datasetName)}</span>
-              {/* The full label over the name, which truncates at 200 px. */}
-              <ps-tooltip text={datasetName}></ps-tooltip>
-            </>
+            <span className="wb-dataset-name">{shownName(datasetName)}</span>
           )}
           {proteinCount !== null && (
             <span className="wb-dataset-count">{proteinCountText(proteinCount)}</span>
           )}
-        </div>
+          <ChevronDown
+            className="wb-dataset-chevron"
+            size={14}
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+        </button>
+        {/* The full label over the name, which truncates at 200 px; anchored to the button. */}
+        {datasetName !== null && <ps-tooltip text={datasetName}></ps-tooltip>}
       </div>
       <div data-workbench="app-bar-center">
         <protspace-protein-search

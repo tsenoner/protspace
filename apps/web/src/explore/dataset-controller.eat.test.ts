@@ -13,7 +13,7 @@ vi.mock('./data-renderer', () => ({
 
 vi.mock('./persisted-dataset', () => ({
   createPersistedDatasetController: () => ({
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadChosenExample: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
     clearCorruptedPersistedDataset: vi.fn(),

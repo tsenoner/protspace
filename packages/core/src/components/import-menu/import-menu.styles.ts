@@ -111,17 +111,40 @@ export const dataMenuStyles = [
 export const importMenuStyles = [
   dataMenuStyles,
   css`
-    .import-current-dataset {
+    .import-menu {
       display: flex;
       flex-direction: column;
-      gap: var(--ps-space-0-5);
-      padding-bottom: var(--ps-space-3);
-      margin-bottom: var(--ps-space-3);
-      border-bottom: 1px solid var(--ps-border);
+      box-sizing: border-box;
+      width: 300px;
+      max-width: 100%;
+      text-align: left;
     }
 
-    .import-current-dataset-label,
-    .import-examples-label {
+    .import-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-1);
+      padding: var(--ps-space-3);
+    }
+
+    .import-section + .import-section {
+      border-top: 1px solid var(--ps-border);
+    }
+
+    .import-open-file::part(button) {
+      width: 100%;
+    }
+
+    .import-note,
+    .import-examples-hint {
+      margin: 0;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      line-height: var(--ps-leading-normal);
+    }
+
+    .import-section-label {
+      margin: 0;
       color: var(--ps-text-muted);
       font-size: var(--ps-text-xs);
       font-weight: var(--ps-weight-semibold);
@@ -129,37 +152,17 @@ export const importMenuStyles = [
       text-transform: uppercase;
     }
 
-    .import-current-dataset-name {
-      font-weight: var(--ps-weight-medium);
-      line-height: var(--ps-leading-normal);
-      word-break: break-word;
-    }
-
-    .import-actions {
-      display: flex;
-      flex-direction: column;
-      gap: var(--ps-space-1);
-    }
-
-    .import-actions > .btn {
-      width: 100%;
-    }
-
-    .import-examples {
-      margin-top: var(--ps-space-3);
-      padding-top: var(--ps-space-3);
-      border-top: 1px solid var(--ps-border);
-    }
-
     .import-examples-header {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
       gap: var(--ps-space-2);
-      margin-bottom: var(--ps-space-1);
     }
 
     .import-examples-docs {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--ps-space-0-5);
       border-radius: var(--ps-radius-sm);
       color: var(--ps-accent-text);
       font-size: var(--ps-text-xs);
@@ -172,32 +175,82 @@ export const importMenuStyles = [
       text-decoration: underline;
     }
 
-    .import-examples-hint {
-      margin: 0 0 var(--ps-space-2);
-      color: var(--ps-text-muted);
-      font-size: var(--ps-text-xs);
-      line-height: var(--ps-leading-normal);
+    /* Read by assistive technology only: the link opens a new tab. */
+    .import-examples-docs-hint {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .import-example-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-0-5);
     }
 
     /* An example item: its button, then its info popover as a sibling (never inside the button). */
-    .import-example-row,
-    .import-current-dataset-row {
+    .import-example-row {
       display: flex;
       align-items: center;
       gap: var(--ps-space-1);
     }
 
-    .import-example-button {
+    .import-row {
+      display: flex;
       flex: 1 1 auto;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      box-sizing: border-box;
+      width: 100%;
       min-width: 0;
-      /* A long label wraps rather than being clipped behind the badge. */
-      white-space: normal;
+      min-height: var(--ps-row);
+      padding: var(--ps-space-1) var(--ps-space-2);
+      border: 0;
+      border-radius: var(--ps-radius);
+      background: transparent;
+      color: var(--ps-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color var(--ps-duration-fast) var(--ps-ease);
     }
 
+    .import-row:hover:not(:disabled) {
+      background: var(--ps-surface-hover);
+    }
+
+    /* The example on screen: not a choice, but still readable, with its check. */
+    .import-row:disabled {
+      color: var(--ps-text-muted);
+      cursor: default;
+    }
+
+    .import-row-check {
+      display: inline-flex;
+      flex: none;
+      width: 14px;
+      color: var(--ps-accent-text);
+    }
+
+    .import-row-label,
     .import-example-label {
+      flex: 1 1 auto;
       min-width: 0;
-      text-align: center;
+      /* A long name wraps rather than being clipped behind the size or the badge. */
       overflow-wrap: anywhere;
+    }
+
+    .import-row-meta {
+      flex: none;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
     }
 
     .import-example-badge {

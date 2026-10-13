@@ -7,6 +7,7 @@ import {
   loadLastImportedFile,
   markLastLoadStatus,
   readLastLoadStatus,
+  readStoredImportSummary,
   restoreLastLoadStatus,
 } from './opfs-dataset-store';
 
@@ -350,5 +351,40 @@ describe('lastLoadStatus APIs', () => {
     await markLastLoadStatus('pending');
     await clearLastImportedFile();
     expect(await readLastLoadStatus()).toBeNull();
+  });
+});
+
+describe('readStoredImportSummary', () => {
+  it('returns the name, size and time without reading dataset.bin', async () => {
+    const root = new MockDirectoryHandle();
+    stubNavigator(root);
+    await beginSaveImportedFile(new File(['protein-data'], 'mine.parquetbundle')).commit();
+    const store = await root.getDirectoryHandle('protspace-last-import');
+    const opened = vi.spyOn(store, 'getFileHandle');
+
+    const summary = await readStoredImportSummary();
+
+    expect(summary).toEqual({
+      name: 'mine.parquetbundle',
+      size: 12,
+      storedAt: expect.any(String),
+    });
+    expect(opened.mock.calls.map(([name]) => name)).toEqual(['metadata.json']);
+  });
+
+  it('returns null when nothing is stored', async () => {
+    stubNavigator(new MockDirectoryHandle());
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+    stubNavigator();
+    await expect(readStoredImportSummary()).resolves.toBeNull();
+  });
+
+  it('returns null for corrupt metadata', async () => {
+    const root = new MockDirectoryHandle();
+    const store = await root.getDirectoryHandle('protspace-last-import', { create: true });
+    await store.writeTextFile('metadata.json', '{not-json');
+    stubNavigator(root);
+
+    await expect(readStoredImportSummary()).resolves.toBeNull();
   });
 });

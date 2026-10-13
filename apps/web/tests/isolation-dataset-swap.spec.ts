@@ -23,7 +23,7 @@ const CUSTOM_5K_PROTEIN_COUNT = 5181;
 /**
  * Drive the dataset-load pipelines directly instead of through the Import menu UI.
  *
- * Both menu actions just delegate: "Load your dataset" opens the hidden file input
+ * Both menu actions just delegate: "Open a file…" opens the hidden file input
  * inside <protspace-data-loader> (`importUserFile` sets it), and choosing an example
  * dispatches the `load-example-dataset` event upward from the Import menu. Driving
  * those entry points directly avoids click-on-shadow-DOM flakiness in headless mode

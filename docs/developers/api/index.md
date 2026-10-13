@@ -425,12 +425,22 @@ helpers `createCondition`, `evaluateQuery`, `hasConfiguredCondition`, `sameQuery
 
 ### Import Menu
 
-| Property             | Type                               | Description                                                        |
-| -------------------- | ---------------------------------- | ------------------------------------------------------------------ |
-| `exampleDatasets`    | `readonly ExampleDatasetSummary[]` | Example catalog, listed in the "Examples" section; JavaScript-only |
-| `examplesDocsUrl`    | `string`                           | Page linked as "About these examples ↗"; `examples-docs-url`       |
-| `currentDatasetName` | `string`                           | Dataset on screen; `current-dataset-name`                          |
-| `currentExampleId`   | `string \| null`                   | Example on screen, `null` for a user import; `current-example-id`  |
+The Import button and any control the host passes to `openFrom` or `toggleFrom` open the same
+panel, a dialog named "Import": "Open a file…" with the formats it accepts and where each goes,
+the last imported file, and the example catalog.
+
+| Property           | Type                                          | Description                                                                                          |
+| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `exampleDatasets`  | `readonly ExampleDatasetSummary[]`            | Example catalog, listed in the "Examples" section; JavaScript-only                                   |
+| `examplesDocsUrl`  | `string`                                      | Page linked as "About these examples"; `examples-docs-url`                                           |
+| `currentExampleId` | `string \| null`                              | Example on screen, `null` for a user import; its item is disabled with a check; `current-example-id` |
+| `lastFile`         | `{ name: string; sizeLabel: string } \| null` | The stored import, offered as "Last file"; `null` hides the row; JavaScript-only                     |
+
+::: warning BREAKING
+`currentDatasetName` (`current-dataset-name`) and the panel's "Current dataset" block are removed.
+Name the dataset in your own control and open this panel from it with `toggleFrom`, as the app
+bar's dataset name does.
+:::
 
 `ExampleDatasetSummary` is exported from `@protspace/core`:
 
@@ -440,18 +450,22 @@ helpers `createCondition`, `evaluateQuery`, `hasConfiguredCondition`, `sameQuery
 | `label`       | `string`  | The item's text                                             |
 | `description` | `string`  | The first paragraph of the item's info popover              |
 | `insight?`    | `string`  | The popover's second paragraph: what the curated view shows |
-| `docsUrl?`    | `string`  | The popover's "Learn more ↗" link                           |
+| `docsUrl?`    | `string`  | The popover's "Learn more" link                             |
 | `large?`      | `boolean` | A "Large" badge on the item                                 |
 
-When `currentExampleId` names an entry, the same info popover sits next to the current dataset name.
+Methods: `openFrom(anchor: HTMLElement)` opens the panel under `anchor` and sets
+`aria-haspopup="dialog"` and `aria-expanded` on it; focus returns to it when the panel closes.
+`toggleFrom(anchor)` closes the panel when it is open from that anchor and opens it there
+otherwise.
 
-| Event                  | Detail           | Description                    |
-| ---------------------- | ---------------- | ------------------------------ |
-| `load-example-dataset` | `{ id: string }` | An example dataset was chosen  |
-| `open-file-dialog`     | `{}`             | "Load your dataset" was chosen |
+| Event                  | Detail           | Description                   |
+| ---------------------- | ---------------- | ----------------------------- |
+| `load-example-dataset` | `{ id: string }` | An example dataset was chosen |
+| `open-file-dialog`     | `{}`             | "Open a file…" was chosen     |
+| `open-last-file`       | `{}`             | "Last file" was chosen        |
 
-Both fire inside the user's click: call the data loader's `openFilePicker()` from the
-`open-file-dialog` listener and the browser lets the file chooser open.
+Each fires inside the user's click, after the panel has closed: call the data loader's
+`openFilePicker()` from the `open-file-dialog` listener and the browser lets the file chooser open.
 
 ### Export Menu
 

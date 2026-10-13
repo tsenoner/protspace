@@ -59,12 +59,44 @@
   background: var(--ps-border);
 }
 
-[data-workbench='dataset'] {
+/* The dataset name is the dataset switcher: it opens the Import panel (design decision 1). */
+.wb-dataset {
   display: flex;
   align-items: baseline;
   gap: var(--ps-space-1-5);
   min-width: 0;
+  /* The padding is the hover area (about 32 px tall); the negative margin keeps the icon where the
+     mockup has it. No fixed height: a baseline-aligned flex row sits at the top of a taller box. */
+  margin-inline-start: calc(-1 * var(--ps-space-2));
+  padding: var(--ps-space-1-5) var(--ps-space-2);
+  border: 0;
+  border-radius: var(--ps-radius);
+  background: transparent;
+  color: var(--ps-text);
+  font: inherit;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ps-duration-fast) var(--ps-ease);
+}
+
+.wb-dataset[hidden] {
+  display: none;
+}
+
+.wb-dataset:hover,
+.wb-dataset[aria-expanded='true'] {
+  background: var(--ps-surface-hover);
+}
+
+.wb-dataset:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+.wb-dataset-chevron {
+  flex: none;
+  align-self: center;
+  color: var(--ps-text-muted);
 }
 
 /* The row stays baseline-aligned for the name and count; the icon centres itself. */

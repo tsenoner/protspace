@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   markLastLoadStatus: vi.fn(),
   resolvePendingLoadFinalization: vi.fn(),
   persisted: {
-    loadExampleDatasetAndClearPersistedFile: vi.fn(),
+    loadChosenExample: vi.fn(),
     loadExampleDataset: vi.fn(),
     loadPersistedOrDefaultDataset: vi.fn(),
     tryLoadPersistedAgain: vi.fn(),
@@ -121,15 +121,15 @@ afterEach(() => {
 
 describe('startup outcomes and dataset-change emits (persisted-dataset mocked)', () => {
   it('loadDefaultDatasetAndClearPersistedFile loads the demo in place of the stored import', async () => {
-    mocks.persisted.loadExampleDatasetAndClearPersistedFile.mockResolvedValue('loaded');
+    mocks.persisted.loadExampleDataset.mockResolvedValue('loaded');
     const { controller } = createController();
 
     await controller.loadDefaultDatasetAndClearPersistedFile();
 
-    expect(mocks.persisted.loadExampleDatasetAndClearPersistedFile).toHaveBeenCalledWith(
-      DEMO,
-      'startup',
-    );
+    expect(mocks.persisted.loadExampleDataset).toHaveBeenCalledWith(DEMO, 'startup', {
+      replacesStoredImport: true,
+    });
+    expect(mocks.persisted.loadChosenExample).not.toHaveBeenCalled();
   });
 
   it.each([

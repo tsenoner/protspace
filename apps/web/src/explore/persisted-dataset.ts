@@ -557,17 +557,14 @@ export function createPersistedDatasetController({
   };
 
   /**
-   * Loads an example in place of the stored import (a menu choice, or the
-   * recovery banner's "Load default"). The stored import is cleared by
-   * `handleDataLoaded` once this example has actually decoded, not up front:
-   * clearing before the fetch deleted the import still on screen whenever the
-   * download or parse failed or the request was superseded.
+   * An example chosen from the Import menu: a user request that keeps the stored import, so the
+   * menu's "Last file" can reopen it. Only the recovery banner's "Load default" and "Clear stored
+   * data" replace it (`loadDefaultDatasetAndClearPersistedFile` in dataset-controller.ts).
    */
-  const loadExampleDatasetAndClearPersistedFile = (
+  const loadChosenExample = (
     entry: ExampleDataset,
     source: DatasetChangeSource,
-  ): Promise<ExampleLoadOutcome> =>
-    loadExampleDataset(entry, source, { replacesStoredImport: true });
+  ): Promise<ExampleLoadOutcome> => loadExampleDataset(entry, source);
 
   return {
     /** Takes a new request epoch for a user request (see `requestEpoch` above). */
@@ -587,7 +584,7 @@ export function createPersistedDatasetController({
     isCurrentRequest,
     loadExampleDataset,
     loadPersistedOrDefaultDataset,
-    loadExampleDatasetAndClearPersistedFile,
+    loadChosenExample,
     recoverFromCorruptedPersistedDataset,
     tryLoadPersistedAgain,
   };

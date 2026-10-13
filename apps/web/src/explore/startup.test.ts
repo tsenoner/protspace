@@ -47,7 +47,7 @@ const DEMO = TEST_DEMO;
 function createDatasetController() {
   return {
     loadDefaultDatasetAndClearPersistedFile: vi.fn().mockResolvedValue(undefined),
-    loadExampleDatasetAndClearPersistedFile: vi.fn().mockResolvedValue('loaded'),
+    loadChosenExample: vi.fn().mockResolvedValue('loaded'),
     loadExampleDataset: vi.fn().mockResolvedValue('loaded'),
     loadPersistedOrDefaultDataset: vi.fn().mockResolvedValue({ kind: 'default-loaded' }),
     tryLoadPersistedAgain: vi.fn().mockResolvedValue(undefined),

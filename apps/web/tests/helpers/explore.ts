@@ -292,6 +292,14 @@ export const importMenu = (page: Page): Locator => page.locator('#myImportMenu')
 /** The element that holds the Export panel. */
 export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu');
 
+/** The Import panel: a dialog named "Import" that the Import button and the dataset name open. */
+const importPanel = (page: Page): Locator =>
+  importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
+
+/** The app bar's dataset name, which opens the Import panel (the dataset switcher). */
+export const datasetSwitcher = (page: Page): Locator =>
+  appBar(page).getByRole('button', { name: /^Switch dataset/ });
+
 /** The view bar's Filter button; its name reads "Filter" or "Filter, N conditions applied". */
 export const filterButton = (page: Page): Locator =>
   viewBar(page).getByRole('button', { name: /^Filter/ });
@@ -352,8 +360,10 @@ export async function clearStatusChip(page: Page, kind: StatusChipKind): Promise
 // ─── Actions ───────────────────────────────────────────────────────────────────
 
 /**
- * Opens the Import menu unless it is open. Importing a custom dataset leaves the menu open
- * (nothing closes it), so only click the trigger when the menu is closed: re-clicking toggles it.
+ * Opens the Import panel unless it is open, and resolves once it shows. A custom import set
+ * through the data loader's input leaves the panel open (nothing closes it), so the trigger is
+ * clicked only while the panel is closed: re-clicking toggles it. Open is read from the panel's
+ * contents, which go at once on close, not from the panel, which stays visible while it fades.
  */
 export async function openImportMenu(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
@@ -361,6 +371,7 @@ export async function openImportMenu(page: Page): Promise<void> {
   if (!(await ownDataset.isVisible().catch(() => false))) {
     await importTrigger(page).click();
   }
+  await expect(importPanel(page)).toBeVisible();
   await expect(ownDataset).toBeVisible();
 }
 
@@ -436,7 +447,7 @@ export async function applyFirstCategoryFilter(page: Page): Promise<void> {
 
 /**
  * Imports `file` (a path, or a payload built in the test) through the data
- * loader's file input, the input the Import menu's "Load your dataset" opens.
+ * loader's file input, the input the Import menu's "Open a file…" opens.
  */
 export async function importUserFile(
   page: Page,
