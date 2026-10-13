@@ -128,7 +128,8 @@ function mount(makeData: () => VisualizationData, selectedAnnotation?: string) {
     annotations: [] as string[],
     data: undefined as VisualizationData | undefined,
     query: [] as FilterQuery,
-    dirty: false,
+    // Unset until the controller writes it, so a clean flag proves open() synced it.
+    dirty: null as boolean | null,
   });
   const dialog = { open: false };
   const root = new EventTarget();
@@ -223,6 +224,11 @@ describe('filter controller: the Filter dialog', () => {
     editQuery(m.queryBuilder, [configured('a'), createCondition()]);
     expect(m.queryBuilder.dirty).toBe(true);
     fire(m.queryBuilder, 'query-reset');
+    expect(m.queryBuilder.dirty).toBe(false);
+
+    editQuery(m.queryBuilder, [configured('a'), createCondition()]);
+    expect(m.queryBuilder.dirty).toBe(true);
+    m.controller.clear();
     expect(m.queryBuilder.dirty).toBe(false);
   });
 

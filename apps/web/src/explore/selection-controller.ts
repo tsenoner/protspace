@@ -78,8 +78,9 @@ interface SelectionController {
 
 /**
  * The selection (design decision 9, moved from the control bar): plot clicks and brushes, the
- * search box's picks, the selection bar, the plot tools, isolation and its two Escape steps (the selection, then the tool). Every change lands through
- * one commit, which writes the plot, the search box and the tools, then tells the app.
+ * search box's picks, the selection bar, the plot tools, isolation and its two Escape steps (the
+ * selection, then the tool). Every change lands through one commit, which writes the plot, the
+ * search box and the tools, then tells the app.
  */
 export function createSelectionController({
   plotElement,
