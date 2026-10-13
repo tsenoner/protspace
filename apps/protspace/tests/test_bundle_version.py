@@ -263,8 +263,66 @@ def test_arrow_reader_save_data_keeps_the_grammar_stamp(tmp_path):
     out = tmp_path / "out"
     ArrowReader(source).save_data(out)
 
-    saved = pq.read_metadata(out / "protein_annotations.parquet").metadata
+    saved = pq.read_metadata(out / "selected_annotations.parquet").metadata
     assert saved[FORMAT_VERSION_KEY] == b"2"
+
+
+def test_arrow_reader_save_data_reloads_annotations_and_projections(tmp_path):
+    """A directory `save_data` writes (`protspace style` on an unbundled parquet
+    directory) loads back with its annotations, projections and styles; written
+    under any name but the one the reader looks for, it reloads empty."""
+    import json
+
+    import pyarrow as pa
+
+    from protspace.utils.arrow_reader import ArrowReader
+
+    source = tmp_path / "in"
+    source.mkdir()
+    pq.write_table(
+        pa.table({"protein_id": ["P1", "P2"], "cath": ["x", "y"]}),
+        source / "selected_annotations.parquet",
+    )
+    pq.write_table(
+        pa.table(
+            {
+                "projection_name": ["PCA_2"],
+                "dimensions": [2],
+                "info_json": [json.dumps({"n_components": 2})],
+            }
+        ),
+        source / "projections_metadata.parquet",
+    )
+    pq.write_table(
+        pa.table(
+            {
+                "projection_name": ["PCA_2", "PCA_2"],
+                "identifier": ["P1", "P2"],
+                "x": [0.5, 1.5],
+                "y": [-1.0, 2.0],
+                "z": pa.array([None, None], type=pa.float64()),
+            }
+        ),
+        source / "projections_data.parquet",
+    )
+    reader = ArrowReader(source)
+    reader.update_annotation_color("cath", "x", "#ff0000")
+    out = tmp_path / "out"
+    reader.save_data(out)
+
+    reloaded = ArrowReader(out)
+    assert sorted(reloaded.get_protein_ids()) == ["P1", "P2"]
+    assert reloaded.get_protein_annotations("P2") == {"cath": "y"}
+    assert reloaded.get_projection_names() == ["PCA_2"]
+    assert reloaded.get_projection_info("PCA_2") == {
+        "dimensions": 2,
+        "info": {"n_components": 2},
+    }
+    assert reloaded.get_projection_data("PCA_2") == [
+        {"identifier": "P1", "coordinates": {"x": 0.5, "y": -1.0}},
+        {"identifier": "P2", "coordinates": {"x": 1.5, "y": 2.0}},
+    ]
+    assert reloaded.get_annotation_colors("cath") == {"x": "#ff0000"}
 
 
 def test_annotate_command_stamps_format_version(tmp_path, monkeypatch):

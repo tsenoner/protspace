@@ -222,8 +222,13 @@ class ArrowReader:
 
         output_path.mkdir(parents=True, exist_ok=True)
 
+        # The names _read_directory reads back (and a bundle's parts extract to)
+        from protspace.data.io.bundle import CORE_FILENAMES
+
+        annotations_name, metadata_name, data_name = CORE_FILENAMES
+
         # Save protein annotations
-        protein_annotations_path = output_path / "protein_annotations.parquet"
+        protein_annotations_path = output_path / annotations_name
         protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
         if self.should_decode():
             # The cells are written back as they were read, so they keep the
@@ -234,12 +239,12 @@ class ArrowReader:
         pq.write_table(protein_annotations_table, str(protein_annotations_path))
 
         # Save projections metadata
-        projections_metadata_path = output_path / "projections_metadata.parquet"
+        projections_metadata_path = output_path / metadata_name
         projections_metadata_table = pa.Table.from_pandas(self._projections_metadata_df)
         pq.write_table(projections_metadata_table, str(projections_metadata_path))
 
         # Save projections data
-        projections_data_path = output_path / "projections_data.parquet"
+        projections_data_path = output_path / data_name
         projections_data_table = pa.Table.from_pandas(self._projections_data_df)
         pq.write_table(projections_data_table, str(projections_data_path))
 
