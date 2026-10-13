@@ -26,7 +26,6 @@ const LEGACY = new Set<string>([
   '../components/control-bar/annotation-select.styles.ts',
   '../components/control-bar/query-builder.styles.ts',
   '../components/control-bar/search.styles.ts',
-  '../components/legend/category-score-strip.styles.ts',
   '../components/legend/legend.styles.ts',
   '../components/legend/styles/layout.ts',
   '../components/legend/styles/theme.ts',

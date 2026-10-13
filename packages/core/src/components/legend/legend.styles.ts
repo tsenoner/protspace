@@ -3,6 +3,8 @@ import { buttonMixin } from '../../styles/mixins';
 import { reducedMotion } from '../kit/kit-shared.styles';
 import { themeStyles } from './styles/theme';
 import { layoutStyles } from './styles/layout';
+import { eatStyles } from './styles/eat';
+import { stripStyles } from './styles/strips';
 import { headerStyles } from './styles/header';
 import { rowStyles } from './styles/row';
 import { pickerStyles } from './styles/picker';
@@ -26,6 +28,8 @@ export const legendStyles = [
   // 3. Component-specific (modular). Rows come after layout, whose list box they adjust.
   themeStyles,
   layoutStyles,
+  eatStyles,
+  stripStyles,
   headerStyles,
   rowStyles,
   pickerStyles,

@@ -17,6 +17,11 @@ import {
 } from '@protspace/utils';
 import type { EatPopulationCounts } from './eat-population-counts';
 import '../common/info-popover';
+import '../kit/checkbox';
+import '../kit/select';
+import type { PsCheckbox } from '../kit/checkbox';
+import type { PsSelect, SelectOption } from '../kit/select';
+import { formatCount } from '../../utils/count-text';
 
 /**
  * Debounce window (ms) for committing an EAT reliability slider drag. The slider's
@@ -102,6 +107,13 @@ const EAT_RELIABILITY_EFFECT: Record<EatReliabilityMode, string> = {
   between:
     'Only predictions between the two bounds are kept; everything outside the band is hidden. Widen the band to 0–100% to show all.',
 };
+
+/** The filter's three directions, in the order the mode select lists them. */
+const EAT_MODE_OPTIONS: SelectOption[] = [
+  { value: 'atLeast', label: 'Hide below' },
+  { value: 'atMost', label: 'Hide above' },
+  { value: 'between', label: 'Keep between' },
+];
 
 /** The `eat-overlay-change` detail the legend dispatches. */
 export interface EatOverlayChangeDetail {
@@ -242,11 +254,11 @@ export class EatReliabilityController implements ReactiveController {
   readonly onToggle = (event: Event): void => {
     // A discrete decision, like a mode change: it supersedes any pending drag commit.
     this.cancelCommit();
-    this.setOverlayEnabled((event.currentTarget as HTMLInputElement).checked);
+    this.setOverlayEnabled((event.currentTarget as PsCheckbox).checked);
   };
 
   readonly onModeChange = (event: Event): void => {
-    const mode = (event.currentTarget as HTMLSelectElement).value as EatReliabilityMode;
+    const mode = (event.currentTarget as PsSelect).value as EatReliabilityMode;
     // `normalizeReliability` blanks the bound the new mode does not use, so switching
     // modes cannot leave a stale constraint applied from a side the user can no longer
     // see or edit.
@@ -429,17 +441,14 @@ function renderReliabilityPercent(
 
 function renderReliabilityModeSelect(ctrl: EatReliabilityController): TemplateResult {
   return html`
-    <select
+    <ps-select
       class="eat-threshold-mode"
-      aria-label="EAT reliability filter mode"
+      label="EAT reliability filter mode"
+      .options=${EAT_MODE_OPTIONS}
       .value=${ctrl.reliability.mode}
-      ?disabled=${!ctrl.overlayEnabled}
+      .disabled=${!ctrl.overlayEnabled}
       @change=${ctrl.onModeChange}
-    >
-      <option value="atLeast">Hide below</option>
-      <option value="atMost">Hide above</option>
-      <option value="between">Keep between</option>
-    </select>
+    ></ps-select>
   `;
 }
 
@@ -512,15 +521,13 @@ export function renderEatSection(
     <section class="eat-legend" aria-label="Embedding Annotation Transfer">
       <div class="eat-legend-header">
         <div class="eat-legend-title">Predicted (transferred)</div>
-        <label class="eat-switch">
-          <input
-            type="checkbox"
-            .checked=${ctrl.overlayEnabled}
-            aria-label="Show EAT predictions"
-            @change=${ctrl.onToggle}
-          />
-          <span>Show</span>
-        </label>
+        <ps-checkbox
+          class="eat-switch"
+          label="Show EAT predictions"
+          .checked=${ctrl.overlayEnabled}
+          @change=${ctrl.onToggle}
+          >Show</ps-checkbox
+        >
       </div>
       <div class="eat-threshold">${renderReliabilityBand(ctrl)}</div>
       ${ctrl.overlayEnabled && view.counts
@@ -529,12 +536,12 @@ export function renderEatSection(
               <div class="eat-legend-row">
                 <span class="eat-swatch observed" aria-hidden="true"></span>
                 <span>Observed</span>
-                <strong>${view.counts.observed}</strong>
+                <strong>${formatCount(view.counts.observed)}</strong>
               </div>
               <div class="eat-legend-row">
                 <span class="eat-swatch predicted" aria-hidden="true"></span>
                 <span>Predicted by EAT</span>
-                <strong>${view.counts.predicted}</strong>
+                <strong>${formatCount(view.counts.predicted)}</strong>
               </div>
             </div>
           `

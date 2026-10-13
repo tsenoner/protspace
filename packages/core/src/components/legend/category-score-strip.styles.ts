@@ -12,19 +12,19 @@ export const categoryScoreStripStyles = [
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      font-size: var(--text-sm);
-      color: var(--legend-text-secondary);
-      padding: 0 0.25rem;
+      font-size: var(--ps-text-sm);
+      color: var(--ps-text-muted);
+      padding: 0 var(--ps-space-1);
     }
 
     .strip-label {
-      font-weight: 600;
-      color: var(--legend-text-color);
+      font-weight: var(--ps-weight-semibold);
+      color: var(--ps-text);
       /* Keeps the ⓘ on the label's baseline rather than letting the 18px button
          stretch the header row. */
       display: inline-flex;
       align-items: center;
-      gap: 0.15rem;
+      gap: var(--ps-space-0-5);
     }
 
     /* Centring lands the readout on the axis line: the svg's layout box is
@@ -32,7 +32,7 @@ export const categoryScoreStripStyles = [
     .strip-body {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: var(--ps-space-2);
     }
 
     svg {
@@ -51,34 +51,34 @@ export const categoryScoreStripStyles = [
       flex: none;
       min-width: 3rem;
       text-align: right;
-      font-size: var(--text-sm);
+      font-size: var(--ps-text-sm);
       font-variant-numeric: tabular-nums;
-      color: var(--legend-text-color);
+      color: var(--ps-text);
     }
 
     .strip-value.is-empty {
-      color: var(--legend-text-secondary);
+      color: var(--ps-text-muted);
     }
 
     .axis {
-      stroke: var(--legend-border);
+      stroke: var(--ps-border);
       stroke-width: 1;
     }
 
     circle {
-      stroke: var(--legend-bg);
+      stroke: var(--ps-surface);
       stroke-width: 1;
       cursor: pointer;
     }
 
     circle.is-highlighted {
-      stroke: var(--legend-text-color);
+      stroke: var(--ps-text);
       stroke-width: 2;
     }
 
     .bound {
-      font-size: var(--text-caption);
-      fill: var(--legend-text-secondary);
+      font-size: var(--ps-text-xs);
+      fill: var(--ps-text-muted);
     }
   `,
 ];

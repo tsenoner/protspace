@@ -4,6 +4,8 @@ import type { VisualizationData } from '@protspace/utils';
 import './legend';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './legend-eat-controls';
+import type { PsCheckbox } from '../kit/checkbox';
+import type { PsSelect } from '../kit/select';
 
 function makeData(): VisualizationData {
   return {
@@ -60,12 +62,37 @@ describe('legend-owned EAT controls', () => {
     expect(root.querySelector<HTMLInputElement>('.eat-threshold-percent')?.value).toBe('0');
   });
 
+  it('puts the switch and the mode on the kit, keeping their names', async () => {
+    const { legend } = await setup();
+    const root = legend.shadowRoot!;
+
+    const toggle = root.querySelector<PsCheckbox>('ps-checkbox.eat-switch')!;
+    expect(toggle.label).toBe('Show EAT predictions');
+    expect(toggle.checked).toBe(true);
+    expect(toggle.textContent!.trim()).toBe('Show');
+    // The native checkbox inside carries the name, so the role stays `checkbox`.
+    await toggle.updateComplete;
+    expect(
+      toggle.shadowRoot!.querySelector('input[type="checkbox"]')!.getAttribute('aria-label'),
+    ).toBe('Show EAT predictions');
+
+    const mode = root.querySelector<PsSelect>('ps-select.eat-threshold-mode')!;
+    expect(mode.label).toBe('EAT reliability filter mode');
+    expect(mode.value).toBe('atLeast');
+    expect(mode.disabled).toBe(false);
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    await legend.updateComplete;
+    expect(mode.disabled).toBe(true);
+  });
+
   it('syncs the overlay switch with the scatter plot and emits threshold changes for the filter', async () => {
     const { legend, plot } = await setup();
     const listener = vi.fn();
     legend.addEventListener('eat-overlay-change', listener);
 
-    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    const toggle = legend.shadowRoot!.querySelector<PsCheckbox>('ps-checkbox.eat-switch')!;
     toggle.checked = false;
     toggle.dispatchEvent(new Event('change'));
     await legend.updateComplete;
@@ -222,7 +249,7 @@ describe('legend-owned EAT controls', () => {
     const listener = vi.fn();
     legend.addEventListener('eat-overlay-change', listener);
 
-    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    const toggle = legend.shadowRoot!.querySelector<PsCheckbox>('ps-checkbox.eat-switch')!;
     toggle.checked = false;
     toggle.dispatchEvent(new Event('change'));
 
@@ -249,7 +276,7 @@ describe('legend-owned EAT controls', () => {
     range.dispatchEvent(new Event('input'));
 
     // ...then a discrete toggle applies immediately (one emit) and supersedes it.
-    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    const toggle = legend.shadowRoot!.querySelector<PsCheckbox>('ps-checkbox.eat-switch')!;
     toggle.checked = false;
     toggle.dispatchEvent(new Event('change'));
     expect(listener).toHaveBeenCalledTimes(1);
@@ -329,7 +356,7 @@ describe('legend EAT reliability modes (#380)', () => {
     const { legend } = await setup();
     const listener = vi.fn();
     legend.addEventListener('eat-overlay-change', listener);
-    const select = legend.shadowRoot!.querySelector<HTMLSelectElement>('.eat-threshold-mode')!;
+    const select = legend.shadowRoot!.querySelector<PsSelect>('ps-select.eat-threshold-mode')!;
     select.value = mode;
     select.dispatchEvent(new Event('change'));
     await legend.updateComplete;
@@ -338,10 +365,13 @@ describe('legend EAT reliability modes (#380)', () => {
 
   it('offers all three directions', async () => {
     const { legend } = await setup();
-    const options = Array.from(
-      legend.shadowRoot!.querySelectorAll<HTMLOptionElement>('.eat-threshold-mode option'),
-    ).map((o) => o.value);
-    expect(options).toEqual(['atLeast', 'atMost', 'between']);
+    const select = legend.shadowRoot!.querySelector<PsSelect>('ps-select.eat-threshold-mode')!;
+    expect(select.options.map((o) => o.value)).toEqual(['atLeast', 'atMost', 'between']);
+    expect(select.options.map((o) => o.label)).toEqual([
+      'Hide below',
+      'Hide above',
+      'Keep between',
+    ]);
   });
 
   it('emits the mode immediately, without waiting out the drag debounce', async () => {
@@ -363,7 +393,7 @@ describe('legend EAT reliability modes (#380)', () => {
     legend.setReliabilityState({ mode: 'between', min: 0.2, max: 0.6 });
     await legend.updateComplete;
 
-    const select = legend.shadowRoot!.querySelector<HTMLSelectElement>('.eat-threshold-mode')!;
+    const select = legend.shadowRoot!.querySelector<PsSelect>('ps-select.eat-threshold-mode')!;
     select.value = 'atLeast';
     select.dispatchEvent(new Event('change'));
     await legend.updateComplete;
@@ -401,7 +431,7 @@ describe('legend EAT reliability modes (#380)', () => {
     legend.setReliabilityState({ mode: 'atMost', min: 0, max: 0.4 });
     await legend.updateComplete;
 
-    const toggle = legend.shadowRoot!.querySelector<HTMLInputElement>('.eat-switch input')!;
+    const toggle = legend.shadowRoot!.querySelector<PsCheckbox>('ps-checkbox.eat-switch')!;
     for (const checked of [false, true]) {
       toggle.checked = checked;
       toggle.dispatchEvent(new Event('change'));
