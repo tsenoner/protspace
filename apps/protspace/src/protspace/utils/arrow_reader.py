@@ -60,48 +60,40 @@ class ArrowReader:
             self._load_data()
             self._build_data_structure()
 
-    _CORE_FILENAMES = (
-        "selected_annotations.parquet",
-        "projections_metadata.parquet",
-        "projections_data.parquet",
-    )
+    def _load_data(self):
+        """Load data from Parquet files.
 
-    def _validate_data_path(self) -> None:
-        """Fail loudly when data_path cannot yield any ProtSpace table.
-
-        Every probe in _load_data is an ``.exists()`` test with an empty-frame fallback, so a
-        .parquetbundle FILE, a missing directory, or an unrelated directory all produced a
-        reader reporting 0 proteins / 0 projections / format_version 1 and raised nothing.
-
-        The check is "at least one core file", not "all three": extracted directories carrying
-        only selected_annotations.parquet are legitimate (see test_bundle_version.py).
+        Each table falls back to an empty frame when absent, so at least one
+        must exist; a bad path would otherwise read as an empty dataset.
         """
+        from protspace.data.io.bundle import CORE_FILENAMES
+
+        # Checked before the try so these errors are not re-wrapped below.
         path = self.data_path
         if path.is_file():
-            if path.suffix.lower() == ".parquetbundle":
-                raise ValueError(
-                    f"'{path}' is a .parquetbundle file; ArrowReader reads a directory of "
-                    "parquet files. Extract it first with "
-                    "protspace.data.io.bundle.extract_bundle_to_dir()."
-                )
+            hint = (
+                " Extract it first with protspace.data.io.extract_bundle_to_dir()."
+                if path.suffix.lower() == ".parquetbundle"
+                else ""
+            )
             raise ValueError(
-                f"'{path}' is a file; ArrowReader expects a directory of .parquet files."
+                f"'{path}' is a file; ArrowReader expects a directory of .parquet "
+                f"files.{hint}"
             )
         if not path.is_dir():
             raise FileNotFoundError(f"No such directory: '{path}'")
-        if not any((path / name).exists() for name in self._CORE_FILENAMES):
+        core_paths = [path / name for name in CORE_FILENAMES]
+        if not any(p.exists() for p in core_paths):
             raise ValueError(
-                f"Directory '{path}' contains none of {', '.join(self._CORE_FILENAMES)}."
+                f"Directory '{path}' contains none of {', '.join(CORE_FILENAMES)}."
             )
 
-    def _load_data(self):
-        """Load data from Parquet files."""
-        # Before the try: this ValueError must not be re-wrapped by the handler below.
-        self._validate_data_path()
         try:
-            protein_annotations_path = self.data_path / "selected_annotations.parquet"
-            projections_metadata_path = self.data_path / "projections_metadata.parquet"
-            projections_data_path = self.data_path / "projections_data.parquet"
+            (
+                protein_annotations_path,
+                projections_metadata_path,
+                projections_data_path,
+            ) = core_paths
 
             if protein_annotations_path.exists():
                 annotations_table = pq.read_table(str(protein_annotations_path))
