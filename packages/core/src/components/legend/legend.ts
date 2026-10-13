@@ -3,13 +3,11 @@ import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import { perfCounters } from '../../utils/perf-counters';
 import {
-  COLOR_SCHEMES,
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   getNumericBinLabelMap,
   getNumericBinLowerBoundMap,
   getOrderedNumericBinIds,
-  isGradientPalette,
   isNumericAnnotation,
   materializeNumericAnnotation,
   normalizeNumericPaletteId,
@@ -34,7 +32,6 @@ import {
   LEGEND_STYLES,
   LEGEND_VALUES,
   LEGEND_EVENTS,
-  NA_VALUE,
   toDisplayValue,
   toInternalValue,
 } from './config';
@@ -79,7 +76,6 @@ import {
   valueToKey,
   calculatePointSize,
   defaultShapeSize,
-  explicitShapeSize,
   SHAPE_SIZE_FILLER,
   getDefaultSortMode,
   getItemClasses,
@@ -93,6 +89,20 @@ import {
   computeOtherConcreteValues,
 } from './legend-helpers';
 import { computeEatPopulationCounts, type EatPopulationCounts } from './eat-population-counts';
+import {
+  applyDerivedNumericColors,
+  applyNumericDisplayLabels,
+  applyPaletteColors,
+  normalizeCategoricalPaletteId,
+  normalizeSortModeForType,
+  numericOrderFromItems,
+  reorderByValues,
+  resolvePersistedSettings,
+  reverseKeepingOtherLast,
+  reverseSortMode,
+  sortItemsForDisplay,
+  type ResolvedLegendSettings,
+} from './legend-items-state';
 
 // Dialogs
 import {
@@ -310,14 +320,14 @@ export class ProtspaceLegend extends LitElement {
       return {
         maxVisibleValues: this.maxVisibleValues,
         shapeSize: this._annotationShapeSize ?? SHAPE_SIZE_FILLER,
-        sortMode: this._normalizeSortModeForEffectiveType(
+        sortMode: normalizeSortModeForType(
           this._annotationSortModes[this.selectedAnnotation],
           isNumericAnnotation,
         ),
         enableDuplicateStackUI: this._dialogSettings.enableDuplicateStackUI,
         selectedPaletteId: isNumericAnnotation
           ? normalizeNumericPaletteId(this._selectedPaletteId)
-          : this._normalizeCategoricalPaletteId(this._selectedPaletteId),
+          : normalizeCategoricalPaletteId(this._selectedPaletteId),
         numericSettings: isNumericAnnotation
           ? {
               strategy:
@@ -343,11 +353,7 @@ export class ProtspaceLegend extends LitElement {
         // Exclude Other (synthetic) and NA (locked to legend end regardless of
         // sort) from the persisted manual order — they have no observable
         // position effect and would clutter the saved state.
-        const orderedIds = [...items]
-          .filter((item) => item.value !== LEGEND_VALUES.OTHER && item.value !== NA_VALUE)
-          .sort((left, right) => left.zOrder - right.zOrder)
-          .map((item) => item.value);
-        this._setNumericManualOrderIds(this.selectedAnnotation, orderedIds);
+        this._setNumericManualOrderIds(this.selectedAnnotation, numericOrderFromItems(items));
       }
     },
     onReorder: () => {
@@ -552,25 +558,11 @@ export class ProtspaceLegend extends LitElement {
       [this.selectedAnnotation]: 'manual',
     };
 
-    const itemMap = new Map(this._legendItems.map((item) => [item.value, item]));
-    const otherItem = itemMap.get(LEGEND_VALUES.OTHER);
-
     if (this._isNumericAnnotation()) {
       this._setNumericManualOrderIds(this.selectedAnnotation, visibleOrder);
       this._updateLegendItems();
     } else {
-      const reorderedItems = visibleOrder
-        .map((value, index) => {
-          const item = itemMap.get(value);
-          return item ? { ...item, zOrder: index } : null;
-        })
-        .filter((item): item is LegendItem => item !== null);
-
-      if (otherItem) {
-        reorderedItems.push({ ...otherItem, zOrder: reorderedItems.length });
-      }
-
-      this._legendItems = reorderedItems;
+      this._legendItems = reorderByValues(this._legendItems, visibleOrder);
     }
 
     this._scatterplotController.syncNumericAnnotationSettings();
@@ -615,43 +607,6 @@ export class ProtspaceLegend extends LitElement {
   /** `autoSync` is off; its doc lists what that changes. */
   private get _hostDriven(): boolean {
     return !this.autoSync;
-  }
-
-  /**
-   * Display order for the legend list. Every mode but `silhouette-desc` has already been
-   * applied upstream and is carried by `zOrder`; scores arrive too late for that path, so
-   * they are applied here. Deliberately display-only: bucket membership stays size-driven,
-   * so switching sort never changes which categories are visible.
-   */
-  private _sortLegendItemsForDisplay(): LegendItem[] {
-    const items = [...this._legendItems];
-    const mode = this._currentSortMode;
-    if (mode !== 'silhouette-desc' && mode !== 'silhouette-asc') {
-      return items.sort((a, b) => a.zOrder - b.zOrder);
-    }
-    // Indexed once rather than a `.find()` per comparison: the comparator runs
-    // O(items · log items) times and the scan is O(categories), so a legend with a few
-    // hundred categories paid hundreds of thousands of string compares per rebuild.
-    const scoreByCategory = new Map(
-      this._categoryScores.map((score) => [score.category, score.silhouette]),
-    );
-    const scoreOf = (value: string): number =>
-      scoreByCategory.get(value) ?? Number.NEGATIVE_INFINITY;
-    // Ascending is the header reverse button's result. Unscored categories keep sorting last
-    // either way: they sit at -Infinity, so the ascending branch negates only the scored gap.
-    const descending = mode === 'silhouette-desc';
-    return items.sort((a, b) => {
-      // "Other" is a bucket, not a category, so it has no score and stays last.
-      if (a.value === LEGEND_VALUES.OTHER) return 1;
-      if (b.value === LEGEND_VALUES.OTHER) return -1;
-      const scoreA = scoreOf(a.value);
-      const scoreB = scoreOf(b.value);
-      const unscored = scoreA === Number.NEGATIVE_INFINITY || scoreB === Number.NEGATIVE_INFINITY;
-      const diff = unscored || descending ? scoreB - scoreA : scoreA - scoreB;
-      // `||` (not `!== 0 ? … :`) so an unscored pair, where diff is NaN, also falls
-      // through to the zOrder tiebreak instead of coercing to a no-op comparator.
-      return diff || a.zOrder - b.zOrder;
-    });
   }
 
   /**
@@ -1236,10 +1191,6 @@ export class ProtspaceLegend extends LitElement {
     return {};
   }
 
-  private _getNumericDisplayLabelMap(): Map<string, string> {
-    return getNumericBinLabelMap(this.annotationData);
-  }
-
   private _getNumericOrderValues(): Map<string, number> {
     return getNumericBinLowerBoundMap(this.annotationData);
   }
@@ -1255,12 +1206,7 @@ export class ProtspaceLegend extends LitElement {
       return undefined;
     }
 
-    const visibleIds = [...this._legendItems]
-      .filter((item) => item.value !== LEGEND_VALUES.OTHER && item.value !== NA_VALUE)
-      .sort((left, right) => left.zOrder - right.zOrder)
-      .map((item) => item.value);
-
-    return visibleIds.length > 0 ? visibleIds : undefined;
+    return numericOrderFromItems(this._legendItems);
   }
 
   private _setNumericManualOrderIds(annotationName: string, orderIds: string[] | undefined): void {
@@ -1277,36 +1223,6 @@ export class ProtspaceLegend extends LitElement {
       ...this._numericManualOrderIdsByAnnotation,
       [annotationName]: [...orderIds],
     };
-  }
-
-  private _applyNumericDisplayLabels(): void {
-    if (!this._isNumericAnnotation()) return;
-
-    const labelMap = this._getNumericDisplayLabelMap();
-    this._legendItems = this._legendItems.map((item) =>
-      item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE
-        ? item
-        : { ...item, displayValue: labelMap.get(item.value) ?? item.displayValue ?? item.value },
-    );
-  }
-
-  private _applyDerivedNumericColors(): void {
-    if (!this._isNumericAnnotation()) return;
-
-    const derivedColors = new Map(
-      this.annotationData.values.map((value, index) => [
-        valueToKey(toInternalValue(value)),
-        this.annotationData.colors?.[index] ?? '',
-      ]),
-    );
-
-    this._legendItems = this._legendItems.map((item) => {
-      if (item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE) {
-        return item;
-      }
-      const derivedColor = derivedColors.get(item.value);
-      return derivedColor ? { ...item, color: derivedColor } : item;
-    });
   }
 
   private _updateLegendItems(): void {
@@ -1351,7 +1267,7 @@ export class ProtspaceLegend extends LitElement {
           ? this._visibleValues
           : new Set<string>();
       const numericOrderValues = this._getNumericOrderValues();
-      const numericDisplayLabels = this._getNumericDisplayLabelMap();
+      const numericDisplayLabels = getNumericBinLabelMap(this.annotationData);
       const numericManualOrderIds = isNumericAnnotation
         ? (this._buildNumericManualOrderIds(this.selectedAnnotation) ?? [])
         : [];
@@ -1399,10 +1315,16 @@ export class ProtspaceLegend extends LitElement {
       this._otherItems = otherItems;
 
       if (isNumericAnnotation) {
-        this._applyNumericDisplayLabels();
-        this._applyDerivedNumericColors();
+        // Only once the annotation itself reads as numeric: a plot-side numeric column whose
+        // legend data has not caught up yet keeps the processor's labels and colours.
+        if (this._isNumericAnnotation()) {
+          this._legendItems = applyDerivedNumericColors(
+            applyNumericDisplayLabels(this._legendItems, this.annotationData),
+            this.annotationData,
+          );
+        }
       } else if (this._selectedPaletteId !== 'kellys') {
-        this._applyPaletteColors(this._selectedPaletteId);
+        this._legendItems = applyPaletteColors(this._legendItems, this._selectedPaletteId);
       }
 
       // Clear pending extract/merge values after they've been applied
@@ -1433,83 +1355,39 @@ export class ProtspaceLegend extends LitElement {
 
   private _applyPersistedSettings(settings: LegendPersistedSettings): void {
     try {
-      const isNumericAnnotation = this._isCurrentAnnotationNumeric();
-      const { settings: resolvedNumericSettings } = resolveNumericAnnotationDisplaySettings({
-        persistedSettings: settings,
-        liveSettings: this._numericSettingsByAnnotation[this.selectedAnnotation],
-        defaultBinCount: LEGEND_DEFAULTS.maxVisibleValues,
+      const resolved: ResolvedLegendSettings = resolvePersistedSettings(settings, {
+        isNumeric: this._isCurrentAnnotationNumeric(),
+        liveNumeric: this._numericSettingsByAnnotation[this.selectedAnnotation],
+        signatures: (binCount, strategy, paletteId, reverseGradient) =>
+          this._computeNumericSettingsSignatures(binCount, strategy, paletteId, reverseGradient),
       });
-      const resolvedPaletteId = isNumericAnnotation
-        ? resolvedNumericSettings.paletteId
-        : this._normalizeCategoricalPaletteId(settings.selectedPaletteId);
-      const resolvedMaxVisibleValues = isNumericAnnotation
-        ? resolvedNumericSettings.binCount
-        : settings.maxVisibleValues;
-      const resolvedNumericStrategy = resolvedNumericSettings.strategy;
-      const resolvedReverseGradient = resolvedNumericSettings.reverseGradient ?? false;
-      const persistedNumericState =
-        isNumericAnnotation && settings.numericSettings
-          ? this._computeNumericSettingsSignatures(
-              resolvedMaxVisibleValues,
-              resolvedNumericStrategy,
-              resolvedPaletteId,
-              resolvedReverseGradient,
-            )
-          : null;
-      const hasMatchingNumericSignature =
-        !isNumericAnnotation ||
-        !settings.numericSettings ||
-        (persistedNumericState !== null &&
-          settings.numericSettings.signature === persistedNumericState.signature);
-      const hasMatchingNumericTopology =
-        !isNumericAnnotation ||
-        !settings.numericSettings ||
-        (persistedNumericState !== null &&
-          settings.numericSettings.topologySignature === persistedNumericState.topologySignature);
 
-      if (!hasMatchingNumericSignature) {
+      if (resolved.clearPendingCategories) {
         this._persistenceController.clearPendingCategories();
       }
-
-      this.maxVisibleValues = resolvedMaxVisibleValues;
-      // Capped here, not only when resolved: the record and the export keep this value.
-      const ownShapeSize = explicitShapeSize(settings.shapeSize);
-      this._annotationShapeSize =
-        ownShapeSize === null ? null : Math.min(ownShapeSize, LEGEND_DEFAULTS.maxSymbolSize);
+      this.maxVisibleValues = resolved.maxVisibleValues;
+      this._annotationShapeSize = resolved.annotationShapeSize;
       this.shapeSize = this._resolveShapeSize();
-      this._hiddenValues = hasMatchingNumericTopology ? settings.hiddenValues : [];
-      this._selectedPaletteId = resolvedPaletteId;
-      if (isNumericAnnotation) {
-        this._persistenceController.clearPendingCategories();
-      }
+      this._hiddenValues = resolved.hiddenValues;
+      this._selectedPaletteId = resolved.paletteId;
 
-      if (isNumericAnnotation) {
+      if (resolved.numeric) {
+        const { manualOrderIds, ...numericSettings } = resolved.numeric;
         this._numericSettingsByAnnotation = {
           ...this._numericSettingsByAnnotation,
-          [this.selectedAnnotation]: {
-            binCount: resolvedMaxVisibleValues,
-            strategy: resolvedNumericStrategy,
-            paletteId: resolvedPaletteId,
-            reverseGradient: resolvedReverseGradient,
-          },
+          [this.selectedAnnotation]: numericSettings,
         };
-        this._setNumericManualOrderIds(
-          this.selectedAnnotation,
-          hasMatchingNumericTopology ? settings.numericSettings?.manualOrderIds : undefined,
-        );
+        this._setNumericManualOrderIds(this.selectedAnnotation, manualOrderIds);
       }
 
       this._annotationSortModes = {
         ...this._annotationSortModes,
-        [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
-          settings.sortMode,
-          isNumericAnnotation,
-        ),
+        [this.selectedAnnotation]: resolved.sortMode,
       };
 
       this._scatterplotController.updateConfig({
         pointSize: calculatePointSize(this.shapeSize),
-        enableDuplicateStackUI: settings.enableDuplicateStackUI,
+        enableDuplicateStackUI: resolved.enableDuplicateStackUI,
       });
       this._scatterplotController.syncNumericAnnotationSettings();
     } catch (error) {
@@ -1583,33 +1461,7 @@ export class ProtspaceLegend extends LitElement {
       (annotationName === this.selectedAnnotation ? this.annotationData : undefined);
     const isNumeric = isNumericAnnotation(annotation);
 
-    return this._normalizeSortModeForEffectiveType(sortMode, isNumeric);
-  }
-
-  private _normalizeSortModeForEffectiveType(
-    sortMode: LegendSortMode | undefined,
-    isNumeric: boolean,
-  ): LegendSortMode {
-    if (isNumeric) {
-      if (
-        sortMode === 'alpha-asc' ||
-        sortMode === 'alpha-desc' ||
-        sortMode === 'manual' ||
-        sortMode === 'manual-reverse'
-      ) {
-        return sortMode;
-      }
-      return 'alpha-asc';
-    }
-
-    return sortMode ?? 'size-desc';
-  }
-
-  private _normalizeCategoricalPaletteId(paletteId: string | undefined | null): string {
-    if (!paletteId || isGradientPalette(paletteId)) {
-      return 'kellys';
-    }
-    return paletteId;
+    return normalizeSortModeForType(sortMode, isNumeric);
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -1790,32 +1642,14 @@ export class ProtspaceLegend extends LitElement {
       );
     }
 
-    // Toggle direction: asc <-> desc, or manual <-> manual-reverse
-    let newMode: LegendSortMode;
-    if (currentMode === 'manual') {
-      newMode = 'manual-reverse';
-    } else if (currentMode === 'manual-reverse') {
-      newMode = 'manual';
-    } else if (currentMode.endsWith('-asc')) {
-      newMode = currentMode.replace('-asc', '-desc') as LegendSortMode;
-    } else {
-      newMode = currentMode.replace('-desc', '-asc') as LegendSortMode;
-    }
-
-    // Update sort mode
     this._annotationSortModes = {
       ...this._annotationSortModes,
-      [this.selectedAnnotation]: newMode,
+      [this.selectedAnnotation]: reverseSortMode(currentMode),
     };
 
     if (!this._isNumericAnnotation()) {
       // Always reverse the visible items directly, keeping "Other" at the end.
-      const sorted = [...this._legendItems].sort((a, b) => a.zOrder - b.zOrder);
-      const otherItem = sorted.find((i) => i.value === LEGEND_VALUES.OTHER);
-      const nonOther = sorted.filter((i) => i.value !== LEGEND_VALUES.OTHER);
-      const reversed = nonOther.reverse();
-      const reordered = otherItem ? [...reversed, otherItem] : reversed;
-      this._legendItems = reordered.map((item, idx) => ({ ...item, zOrder: idx }));
+      this._legendItems = reverseKeepingOtherLast(this._legendItems);
     } else {
       this._updateLegendItems();
     }
@@ -1887,7 +1721,7 @@ export class ProtspaceLegend extends LitElement {
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
     const selectedPaletteId = isNumericAnnotation
       ? normalizeNumericPaletteId(numericSettings?.paletteId ?? DEFAULT_NUMERIC_PALETTE_ID)
-      : this._normalizeCategoricalPaletteId(this._selectedPaletteId);
+      : normalizeCategoricalPaletteId(this._selectedPaletteId);
     this._dialogSettings = {
       maxVisibleValues: this.maxVisibleValues,
       // `shapeSize` is a public property, so a host can set it past the dialog's bound.
@@ -1915,10 +1749,10 @@ export class ProtspaceLegend extends LitElement {
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
     const nextSelectedPaletteId = isNumericAnnotation
       ? normalizeNumericPaletteId(this._dialogSettings.selectedPaletteId)
-      : this._normalizeCategoricalPaletteId(this._dialogSettings.selectedPaletteId);
+      : normalizeCategoricalPaletteId(this._dialogSettings.selectedPaletteId);
     const nextAnnotationSortModes = {
       ...this._dialogSettings.annotationSortModes,
-      [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
+      [this.selectedAnnotation]: normalizeSortModeForType(
         this._dialogSettings.annotationSortModes[this.selectedAnnotation],
         isNumericAnnotation,
       ),
@@ -2014,7 +1848,7 @@ export class ProtspaceLegend extends LitElement {
       ...this._dialogSettings,
       selectedPaletteId: isNumericAnnotation
         ? normalizeNumericPaletteId(paletteId)
-        : this._normalizeCategoricalPaletteId(paletteId),
+        : normalizeCategoricalPaletteId(paletteId),
     };
   }
 
@@ -2116,23 +1950,6 @@ export class ProtspaceLegend extends LitElement {
       e.preventDefault();
       this._handleSettingsSave();
     }
-  }
-
-  private _applyPaletteColors(paletteId: string): void {
-    if (this._isNumericAnnotation()) {
-      return;
-    }
-    const palette = COLOR_SCHEMES[paletteId as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.kellys;
-
-    // Apply palette colors to all legend items (excluding special categories like "Others" and "N/A")
-    this._legendItems = this._legendItems.map((item, index) => {
-      // Skip special categories (Other, N/A) as they have fixed colors
-      if (item.value === LEGEND_VALUES.OTHER || item.value === NA_VALUE) {
-        return item;
-      }
-
-      return { ...item, color: palette[index % palette.length] };
-    });
   }
 
   private _syncLegendColorsToPersistence(): void {
@@ -2237,7 +2054,11 @@ export class ProtspaceLegend extends LitElement {
   protected willUpdate(changedProperties: Map<string, unknown>): void {
     // Derived before render, so a change to the items renders the rows once, in their new order.
     if (changedProperties.has('_legendItems') || changedProperties.has('_categoryScores')) {
-      this._sortedLegendItems = this._sortLegendItemsForDisplay();
+      this._sortedLegendItems = sortItemsForDisplay(
+        this._legendItems,
+        this._currentSortMode,
+        this._categoryScores,
+      );
       this._stripPoints = deriveStripPoints(this._legendItems, this._categoryScores);
     }
   }
@@ -2321,7 +2142,7 @@ export class ProtspaceLegend extends LitElement {
     const annotationSortModes = this.selectedAnnotation
       ? {
           ...initializedSortModes,
-          [this.selectedAnnotation]: this._normalizeSortModeForEffectiveType(
+          [this.selectedAnnotation]: normalizeSortModeForType(
             initializedSortModes[this.selectedAnnotation],
             isNumericAnnotation,
           ),
