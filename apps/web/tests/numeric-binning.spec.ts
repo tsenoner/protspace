@@ -625,41 +625,38 @@ async function readLegendDragHandles(page: Page): Promise<{ total: number; enabl
   });
 }
 
-async function dragLegendHandle(page: Page, fromIndex: number, toIndex: number): Promise<void> {
-  const dragCoordinates = await page.evaluate(
-    ({ sourceIndex, targetIndex }) => {
-      const legend = document.querySelector('protspace-legend') as HTMLElement & {
-        shadowRoot: ShadowRoot;
-      };
-      const handles = Array.from(
-        legend?.shadowRoot?.querySelectorAll('.legend-item:not(.legend-item-other) .drag-handle') ??
-          [],
-      ) as HTMLElement[];
-      if (handles.length <= Math.max(sourceIndex, targetIndex)) {
-        return null;
-      }
-
-      const source = handles[sourceIndex]?.getBoundingClientRect();
-      const target = handles[targetIndex]?.getBoundingClientRect();
-      if (!source || !target) {
-        return null;
-      }
-
-      return {
-        fromX: source.left + source.width / 2,
-        fromY: source.top + source.height / 2,
-        toX: target.left + target.width / 2,
-        toY: target.top + target.height / 2,
-      };
-    },
-    { sourceIndex: fromIndex, targetIndex: toIndex },
-  );
-
-  expect(dragCoordinates).not.toBeNull();
-
-  await page.mouse.move(dragCoordinates?.fromX ?? 0, dragCoordinates?.fromY ?? 0);
+/**
+ * Press the drag handle of the `index`-th sortable row the way a user does: the handle shows only
+ * on a hovered row, and showing it moves it (the name gives way), so hover the row first, then
+ * read the handle's box and check the pointer really lands on it.
+ */
+async function pressLegendHandle(page: Page, index: number): Promise<void> {
+  const rows = page.locator('protspace-legend .legend-item:not(.legend-item-other)');
+  await rows.nth(index).hover();
+  const handle = await page.evaluate((rowIndex) => {
+    const root = document.querySelector('protspace-legend')?.shadowRoot;
+    const row = root?.querySelectorAll('.legend-item:not(.legend-item-other)')[rowIndex];
+    const box = row?.querySelector('.drag-handle')?.getBoundingClientRect();
+    if (!root || !box) return null;
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    return { x, y, hit: root.elementFromPoint(x, y)?.closest('.drag-handle') !== null };
+  }, index);
+  expect(handle).toMatchObject({ hit: true });
+  await page.mouse.move(handle!.x, handle!.y);
   await page.mouse.down();
-  await page.mouse.move(dragCoordinates?.toX ?? 0, dragCoordinates?.toY ?? 0, { steps: 10 });
+}
+
+async function dragLegendHandle(page: Page, fromIndex: number, toIndex: number): Promise<void> {
+  await pressLegendHandle(page, fromIndex);
+  const target = await page
+    .locator('protspace-legend .legend-item:not(.legend-item-other)')
+    .nth(toIndex)
+    .boundingBox();
+  expect(target).not.toBeNull();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2, {
+    steps: 10,
+  });
   await page.mouse.up();
 }
 
@@ -1117,32 +1114,9 @@ test('dropping a pointer drag outside the legend keeps categorical sorting uncha
   await selectAnnotation(page, 'family');
 
   const initialLegend = await readLegendDisplay(page);
-  const dragCoordinates = await page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const handle = legend?.shadowRoot?.querySelector('.drag-handle') as HTMLElement | null;
-    const legendBounds = legend?.shadowRoot
-      ?.querySelector('.legend-container')
-      ?.getBoundingClientRect();
-    const handleBounds = handle?.getBoundingClientRect();
-    if (!handleBounds || !legendBounds) {
-      return null;
-    }
-
-    return {
-      fromX: handleBounds.left + handleBounds.width / 2,
-      fromY: handleBounds.top + handleBounds.height / 2,
-      toX: legendBounds.left - 80,
-      toY: legendBounds.top - 80,
-    };
-  });
-
-  expect(dragCoordinates).not.toBeNull();
-
-  await page.mouse.move(dragCoordinates?.fromX ?? 0, dragCoordinates?.fromY ?? 0);
-  await page.mouse.down();
-  await page.mouse.move(dragCoordinates?.toX ?? 0, dragCoordinates?.toY ?? 0, { steps: 10 });
+  const legendBounds = (await page.locator('protspace-legend .legend-container').boundingBox())!;
+  await pressLegendHandle(page, 0);
+  await page.mouse.move(legendBounds.x - 80, legendBounds.y - 80, { steps: 10 });
   await page.mouse.up();
 
   await expect

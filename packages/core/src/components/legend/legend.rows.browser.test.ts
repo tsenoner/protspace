@@ -186,6 +186,29 @@ describe('legend rows in a browser', () => {
     await userEvent.unhover(part(legend, LONG, '.legend-item-main'));
   });
 
+  it('at 240 px the handle a hover reveals is under the pointer, and dragging it reorders the rows', async () => {
+    const legend = await mount();
+    const order = () =>
+      [...legend.shadowRoot!.querySelectorAll('.legend-item')].map((el) =>
+        el.getAttribute('data-value'),
+      );
+    expect(order()).toEqual([LONG, 'Short']);
+
+    // Shown, the strip moves the handle to where the name gave way; it must be on top there.
+    await userEvent.hover(part(legend, LONG, '.legend-item-main'));
+    await expect.poll(() => opacity(part(legend, LONG, '.legend-item-actions'))).toBe('1');
+    const handle = part(legend, LONG, '.drag-handle');
+    const box = handle.getBoundingClientRect();
+    const hit = legend.shadowRoot!.elementFromPoint(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+    expect(hit?.closest('.drag-handle')).toBe(handle);
+
+    await userEvent.dragAndDrop(handle, part(legend, 'Short', '.legend-item-main'));
+    await expect.poll(order).toEqual(['Short', LONG]);
+  });
+
   it('hovering a truncated name shows its full text after 500 ms; a name that fits shows nothing', async () => {
     const legend = await mount();
     const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
