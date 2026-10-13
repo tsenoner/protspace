@@ -101,6 +101,16 @@ describe('protspace-export-menu', () => {
     expect(trigger().textContent!.replace(/\s+/g, ' ').trim()).toBe('Export');
   });
 
+  it('Quick PNG and Quick PDF are described by the contours note', async () => {
+    await open();
+    for (const name of ['Quick PNG', 'Quick PDF']) {
+      await expect
+        .element(page.getByRole('menuitem', { name }))
+        .toHaveAccessibleDescription('Quick exports leave out contours.');
+    }
+    expect(item('ids').hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('each quick item dispatches export with its type and the EXPORT_DEFAULTS sizes, and closes the menu', async () => {
     const seen = exportsSeen();
     for (const type of ['png', 'pdf', 'ids', 'parquet'] as const) {

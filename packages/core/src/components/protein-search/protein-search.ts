@@ -28,6 +28,7 @@ const COPY_FEEDBACK_MS = 2000;
  */
 const SUGGESTIONS_LIST_ID = 'protein-search-suggestions';
 const REPORT_ID = 'protein-search-report';
+const NO_MATCHES = 'No matching protein IDs found';
 const suggestionRowId = (index: number) => `${SUGGESTIONS_LIST_ID}-${index}`;
 
 type AddSource = 'typed' | 'suggestion';
@@ -83,11 +84,14 @@ export class ProtspaceProteinSearch extends LitElement {
 
   render() {
     const expanded = !this._report && this._isPopupRendered;
-    // Always rendered and holding one sentence, so a screen reader announces each report (a live
-    // region inserted together with its text often goes unheard).
+    // Always rendered and holding one sentence, so a screen reader announces each report and the
+    // no-match message (a live region inserted together with its text often goes unheard).
+    const noMatches = !this._report && !this._isListboxRendered && this._isPopupRendered;
     const announcement = this._report
       ? copyAnnouncement(this._copyState) || reportSummary(this._report)
-      : '';
+      : noMatches
+        ? NO_MATCHES
+        : '';
     return html`
       <div class="search-container">
         <div class="search-chips" @click=${this._focusSearchInput}>
@@ -156,7 +160,7 @@ export class ProtspaceProteinSearch extends LitElement {
       // is valid, a bare div is not. Only one of the two branches ever renders.
       return html`
         <div class="search-suggestions" id=${SUGGESTIONS_LIST_ID} role="listbox" tabindex="-1">
-          <div class="no-results" role="status">No matching protein IDs found</div>
+          <div class="no-results" aria-hidden="true">${NO_MATCHES}</div>
         </div>
       `;
     }

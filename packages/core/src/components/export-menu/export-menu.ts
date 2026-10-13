@@ -28,6 +28,12 @@ const QUICK_EXPORTS: ReadonlyArray<{ value: ExportEventDetail['type']; label: st
   { value: 'parquet', label: 'Data bundle (.parquetbundle)' },
 ];
 
+/**
+ * The note under the items. A `ps-menu-label` is presentation, which assistive tech skips, so the
+ * two quick image exports it is about name it as their description.
+ */
+const CONTOURS_NOTE_ID = 'export-contours-note';
+
 const FIGURE_EDITOR = 'figure';
 const INCLUDE_SETTINGS = 'include-settings';
 
@@ -76,7 +82,12 @@ export class ProtspaceExportMenu extends LitElement {
       >
         <ps-menu-item value=${FIGURE_EDITOR}>Figure editor…</ps-menu-item>
         ${QUICK_EXPORTS.map(
-          ({ value, label }) => html`<ps-menu-item value=${value}>${label}</ps-menu-item>`,
+          ({ value, label }) =>
+            html`<ps-menu-item
+              value=${value}
+              aria-describedby=${value === 'png' || value === 'pdf' ? CONTOURS_NOTE_ID : nothing}
+              >${label}</ps-menu-item
+            >`,
         )}
         <ps-menu-item
           type="checkbox"
@@ -84,7 +95,9 @@ export class ProtspaceExportMenu extends LitElement {
           .checked=${this.includeLegendSettings}
           >Include legend settings</ps-menu-item
         >
-        <ps-menu-label class="export-note">Quick exports leave out contours.</ps-menu-label>
+        <ps-menu-label id=${CONTOURS_NOTE_ID} class="export-note"
+          >Quick exports leave out contours.</ps-menu-label
+        >
       </ps-menu>`;
   }
 

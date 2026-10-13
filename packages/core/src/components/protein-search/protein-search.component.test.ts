@@ -159,7 +159,9 @@ describe('protspace-protein-search feedback', () => {
     expect(input.getAttribute('aria-controls')).toBe(popup.id);
     // `aria-controls` has to name an actual popup, so the empty state is still a listbox.
     expect(popup.getAttribute('role')).toBe('listbox');
-    expect(element.shadowRoot!.querySelector('.no-results')!.getAttribute('role')).toBe('status');
+    // The always-rendered live region says it; the visible copy is not a second live region.
+    expect(liveOf(element)!.textContent!.trim()).toBe('No matching protein IDs found');
+    expect(element.shadowRoot!.querySelector('.no-results')!.hasAttribute('role')).toBe(false);
   });
 
   it('surfaces current selections when the empty input is focused', async () => {
