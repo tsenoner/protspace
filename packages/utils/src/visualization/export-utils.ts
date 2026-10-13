@@ -484,7 +484,9 @@ export class ProtSpaceExporter {
     try {
       this.downloadFile(url, fileName);
     } finally {
-      URL.revokeObjectURL(url);
+      // Not straight after the click: Firefox and Safari can abort a download whose URL is
+      // revoked before it starts.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
     return fileName;
   }

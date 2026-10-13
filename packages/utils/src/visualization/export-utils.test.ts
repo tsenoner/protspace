@@ -396,6 +396,9 @@ describe('exporters report the file they wrote', () => {
     expect((created.mock.calls[0][0] as Blob).type).toBe('text/plain;charset=utf-8');
     expect(download).toHaveBeenCalledWith('blob:protein-ids', 'protein_ids.txt');
     expect(String(download.mock.calls[0][0]).startsWith('data:')).toBe(false);
+    // Revoked only after the browser has had time to start the download (Firefox, Safari).
+    expect(revoked).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
     expect(revoked).toHaveBeenCalledWith('blob:protein-ids');
   });
 
