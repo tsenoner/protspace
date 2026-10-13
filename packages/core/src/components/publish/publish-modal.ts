@@ -135,12 +135,16 @@ export class ProtspacePublishModal extends LitElement {
     newFigure: () => this._handleNewFigure(),
     reset: () => this._handleReset(),
     undo: () => this._undoLast(),
+    holdUndo: () => this._holdUndo(),
+    releaseUndo: () => this._releaseUndo(),
     close: () => this._dialog?.dismiss(),
     exportFigure: () => void this._handleExport(),
   };
   /** The state New figure or Reset produced; any other state ends the Undo offer. */
   private _undoAfter: PublishState | null = null;
   private _undoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The button whose Undo is on offer; focus goes back to it when the strip leaves with focus. */
+  private _undoFrom: 'New figure' | 'Reset' | null = null;
   /** Escape deselects a selected overlay or inset before it closes the dialog. */
   private _releaseSelectionLayer: (() => void) | null = null;
 
@@ -150,15 +154,11 @@ export class ProtspacePublishModal extends LitElement {
     this._state = this.savedPublishState
       ? sanitizePublishState(this.savedPublishState)
       : createDefaultPublishState();
-    // Set fingerprint on first use (no saved state)
-    if (!this._state.viewFingerprint && this.currentProjection) {
+    // Only overlays and insets can sit wrong on another view; with none placed, adopt this one.
+    if (this.currentProjection && (!this._state.viewFingerprint || !hasPlaced(this._state))) {
       this._state = { ...this._state, viewFingerprint: this.currentProjection };
     }
-    // Check for fingerprint mismatch
-    this._showFingerprintWarning = shouldShowFingerprintWarning(
-      this._state.viewFingerprint,
-      this.currentProjection,
-    );
+    this._showFingerprintWarning = this._isMisplaced(this._state);
     this._readLegend();
     window.addEventListener('keydown', this._onKeyDown);
   }
@@ -639,22 +639,51 @@ export class ProtspacePublishModal extends LitElement {
       insets: [],
       viewFingerprint: this.currentProjection ?? undefined,
     });
-    this._offerUndo('Overlays and insets cleared', before);
+    if (hasPlaced(before)) this._offerUndo('Overlays and insets cleared', before);
   }
 
-  /** Shows what New figure or Reset did, with Undo, until the next edit or for 8 s. */
+  /**
+   * Shows what New figure or Reset did, with Undo, until the next edit or for 8 s. The 8 s wait
+   * while focus is in the strip, so it never leaves from under a keyboard user.
+   */
   private _offerUndo(message: UndoMessage, before: PublishState) {
-    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
     this._undo = { message, state: before };
     this._undoAfter = this._state;
+    this._undoFrom = message === 'Settings reset' ? 'Reset' : 'New figure';
+    this._startUndoTimer();
+  }
+
+  private _startUndoTimer() {
+    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
     this._undoTimer = setTimeout(() => this._dropUndo(), 8_000);
   }
 
+  private _holdUndo() {
+    if (this._undoTimer !== null) clearTimeout(this._undoTimer);
+    this._undoTimer = null;
+  }
+
+  private _releaseUndo() {
+    if (this._undo) this._startUndoTimer();
+  }
+
   private _dropUndo() {
+    const strip = this.renderRoot.querySelector('.publish-undo');
+    const active = (this.renderRoot as ShadowRoot).activeElement;
+    const hadFocus = !!strip && !!active && strip.contains(active);
+    const from = this._undoFrom;
     if (this._undoTimer !== null) clearTimeout(this._undoTimer);
     this._undoTimer = null;
     this._undo = null;
     this._undoAfter = null;
+    this._undoFrom = null;
+    if (!hadFocus || !from) return;
+    void this.updateComplete.then(() => {
+      if (this._disposed) return;
+      [...this.renderRoot.querySelectorAll<HTMLElement>('ps-button')]
+        .find((each) => each.textContent?.trim() === from)
+        ?.focus();
+    });
   }
 
   private _undoLast() {
@@ -662,6 +691,16 @@ export class ProtspacePublishModal extends LitElement {
     if (!undo) return;
     this._dropUndo();
     this._applyStateAndRebuild(undo.state);
+    // The restored overlays may sit on another projection, like on open.
+    this._showFingerprintWarning = this._isMisplaced(undo.state);
+  }
+
+  /** Whether `state` has overlays or insets placed on a view other than the current one. */
+  private _isMisplaced(state: PublishState): boolean {
+    return (
+      hasPlaced(state) &&
+      shouldShowFingerprintWarning(state.viewFingerprint, this.currentProjection)
+    );
   }
 
   /** Says inside the dialog why an export failed; the next export attempt clears it. */
@@ -760,6 +799,10 @@ export class ProtspacePublishModal extends LitElement {
       </ps-dialog>
     `;
   }
+}
+
+function hasPlaced(state: PublishState): boolean {
+  return state.overlays.length > 0 || state.insets.length > 0;
 }
 
 declare global {

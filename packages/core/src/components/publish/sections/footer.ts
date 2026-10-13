@@ -16,6 +16,10 @@ interface FooterHandlers {
   newFigure(): void;
   reset(): void;
   undo(): void;
+  /** Focus entered the Undo strip: hold its 8 s. */
+  holdUndo(): void;
+  /** Focus left the Undo strip: start its 8 s again. */
+  releaseUndo(): void;
   close(): void;
   exportFigure(): void;
 }
@@ -36,7 +40,12 @@ export function renderFooter(model: FooterModel, handlers: FooterHandlers): Temp
         ${model.exportError
           ? html`<p class="publish-export-error" role="alert">${model.exportError}</p>`
           : nothing}
-        <div class="publish-undo" role="status">
+        <div
+          class="publish-undo"
+          role="status"
+          @focusin=${handlers.holdUndo}
+          @focusout=${handlers.releaseUndo}
+        >
           ${model.undo
             ? html`<span>${model.undo}</span>
                 <ps-button size="sm" variant="ghost" @click=${handlers.undo}

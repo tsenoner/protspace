@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsDialog } from '../kit/dialog';
+import { deepActiveElement } from '../kit/focus';
 import { ESCAPE_ORDER, onEscapeFallback } from '../kit/layers';
 import './publish-modal';
 
@@ -40,6 +41,7 @@ const inset = {
 beforeAll(() => adoptTheme());
 const cleanups: Array<() => void> = [];
 afterEach(() => {
+  vi.useRealTimers();
   while (cleanups.length) cleanups.pop()!();
   document.body.replaceChildren();
 });
@@ -151,6 +153,18 @@ describe('protspace-publish-modal dialog', () => {
     await modal.updateComplete;
     expect(document.activeElement).toBe(opener);
   });
+
+  it('focus returns to the opener from the footer Close and from the dialog ✕', async () => {
+    const first = await mount();
+    button(first.modal, 'Close').click();
+    expect(document.activeElement).toBe(first.opener);
+    first.modal.remove();
+
+    const second = await mount();
+    const dialog = second.modal.shadowRoot!.querySelector('ps-dialog')!;
+    dialog.shadowRoot!.querySelector<HTMLElement>('ps-icon-button[label="Close"]')!.click();
+    expect(document.activeElement).toBe(second.opener);
+  });
 });
 
 describe('protspace-publish-modal undo', () => {
@@ -186,6 +200,63 @@ describe('protspace-publish-modal undo', () => {
     button(modal, 'Undo').click();
     await modal.updateComplete;
     expect(internals._state.dpi).toBe(600);
+  });
+
+  it('New figure with nothing to clear offers no Undo', async () => {
+    const { modal } = await mount();
+    button(modal, 'New figure').click();
+    await modal.updateComplete;
+    expect(undoText(modal)).toBe('');
+  });
+
+  it('Undo from the keyboard gives focus back to the button that offered it', async () => {
+    const { modal, internals } = await mount();
+    internals._state = { ...internals._state, overlays: [circle] };
+    await modal.updateComplete;
+    button(modal, 'New figure').click();
+    await modal.updateComplete;
+
+    button(modal, 'Undo').focus();
+    await userEvent.keyboard('{Enter}');
+    await modal.updateComplete;
+    expect(internals._state.overlays).toHaveLength(1);
+    const newFigure = button(modal, 'New figure').shadowRoot!.querySelector('button');
+    await expect.poll(() => deepActiveElement()).toBe(newFigure);
+  });
+
+  it('the strip leaves after 8 s', async () => {
+    vi.useFakeTimers();
+    const { modal, internals } = await mount();
+    internals._state = { ...internals._state, overlays: [circle] };
+    await modal.updateComplete;
+    button(modal, 'New figure').click();
+    await modal.updateComplete;
+
+    vi.advanceTimersByTime(8_000);
+    await modal.updateComplete;
+    expect(undoText(modal)).toBe('');
+  });
+
+  it('the strip stays while Undo has focus, and its 8 s restart on blur', async () => {
+    vi.useFakeTimers();
+    const { modal, internals } = await mount();
+    internals._state = { ...internals._state, dpi: 600 };
+    await modal.updateComplete;
+    button(modal, 'Reset').click();
+    await modal.updateComplete;
+
+    button(modal, 'Undo').focus();
+    vi.advanceTimersByTime(8_000);
+    await modal.updateComplete;
+    expect(undoText(modal)).toBe('Settings reset Undo');
+
+    button(modal, 'Export').focus();
+    vi.advanceTimersByTime(7_999);
+    await modal.updateComplete;
+    expect(undoText(modal)).toBe('Settings reset Undo');
+    vi.advanceTimersByTime(1);
+    await modal.updateComplete;
+    expect(undoText(modal)).toBe('');
   });
 
   it('an edit after New figure removes the Undo strip', async () => {

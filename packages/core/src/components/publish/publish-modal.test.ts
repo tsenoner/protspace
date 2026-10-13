@@ -1186,4 +1186,79 @@ describe('<protspace-publish-modal> fingerprint warning', () => {
       HTMLCanvasElement.prototype.getContext = origGetContext;
     }
   });
+
+  describe('with a saved state from another projection', () => {
+    type FingerprintModal = HTMLElement & {
+      savedPublishState: Record<string, unknown>;
+      currentProjection: { projection: string; dimensionality: number };
+      updateComplete: Promise<unknown>;
+      shadowRoot: ShadowRoot;
+      _state: { viewFingerprint?: { projection: string; dimensionality: number } };
+    };
+    const circle = {
+      type: 'circle',
+      cx: 0.5,
+      cy: 0.5,
+      rx: 0.1,
+      ry: 0.1,
+      rotation: 0,
+      color: '#000',
+      strokeWidth: 2,
+    };
+    let origGetContext: typeof HTMLCanvasElement.prototype.getContext;
+    beforeEach(() => {
+      origGetContext = HTMLCanvasElement.prototype.getContext;
+      const stubCtx = new Proxy({}, { get: () => () => undefined });
+      HTMLCanvasElement.prototype.getContext = function () {
+        return stubCtx;
+      } as unknown as typeof HTMLCanvasElement.prototype.getContext;
+      return () => {
+        HTMLCanvasElement.prototype.getContext = origGetContext;
+      };
+    });
+
+    async function open(overlays: unknown[]): Promise<FingerprintModal> {
+      const modal = document.createElement('protspace-publish-modal') as FingerprintModal;
+      modal.savedPublishState = {
+        viewFingerprint: { projection: 'PCA', dimensionality: 2 },
+        overlays,
+      };
+      modal.currentProjection = { projection: 'UMAP', dimensionality: 2 };
+      document.body.appendChild(modal);
+      await modal.updateComplete;
+      return modal;
+    }
+
+    const clickButton = (modal: FingerprintModal, name: string) =>
+      [...modal.shadowRoot.querySelectorAll<HTMLElement>('ps-button')]
+        .find((each) => each.textContent?.trim() === name)!
+        .click();
+
+    it('with nothing placed, it adopts the current view and does not warn', async () => {
+      const modal = await open([]);
+      expect(modal.shadowRoot.querySelector('.publish-warning')).toBeNull();
+      expect(modal._state.viewFingerprint).toEqual({ projection: 'UMAP', dimensionality: 2 });
+      modal.remove();
+    });
+
+    it('with an overlay placed, it names both projections', async () => {
+      const modal = await open([circle]);
+      const warning = modal.shadowRoot.querySelector('.publish-warning');
+      expect(warning?.textContent).toContain('PCA');
+      expect(warning?.textContent).toContain('UMAP');
+      modal.remove();
+    });
+
+    it('Undo after New figure brings the warning back with the overlays', async () => {
+      const modal = await open([circle]);
+      clickButton(modal, 'New figure');
+      await modal.updateComplete;
+      expect(modal.shadowRoot.querySelector('.publish-warning')).toBeNull();
+
+      clickButton(modal, 'Undo');
+      await modal.updateComplete;
+      expect(modal.shadowRoot.querySelector('.publish-warning')?.textContent).toContain('PCA');
+      modal.remove();
+    });
+  });
 });
