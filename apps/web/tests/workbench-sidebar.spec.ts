@@ -9,6 +9,7 @@ import {
   sidebar,
   waitForExploreDataLoad,
 } from './helpers/explore';
+import { closeLegendSettings, legendSettingsDialog, openLegendSettings } from './helpers/legend';
 import {
   clickProteinNearPlotCentre,
   collapseSidebar,
@@ -354,38 +355,22 @@ test('a zoomed-in view keeps its centre protein across collapse and expand', asy
   expectNear(back.dy, start.dy, 2);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('the legend settings dialog is fully visible after collapse and expand', async ({
-  page,
-}) => {
+test('the legend settings popover is fully visible after collapse and expand', async ({ page }) => {
   await openExplore(page);
   await collapseSidebar(page);
   await expandSidebar(page);
 
-  await page.locator('protspace-legend').getByRole('button', { name: 'Legend settings' }).click();
-  const overlay = page.locator('protspace-legend .modal-overlay');
-  await expect(overlay).toBeVisible();
-  // position: fixed; inset: 0 covers the viewport only while no ancestor keeps a transform.
+  await openLegendSettings(page);
+  const dialog = legendSettingsDialog(page);
+  const box = (await dialog.boundingBox())!;
   const viewport = page.viewportSize()!;
-  expect(await overlay.boundingBox()).toEqual({
-    x: 0,
-    y: 0,
-    width: viewport.width,
-    height: viewport.height,
-  });
-  // Nothing of the shell paints over it: not the rail, not the structure footer under the legend.
-  for (const [x, y] of [
-    [viewport.width - 22, viewport.height / 2],
-    [viewport.width - 200, viewport.height - 22],
-  ]) {
-    const legendOnTop = await page.evaluate(
-      ([px, py]) =>
-        document.elementFromPoint(px, py) === document.querySelector('protspace-legend'),
-      [x, y],
-    );
-    expect(legendOnTop, `${x},${y}`).toBe(true);
-  }
-  await page.keyboard.press('Escape');
+  // In the top layer: inside the viewport, and nothing of the shell paints over it.
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  expect(await isTopmost(dialog)).toBe(true);
+  await closeLegendSettings(page);
 });
 
 test('a protein clicked while collapsed waits behind the Structure dot; Structure opens the sidebar and loads it', async ({
@@ -441,13 +426,22 @@ test('the edge is the Tab stop after the plot tools, and the rail toggle names n
 
 /**
  * Whether `locator`'s element is the topmost thing painted at its centre and across its box (a 3×3
- * grid 8 px inside its edges), looking through every shadow root on the way down.
+ * grid 8 px inside its edges), looking through every shadow root on the way down. A popover's
+ * content is slotted into its panel, so the walk back up follows slots.
  */
 function isTopmost(locator: Locator): Promise<boolean> {
   return locator.evaluate((element) => {
     const box = element.getBoundingClientRect();
     const xs = [box.left + 8, box.left + box.width / 2, box.right - 8];
     const ys = [box.top + 8, box.top + box.height / 2, box.bottom - 8];
+    const within = (start: Node | null): boolean => {
+      for (let node = start; node; ) {
+        if (node === element) return true;
+        node =
+          (node as Element).assignedSlot ?? node.parentNode ?? (node as ShadowRoot).host ?? null;
+      }
+      return false;
+    };
     return xs.every((x) =>
       ys.every((y) => {
         let hit: Element | null = document.elementFromPoint(x, y);
@@ -456,14 +450,13 @@ function isTopmost(locator: Locator): Promise<boolean> {
           if (!inner || inner === hit) break;
           hit = inner;
         }
-        return hit !== null && element.contains(hit);
+        return within(hit);
       }),
     );
   });
 }
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('with the sidebar open, a legend dialog and the Import and Export panels sit over the shell', async ({
+test('with the sidebar open, the legend settings popover and the Import and Export panels sit over the shell', async ({
   page,
 }) => {
   await stubStructureRequests(page);
@@ -474,36 +467,15 @@ test.fixme('with the sidebar open, a legend dialog and the Import and Export pan
   await expect(structurePanel(page)).toHaveCSS('z-index', '3');
   await expect(edge(page)).toBeVisible();
 
-  await page.locator('protspace-legend').getByRole('button', { name: 'Legend settings' }).click();
-  const overlay = page.locator('protspace-legend .modal-overlay');
-  await expect(overlay).toBeVisible();
+  await openLegendSettings(page);
+  const dialog = legendSettingsDialog(page);
   const viewport = page.viewportSize()!;
-  expect(await overlay.boundingBox()).toEqual({
-    x: 0,
-    y: 0,
-    width: viewport.width,
-    height: viewport.height,
-  });
-  const dialog = overlay.locator('[role="dialog"]').first();
-  await expect(dialog).toBeVisible();
+  const dialogBox = (await dialog.boundingBox())!;
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewport.height);
+  // Topmost over the shell: the rail, the edge and the docked structure stay beneath it.
   expect(await isTopmost(dialog)).toBe(true);
-  // The overlay covers the rail, the edge and the docked structure too.
-  const shellPoints = await Promise.all(
-    [rail(page), edge(page), structurePanel(page)].map(async (part) => {
-      const box = (await part.boundingBox())!;
-      return [box.x + box.width / 2, box.y + box.height / 2] as const;
-    }),
-  );
-  for (const [x, y] of shellPoints) {
-    const legendOnTop = await page.evaluate(
-      ([px, py]) =>
-        document.elementFromPoint(px, py) === document.querySelector('protspace-legend'),
-      [x, y],
-    );
-    expect(legendOnTop, `${x},${y}`).toBe(true);
-  }
-  await page.keyboard.press('Escape');
-  await expect(overlay).toBeHidden();
+  await closeLegendSettings(page);
 
   for (const [open, menu] of [
     [openImportMenu, importMenu],

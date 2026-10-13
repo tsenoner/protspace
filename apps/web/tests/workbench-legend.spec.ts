@@ -1,8 +1,20 @@
 import { expect, test } from '@playwright/test';
 import { SIDEBAR_WIDTH } from '../src/explore/layout-defaults';
-import { getFirstLegendItemValue, openExplore, selectAnnotation } from './helpers/explore';
+import {
+  dismissTourIfPresent,
+  getFirstLegendItemValue,
+  importUserFile,
+  openExplore,
+  openImportMenu,
+  selectAnnotation,
+  waitForExploreDataLoad,
+  waitForPersistedExploreDataset,
+  waitForProteinCount,
+} from './helpers/explore';
+import { TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import {
   addFromOther,
+  closeLegendSettings,
   escapeRegex,
   isLegendItemHidden,
   legend,
@@ -10,8 +22,14 @@ import {
   legendRowAction,
   legendOtherDialog,
   legendRowValues,
+  legendSettingsDialog,
   legendSortButton,
+  legendSortLabel,
   openLegendOther,
+  openLegendSettings,
+  pickLegendPalette,
+  readLegendSettings,
+  setLegendSetting,
   setLegendSort,
 } from './helpers/legend';
 import { seedLayout } from './helpers/workbench';
@@ -142,4 +160,61 @@ test('View opens Other; a search and Add to legend bring a category back', async
   // Still open: an add keeps the popover open on the next row.
   await expect(legendOtherDialog(page)).toBeVisible();
   expect(await legendRowValues(page)).toContain(target);
+});
+
+test('settings and the sort apply live and survive a reload under the same protspace:legend: key', async ({
+  page,
+}) => {
+  // A user import without bundle settings: a reload restores it from OPFS and keeps local
+  // settings (the demo would clear them on every load).
+  await openExplore(page);
+  await openImportMenu(page);
+  await importUserFile(page, TOXPROT_5181_FIXTURE);
+  await waitForProteinCount(page, 5181);
+  await waitForPersistedExploreDataset(page);
+  await selectAnnotation(page, 'phylum');
+
+  await openLegendSettings(page);
+  await pickLegendPalette(page, 'Okabe-Ito');
+  await setLegendSetting(page, 'Max legend items', '5');
+  // Applied while the popover is still open: there is no Save.
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  expect(
+    (await legendRowValues(page)).filter((value) => value !== 'Other').length,
+  ).toBeLessThanOrEqual(5);
+  await closeLegendSettings(page);
+  // The sort is stored in the same record (a demo reload would clear it: the user import keeps it).
+  await setLegendSort(page, 'By name');
+
+  const records = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        Object.keys(localStorage)
+          .filter((key) => /^protspace:legend:[^:]+:phylum$/.test(key))
+          .map((key) => [key, JSON.parse(localStorage.getItem(key) ?? 'null')]),
+      ),
+    );
+  const before = await records();
+  const keys = Object.keys(before);
+  expect(keys).toHaveLength(1);
+  expect(Object.keys(before[keys[0]])).toEqual([
+    'maxVisibleValues',
+    'shapeSize',
+    'sortMode',
+    'hiddenValues',
+    'categories',
+    'enableDuplicateStackUI',
+    'selectedPaletteId',
+  ]);
+  expect(before[keys[0]]).toMatchObject({ maxVisibleValues: 5, selectedPaletteId: 'okabeIto' });
+
+  await page.reload();
+  await waitForExploreDataLoad(page, { proteinCount: 5181 });
+  await dismissTourIfPresent(page);
+  await selectAnnotation(page, 'phylum');
+
+  expect(Object.keys(await records())).toEqual(keys);
+  expect(await legendSortLabel(page)).toBe('By name, A to Z');
+  expect(await readLegendSettings(page)).toMatchObject({ palette: 'Okabe-Ito', maxItems: '5' });
+  await closeLegendSettings(page);
 });

@@ -150,3 +150,123 @@ export async function addFromOther(page: Page, name: string): Promise<void> {
     .click();
   await expect(legendRow(page, name)).toBeVisible();
 }
+
+/** The settings popover's panel, a dialog named "Legend settings: {display name}". */
+export function legendSettingsDialog(page: Page): Locator {
+  return page.getByRole('dialog', { name: /^Legend settings/ });
+}
+
+/**
+ * Opens the legend settings popover unless it is open, and returns its element: the scope for its
+ * controls. The panel's content is slotted, so a locator scoped to the panel would not find it.
+ */
+export async function openLegendSettings(page: Page): Promise<Locator> {
+  if (!(await legendSettingsDialog(page).isVisible())) {
+    await legend(page).getByRole('button', { name: 'Legend settings', exact: true }).click();
+  }
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  return legend(page).locator('protspace-legend-settings-popover');
+}
+
+/** Every `protspace:` entry in localStorage, to wait for an edit to be stored. */
+function storedState(page: Page): Promise<string> {
+  return page.evaluate(() =>
+    JSON.stringify(
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith('protspace:'))
+        .sort()
+        .map((key) => [key, localStorage.getItem(key)]),
+    ),
+  );
+}
+
+/**
+ * Types `value` into a number field and leaves it, then waits until the edit is stored. The value
+ * must differ from the field's, or nothing is stored to wait for.
+ */
+export async function setLegendSetting(
+  page: Page,
+  field: 'Max legend items' | 'Bins' | 'Shape size' | 'Point size',
+  value: string,
+): Promise<void> {
+  const settings = await openLegendSettings(page);
+  const before = await storedState(page);
+  const input = settings.getByRole('spinbutton', { name: field, exact: true });
+  await input.fill(value);
+  await input.blur();
+  await expect.poll(() => storedState(page)).not.toBe(before);
+}
+
+/** Picks a palette swatch by its label, e.g. "Okabe-Ito" or "Viridis". */
+export async function pickLegendPalette(page: Page, label: string): Promise<void> {
+  const settings = await openLegendSettings(page);
+  const swatch = settings.getByRole('radio', { name: label, exact: true });
+  await swatch.click();
+  await expect(swatch).toBeChecked();
+}
+
+export async function setBinDistribution(
+  page: Page,
+  label: 'Linear' | 'Quantile' | 'Logarithmic',
+): Promise<void> {
+  const settings = await openLegendSettings(page);
+  await settings.getByRole('combobox', { name: 'Bin distribution' }).selectOption({ label });
+}
+
+export async function toggleLegendSetting(
+  page: Page,
+  name: 'Show duplicate counts and spread overlaps' | 'Reverse gradient',
+): Promise<void> {
+  const settings = await openLegendSettings(page);
+  const control = settings.getByRole('switch', { name, exact: true });
+  const checked = await control.getAttribute('aria-checked');
+  await control.click();
+  await expect(control).toHaveAttribute('aria-checked', checked === 'true' ? 'false' : 'true');
+}
+
+/** Reset; the popover stays open, and Reset disables itself once nothing is stored. */
+export async function resetLegendSettings(page: Page): Promise<void> {
+  const settings = await openLegendSettings(page);
+  const reset = settings.getByRole('button', { name: 'Reset', exact: true });
+  await reset.click();
+  await expect(reset).toBeDisabled();
+}
+
+export async function closeLegendSettings(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(legendSettingsDialog(page)).toBeHidden();
+}
+
+/** What the popover shows: the checked palette's label, the two fields and the numeric controls. */
+export async function readLegendSettings(page: Page): Promise<{
+  palette: string;
+  maxItems: string;
+  size: string;
+  distribution?: string;
+  reverseGradient?: boolean;
+}> {
+  const settings = await openLegendSettings(page);
+  const fields = settings.getByRole('spinbutton');
+  const result: {
+    palette: string;
+    maxItems: string;
+    size: string;
+    distribution?: string;
+    reverseGradient?: boolean;
+  } = {
+    palette: ((await settings.getByRole('radio', { checked: true }).textContent()) ?? '').trim(),
+    maxItems: await fields.nth(0).inputValue(),
+    size: await fields.nth(1).inputValue(),
+  };
+  const distribution = settings.getByRole('combobox', { name: 'Bin distribution' });
+  if ((await distribution.count()) > 0) {
+    result.distribution = await distribution.evaluate(
+      (select: HTMLSelectElement) => select.selectedOptions[0]?.textContent?.trim() ?? '',
+    );
+  }
+  const reverse = settings.getByRole('switch', { name: 'Reverse gradient', exact: true });
+  if ((await reverse.count()) > 0) {
+    result.reverseGradient = (await reverse.getAttribute('aria-checked')) === 'true';
+  }
+  return result;
+}

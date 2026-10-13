@@ -12,11 +12,20 @@ import {
 } from './helpers/explore';
 import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 import {
+  closeLegendSettings,
   escapeRegex,
+  legendSettingsDialog,
   legendSortButton,
   legendSortLabel,
+  openLegendSettings,
+  pickLegendPalette,
+  readLegendSettings,
+  resetLegendSettings,
+  setBinDistribution,
+  setLegendSetting,
   setLegendSort,
   toggleLegendReverse,
+  toggleLegendSetting,
 } from './helpers/legend';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -223,167 +232,12 @@ async function getNumericState(page: Page) {
   });
 }
 
-async function readNumericPreview(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const previewPanel = root?.querySelector(
-      '.color-palette-preview--continuous',
-    ) as HTMLElement | null;
-    const previewCaption = root?.querySelector(
-      '.color-palette-preview-caption',
-    ) as HTMLElement | null;
-    const scaleLabels = Array.from(
-      root?.querySelectorAll('.color-palette-gradient-scale span') ?? [],
-    ).map((node) => node.textContent?.trim() ?? '');
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
-
-    return {
-      gradientBarCount: root?.querySelectorAll('.color-palette-gradient-bar').length ?? 0,
-      ariaLabel: gradientBar?.getAttribute('aria-label') ?? null,
-      caption: previewCaption?.textContent?.trim() ?? '',
-      panelHeight: previewPanel?.getBoundingClientRect().height ?? 0,
-      scaleLabels,
-      options: Array.from(distribution?.options ?? []).map((option) => ({
-        value: option.value,
-        label: option.textContent?.trim() ?? '',
-      })),
-    };
-  });
-}
-
-async function readNumericPreviewChrome(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const gradientBar = legend?.shadowRoot?.querySelector(
-      '.color-palette-gradient-bar',
-    ) as HTMLElement | null;
-    if (!gradientBar) {
-      throw new Error('Numeric gradient preview not found');
-    }
-    const styles = window.getComputedStyle(gradientBar);
-    const rect = gradientBar.getBoundingClientRect();
-    return {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-      width: rect.width,
-      height: rect.height,
-      boxShadow: styles.boxShadow,
-      hasShadow: styles.boxShadow !== 'none',
-      borderRadius: styles.borderRadius,
-      transform: styles.transform,
-    };
-  });
-}
-
-async function readPalettePreviewChrome(
-  page: Page,
-  kind: 'numeric' | 'categorical',
-): Promise<{
-  height: number;
-  hasShadow: boolean;
-  borderRadius: string;
-}> {
-  return page.evaluate((previewKind) => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const target =
-      previewKind === 'numeric'
-        ? (root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null)
-        : (root?.querySelector('.color-palette-swatch') as HTMLElement | null);
-
-    if (!target) {
-      throw new Error(`Palette preview target not found for ${previewKind}`);
-    }
-
-    const styles = window.getComputedStyle(target);
-    return {
-      height: target.getBoundingClientRect().height,
-      hasShadow: styles.boxShadow !== 'none',
-      borderRadius: styles.borderRadius,
-    };
-  }, kind);
-}
-
-async function openLegendSettings(page: Page): Promise<void> {
-  await dismissTourIfPresent(page);
-  await page.locator('protspace-legend button[aria-label="Legend settings"]').click();
-  await expect(page.locator('protspace-legend #legend-settings-dialog')).toBeVisible();
-}
-
-async function readLegendSettingsDialog(page: Page) {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const root = legend?.shadowRoot;
-    const labels = Array.from(root?.querySelectorAll('label') ?? []);
-    const includeShapesPresent = labels.some(
-      (l) => (l.textContent ?? '').trim() === 'Include shapes',
-    );
-    const palette = root?.querySelector('.color-palette-select') as HTMLSelectElement | null;
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const sortingSection = root?.querySelector(
-      '#legend-sorting-section-title',
-    ) as HTMLElement | null;
-    const maxVisibleLabel = (root?.querySelector('#max-visible-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const shapeSizeLabel = (root?.querySelector('#shape-size-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const sortingLabels = Array.from(
-      root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? [],
-    ).map((input) => input.closest('label')?.textContent?.trim() ?? '');
-    const selectedSortingLabel =
-      (
-        Array.from(root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? []).find(
-          (input) => (input as HTMLInputElement).checked,
-        ) as HTMLInputElement | undefined
-      )
-        ?.closest('label')
-        ?.textContent?.trim() ?? '';
-    const reverseGradientToggle = root?.querySelector(
-      '#reverse-gradient-toggle',
-    ) as HTMLInputElement | null;
-    const dialogTitle = root?.querySelector('#legend-settings-title') as HTMLElement | null;
-    const paletteOptionTexts = Array.from(palette?.options ?? []).map(
-      (option) => option.textContent?.trim() ?? '',
-    );
-
-    return {
-      title: dialogTitle?.textContent?.trim() ?? '',
-      includeShapesAbsent: !includeShapesPresent,
-      palette: palette?.value ?? null,
-      paletteOptions: Array.from(palette?.options ?? []).map((option) => option.value),
-      paletteOptionTexts,
-      reverseGradientChecked: reverseGradientToggle?.checked ?? false,
-      distribution: distribution?.value ?? null,
-      hasDistributionSelect: Boolean(distribution),
-      hasGradientPreview: Boolean(gradientBar),
-      hasSortingSection: Boolean(sortingSection),
-      sortingSectionTitle: sortingSection?.textContent?.trim() ?? '',
-      maxVisibleLabel: maxVisibleLabel?.textContent?.trim() ?? '',
-      shapeSizeLabel: shapeSizeLabel?.textContent?.trim() ?? '',
-      sortingLabels,
-      selectedSortingLabel,
-      logDisabled:
-        (distribution?.querySelector('option[value="logarithmic"]') as HTMLOptionElement | null)
-          ?.disabled ?? null,
-    };
-  });
+/** Viridis, linear bins and `bins` of them, applied live; then the popover closes. */
+async function rebinLength(page: Page, bins: string): Promise<void> {
+  await pickLegendPalette(page, 'Viridis');
+  await setBinDistribution(page, 'Linear');
+  await setLegendSetting(page, 'Bins', bins);
+  await closeLegendSettings(page);
 }
 
 async function readLegendDisplay(page: Page) {
@@ -809,37 +663,6 @@ async function dragLegendHandle(page: Page, fromIndex: number, toIndex: number):
   await page.mouse.up();
 }
 
-async function readCategoricalPreviewRows(page: Page): Promise<{
-  swatchCount: number;
-  firstRowCount: number;
-  overflows: boolean;
-  firstSwatchWidth: number;
-}> {
-  return page.evaluate(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const preview = legend?.shadowRoot?.querySelector(
-      '.color-palette-preview',
-    ) as HTMLElement | null;
-    const swatches = Array.from(
-      legend?.shadowRoot?.querySelectorAll('.color-palette-preview .color-palette-swatch') ?? [],
-    ) as HTMLElement[];
-    if (swatches.length === 0) {
-      return { swatchCount: 0, firstRowCount: 0, overflows: false, firstSwatchWidth: 0 };
-    }
-    const firstTop = Math.round(swatches[0].getBoundingClientRect().top);
-    return {
-      swatchCount: swatches.length,
-      firstRowCount: swatches.filter(
-        (swatch) => Math.round(swatch.getBoundingClientRect().top) === firstTop,
-      ).length,
-      overflows: (preview?.scrollWidth ?? 0) > (preview?.clientWidth ?? 0) + 1,
-      firstSwatchWidth: swatches[0]?.getBoundingClientRect().width ?? 0,
-    };
-  });
-}
-
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
   const targets = await page.evaluate(() => {
     const plot = document.querySelector('protspace-scatterplot') as HTMLElement & {
@@ -935,47 +758,6 @@ async function readTooltipSummary(page: Page): Promise<{
   });
 }
 
-async function updateLegendSettings(
-  page: Page,
-  settings: {
-    maxVisibleValues: number;
-    paletteId: string;
-    strategy: 'linear' | 'quantile' | 'logarithmic';
-    reverseGradient?: boolean;
-  },
-): Promise<void> {
-  const legend = page.locator('protspace-legend');
-  await legend.locator('#max-visible-input').fill(String(settings.maxVisibleValues));
-  await legend.locator('.color-palette-select').first().selectOption(settings.paletteId);
-  const distributionSelect = legend.locator('#numeric-distribution-select');
-  if ((await distributionSelect.count()) > 0) {
-    await distributionSelect.selectOption(settings.strategy);
-  }
-  if (settings.reverseGradient !== undefined) {
-    const toggle = legend.locator('#reverse-gradient-toggle');
-    const checked = await toggle.isChecked();
-    if (checked !== settings.reverseGradient) {
-      await toggle.click();
-    }
-  }
-}
-
-async function clickDialogButton(page: Page, label: 'Cancel' | 'Save'): Promise<void> {
-  await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: label })
-    .click();
-}
-
-async function waitForDialogClosed(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    return !legend?.shadowRoot?.querySelector('#legend-settings-dialog');
-  });
-}
-
 test('raw numeric annotations are materialized into frontend bins', async ({ page }) => {
   await loadDataset(page);
 
@@ -989,8 +771,7 @@ test('raw numeric annotations are materialized into frontend bins', async ({ pag
   expect(result.colors.at(-1)).toBe('#FACCFA');
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric settings are staged, saved, and restored on re-import', async ({ page }) => {
+test('numeric settings apply live and are restored on re-import', async ({ page }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
@@ -1010,133 +791,62 @@ test.fixme('numeric settings are staged, saved, and restored on re-import', asyn
   await expect
     .poll(async () => {
       const state = await getNumericState(page);
-      return {
-        rawKind: state.rawKind ?? null,
-        hasBins: (state.binCount ?? 0) > 0,
-      };
+      return { rawKind: state.rawKind ?? null, hasBins: (state.binCount ?? 0) > 0 };
     })
     .toEqual({ rawKind: 'numeric', hasBins: true });
 
+  // Task 3.9's check: the order is the header's, not a settings section.
   expect(await legendSortLabel(page)).toBe('By value, low to high');
-  await openLegendSettings(page);
-  const initialDialog = await readLegendSettingsDialog(page);
+  const settings = await openLegendSettings(page);
   await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: length' }),
+    page.getByRole('dialog', { name: 'Legend settings: Sequence length' }),
   ).toBeVisible();
-  expect(initialDialog.includeShapesAbsent).toBe(true);
-  expect(initialDialog.palette).toBe('batlow');
-  expect(initialDialog.distribution).toBe('quantile');
-  expect(initialDialog.hasDistributionSelect).toBe(true);
-  expect(initialDialog.hasSortingSection).toBe(true);
-  expect(initialDialog.title).toBe('Legend settings: length');
-  expect(initialDialog.maxVisibleLabel).toBe('Max legend items');
-  expect(initialDialog.shapeSizeLabel).toBe('Point size');
-  expect(initialDialog.sortingLabels).toEqual(['By numeric value', 'Manual order']);
-  expect(initialDialog.reverseGradientChecked).toBe(false);
-  expect(initialDialog.paletteOptionTexts).toEqual([
-    'Batlow - Scientific sequential gradient',
-    'Cividis - Colorblind-friendly sequential gradient',
-    'Inferno - High-contrast sequential gradient',
-    'Plasma - Vivid sequential gradient',
-    'Viridis - Perceptually uniform sequential gradient',
-  ]);
-  expect(initialDialog.logDisabled).toBe(false);
-  const initialPreview = await readNumericPreview(page);
-  expect(initialPreview.ariaLabel).toBe('Batlow continuous gradient preview');
-  expect(initialPreview.caption).toBe('');
-  expect(initialPreview.scaleLabels).toEqual(['Low', 'High']);
-  expect((await readNumericPreview(page)).options).toContainEqual({
-    value: 'logarithmic',
-    label: 'Logarithmic',
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
   });
+  await expect(settings.getByRole('spinbutton', { name: 'Bins', exact: true })).toBeVisible();
+  await expect(settings.getByRole('spinbutton', { name: 'Point size', exact: true })).toBeVisible();
+  expect(
+    await settings
+      .getByRole('radio')
+      .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
+  ).toEqual(['Batlow', 'Cividis', 'Inferno', 'Plasma', 'Viridis']);
+  expect(
+    await settings
+      .getByRole('combobox', { name: 'Bin distribution' })
+      .evaluate(
+        (select: HTMLSelectElement) =>
+          select.querySelector<HTMLOptionElement>('option[value="logarithmic"]')?.disabled,
+      ),
+  ).toBe(false);
+  // No Save, no Cancel, and the order lives in the header's sort menu now.
+  await expect(settings.getByRole('button', { name: /^(Save|Cancel)$/ })).toHaveCount(0);
+  await expect(settings.getByText('Bin order')).toHaveCount(0);
+  await expect(settings.getByText('Include shapes')).toHaveCount(0);
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-  });
-  await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
-    ariaLabel: 'Plasma continuous gradient preview',
-  });
-  const plasmaPreview = await readNumericPreview(page);
-  expect(plasmaPreview.scaleLabels).toEqual(['Low', 'High']);
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-
-  let state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.binCount).toBeGreaterThan(0);
-  expect(state.binCount).toBeLessThanOrEqual(10);
-  expect(state.colors[0]).toBe('#011959');
-
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-  });
-  await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
-    ariaLabel: 'Plasma continuous gradient preview',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              {
-                colors?: string[];
-                numericMetadata?: { strategy?: string; binCount?: number };
-              }
-            >;
-          };
-        })
-      | null;
-    const lengthAnnotation = plot?.getCurrentData?.()?.annotations?.length;
-    return (
-      lengthAnnotation?.numericMetadata?.strategy === 'quantile' &&
-      lengthAnnotation?.numericMetadata?.binCount === 5 &&
-      lengthAnnotation?.colors?.[0] === '#0D0887'
-    );
-  });
-
-  state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.binCount).toBe(5);
+  await pickLegendPalette(page, 'Plasma');
+  await setLegendSetting(page, 'Bins', '5');
+  // Applied with the popover still open.
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  await expect
+    .poll(() => getNumericState(page))
+    .toMatchObject({ strategy: 'quantile', binCount: 5 });
+  const state = await getNumericState(page);
   expect(state.colors[0]).toBe('#0D0887');
   expect(state.colors.at(-1)).toBe('#F0F921');
+  await closeLegendSettings(page);
 
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
-
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              {
-                colors?: string[];
-                numericMetadata?: { strategy?: string; binCount?: number };
-              }
-            >;
-          };
-        })
-      | null;
-    const lengthAnnotation = plot?.getCurrentData?.()?.annotations?.length;
-    return (
-      lengthAnnotation?.numericMetadata?.strategy === 'quantile' &&
-      lengthAnnotation?.numericMetadata?.binCount === 5
-    );
-  });
+  await expect
+    .poll(() => getNumericState(page))
+    .toMatchObject({ strategy: 'quantile', binCount: 5 });
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('reset restores numeric settings defaults and clears saved state on re-import', async ({
+test('reset restores numeric settings defaults and clears saved state on re-import', async ({
   page,
 }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
@@ -1150,47 +860,33 @@ test.fixme('reset restores numeric settings defaults and clears saved state on r
       | null;
     return typeof plot?.getCurrentData === 'function';
   });
-
   const bundleBytes = Array.from(fs.readFileSync(RAW_NUMERIC_BUNDLE_PATH));
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
   await waitForLegendAnnotation(page, 'length');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
+  await pickLegendPalette(page, 'Plasma');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await setLegendSetting(page, 'Bins', '5');
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#F0F921');
   let state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#F0F921');
   expect(state.colors.at(-1)).toBe('#0D0887');
 
-  await openLegendSettings(page);
-  await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: 'Reset' })
-    .click();
-  await waitForDialogClosed(page);
-
+  await resetLegendSettings(page);
+  // Reset keeps the popover open, showing the defaults.
+  await expect(legendSettingsDialog(page)).toBeVisible();
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
+  });
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#011959');
   state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
   expect(state.colors.at(-1)).toBe('#FACCFA');
-
-  await openLegendSettings(page);
-  let dialog = await readLegendSettingsDialog(page);
-  expect(dialog.palette).toBe('batlow');
-  expect(dialog.distribution).toBe('quantile');
-  expect(dialog.reverseGradientChecked).toBe(false);
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await closeLegendSettings(page);
 
   await loadBundleFromBytes(page, bundleBytes, 'phosphatase_no_binning.parquetbundle');
   await waitForAnnotationAvailable(page, 'length');
@@ -1201,18 +897,15 @@ test.fixme('reset restores numeric settings defaults and clears saved state on r
   expect(state.strategy).toBe('quantile');
   expect(state.colors[0]).toBe('#011959');
   expect(state.colors.at(-1)).toBe('#FACCFA');
-
-  await openLegendSettings(page);
-  dialog = await readLegendSettingsDialog(page);
-  expect(dialog.palette).toBe('batlow');
-  expect(dialog.distribution).toBe('quantile');
-  expect(dialog.reverseGradientChecked).toBe(false);
+  expect(await readLegendSettings(page)).toMatchObject({
+    palette: 'Batlow',
+    distribution: 'Quantile',
+    reverseGradient: false,
+  });
+  await closeLegendSettings(page);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('closing the settings dialog discards staged numeric changes like cancel', async ({
-  page,
-}) => {
+test('closing the settings popover keeps the numeric changes it applied', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -1220,56 +913,40 @@ test.fixme('closing the settings dialog discards staged numeric changes like can
   expect(initialState.strategy).toBe('quantile');
   expect(initialState.colors[0]).toBe('#011959');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-
+  await pickLegendPalette(page, 'Plasma');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await setLegendSetting(page, 'Bins', '5');
+  // The settings button closes the popover it opened.
   await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: 'Close settings' })
+    .locator('protspace-legend')
+    .getByRole('button', { name: 'Legend settings', exact: true })
     .click();
-  await waitForDialogClosed(page);
+  await expect(legendSettingsDialog(page)).toBeHidden();
 
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#F0F921');
   const state = await getNumericState(page);
   expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
+  expect(state.colors.at(-1)).toBe('#0D0887');
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('pressing escape closes the settings dialog and discards staged numeric changes', async ({
+test('Escape closes the settings popover and keeps a value typed just before it', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
-  const initialState = await getNumericState(page);
-  expect(initialState.strategy).toBe('quantile');
-  expect(initialState.colors[0]).toBe('#011959');
-
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-
+  const settings = await openLegendSettings(page);
+  // No blur: Escape right after typing must still apply the pending value.
+  await settings.getByRole('spinbutton', { name: 'Bins', exact: true }).fill('5');
   await page.keyboard.press('Escape');
-  await waitForDialogClosed(page);
+  await expect(legendSettingsDialog(page)).toBeHidden();
 
-  const state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBe(5);
+  expect((await readLegendSettings(page)).maxItems).toBe('5');
+  await closeLegendSettings(page);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('changing only max legend items recalculates numeric colors for the same gradient palette', async ({
+test('changing only max legend items recalculates numeric colors for the same gradient palette', async ({
   page,
 }) => {
   await loadDataset(page);
@@ -1282,25 +959,19 @@ test.fixme('changing only max legend items recalculates numeric colors for the s
   expect(initialState.colors[0]).toBe('#011959');
   expect(initialState.colors.at(-1)).toBe('#FACCFA');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'cividis',
-    strategy: 'linear',
-  });
+  await pickLegendPalette(page, 'Cividis');
+  await setBinDistribution(page, 'Linear');
+  await setLegendSetting(page, 'Bins', '5');
+  await closeLegendSettings(page);
 
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBe(5);
   const savedState = await getNumericState(page);
-  expect(savedState.binCount).toBe(5);
   expect(savedState.colors).not.toEqual(initialState.colors);
   expect(savedState.colors[0]).toBe('#00224E');
   expect(savedState.colors.at(-1)).toBe('#FEE838');
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('reversing the numeric gradient swaps the low and high bin colors', async ({ page }) => {
+test('reversing the numeric gradient swaps the low and high bin colors', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -1308,117 +979,91 @@ test.fixme('reversing the numeric gradient swaps the low and high bin colors', a
   expect(initialState.colors.length).toBeGreaterThan(1);
   expect(initialState.colors[0]).toBe('#011959');
   expect(initialState.colors.at(-1)).toBe('#FACCFA');
+  expect((await readLegendSettings(page)).reverseGradient).toBe(false);
 
-  await openLegendSettings(page);
-  const initialDialog = await readLegendSettingsDialog(page);
-  expect(initialDialog.reverseGradientChecked).toBe(false);
+  await pickLegendPalette(page, 'Cividis');
+  await setBinDistribution(page, 'Linear');
+  await toggleLegendSetting(page, 'Reverse gradient');
+  await closeLegendSettings(page);
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 10,
-    paletteId: 'cividis',
-    strategy: 'linear',
-    reverseGradient: true,
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  const reversedState = await getNumericState(page);
-  expect(reversedState.colors[0]).toBe('#FEE838');
-  expect(reversedState.colors.at(-1)).toBe('#00224E');
-
-  await openLegendSettings(page);
-  const reversedDialog = await readLegendSettingsDialog(page);
-  expect(reversedDialog.reverseGradientChecked).toBe(true);
+  await expect.poll(async () => (await getNumericState(page)).colors[0]).toBe('#FEE838');
+  expect((await getNumericState(page)).colors.at(-1)).toBe('#00224E');
+  expect((await readLegendSettings(page)).reverseGradient).toBe(true);
+  await closeLegendSettings(page);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric palette preview stays compact even for large max legend item counts', async ({
+test('numeric palette swatches stay inside the settings popover with 100 bins', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
+  await setLegendSetting(page, 'Bins', '100');
+  await setBinDistribution(page, 'Logarithmic');
 
-  await updateLegendSettings(page, {
-    maxVisibleValues: 100,
-    paletteId: 'cividis',
-    strategy: 'logarithmic',
-  });
-
-  await expect
-    .poll(async () => (await readNumericPreview(page)).ariaLabel)
-    .toBe('Cividis continuous gradient preview');
-
-  const preview = await readNumericPreview(page);
-  expect(preview.caption).toBe('');
-  expect(preview.gradientBarCount).toBe(1);
-  expect(preview.scaleLabels).toEqual(['Low', 'High']);
+  const settings = await openLegendSettings(page);
+  const panel = (await legendSettingsDialog(page).boundingBox())!;
+  const swatches = settings.getByRole('radio');
+  await expect(swatches).toHaveCount(5);
+  for (const swatch of await swatches.all()) {
+    const box = (await swatch.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(panel.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+    await expect(swatch.locator('.swatch-gradient')).toHaveCount(1);
+  }
+  expect(panel.y + panel.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await closeLegendSettings(page);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric palette preview remains bounded when hovered', async ({ page }) => {
+test('numeric and categorical palette swatches share the same chrome', async ({ page }) => {
   await loadDataset(page);
-  await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-
-  const beforeHover = await readNumericPreviewChrome(page);
-  await page.locator('protspace-legend').locator('.color-palette-preview--continuous').hover();
-  await expect
-    .poll(async () => (await readNumericPreviewChrome(page)).width)
-    .toBeGreaterThan(beforeHover.width);
-  const afterHover = await readNumericPreviewChrome(page);
-  expect(afterHover.height).toBeLessThan(beforeHover.height * 1.08);
-});
-
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric gradient preview uses the same rendered chrome as categorical swatches', async ({
-  page,
-}) => {
-  await loadDataset(page);
+  const chrome = async () => {
+    const settings = await openLegendSettings(page);
+    const result = await settings
+      .getByRole('radio')
+      .first()
+      .evaluate((radio) => {
+        const strip = radio.querySelector('.swatch-chips, .swatch-gradient') as HTMLElement;
+        return {
+          swatchRadius: getComputedStyle(radio).borderRadius,
+          stripRadius: getComputedStyle(strip).borderRadius,
+          stripHeight: strip.getBoundingClientRect().height,
+        };
+      });
+    await closeLegendSettings(page);
+    return result;
+  };
 
   await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-  const categoricalChrome = await readPalettePreviewChrome(page, 'categorical');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-
+  const categorical = await chrome();
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  const numericChrome = await readNumericPreviewChrome(page);
-
-  expect(numericChrome.borderRadius).toBe(categoricalChrome.borderRadius);
-  expect(numericChrome.hasShadow).toBe(true);
-  expect(categoricalChrome.hasShadow).toBe(true);
+  const numeric = await chrome();
+  expect(numeric).toEqual(categorical);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical annotations do not expose gradient palettes or gradient previews', async ({
+test('categorical annotations do not expose gradient palettes or gradient controls', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
+  // Task 3.9's check: the sort button is there, and the order is categorical.
   await expect(legendSortButton(page)).toBeVisible();
   expect(await legendSortLabel(page)).not.toMatch(/^By value/);
-  await openLegendSettings(page);
+  const settings = await openLegendSettings(page);
 
-  const dialog = await readLegendSettingsDialog(page);
+  await expect(page.getByRole('dialog', { name: 'Legend settings: Family' })).toBeVisible();
+  expect(
+    await settings
+      .getByRole('radio')
+      .evaluateAll((radios) => radios.map((radio) => radio.textContent?.trim() ?? '')),
+  ).toEqual(['Dark2', "Kelly's Colors", 'Okabe-Ito', 'Set2', 'Tableau 10', 'Tol Bright']);
+  await expect(settings.locator('.swatch-gradient')).toHaveCount(0);
+  await expect(settings.getByRole('combobox', { name: 'Bin distribution' })).toHaveCount(0);
+  await expect(settings.getByRole('switch', { name: 'Reverse gradient' })).toHaveCount(0);
   await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: family' }),
+    settings.getByRole('spinbutton', { name: 'Max legend items', exact: true }),
   ).toBeVisible();
-  expect(dialog.hasGradientPreview).toBe(false);
-  expect(dialog.hasDistributionSelect).toBe(false);
-  expect(dialog.hasSortingSection).toBe(true);
-  expect(dialog.title).toBe('Legend settings: family');
-  expect(dialog.maxVisibleLabel).toBe('Max legend items');
-  expect(dialog.shapeSizeLabel).toBe('Shape size');
-  expect(dialog.paletteOptions).toEqual([
-    'dark2',
-    'kellys',
-    'okabeIto',
-    'set2',
-    'tableau10',
-    'tolBright',
-  ]);
+  await expect(settings.getByRole('spinbutton', { name: 'Shape size', exact: true })).toBeVisible();
+  await closeLegendSettings(page);
 });
 
 test('drag handles stay active outside manual mode and keep Other disabled', async ({ page }) => {
@@ -1439,8 +1084,7 @@ test('drag handles stay active outside manual mode and keep Other disabled', asy
   );
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('clicking a legend row toggles visibility without switching categorical sort mode', async ({
+test('clicking a legend row toggles visibility without switching categorical sort mode', async ({
   page,
 }) => {
   await loadDataset(page);
@@ -1449,17 +1093,10 @@ test.fixme('clicking a legend row toggles visibility without switching categoric
   const firstRow = page.locator('protspace-legend .legend-item-main').first();
   await firstRow.click();
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('same-slot pointer drag does not switch categorical sorting to manual', async ({
-  page,
-}) => {
+test('same-slot pointer drag does not switch categorical sorting to manual', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
 
@@ -1470,15 +1107,10 @@ test.fixme('same-slot pointer drag does not switch categorical sorting to manual
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('dropping a pointer drag outside the legend keeps categorical sorting unchanged', async ({
+test('dropping a pointer drag outside the legend keeps categorical sorting unchanged', async ({
   page,
 }) => {
   await loadDataset(page);
@@ -1517,15 +1149,10 @@ test.fixme('dropping a pointer drag outside the legend keeps categorical sorting
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical keyboard escape restores order and keeps non-manual sorting', async ({
+test('categorical keyboard escape restores order and keeps non-manual sorting', async ({
   page,
 }) => {
   await loadDemoDataset(page);
@@ -1549,15 +1176,10 @@ test.fixme('categorical keyboard escape restores order and keeps non-manual sort
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By count/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical keyboard reorder promotes to manual order and keeps Other fixed', async ({
+test('categorical keyboard reorder promotes to manual order and keeps Other fixed', async ({
   page,
 }) => {
   await loadDemoDataset(page);
@@ -1575,15 +1197,10 @@ test.fixme('categorical keyboard reorder promotes to manual order and keeps Othe
   );
   expect(reorderedLegend.items.at(-1)?.value).toBe(initialLegend.items.at(-1)?.value);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
+test('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
   page,
 }) => {
   await page.route(STARTUP_URL_GLOB, async (route) => {
@@ -1619,16 +1236,8 @@ test.fixme('real phosphatase bundle rebins length to five bins without leaving t
   expect(initialNumericState.binCount).toBeGreaterThan(0);
   expect(initialNumericState.binCount).toBeLessThanOrEqual(10);
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-
   const startedAt = Date.now();
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   await page.waitForFunction(() => {
     const plot = document.querySelector('protspace-scatterplot') as
@@ -1659,11 +1268,8 @@ test.fixme('real phosphatase bundle rebins length to five bins without leaving t
   expect(finalNumericState.colors).not.toEqual(initialNumericState.colors);
   expect(finalNumericState.colors[0]).toBe('#440154');
   expect(finalNumericState.colors.at(-1)).toBe('#FDE725');
-  await openLegendSettings(page);
-  const reopenedDialog = await readLegendSettingsDialog(page);
-  expect(reopenedDialog.distribution).toBe('linear');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect((await readLegendSettings(page)).distribution).toBe('Linear');
+  await closeLegendSettings(page);
 });
 
 test('numeric header toggle reverses rendered bin order without changing color assignments', async ({
@@ -1697,21 +1303,12 @@ test('numeric header toggle reverses rendered bin order without changing color a
   // there is no longer a "filter order mirrors legend order" assertion here.)
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('linear numeric bins can realize fewer values than requested', async ({ page }) => {
+test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 20,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '20');
 
-  const realizedState = await getNumericState(page);
-  expect(realizedState.binCount).toBeLessThan(20);
+  await expect.poll(async () => (await getNumericState(page)).binCount).toBeLessThan(20);
   // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
   // range input, so there is no per-bin filter list to count against here.)
 });
@@ -1727,40 +1324,33 @@ test('numeric legend labels are display summaries without comparison markers', a
   expect(legend.items.every((item) => !item.label.includes('.'))).toBe(true);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical palette preview keeps eleven swatches on the first row at desktop width', async ({
+test('categorical palette swatches fit the settings popover at 1280 and 1100 px wide', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const preview = await readCategoricalPreviewRows(page);
-  expect(preview.swatchCount).toBeGreaterThanOrEqual(11);
-  expect(preview.firstRowCount).toBe(11);
-  expect(preview.overflows).toBe(false);
-  expect(preview.firstSwatchWidth).toBeGreaterThanOrEqual(32);
-  expect(preview.firstSwatchWidth).toBeLessThanOrEqual(40);
+  for (const width of [1280, 1100]) {
+    await page.setViewportSize({ width, height: 720 });
+    const settings = await openLegendSettings(page);
+    const panel = (await legendSettingsDialog(page).boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(width);
+    const swatches = settings.getByRole('radio');
+    await expect(swatches).toHaveCount(6);
+    for (const swatch of await swatches.all()) {
+      const box = (await swatch.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(panel.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+      // Up to eight chips: Tol Bright has seven colours.
+      const chips = await swatch.locator('.chip').count();
+      expect(chips).toBeGreaterThan(0);
+      expect(chips).toBeLessThanOrEqual(8);
+    }
+    await closeLegendSettings(page);
+  }
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical palette preview wraps cleanly at a narrower desktop width', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1100, height: 720 });
-  await loadDataset(page);
-  await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const preview = await readCategoricalPreviewRows(page);
-  expect(preview.swatchCount).toBeGreaterThanOrEqual(11);
-  expect(preview.overflows).toBe(false);
-  expect(preview.firstRowCount).toBeLessThanOrEqual(11);
-  expect(preview.firstRowCount).toBeGreaterThanOrEqual(8);
-});
-
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical pointer drag from size-asc keeps Other fixed and promotes to manual', async ({
+test('categorical pointer drag from size-asc keeps Other fixed and promotes to manual', async ({
   page,
 }) => {
   await loadDemoDataset(page);
@@ -1777,15 +1367,10 @@ test.fixme('categorical pointer drag from size-asc keeps Other fixed and promote
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items.at(-1)?.label.startsWith('Other')).toBe(true);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical pointer drag from alphabetical reverse promotes to manual order', async ({
+test('categorical pointer drag from alphabetical reverse promotes to manual order', async ({
   page,
 }) => {
   await loadDemoDataset(page);
@@ -1798,11 +1383,7 @@ test.fixme('categorical pointer drag from alphabetical reverse promotes to manua
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedAlphaLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('numeric range filters isolate to the matching subset and reset restores the full view', async ({
@@ -1897,8 +1478,7 @@ test('non-selected categorical annotations can still drive filtering', async ({ 
   expect(selectedAnnotation).toBe('length');
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric pointer drag promotes value order to manual and reverse does not recolor bins', async ({
+test('numeric pointer drag promotes value order to manual and reverse does not recolor bins', async ({
   page,
 }) => {
   await loadDataset(page);
@@ -1918,11 +1498,7 @@ test.fixme('numeric pointer drag promotes value order to manual and reverse does
 
   const manuallyReorderedLegend = await readLegendDisplay(page);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
   await toggleLegendReverse(page);
 
@@ -1937,10 +1513,7 @@ test.fixme('numeric pointer drag promotes value order to manual and reverse does
   );
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric pointer drag from high-to-low value order promotes to manual', async ({
-  page,
-}) => {
+test('numeric pointer drag from high-to-low value order promotes to manual', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   await toggleLegendReverse(page);
@@ -1953,17 +1526,10 @@ test.fixme('numeric pointer drag from high-to-low value order promotes to manual
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('keyboard pickup without movement keeps numeric sorting in value order', async ({
-  page,
-}) => {
+test('keyboard pickup without movement keeps numeric sorting in value order', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -1977,15 +1543,10 @@ test.fixme('keyboard pickup without movement keeps numeric sorting in value orde
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('keyboard escape cancels pickup and keeps numeric sorting in value order', async ({
+test('keyboard escape cancels pickup and keeps numeric sorting in value order', async ({
   page,
 }) => {
   await loadDataset(page);
@@ -2010,17 +1571,10 @@ test.fixme('keyboard escape cancels pickup and keeps numeric sorting in value or
   });
   expect(activeValue).toBe(initialLegend.items[0]?.value ?? null);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('keyboard escape after moving restores numeric order and value sorting', async ({
-  page,
-}) => {
+test('keyboard escape after moving restores numeric order and value sorting', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -2043,15 +1597,10 @@ test.fixme('keyboard escape after moving restores numeric order and value sortin
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^By value/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric keyboard reordering persists across reload', async ({ page }) => {
+test('numeric keyboard reordering persists across reload', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   const initialLegend = await readLegendDisplay(page);
@@ -2088,11 +1637,7 @@ test.fixme('numeric keyboard reordering persists across reload', async ({ page }
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items[2]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
   // (Numeric filtering no longer mirrors legend order — it is a raw-value range
   // input — so the former filter-order assertion is dropped; the reload below
@@ -2109,10 +1654,7 @@ test.fixme('numeric keyboard reordering persists across reload', async ({ page }
     .toEqual(reorderedLegend.items.map((item) => item.value));
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('topology-changing numeric rebins drop stale manual order on reload', async ({
-  page,
-}) => {
+test('topology-changing numeric rebins drop stale manual order on reload', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
   const initialLegend = await readLegendDisplay(page);
@@ -2144,17 +1686,11 @@ test.fixme('topology-changing numeric rebins drop stale manual order on reload',
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(manualLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
-  const rebinnedLegend = await readLegendDisplay(page);
-  expect(rebinnedLegend.items.length).toBeLessThan(manualLegend.items.length);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.length)
+    .toBeLessThan(manualLegend.items.length);
 
   await loadBundleFromBytes(
     page,
@@ -2173,8 +1709,7 @@ test.fixme('topology-changing numeric rebins drop stale manual order on reload',
   );
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical manual reorder and reverse continue to work', async ({ page }) => {
+test('categorical manual reorder and reverse continue to work', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
   const initialLegend = await readLegendDisplay(page);
@@ -2190,20 +1725,23 @@ test.fixme('categorical manual reorder and reverse continue to work', async ({ p
   const afterReorder = await readLegendDisplay(page);
   expect(afterReorder.items[1]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 
   await toggleLegendReverse(page);
+  const reversed = [...afterReorder.items.map((item) => item.value)].reverse();
   await expect
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual([...afterReorder.items.map((item) => item.value)].reverse());
+    .toEqual(reversed);
+
+  // A later item pass, here a live settings edit, keeps the reversed order (it used to flip back).
+  const { size } = await readLegendSettings(page);
+  await setLegendSetting(page, 'Shape size', size === '20' ? '24' : '20');
+  await closeLegendSettings(page);
+  expect((await readLegendDisplay(page)).items.map((item) => item.value)).toEqual(reversed);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('categorical drag-promoted manual order persists after re-import', async ({ page }) => {
+test('categorical drag-promoted manual order persists after re-import', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'family');
 
@@ -2232,11 +1770,7 @@ test.fixme('categorical drag-promoted manual order persists after re-import', as
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(manualLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  expect(await legendSortLabel(page)).toMatch(/^Your order/);
 });
 
 test('long categorical legend labels end in an ellipsis on one line', async ({ page }) => {
@@ -2290,20 +1824,12 @@ test('long categorical legend labels end in an ellipsis on one line', async ({ p
   );
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('numeric tooltip shows the raw value within the current bin range after rebinning', async ({
+test('numeric tooltip shows the raw value within the current bin range after rebinning', async ({
   page,
 }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   // The numeric tooltip shows the raw value (no bin label / comparison markers).
   // To verify it shows the *hovered point's* value — not a stale or
@@ -2388,8 +1914,7 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
   expect(legend.items.every((item) => item.value.length > 0)).toBe(true);
 });
 
-// Task 3.13 moves this test to the settings popover.
-test.fixme('rebinning replaces the numeric bins (stale bin labels are gone)', async ({ page }) => {
+test('rebinning replaces the numeric bins (stale bin labels are gone)', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
 
@@ -2418,14 +1943,7 @@ test.fixme('rebinning replaces the numeric bins (stale bin labels are gone)', as
     return staleValue;
   });
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
+  await rebinLength(page, '5');
 
   // After rebinning, the annotation exposes an entirely new set of bins, so the
   // stale bin label must be gone from the current bins. Read the current bins
