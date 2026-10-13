@@ -114,6 +114,20 @@ describe('ps-select', () => {
     expect(el.value).toBe('kelly');
     expect(select.value).toBe('kelly');
   });
+
+  it('forwards describedBy to the native select', async () => {
+    document.body.innerHTML =
+      '<p id="note">Only positive values.</p><ps-select label="Bin distribution"></ps-select>';
+    const el = document.querySelector('ps-select')!;
+    const note = document.getElementById('note')!;
+    el.describedBy = [note];
+    await el.updateComplete;
+    const native = el.shadowRoot!.querySelector('select')!;
+    expect(native.ariaDescribedByElements?.[0]).toBe(note);
+    el.describedBy = [];
+    await el.updateComplete;
+    expect(native.ariaDescribedByElements ?? []).toHaveLength(0);
+  });
 });
 
 describe('ps-checkbox', () => {

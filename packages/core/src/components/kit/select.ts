@@ -26,11 +26,15 @@ export class PsSelect extends LitElement {
   @property() label = '';
   @property({ type: Boolean, reflect: true }) disabled = false;
 
+  /** Elements that describe the select; an id reference cannot reach into the shadow root. */
+  @property({ attribute: false }) describedBy: readonly Element[] = [];
+
   render() {
     return html`<div class="field select">
       <select
         part="select"
         aria-label=${this.label || nothing}
+        .ariaDescribedByElements=${this.describedBy.length ? this.describedBy : null}
         ?disabled=${this.disabled}
         @change=${this.onChange}
       >
