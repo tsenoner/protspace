@@ -39,6 +39,7 @@ import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './
 import { createLoadQueue } from './load-queue';
 import {
   LOADING_COPY,
+  createLoadFocusReturn,
   createLoadingOverlayController,
   type LoadingOverlayController,
 } from './loading-overlay';
@@ -148,12 +149,18 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     });
   };
   const loadingOverlay = createLoadingOverlayController();
+  // When the control focused before the load is gone, the dataset button, which names the result.
+  const focusReturn = createLoadFocusReturn(() =>
+    document.querySelector<HTMLElement>('[data-workbench="dataset"]'),
+  );
   const overlayController: LoadingOverlayController = {
     update(show, progress, message, subMessage, note) {
+      if (show && !overlayShown) focusReturn.remember();
       loadingOverlay.update(show, progress, message, subMessage, note);
       if (show !== overlayShown) {
         overlayShown = show;
         syncDatasetPhase();
+        if (!show) focusReturn.restore();
       }
     },
     setCancelHandler: (handler, label) => loadingOverlay.setCancelHandler(handler, label),

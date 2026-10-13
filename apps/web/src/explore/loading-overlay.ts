@@ -71,6 +71,7 @@ export function loadingCopyFor(
 const OVERLAY_ID = 'progressive-loading';
 const CANCEL_BUTTON_ID = 'progressive-loading-cancel';
 const CANCEL_DEFAULT_LABEL = 'Cancel';
+const LIVE_ID = 'progressive-loading-status';
 
 /**
  * The full-page loading overlay. It blocks the page while a load runs; the runtime also makes the
@@ -95,14 +96,24 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     return el;
   };
 
+  // One live region for the controller's lifetime, there before any text is put in it: a region
+  // inserted together with its text is often not announced. It says the title only, so a progress
+  // tick is not read out.
+  const live = element('p', 'sr-only', LIVE_ID);
+  live.setAttribute('role', 'status');
+  doc.body.appendChild(live);
+  const setText = (el: HTMLElement | null, text: string) => {
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+
   const build = (): HTMLElement => {
     const overlay = element('div', 'ps-loading', OVERLAY_ID);
-    overlay.setAttribute('role', 'status');
-    overlay.setAttribute('aria-live', 'polite');
-    overlay.setAttribute('aria-atomic', 'true');
-    overlay.setAttribute('aria-busy', 'true');
     const card = element('div', 'ps-loading__card');
-    const bar = element('div', 'ps-loading__bar');
+    const bar = element('div', 'ps-loading__bar', 'progress-track');
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', 'Loading');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
     bar.appendChild(element('div', 'ps-loading__fill', 'progress-bar'));
     card.appendChild(element('p', 'ps-loading__title', 'processing-text'));
     card.appendChild(bar);
@@ -126,7 +137,7 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
       (overlay.firstElementChild ?? overlay).appendChild(button);
     }
 
-    button.textContent = cancelLabel;
+    setText(button, cancelLabel);
   };
 
   const renderNote = (overlay: HTMLElement) => {
@@ -163,6 +174,8 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
 
     if (!show) {
       currentNote = null;
+      // Emptied, so the next load's title is announced even when it reads the same.
+      setText(live, '');
       // Removed at once, with no fade: callers dismiss only when the load has settled,
       // and a fading overlay still covers (and blocks clicks on) the page meanwhile.
       overlay?.remove();
@@ -174,20 +187,20 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
       doc.body.appendChild(overlay);
     }
 
-    overlay.setAttribute('aria-label', [subMessage, message].filter(Boolean).join('. '));
-
     const progressBar = overlay.querySelector<HTMLElement>('#progress-bar');
-    const progressText = overlay.querySelector<HTMLElement>('#progress-text');
-    const processingText = overlay.querySelector<HTMLElement>('#processing-text');
-
     if (progressBar) progressBar.style.width = `${progress}%`;
-    if (progressText) progressText.textContent = message;
-    if (processingText) processingText.textContent = subMessage;
+    overlay
+      .querySelector('#progress-track')
+      ?.setAttribute('aria-valuenow', String(Math.round(progress)));
+    setText(overlay.querySelector<HTMLElement>('#progress-text'), message);
+    setText(overlay.querySelector<HTMLElement>('#processing-text'), subMessage);
+    setText(live, subMessage);
 
+    // A progress tick leaves the note alone; only a call that passes one (or null) changes it.
     if (note !== undefined) {
       currentNote = note;
+      renderNote(overlay);
     }
-    renderNote(overlay);
     renderCancelButton(overlay);
   };
 
@@ -205,6 +218,57 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
       cancelHandler = null;
       currentNote = null;
       doc.getElementById(OVERLAY_ID)?.remove();
+      live.remove();
+    },
+  };
+}
+
+/** The focused element, looking through open shadow roots. */
+function deepActiveElement(doc: Document): HTMLElement | null {
+  let el: Element | null = doc.activeElement;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  return el as HTMLElement | null;
+}
+
+interface LoadFocusReturn {
+  /** Notes the focused element as a load begins (the workbench goes inert and drops focus). */
+  remember(): void;
+  /** Puts focus back once the load has ended, or on `fallback` when that element is gone. */
+  restore(): void;
+}
+
+/**
+ * Hands focus back after a load. The workbench is inert while the overlay shows, so focus falls
+ * to `<body>`, and a keyboard user would start again from the top of the page after every dataset
+ * switch. `restore` waits a frame, until React has lifted `inert`; it does nothing when focus was
+ * on `<body>` before the load or has moved since.
+ */
+export function createLoadFocusReturn(
+  fallback: () => HTMLElement | null,
+  doc: Document = document,
+  nextFrame: (callback: () => void) => void = (callback) => requestAnimationFrame(callback),
+): LoadFocusReturn {
+  let remembered: HTMLElement | null = null;
+  const focusLost = () => doc.activeElement === null || doc.activeElement === doc.body;
+  // Focusing a removed, hidden or inert element does nothing: whether focus moved says so.
+  const tryFocus = (el: HTMLElement | null) => {
+    if (!el?.isConnected) return false;
+    el.focus();
+    return !focusLost();
+  };
+  return {
+    remember() {
+      const active = deepActiveElement(doc);
+      remembered = active === doc.body ? null : active;
+    },
+    restore() {
+      const target = remembered;
+      remembered = null;
+      if (!target) return;
+      nextFrame(() => {
+        if (!focusLost()) return;
+        if (!tryFocus(target)) tryFocus(fallback());
+      });
     },
   };
 }

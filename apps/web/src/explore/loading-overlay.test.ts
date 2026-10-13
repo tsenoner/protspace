@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EXAMPLE_DOWNLOAD_SHARE,
   LOADING_COPY,
+  createLoadFocusReturn,
   createLoadingOverlayController,
   loadingCopyFor,
   progressAfterExampleDownload,
@@ -213,12 +214,13 @@ describe('loading-overlay rendering', () => {
 
     const overlay = doc._byId('progressive-loading')!;
     expect(overlay.className).toBe('ps-loading');
-    expect(overlay.getAttribute('role')).toBe('status');
-    expect(overlay.getAttribute('aria-live')).toBe('polite');
-    expect(overlay.getAttribute('aria-busy')).toBe('true');
-    expect(overlay.getAttribute('aria-label')).toBe(
-      'Reading your file in the browser. Reading mine.parquetbundle…',
-    );
+    // The card itself is no live region: a separate one says the title (below).
+    expect(overlay.getAttribute('role')).toBeNull();
+    expect(overlay.getAttribute('aria-busy')).toBeNull();
+    const track = doc._byId('progress-track')!;
+    expect(track.getAttribute('role')).toBe('progressbar');
+    expect(track.getAttribute('aria-label')).toBe('Loading');
+    expect(track.getAttribute('aria-valuenow')).toBe('30');
     // No inline styling: workbench.css styles the classes from tokens.
     expect(overlay.style.cssText).toBe('');
     const card = overlay.firstElementChild!;
@@ -363,5 +365,127 @@ describe('loading-overlay dismissal', () => {
     const ctrl = createLoadingOverlayController(doc as unknown as Document);
     expect(() => ctrl.update(false)).not.toThrow();
     expect(doc.getElementById('progressive-loading')).toBeNull();
+  });
+});
+
+describe('loading-overlay announcements', () => {
+  const live = () => doc._byId('progressive-loading-status');
+
+  it('says the title in a live region that exists before any load', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    const region = live()!;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.textContent).toBe('');
+
+    ctrl.update(true, 10, '0.1 / 1.0 MB', 'Downloading Demo…');
+    expect(live()).toBe(region);
+    expect(region.textContent).toBe('Downloading Demo…');
+    ctrl.dispose();
+    expect(live()).toBeNull();
+  });
+
+  it('a progress tick changes neither the region nor the note', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 10, '0.1 / 1.0 MB', 'Downloading Demo…', { text: 'A note' });
+    const note = getNoteEl();
+    ctrl.update(true, 20, '0.2 / 1.0 MB', 'Downloading Demo…');
+    expect(live()!.textContent).toBe('Downloading Demo…');
+    expect(getNoteEl()).toBe(note);
+    expect(doc._byId('progress-text')!.textContent).toBe('0.2 / 1.0 MB');
+    ctrl.dispose();
+  });
+
+  it('empties the region on hide, so the same title is said again next time', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 10, '', 'Opening Demo');
+    ctrl.update(false);
+    expect(live()!.textContent).toBe('');
+    ctrl.dispose();
+  });
+});
+
+describe('createLoadFocusReturn', () => {
+  interface FakeFocusable {
+    isConnected: boolean;
+    focusable: boolean;
+    shadowRoot: null;
+    focus(): void;
+  }
+
+  function makeFocusDoc() {
+    const body: { shadowRoot: null } = { shadowRoot: null };
+    const fake = { body, activeElement: body as unknown };
+    const el = (connected = true, focusable = true): FakeFocusable => ({
+      isConnected: connected,
+      focusable,
+      shadowRoot: null,
+      focus() {
+        if (this.isConnected && this.focusable) fake.activeElement = this;
+      },
+    });
+    return { fake, el };
+  }
+
+  function setup(withFallback = false) {
+    const { fake, el } = makeFocusDoc();
+    const fallback = withFallback ? el() : null;
+    const frames: Array<() => void> = [];
+    const keeper = createLoadFocusReturn(
+      () => fallback as unknown as HTMLElement | null,
+      fake as unknown as Document,
+      (callback) => frames.push(callback),
+    );
+    const runFrame = () => frames.splice(0).forEach((callback) => callback());
+    return { fake, el, keeper, runFrame, fallback };
+  }
+
+  it('puts focus back on the control focused when the load began, a frame after it ends', () => {
+    const { fake, el, keeper, runFrame } = setup();
+    const button = el();
+    fake.activeElement = button;
+    keeper.remember();
+    // The workbench goes inert: focus falls to <body>.
+    fake.activeElement = fake.body;
+    keeper.restore();
+    expect(fake.activeElement).toBe(fake.body);
+    runFrame();
+    expect(fake.activeElement).toBe(button);
+  });
+
+  it('falls back when that control is gone or cannot take focus', () => {
+    const { fake, el, keeper, runFrame, fallback } = setup(true);
+    const gone = el();
+    fake.activeElement = gone;
+    keeper.remember();
+    gone.isConnected = false;
+    fake.activeElement = fake.body;
+    keeper.restore();
+    runFrame();
+    expect(fake.activeElement).toBe(fallback);
+
+    const hidden = el(true, false);
+    fake.activeElement = hidden;
+    keeper.remember();
+    fake.activeElement = fake.body;
+    keeper.restore();
+    runFrame();
+    expect(fake.activeElement).toBe(fallback);
+  });
+
+  it('leaves focus alone when it was on <body> before the load, or has moved since', () => {
+    const { fake, el, keeper, runFrame } = setup();
+    keeper.remember();
+    keeper.restore();
+    runFrame();
+    expect(fake.activeElement).toBe(fake.body);
+
+    const before = el();
+    const elsewhere = el();
+    fake.activeElement = before;
+    keeper.remember();
+    fake.activeElement = elsewhere;
+    keeper.restore();
+    runFrame();
+    expect(fake.activeElement).toBe(elsewhere);
   });
 });
