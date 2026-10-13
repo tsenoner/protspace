@@ -8,7 +8,8 @@ const HOVER_DELAY_MS = 500;
 
 /**
  * A short label for a control. It replaces native `title` tooltips (design decision 8). It is not a
- * layer: Escape hides it without being consumed.
+ * layer: Escape hides it and, when it was shown, takes that press (preventDefault), so the same
+ * press does not also reach the page's Escape fallbacks (decision 11: one step per press).
  *
  * The host is the `role="tooltip"` node and carries the text as its `aria-label`, so the text is
  * readable while the panel is hidden. The target references the host through
@@ -123,9 +124,13 @@ export class PsTooltip extends LitElement {
     if ((event.composedPath()[0] as Element).matches(':focus-visible')) this.show();
   };
 
-  // On the document while shown, so Escape hides a hover-shown tooltip too (WCAG 1.4.13).
+  // On the document while shown, so Escape hides a hover-shown tooltip too (WCAG 1.4.13). Hiding a
+  // shown tooltip is that press's one step, so it is default-prevented for the Escape fallbacks.
   private onKeydown = (event: Event) => {
-    if ((event as KeyboardEvent).key === 'Escape') this.hide();
+    if ((event as KeyboardEvent).key !== 'Escape') return;
+    if (!this.tip?.matches(':popover-open')) return;
+    event.preventDefault();
+    this.hide();
   };
 }
 

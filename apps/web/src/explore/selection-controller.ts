@@ -1,5 +1,6 @@
 import {
   AfterPaintCommit,
+  ESCAPE_ORDER,
   type BrushSelectionDetail,
   type PlotTool,
   type ProteinClickDetail,
@@ -51,8 +52,11 @@ interface SelectionControllerOptions {
   plotTools: ProtspacePlotTools;
   proteinSearch: ProtspaceProteinSearch;
   interactionController: Pick<InteractionController, 'handleSelectionChange'>;
-  /** Where Escape is heard, in the bubble phase: the document in the app. */
-  root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
+  /**
+   * Registers an Escape fallback (`onEscapeFallback` from `@protspace/core` in the app): run with
+   * no layer open, after the plot's EAT connectors; returns its release.
+   */
+  registerEscape(order: number, handle: (event: KeyboardEvent) => boolean): () => void;
   /** Shows a warning toast: `notify.warning` in the app. */
   warn(options: NotifyOptions): void;
 }
@@ -63,18 +67,9 @@ interface SelectionController {
   dispose(): void;
 }
 
-/** Whether an element in `path` is a modal (`aria-modal="true"`), which owns its own Escape. */
-function insideModal(path: readonly unknown[]): boolean {
-  return path.some(
-    (node) =>
-      typeof (node as Element | null)?.getAttribute === 'function' &&
-      (node as Element).getAttribute('aria-modal') === 'true',
-  );
-}
-
 /**
  * The selection (design decision 9, moved from the control bar): plot clicks and brushes, the
- * search box's picks, the plot tools, isolation and the Escape order. Every change lands through
+ * search box's picks, the plot tools, isolation and its two Escape steps (the selection, then the tool). Every change lands through
  * one commit, which writes the plot, the search box and the tools, then tells the app.
  */
 export function createSelectionController({
@@ -82,7 +77,7 @@ export function createSelectionController({
   plotTools,
   proteinSearch,
   interactionController,
-  root,
+  registerEscape,
   warn,
 }: SelectionControllerOptions): SelectionController {
   /** The selection the search box and the tools show, a search pick still waiting included. */
@@ -220,33 +215,17 @@ export function createSelectionController({
     show(Array.isArray(plotElement.selectedProteinIds) ? plotElement.selectedProteinIds : []);
   };
 
-  /**
-   * Escape, in the bubble phase on the document. Open layers (menus, dialogs, the search's
-   * suggestions) take it first in the capture phase; a modal that is not a layer yet owns its
-   * own. Each press undoes one step: the duplicate-stack spider, then the selection, then the
-   * selection tool. Stopping it keeps the plot's own Escape (EAT connectors) for a later press.
-   */
-  const onKeydown = (event: Event) => {
-    if ((event as KeyboardEvent).key !== 'Escape') return;
-    if (insideModal(event.composedPath())) return;
-    if (plotElement.hasExpandedDuplicateStack()) {
-      event.preventDefault();
-      event.stopPropagation();
-      plotElement.closeExpandedDuplicateStack();
-      return;
-    }
-    if (selected.length > 0) {
-      event.preventDefault();
-      event.stopPropagation();
-      commitSelection([], { afterPaint: true });
-      return;
-    }
-    if (tool !== 'pan') {
-      event.preventDefault();
-      event.stopPropagation();
-      setTool('pan');
-    }
-  };
+  // Escape (decision 11), after the top layer and the plot's EAT connectors: one step per press.
+  const releaseSelectionEscape = registerEscape(ESCAPE_ORDER.selection, () => {
+    if (selected.length === 0) return false;
+    commitSelection([], { afterPaint: true });
+    return true;
+  });
+  const releaseToolEscape = registerEscape(ESCAPE_ORDER.tool, () => {
+    if (tool === 'pan') return false;
+    setTool('pan');
+    return true;
+  });
 
   plotElement.addEventListener('protein-click', onProteinClick);
   plotElement.addEventListener('brush-selection', onBrushSelection);
@@ -263,7 +242,6 @@ export function createSelectionController({
   plotTools.addEventListener('clear-selections', onClear);
   plotTools.addEventListener('isolate-data', onIsolate);
   plotTools.addEventListener('reset-isolation', onResetIsolation);
-  root.addEventListener('keydown', onKeydown);
 
   return {
     resetForNewDataset() {
@@ -290,7 +268,8 @@ export function createSelectionController({
       plotTools.removeEventListener('clear-selections', onClear);
       plotTools.removeEventListener('isolate-data', onIsolate);
       plotTools.removeEventListener('reset-isolation', onResetIsolation);
-      root.removeEventListener('keydown', onKeydown);
+      releaseSelectionEscape();
+      releaseToolEscape();
     },
   };
 }

@@ -79,6 +79,58 @@ describe('Escape', () => {
     escape();
     expect(pageHandler).not.toHaveBeenCalled();
   });
+
+  it('fallbacks run after the page’s own bubble handlers', () => {
+    const calls: string[] = [];
+    const page = () => calls.push('page');
+    document.body.addEventListener('keydown', page);
+    cleanups.push(() => document.body.removeEventListener('keydown', page));
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.selection, () => (calls.push('fallback'), true)));
+    escape();
+    expect(calls).toEqual(['page', 'fallback']);
+  });
+
+  it('a handler that calls preventDefault keeps Escape from the fallbacks', () => {
+    const fallback = vi.fn(() => true);
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.connectors, fallback));
+    const handled = (event: Event) => event.preventDefault();
+    document.body.addEventListener('keydown', handled);
+    cleanups.push(() => document.body.removeEventListener('keydown', handled));
+    escape();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('a handler that stops propagation keeps Escape from the fallbacks', () => {
+    const fallback = vi.fn(() => true);
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.connectors, fallback));
+    const inner = element();
+    const stop = (event: Event) => event.stopPropagation();
+    inner.addEventListener('keydown', stop);
+    escape(inner);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('ESCAPE_ORDER.tool runs after selection', () => {
+    expect(ESCAPE_ORDER.tool).toBeGreaterThan(ESCAPE_ORDER.selection);
+    const calls: string[] = [];
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.tool, () => (calls.push('tool'), true)));
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.selection, () => (calls.push('selection'), false)));
+    escape();
+    expect(calls).toEqual(['selection', 'tool']);
+  });
+
+  it('an open layer still takes Escape in the capture phase and no fallback runs', () => {
+    const fallback = vi.fn(() => true);
+    cleanups.push(onEscapeFallback(ESCAPE_ORDER.connectors, fallback));
+    const page = vi.fn();
+    document.body.addEventListener('keydown', page);
+    cleanups.push(() => document.body.removeEventListener('keydown', page));
+    const { close } = open();
+    escape();
+    expect(close).toHaveBeenCalledOnce();
+    expect(page).not.toHaveBeenCalled();
+    expect(fallback).not.toHaveBeenCalled();
+  });
 });
 
 describe('outside press', () => {

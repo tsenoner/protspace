@@ -32,6 +32,17 @@ Keep dialogs and focused workflow surfaces inside the component that owns the wo
 - Example: legend settings popover
 - Example: legend "Other" popover (search and "Add to legend")
 
+### Escape and closing
+
+Every open overlay is a layer on the kit's one stack (`packages/core/src/components/kit/layers.ts`):
+popovers, menus, dialogs, the figure editor, the pinned projection details, a pinned tooltip and an
+expanded duplicate stack. Escape closes the top layer in the window's capture phase. With no layer
+open, a component that acts on Escape (the search box emptying a typed query, a shown tooltip
+hiding) calls `preventDefault()`, and then the fallbacks run in the window's bubble phase in
+`ESCAPE_ORDER`: the EAT connectors (`connectors`, registered by the scatterplot), the selection
+(`selection`) and the selection tool (`tool`, both registered by the app's selection controller).
+The first that acts takes the press, so one press takes one step.
+
 ### Component-owned inline states
 
 Keep empty, loading, and error states inline when the message is part of the component itself.

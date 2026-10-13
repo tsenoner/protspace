@@ -1,5 +1,6 @@
 import '@protspace/core'; // Registers all web components
 import type { RendererDegradedDetail } from '@protspace/core';
+import { onEscapeFallback } from '@protspace/core';
 import type { EatReliabilityState } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getRendererDegradedNotification } from './notifications';
@@ -304,7 +305,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotTools,
     proteinSearch,
     interactionController,
-    root: document,
+    registerEscape: onEscapeFallback,
     warn: (options) => notify.warning(options),
   });
   lifecycle.addCleanup(() => selectionController.dispose());

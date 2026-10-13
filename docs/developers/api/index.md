@@ -152,6 +152,14 @@ projection change, or when `tooltipActions` becomes empty. Hovers over other pro
 `tooltip-action` (bubbles, composed) with the action's `id` and the pinned `proteinId`
 (`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only.
 
+Escape follows the kit's one layer stack (`ESCAPE_ORDER`, `onEscapeFallback` and `pushLayer`,
+exported from `@protspace/core`). An expanded duplicate stack and a pinned tooltip are layers: the
+next Escape closes them before anything else. With no layer open, the plot's own Escape fallback,
+registered at `ESCAPE_ORDER.connectors` while it is connected, hides the EAT provenance connectors.
+A host registers its own steps at higher orders (the app clears the selection at
+`ESCAPE_ORDER.selection` and returns to Move at `ESCAPE_ORDER.tool`), and each press takes only one
+step.
+
 ### Example
 
 ```html

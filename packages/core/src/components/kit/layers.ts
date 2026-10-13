@@ -1,9 +1,12 @@
 /**
- * One stack of open layers (popovers, menus, dialogs, sheets) for the whole page (design decision
- * 11). Escape closes only the top layer. With no layer open, Escape goes to the registered
- * fallbacks in ascending order (EAT connectors, then the selection), and the first that handles it
- * wins. A press that starts and ends outside the top layer closes it, so a drag that ends outside
- * closes nothing.
+ * One stack of open layers (popovers, menus, dialogs, sheets, the figure editor, pinned panels) for
+ * the whole page (design decision 11). Escape closes only the top layer, in the window's capture
+ * phase, before any component sees the key. With no layer open, Escape first reaches the page's own
+ * handlers; a handler that acts on it calls `preventDefault()` (or stops it). Then, in the window's
+ * bubble phase, the registered fallbacks run in ascending `ESCAPE_ORDER` (EAT connectors, the
+ * selection, the selection tool), and the first that handles it wins. So each press takes exactly
+ * one step. A press that starts and ends outside the top layer closes it, so a drag that ends
+ * outside closes nothing.
  */
 export interface Layer {
   /** Closes the layer. The owner then calls the release function pushLayer returned. */
@@ -15,7 +18,7 @@ export interface Layer {
 }
 
 /** Order of the Escape fallbacks when no layer is open; lower runs first. */
-export const ESCAPE_ORDER = { connectors: 10, selection: 20 } as const;
+export const ESCAPE_ORDER = { connectors: 10, selection: 20, tool: 30 } as const;
 
 interface Fallback {
   readonly order: number;
@@ -61,15 +64,20 @@ function isInside(layer: Layer, event: Event): boolean {
   return layer.elements.some((el) => path.includes(el));
 }
 
-function onKeydown(event: KeyboardEvent): void {
+/** Capture phase: the top layer takes Escape before anything else hears it. */
+function onLayerKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || event.isComposing) return;
   const top = topLayer();
-  if (top) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    top.close();
-    return;
-  }
+  if (!top) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  top.close();
+}
+
+/** Bubble phase: no layer was open and no component handled the press. */
+function onFallbackKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return;
+  if (topLayer()) return;
   for (const fallback of [...fallbacks]) {
     if (fallback.handle(event)) {
       event.preventDefault();
@@ -93,8 +101,10 @@ function onPointerUp(event: Event): void {
 function install(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
-  // Capture on window runs before any component's own handler.
-  window.addEventListener('keydown', onKeydown, true);
+  // Capture on window runs before any component's own handler; the fallbacks wait for the bubble
+  // phase, after every component had its chance to handle the press.
+  window.addEventListener('keydown', onLayerKeydown, true);
+  window.addEventListener('keydown', onFallbackKeydown);
   window.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointerup', onPointerUp, true);
 }

@@ -38,9 +38,18 @@ describe('shortcuts', () => {
     ).toBe(true);
   });
 
-  it('Escape reads clear the selection, then return to Move and zoom', () => {
-    const selection = SHORTCUT_GROUPS.find((group) => group.title === 'Selection');
-    const escape = selection?.items.find((shortcut) => shortcut.keys.join('+') === 'Escape');
-    expect(escape?.action).toBe('Clear the selection, then return to Move and zoom');
+  it('lists the Escape steps in the order one press at a time takes them', () => {
+    const escapes = (title: string) =>
+      SHORTCUT_GROUPS.find((group) => group.title === title)
+        ?.items.filter((shortcut) => shortcut.keys.join('+') === 'Escape')
+        .map((shortcut) => shortcut.action);
+    expect(escapes('Plot')).toEqual([
+      'Close an expanded stack of duplicate points',
+      'Hide the EAT connectors',
+    ]);
+    expect(escapes('Selection')).toEqual(['Clear the selection, then return to Move and zoom']);
+    expect(escapes('Figure editor')).toEqual([
+      'Deselect the overlay or inset, then close the editor',
+    ]);
   });
 });

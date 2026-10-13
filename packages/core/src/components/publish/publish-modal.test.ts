@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import './publish-modal';
 import type { ProtspacePublishModal } from './publish-modal';
+import { topLayer } from '../kit/layers';
 
 interface PublishInternals {
   _state: {
@@ -760,7 +761,7 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     expect(internals._selectedItem).toEqual({ kind: 'overlay', index: 0 });
   });
 
-  it('Escape clears selection without removing the item', async () => {
+  it('Escape with an item selected deselects it and keeps the editor open; the next Escape fires close', async () => {
     const modal = makeModal();
     await modal.updateComplete;
     const internals = modal as unknown as SelectionInternals;
@@ -768,12 +769,36 @@ describe('<protspace-publish-modal> selection + keyboard delete', () => {
     internals._selectedItem = { kind: 'overlay', index: 0 };
     internals.requestUpdate();
     await modal.updateComplete;
+    const onClose = vi.fn();
+    modal.addEventListener('close', onClose);
+    // As a key press reaches the page: the layer stack hears it on window in the capture phase.
+    const escape = () =>
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        }),
+      );
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    escape();
     await modal.updateComplete;
-
     expect(internals._state.overlays).toHaveLength(1);
     expect(internals._selectedItem).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(topLayer()).toBeDefined();
+
+    escape();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('is a layer while connected and releases it on removal', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    expect(topLayer()).toBeDefined();
+    modal.remove();
+    expect(topLayer()).toBeUndefined();
   });
 
   it('keydown is a no-op when nothing is selected', async () => {

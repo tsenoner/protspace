@@ -2,6 +2,10 @@
  * The keyboard and pointer shortcuts the explore page has today, for the help menu's dialog. One
  * list, which phase 4 extends (undo and redo). Keys are named as `KeyboardEvent.key` names them,
  * plus 'Mod' for the platform's command key and plain words for pointer gestures.
+ *
+ * Escape takes one step per press (design decision 11): the open popover, menu, dialog, figure
+ * editor, pinned panel or expanded duplicate stack first, then the EAT connectors, then the
+ * selection, then the selection tool (back to Move and zoom). The rows below follow that order.
  */
 export interface Shortcut {
   /** The keys pressed together. 'Mod' reads ⌘ on Apple platforms and Ctrl elsewhere. */
@@ -74,7 +78,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     title: 'Figure editor',
     items: [
       { keys: ['Delete'], action: 'Remove the selected overlay or inset' },
-      { keys: ['Escape'], action: 'Deselect the overlay or inset' },
+      { keys: ['Escape'], action: 'Deselect the overlay or inset, then close the editor' },
     ],
   },
 ];

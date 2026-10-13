@@ -11,6 +11,7 @@ import { customElement } from '../../utils/safe-custom-element';
 import { tokens } from '../../styles/tokens';
 import { buttonMixin } from '../../styles/mixins';
 import { publishModalStyles } from './publish-modal.styles';
+import { pushLayer } from '../kit/layers';
 import { JOURNAL_PRESETS, type PresetId } from './journal-presets';
 import {
   createDefaultPublishState,
@@ -157,7 +158,7 @@ export class ProtspacePublishModal extends LitElement {
   @state() private _state: PublishState = createDefaultPublishState();
   @state() private _tool: OverlayTool = 'select';
   /** Currently selected overlay/inset, or null. Click sets it (sidebar or
-   *  canvas). Delete/Backspace removes it. Escape clears it. */
+   *  canvas). Delete/Backspace removes it. Escape clears it, then closes the editor. */
   @state() private _selectedItem: { kind: 'overlay' | 'inset'; index: number } | null = null;
   @state() private _showFingerprintWarning = false;
   @state() private _showResampleNote = false;
@@ -176,6 +177,8 @@ export class ProtspacePublishModal extends LitElement {
   private _lastInsetRenderAt = 0;
   private _settleTimer: ReturnType<typeof setTimeout> | null = null;
   private _disposed = false;
+  /** The editor's Escape layer while it is in the page (until it moves onto ps-dialog). */
+  private _releaseEscapeLayer: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -194,12 +197,21 @@ export class ProtspacePublishModal extends LitElement {
     );
     this._readLegend();
     window.addEventListener('keydown', this._onKeyDown);
+    // A layer: Escape deselects, then closes the editor, and never reaches the page's own Escape
+    // (the plot's selection) underneath. A press outside is the backdrop's own click.
+    this._releaseEscapeLayer ??= pushLayer({
+      close: () => this._onEscapeLayer(),
+      elements: [this],
+      dismissOnOutsidePress: false,
+    });
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this._disposed = true;
     window.removeEventListener('keydown', this._onKeyDown);
+    this._releaseEscapeLayer?.();
+    this._releaseEscapeLayer = null;
     this._overlayController?.destroy();
     this._overlayController = null;
     if (this._redrawHandle !== null) cancelAnimationFrame(this._redrawHandle);
@@ -207,27 +219,28 @@ export class ProtspacePublishModal extends LitElement {
   }
 
   /**
-   * Delete/Backspace removes the selected overlay or inset; Escape clears
-   * the selection. Skipped while focus is in an editable element so typing
-   * Backspace inside the label-text input still erases characters instead
-   * of deleting the overlay.
+   * Delete/Backspace removes the selected overlay or inset. Skipped while focus is in an editable
+   * element so typing Backspace inside the label-text input still erases characters instead of
+   * deleting the overlay. Escape is the layer's (`_onEscapeLayer`).
    */
   private _onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Delete' && e.key !== 'Backspace' && e.key !== 'Escape') return;
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     if (isEditableTarget(e)) return;
     const sel = this._selectedItem;
-    if (e.key === 'Escape') {
-      if (sel) {
-        this._setSelection(null);
-        e.preventDefault();
-      }
-      return;
-    }
     if (!sel) return;
     if (sel.kind === 'overlay') this._removeOverlay(sel.index);
     else this._removeInset(sel.index);
     e.preventDefault();
   };
+
+  /** Escape: the first press deselects an overlay or inset, the next closes the editor. */
+  private _onEscapeLayer(): void {
+    if (this._selectedItem) {
+      this._setSelection(null);
+      return;
+    }
+    this._handleClose();
+  }
 
   override firstUpdated() {
     this._setupOverlay();

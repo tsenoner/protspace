@@ -14,26 +14,39 @@ import {
   mergeProteinSelections,
   toggleProteinSelection,
 } from './selection-controller';
+import { ESCAPE_ORDER } from '../../../../packages/core/src/components/kit/layers';
 
-// Lit cannot load in node: AfterPaintCommit is plain TS, read from core's source.
+// Lit cannot load in node: AfterPaintCommit and ESCAPE_ORDER are plain TS, read from core's source.
 vi.mock('@protspace/core', async () => {
   const { AfterPaintCommit } =
     await import('../../../../packages/core/src/utils/after-paint-commit');
-  return { AfterPaintCommit };
+  const { ESCAPE_ORDER } = await import('../../../../packages/core/src/components/kit/layers');
+  return { AfterPaintCommit, ESCAPE_ORDER };
 });
 
 /** In node there is no requestAnimationFrame: a commit "after the paint" is a 0 ms timer. */
 const afterPaint = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const fire = (target: EventTarget, type: string, detail?: unknown) =>
   target.dispatchEvent(new CustomEvent(type, { detail }));
-/** An Escape keydown with a given composed path, as the document would hear it. */
-function escape(root: EventTarget, path: unknown[] = []): Event {
-  const event = Object.assign(new Event('keydown', { cancelable: true }), {
-    key: 'Escape',
-    composedPath: () => path,
+/**
+ * A stand-in for the layer stack's Escape fallbacks: `press()` runs them as one Escape press does,
+ * in ascending order, until one acts.
+ */
+function fakeEscape() {
+  const handlers = new Map<number, (event: KeyboardEvent) => boolean>();
+  const register = vi.fn((order: number, handle: (event: KeyboardEvent) => boolean) => {
+    handlers.set(order, handle);
+    return () => {
+      handlers.delete(order);
+    };
   });
-  root.dispatchEvent(event);
-  return event;
+  const press = (): boolean => {
+    for (const order of [...handlers.keys()].sort((a, b) => a - b)) {
+      if (handlers.get(order)!(new Event('keydown') as KeyboardEvent)) return true;
+    }
+    return false;
+  };
+  return { register, press, handlers };
 }
 const click = (proteinId: string, modifierKeys?: { ctrl?: boolean; meta?: boolean }) => ({
   proteinId,
@@ -54,8 +67,6 @@ function setup() {
     isolateSelection: vi.fn(),
     resetIsolation: vi.fn(),
     resetZoom: vi.fn(),
-    hasExpandedDuplicateStack: vi.fn(() => false),
-    closeExpandedDuplicateStack: vi.fn(),
   });
   const tools = Object.assign(new EventTarget(), {
     tool: 'pan',
@@ -68,17 +79,17 @@ function setup() {
     selectedProteinIds: [] as string[],
   });
   const interaction = { handleSelectionChange: vi.fn() };
-  const root = new EventTarget();
+  const escape = fakeEscape();
   const warn = vi.fn();
   const controller = createSelectionController({
     plotElement: plot as unknown as ProtspaceScatterplot,
     plotTools: tools as unknown as ProtspacePlotTools,
     proteinSearch: search as unknown as ProtspaceProteinSearch,
     interactionController: interaction,
-    root: root as unknown as Document,
+    registerEscape: escape.register,
     warn,
   });
-  return { controller, plot, tools, search, interaction, root, warn };
+  return { controller, plot, tools, search, interaction, escape, warn };
 }
 
 afterEach(() => {
@@ -303,39 +314,32 @@ describe('selection controller: plot events', () => {
 });
 
 describe('selection controller: Escape', () => {
-  it('Escape closes the duplicate stack, then clears, then returns to Move, and ignores presses inside a modal', async () => {
+  it('the selection fallback clears, then the tool fallback returns to Move, one per press', async () => {
     const m = setup();
+    expect(m.escape.register).toHaveBeenCalledWith(ESCAPE_ORDER.selection, expect.any(Function));
+    expect(m.escape.register).toHaveBeenCalledWith(ESCAPE_ORDER.tool, expect.any(Function));
     fire(m.tools, 'plot-tool-change', { tool: 'rectangle' });
     fire(m.search, 'selection-change', { proteinIds: ['P1'] });
 
-    m.plot.hasExpandedDuplicateStack.mockReturnValueOnce(true);
-    let event = escape(m.root);
-    expect(m.plot.closeExpandedDuplicateStack).toHaveBeenCalledOnce();
-    expect(event.defaultPrevented).toBe(true);
-    expect(m.plot.selectedProteinIds).toEqual(['P1']);
-
-    event = escape(m.root);
-    expect(event.defaultPrevented).toBe(true);
+    expect(m.escape.press()).toBe(true);
     expect(m.search.selectedProteinIds).toEqual([]);
+    expect(m.tools.tool).toBe('rectangle');
     await afterPaint();
     expect(m.plot.selectedProteinIds).toEqual([]);
 
-    event = escape(m.root);
-    expect(event.defaultPrevented).toBe(true);
+    expect(m.escape.press()).toBe(true);
     expect(m.tools.tool).toBe('pan');
     expect(m.plot.selectionMode).toBe(false);
 
     // Nothing left to undo.
-    event = escape(m.root);
-    expect(event.defaultPrevented).toBe(false);
+    expect(m.escape.press()).toBe(false);
+  });
 
-    // A modal (the legend's dialogs, the figure editor) owns its own Escape.
-    fire(m.tools, 'plot-tool-change', { tool: 'lasso' });
-    event = escape(m.root, [
-      { getAttribute: (name: string) => (name === 'aria-modal' ? 'true' : null) },
-    ]);
-    expect(event.defaultPrevented).toBe(false);
-    expect(m.tools.tool).toBe('lasso');
+  it('dispose unregisters both fallbacks', () => {
+    const m = setup();
+    expect(m.escape.handlers.size).toBe(2);
+    m.controller.dispose();
+    expect(m.escape.handlers.size).toBe(0);
   });
 });
 
@@ -360,7 +364,7 @@ describe('selection controller: lifecycle', () => {
     m.controller.dispose();
 
     fire(m.plot, 'protein-click', click('P1', {}));
-    escape(m.root);
+    expect(m.escape.press()).toBe(false);
 
     expect(m.plot.selectedProteinIds).toEqual([]);
   });

@@ -26,6 +26,7 @@ import {
 import { projectionMetadataStyles } from './projection-metadata.styles';
 import '../../common/info-popover';
 import { icon } from '../../kit/icon';
+import { pushLayer } from '../../kit/layers';
 
 /** One rendered `<dt>/<dd>` pair. An empty `description` renders no ⓘ. */
 interface MetadataRow {
@@ -150,6 +151,9 @@ export class ProtspaceProjectionMetadata extends LitElement {
    * reading a metric's ⓘ, or selecting a number, means travelling outside the card.
    */
   @state() private _pinned = false;
+  // While pinned the card is a layer (decision 11): Escape and a press outside close it before
+  // the page's own Escape (the selection) hears the press.
+  private _releaseLayer: (() => void) | null = null;
 
   static styles = projectionMetadataStyles;
 
@@ -203,30 +207,25 @@ export class ProtspaceProjectionMetadata extends LitElement {
   private _setPinned(pinned: boolean): void {
     if (this._pinned === pinned) return;
     this._pinned = pinned;
-    // Bound once per toggle rather than kept for the element's lifetime: an always-on
-    // document listener on a component that exists per scatter-plot is a cost for a state
-    // that is off almost always.
     if (pinned) {
-      document.addEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.addEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer = pushLayer({ close: () => this._closeFromLayer(), elements: [this] });
     } else {
-      document.removeEventListener('pointerdown', this._onDocumentPointerDown, true);
-      document.removeEventListener('keydown', this._onDocumentKeydown, true);
+      this._releaseLayer?.();
+      this._releaseLayer = null;
     }
   }
 
-  /** `composedPath` rather than `contains`: the click may originate inside a nested shadow root. */
-  private _onDocumentPointerDown = (event: Event) => {
-    if (!event.composedPath().includes(this)) this._setPinned(false);
-  };
-
-  private _onDocumentKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    // Let a pinned ⓘ inside the panel take Escape first; it closes on its own keydown handler
-    // and stopping here would leave the user pressing Escape twice with nothing happening.
+  /**
+   * Escape or a press outside the card. Focus goes back to the trigger only when it was in the
+   * card: a press outside leaves it on what the user pressed.
+   */
+  private _closeFromLayer(): void {
+    const focusWasInside = this.shadowRoot?.activeElement != null;
     this._setPinned(false);
-    (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
-  };
+    if (focusWasInside) {
+      (this.shadowRoot?.querySelector('.trigger') as HTMLElement | null)?.focus();
+    }
+  }
 
   render() {
     const { parameters, quality, qualityScope } = this._splitMetadata();

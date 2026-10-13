@@ -42,7 +42,7 @@ import type {
   TooltipAction,
   TooltipActionDetail,
 } from './scatter-plot.events';
-import { pushLayer } from '../kit/layers';
+import { ESCAPE_ORDER, onEscapeFallback, pushLayer } from '../kit/layers';
 import { PointGridController, type GridStash } from './interaction/point-grid-controller';
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
@@ -184,6 +184,10 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _pinnedTooltip: { point: PlotDataPoint; view: TooltipView } | null = null;
   // Releases the pin's layer (kit/layers.ts), through which Escape and outside presses end it.
   private _releasePinnedTooltip: (() => void) | null = null;
+  // The Escape fallback that hides the EAT connectors (ESCAPE_ORDER.connectors), while connected.
+  private _releaseConnectorEscape: (() => void) | null = null;
+  // The expanded duplicate-stack spider's layer: Escape collapses it before any fallback.
+  private _releaseSpiderLayer: (() => void) | null = null;
   @state() private _mergedConfig = DEFAULT_CONFIG;
   // Plain field, NOT @state: render() never reads _transform (it drives the
   // canvas imperatively via the zoom RAF + d3 attr()), so reactivity here only
@@ -307,6 +311,7 @@ export class ProtspaceScatterplot extends LitElement {
     onPointActivate: (e, p) => this._handleClick(e, p),
     onHover: (e, p) => this._handleMouseOver(e, p),
     onHoverEnd: () => this._clearHoverState(),
+    onExpandedChange: (expanded) => this._syncSpiderLayer(expanded),
   });
 
   private _connectorOverlay = new ConnectorOverlayController({
@@ -487,7 +492,13 @@ export class ProtspaceScatterplot extends LitElement {
     this.addEventListener('dragenter', this.handleDragEnter);
     this.addEventListener('dragleave', this.handleDragLeave);
     this.addEventListener('drop', this.handleDrop);
-    window.addEventListener('keydown', this._handleConnectorKeydown);
+    // After the top layer and before the host's own fallbacks (the selection, the tool).
+    this._releaseConnectorEscape ??= onEscapeFallback(ESCAPE_ORDER.connectors, () => {
+      if (!this.hasActiveProvenanceConnectors()) return false;
+      this.clearProvenanceConnectors();
+      return true;
+    });
+    if (this._dupOverlay.hasExpanded()) this._syncSpiderLayer(true);
     window.addEventListener('keydown', this._handleShiftKey);
     window.addEventListener('keyup', this._handleShiftKey);
     window.addEventListener('blur', this._handleWindowBlur);
@@ -538,7 +549,9 @@ export class ProtspaceScatterplot extends LitElement {
     this.removeEventListener('dragenter', this.handleDragEnter);
     this.removeEventListener('dragleave', this.handleDragLeave);
     this.removeEventListener('drop', this.handleDrop);
-    window.removeEventListener('keydown', this._handleConnectorKeydown);
+    this._releaseConnectorEscape?.();
+    this._releaseConnectorEscape = null;
+    this._syncSpiderLayer(false);
     window.removeEventListener('keydown', this._handleShiftKey);
     window.removeEventListener('keyup', this._handleShiftKey);
     window.removeEventListener('blur', this._handleWindowBlur);
@@ -548,12 +561,6 @@ export class ProtspaceScatterplot extends LitElement {
     this._shiftDown = false;
     this._focusedValues = null;
   }
-
-  private _handleConnectorKeydown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && this._connectorOverlay.hasActiveRequest()) {
-      this.clearProvenanceConnectors();
-    }
-  };
 
   private handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -1810,6 +1817,21 @@ export class ProtspaceScatterplot extends LitElement {
     this._releasePinnedTooltip?.();
     this._releasePinnedTooltip = null;
     this._pinnedTooltip = null;
+  }
+
+  /** A layer while the spider is open; the plot's own click already collapses it, so no outside press. */
+  private _syncSpiderLayer(expanded: boolean): void {
+    if (expanded && this.isConnected) {
+      this._releaseSpiderLayer ??= pushLayer({
+        close: () => this.closeExpandedDuplicateStack(),
+        elements: [this],
+        dismissOnOutsidePress: false,
+      });
+      return;
+    }
+    if (expanded) return;
+    this._releaseSpiderLayer?.();
+    this._releaseSpiderLayer = null;
   }
 
   /** A pin ends with its data, with its points' positions, or with the last action. */

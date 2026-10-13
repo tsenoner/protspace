@@ -246,6 +246,32 @@ describe('ps-tooltip', () => {
     expect(tip(el).matches(':popover-open')).toBe(false);
   });
 
+  it('Escape that hides a shown tooltip is default-prevented; Escape with the tooltip hidden is not', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    vi.useFakeTimers();
+    inner(el).dispatchEvent(new PointerEvent('pointerenter'));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(true);
+    const escape = () =>
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      });
+
+    const hiding = escape();
+    document.body.dispatchEvent(hiding);
+    expect(hiding.defaultPrevented).toBe(true);
+    expect(tip(el).matches(':popover-open')).toBe(false);
+
+    const nothingShown = escape();
+    document.body.dispatchEvent(nothingShown);
+    expect(nothingShown.defaultPrevented).toBe(false);
+  });
+
   it('describes its target, through a kit button to the inner button that takes focus', async () => {
     document.body.innerHTML = `
       <ps-button>Export</ps-button><ps-tooltip text="Export the figure"></ps-tooltip>
