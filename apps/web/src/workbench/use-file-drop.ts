@@ -50,12 +50,26 @@ export function useFileDrop(root: RefObject<HTMLElement | null>): boolean {
         ?.dispatchEvent(new CustomEvent('file-dropped', { detail: { file }, bubbles: true }));
     };
 
+    // Outside the workbench (the loading overlay over an inert workbench, a dialog) a file drop
+    // does nothing, rather than the browser opening the file in place of the app. A drag the
+    // workbench already took is left alone.
+    const onStrayOver = (event: DragEvent) => {
+      if (!carriesFiles(event) || event.defaultPrevented) return;
+      event.preventDefault();
+      event.dataTransfer!.dropEffect = 'none';
+    };
+    const onStrayDrop = (event: DragEvent) => {
+      if (carriesFiles(event)) event.preventDefault();
+    };
+
     element.addEventListener('dragenter', onEnter, true);
     element.addEventListener('dragover', onOver, true);
     element.addEventListener('dragleave', onLeave, true);
     element.addEventListener('drop', onDrop, true);
     window.addEventListener('blur', end);
     window.addEventListener('dragend', end);
+    window.addEventListener('dragover', onStrayOver);
+    window.addEventListener('drop', onStrayDrop);
     return () => {
       element.removeEventListener('dragenter', onEnter, true);
       element.removeEventListener('dragover', onOver, true);
@@ -63,6 +77,8 @@ export function useFileDrop(root: RefObject<HTMLElement | null>): boolean {
       element.removeEventListener('drop', onDrop, true);
       window.removeEventListener('blur', end);
       window.removeEventListener('dragend', end);
+      window.removeEventListener('dragover', onStrayOver);
+      window.removeEventListener('drop', onStrayDrop);
     };
   }, [root]);
 
