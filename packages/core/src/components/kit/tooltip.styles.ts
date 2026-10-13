@@ -8,6 +8,8 @@ export const tooltipStyles = css`
     position: fixed;
     inset: auto;
     margin: 0;
+    /* Its own width, not the room left where it sits: Floating UI's shift would widen it each frame. */
+    width: max-content;
     max-width: 280px;
     padding: var(--ps-space-1) var(--ps-space-2);
     border: 0;

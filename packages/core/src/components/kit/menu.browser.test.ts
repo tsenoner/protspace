@@ -341,6 +341,34 @@ describe('ps-menu', () => {
       menu.querySelector<PsMenuItem>('[value="species"]')!.offsetHeight,
     );
   });
+
+  it('returns focus to a ps-icon-button at the right edge without its tooltip creeping', async () => {
+    document.body.innerHTML = `
+      <div style="position:fixed;top:0;right:0">
+        <ps-icon-button icon="x" size="sm" label="Sort: By count, largest first"></ps-icon-button>
+      </div>
+      <ps-menu label="Sort"><ps-menu-item value="a" type="radio" checked>A</ps-menu-item></ps-menu>`;
+    const host = document.querySelector('ps-icon-button')!;
+    await host.updateComplete;
+    const menu = document.querySelector('ps-menu') as PsMenu;
+    menu.anchor = host;
+    host.shadowRoot!.querySelector('button')!.focus();
+    menu.open = true;
+    await menu.updateComplete;
+    await frame();
+    await frame();
+    key('Escape');
+    const tip = host
+      .shadowRoot!.querySelector('ps-tooltip')!
+      .shadowRoot!.querySelector<HTMLElement>('.tip')!;
+    expect(tip.matches(':popover-open')).toBe(true);
+    await frame();
+    const first = tip.getBoundingClientRect();
+    for (let i = 0; i < 4; i++) await frame();
+    const last = tip.getBoundingClientRect();
+    expect(last.width).toBe(first.width);
+    expect(last.height).toBeLessThan(24); // one line
+  });
 });
 
 describe('ps-menu-group', () => {
