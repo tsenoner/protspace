@@ -249,6 +249,44 @@ describe('protspace-import-menu', () => {
     expect(isOpen()).toBe(false);
   });
 
+  it('a second real press on the external anchor closes the panel', async () => {
+    datasetButton().addEventListener('click', () => menu.toggleFrom(datasetButton()));
+    await userEvent.click(datasetButton());
+    await settle();
+    expect(isOpen()).toBe(true);
+    expect(root().activeElement).toBe(ownFile());
+
+    // The press focuses the anchor first; that focusout must not close the panel early.
+    await userEvent.click(datasetButton());
+    await settle();
+    expect(isOpen()).toBe(false);
+    expect(datasetButton().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('openFrom another anchor while open moves the panel there and focuses its first action', async () => {
+    await open();
+    menu.openFrom(datasetButton());
+    await settle();
+    await settle();
+
+    expect(isOpen()).toBe(true);
+    expect(datasetButton().getAttribute('aria-expanded')).toBe('true');
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+    expect(root().activeElement).toBe(ownFile());
+  });
+
+  it("an example's name and size render apart, the size on one line", async () => {
+    menu.exampleDatasets = [
+      { id: 'venom', label: 'Venom toxins (demo) · 7.8K · 1.0 MB', description: 'Toxins.' },
+    ];
+    await open();
+    const button = example('venom');
+    expect(button.querySelector('.import-example-label')!.textContent).toBe('Venom toxins (demo)');
+    const meta = button.querySelector('.import-row-meta')!;
+    expect(meta.textContent).toBe('7.8K · 1.0 MB');
+    expect(getComputedStyle(meta).whiteSpace).toBe('nowrap');
+  });
+
   it('the Last file row shows only with lastFile and fires open-last-file', async () => {
     await open();
     expect(root().querySelector('.import-last-file')).toBeNull();
@@ -289,6 +327,17 @@ describe('protspace-import-menu', () => {
     expect(root().activeElement).toBe(ownFile());
     await userEvent.keyboard('{ArrowUp}');
     expect(root().activeElement).toBe(example('swissprot'));
+  });
+
+  it("ArrowDown and ArrowUp on an example's ⓘ continue from its row", async () => {
+    await open();
+    (exampleInfo('5K')!.shadowRoot!.querySelector('.info-button') as HTMLButtonElement).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(root().activeElement).toBe(example('swissprot'));
+
+    (exampleInfo('5K')!.shadowRoot!.querySelector('.info-button') as HTMLButtonElement).focus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(root().activeElement).toBe(example('5K'));
   });
 
   it("an example's ⓘ bubble is topmost", async () => {

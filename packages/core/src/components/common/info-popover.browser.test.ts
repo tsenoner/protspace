@@ -13,6 +13,7 @@ type InfoPopoverElement = HTMLElement & {
   label: string;
   align: 'left' | 'right';
   placement: 'bottom' | 'side';
+  besideRow: boolean;
   updateComplete: Promise<boolean>;
 };
 
@@ -63,7 +64,10 @@ function escape(): void {
 
 async function mount(
   props: Partial<
-    Pick<InfoPopoverElement, 'description' | 'detail' | 'docsUrl' | 'label' | 'align' | 'placement'>
+    Pick<
+      InfoPopoverElement,
+      'description' | 'detail' | 'docsUrl' | 'label' | 'align' | 'placement' | 'besideRow'
+    >
   > = {},
   parent: HTMLElement = document.getElementById('stage')!,
 ): Promise<InfoPopoverElement> {
@@ -74,6 +78,7 @@ async function mount(
   el.label = props.label ?? 'Test annotation';
   if (props.align) el.align = props.align;
   if (props.placement) el.placement = props.placement;
+  if (props.besideRow) el.besideRow = true;
   parent.append(el);
   await el.updateComplete;
   return el;
@@ -233,6 +238,19 @@ describe('protspace-info-popover on ps-popover', () => {
     expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
     const hit = deepestAt(box.left + box.width / 2, box.top + box.height / 2);
     expect(hit !== null && bubble(el)!.contains(hit)).toBe(true);
+  });
+
+  it('beside-row: at the right edge the side bubble flips beside the row, not over it', async () => {
+    const { row } = await openOuterPanel();
+    document.getElementById('anchor')!.style.marginLeft = '1000px';
+    const el = await mount({ placement: 'side', besideRow: true }, row);
+    trigger(el).click();
+    await settle(el);
+
+    const box = bubble(el)!.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    expect(rowBox.right).toBeGreaterThan(window.innerWidth - 300);
+    expect(box.right <= rowBox.left + 1 || box.left >= rowBox.right - 1).toBe(true);
   });
 
   it('Escape inside an open ps-popover closes the bubble first, then the panel', async () => {

@@ -119,6 +119,13 @@ test.describe('Import and Export menus', () => {
     await expect(switcher).toBeFocused();
     await expect(switcher).toHaveAttribute('aria-expanded', 'false');
 
+    // A second press on the dataset name closes the panel, as on Import.
+    await switcher.click();
+    await expect(panel).toBeVisible();
+    await switcher.click();
+    await expect(panel).toBeHidden();
+    await expect(switcher).toHaveAttribute('aria-expanded', 'false');
+
     await switcher.click();
     await importMenu(page).locator(`[data-example-id="${other.id}"]`).click();
     await waitForProteinCount(page, other.count);

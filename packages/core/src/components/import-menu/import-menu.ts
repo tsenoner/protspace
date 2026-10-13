@@ -181,7 +181,7 @@ export class ProtspaceImportMenu extends LitElement {
               @click=${() => this.loadExample(example.id)}
             >
               <span class="import-row-check">${current ? icon('check', 14) : nothing}</span>
-              <span class="import-example-label">${example.label}</span>
+              ${this.renderExampleLabel(example.label)}
               ${example.large ? html`<span class="import-example-badge">Large</span>` : nothing}
             </button>
             ${this.renderExampleInfo(example)}
@@ -189,6 +189,14 @@ export class ProtspaceImportMenu extends LitElement {
         })}
       </div>
     </section>`;
+  }
+
+  /** "Name · 7.8K · 1.0 MB": the name wraps, the size and count stay on one line, as Last file's. */
+  private renderExampleLabel(label: string) {
+    const [name, ...meta] = label.split(' · ');
+    return html`<span class="import-example-label">${name}</span>${meta.length > 0
+        ? html`<span class="import-row-meta">${meta.join(' · ')}</span>`
+        : nothing}`;
   }
 
   /**
@@ -200,6 +208,7 @@ export class ProtspaceImportMenu extends LitElement {
     return html`<protspace-info-popover
       class="import-example-info"
       placement="side"
+      beside-row
       data-example-info=${example.id}
       .description=${example.description}
       .detail=${example.insight ?? ''}
@@ -227,27 +236,41 @@ export class ProtspaceImportMenu extends LitElement {
     const actions = this.actions();
     if (actions.length === 0) return;
     event.preventDefault();
-    const current = actions.indexOf((this.renderRoot as ShadowRoot).activeElement as HTMLElement);
+    const active = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
     const last = actions.length - 1;
-    const next =
-      event.key === 'ArrowDown'
-        ? current < 0 || current === last
-          ? 0
-          : current + 1
-        : current <= 0
-          ? last
-          : current - 1;
+    let next: number;
+    const current = active ? actions.indexOf(active) : -1;
+    if (current < 0 && active) {
+      // An example's ⓘ: continue from its row's button, the last action before it.
+      const before =
+        actions.filter(
+          (action) => action.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).length - 1;
+      next = event.key === 'ArrowDown' ? (before === last ? 0 : before + 1) : Math.max(before, 0);
+    } else {
+      next =
+        event.key === 'ArrowDown'
+          ? current < 0 || current === last
+            ? 0
+            : current + 1
+          : current <= 0
+            ? last
+            : current - 1;
+    }
     actions[next].focus();
   };
 
   /**
    * Tab out of the panel closes it. Focus moving inside the shadow root reaches this host listener
    * retargeted to the host itself; a null target (a press on the panel's background, or the
-   * window losing focus) leaves it open.
+   * window losing focus) leaves it open. The anchor counts as inside, as for the popover's
+   * outside press: a press on it focuses it first, and its own click then toggles the panel.
    */
   private onFocusOut = (event: FocusEvent) => {
     const next = event.relatedTarget as Node | null;
-    if (this.open && next && !flatContains(this, next)) this.close();
+    if (!this.open || !next || flatContains(this, next)) return;
+    if (this.anchorEl && flatContains(this.anchorEl, next)) return;
+    this.close();
   };
 
   private onTriggerClick = () => {

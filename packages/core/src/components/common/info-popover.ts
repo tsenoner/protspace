@@ -35,7 +35,7 @@ const CLOSE_GRACE_MS = 140;
  *   aligns its right edge to the icon.
  * - `"side"` puts it beside the icon (right, flipping left near the viewport edge), used by the
  *   rows of a list. The whole row (this element's parent) keeps it open, so the pointer can cross
- *   the row towards the bubble.
+ *   the row towards the bubble. With `beside-row` the bubble sits beside the row itself.
  *
  * Renders nothing when there is neither a description, a detail nor a docs URL.
  */
@@ -58,6 +58,11 @@ class ProtspaceInfoPopover extends LitElement {
   @property({ type: String }) align: 'left' | 'right' = 'left';
   /** `'bottom'` drops the bubble below the icon; `'side'` puts it beside the icon. */
   @property({ type: String }) placement: 'bottom' | 'side' = 'bottom';
+  /**
+   * For `placement="side"`: the bubble sits beside the whole row rather than the icon, so a flip
+   * near the viewport edge lands beside the list (the Import panel) instead of over its rows.
+   */
+  @property({ type: Boolean, attribute: 'beside-row' }) besideRow = false;
 
   /** Pointer is over the icon or the bubble. */
   @state() private hovering = false;
@@ -103,6 +108,8 @@ class ProtspaceInfoPopover extends LitElement {
     if (this.placement === 'side' && this.parentElement) {
       this._row = this.parentElement;
       this._row.addEventListener('pointerleave', this._onRowPointerLeave);
+      // The bubble's anchor reads `_row`, which the first render had not set yet.
+      if (this.besideRow) this.requestUpdate();
     }
   }
 
@@ -235,7 +242,7 @@ class ProtspaceInfoPopover extends LitElement {
       </button>
       <ps-popover
         id=${this.popoverId}
-        .anchor=${this.infoButton}
+        .anchor=${this.besideRow && this._row ? this._row : this.infoButton}
         .open=${open}
         placement=${this.bubblePlacement}
         panel-role="dialog"

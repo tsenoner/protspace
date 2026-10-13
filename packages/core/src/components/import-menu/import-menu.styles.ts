@@ -184,6 +184,7 @@ export const importMenuStyles = [
       color: var(--ps-text-muted);
       font-size: var(--ps-text-sm);
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .import-example-badge {
