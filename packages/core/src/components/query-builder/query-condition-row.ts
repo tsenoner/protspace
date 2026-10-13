@@ -144,6 +144,12 @@ class ProtspaceQueryConditionRow extends LitElement {
     this._annotationHighlightIndex = -1;
   }
 
+  /** Closes this row's annotation and value pickers; `updated()` releases their layers. */
+  closePickers(): void {
+    this._closeAnnotationPicker();
+    this._showValuePicker = false;
+  }
+
   private _toggleAnnotationPicker(e: Event) {
     if (this._showAnnotationPicker) {
       this._closeAnnotationPicker();

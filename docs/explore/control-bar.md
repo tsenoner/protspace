@@ -142,7 +142,7 @@ Isolate is useful for examining relationships within a specific protein subset -
 
 ![Filter Query modal with a single condition: Protein family equal to "phospholipase A2 family" or "three-finger toxin family", with a live counter of how many proteins match](./images/filter-query-builder.png)
 
-**Filter** opens a query builder modal for building complex annotation-based filters:
+**Filter** opens the Filter panel in the sidebar, in place of the legend, for building annotation-based filters:
 
 1. Click **Filter** to open the query builder
 2. Each row is a condition: select an annotation, then click **+** to pick values
@@ -182,9 +182,9 @@ condition in **NOT** re-includes those proteins, because NOT is the complement o
 There is no numeric equivalent of the categorical N/A entry you can pick from a value list.
 :::
 
-Close the modal with the **×** button, **Cancel**, **Escape** key, or clicking the backdrop.
+**Apply** filters the plot and keeps the panel open. **Cancel** returns the conditions to the filter last applied, and the panel's **×** returns to the legend.
 
-**Reset** clears the query and restores all proteins without closing the modal.
+**Reset** clears the query and restores all proteins; the panel stays open.
 
 ::: tip Logical Operators
 

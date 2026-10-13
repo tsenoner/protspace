@@ -14,8 +14,6 @@ import type {
   ProtspacePlotStatus,
   ProtspaceStructureViewer,
   DataLoader as ProtspaceDataLoader,
-  PsButton,
-  PsDialog,
 } from '@protspace/core';
 
 interface ExploreElements {
@@ -26,8 +24,6 @@ interface ExploreElements {
   plotElement: ProtspaceScatterplot;
   structureViewer: ProtspaceStructureViewer;
   queryBuilder: ProtspaceQueryBuilder;
-  filterDialog: PsDialog;
-  filterButton: PsButton;
   projectionSelect: ProtspaceProjectionSelect;
   annotationSelect: ProtspaceAnnotationSelect;
   contoursMenu: ProtspaceContoursMenu;
@@ -46,7 +42,6 @@ const REQUIRED_TAGS = [
   'protspace-import-menu',
   'protspace-export-menu',
   'protspace-query-builder',
-  'ps-dialog',
   'protspace-projection-select',
   'protspace-annotation-select',
   'protspace-contours-menu',
@@ -71,8 +66,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
   const importMenu = doc.getElementById('myImportMenu') as ProtspaceImportMenu | null;
   const exportMenu = doc.getElementById('myExportMenu') as ProtspaceExportMenu | null;
   const queryBuilder = doc.getElementById('myQueryBuilder') as ProtspaceQueryBuilder | null;
-  const filterDialog = doc.getElementById('myFilterDialog') as PsDialog | null;
-  const filterButton = doc.getElementById('myFilterButton') as PsButton | null;
   const projectionSelect = doc.getElementById(
     'myProjectionSelect',
   ) as ProtspaceProjectionSelect | null;
@@ -96,8 +89,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !importMenu ||
     !exportMenu ||
     !queryBuilder ||
-    !filterDialog ||
-    !filterButton ||
     !projectionSelect ||
     !annotationSelect ||
     !contoursMenu ||
@@ -115,8 +106,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
       importMenu,
       exportMenu,
       queryBuilder,
-      filterDialog,
-      filterButton,
       projectionSelect,
       annotationSelect,
       contoursMenu,
@@ -137,8 +126,6 @@ export function getElements(doc: Document = document): ExploreElements | null {
     plotElement,
     structureViewer,
     queryBuilder,
-    filterDialog,
-    filterButton,
     projectionSelect,
     annotationSelect,
     contoursMenu,

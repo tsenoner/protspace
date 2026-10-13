@@ -7,6 +7,7 @@ import {
   SIDEBAR_WIDTH,
   type FloatingRect,
   type LayoutState,
+  type SidebarPanel,
   type StructurePlacement,
 } from './layout-defaults';
 
@@ -24,6 +25,8 @@ const isFiniteNumber = (value: unknown): value is number =>
 
 const isPlacement = (value: unknown): value is StructurePlacement =>
   value === 'docked' || value === 'floating';
+
+const isPanel = (value: unknown): value is SidebarPanel => value === 'legend' || value === 'filter';
 
 function parseRect(raw: unknown): FloatingRect | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -61,6 +64,7 @@ export function parseLayout(raw: unknown): LayoutState {
       ? value.structurePlacement
       : DEFAULT_LAYOUT.structurePlacement,
     floatingRect: parseRect(value.floatingRect),
+    panel: isPanel(value.panel) ? value.panel : DEFAULT_LAYOUT.panel,
   };
 }
 
@@ -75,7 +79,8 @@ function sameLayout(a: LayoutState, b: LayoutState): boolean {
     a.sidebarWidth === b.sidebarWidth &&
     a.legendFraction === b.legendFraction &&
     a.structurePlacement === b.structurePlacement &&
-    sameRect(a.floatingRect, b.floatingRect)
+    sameRect(a.floatingRect, b.floatingRect) &&
+    a.panel === b.panel
   );
 }
 
@@ -103,6 +108,11 @@ export function updateLayout(patch: Partial<LayoutState>): void {
   layout = next;
   setStorageItem(LAYOUT_STORAGE_KEY, next);
   for (const listener of [...listeners]) listener();
+}
+
+/** Opens the sidebar on `panel`: the rail's items, the view bar's Filter and the status chips. */
+export function openPanel(panel: SidebarPanel): void {
+  updateLayout({ sidebarOpen: true, panel });
 }
 
 export function resetLayoutForTests(): void {

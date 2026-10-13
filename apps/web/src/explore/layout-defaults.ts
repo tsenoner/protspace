@@ -27,6 +27,9 @@ export const DESKTOP_MIN_WIDTH = 951;
 
 export type StructurePlacement = 'docked' | 'floating';
 
+/** What the sidebar shows above the structure: the legend or the Filter panel (decision 14). */
+export type SidebarPanel = 'legend' | 'filter';
+
 /** The floating card in px, relative to the plot area's top-left corner. */
 export interface FloatingRect {
   x: number;
@@ -42,6 +45,8 @@ export interface LayoutState {
   structurePlacement: StructurePlacement;
   /** null: the default spot at the plot area's bottom-right corner. */
   floatingRect: FloatingRect | null;
+  /** The sidebar's panel; the filter itself is never stored. */
+  panel: SidebarPanel;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -50,6 +55,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   legendFraction: LEGEND_FRACTION.default,
   structurePlacement: 'docked',
   floatingRect: null,
+  panel: 'legend',
 };
 
 /** The icon rail at the sidebar's right edge, shown at desktop widths. */

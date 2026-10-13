@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LAYOUT, LAYOUT_STORAGE_KEY, type LayoutState } from './layout-defaults';
 import {
   getLayout,
+  openPanel,
   parseLayout,
   resetLayoutForTests,
   subscribeLayout,
@@ -48,6 +49,7 @@ describe('layout store', () => {
       legendFraction: 0.35,
       structurePlacement: 'floating',
       floatingRect: { x: 40, y: 24, width: 360, height: 300 },
+      panel: 'filter',
     };
     updateLayout(layout);
     resetLayoutForTests();
@@ -62,6 +64,7 @@ describe('layout store', () => {
         legendFraction: Number.POSITIVE_INFINITY,
         structurePlacement: 'sideways',
         floatingRect: 'bottom-right',
+        panel: 'structure',
       }),
     ).toEqual(DEFAULT_LAYOUT);
     // A bad field leaves the good ones alone.
@@ -161,5 +164,25 @@ describe('layout store', () => {
       legendFraction: 0.3,
       structurePlacement: 'floating',
     });
+  });
+
+  it('panel defaults to legend, and an unknown panel falls back', () => {
+    expect(getLayout().panel).toBe('legend');
+    expect(parseLayout({ panel: 'filter' }).panel).toBe('filter');
+    expect(parseLayout({ panel: 'Filter' }).panel).toBe('legend');
+    expect(parseLayout({ panel: 3 }).panel).toBe('legend');
+  });
+
+  it('openPanel opens the sidebar on that panel, in one write', () => {
+    updateLayout({ sidebarOpen: false });
+    storage.setItem.mockClear();
+    const listener = vi.fn();
+    subscribeLayout(listener);
+
+    openPanel('filter');
+
+    expect(getLayout()).toMatchObject({ sidebarOpen: true, panel: 'filter' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
   });
 });

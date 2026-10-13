@@ -8,7 +8,7 @@ import {
   expectUrlParam,
   exportMenu,
   filterButton,
-  filterDialog,
+  filterPanel,
   getColorByOptions,
   getContoursMode,
   getCurrentDatasetName,
@@ -162,15 +162,15 @@ test.describe('explore helpers', () => {
     await expect(exportMenu(page).getByRole('button', { name: 'PNG', exact: true })).toBeVisible();
   });
 
-  test('openFilter opens the filter dialog with its query builder', async ({ page }) => {
+  test('openFilter opens the Filter panel with its query builder', async ({ page }) => {
     await openExplore(page);
     await expect(filterButton(page)).toBeVisible();
     await openFilter(page);
-    await expect(filterDialog(page)).toBeVisible();
+    await expect(filterPanel(page)).toBeVisible();
     await expect(queryBuilder(page)).toBeVisible();
-    // An open dialog stays open.
+    // An open panel stays open.
     await openFilter(page);
-    await expect(filterDialog(page)).toBeVisible();
+    await expect(filterPanel(page)).toBeVisible();
   });
 
   test('chooseTool switches between move, box and lasso', async ({ page }) => {

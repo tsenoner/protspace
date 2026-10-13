@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsButton, PsIconButton } from '../kit/button';
+import { topLayer } from '../kit/layers';
 import type { ProtspaceQueryBuilder } from './query-builder';
 import './query-builder';
 import { createCondition, createGroup } from './query-types';
@@ -99,5 +100,19 @@ describe('protspace-query-builder in a narrow panel', () => {
     expect(
       all.map((row) => row.shadowRoot!.querySelector('.condition-row')!.getAttribute('aria-label')),
     ).toEqual(['Condition 1', 'Condition 2', 'Condition 3']);
+  });
+
+  it('closePopups releases an open picker’s layer', async () => {
+    const builder = await mount([createCondition()]);
+    const row = rows(builder)[0];
+    row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
+    await row.updateComplete;
+    expect(topLayer()).toBeDefined();
+
+    builder.closePopups();
+    await row.updateComplete;
+    await row.updateComplete;
+
+    expect(topLayer()).toBeUndefined();
   });
 });

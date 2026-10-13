@@ -118,3 +118,15 @@ Communication between controllers and host component happens through callback in
 - Testability (controllers can be tested in isolation)
 - Reusability (controllers can be used by other components)
 - Maintainability (concerns are clearly separated)
+
+## Filter panel
+
+The app's filter controller (`apps/web/src/explore/filter-controller.ts`) keeps two queries: the
+applied filter, written to the scatterplot's `filteredProteinIds` and `filtersActive`, and the
+draft the Filter panel's query builder edits. Apply makes the draft the applied filter and keeps
+the panel open; Cancel returns the draft to it; Reset and the status chip's ✕ remove it. The
+builder gets data and recounts only while the panel is on screen (`panel` in the layout store;
+the filter itself is never stored). The legend's EAT reliability control writes the applied
+filter at once and changes only its own column's condition in a dirty draft. Each Apply, Reset and
+removal is reported as a `FilterCommit` holding the applied query and its matched ids by
+reference, which the undo history records.

@@ -4,6 +4,8 @@ import {
   chooseTool,
   clearStatusChip,
   clickLegendItem,
+  closeFilterPanel,
+  filterPanel,
   getFirstLegendItemValue,
   getSelectedProteinIds,
   importTrigger,
@@ -12,7 +14,6 @@ import {
   openExplore,
   plotArea,
   plotStatus,
-  queryBuilder,
   resetIsolation,
   searchInput,
   selectionBar,
@@ -337,9 +338,8 @@ test.describe('plot tools and selection', () => {
     await statusChip(page, 'filter')
       .getByRole('button', { name: 'Filtered · 1 condition', exact: true })
       .click();
-    await expect(queryBuilder(page)).toBeVisible();
-    // Close the Filter (a dialog until Task 4.5) so the chip is reachable again.
-    await page.keyboard.press('Escape');
+    await expect(filterPanel(page)).toBeVisible();
+    await closeFilterPanel(page);
 
     await clearStatusChip(page, 'filter');
     expect(

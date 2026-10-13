@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 // The legend helpers live in helpers/legend.ts; these three are re-exported for their old callers.
 export { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './legend';
+import { getFirstLegendItemValue } from './legend';
 
 export async function dismissTourIfPresent(page: Page): Promise<void> {
   const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
@@ -295,9 +296,9 @@ export const exportMenu = (page: Page): Locator => page.locator('#myExportMenu')
 export const filterButton = (page: Page): Locator =>
   viewBar(page).getByRole('button', { name: /^Filter/ });
 
-/** The Filter dialog (`ps-dialog` headed "Filter"). */
-export const filterDialog = (page: Page): Locator =>
-  page.getByRole('dialog', { name: 'Filter', exact: true });
+/** The sidebar's Filter panel (a region named by its heading, "Filter"). */
+export const filterPanel = (page: Page): Locator =>
+  page.getByRole('region', { name: 'Filter', exact: true });
 
 export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
 
@@ -379,18 +380,56 @@ export async function openExportMenu(page: Page): Promise<void> {
   await expect(png).toBeVisible();
 }
 
-/** Opens the Filter dialog, from the view bar or from More, unless it is open already. */
+/** Opens the Filter panel, from the view bar or from More, unless it shows already. */
 export async function openFilter(page: Page): Promise<void> {
   await waitForExploreInteractionReady(page);
-  const dialog = filterDialog(page);
-  if (await dialog.isVisible().catch(() => false)) return;
+  const panel = filterPanel(page);
+  if (await panel.isVisible().catch(() => false)) return;
   if (await filterButton(page).isVisible()) {
     await filterButton(page).click();
   } else {
     await moreButton(page).click();
-    await page.locator('#wb-more-menu').getByRole('menuitem', { name: 'Filter…' }).click();
+    await page
+      .locator('#wb-more-menu')
+      .getByRole('menuitem', { name: 'Filter', exact: true })
+      .click();
   }
-  await expect(dialog).toBeVisible();
+  await expect(panel).toBeVisible();
+}
+
+/** Closes the Filter panel with its ✕, back to the legend, if it shows. */
+export async function closeFilterPanel(page: Page): Promise<void> {
+  const panel = filterPanel(page);
+  if (!(await panel.isVisible().catch(() => false))) return;
+  await panel.getByRole('button', { name: 'Close filter', exact: true }).click();
+  await expect(panel).toBeHidden();
+}
+
+const quoted = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+/**
+ * Opens the Filter panel and applies one condition: the colouring annotation equals the legend's
+ * first category. The panel stays open.
+ */
+export async function applyFirstCategoryFilter(page: Page): Promise<void> {
+  const { annotation } = await getViewState(page);
+  const value = await getFirstLegendItemValue(page);
+  await openFilter(page);
+  const row = queryBuilder(page).locator('protspace-query-condition-row').first();
+  await row.locator('.annotation-select-trigger').click();
+  await queryBuilder(page)
+    .locator(`.annotation-picker-item[data-annotation="${quoted(annotation ?? '')}"]`)
+    .first()
+    .click();
+  await row.locator('.value-chip-add').click();
+  await queryBuilder(page)
+    .locator(`.value-picker-item[data-value="${quoted(value)}"]`)
+    .first()
+    .click();
+  // A click elsewhere in the builder closes the value picker.
+  await queryBuilder(page).locator('.match-count').click();
+  await filterApplyButton(page).click();
+  await expect(filterApplyButton(page)).toBeDisabled();
 }
 
 /**

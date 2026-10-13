@@ -10,8 +10,10 @@ import {
   filterButton,
   isolateSelection,
   openExportMenu,
+  openFilter,
   plotStatus,
   projectionTrigger,
+  queryBuilder,
   resetIsolation,
   searchInput,
   selectAnnotation,
@@ -20,6 +22,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { rail } from './helpers/workbench';
 
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
@@ -797,6 +800,47 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   expect(fs.statSync(downloadPath!).size).toBeGreaterThan(10_000);
+});
+
+test('with a dirty draft, moving the slider in the legend updates the draft’s reliability row and keeps the other edit', async ({
+  page,
+}) => {
+  await loadEatFixture(page);
+  await selectAnnotation(page, 'ec');
+  const eatGroup = page
+    .locator('protspace-legend')
+    .getByRole('region', { name: 'Embedding Annotation Transfer' });
+  const thresholdPercent = eatGroup.getByRole('spinbutton', {
+    name: 'EAT reliability filter percentage',
+  });
+  type Draft = Array<{ kind?: string; annotation?: string; min?: number | null }>;
+  const draft = () =>
+    queryBuilder(page).evaluate((builder) => (builder as unknown as { query: Draft }).query);
+
+  // A dirty draft: a second, empty row beside the seeded one.
+  await openFilter(page);
+  await queryBuilder(page).getByRole('button', { name: '+ Add condition' }).click();
+  await expect.poll(async () => (await draft()).length).toBe(2);
+
+  // To the legend, move the slider, back to the panel.
+  await rail(page).getByRole('button', { name: 'Legend', exact: true }).click();
+  await thresholdPercent.fill('50');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (document.querySelector('#myPlot') as (Element & { filtersActive?: boolean }) | null)
+            ?.filtersActive ?? false,
+      ),
+    )
+    .toBe(true);
+  await rail(page).getByRole('button', { name: 'Filter', exact: true }).click();
+
+  const rows = await draft();
+  expect(rows).toHaveLength(3);
+  expect(rows.slice(0, 2).every((row) => row.annotation === '')).toBe(true);
+  expect(rows[2]).toMatchObject({ kind: 'numeric', min: 0.5 });
+  await expect(queryBuilder(page).getByRole('button', { name: 'Cancel' })).toBeEnabled();
 });
 
 /**

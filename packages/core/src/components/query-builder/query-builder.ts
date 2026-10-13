@@ -248,6 +248,13 @@ export class ProtspaceQueryBuilder extends LitElement {
     this._dispatch('query-close');
   }
 
+  /** Closes every row's open picker, for a host that hides the builder. */
+  closePopups(): void {
+    for (const row of this.renderRoot.querySelectorAll('protspace-query-condition-row')) {
+      (row as HTMLElement & { closePickers(): void }).closePickers();
+    }
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   private _renderRow(

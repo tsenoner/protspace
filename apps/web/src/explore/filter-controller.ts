@@ -12,7 +12,6 @@ import {
   type ProtspaceLegend,
   type ProtspaceQueryBuilder,
   type ProtspaceScatterplot,
-  type PsDialog,
 } from '@protspace/core';
 import {
   DEFAULT_EAT_RELIABILITY,
@@ -24,41 +23,53 @@ import {
 import { TOOLTIP_ONLY_ANNOTATIONS } from './view-bar-controller';
 import { setWorkbenchStatus } from './workbench-status';
 
+/**
+ * A filter as the plot holds it: the query that produced it and the protein ids it keeps, by
+ * reference. `matchedIds` null: nothing is filtered (no query, or one that matches nothing, #380).
+ */
+export interface FilterSnapshot {
+  query: FilterQuery;
+  matchedIds: readonly string[] | null;
+}
+
+/** An applied filter changed through the panel or the chip: what undo records (Task 4.6). */
+export interface FilterCommit {
+  before: FilterSnapshot;
+  after: FilterSnapshot;
+  cause: 'apply' | 'reset' | 'clear';
+}
+
 interface FilterControllerOptions {
   plotElement: ProtspaceScatterplot;
   legendElement: ProtspaceLegend;
   queryBuilder: ProtspaceQueryBuilder;
-  dialog: PsDialog;
   /** Where `annotation-change` is heard; the document in the app. */
   root: Pick<Document, 'addEventListener' | 'removeEventListener'>;
+  /** Whether the Filter panel is on screen: the builder counts only then. */
+  isPanelShown(): boolean;
+  /** Calls `listener` whenever `isPanelShown()` may have changed. */
+  subscribePanel(listener: () => void): () => void;
+  /** An Apply, a Reset or a removal changed the applied filter. */
+  onFilterCommitted?(commit: FilterCommit): void;
 }
 
 export interface FilterController {
-  /** Opens the Filter dialog on the current data, with one empty condition when there is none. */
-  open(): void;
-  /** The status corner's filter ✕: removes the applied filter; the next opening starts afresh. */
-  clear(): void;
   /** The colouring annotation changed: move the reliability control to its column's state. */
   setSelectedAnnotation(annotation: string): void;
-  /** The legend's reliability control: replaces its base's condition and applies the query. */
+  /** The legend's reliability control: replaces its base's condition and applies the filter. */
   setEatReliability(baseKey: string, state: EatReliabilityState): void;
-  /** A new dataset has other proteins, so the query and the mirror record go. */
+  /** The filter chip's ✕: removes the applied filter; a dirty draft keeps its edits. */
+  clear(): void;
+  /** Undo and redo: makes `snapshot` the applied filter as it was, without evaluating. */
+  restore(snapshot: FilterSnapshot): void;
+  getApplied(): FilterSnapshot;
+  /** A new dataset has other proteins, so the filter, the draft and the mirror record go. */
   resetForNewDataset(): void;
   dispose(): void;
 }
 
-/**
- * The filter the Filter dialog builds (design decision 9, moved from the control bar).
- *
- * A query applies through the plot's filter channel (`filteredProteinIds`, `filtersActive`),
- * which is idempotent: a filter is neither a selection nor an isolation (#257). Matched indices
- * are positions in the materialized snapshot the builder evaluated, never in the isolated
- * subset `getCurrentData()` returns.
- *
- * The legend's EAT reliability control and the query mirror each other, per eat-confidence
- * column (#6b, #380). Both directions compare against the last state recorded for that column, so
- * they cannot ping-pong, and a change on one base is never measured against another's.
- */
+const NO_FILTER: FilterSnapshot = { query: [], matchedIds: null };
+
 /** Leaf conditions that constrain something: a group counts its own, an empty row counts 0. */
 function countConfigured(items: FilterQuery): number {
   let count = 0;
@@ -69,29 +80,38 @@ function countConfigured(items: FilterQuery): number {
   return count;
 }
 
+/**
+ * The filter the sidebar's Filter panel builds (design decision 14).
+ *
+ * The panel edits a draft; Apply makes it the applied filter, Cancel returns the draft to it, and
+ * Reset or the chip's ✕ removes it. A filter applies through the plot's filter channel
+ * (`filteredProteinIds`, `filtersActive`), which is idempotent: a filter is neither a selection
+ * nor an isolation (#257). Matched indices are positions in the materialized snapshot the builder
+ * evaluated, never in the isolated subset `getCurrentData()` returns.
+ *
+ * The legend's EAT reliability control writes the applied filter at once and also updates the
+ * draft: a clean draft follows the applied filter, a dirty one gets only that column's condition.
+ * The applied filter moves the control back, per eat-confidence column (#6b, #380); both
+ * directions compare against the last state recorded for that column, so they cannot ping-pong.
+ */
 export function createFilterController({
   plotElement,
   legendElement,
   queryBuilder,
-  dialog,
   root,
+  isPanelShown,
+  subscribePanel,
+  onFilterCommitted,
 }: FilterControllerOptions): FilterController {
-  let query: FilterQuery = [];
-  let filterActive = false;
-  /** The configured conditions of the query last applied; the draft in the dialog may differ. */
-  let appliedCount = 0;
+  let applied: FilterSnapshot = NO_FILTER;
+  /** The empty row a fresh panel shows; the draft is clean while it equals it and nothing applies. */
+  let seed: FilterQuery = [createCondition()];
+  let draft: FilterQuery = seed;
   let selectedAnnotation = '';
   /** The materialized snapshot the builder evaluates; refreshed on every plot data-change. */
   let snapshot: VisualizationData | undefined;
+  let shown = isPanelShown();
   const lastMirrored = new Map<string, EatReliabilityState>();
-  /**
-   * The query that counts as clean: the one last applied, reset to or seeded. The builder's Cancel
-   * is enabled, and its Apply can apply, only while the query differs from it.
-   */
-  let appliedQuery: FilterQuery = [];
-  const syncDirty = () => {
-    queryBuilder.dirty = !sameQuery(query, appliedQuery);
-  };
 
   const readSnapshot = (): VisualizationData | undefined =>
     plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? snapshot;
@@ -99,69 +119,69 @@ export function createFilterController({
   const filterableAnnotations = (data: VisualizationData | undefined): string[] =>
     Object.keys(data?.annotations ?? {}).filter((key) => !TOOLTIP_ONLY_ANNOTATIONS.has(key));
 
+  /** What a clean draft equals: the applied query, or the seed while none is applied. */
+  const baseline = (): FilterQuery => (applied.query.length > 0 ? applied.query : seed);
+  const isDirty = () => !sameQuery(draft, baseline());
+
   const publish = () =>
-    setWorkbenchStatus({ appliedFilterConditions: filterActive ? appliedCount : 0 });
+    setWorkbenchStatus({
+      appliedFilterConditions: applied.matchedIds ? countConfigured(applied.query) : 0,
+    });
 
   /**
    * The builder re-counts the whole dataset whenever its data or query changes, so it gets them
-   * only while the dialog shows it; open() hands it the latest.
+   * only while the panel shows it; becoming shown hands it the latest.
    */
   const syncBuilder = () => {
-    if (!dialog.open) return;
-    queryBuilder.data = snapshot;
-    queryBuilder.query = query;
-    syncDirty();
-  };
-
-  const setQuery = (next: FilterQuery) => {
-    query = next;
-    syncBuilder();
-    publish();
+    if (!isPanelShown()) return;
+    if (queryBuilder.data !== snapshot) {
+      queryBuilder.annotations = filterableAnnotations(snapshot);
+      queryBuilder.data = snapshot;
+    }
+    queryBuilder.query = draft;
+    queryBuilder.dirty = isDirty();
   };
 
   /**
-   * Releases the filter channel so every protein returns, leaving isolation alone. Writes only
-   * when something is set: a fresh `[]` over an empty one still rebuilds the plot's geometry.
+   * Writes `ids` to the plot's filter channel, or releases it. Releases only when something is
+   * set: a fresh `[]` over an empty one still rebuilds the plot's geometry.
    */
-  const clearFilterChannel = () => {
-    if (plotElement.filtersActive || (plotElement.filteredProteinIds?.length ?? 0) > 0) {
+  const writeChannel = (ids: readonly string[] | null) => {
+    if (ids) {
+      // The snapshot's own array: undo writes back the ids it recorded, never a copy.
+      plotElement.filteredProteinIds = ids as string[];
+      plotElement.filtersActive = true;
+    } else if (plotElement.filtersActive || (plotElement.filteredProteinIds?.length ?? 0) > 0) {
       plotElement.filteredProteinIds = [];
       plotElement.filtersActive = false;
     }
-    filterActive = false;
+  };
+
+  const setApplied = (next: FilterSnapshot) => {
+    applied = next;
+    writeChannel(next.matchedIds);
     publish();
   };
 
-  const applyMatchedIndices = (matchedIndices: Set<number>) => {
-    const proteinIds = snapshot?.protein_ids;
-    if (!proteinIds) return;
+  /** The ids at `indices` in the snapshot; null for none (#380: the plot stays unfiltered). */
+  const idsAt = (indices: Iterable<number>, proteinIds: readonly string[]): string[] | null => {
     // One pass, no intermediates: this runs on every slider commit at Swiss-Prot scale.
-    const matchedIds: string[] = [];
-    for (const index of matchedIndices) {
+    const matched: string[] = [];
+    for (const index of indices) {
       const id = proteinIds[index];
-      if (id !== undefined) matchedIds.push(id);
+      if (id !== undefined) matched.push(id);
     }
-    // An empty active channel reads as "nothing is visible", with no way back: leave the plot
-    // unfiltered instead; the builder still reports the 0 count (#380).
-    if (matchedIds.length === 0) {
-      clearFilterChannel();
-      return;
-    }
-    plotElement.filteredProteinIds = matchedIds;
-    plotElement.filtersActive = true;
-    filterActive = true;
-    appliedCount = countConfigured(query);
-    publish();
+    return matched.length > 0 ? matched : null;
   };
 
-  /** Evaluates the query on the snapshot and applies it, or clears the channel when it is empty. */
-  const applyQuery = () => {
-    if (!snapshot) return;
-    if (!hasConfiguredCondition(query)) {
-      clearFilterChannel();
+  /** Evaluates `query` on the snapshot and makes it the applied filter. */
+  const applyQuery = (query: FilterQuery) => {
+    const proteinIds = snapshot?.protein_ids;
+    if (!snapshot || !proteinIds || !hasConfiguredCondition(query)) {
+      setApplied({ query, matchedIds: null });
       return;
     }
-    applyMatchedIndices(evaluateQuery(query, snapshot));
+    setApplied({ query, matchedIds: idsAt(evaluateQuery(query, snapshot), proteinIds) });
   };
 
   /** The eat-confidence column whose runtime base is `baseKey`, if any. */
@@ -175,13 +195,13 @@ export function createFilterController({
   };
 
   /**
-   * Reverse mirror: tells the legend what the query says for the selected base. `force` repositions
-   * the control after an annotation change even when this base's state is unchanged.
+   * Reverse mirror: tells the legend what the applied filter says for the selected base. `force`
+   * repositions the control after an annotation change even when this base's state is unchanged.
    */
   const mirrorToLegend = (force = false) => {
     const key = findEatKey(selectedAnnotation);
     if (!key) return;
-    const derived = reliabilityFromConditions(findConditionsForAnnotation(query, key));
+    const derived = reliabilityFromConditions(findConditionsForAnnotation(applied.query, key));
     // No record yet: nothing moved this column off its resting position, which the legend shows.
     const last = lastMirrored.get(key) ?? DEFAULT_EAT_RELIABILITY;
     if (!force && isSameReliability(last, derived)) return;
@@ -196,34 +216,37 @@ export function createFilterController({
     mirrorToLegend(true);
   };
 
+  /** The draft edits nothing on screen: no plot, no legend, until Apply. */
   const onQueryChanged = (event: Event) => {
-    setQuery((event as CustomEvent<{ query: FilterQuery }>).detail.query);
-    // A direct edit of the query moves the legend's reliability control (#6b).
-    mirrorToLegend();
+    draft = (event as CustomEvent<{ query: FilterQuery }>).detail.query;
+    syncBuilder();
   };
 
   const onQueryApply = (event: Event) => {
-    applyMatchedIndices(
-      (event as CustomEvent<{ matchedIndices: Set<number> }>).detail.matchedIndices,
-    );
-    appliedQuery = query;
-    syncDirty();
-    dialog.open = false;
+    const proteinIds = snapshot?.protein_ids;
+    if (!proteinIds) return;
+    const before = applied;
+    const { matchedIndices } = (event as CustomEvent<{ matchedIndices: Set<number> }>).detail;
+    setApplied({ query: draft, matchedIds: idsAt(matchedIndices, proteinIds) });
+    mirrorToLegend();
+    // The panel stays: the draft is now clean and Apply says there is nothing new.
+    syncBuilder();
+    onFilterCommitted?.({ before, after: applied, cause: 'apply' });
+  };
+
+  const onQueryCancel = () => {
+    draft = baseline();
+    syncBuilder();
   };
 
   const onQueryReset = () => {
-    clearFilterChannel();
-    // A fresh row to start the next query; the dialog stays open.
-    setQuery([createCondition()]);
-    appliedQuery = query;
-    syncDirty();
+    const before = applied;
+    setApplied(NO_FILTER);
+    draft = seed;
     // A full reset drops any reliability condition too: pull the legend control back.
     mirrorToLegend();
-  };
-
-  /** The builder's Cancel (`query-cancel`) or its own close: close, keeping the edits for the next opening. */
-  const onQueryClose = () => {
-    dialog.open = false;
+    syncBuilder();
+    if (before.query.length > 0) onFilterCommitted?.({ before, after: applied, cause: 'reset' });
   };
 
   const onAnnotationChange = (event: Event) => {
@@ -235,42 +258,33 @@ export function createFilterController({
     const data = (event as CustomEvent<{ data?: VisualizationData | null }>).detail?.data;
     if (!data) return;
     snapshot = plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? undefined;
-    if (!dialog.open) return;
-    queryBuilder.annotations = filterableAnnotations(snapshot);
-    queryBuilder.data = snapshot;
+    syncBuilder();
+  };
+
+  /** The layout changed: a panel that just came on screen gets the latest data and draft. */
+  const onPanelChange = () => {
+    const next = isPanelShown();
+    if (next === shown) return;
+    shown = next;
+    if (!shown) {
+      // A picker left open under `display: none` would keep its layer, and the next Escape would
+      // be spent closing something the user cannot see.
+      queryBuilder.closePopups();
+      return;
+    }
+    snapshot = readSnapshot();
+    syncBuilder();
   };
 
   queryBuilder.addEventListener('query-changed', onQueryChanged);
   queryBuilder.addEventListener('query-apply', onQueryApply);
   queryBuilder.addEventListener('query-reset', onQueryReset);
-  queryBuilder.addEventListener('query-close', onQueryClose);
-  queryBuilder.addEventListener('query-cancel', onQueryClose);
+  queryBuilder.addEventListener('query-cancel', onQueryCancel);
   root.addEventListener('annotation-change', onAnnotationChange);
   plotElement.addEventListener('data-change', onDataChange);
+  const unsubscribePanel = subscribePanel(onPanelChange);
 
   return {
-    open() {
-      snapshot = readSnapshot();
-      // Seed one empty condition so the user sees a row at once.
-      if (query.length === 0) {
-        query = [createCondition()];
-        // An untouched seed is clean: nothing to cancel, nothing to apply.
-        appliedQuery = query;
-      }
-      queryBuilder.annotations = filterableAnnotations(snapshot);
-      queryBuilder.data = snapshot;
-      queryBuilder.query = query;
-      syncDirty();
-      dialog.open = true;
-    },
-    clear() {
-      clearFilterChannel();
-      setQuery([]);
-      appliedQuery = query;
-      syncDirty();
-      // The reliability condition went with the query: pull the legend control back.
-      mirrorToLegend();
-    },
     setSelectedAnnotation,
     setEatReliability(baseKey, state) {
       // Resync first: on a dataset switch the slider can fire before data-change refreshes the
@@ -278,29 +292,56 @@ export function createFilterController({
       snapshot = readSnapshot();
       const key = findEatKey(baseKey);
       if (!key) return;
-      const existing = findConditionsForAnnotation(query, key);
+      const existing = findConditionsForAnnotation(applied.query, key);
       // A reliability state is one un-negated condition, or none at all.
       const nextConditions = conditionsForReliability(key, state, existing[0]?.id);
       const [replacement = null] = nextConditions;
-      // Record what the query will READ BACK as, before the guard below: state -> conditions is
+      // Record what the filter will READ BACK as, before the guard below: state -> conditions is
       // not injective, and a mode that constrains nothing still has a position to keep.
       lastMirrored.set(key, reliabilityFromConditions(nextConditions));
-      // The query already expresses this state for THIS base: re-applying could ping-pong.
-      if (sameConditions(existing, nextConditions)) return;
-      setQuery(replaceConditionsForAnnotation(query, key, replacement));
-      applyQuery();
-      // The slider applies at once: what it wrote is the clean state.
-      appliedQuery = query;
-      syncDirty();
+      const draftWasClean = !isDirty();
+      if (!sameConditions(existing, nextConditions)) {
+        applyQuery(replaceConditionsForAnnotation(applied.query, key, replacement));
+      }
+      if (draftWasClean) {
+        draft = baseline();
+      } else {
+        // Only this column's condition changes in a dirty draft, under the draft's own id, so
+        // the row keeps its live count and any half-typed bound (decision 14).
+        const inDraft = findConditionsForAnnotation(draft, key);
+        const forDraft = conditionsForReliability(key, state, inDraft[0]?.id);
+        if (!sameConditions(inDraft, forDraft)) {
+          draft = replaceConditionsForAnnotation(draft, key, forDraft[0] ?? null);
+        }
+      }
+      syncBuilder();
     },
+    clear() {
+      if (applied.query.length === 0) return;
+      const before = applied;
+      const draftWasClean = !isDirty();
+      setApplied(NO_FILTER);
+      if (draftWasClean) draft = seed;
+      mirrorToLegend();
+      syncBuilder();
+      onFilterCommitted?.({ before, after: applied, cause: 'clear' });
+    },
+    restore(next) {
+      const draftWasClean = !isDirty();
+      setApplied(next);
+      if (draftWasClean) draft = baseline();
+      mirrorToLegend();
+      syncBuilder();
+    },
+    getApplied: () => applied,
     resetForNewDataset() {
       // The plot's own filter channel is reset with its data (data-renderer applyPlotState).
-      query = [];
-      appliedQuery = [];
-      filterActive = false;
+      applied = NO_FILTER;
+      seed = [createCondition()];
+      draft = seed;
       lastMirrored.clear();
-      // A closed dialog's builder still holds the dataset it last showed; let it go.
-      if (!dialog.open) queryBuilder.data = undefined;
+      // A hidden panel's builder still holds the dataset it last showed; let it go.
+      if (!isPanelShown()) queryBuilder.data = undefined;
       syncBuilder();
       publish();
     },
@@ -308,10 +349,10 @@ export function createFilterController({
       queryBuilder.removeEventListener('query-changed', onQueryChanged);
       queryBuilder.removeEventListener('query-apply', onQueryApply);
       queryBuilder.removeEventListener('query-reset', onQueryReset);
-      queryBuilder.removeEventListener('query-close', onQueryClose);
-      queryBuilder.removeEventListener('query-cancel', onQueryClose);
+      queryBuilder.removeEventListener('query-cancel', onQueryCancel);
       root.removeEventListener('annotation-change', onAnnotationChange);
       plotElement.removeEventListener('data-change', onDataChange);
+      unsubscribePanel();
       // The status store outlives this page: no stale count after leaving /explore.
       setWorkbenchStatus({ appliedFilterConditions: 0 });
     },

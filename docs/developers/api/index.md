@@ -385,7 +385,7 @@ the plot: set `plot.selectedProteinIds` and `search.selectedProteinIds` from its
 | `data`        | `ProtspaceData \| undefined` | Dataset the match count is computed on                                                                                                                                                |
 | `query`       | `FilterQuery`                | Conditions and groups being edited                                                                                                                                                    |
 | `dirty`       | `boolean \| null`            | Optional, set by a host that keeps a draft: the query differs from the filter last applied. `false` disables Cancel and Apply ("No changes to apply"); unset (`null`), they ignore it |
-| `embedded`    | `boolean`                    | Inside a host panel or dialog that brings its own heading: no title or close button, and Escape is left to the host; `embedded`                                                       |
+| `embedded`    | `boolean`                    | Inside a host panel or dialog that brings its own heading (the app's Filter panel): no title or close button, and Escape is left to the host; `embedded`                              |
 
 | Event           | Detail               | Description                                          |
 | --------------- | -------------------- | ---------------------------------------------------- |
@@ -394,6 +394,8 @@ the plot: set `plot.selectedProteinIds` and `search.selectedProteinIds` from its
 | `query-reset`   | none                 | Reset                                                |
 | `query-cancel`  | none                 | Cancel: return `query` to the filter last applied    |
 | `query-close`   | none                 | The close button or Escape; only when not `embedded` |
+
+`closePopups()` closes any open annotation or value picker; call it when the host hides the builder.
 
 The footer shows the live count ("12 of 573,230 proteins match") and, while Apply is disabled, why:
 a condition without an annotation, value or number (numbered as the rows are), no condition at all,

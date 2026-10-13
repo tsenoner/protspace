@@ -42,7 +42,7 @@ const getSidebarCap = () => clampSidebarToWindow(SIDEBAR_WIDTH.max, window.inner
 export function Workbench() {
   const layout = useLayout();
   const mode = useLayoutMode();
-  const { structureProteinId } = useWorkbenchStatus();
+  const { structureProteinId, appliedFilterConditions } = useWorkbenchStatus();
   // The divider's drag or key preview; null while the stored fraction shows.
   const [legendFractionPreview, setLegendFractionPreview] = useState<number | null>(null);
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
@@ -75,6 +75,7 @@ export function Workbench() {
       data-layout={mode}
       data-structure={structure}
       data-sidebar={phase}
+      data-panel={layout.panel}
       data-sidebar-resizing={sidebarWidthPreview !== null ? '' : undefined}
     >
       <AppBar />
@@ -122,8 +123,10 @@ export function Workbench() {
         />
         <Rail
           sidebarOpen={layout.sidebarOpen}
+          panel={layout.panel}
           structureProteinId={structureProteinId}
           structureDocked={placement === 'docked'}
+          filterApplied={appliedFilterConditions > 0}
           toggleRef={railToggleRef}
           structureRef={structureRef}
         />

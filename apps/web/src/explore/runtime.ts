@@ -13,7 +13,7 @@ import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { DESKTOP_MIN_WIDTH } from './layout-defaults';
-import { updateLayout } from './layout-state';
+import { getLayout, openPanel, subscribeLayout } from './layout-state';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -72,8 +72,6 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const {
     dataLoader,
     exportMenu,
-    filterButton,
-    filterDialog,
     importMenu,
     legendElement,
     plotElement,
@@ -345,23 +343,37 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => viewController.dispose());
 
+  // The Filter panel counts only while it is on screen: open on the sidebar's Filter panel, or,
+  // below 951 px where the sidebar always shows, whenever Filter is the chosen panel.
+  const filterDesktopQuery = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`);
+  const isFilterPanelShown = () => {
+    const { panel, sidebarOpen } = getLayout();
+    return panel === 'filter' && (sidebarOpen || !filterDesktopQuery.matches);
+  };
   const filterController = createFilterController({
     plotElement,
     legendElement,
     queryBuilder,
-    dialog: filterDialog,
     root: document,
+    isPanelShown: isFilterPanelShown,
+    subscribePanel(listener) {
+      const unsubscribe = subscribeLayout(listener);
+      filterDesktopQuery.addEventListener('change', listener);
+      return () => {
+        unsubscribe();
+        filterDesktopQuery.removeEventListener('change', listener);
+      };
+    },
   });
   lifecycle.addCleanup(() => filterController.dispose());
-  addTrackedEventListener(lifecycle, filterButton, 'click', () => filterController.open());
   const statusController = createStatusController({
     plotElement,
     plotStatus,
     getStatus: getWorkbenchStatus,
     subscribeStatus: subscribeWorkbenchStatus,
-    openFilter: () => filterController.open(),
+    openFilter: () => openPanel('filter'),
     clearFilter: () => filterController.clear(),
-    openLegend: () => updateLayout({ sidebarOpen: true }),
+    openLegend: () => openPanel('legend'),
     showAllCategories: () => legendElement.showAllCategories(),
     resetIsolation: () => selectionController.resetIsolation(),
   });

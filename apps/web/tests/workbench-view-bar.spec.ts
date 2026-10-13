@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   appBar,
+  closeFilterPanel,
   expectUrlParam,
   filterButton,
-  filterDialog,
   getColorByOptions,
   getContoursMode,
   getViewState,
@@ -238,7 +238,9 @@ test.describe('view bar stages', () => {
     await expect(
       moreItems(page).getByRole('menuitemradio', { name: 'Always', exact: true }),
     ).toHaveAttribute('aria-checked', 'true');
-    await expect(moreItems(page).getByRole('menuitem', { name: 'Filter…' })).toHaveCount(0);
+    await expect(
+      moreItems(page).getByRole('menuitem', { name: 'Filter', exact: true }),
+    ).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(moreMenu(page)).toBeHidden();
 
@@ -251,15 +253,24 @@ test.describe('view bar stages', () => {
     await expect(
       moreItems(page)
         .getByRole('group', { name: 'Filter' })
-        .getByRole('menuitem', { name: 'Filter…' }),
+        .getByRole('menuitem', { name: 'Filter', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(moreMenu(page)).toBeHidden();
-    // Filter… in More opens the same dialog, which hands focus back to More.
+    // Filter in More opens the same panel, with focus on its heading. Close hands focus to the
+    // rail's Filter item on desktop; below 951 px, where there is no rail, to More, since the
+    // Filter button is hidden at this stage.
     await openFilter(page);
-    await page.keyboard.press('Escape');
-    await expect(filterDialog(page)).toBeHidden();
-    await expect(moreButton(page)).toBeFocused();
+    await expect(page.locator('#wb-filter-title')).toBeFocused();
+    await closeFilterPanel(page);
+    const returnTarget =
+      page.viewportSize()!.width >= 951
+        ? page.getByRole('navigation', { name: 'Panels' }).getByRole('button', {
+            name: 'Filter',
+            exact: true,
+          })
+        : moreButton(page);
+    await expect(returnTarget).toBeFocused();
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await settle(page);

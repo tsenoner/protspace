@@ -1,21 +1,17 @@
 /**
- * The filter, moved from the control bar (`control-bar.query-apply.test.ts`), driven by fakes.
+ * The filter as the sidebar's Filter panel builds it (design decision 14), driven by fakes.
  *
  * A query is applied through the plot's dedicated, idempotent filter channel
  * (`filteredProteinIds` / `filtersActive`): a filter is neither a selection nor an isolation.
  * Matched indices are positions in the materialized snapshot the builder evaluated; translating
  * them through the isolated subset shrank the result on every re-apply (#257).
  *
- * The legend's EAT reliability control and the query mirror each other per eat-confidence column
- * (#6b, #380). The column is found by its runtime role, not its `__eat_confidence` suffix, so the
- * collision-renamed `__runtime_N` variant works too.
+ * Edits are a draft until Apply. The legend's EAT reliability control writes the applied filter at
+ * once and mirrors into the draft; the applied query moves the control back (#6b, #380). The
+ * column is found by its runtime role, not its `__eat_confidence` suffix, so the collision-renamed
+ * `__runtime_N` variant works too.
  */
-import type {
-  ProtspaceLegend,
-  ProtspaceQueryBuilder,
-  ProtspaceScatterplot,
-  PsDialog,
-} from '@protspace/core';
+import type { ProtspaceLegend, ProtspaceQueryBuilder, ProtspaceScatterplot } from '@protspace/core';
 import { NA_VALUE, NEUTRAL_BOUND, type VisualizationData } from '@protspace/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findConditionsForAnnotation } from '../../../../packages/core/src/components/query-builder/query-annotation-conditions';
@@ -24,7 +20,12 @@ import {
   type FilterQuery,
   type NumericCondition,
 } from '../../../../packages/core/src/components/query-builder/query-types';
-import { createFilterController, type FilterController } from './filter-controller';
+import {
+  createFilterController,
+  type FilterCommit,
+  type FilterController,
+  type FilterSnapshot,
+} from './filter-controller';
 import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
 
 // Lit cannot load in node: stand in for @protspace/core with its pure query helpers, read from
@@ -111,9 +112,13 @@ function makeMultiEatData(): VisualizationData {
 
 /**
  * The controller with fakes for everything it touches. `getCurrentData` returns an isolated
- * subset on purpose: matched indices must never be translated through it (#257).
+ * subset on purpose: matched indices must never be translated through it (#257). `panel.show()`
+ * and `panel.hide()` stand in for the layout store.
  */
-function mount(makeData: () => VisualizationData, selectedAnnotation?: string) {
+function mount(
+  makeData: () => VisualizationData,
+  { selectedAnnotation, shown = true }: { selectedAnnotation?: string; shown?: boolean } = {},
+) {
   const plot = Object.assign(new EventTarget(), {
     filteredProteinIds: [] as string[],
     filtersActive: false,
@@ -128,22 +133,42 @@ function mount(makeData: () => VisualizationData, selectedAnnotation?: string) {
     annotations: [] as string[],
     data: undefined as VisualizationData | undefined,
     query: [] as FilterQuery,
-    // Unset until the controller writes it, so a clean flag proves open() synced it.
-    dirty: null as boolean | null,
+    dirty: false,
+    closePopups: vi.fn(),
   });
-  const dialog = { open: false };
+  const listeners = new Set<() => void>();
+  const panel = {
+    shown,
+    show() {
+      panel.shown = true;
+      for (const listener of [...listeners]) listener();
+    },
+    hide() {
+      panel.shown = false;
+      for (const listener of [...listeners]) listener();
+    },
+    listenerCount: () => listeners.size,
+  };
+  const commits: FilterCommit[] = [];
   const root = new EventTarget();
   const controller = createFilterController({
     plotElement: plot as unknown as ProtspaceScatterplot,
     legendElement: legend as unknown as ProtspaceLegend,
     queryBuilder: queryBuilder as unknown as ProtspaceQueryBuilder,
-    dialog: dialog as unknown as PsDialog,
     root: root as unknown as Document,
+    isPanelShown: () => panel.shown,
+    subscribePanel(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    onFilterCommitted: (commit) => commits.push(commit),
   });
+  // The plot's data-change hands the controller its first snapshot, as the runtime's load does.
+  fire(plot, 'data-change', { data: makeData() });
   if (selectedAnnotation !== undefined) controller.setSelectedAnnotation(selectedAnnotation);
   // Mounting with an annotation mirrors once; the tests count only what they cause.
   legend.setReliabilityState.mockClear();
-  return { controller, plot, legend, queryBuilder, dialog, root };
+  return { controller, plot, legend, queryBuilder, panel, root, commits };
 }
 
 const fire = (target: EventTarget, type: string, detail?: unknown) =>
@@ -167,33 +192,45 @@ const numericCount = (query: FilterQuery) =>
 /** The column's live reliability condition, which is always the first (and only) one. */
 const eatCondition = (query: FilterQuery, key: string = EAT_KEY): NumericCondition | undefined =>
   findConditionsForAnnotation(query, key)[0];
+const applied = (controller: FilterController): FilterQuery => controller.getApplied().query;
 
 beforeEach(() => {
   resetWorkbenchStatusForTests();
 });
 
-describe('filter controller: the Filter dialog', () => {
+describe('filter controller: the Filter panel and its draft', () => {
   let m: ReturnType<typeof mount>;
 
   beforeEach(() => {
     m = mount(() => makeFullData(100));
-    m.controller.open();
   });
 
-  it('open seeds one empty condition, hands the builder the materialized snapshot and opens the dialog', () => {
-    expect(m.dialog.open).toBe(true);
+  it('a shown panel gets one empty condition, the materialized snapshot and a clean state', () => {
     expect(m.queryBuilder.query).toHaveLength(1);
+    expect(m.queryBuilder.query[0]).toMatchObject({ annotation: '', values: [] });
     expect(m.queryBuilder.data?.protein_ids).toHaveLength(100);
+    expect(m.queryBuilder.dirty).toBe(false);
     expect(m.plot.getMaterializedData).toHaveBeenCalled();
   });
 
   it('the builder lists every annotation except the tooltip-only ones', () => {
     const eat = mount(makeEatData);
-    eat.controller.open();
     expect(eat.queryBuilder.annotations).toEqual(['family', EAT_KEY]);
   });
 
+  it('a draft edit does not touch the plot until Apply', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+
+    expect(m.queryBuilder.query).toEqual([configured('a')]);
+    expect(m.queryBuilder.dirty).toBe(true);
+    expect(m.plot.filtersActive).toBe(false);
+    expect(m.plot.filteredProteinIds).toEqual([]);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.commits).toEqual([]);
+  });
+
   it('applies a query via the filter channel without selecting or isolating', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, range(30));
 
     expect(m.plot.filteredProteinIds).toEqual(ids(30));
@@ -202,45 +239,28 @@ describe('filter controller: the Filter dialog', () => {
     expect(m.plot.selectedProteinIds).toEqual(['sentinel']);
   });
 
-  it('apply closes the dialog and reports the condition count', () => {
-    editQuery(m.queryBuilder, [configured('a')]);
+  it('Apply applies, keeps the draft clean and fires apply with before and after snapshots', () => {
+    const draft = [configured('a')];
+    editQuery(m.queryBuilder, draft);
     apply(m.queryBuilder, range(30));
 
-    expect(m.dialog.open).toBe(false);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
-  });
-
-  it('a query edit sets dirty; Apply clears it', () => {
-    // The seeded row is clean: there is nothing to cancel yet.
     expect(m.queryBuilder.dirty).toBe(false);
-
-    editQuery(m.queryBuilder, [configured('a')]);
-    expect(m.queryBuilder.dirty).toBe(true);
-
-    apply(m.queryBuilder, range(30));
-    expect(m.queryBuilder.dirty).toBe(false);
-
-    m.controller.open();
-    editQuery(m.queryBuilder, [configured('a'), createCondition()]);
-    expect(m.queryBuilder.dirty).toBe(true);
-    fire(m.queryBuilder, 'query-reset');
-    expect(m.queryBuilder.dirty).toBe(false);
-
-    editQuery(m.queryBuilder, [configured('a'), createCondition()]);
-    expect(m.queryBuilder.dirty).toBe(true);
-    m.controller.clear();
-    expect(m.queryBuilder.dirty).toBe(false);
-  });
-
-  it('query-cancel closes the dialog', () => {
-    fire(m.queryBuilder, 'query-cancel');
-    expect(m.dialog.open).toBe(false);
+    expect(m.queryBuilder.query).toBe(draft);
+    expect(m.commits).toHaveLength(1);
+    const [commit] = m.commits;
+    expect(commit.cause).toBe('apply');
+    expect(commit.before).toEqual({ query: [], matchedIds: null });
+    expect(commit.after.query).toBe(draft);
+    expect(commit.after.matchedIds).toEqual(ids(30));
+    // The plot holds the very array the snapshot records: undo writes it back, never a copy.
+    expect(m.plot.filteredProteinIds).toBe(commit.after.matchedIds);
+    expect(m.controller.getApplied()).toBe(commit.after);
   });
 
   it('the count is the applied filter’s: a row added after Apply does not change it', () => {
     editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, range(30));
-    m.controller.open();
 
     editQuery(m.queryBuilder, [configured('a'), createCondition()]);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
@@ -261,17 +281,8 @@ describe('filter controller: the Filter dialog', () => {
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(3);
   });
 
-  it('dispose clears the applied count', () => {
-    editQuery(m.queryBuilder, [configured('a')]);
-    apply(m.queryBuilder, range(30));
-    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
-
-    m.controller.dispose();
-
-    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
-  });
-
   it('is idempotent: re-applying the same query yields the same matches', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, range(30));
     apply(m.queryBuilder, range(30));
     apply(m.queryBuilder, range(30));
@@ -283,27 +294,54 @@ describe('filter controller: the Filter dialog', () => {
   });
 
   it('replaces (does not stack) when a narrower query is applied next', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, range(30));
+    editQuery(m.queryBuilder, [configured('b')]);
     apply(m.queryBuilder, range(12));
 
     expect(m.plot.filteredProteinIds).toEqual(ids(12));
   });
 
   it('does not blank the plot when the query matches nothing', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, [5, 6, 7]);
     expect(m.plot.filtersActive).toBe(true);
 
     // An active-but-empty channel reads as "hide everything", with no way back (#380).
+    editQuery(m.queryBuilder, [configured('b')]);
     apply(m.queryBuilder, []);
 
     expect(m.plot.filtersActive).toBe(false);
     expect(m.plot.filteredProteinIds).toHaveLength(0);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.controller.getApplied()).toEqual({ query: [configured('b')], matchedIds: null });
   });
 
-  it('reset clears only the filter channel, re-seeds an empty condition and keeps the dialog open', () => {
+  it('Cancel restores the applied query, or the seed when nothing is applied', () => {
+    const seed = m.queryBuilder.query;
+    editQuery(m.queryBuilder, [configured('a')]);
+    fire(m.queryBuilder, 'query-cancel');
+    expect(m.queryBuilder.query).toBe(seed);
+    expect(m.queryBuilder.dirty).toBe(false);
+
+    const draft = [configured('a')];
+    editQuery(m.queryBuilder, draft);
+    apply(m.queryBuilder, range(30));
+    editQuery(m.queryBuilder, [configured('a'), configured('b')]);
+    fire(m.queryBuilder, 'query-cancel');
+
+    expect(m.queryBuilder.query).toBe(draft);
+    expect(m.queryBuilder.dirty).toBe(false);
+    expect(m.plot.filteredProteinIds).toEqual(ids(30));
+  });
+
+  it('Reset empties both and fires reset; a Reset with nothing applied records nothing', () => {
+    fire(m.queryBuilder, 'query-reset');
+    expect(m.commits).toEqual([]);
+
+    editQuery(m.queryBuilder, [configured('a')]);
     apply(m.queryBuilder, [0, 1, 2]);
-    m.controller.open();
+    editQuery(m.queryBuilder, [configured('a'), configured('b')]);
 
     fire(m.queryBuilder, 'query-reset');
 
@@ -311,36 +349,91 @@ describe('filter controller: the Filter dialog', () => {
     expect(m.plot.filtersActive).toBe(false);
     expect(m.plot.isolateSelection).not.toHaveBeenCalled();
     expect(m.queryBuilder.query).toHaveLength(1);
-    expect(m.dialog.open).toBe(true);
+    expect(m.queryBuilder.query[0]).toMatchObject({ annotation: '' });
+    expect(m.queryBuilder.dirty).toBe(false);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.commits[m.commits.length - 1]).toMatchObject({
+      cause: 'reset',
+      before: { query: [configured('a')], matchedIds: ids(3) },
+      after: { query: [], matchedIds: null },
+    });
+  });
+
+  it('clear() removes the filter and rebases a clean draft to the seed', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(30));
+
+    m.controller.clear();
+
+    expect(m.plot.filtersActive).toBe(false);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.queryBuilder.query).toHaveLength(1);
+    expect(m.queryBuilder.query[0]).toMatchObject({ annotation: '' });
+    expect(m.commits[m.commits.length - 1]).toMatchObject({ cause: 'clear', after: { query: [] } });
+  });
+
+  it('clear() with a dirty draft keeps the draft', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(30));
+    const dirty = [configured('a'), configured('b')];
+    editQuery(m.queryBuilder, dirty);
+
+    m.controller.clear();
+
+    expect(m.queryBuilder.query).toBe(dirty);
+    expect(m.queryBuilder.dirty).toBe(true);
+    expect(m.plot.filtersActive).toBe(false);
+  });
+
+  it('clear() with nothing applied does nothing', () => {
+    m.controller.clear();
+    expect(m.commits).toEqual([]);
+  });
+
+  it('restore() writes the stored ids without evaluating and publishes the count', () => {
+    const snapshot: FilterSnapshot = {
+      query: [configured('a'), configured('b')],
+      matchedIds: ['p7', 'p9'],
+    };
+
+    m.controller.restore(snapshot);
+
+    expect(m.plot.filteredProteinIds).toBe(snapshot.matchedIds);
+    expect(m.plot.filtersActive).toBe(true);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(2);
+    expect(m.controller.getApplied()).toBe(snapshot);
+    // A clean draft follows the restored filter; restore records nothing.
+    expect(m.queryBuilder.query).toBe(snapshot.query);
+    expect(m.commits).toEqual([]);
+
+    m.controller.restore({ query: [], matchedIds: null });
+    expect(m.plot.filtersActive).toBe(false);
+    expect(m.plot.filteredProteinIds).toEqual([]);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
   });
 
-  it('Cancel in the builder closes the dialog and keeps the edits', () => {
-    const edited: FilterQuery = [
-      { id: 'a', kind: 'categorical', annotation: 'family', values: ['A'] },
-    ];
-    editQuery(m.queryBuilder, edited);
-
-    fire(m.queryBuilder, 'query-close');
-    expect(m.dialog.open).toBe(false);
-
-    m.controller.open();
-    expect(m.queryBuilder.query).toEqual(edited);
+  it('restore() keeps a dirty draft', () => {
+    const dirty = [configured('x')];
+    editQuery(m.queryBuilder, dirty);
+    m.controller.restore({ query: [configured('a')], matchedIds: ['p1'] });
+    expect(m.queryBuilder.query).toBe(dirty);
   });
 
-  it('a closed dialog’s builder gets no new data', () => {
-    fire(m.queryBuilder, 'query-close');
+  it('the builder gets data only while the panel shows, and the latest when it shows', () => {
+    m.panel.hide();
     const before = m.queryBuilder.data;
     m.plot.getMaterializedData.mockImplementation(() => makeFullData(50));
 
     fire(m.plot, 'data-change', { data: makeFullData(50) });
+    editQuery(m.queryBuilder, [configured('a')]);
     expect(m.queryBuilder.data).toBe(before);
 
-    m.controller.open();
+    m.panel.show();
     expect(m.queryBuilder.data?.protein_ids).toHaveLength(50);
+    expect(m.queryBuilder.query).toEqual([configured('a')]);
   });
 
-  it('a dataset reset clears the query and the applied count', () => {
+  it('a dataset reset clears the filter and the draft', () => {
     editQuery(m.queryBuilder, [{ id: 'a', kind: 'categorical', annotation: 'x', values: ['y'] }]);
     apply(m.queryBuilder, range(3));
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
@@ -348,13 +441,21 @@ describe('filter controller: the Filter dialog', () => {
     m.controller.resetForNewDataset();
 
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
-    m.controller.open();
+    expect(m.controller.getApplied()).toEqual({ query: [], matchedIds: null });
     expect(m.queryBuilder.query).toHaveLength(1);
     expect(m.queryBuilder.query[0]).not.toMatchObject({ annotation: 'x' });
   });
 
-  it('a dataset reset lets a closed dialog’s builder drop the previous dataset', () => {
-    fire(m.queryBuilder, 'query-close');
+  it('hiding the panel closes an open picker', () => {
+    expect(m.queryBuilder.closePopups).not.toHaveBeenCalled();
+    m.panel.hide();
+    expect(m.queryBuilder.closePopups).toHaveBeenCalledTimes(1);
+    m.panel.show();
+    expect(m.queryBuilder.closePopups).toHaveBeenCalledTimes(1);
+  });
+
+  it('a dataset reset lets a hidden panel’s builder drop the previous dataset', () => {
+    m.panel.hide();
     expect(m.queryBuilder.data).toBeDefined();
 
     m.controller.resetForNewDataset();
@@ -362,8 +463,16 @@ describe('filter controller: the Filter dialog', () => {
     expect(m.queryBuilder.data).toBeUndefined();
   });
 
-  it('dispose stops listening', () => {
+  it('dispose stops listening and clears the applied count', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    apply(m.queryBuilder, range(30));
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+
     m.controller.dispose();
+
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.panel.listenerCount()).toBe(0);
+    m.plot.filtersActive = false;
     apply(m.queryBuilder, range(3));
     expect(m.plot.filtersActive).toBe(false);
   });
@@ -373,16 +482,13 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
   let m: ReturnType<typeof mount>;
 
   beforeEach(() => {
-    m = mount(makeEatData, 'family');
-    // An open dialog mirrors the controller's query onto the builder, which is how these tests
-    // read it.
-    m.dialog.open = true;
+    m = mount(makeEatData, { selectedAnnotation: 'family' });
   });
 
   it('forward: upserts a single "EAT_confidence >= x or N/A" condition and applies it', () => {
     threshold(m.controller, 'family', 0.5);
 
-    expect(eatCondition(m.queryBuilder.query)).toMatchObject({
+    expect(eatCondition(applied(m.controller))).toMatchObject({
       kind: 'numeric',
       annotation: EAT_KEY,
       operator: 'gte',
@@ -390,8 +496,8 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
       presence: [NA_VALUE],
     });
     // Un-negated: the N/A chip is what retains curated points now, not NOT.
-    expect(eatCondition(m.queryBuilder.query)?.logicalOp).not.toBe('NOT');
-    expect(m.queryBuilder.query).toHaveLength(1);
+    expect(eatCondition(applied(m.controller))?.logicalOp).not.toBe('NOT');
+    expect(applied(m.controller)).toHaveLength(1);
     expect(m.plot.filtersActive).toBe(true);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
 
@@ -405,14 +511,45 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(kept).toContain('p19');
     expect(kept).toHaveLength(15);
     expect(m.plot.selectedProteinIds).toEqual(['sentinel']);
+    // The slider is not an undo step.
+    expect(m.commits).toEqual([]);
+  });
+
+  it('slider with a clean draft → the draft equals the new applied query', () => {
+    threshold(m.controller, 'family', 0.5);
+    expect(m.queryBuilder.query).toBe(applied(m.controller));
+    expect(m.queryBuilder.dirty).toBe(false);
+  });
+
+  it('slider with a dirty draft → only the reliability condition changes in the draft, the draft’s condition id is kept', () => {
+    threshold(m.controller, 'family', 0.5);
+    const draftCondition = { ...eatCondition(applied(m.controller))!, id: 'draft-eat' };
+    editQuery(m.queryBuilder, [configured('a'), { ...draftCondition, logicalOp: 'AND' }]);
+
+    threshold(m.controller, 'family', 0.8);
+
+    expect(eatCondition(applied(m.controller))).toMatchObject({ min: 0.8 });
+    const draft = m.queryBuilder.query;
+    expect(draft).toHaveLength(2);
+    expect(draft[0]).toEqual(configured('a'));
+    expect(eatCondition(draft)).toMatchObject({ id: 'draft-eat', min: 0.8, logicalOp: 'AND' });
+    expect(m.queryBuilder.dirty).toBe(true);
+  });
+
+  it('slider with a dirty draft that has no reliability row → the row joins the draft', () => {
+    editQuery(m.queryBuilder, [configured('a')]);
+    threshold(m.controller, 'family', 0.5);
+    expect(m.queryBuilder.query).toHaveLength(2);
+    expect(m.queryBuilder.query[0]).toEqual(configured('a'));
+    expect(eatCondition(m.queryBuilder.query)).toMatchObject({ min: 0.5 });
   });
 
   it('forward: re-applying with a new threshold replaces (does not stack) the condition', () => {
     threshold(m.controller, 'family', 0.5);
     threshold(m.controller, 'family', 0.8);
 
-    expect(numericCount(m.queryBuilder.query)).toBe(1);
-    expect(eatCondition(m.queryBuilder.query)).toMatchObject({ min: 0.8 });
+    expect(numericCount(applied(m.controller))).toBe(1);
+    expect(eatCondition(applied(m.controller))).toMatchObject({ min: 0.8 });
     // Kept = curated (5) + predictions >= 0.8 (p16–p19 = 4) = 9.
     expect(m.plot.filteredProteinIds).toHaveLength(9);
   });
@@ -444,21 +581,23 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     expect(kept).toHaveLength(15);
   });
 
-  it('forward: dragging to 0 removes the eat condition and clears the filter channel', () => {
+  it('forward: dragging to 0 removes the eat condition, clears the filter channel and rebases a clean draft', () => {
     threshold(m.controller, 'family', 0.5);
     expect(m.plot.filtersActive).toBe(true);
 
     threshold(m.controller, 'family', 0);
 
+    expect(applied(m.controller)).toHaveLength(0);
     expect(eatCondition(m.queryBuilder.query)).toBeUndefined();
-    expect(m.queryBuilder.query).toHaveLength(0);
+    // The clean draft returns to the seeded empty row.
+    expect(m.queryBuilder.query).toHaveLength(1);
     expect(m.plot.filtersActive).toBe(false);
     expect(m.plot.filteredProteinIds).toEqual([]);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
   });
 
-  it('reverse: a query change that adds or drops the condition moves the legend control', () => {
-    editQuery(m.queryBuilder, [
+  it('a draft edit of the reliability condition moves the slider only on Apply', () => {
+    const edited: FilterQuery = [
       {
         id: 'x',
         kind: 'numeric',
@@ -468,46 +607,51 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
         max: null,
         presence: [NA_VALUE],
       },
-    ]);
+    ];
+    editQuery(m.queryBuilder, edited);
+    expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
+
+    apply(m.queryBuilder, range(15));
     expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0.6 }),
     );
 
-    editQuery(m.queryBuilder, []);
+    fire(m.queryBuilder, 'query-reset');
     expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
       expect.objectContaining({ min: 0 }),
     );
   });
 
-  it('guards the loop: a query change echoing the forward value does not move the legend again', () => {
+  it('guards the loop: an Apply echoing the forward value does not move the legend again', () => {
     threshold(m.controller, 'family', 0.5);
     m.legend.setReliabilityState.mockClear();
 
-    // The builder re-broadcasts the current query (same 0.5): no new value.
-    editQuery(m.queryBuilder, m.queryBuilder.query);
+    // The draft is the applied query; applying it again changes nothing on the legend.
+    apply(m.queryBuilder, range(15));
 
     expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
   });
 
-  it('keeps a mode that constrains nothing, across an unrelated query edit', () => {
+  it('keeps a mode that constrains nothing, across an unrelated Apply', () => {
     // A freshly loaded dataset: the reset empties the per-column record, and the colour-by
     // annotation is unchanged, so nothing repopulates it.
     m.controller.resetForNewDataset();
 
     // "Hide above" picked before its bound moves constrains nothing, so the forward mirror
     // emits no condition and returns early. It must still record the position, or the next
-    // unrelated edit pushes the `atLeast` default back onto the legend's mode select.
+    // unrelated Apply pushes the `atLeast` default back onto the legend's mode select.
     m.controller.setEatReliability('family', { mode: 'atMost', min: 0, max: 1 });
     m.legend.setReliabilityState.mockClear();
 
     editQuery(m.queryBuilder, [
       { id: 'other', kind: 'numeric', annotation: 'length', operator: 'gt', min: 10 },
     ] as FilterQuery);
+    apply(m.queryBuilder, range(4));
 
     expect(m.legend.setReliabilityState).not.toHaveBeenCalled();
   });
 
-  it('guards the loop for a condition that is not first in the query', () => {
+  it('guards the loop for a condition that is not first in the draft', () => {
     // Every row after the first carries an `AND`, and the reliability condition is emitted
     // bare, so comparing the raw logicalOp made the guard miss.
     editQuery(m.queryBuilder, [
@@ -527,28 +671,8 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     const before = m.queryBuilder.query;
     m.controller.setEatReliability('family', { mode: 'atLeast', min: 0.5, max: 1 });
 
-    // Identity, not equality: the guard must skip the rewrite entirely.
+    // Identity, not equality: the draft already says this, so it is not rewritten.
     expect(m.queryBuilder.query).toBe(before);
-  });
-
-  it('clear releases the channel, publishes 0 and mirrors the reliability control back', () => {
-    threshold(m.controller, 'family', 0.5);
-    expect(m.plot.filtersActive).toBe(true);
-    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
-    m.legend.setReliabilityState.mockClear();
-
-    m.controller.clear();
-
-    expect(m.plot.filtersActive).toBe(false);
-    expect(m.plot.filteredProteinIds).toEqual([]);
-    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
-    expect(m.queryBuilder.query).toEqual([]);
-    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
-      expect.objectContaining({ min: 0 }),
-    );
-    // The next opening seeds one empty row.
-    m.controller.open();
-    expect(m.queryBuilder.query).toHaveLength(1);
   });
 });
 
@@ -557,20 +681,19 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
 
   beforeEach(() => {
     m = mount(makeMultiEatData);
-    m.dialog.open = true;
   });
 
   it('scopes the condition to the base: setting GO does not clobber EC', () => {
     threshold(m.controller, 'ec', 0.5);
     threshold(m.controller, 'go', 0.8);
 
-    expect(numericCount(m.queryBuilder.query)).toBe(2);
-    expect(eatCondition(m.queryBuilder.query, EC_KEY)).toMatchObject({
+    expect(numericCount(applied(m.controller))).toBe(2);
+    expect(eatCondition(applied(m.controller), EC_KEY)).toMatchObject({
       operator: 'gte',
       presence: [NA_VALUE],
       min: 0.5,
     });
-    expect(eatCondition(m.queryBuilder.query, GO_KEY)).toMatchObject({
+    expect(eatCondition(applied(m.controller), GO_KEY)).toMatchObject({
       operator: 'gte',
       presence: [NA_VALUE],
       min: 0.8,
@@ -582,9 +705,9 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
     threshold(m.controller, 'go', 0.8);
     threshold(m.controller, 'ec', 0.3);
 
-    expect(eatCondition(m.queryBuilder.query, EC_KEY)).toMatchObject({ min: 0.3 });
-    expect(eatCondition(m.queryBuilder.query, GO_KEY)).toMatchObject({ min: 0.8 });
-    expect(numericCount(m.queryBuilder.query)).toBe(2);
+    expect(eatCondition(applied(m.controller), EC_KEY)).toMatchObject({ min: 0.3 });
+    expect(eatCondition(applied(m.controller), GO_KEY)).toMatchObject({ min: 0.8 });
+    expect(numericCount(applied(m.controller))).toBe(2);
   });
 
   it('dragging one base to 0 removes only its condition, leaving the other', () => {
@@ -592,8 +715,8 @@ describe('filter controller: per-base EAT reliability (multi-EAT)', () => {
     threshold(m.controller, 'go', 0.8);
     threshold(m.controller, 'ec', 0);
 
-    expect(eatCondition(m.queryBuilder.query, EC_KEY)).toBeUndefined();
-    expect(eatCondition(m.queryBuilder.query, GO_KEY)).toMatchObject({ min: 0.8 });
+    expect(eatCondition(applied(m.controller), EC_KEY)).toBeUndefined();
+    expect(eatCondition(applied(m.controller), GO_KEY)).toMatchObject({ min: 0.8 });
   });
 
   it('an annotation change forces the mirror to the newly selected base', () => {
@@ -617,8 +740,7 @@ describe('filter controller: every reliability mode (#380)', () => {
   let m: ReturnType<typeof mount>;
 
   beforeEach(() => {
-    m = mount(makeEatData, 'family');
-    m.dialog.open = true;
+    m = mount(makeEatData, { selectedAnnotation: 'family' });
   });
 
   // A hand-built condition on the eat-confidence column IS the reliability filter, whatever its
@@ -627,11 +749,13 @@ describe('filter controller: every reliability mode (#380)', () => {
     ['greater than', { operator: 'gt' as const, min: 0.5, max: null }],
     ['between', { operator: 'between' as const, min: 0.4, max: 0.9 }],
     ['non-negated less than', { operator: 'lt' as const, min: null, max: 0.5 }],
-  ])('replaces a hand-built "%s" rather than appending beside it', (_name, seed) => {
+  ])('replaces an applied hand-built "%s" rather than appending beside it', (_name, seed) => {
     editQuery(m.queryBuilder, [{ id: 'x', kind: 'numeric', annotation: EAT_KEY, ...seed }]);
+    apply(m.queryBuilder, range(10));
 
     threshold(m.controller, 'family', 0.5);
 
+    expect(findConditionsForAnnotation(applied(m.controller), EAT_KEY)).toHaveLength(1);
     expect(findConditionsForAnnotation(m.queryBuilder.query, EAT_KEY)).toHaveLength(1);
     // One coherent condition, not an unsatisfiable pair: the plot keeps points.
     expect(m.plot.filteredProteinIds.length).toBeGreaterThan(0);
@@ -662,7 +786,7 @@ describe('filter controller: every reliability mode (#380)', () => {
     expect(m.plot.filteredProteinIds).toContain('p10'); // 0.50, inside
   });
 
-  it('finds and replaces a reliability condition nested in a group', () => {
+  it('finds and replaces a reliability condition nested in a group of the draft', () => {
     editQuery(m.queryBuilder, [
       {
         id: 'g',
@@ -684,6 +808,6 @@ describe('filter controller: every reliability mode (#380)', () => {
 
     const conditions = findConditionsForAnnotation(m.queryBuilder.query, EAT_KEY);
     expect(conditions).toHaveLength(1);
-    expect(conditions[0]).toMatchObject({ operator: 'gte', min: 0.7 });
+    expect(conditions[0]).toMatchObject({ id: 'x', operator: 'gte', min: 0.7 });
   });
 });

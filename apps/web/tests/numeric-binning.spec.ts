@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
+  closeFilterPanel,
   dismissTourIfPresent,
   filterApplyButton,
-  filterDialog,
   filterResetButton,
   getColorByOptions,
   openFilter,
@@ -598,7 +598,9 @@ async function applyFiltersFromMenu(page: Page): Promise<void> {
   const apply = filterApplyButton(page);
   await expect(apply).toBeEnabled();
   await apply.click();
-  await expect(filterDialog(page)).toBeHidden();
+  // The panel stays open with the draft applied; back to the legend, as the dialog's close was.
+  await expect(apply).toBeDisabled();
+  await closeFilterPanel(page);
 }
 
 /**

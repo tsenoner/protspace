@@ -2,6 +2,7 @@ import { memo, useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'r
 import { SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { clampSidebarWidth, sidebarStep } from './layout-geometry';
+import { FilterPanel } from './FilterPanel';
 
 interface SidebarProps {
   ref?: Ref<HTMLElement>;
@@ -10,10 +11,10 @@ interface SidebarProps {
 }
 
 /**
- * The flush right sidebar (design decision 2): the legend, above the structure section that
- * StructurePanel renders as the aside's sibling, so placing the structure never moves either
- * element. Memoised: it re-renders only when the sidebar becomes inert or interactive again, and
- * the legend is never re-created or moved. The ref is the slide's target (use-sidebar-transition).
+ * The flush right sidebar (design decisions 2 and 14): the legend or the Filter panel, above the
+ * structure section that StructurePanel renders as the aside's sibling, so placing the structure
+ * never moves either element. Memoised: it re-renders only when the sidebar becomes inert or
+ * interactive again, and the legend and the query builder are never re-created or moved. The ref is the slide's target (use-sidebar-transition).
  */
 export const Sidebar = memo(function Sidebar({ ref, inert }: SidebarProps) {
   return (
@@ -25,6 +26,7 @@ export const Sidebar = memo(function Sidebar({ ref, inert }: SidebarProps) {
         auto-hide="true"
         scatterplot-selector="#myPlot"
       ></protspace-legend>
+      <FilterPanel />
     </aside>
   );
 });

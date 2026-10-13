@@ -420,7 +420,7 @@ test('the edge is the Tab stop after the plot tools, and the rail toggle names n
 
   // An id on a host would not reach the inner button that takes focus.
   const buttons = rail(page).locator('ps-icon-button');
-  await expect(buttons).toHaveCount(3);
+  await expect(buttons).toHaveCount(4);
   await expect(rail(page).locator('ps-icon-button[aria-controls]')).toHaveCount(0);
 });
 
