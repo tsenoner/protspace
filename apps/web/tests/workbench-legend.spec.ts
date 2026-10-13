@@ -33,7 +33,7 @@ import {
   setLegendSetting,
   setLegendSort,
 } from './helpers/legend';
-import { seedLayout } from './helpers/workbench';
+import { seedLayout, structurePanel } from './helpers/workbench';
 
 const byName = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -245,4 +245,23 @@ test('the legend fills the sidebar column flush, with no card border', async ({ 
   expect(Math.abs(box.x - (column.x + 1))).toBeLessThanOrEqual(1);
   expect(Math.abs(box.x + box.width - (column.x + column.width))).toBeLessThanOrEqual(1);
   expect(Math.abs(box.y - column.y)).toBeLessThanOrEqual(1);
+  // The legend runs down to the structure bar under it.
+  const bar = (await structurePanel(page).boundingBox())!;
+  expect(Math.abs(box.y + box.height - bar.y)).toBeLessThanOrEqual(1);
+});
+
+test('the narrow legend scrolls its list instead of growing past the viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await openExplore(page);
+  await selectAnnotation(page, 'protein_families');
+  await setLegendSetting(page, 'Max legend items', '60');
+  await closeLegendSettings(page);
+
+  const list = legend(page).locator('.legend-items');
+  await expect.poll(() => list.locator('.legend-item').count()).toBeGreaterThan(30);
+  const box = (await legend(page).boundingBox())!;
+  expect(box.height).toBeLessThanOrEqual(800);
+  expect(await list.evaluate((l) => l.scrollHeight > l.clientHeight)).toBe(true);
 });

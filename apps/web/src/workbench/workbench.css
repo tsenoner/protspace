@@ -203,6 +203,8 @@
 .workbench[data-layout='narrow'] #myLegend {
   flex: none;
   min-height: 320px;
+  /* The legend has no height of its own: cap it so a long list scrolls inside it. */
+  max-height: max(320px, calc(100dvh - 10rem));
 }
 
 /* The view bar never wraps on desktop. Here, once its last stage still does not fit, it wraps
