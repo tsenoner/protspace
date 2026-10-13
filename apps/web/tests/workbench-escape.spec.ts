@@ -8,6 +8,8 @@ import {
   openExplore,
   searchInput,
   selectAnnotation,
+  selectionBar,
+  selectionBarAction,
   viewBar,
   waitForProteinCount,
 } from './helpers/explore';
@@ -116,6 +118,19 @@ test.describe('the Escape order', () => {
     await expect(toolButton(page, 'Move and zoom')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('Escape with focus in the selection bar clears the selection and returns focus to the tool', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await selectFirstBySearch(page);
+    await selectionBarAction(page, 'Zoom to them').focus();
+
+    await page.keyboard.press('Escape');
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
+    await expect(selectionBar(page)).toBeHidden();
+    await expect(toolButton(page, 'Move and zoom')).toBeFocused();
+  });
+
   test('with the projection details pinned, Escape closes only them', async ({ page }) => {
     await openExplore(page);
     const id = await selectFirstBySearch(page);
@@ -164,36 +179,21 @@ test.describe('the Escape order', () => {
     );
     const editor = page.locator('protspace-publish-modal');
     await expect(editor).toBeAttached();
-    // An overlay, selected, as a click on it in the editor leaves it.
-    await editor.evaluate((modal) => {
-      const m = modal as unknown as {
-        _state: Record<string, unknown>;
-        _selectedItem: unknown;
-        requestUpdate(): void;
-      };
-      m._state = {
-        ...m._state,
-        overlays: [
-          {
-            type: 'circle',
-            cx: 0.5,
-            cy: 0.5,
-            rx: 0.1,
-            ry: 0.1,
-            rotation: 0,
-            color: '#000',
-            strokeWidth: 2,
-          },
-        ],
-      };
-      m._selectedItem = { kind: 'overlay', index: 0 };
-      m.requestUpdate();
-    });
-    const selectedItem = () =>
-      editor.evaluate((modal) => (modal as unknown as { _selectedItem: unknown })._selectedItem);
+    // Draw a circle with the Circle tool, then select it from its row in the sidebar.
+    await editor.getByRole('button', { name: 'Circle', exact: true }).click();
+    const canvas = (await editor.locator('canvas.publish-preview-canvas').boundingBox())!;
+    const cx = canvas.x + canvas.width * 0.4;
+    const cy = canvas.y + canvas.height * 0.4;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + canvas.width * 0.15, cy + canvas.height * 0.15, { steps: 5 });
+    await page.mouse.up();
+    const overlayRow = editor.locator('[data-publish-item="overlay-0"]');
+    await overlayRow.click({ position: { x: 4, y: 4 } });
+    await expect(overlayRow).toHaveClass(/\bselected\b/);
 
     await page.keyboard.press('Escape');
-    await expect.poll(selectedItem).toBeNull();
+    await expect(overlayRow).not.toHaveClass(/\bselected\b/);
     await expect(editor).toBeAttached();
     await twoFrames(page);
     expect(await getSelectedProteinIds(page)).toEqual([id]);
