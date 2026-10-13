@@ -715,7 +715,7 @@ test.describe('Control Bar Screenshots', () => {
     ).toHaveCount(exampleValueCount, { timeout: 5_000 });
     // Match counts resolve on a debounce; until then the counter reads "0 of 0".
     await expect(page.locator('#myControlBar protspace-query-builder .match-count')).toHaveText(
-      /of [1-9]\d* proteins matched/,
+      /of [1-9][\d,]* proteins? match/,
       { timeout: 5_000 },
     );
     await awaitTwoFrames(page);

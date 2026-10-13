@@ -379,22 +379,32 @@ the plot: set `plot.selectedProteinIds` and `search.selectedProteinIds` from its
 
 ### Query Builder
 
-| Property      | Type                         | Description                                                           |
-| ------------- | ---------------------------- | --------------------------------------------------------------------- |
-| `annotations` | `string[]`                   | Columns a condition can test                                          |
-| `data`        | `ProtspaceData \| undefined` | Dataset the match count is computed on                                |
-| `query`       | `FilterQuery`                | Conditions and groups being edited                                    |
-| `embedded`    | `boolean`                    | Inside a host dialog: no title or close button of its own; `embedded` |
+| Property      | Type                         | Description                                                                                                                                                                           |
+| ------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `annotations` | `string[]`                   | Columns a condition can test                                                                                                                                                          |
+| `data`        | `ProtspaceData \| undefined` | Dataset the match count is computed on                                                                                                                                                |
+| `query`       | `FilterQuery`                | Conditions and groups being edited                                                                                                                                                    |
+| `dirty`       | `boolean \| null`            | Optional, set by a host that keeps a draft: the query differs from the filter last applied. `false` disables Cancel and Apply ("No changes to apply"); unset (`null`), they ignore it |
+| `embedded`    | `boolean`                    | Inside a host panel or dialog that brings its own heading: no title or close button, and Escape is left to the host; `embedded`                                                       |
 
-| Event           | Detail               | Description                                       |
-| --------------- | -------------------- | ------------------------------------------------- |
-| `query-changed` | `{ query }`          | The query was edited                              |
-| `query-apply`   | `{ matchedIndices }` | Apply: a `Set` of indices into `data.protein_ids` |
-| `query-reset`   | none                 | Reset All                                         |
-| `query-close`   | none                 | Cancel                                            |
+| Event           | Detail               | Description                                          |
+| --------------- | -------------------- | ---------------------------------------------------- |
+| `query-changed` | `{ query }`          | The query was edited: set `query` and `dirty` back   |
+| `query-apply`   | `{ matchedIndices }` | Apply: a `Set` of indices into `data.protein_ids`    |
+| `query-reset`   | none                 | Reset                                                |
+| `query-cancel`  | none                 | Cancel: return `query` to the filter last applied    |
+| `query-close`   | none                 | The close button or Escape; only when not `embedded` |
+
+The footer shows the live count ("12 of 573,230 proteins match") and, while Apply is disabled, why:
+a condition without an annotation, value or number (numbered as the rows are), no condition at all,
+a query that keeps no protein or every protein, or no change since the last Apply.
+
+::: warning BREAKING
+Cancel now dispatches `query-cancel`, not `query-close`. The buttons read Reset, Cancel and Apply.
+:::
 
 Apply a match through the scatterplot's `filteredProteinIds` and `filtersActive`. The query
-helpers `createCondition`, `evaluateQuery`, `hasConfiguredCondition`,
+helpers `createCondition`, `evaluateQuery`, `hasConfiguredCondition`, `sameQuery`,
 `findConditionsForAnnotation`, `replaceConditionsForAnnotation`, `conditionsForReliability`,
 `reliabilityFromConditions` and `sameConditions` and the `FilterQuery` type are exported too.
 

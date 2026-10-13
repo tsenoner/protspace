@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { NA_VALUE } from '@protspace/utils';
+import { NA_VALUE, countNoun } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import type { ProtspaceData } from './types';
 import type { NumericCondition, NumericOperator } from './query-types';
@@ -166,7 +166,6 @@ class ProtspaceQueryNumericInput extends LitElement {
             class="value-chip-add"
             data-presence=${value}
             @click=${() => this._addPresence(value)}
-            title="Add ${displayFilterValue(value)}"
           >
             + ${displayFilterValue(value)}
           </button>
@@ -224,7 +223,7 @@ class ProtspaceQueryNumericInput extends LitElement {
         ${this._renderPresence(presence)}
         ${this._matchCount !== null
           ? html`<span class="numeric-match-count"
-              >${this._matchCount.toLocaleString()} proteins match</span
+              >${countNoun(this._matchCount, 'protein matches', 'proteins match')}</span
             >`
           : nothing}
       </div>

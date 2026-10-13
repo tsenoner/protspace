@@ -3,7 +3,9 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   dismissTourIfPresent,
+  filterApplyButton,
   filterDialog,
+  filterResetButton,
   getColorByOptions,
   openFilter,
   queryBuilder,
@@ -266,7 +268,7 @@ async function readLegendDisplay(page: Page) {
 // ─── Query-builder filter helpers ───────────────────────────────────────────
 // The Filter button opens the query builder in the filter dialog. A condition row picks an
 // annotation and one or more of its values; "Apply & Isolate" isolates the scatter-plot to the
-// matched proteins (observed via getCurrentData()), and "Reset All" clears isolation.
+// matched proteins (observed via getCurrentData()), and "Reset" clears isolation.
 // Numeric bins are listed in the value picker by their internal id
 // (e.g. "num:quantile:10:20.5"); these helpers map friendly bin labels (as the
 // legend shows them) to those internal ids via numericMetadata.bins.
@@ -581,19 +583,19 @@ async function setNumericFilter(
 }
 
 /**
- * Clear the active filter and isolation entirely via "Reset All". Leaves the
+ * Clear the active filter and isolation entirely via "Reset". Leaves the
  * builder open (matching the component behaviour). The single caller that filters
  * one annotation uses this to return to the unfiltered view.
  */
 async function disableFilter(page: Page, _annotation: string): Promise<void> {
   await openFilter(page);
   await closeOpenPickers(page);
-  await queryBuilder(page).locator('.query-footer-reset').click();
+  await filterResetButton(page).click();
 }
 
 async function applyFiltersFromMenu(page: Page): Promise<void> {
   await closeOpenPickers(page);
-  const apply = queryBuilder(page).locator('.btn-primary');
+  const apply = filterApplyButton(page);
   await expect(apply).toBeEnabled();
   await apply.click();
   await expect(filterDialog(page)).toBeHidden();
@@ -1882,11 +1884,11 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
     .poll(async () =>
       ((await queryBuilder(page).locator('.match-count').textContent()) ?? '').trim(),
     )
-    // Anchor to the start: the count renders as "<n> of <total> proteins
-    // matched", so a bare .toContain('0 of') would also match "10 of", "20 of",
-    // etc. Require the matched count itself to be exactly 0.
+    // Anchor to the start: the count reads "<n> of <total> proteins match", so a bare .toContain('0 of') would also match "10 of"
     .toMatch(/^0 of /);
-  await expect(queryBuilder(page).locator('.btn-primary')).toBeDisabled();
+  await expect(filterApplyButton(page)).toBeDisabled();
+  // The builder says why: the count is in, and it is zero.
+  await expect(queryBuilder(page).locator('#apply-reason')).toHaveText('No proteins match');
   expect(await isolatedCount(page)).toBe(fullCount);
 
   // Cancel is the builder's own button, so it is found inside the builder wherever the dialog is.

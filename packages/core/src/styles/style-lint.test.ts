@@ -26,7 +26,6 @@ const LEGACY = new Set<string>([
   '../components/control-bar/annotation-select.styles.ts',
   '../components/control-bar/search.styles.ts',
   '../components/publish/publish-modal.styles.ts',
-  '../components/query-builder/query-builder.styles.ts',
   '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',
   '../components/scatter-plot/tooltips/protein-tooltip.styles.ts',

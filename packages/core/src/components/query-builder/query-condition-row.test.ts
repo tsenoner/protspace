@@ -16,6 +16,7 @@ import type { ProtspaceData } from './types';
 interface ConditionRowEl extends HTMLElement {
   condition: FilterCondition;
   annotations: string[];
+  number: number;
   data: ProtspaceData;
   updateComplete: Promise<unknown>;
   _selectAnnotation(annotation: string): void;
@@ -498,5 +499,29 @@ describe('query-condition-row inside a dialog', () => {
     expect(dialogClose).not.toHaveBeenCalled();
     expect(topLayer()?.close).toBe(dialogClose);
     releaseDialog();
+  });
+});
+
+describe('query-condition-row names', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('labels the row and its operator by number and names its remove button', async () => {
+    const el = await mount();
+    el.number = 2;
+    await el.updateComplete;
+    const root = el.shadowRoot!;
+
+    expect(root.querySelector('.condition-row')!.getAttribute('aria-label')).toBe('Condition 2');
+    expect(root.querySelector('.condition-number')!.textContent!.trim()).toBe('2');
+    expect(root.querySelector('.logical-op-select')!.getAttribute('aria-label')).toBe(
+      'Operator for condition 2',
+    );
+    const remove = root.querySelector('ps-icon-button.condition-remove') as HTMLElement & {
+      label: string;
+    };
+    expect(remove.label).toBe('Remove condition');
+    expect(root.querySelector('.value-chip-add')!.getAttribute('aria-label')).toBe('Add value');
   });
 });

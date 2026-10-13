@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  filterApplyButton,
   filterButton,
   filterDialog,
+  filterResetButton,
   getFirstLegendItemValue,
   getProteinCount,
   getViewState,
@@ -41,7 +43,7 @@ async function applyFirstCategoryFilter(page: Page): Promise<void> {
     .click();
   // A click elsewhere in the dialog closes the value picker, as it always has.
   await queryBuilder(page).locator('.match-count').click();
-  await queryBuilder(page).getByRole('button', { name: 'Apply Filter' }).click();
+  await filterApplyButton(page).click();
 }
 
 test.describe('the Filter dialog', () => {
@@ -87,7 +89,7 @@ test.describe('the Filter dialog', () => {
     await expect.poll(async () => (await readPlotFilter(page)).filtersActive).toBe(true);
 
     await openFilter(page);
-    await queryBuilder(page).getByRole('button', { name: 'Reset All' }).click();
+    await filterResetButton(page).click();
 
     await expect(filterDialog(page)).toBeVisible();
     await expect.poll(async () => (await readPlotFilter(page)).filtersActive).toBe(false);

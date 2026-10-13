@@ -36,10 +36,11 @@ export function renderValueChip(value: string, onRemove: () => void, presenceTag
     <span class="value-chip">
       <span class="value-chip-text">${displayFilterValue(value)}</span>
       <button
+        type="button"
         class="value-chip-remove"
         data-presence=${presenceTag ?? nothing}
         @click=${onRemove}
-        title="Remove value"
+        aria-label="Remove value"
       >
         ×
       </button>

@@ -14,6 +14,7 @@ import { pushLayer } from '../kit/layers';
 import { isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
 import { renderValueChip } from './query-presence';
+import '../kit/button';
 import './query-value-picker';
 import './query-numeric-input';
 
@@ -33,6 +34,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @property({ type: Object }) data: ProtspaceData | undefined = undefined;
   @property({ type: Object }) matchedIndices: Set<number> = new Set();
   @property({ type: Boolean }) isFirst: boolean = false;
+  /** The condition's number in the builder (1-based, group leaves included); 0 shows none. */
+  @property({ type: Number }) number = 0;
 
   @state() private _showAnnotationPicker: boolean = false;
   @state() private _showValuePicker: boolean = false;
@@ -331,7 +334,9 @@ class ProtspaceQueryConditionRow extends LitElement {
       <div class="value-chips">
         ${this.condition.values.map((v) => renderValueChip(v, () => this._removeValue(v)))}
         <button
+          type="button"
           class="value-chip-add"
+          aria-label="Add value"
           @click=${(e: Event) => {
             this._showValuePicker = !this._showValuePicker;
             if (this._showValuePicker) {
@@ -340,7 +345,6 @@ class ProtspaceQueryConditionRow extends LitElement {
               this._valuePickerPos = { top: rect.bottom + 4, left: rect.left };
             }
           }}
-          title="Add value"
         >
           +
         </button>
@@ -378,12 +382,16 @@ class ProtspaceQueryConditionRow extends LitElement {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   render() {
+    const n = this.number;
+    const operatorLabel = n > 0 ? `Operator for condition ${n}` : 'Operator';
     return html`
-      <div class="condition-row">
+      <div class="condition-row" role="group" aria-label=${n > 0 ? `Condition ${n}` : 'Condition'}>
+        <span class="condition-number" aria-hidden="true">${n > 0 ? n : ''}</span>
         ${this.isFirst
           ? html`
               <select
                 class="logical-op-select ${this.condition.logicalOp === 'NOT' ? '' : 'op-blank'}"
+                aria-label=${operatorLabel}
                 .value=${this.condition.logicalOp ?? ''}
                 @change=${this._handleLogicalOpChange}
               >
@@ -394,6 +402,7 @@ class ProtspaceQueryConditionRow extends LitElement {
           : html`
               <select
                 class="logical-op-select"
+                aria-label=${operatorLabel}
                 .value=${this.condition.logicalOp ?? 'AND'}
                 @change=${this._handleLogicalOpChange}
               >
@@ -404,6 +413,7 @@ class ProtspaceQueryConditionRow extends LitElement {
             `}
 
         <button
+          type="button"
           class="annotation-select-trigger"
           @click=${this._toggleAnnotationPicker}
           @keydown=${this._handleAnnotationPickerKeydown}
@@ -420,11 +430,18 @@ class ProtspaceQueryConditionRow extends LitElement {
         </button>
 
         ${this._showAnnotationPicker ? this._renderAnnotationPicker() : nothing}
-        ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
 
-        <button class="condition-remove" @click=${this._handleRemove} title="Remove condition">
-          ×
-        </button>
+        <ps-icon-button
+          class="condition-remove"
+          icon="x"
+          size="sm"
+          label="Remove condition"
+          @click=${this._handleRemove}
+        ></ps-icon-button>
+
+        <div class="condition-values">
+          ${this.condition.kind === 'numeric' ? this._renderNumericInput() : this._renderValues()}
+        </div>
       </div>
     `;
   }

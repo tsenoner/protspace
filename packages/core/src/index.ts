@@ -21,6 +21,7 @@ export { ProtspaceQueryBuilder } from './components/query-builder/query-builder'
 export { createCondition } from './components/query-builder/query-types';
 export type { FilterQuery } from './components/query-builder/query-types';
 export { evaluateQuery, hasConfiguredCondition } from './components/query-builder/query-evaluate';
+export { sameQuery } from './components/query-builder/query-equal';
 export {
   findConditionsForAnnotation,
   replaceConditionsForAnnotation,

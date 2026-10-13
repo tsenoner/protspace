@@ -37,6 +37,7 @@ vi.mock('@protspace/core', async () => {
     await import('../../../../packages/core/src/components/query-builder/query-annotation-conditions');
   const reliability =
     await import('../../../../packages/core/src/components/query-builder/eat-reliability');
+  const equal = await import('../../../../packages/core/src/components/query-builder/query-equal');
   return {
     createCondition: types.createCondition,
     evaluateQuery: evaluate.evaluateQuery,
@@ -46,6 +47,7 @@ vi.mock('@protspace/core', async () => {
     conditionsForReliability: reliability.conditionsForReliability,
     reliabilityFromConditions: reliability.reliabilityFromConditions,
     sameConditions: reliability.sameConditions,
+    sameQuery: equal.sameQuery,
   };
 });
 
@@ -126,6 +128,7 @@ function mount(makeData: () => VisualizationData, selectedAnnotation?: string) {
     annotations: [] as string[],
     data: undefined as VisualizationData | undefined,
     query: [] as FilterQuery,
+    dirty: false,
   });
   const dialog = { open: false };
   const root = new EventTarget();
@@ -204,6 +207,28 @@ describe('filter controller: the Filter dialog', () => {
 
     expect(m.dialog.open).toBe(false);
     expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+  });
+
+  it('a query edit sets dirty; Apply clears it', () => {
+    // The seeded row is clean: there is nothing to cancel yet.
+    expect(m.queryBuilder.dirty).toBe(false);
+
+    editQuery(m.queryBuilder, [configured('a')]);
+    expect(m.queryBuilder.dirty).toBe(true);
+
+    apply(m.queryBuilder, range(30));
+    expect(m.queryBuilder.dirty).toBe(false);
+
+    m.controller.open();
+    editQuery(m.queryBuilder, [configured('a'), createCondition()]);
+    expect(m.queryBuilder.dirty).toBe(true);
+    fire(m.queryBuilder, 'query-reset');
+    expect(m.queryBuilder.dirty).toBe(false);
+  });
+
+  it('query-cancel closes the dialog', () => {
+    fire(m.queryBuilder, 'query-cancel');
+    expect(m.dialog.open).toBe(false);
   });
 
   it('the count is the applied filter’s: a row added after Apply does not change it', () => {

@@ -301,6 +301,14 @@ export const filterDialog = (page: Page): Locator =>
 
 export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
 
+/** The query builder's Apply button. */
+export const filterApplyButton = (page: Page): Locator =>
+  queryBuilder(page).getByRole('button', { name: 'Apply', exact: true });
+
+/** The query builder's Reset button: it removes the filter. */
+export const filterResetButton = (page: Page): Locator =>
+  queryBuilder(page).getByRole('button', { name: 'Reset', exact: true });
+
 export const annotationSelect = (page: Page): Locator =>
   page.locator('protspace-annotation-select');
 

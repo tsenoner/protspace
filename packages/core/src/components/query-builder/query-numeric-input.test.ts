@@ -6,7 +6,7 @@
  * so each test feeds an emitted condition back in as the prop (as the real parent
  * does) before asserting the next render.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NA_VALUE } from '@protspace/utils';
 import './query-numeric-input';
 import type { NumericCondition, NumericOperator } from './query-types';
@@ -104,6 +104,31 @@ describe('query-numeric-input', () => {
       'Minimum value',
       'Maximum value',
     ]);
+  });
+
+  it('counts the matching proteins in plural-aware words', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = await mount(makeCondition({ operator: 'gt', min: 150 }));
+      el.data = {
+        protein_ids: ['P1', 'P2', 'P3'],
+        annotations: { length: { kind: 'numeric', values: [] } },
+        numeric_annotation_data: { length: new Float64Array([100, 200, 300]) },
+      };
+      await el.updateComplete;
+      vi.advanceTimersByTime(750);
+      await el.updateComplete;
+      const count = () => el.shadowRoot!.querySelector('.numeric-match-count')!.textContent!.trim();
+      expect(count()).toBe('2 proteins match');
+
+      el.condition = makeCondition({ operator: 'gt', min: 250 });
+      await el.updateComplete;
+      vi.advanceTimersByTime(750);
+      await el.updateComplete;
+      expect(count()).toBe('1 protein matches');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows only the fields the operator needs', async () => {

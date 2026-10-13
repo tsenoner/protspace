@@ -1,227 +1,307 @@
 import { css } from 'lit';
-import { tokens } from '../../styles/tokens';
-import { buttonMixin, inputMixin, dropdownMixin } from '../../styles/mixins';
+import { focusRing } from '../kit/kit-shared.styles';
 
 /**
- * Query Builder Styles
+ * The query builder's sheet, shared by the builder, its condition rows, the value picker and the
+ * numeric input (each has its own shadow root). Every colour and type size reads a --ps-* token.
  *
- * Shared styles for query-builder, query-condition-row, query-numeric-input and
- * query-value-picker.
- *
- * Composes the design system explicitly — tokens plus the button/input/dropdown
- * mixins — exactly like annotation-select.styles.ts. Previously this sheet was a
- * bare `css` block that only worked inside the control bar's shadow root, where
- * the parent happened to pull the mixins in; the row/picker components (which
- * have their own shadow roots) inherited the custom properties but none of the
- * component classes, so they drifted away from the rest of the UI.
+ * The rows stack: number, operator, annotation and ✕ on the first line, the values below, which is
+ * what a 240–480 px sidebar panel needs. The two pickers stay `position: fixed` against a measured
+ * trigger, so no ancestor of the Filter panel may get a transform, filter, contain or
+ * container-type.
  */
 export const queryBuilderStyles = [
-  tokens,
-  buttonMixin,
-  inputMixin,
-  dropdownMixin,
+  focusRing,
   css`
-    /* ==========================================
-       QUERY BUILDER CONTAINER
-       ========================================== */
+    :host {
+      font-family: var(--ps-font-sans);
+      font-size: var(--ps-text-base);
+      line-height: var(--ps-leading-tight);
+      color: var(--ps-text);
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+      color: inherit;
+    }
+
+    /* ── The builder ─────────────────────────────────────────────────────── */
 
     .query-builder {
-      width: 100%;
-      height: 100%;
-      padding: var(--spacing-lg);
-      box-sizing: border-box;
       display: flex;
       flex-direction: column;
+      gap: var(--ps-space-3);
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: var(--ps-space-3);
     }
 
     .query-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: var(--spacing-md);
+      gap: var(--ps-space-2);
+    }
+
+    .query-title {
+      font-size: var(--ps-text-md);
+      font-weight: var(--ps-weight-semibold);
     }
 
     .query-conditions {
       display: flex;
+      flex: 1 1 auto;
       flex-direction: column;
-      gap: var(--spacing-sm);
-      flex: 1;
+      gap: var(--ps-space-2);
+      min-height: 0;
       overflow-y: auto;
-      overflow-x: visible;
       scrollbar-width: thin;
-      margin-bottom: var(--spacing-sm);
     }
 
     .query-actions {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: var(--spacing-md);
+      gap: var(--ps-space-3);
+    }
+
+    .btn-link {
+      padding: var(--ps-space-0-5) var(--ps-space-1);
+      border: 0;
+      border-radius: var(--ps-radius-sm);
+      background: none;
+      color: var(--ps-accent-text);
+      font-weight: var(--ps-weight-medium);
+      cursor: pointer;
+    }
+
+    .btn-link:hover {
+      text-decoration: underline;
     }
 
     .query-footer {
       display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-      padding-top: var(--spacing-sm);
-      border-top: var(--border-width) solid var(--border);
-      box-sizing: border-box;
+      flex: none;
+      flex-direction: column;
+      gap: var(--ps-space-1-5);
+      padding-top: var(--ps-space-2);
+      border-top: 1px solid var(--ps-border);
     }
 
-    .query-footer button {
-      flex: none;
+    .match-count,
+    .apply-reason {
+      margin: 0;
+      font-size: var(--ps-text-sm);
+      line-height: var(--ps-leading-normal);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .match-count {
+      color: var(--ps-text);
+    }
+
+    /* Room for one line even while empty, so the buttons do not jump when a reason appears. */
+    .apply-reason {
+      min-height: calc(var(--ps-text-sm) * var(--ps-leading-normal));
+      color: var(--ps-text-muted);
+    }
+
+    .query-footer-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--ps-space-2);
     }
 
     .query-footer-reset {
       margin-inline-end: auto;
     }
 
-    /* ==========================================
-       MATCH COUNT
-       ========================================== */
+    /* ── Groups ──────────────────────────────────────────────────────────── */
 
-    .match-count {
-      font-size: var(--text-sm);
-      color: var(--primary);
+    .group-container {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-2);
+      padding-left: var(--ps-space-2);
+      border-left: 3px solid var(--ps-border);
+    }
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-2);
+    }
+
+    .group-label {
+      flex: 1;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-weight: var(--ps-weight-semibold);
+    }
+
+    .group-conditions {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ps-space-2);
+    }
+
+    /* ── A condition row ─────────────────────────────────────────────────── */
+
+    .condition-row {
+      display: grid;
+      grid-template-areas:
+        'number op annotation remove'
+        'values values values values';
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--ps-space-1-5);
+      box-sizing: border-box;
+      padding: var(--ps-space-2);
+      border: 1px solid var(--ps-border);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+    }
+
+    .condition-number {
+      grid-area: number;
+      min-width: 1.25em;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
       text-align: right;
     }
 
-    /* ==========================================
-       CONDITION ROW
-       ========================================== */
-
-    .condition-row {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-      background: var(--surface);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
-      padding: var(--spacing-sm);
-      flex-wrap: wrap;
-      box-sizing: border-box;
+    .condition-row > .logical-op-select {
+      grid-area: op;
     }
 
-    /* ==========================================
-       NATIVE SELECTS (logical operator + numeric operator)
-       ========================================== */
+    .condition-row > .condition-remove {
+      grid-area: remove;
+    }
 
-    /* Deliberately native <select>s: keyboard, mobile and screen-reader support
-       for free. inputMixin already supplies border, radius, surface, typography,
-       shadow and the focus ring, so all that is left here is the chevron (written
-       once for both) and the room it needs. */
+    .condition-values {
+      grid-area: values;
+      min-width: 0;
+    }
+
+    /* Native selects: keyboard, mobile and screen-reader support for free. */
     .logical-op-select,
     .numeric-operator-select {
-      padding-right: 1.375rem;
-      padding-left: var(--spacing-sm);
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235b6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right var(--spacing-xs) center;
-      background-size: 0.75rem;
-      font-family: inherit;
-      cursor: pointer;
       box-sizing: border-box;
-      flex: none;
-      appearance: none;
-      -webkit-appearance: none;
-      -moz-appearance: none;
+      height: var(--ps-control-sm);
+      padding: 0 var(--ps-space-1);
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+      cursor: pointer;
     }
 
-    .logical-op-select:hover,
-    .numeric-operator-select:hover {
-      background-color: var(--hover-bg);
-      border-color: var(--border-hover);
-    }
-
-    /* Sized by its widest option (AND / OR / NOT) with a floor so the blank and
-       NOT-only variants still line up with the rows below — no fixed width to
-       clip against. */
     .logical-op-select {
-      width: auto;
       min-width: 4.5rem;
-      font-weight: var(--font-medium);
-      text-align: center;
+      font-weight: var(--ps-weight-medium);
     }
 
     .logical-op-select.op-blank {
-      opacity: 0.5;
+      color: var(--ps-text-muted);
     }
 
     .logical-op-placeholder {
-      width: 4.5rem;
       flex: none;
+      width: 4.5rem;
     }
 
     .annotation-select-trigger {
-      justify-content: space-between;
-      min-width: 120px;
-      padding: var(--input-padding-y) var(--input-padding-x);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      color: var(--muted);
-      box-shadow: var(--shadow-sm);
+      grid-area: annotation;
+      display: flex;
+      align-items: center;
+      gap: var(--ps-space-1);
+      box-sizing: border-box;
+      min-width: 0;
+      height: var(--ps-control-sm);
+      padding: 0 var(--ps-space-2);
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+      text-align: left;
+      cursor: pointer;
     }
 
+    .logical-op-select:hover,
+    .numeric-operator-select:hover:not(:disabled),
     .annotation-select-trigger:hover {
-      background: var(--hover-bg);
-      border-color: var(--border-hover);
+      border-color: var(--ps-border-strong);
+      background: var(--ps-surface-hover);
     }
 
-    .condition-remove {
-      color: var(--text-secondary);
-      opacity: 0.6;
-      padding: var(--spacing-xs);
-      border-radius: var(--radius);
+    .dropdown-trigger-text,
+    .dropdown-item-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .predicted-badge {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      font-size: var(--ps-text-xs);
       line-height: 1;
-      flex-shrink: 0;
+      cursor: default;
+      user-select: none;
     }
 
-    .condition-remove:hover {
-      color: var(--danger);
-      opacity: 1;
-      background: color-mix(in srgb, var(--danger) 10%, transparent);
-    }
-
-    /* ==========================================
-       VALUE CHIPS
-       ========================================== */
+    /* ── Value chips ─────────────────────────────────────────────────────── */
 
     .value-chips {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: var(--spacing-xs);
-      flex: 1;
+      gap: var(--ps-space-1);
       min-width: 0;
     }
 
     .value-chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: color-mix(in srgb, var(--primary) 15%, transparent);
-      color: var(--primary);
-      border-radius: var(--radius-pill);
-      padding: var(--spacing-2xs) var(--spacing-sm);
-      font-size: var(--text-sm);
+      gap: var(--ps-space-1);
+      box-sizing: border-box;
       max-width: 160px;
+      height: 22px;
+      padding: 0 var(--ps-space-1) 0 var(--ps-space-2);
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-accent-tint);
+      color: var(--ps-accent-text);
+      font-size: var(--ps-text-sm);
     }
 
     .value-chip-text {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      min-width: 0;
     }
 
     .value-chip-remove {
       display: inline-flex;
-      opacity: 0.6;
-      font-size: var(--text-sm);
-      line-height: 1;
-      color: inherit;
+      flex: none;
+      align-items: center;
+      justify-content: center;
       padding: 0;
-      flex-shrink: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font-size: var(--ps-text-sm);
+      line-height: 1;
+      opacity: 0.7;
+      cursor: pointer;
     }
 
     .value-chip-remove:hover {
@@ -230,78 +310,70 @@ export const queryBuilderStyles = [
 
     .value-chip-add {
       display: inline-flex;
-      gap: var(--spacing-2xs);
-      border: var(--border-width) dashed var(--primary);
-      color: var(--primary);
-      border-radius: var(--radius-pill);
-      padding: var(--spacing-2xs) var(--spacing-sm);
-      font-size: var(--text-sm);
+      align-items: center;
+      box-sizing: border-box;
+      height: 22px;
+      padding: 0 var(--ps-space-2);
+      border: 1px dashed var(--ps-accent);
+      border-radius: var(--ps-radius-full);
+      background: none;
+      color: var(--ps-accent-text);
+      font-size: var(--ps-text-sm);
+      cursor: pointer;
     }
 
     .value-chip-add:hover {
-      background: color-mix(in srgb, var(--primary) 10%, transparent);
+      background: var(--ps-accent-tint);
     }
 
-    /* ==========================================
-       GROUP
-       ========================================== */
+    /* ── The annotation and value pickers ────────────────────────────────── */
 
-    .group-container {
-      border-left: 3px solid var(--border);
-      padding-left: var(--spacing-md);
-      margin-left: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: var(--spacing-sm);
-    }
-
-    .group-header {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-    }
-
-    .group-conditions {
-      display: flex;
-      flex-direction: column;
-      gap: var(--spacing-sm);
-    }
-
-    /* ==========================================
-       PICKER POPOVERS (annotation + value)
-       ========================================== */
-
-    /* Same surface as dropdownMixin's .dropdown-menu, but position: fixed against
-       a measured trigger so the menu can escape the modal's clipping context —
-       the markup therefore cannot reuse the .dropdown-menu class. */
+    /* position: fixed against a measured trigger, so a scrolling panel cannot clip them. */
     .annotation-picker,
     .value-picker {
       position: fixed;
-      background: var(--surface);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-lg);
-      z-index: var(--z-above-modal);
+      z-index: 1001;
+      box-sizing: border-box;
       min-width: 200px;
       max-width: 280px;
-      padding: var(--spacing-sm);
-      box-sizing: border-box;
+      padding: var(--ps-space-2);
+      border: 1px solid var(--ps-border);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface-raised);
+      box-shadow: var(--ps-shadow-lg);
     }
 
-    /* Surface, border and focus ring come from inputMixin via the type="text" the
-       markup carries. Only the layout the mixin has no opinion on stays here.
-       type="text" rather than type="search": WebKit's search input adds its own
-       clear affordance and an Escape-clears-the-field behaviour that would fight
-       handleDropdownEscape. Matches annotation-select's search input. */
+    .annotation-picker-input,
+    .value-picker-input,
+    .numeric-field {
+      box-sizing: border-box;
+      height: var(--ps-control-sm);
+      padding: 0 var(--ps-space-2);
+      border: 1px solid var(--ps-border-control);
+      border-radius: var(--ps-radius);
+      background: var(--ps-surface);
+      color: var(--ps-text);
+    }
+
     .annotation-picker-input,
     .value-picker-input {
       width: 100%;
-      font-family: inherit;
-      margin-bottom: var(--spacing-xs);
-      box-sizing: border-box;
+      margin-bottom: var(--ps-space-1);
     }
 
-    /* Shared by both pickers (the annotation picker reuses this list wrapper). */
+    .annotation-picker-input::placeholder,
+    .value-picker-input::placeholder,
+    .numeric-field::placeholder {
+      color: var(--ps-text-muted);
+    }
+
+    /* Inside a tight box the ring sits on the border rather than 2 px outside it. */
+    .annotation-picker-input:focus-visible,
+    .value-picker-input:focus-visible,
+    .numeric-field:focus-visible {
+      outline-offset: -1px;
+    }
+
     .value-picker-list {
       display: flex;
       flex-direction: column;
@@ -310,199 +382,130 @@ export const queryBuilderStyles = [
       scrollbar-width: thin;
     }
 
-    /* Both option lists carry .dropdown-item, so padding, colour, cursor and the
-       hover/.highlighted pair come from dropdownMixin. Only the value picker's
-       count-on-the-right layout is local. No :focus-visible rule: the options
-       carry no tabindex by design — both pickers keep DOM focus on the search
-       input and move an aria-activedescendant cursor, so .highlighted IS the
-       focus indicator. */
+    /* The options carry no tabindex: focus stays in the search input and .highlighted is the
+       keyboard cursor (aria-activedescendant). */
+    .dropdown-item {
+      padding: var(--ps-space-1-5) var(--ps-space-2);
+      border-radius: var(--ps-radius-sm);
+      color: var(--ps-text);
+      cursor: pointer;
+    }
+
+    .dropdown-item:hover,
+    .dropdown-item.highlighted {
+      background: var(--ps-accent-tint);
+    }
+
     .value-picker-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: var(--spacing-sm);
+      gap: var(--ps-space-2);
     }
 
-    /* Label then predicted badge, laid out like the annotation dropdown's rows. */
     .annotation-picker-item {
       display: flex;
       align-items: center;
-      gap: var(--spacing-sm);
+      gap: var(--ps-space-2);
+    }
+
+    .annotation-picker-item[aria-selected='true'] {
+      color: var(--ps-accent-text);
+      font-weight: var(--ps-weight-medium);
     }
 
     /* Locked out while the "Any value" sentinel is selected (it subsumes them). */
     .value-picker-item.is-disabled,
     .value-picker-item.is-disabled:hover,
     .value-picker-item.is-disabled.highlighted {
-      opacity: 0.5;
-      cursor: not-allowed;
       background: none;
-      border-left-color: transparent;
-      color: var(--muted);
+      color: var(--ps-text-faint);
+      cursor: not-allowed;
     }
 
     .value-picker-highlight {
-      color: var(--primary);
-      font-weight: var(--font-medium);
       background: none;
+      color: var(--ps-accent-text);
+      font-weight: var(--ps-weight-semibold);
     }
 
     .value-picker-count {
-      color: var(--text-secondary);
-      font-size: var(--text-sm);
+      flex: none;
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
-      flex-shrink: 0;
     }
 
     .value-picker-footer {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      padding-top: var(--spacing-xs);
-      border-top: var(--border-width) solid var(--border);
-      margin-top: var(--spacing-xs);
+      margin-top: var(--ps-space-1);
+      padding-top: var(--ps-space-1);
+      border-top: 1px solid var(--ps-border);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
       text-align: center;
     }
 
-    /* Matches .annotation-section-header in annotation-select.styles.ts. */
     .annotation-picker-category {
-      padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
-      font-size: var(--text-sm);
-      font-weight: var(--font-semibold);
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: var(--border-width) solid var(--border);
       position: sticky;
       top: 0;
-      z-index: var(--z-base);
-      background: var(--surface);
+      padding: var(--ps-space-2) var(--ps-space-2) var(--ps-space-1);
+      background: var(--ps-surface-raised);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
+      font-weight: var(--ps-weight-semibold);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
 
-    /* ==========================================
-       BUTTONS
-       ========================================== */
-
-    /* Reset and Apply buttons use btn-danger / btn-primary from buttonMixin */
-
-    /* ==========================================
-       FILTER BADGE (CONTROL-BAR)
-       ========================================== */
-
-    .filter-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 18px;
-      height: 18px;
-      border-radius: var(--radius-pill);
-      background: var(--primary);
-      color: white;
-      font-size: var(--text-sm);
-      padding: 0 4px;
-      box-sizing: border-box;
-      font-weight: var(--font-medium);
-      line-height: 1;
+    @media (forced-colors: active) {
+      .dropdown-item.highlighted {
+        outline: 1px solid Highlight;
+      }
     }
 
-    .filter-active {
-      color: var(--primary);
-      border-color: var(--primary);
-      background: var(--primary-light);
-    }
-
-    /* ==========================================
-       MODAL OVERLAY
-       ========================================== */
-
-    .query-builder-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: var(--z-modal);
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overscroll-behavior: contain;
-    }
-
-    .query-builder-modal {
-      width: 70%;
-      min-width: 600px;
-      max-width: 900px;
-      height: 70vh;
-      max-height: 80vh;
-      background: var(--surface);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-lg);
-      overflow: visible;
-    }
-
-    /* ==========================================
-       NUMERIC INPUT
-       ========================================== */
+    /* ── The numeric input ───────────────────────────────────────────────── */
 
     .numeric-input {
       display: flex;
-      align-items: center;
-      gap: var(--spacing-xs);
       flex-wrap: wrap;
+      align-items: center;
+      gap: var(--ps-space-1);
     }
 
-    /* type="number" is outside inputMixin's element selectors, so the markup wears
-       .input-base — the hook the mixin exposes for exactly this — and only the
-       width stays local. Widening the mixin to input[type='number'] instead would
-       restyle the number inputs in the legend, its settings dialog and the publish
-       modal, which carry their own rules; that sweep is its own change. */
     .numeric-field {
-      width: 90px;
-      font-family: inherit;
-      box-sizing: border-box;
+      width: 84px;
+    }
+
+    .numeric-field:disabled,
+    .numeric-operator-select:disabled {
+      background: var(--ps-surface-muted);
+      color: var(--ps-text-faint);
+      cursor: not-allowed;
     }
 
     .numeric-dash {
-      color: var(--text-secondary);
+      color: var(--ps-text-muted);
     }
 
     .numeric-match-count {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-sm);
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
-    }
-
-    /* ==========================================
-       RESPONSIVE
-       ========================================== */
-
-    @media (max-width: 768px) {
-      .query-builder-modal {
-        width: 95%;
-        min-width: unset;
-        height: 85vh;
-      }
-    }
-
-    @media (max-width: 550px) {
-      .condition-row {
-        flex-wrap: wrap;
-      }
-
-      .annotation-select-trigger {
-        min-width: 0;
-        flex: 1;
-      }
     }
   `,
 ];
 
-/** The builder's own host fills its modal; the rows and pickers sharing the sheet above do not. */
+/** The builder's own host fills the panel that holds it; the rows and pickers sharing the sheet above do not. */
 export const queryBuilderHostStyles = css`
   :host {
+    display: block;
     width: 100%;
     height: 100%;
   }
 
-  /* Embedded in the app's Filter dialog, whose body already pads its content. */
+  /* Embedded in the app's Filter panel, whose body already pads its content. */
   :host([embedded]) .query-builder {
     padding: 0;
   }

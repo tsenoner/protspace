@@ -184,7 +184,7 @@ There is no numeric equivalent of the categorical N/A entry you can pick from a 
 
 Close the modal with the **×** button, **Cancel**, **Escape** key, or clicking the backdrop.
 
-**Reset All** clears the query and restores all proteins without closing the modal.
+**Reset** clears the query and restores all proteins without closing the modal.
 
 ::: tip Logical Operators
 

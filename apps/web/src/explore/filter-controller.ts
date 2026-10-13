@@ -7,6 +7,7 @@ import {
   reliabilityFromConditions,
   replaceConditionsForAnnotation,
   sameConditions,
+  sameQuery,
   type FilterQuery,
   type ProtspaceLegend,
   type ProtspaceQueryBuilder,
@@ -83,6 +84,14 @@ export function createFilterController({
   /** The materialized snapshot the builder evaluates; refreshed on every plot data-change. */
   let snapshot: VisualizationData | undefined;
   const lastMirrored = new Map<string, EatReliabilityState>();
+  /**
+   * The query that counts as clean: the one last applied, reset to or seeded. The builder's Cancel
+   * is enabled, and its Apply can apply, only while the query differs from it.
+   */
+  let appliedQuery: FilterQuery = [];
+  const syncDirty = () => {
+    queryBuilder.dirty = !sameQuery(query, appliedQuery);
+  };
 
   const readSnapshot = (): VisualizationData | undefined =>
     plotElement.getMaterializedData() ?? plotElement.getCurrentData() ?? snapshot;
@@ -101,6 +110,7 @@ export function createFilterController({
     if (!dialog.open) return;
     queryBuilder.data = snapshot;
     queryBuilder.query = query;
+    syncDirty();
   };
 
   const setQuery = (next: FilterQuery) => {
@@ -196,6 +206,8 @@ export function createFilterController({
     applyMatchedIndices(
       (event as CustomEvent<{ matchedIndices: Set<number> }>).detail.matchedIndices,
     );
+    appliedQuery = query;
+    syncDirty();
     dialog.open = false;
   };
 
@@ -203,11 +215,13 @@ export function createFilterController({
     clearFilterChannel();
     // A fresh row to start the next query; the dialog stays open.
     setQuery([createCondition()]);
+    appliedQuery = query;
+    syncDirty();
     // A full reset drops any reliability condition too: pull the legend control back.
     mirrorToLegend();
   };
 
-  /** The builder's Cancel: close, keeping the edits for the next opening. */
+  /** The builder's Cancel (`query-cancel`) or its own close: close, keeping the edits for the next opening. */
   const onQueryClose = () => {
     dialog.open = false;
   };
@@ -230,6 +244,7 @@ export function createFilterController({
   queryBuilder.addEventListener('query-apply', onQueryApply);
   queryBuilder.addEventListener('query-reset', onQueryReset);
   queryBuilder.addEventListener('query-close', onQueryClose);
+  queryBuilder.addEventListener('query-cancel', onQueryClose);
   root.addEventListener('annotation-change', onAnnotationChange);
   plotElement.addEventListener('data-change', onDataChange);
 
@@ -237,15 +252,22 @@ export function createFilterController({
     open() {
       snapshot = readSnapshot();
       // Seed one empty condition so the user sees a row at once.
-      if (query.length === 0) query = [createCondition()];
+      if (query.length === 0) {
+        query = [createCondition()];
+        // An untouched seed is clean: nothing to cancel, nothing to apply.
+        appliedQuery = query;
+      }
       queryBuilder.annotations = filterableAnnotations(snapshot);
       queryBuilder.data = snapshot;
       queryBuilder.query = query;
+      syncDirty();
       dialog.open = true;
     },
     clear() {
       clearFilterChannel();
       setQuery([]);
+      appliedQuery = query;
+      syncDirty();
       // The reliability condition went with the query: pull the legend control back.
       mirrorToLegend();
     },
@@ -267,10 +289,14 @@ export function createFilterController({
       if (sameConditions(existing, nextConditions)) return;
       setQuery(replaceConditionsForAnnotation(query, key, replacement));
       applyQuery();
+      // The slider applies at once: what it wrote is the clean state.
+      appliedQuery = query;
+      syncDirty();
     },
     resetForNewDataset() {
       // The plot's own filter channel is reset with its data (data-renderer applyPlotState).
       query = [];
+      appliedQuery = [];
       filterActive = false;
       lastMirrored.clear();
       // A closed dialog's builder still holds the dataset it last showed; let it go.
@@ -283,6 +309,7 @@ export function createFilterController({
       queryBuilder.removeEventListener('query-apply', onQueryApply);
       queryBuilder.removeEventListener('query-reset', onQueryReset);
       queryBuilder.removeEventListener('query-close', onQueryClose);
+      queryBuilder.removeEventListener('query-cancel', onQueryClose);
       root.removeEventListener('annotation-change', onAnnotationChange);
       plotElement.removeEventListener('data-change', onDataChange);
       // The status store outlives this page: no stale count after leaving /explore.
