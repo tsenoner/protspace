@@ -4,6 +4,7 @@ import {
   type ReactiveControllerHost,
   type TemplateResult,
 } from 'lit';
+import { pushLayer } from '../kit/layers';
 import '../kit/tooltip';
 import type { PsTooltip } from '../kit/tooltip';
 import { toDisplayValue } from './config';
@@ -55,14 +56,16 @@ interface LegendKeyboardOptions {
 /**
  * The legend's keyboard model. On a row: the arrows, Home and End move between rows, Enter and
  * Space toggle, `i` isolates. On a row's handle: Enter or Space picks the row up or drops it, Up
- * and Down move it, Escape puts it back. The legend holds the items; this holds the picked row and
- * the snapshot Escape restores.
+ * and Down move it, and Escape, through the layer stack, puts it back. The legend holds the items;
+ * this holds the picked row, the snapshot Escape restores and the reorder's layer.
  */
 export class LegendKeyboardController implements ReactiveController {
   private host: ReactiveControllerHost & HTMLElement;
   private options: LegendKeyboardOptions;
   private _picked: string | null = null;
   private _snapshot: LegendReorderSnapshot | null = null;
+  /** Releases the reorder's layer; set while a row is picked up. */
+  private _releaseLayer: (() => void) | null = null;
   private _focusValue: string | null = null;
   /** The row holding the Tab stop, worked out once per item list and focus value. */
   private _stop: {
@@ -112,6 +115,8 @@ export class LegendKeyboardController implements ReactiveController {
   }
 
   hostDisconnected(): void {
+    this._releaseLayer?.();
+    this._releaseLayer = null;
     this._picked = null;
     this._snapshot = null;
   }
@@ -163,12 +168,6 @@ export class LegendKeyboardController implements ReactiveController {
         this.options.announce(dropping ? `Dropped ${label}` : `Picked up ${label} for reordering`);
         break;
       }
-      case 'Escape':
-        if (this._picked === item.value) {
-          e.preventDefault();
-          this.cancel();
-        }
-        break;
       case 'ArrowUp':
       case 'ArrowDown':
         if (this._picked === item.value) {
@@ -194,6 +193,8 @@ export class LegendKeyboardController implements ReactiveController {
 
   /** Forgets the picked row and its snapshot, leaving the order as it is. */
   clear(): void {
+    this._releaseLayer?.();
+    this._releaseLayer = null;
     this._snapshot = null;
     if (this._picked === null) return;
     this._picked = null;
@@ -213,6 +214,14 @@ export class LegendKeyboardController implements ReactiveController {
   private _pickUp(value: string): void {
     this._picked = value;
     this._snapshot = this.options.snapshot();
+    // Escape cancels the reorder through the page's one layer stack (decision 11), after any menu
+    // or picker opened over it; a press elsewhere leaves the row picked up. cancel() puts the row
+    // back, refocuses its handle and, through the legend's restore, releases the layer.
+    this._releaseLayer ??= pushLayer({
+      close: () => this.cancel(),
+      elements: [this.host],
+      dismissOnOutsidePress: false,
+    });
     this.host.requestUpdate();
   }
 

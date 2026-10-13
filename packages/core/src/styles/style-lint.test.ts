@@ -28,7 +28,6 @@ const LEGACY = new Set<string>([
   '../components/control-bar/search.styles.ts',
   '../components/legend/category-score-strip.styles.ts',
   '../components/legend/legend.styles.ts',
-  '../components/legend/styles/item.ts',
   '../components/legend/styles/layout.ts',
   '../components/legend/styles/modal.ts',
   '../components/legend/styles/theme.ts',

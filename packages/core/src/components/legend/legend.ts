@@ -40,6 +40,7 @@ import type { PointShape } from '@protspace/utils';
 import { legendStyles } from './legend.styles';
 import '../common/info-popover';
 import '../kit/menu';
+import { topLayer } from '../kit/layers';
 
 // Controllers
 import { ScatterplotSyncController, PersistenceController, DragController } from './controllers';
@@ -512,15 +513,10 @@ export class ProtspaceLegend extends LitElement {
   // Keyboard Handler
   // ─────────────────────────────────────────────────────────────────
 
+  // The Other and settings dialogs are not on the layer stack yet (3.10 and 3.12 move them). An open
+  // layer (the picker, a menu, a keyboard reorder) takes Escape first, whichever listener ran first.
   private _onWindowKeydownCapture = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    // One thing per Escape, in this order: the colour picker, Other, settings, a keyboard reorder.
-    if (this._colorPicker.value !== null) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      this._colorPicker.close();
-      return;
-    }
+    if (e.key !== 'Escape' || topLayer()) return;
     if (this._showOtherDialog) {
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -531,17 +527,10 @@ export class ProtspaceLegend extends LitElement {
       e.stopImmediatePropagation();
       e.preventDefault();
       this._handleSettingsClose();
-      return;
-    }
-    // Caught here as well as on the handle: Lit re-renders during ArrowDown can leave focus on
-    // <body> until requestAnimationFrame puts it back on the handle.
-    if (this._keyboard.cancel()) {
-      e.stopImmediatePropagation();
-      e.preventDefault();
     }
   };
 
-  /** Puts the Escape handler on the window while a legend overlay or a reorder is open. */
+  /** Puts the Escape handler on the window while the Other or the settings dialog is open. */
   private _listenForEscape(on: boolean): void {
     if (on === this._escapeListening) return;
     this._escapeListening = on;
@@ -666,18 +655,13 @@ export class ProtspaceLegend extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._scatterplotController.scatterplotSelector = this.scatterplotSelector;
-    // Controllers re-listen in hostConnected; Lit schedules no update on reconnect.
+    // Lit schedules no update on reconnect, so an open dialog's Escape handler comes back here.
     this._listenForEscape(this._escapeTargetOpen);
   }
 
-  /** Something Escape closes is open: the picker, Other, settings or a keyboard reorder. */
+  /** An old dialog is open: the picker, the row menu and a keyboard reorder are layers instead. */
   private get _escapeTargetOpen(): boolean {
-    return (
-      this._showSettingsDialog ||
-      this._showOtherDialog ||
-      this._colorPicker.value !== null ||
-      this._keyboard.pickedValue !== null
-    );
+    return this._showSettingsDialog || this._showOtherDialog;
   }
 
   disconnectedCallback(): void {
@@ -704,8 +688,6 @@ export class ProtspaceLegend extends LitElement {
   }
 
   updated(changedProperties: Map<string, unknown>): void {
-    // The colour picker and a keyboard reorder live in controllers, whose state never shows in
-    // `changedProperties`, so whether anything Escape closes is open is recomputed every update.
     this._listenForEscape(this._escapeTargetOpen);
 
     // Handle settings dialog focus trapping
@@ -2013,7 +1995,7 @@ export class ProtspaceLegend extends LitElement {
     };
 
     return html`
-      <div class="legend-container" part="container" @click=${() => this._colorPicker.close()}>
+      <div class="legend-container" part="container">
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
           ${this._statusMessage}
         </div>
@@ -2166,8 +2148,8 @@ export class ProtspaceLegend extends LitElement {
       const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>('.legend-item') ?? [])].find(
         (each) => each.dataset.value === value,
       );
-      // Chosen again for the row whose picker is open, the picker stays open.
-      if (row && this._colorPicker.value !== value) this._colorPicker.toggle(value, row);
+      // Opening is idempotent: chosen again for the row whose picker is open, it stays open.
+      if (row) this._colorPicker.open(value, row);
     }
   };
 
@@ -2188,7 +2170,6 @@ export class ProtspaceLegend extends LitElement {
       .open=${item !== undefined}
       @ps-select=${this._onRowMenuSelect}
       @ps-close=${this._onRowMenuClose}
-      @click=${(e: Event) => e.stopPropagation()}
     >
       <ps-menu-item value="isolate">${onlyVisible ? 'Show all' : 'Show only this'}</ps-menu-item>
       ${canCustomize

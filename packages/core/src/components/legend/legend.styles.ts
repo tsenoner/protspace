@@ -5,7 +5,7 @@ import { reducedMotion } from '../kit/kit-shared.styles';
 import { themeStyles } from './styles/theme';
 import { layoutStyles } from './styles/layout';
 import { rowStyles } from './styles/row';
-import { itemStyles } from './styles/item';
+import { pickerStyles } from './styles/picker';
 import { modalStyles } from './styles/modal';
 import { responsiveStyles } from './styles/responsive';
 
@@ -29,7 +29,7 @@ export const legendStyles = [
   themeStyles,
   layoutStyles,
   rowStyles,
-  itemStyles,
+  pickerStyles,
   modalStyles,
 
   // 4. Transitions and animations stop for people who asked for less motion.

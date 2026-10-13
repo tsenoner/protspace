@@ -141,7 +141,8 @@ import { tokens } from '../../styles/tokens';
 import { buttonMixin } from '../../styles/mixins';
 import { themeStyles } from './styles/theme';
 import { layoutStyles } from './styles/layout';
-import { itemStyles } from './styles/item';
+import { rowStyles } from './styles/row';
+import { pickerStyles } from './styles/picker';
 import { responsiveStyles } from './styles/responsive';
 
 export const legendStyles = [
@@ -149,7 +150,8 @@ export const legendStyles = [
   buttonMixin,
   themeStyles,
   layoutStyles,
-  itemStyles,
+  rowStyles,
+  pickerStyles,
   responsiveStyles, // Always last
 ];
 ```
@@ -184,7 +186,8 @@ export const legendStyles = [
   overlayMixins,
   themeStyles,
   layoutStyles,
-  itemStyles,
+  rowStyles,
+  pickerStyles,
   modalStyles,
   responsiveStyles, // Always last
 ];

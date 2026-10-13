@@ -6,6 +6,7 @@ import {
   type TemplateResult,
 } from 'lit';
 import type { PointShape } from '@protspace/utils';
+import '../kit/popover';
 import { SHAPE_PATH_GENERATORS, toDisplayValue } from './config';
 import type { LegendItem } from './types';
 
@@ -32,21 +33,43 @@ interface ColorPickerOptions {
   isNumeric(): boolean;
 }
 
+/** One shape as its radio draws it: filled in the text colour, the plus as an outline. */
+function shapeIcon(shape: PointShape): TemplateResult {
+  const size = 14;
+  const canvas = 20;
+  const centre = canvas / 2;
+  const outline = shape === 'plus';
+  return html`<svg
+    width=${canvas}
+    height=${canvas}
+    viewBox="0 0 ${canvas} ${canvas}"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <g transform="translate(${centre}, ${centre})">
+      <path
+        d=${SHAPE_PATH_GENERATORS[shape](size)}
+        fill=${outline ? 'none' : 'currentColor'}
+        stroke="currentColor"
+        stroke-width=${outline ? 1.5 : 1}
+      ></path>
+    </g>
+  </svg>`;
+}
+
 /**
- * The colour and shape picker of one legend row. It owns which row is open, the panel's position,
- * the shape dropdown, the colour commit delay and the outside-press listeners; the legend owns the
- * items and applies the edits it is handed.
+ * The colour and shape picker of one legend row, a ps-popover anchored to the row and placed to its
+ * left, over the plot. The layer stack closes it on Escape or a press outside (design decision 11);
+ * either way a colour still waiting for its commit delay lands first. The legend owns the items and
+ * applies the edits it is handed.
  */
 export class ColorPickerController implements ReactiveController {
   private host: ReactiveControllerHost & HTMLElement;
   private options: ColorPickerOptions;
   private _value: string | null = null;
-  private _position: { x: number; y: number } | null = null;
-  private _showShapePicker = false;
+  private _anchor: HTMLElement | null = null;
   private _pending: { value: string; color: string } | null = null;
   private _timer: ReturnType<typeof setTimeout> | null = null;
-  private _pressStartedOutside = false;
-  private _listening = false;
 
   constructor(host: ReactiveControllerHost & HTMLElement, options: ColorPickerOptions) {
     this.host = host;
@@ -59,35 +82,16 @@ export class ColorPickerController implements ReactiveController {
     return this._value;
   }
 
-  hostConnected(): void {
-    if (this._value !== null) this._listen(true);
-  }
-
   hostDisconnected(): void {
-    // As before the split: a pending colour is dropped, not committed, when the legend leaves.
+    // As before: a pending colour is dropped, not committed, when the legend leaves the page.
     this._cancelTimer();
-    this._listen(false);
   }
 
-  /** Opens the picker beside `trigger`; the open row's own trigger closes it again. */
-  toggle(value: string, trigger: HTMLElement): void {
-    if (this._value === value) {
-      this.close();
-      return;
-    }
-    // Another row's pending colour lands before this row opens.
+  /** Opens the picker beside `anchor`, the row element; another row's pending colour lands first. */
+  open(value: string, anchor: HTMLElement): void {
     this.flush();
-    const container = this.host.shadowRoot?.querySelector('.legend-container');
-    if (!container) return;
-    const containerRect = container.getBoundingClientRect();
-    const triggerRect = trigger.getBoundingClientRect();
-    this._position = {
-      x: triggerRect.left - containerRect.left + triggerRect.width + 8,
-      y: triggerRect.top - containerRect.top,
-    };
     this._value = value;
-    this._showShapePicker = false;
-    this._listen(true);
+    this._anchor = anchor;
     this.host.requestUpdate();
   }
 
@@ -96,8 +100,7 @@ export class ColorPickerController implements ReactiveController {
     this.flush();
     if (this._value === null) return;
     this._value = null;
-    this._showShapePicker = false;
-    this._listen(false);
+    this._anchor = null;
     this.host.requestUpdate();
   }
 
@@ -108,150 +111,117 @@ export class ColorPickerController implements ReactiveController {
     if (pending) this.options.commitColor(pending.value, pending.color);
   }
 
-  render(): TemplateResult | typeof nothing {
+  /** The popover is always rendered: closing it, not removing it, hands focus back. */
+  render(): TemplateResult {
     const item = this._value === null ? undefined : this.options.getItem(this._value);
-    if (!item || !this._position) return nothing;
+    const open = item !== undefined && this._anchor !== null;
+    const label = item ? (item.displayValue ?? toDisplayValue(item.value)) : '';
+    return html`<ps-popover
+      class="color-picker"
+      .anchor=${this._anchor}
+      .open=${open}
+      placement="left-start"
+      panel-label=${open ? `Colour and shape: ${label}` : 'Colour and shape'}
+      @ps-open=${this._onOpen}
+      @ps-close=${this._onClose}
+      >${item && open ? this._renderBody(item, label) : nothing}</ps-popover
+    >`;
+  }
 
-    const displayLabel = item.displayValue ?? toDisplayValue(item.value);
-    const isMultilabel = this.options.isMultilabel();
-    const isNumeric = this.options.isNumeric();
-
-    // Render shape swatch SVG (outline only, no fill)
-    const renderShapeSwatch = (shape: string, disabled: boolean = false) => {
-      const pathGenerator =
-        SHAPE_PATH_GENERATORS[shape as PointShape] || SHAPE_PATH_GENERATORS.circle;
-      const size = 20;
-      const canvasSize = 28;
-      const centerOffset = canvasSize / 2;
-      const path = pathGenerator(size);
-      const strokeColor = disabled ? '#999' : '#333';
-
-      return html`
-        <svg width="${canvasSize}" height="${canvasSize}" viewBox="0 0 ${canvasSize} ${canvasSize}">
-          <g transform="translate(${centerOffset}, ${centerOffset})">
-            <path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="1.5" />
-          </g>
-        </svg>
-      `;
-    };
-
-    return html`
-      <div
-        class="color-picker-popover"
-        style="left: ${this._position.x}px; top: ${this._position.y}px;"
-        @click=${(e: Event) => e.stopPropagation()}
-        @mousedown=${(e: Event) => e.stopPropagation()}
-      >
-        <div class="color-picker-header">${displayLabel}</div>
-        <div class="symbol-picker-sections">
-          <!-- Color Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Color</div>
-            <input
-              type="color"
-              class="color-picker-swatch"
-              .value=${item.color}
-              aria-label=${`Set color for ${displayLabel}`}
-              @input=${(e: Event) =>
-                this._onColorInput(item.value, (e.target as HTMLInputElement).value)}
-            />
-          </div>
-          <!-- Shape Section -->
-          <div class="symbol-picker-section">
-            <div class="symbol-picker-section-label">Shape</div>
-            <div class="shape-swatch-container">
-              ${isMultilabel || isNumeric
-                ? html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch disabled"
-                      aria-label="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      title="${isNumeric
-                        ? 'Shape selection disabled for numeric annotations'
-                        : 'Shape selection disabled for multilabel annotations'}"
-                      disabled
-                    >
-                      ${renderShapeSwatch(item.shape, true)}
-                    </button>
-                  `
-                : html`
-                    <button
-                      type="button"
-                      class="shape-picker-swatch ${this._showShapePicker ? 'active' : ''}"
-                      aria-label=${`Change shape for ${displayLabel}`}
-                      title="Click to change shape"
-                      @click=${(e: Event) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this._showShapePicker = !this._showShapePicker;
-                        this.host.requestUpdate();
-                      }}
-                    >
-                      ${renderShapeSwatch(item.shape)}
-                    </button>
-                    ${this._showShapePicker
-                      ? html`
-                          <div class="shape-picker-dropdown">
-                            <div class="shape-picker-grid">
-                              ${SHAPES.map((shape) => {
-                                const isSelected = item.shape === shape;
-                                const pathGenerator = SHAPE_PATH_GENERATORS[shape];
-                                const size = 14;
-                                const canvasSize = 20;
-                                const centerOffset = canvasSize / 2;
-                                const path = pathGenerator(size);
-                                const isOutlineOnly = shape === 'plus';
-
-                                return html`
-                                  <button
-                                    type="button"
-                                    class="shape-picker-item ${isSelected ? 'selected' : ''}"
-                                    aria-label=${`Use ${shape} shape for ${displayLabel}`}
-                                    title="${shape}"
-                                    @click=${(e: Event) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      this._showShapePicker = false;
-                                      this.options.commitShape(item.value, shape);
-                                      this.host.requestUpdate();
-                                    }}
-                                  >
-                                    <svg
-                                      width="${canvasSize}"
-                                      height="${canvasSize}"
-                                      viewBox="0 0 ${canvasSize} ${canvasSize}"
-                                    >
-                                      <g transform="translate(${centerOffset}, ${centerOffset})">
-                                        <path
-                                          d="${path}"
-                                          fill="${isOutlineOnly ? 'none' : 'currentColor'}"
-                                          stroke="currentColor"
-                                          stroke-width="${isOutlineOnly ? 1.5 : 1}"
-                                        />
-                                      </g>
-                                    </svg>
-                                  </button>
-                                `;
-                              })}
-                            </div>
-                          </div>
-                        `
-                      : null}
-                  `}
-            </div>
-          </div>
-        </div>
-        ${isMultilabel || isNumeric
-          ? html`<div class="symbol-picker-note">
-              ${isNumeric
-                ? 'Shapes unavailable for numeric annotations'
-                : 'Shapes unavailable for multilabel annotations'}
-            </div>`
-          : null}
+  private _renderBody(item: LegendItem, label: string): TemplateResult {
+    const numeric = this.options.isNumeric();
+    const shapesDisabled = numeric || this.options.isMultilabel();
+    const current: PointShape = SHAPES.includes(item.shape as PointShape)
+      ? (item.shape as PointShape)
+      : 'circle';
+    return html`<div class="color-picker-body">
+      <div class="color-picker-header">${label}</div>
+      <div class="color-picker-field">
+        <span class="color-picker-caption" aria-hidden="true">Colour</span>
+        <input
+          type="color"
+          class="color-picker-swatch"
+          .value=${item.color}
+          aria-label=${`Set color for ${label}`}
+          @input=${(e: Event) =>
+            this._onColorInput(item.value, (e.target as HTMLInputElement).value)}
+        />
       </div>
-    `;
+      <div class="color-picker-field">
+        <span class="color-picker-caption" aria-hidden="true">Shape</span>
+        <div
+          class="shape-picker"
+          role="radiogroup"
+          aria-label="Shape"
+          @keydown=${(e: KeyboardEvent) =>
+            this._onShapeKeyDown(e, item.value, current, shapesDisabled)}
+        >
+          ${SHAPES.map(
+            (shape) =>
+              html`<button
+                type="button"
+                class="shape-picker-item"
+                role="radio"
+                aria-checked=${shape === current ? 'true' : 'false'}
+                aria-label=${`Use ${shape} shape for ${label}`}
+                tabindex=${shape === current ? '0' : '-1'}
+                ?disabled=${shapesDisabled}
+                @click=${() => this.options.commitShape(item.value, shape)}
+              >
+                ${shapeIcon(shape)}
+              </button>`,
+          )}
+        </div>
+      </div>
+      ${shapesDisabled
+        ? html`<p class="symbol-picker-note">
+            ${numeric
+              ? 'Shapes unavailable for numeric annotations'
+              : 'Shapes unavailable for multilabel annotations'}
+          </p>`
+        : nothing}
+    </div>`;
+  }
+
+  // Keyboard users land in the picker; on close the popover hands focus back to where it was.
+  private _onOpen = (event: Event): void => {
+    event.stopPropagation();
+    this.host.shadowRoot?.querySelector<HTMLInputElement>('.color-picker-swatch')?.focus();
+  };
+
+  // Escape or a press outside closed the popover; the pending colour lands, then the state follows.
+  private _onClose = (event: Event): void => {
+    event.stopPropagation();
+    this.close();
+  };
+
+  /** Radio-group keys: the arrows, Home and End pick a shape, and focus stays on the checked one. */
+  private _onShapeKeyDown(
+    e: KeyboardEvent,
+    value: string,
+    current: PointShape,
+    disabled: boolean,
+  ): void {
+    if (disabled) return;
+    const index = SHAPES.indexOf(current);
+    const next =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? SHAPES[(index + 1) % SHAPES.length]
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? SHAPES[(index - 1 + SHAPES.length) % SHAPES.length]
+          : e.key === 'Home'
+            ? SHAPES[0]
+            : e.key === 'End'
+              ? SHAPES[SHAPES.length - 1]
+              : undefined;
+    if (!next) return;
+    e.preventDefault();
+    this.options.commitShape(value, next);
+    void this.host.updateComplete.then(() =>
+      this.host.shadowRoot
+        ?.querySelector<HTMLElement>('.shape-picker-item[aria-checked="true"]')
+        ?.focus(),
+    );
   }
 
   /** The row repaints on every tick; the plot gets the colour once the drag pauses. */
@@ -272,30 +242,4 @@ export class ColorPickerController implements ReactiveController {
     this._timer = null;
     this._pending = null;
   }
-
-  private _listen(on: boolean): void {
-    if (on === this._listening) return;
-    this._listening = on;
-    this._pressStartedOutside = false;
-    if (on) {
-      window.addEventListener('mousedown', this._onWindowMouseDown);
-      window.addEventListener('mouseup', this._onWindowMouseUp);
-    } else {
-      window.removeEventListener('mousedown', this._onWindowMouseDown);
-      window.removeEventListener('mouseup', this._onWindowMouseUp);
-    }
-  }
-
-  // The panel stops its own mousedown, so one that reaches the window started outside it.
-  private _onWindowMouseDown = (event: MouseEvent): void => {
-    const panel = this.host.shadowRoot?.querySelector('.color-picker-popover');
-    this._pressStartedOutside = !!panel && !panel.contains(event.target as Node);
-  };
-
-  // A press that started outside closes on release; a drag that started inside does not.
-  private _onWindowMouseUp = (): void => {
-    if (!this._pressStartedOutside) return;
-    this._pressStartedOutside = false;
-    this.close();
-  };
 }
