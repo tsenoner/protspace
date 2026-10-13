@@ -281,15 +281,8 @@ def generate_template(input_file: str) -> dict:
     with values in frequency-descending order. ``<NA>`` gets a default
     light-gray color.
     """
-    data_format = detect_data_format(input_file)
-
-    if data_format == "parquetbundle":
-        from protspace.data.io.bundle import extract_bundle_to_dir
-
-        temp_dir = extract_bundle_to_dir(Path(input_file))
-        reader = ArrowReader(Path(temp_dir))
-    elif data_format == "parquet":
-        reader = ArrowReader(Path(input_file))
+    detect_data_format(input_file)
+    reader = ArrowReader(Path(input_file))
 
     frequencies = compute_value_frequencies(reader)
     template: dict = {}
@@ -366,7 +359,7 @@ def add_annotation_styles_bundle(
 ) -> None:
     """Add annotation styles to a .parquetbundle file.
 
-    Extracts the bundle to a temp dir, applies styles via ArrowReader, converts
+    Reads the bundle with ArrowReader, applies styles, converts
     the visualization_state back to settings_json, then writes the output
     bundle with updated settings.
 
@@ -375,25 +368,15 @@ def add_annotation_styles_bundle(
     ``selectedPaletteId``) alongside ``colors`` and ``shapes``.  These are
     forwarded to the settings converter.
     """
-    from protspace.data.io.bundle import (
-        SETTINGS_FILENAME,
-        extract_bundle_to_dir,
-        read_settings_from_file,
-        replace_settings_in_bundle,
-    )
+    from protspace.data.io.bundle import replace_settings_in_bundle
     from protspace.data.io.settings_converter import visualization_state_to_settings
 
-    # Extract bundle so ArrowReader can load the data
-    temp_dir = extract_bundle_to_dir(Path(bundle_file))
-    reader = ArrowReader(Path(temp_dir))
+    reader = ArrowReader(Path(bundle_file))
 
-    # Read existing settings (if any) to preserve extra fields.  From the
-    # extracted copy, not the bundle again: this command reads the bundle once
-    # (and so logs a legacy-format warning once).
-    settings_path = Path(temp_dir) / SETTINGS_FILENAME
-    existing_settings = (
-        read_settings_from_file(settings_path) if settings_path.exists() else None
-    )
+    # Existing settings (if any), to preserve extra fields.  From the reader,
+    # not the bundle again: this command reads the bundle once (and so logs a
+    # legacy-format warning once).
+    existing_settings = reader.settings
 
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}

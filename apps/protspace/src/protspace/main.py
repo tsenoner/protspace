@@ -3,7 +3,6 @@ import warnings
 from pathlib import Path
 
 from protspace.app import ProtSpace
-from protspace.data.io.bundle import extract_bundle_to_dir
 
 DEFAULT_PORT = 8050
 
@@ -11,18 +10,18 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
 def detect_data_type(data_path: str) -> str:
-    """Resolve *data_path* to a directory of Parquet files.
+    """Resolve *data_path* to something ``ArrowReader`` reads.
 
-    Accepts a ``.parquetbundle`` file (extracted to a temp dir) or a
-    directory containing ``.parquet`` files.
+    Accepts a ``.parquetbundle`` file or a directory containing ``.parquet``
+    files (or a ``data.parquetbundle``).
 
     Returns:
-        Path to the Parquet directory.
+        Path to the bundle file or the Parquet directory.
     """
     path = Path(data_path)
 
     if path.is_file() and path.suffix.lower() == ".parquetbundle":
-        return extract_bundle_to_dir(path)
+        return str(path)
     elif path.is_dir():
         parquet_files = list(path.glob("*.parquet"))
         if parquet_files:
@@ -30,7 +29,7 @@ def detect_data_type(data_path: str) -> str:
 
         bundle_file = path / "data.parquetbundle"
         if bundle_file.exists():
-            return extract_bundle_to_dir(bundle_file)
+            return str(bundle_file)
 
         raise ValueError(
             f"Directory '{data_path}' does not contain .parquet files or data.parquetbundle"
