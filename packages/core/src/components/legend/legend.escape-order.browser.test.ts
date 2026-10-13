@@ -4,6 +4,7 @@ import { adoptTheme } from '../kit/adopt-theme';
 import type { PsMenu } from '../kit/menu';
 import type { PsPopover } from '../kit/popover';
 import type { ProtspaceLegend } from './legend';
+import { COLOR_COMMIT_DELAY_MS } from './legend-color-picker';
 import { TWELVE, categoricalData } from './test-support/legend-fixtures';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
 
@@ -111,6 +112,36 @@ describe('legend Escape order', () => {
     expect(picked(legend)).toBeNull();
     expect(order(legend).slice(0, 2)).toEqual(['A', 'B']);
     expect(status(legend)).toBe('Reordering canceled.');
+  });
+
+  it('canceling a reorder puts the rows back but keeps a colour set during it', async () => {
+    const legend = await mount();
+    // Make the order manual first, so nothing re-derives the rows after the cancel.
+    await key(legend, handle(legend, 'A'), ' ');
+    await key(legend, handle(legend, 'A'), 'ArrowDown');
+    await key(legend, handle(legend, 'A'), ' ');
+    expect(order(legend).slice(0, 2)).toEqual(['B', 'A']);
+
+    await key(legend, handle(legend, 'A'), ' ');
+    await key(legend, handle(legend, 'A'), 'ArrowUp');
+    await openRowMenu(legend, 'A');
+    await choose(legend, 'Colour and shape');
+    const swatch = legend.shadowRoot!.querySelector<HTMLInputElement>('.color-picker-swatch')!;
+    swatch.value = '#00ff00';
+    swatch.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await new Promise((resolve) => setTimeout(resolve, COLOR_COMMIT_DELAY_MS + 50));
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect(picker(legend).open).toBe(false);
+    expect(picked(legend)).toBe('A');
+
+    await userEvent.keyboard('{Escape}');
+    await settle(legend);
+    expect(picked(legend)).toBeNull();
+    expect(order(legend).slice(0, 2)).toEqual(['B', 'A']);
+    expect(row(legend, 'A').querySelector('.legend-symbol path')!.getAttribute('fill')).toBe(
+      '#00ff00',
+    );
   });
 
   it('a press outside during a reorder does not cancel it', async () => {

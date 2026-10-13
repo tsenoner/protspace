@@ -391,7 +391,6 @@ export class ProtspaceLegend extends LitElement {
     commitColor: (value, color) => this._handleColorChange(value, color),
     commitShape: (value, shape) => this._handleShapeChange(value, shape),
     isMultilabel: () => this._isMultilabelAnnotation(),
-    isNumeric: () => this._isNumericAnnotation(),
   });
 
   private _keyboard = new LegendKeyboardController(this, {
@@ -452,7 +451,12 @@ export class ProtspaceLegend extends LitElement {
     if (this._isNumericAnnotation()) {
       this._setNumericManualOrderIds(this.selectedAnnotation, snapshot.numericManualOrderIds);
     }
-    this._legendItems = snapshot.legendItems.map((item) => ({ ...item }));
+    // Only the order goes back: colour, shape and visibility set during the reorder stay.
+    const live = new Map(this._legendItems.map((item) => [item.value, item]));
+    this._legendItems = snapshot.legendItems.map((item) => ({
+      ...(live.get(item.value) ?? item),
+      zOrder: item.zOrder,
+    }));
     this._otherItems = snapshot.otherItems.map((item) => ({ ...item }));
     this._clearKeyboardReorderState();
 
@@ -2094,7 +2098,6 @@ export class ProtspaceLegend extends LitElement {
 
     const view: LegendRowView = {
       classes,
-      selected,
       symbolSize: LEGEND_STYLES.legendDisplaySize,
       otherCount: isOther ? this._otherItems.length : undefined,
       tabbable: this._keyboard.isTabbable(item.value),
@@ -2158,8 +2161,10 @@ export class ProtspaceLegend extends LitElement {
     const open = this._rowMenu;
     const item = open ? this._legendItems.find((each) => each.value === open.value) : undefined;
     const label = item ? (item.displayValue ?? toDisplayValue(item.value)) : '';
-    const visible = this._legendItems.filter((each) => each.isVisible);
-    const onlyVisible = !!item && visible.length === 1 && visible[0].value === item.value;
+    const onlyVisible =
+      !!item &&
+      item.isVisible &&
+      this._legendItems.every((each) => each.isVisible === (each.value === item.value));
     const canCustomize =
       !!item && item.value !== LEGEND_VALUES.OTHER && !this._isNumericAnnotation();
     return html`<ps-menu
