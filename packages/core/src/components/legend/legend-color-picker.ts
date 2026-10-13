@@ -103,6 +103,15 @@ export class ColorPickerController implements ReactiveController {
     this.host.requestUpdate();
   }
 
+  /** Closes without committing: the annotation changed under it. */
+  dismiss(): void {
+    this._cancelTimer();
+    if (this._value === null) return;
+    this._value = null;
+    this._anchor = null;
+    this.host.requestUpdate();
+  }
+
   /** Commits a colour still waiting for its delay, at once. */
   flush(): void {
     const pending = this._pending;

@@ -113,6 +113,23 @@ function storedFamilyRecord(): LegendPersistedSettings {
   return JSON.parse(localStorage.getItem(key!)!) as LegendPersistedSettings;
 }
 
+/** The stored record for `annotation`, whatever the dataset hash. */
+function storedRecord(annotation: string): LegendPersistedSettings | null {
+  const key = Object.keys(localStorage).find(
+    (each) => each.startsWith('protspace:legend:') && each.endsWith(`:${annotation}`),
+  );
+  return key ? (JSON.parse(localStorage.getItem(key)!) as LegendPersistedSettings) : null;
+}
+
+/** Two annotations with the same twelve categories. */
+function twoAnnotations(): VisualizationData {
+  const data = categoricalData(TWELVE);
+  const kind = categoricalData(TWELVE, 'kind');
+  data.annotations.kind = kind.annotations.kind;
+  data.annotation_data.kind = kind.annotation_data.kind;
+  return data;
+}
+
 describe('legend colour and shape picker', () => {
   it('Colour and shape opens the picker in the top layer beside its row, unclipped by a 240 px sidebar', async () => {
     const { legend } = await mount();
@@ -213,6 +230,42 @@ describe('legend colour and shape picker', () => {
     expect(storedFamilyRecord().categories.A.color).toBe('#ff0000');
     await pause(COLOR_COMMIT_DELAY_MS + 50);
     expect(commits()).toBe(1);
+  });
+
+  it('an annotation change closes it and lands a pending colour on the annotation it was picked on', async () => {
+    const { legend, plot, picker: annotationPicker } = await mount(twoAnnotations());
+    await openPicker(legend, 'A');
+    inputColour(legend, '#ff0000');
+
+    plot.selectedAnnotation = 'kind';
+    annotationPicker.dispatchEvent(
+      new CustomEvent(LEGEND_EVENTS.ANNOTATION_CHANGE, {
+        detail: { annotation: 'kind' },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await settle(legend);
+
+    expect(legend.selectedAnnotation).toBe('kind');
+    expect(picker(legend).open).toBe(false);
+    expect(storedRecord('family')?.categories.A.color).toBe('#ff0000');
+    expect(storedRecord('kind')?.categories?.A?.color).not.toBe('#ff0000');
+    await pause(COLOR_COMMIT_DELAY_MS + 50);
+    expect(storedRecord('kind')?.categories?.A?.color).not.toBe('#ff0000');
+  });
+
+  it('the annotation set from outside closes it and drops a pending colour', async () => {
+    const { legend } = await mount(twoAnnotations());
+    await openPicker(legend, 'A');
+    inputColour(legend, '#ff0000');
+
+    legend.selectedAnnotation = 'kind';
+    await settle(legend);
+
+    expect(picker(legend).open).toBe(false);
+    await pause(COLOR_COMMIT_DELAY_MS + 50);
+    expect(storedRecord('kind')?.categories?.A?.color).not.toBe('#ff0000');
   });
 
   it('a shape pick persists and checks its radio', async () => {

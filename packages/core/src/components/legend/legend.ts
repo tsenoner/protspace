@@ -932,6 +932,8 @@ export class ProtspaceLegend extends LitElement {
     selectedAnnotation: string,
     selectedProjectionName: string,
   ): void {
+    // A pending edit lands on the annotation it was made for, before the plot moves to another.
+    if (selectedAnnotation !== this.selectedAnnotation) this._closeAnnotationOverlays();
     this._clearKeyboardReorderState();
     const scatterplot = this._scatterplotController.scatterplot;
     this._eatControls.mirrorOverlayEnabled(scatterplot?.eatOverlayEnabled ?? true);
@@ -993,7 +995,7 @@ export class ProtspaceLegend extends LitElement {
 
   private _handleAnnotationChange(annotation: string): void {
     // A value still being typed belongs to the annotation it was typed for.
-    this._closeSettings();
+    this._closeAnnotationOverlays();
     this._clearKeyboardReorderState();
     this.selectedAnnotation = annotation;
     this._hiddenValues = [];
@@ -1676,6 +1678,12 @@ export class ProtspaceLegend extends LitElement {
     this.dispatchEvent(new CustomEvent(LEGEND_EVENTS.CUSTOMIZE, { bubbles: true, composed: true }));
   }
 
+  /** Closes the annotation's own overlays, landing their pending edits on it first. */
+  private _closeAnnotationOverlays(): void {
+    this._closeSettings();
+    this._colorPicker.close();
+  }
+
   private _closeSettings(): void {
     if (!this._settingsAnchor) return;
     // A value typed but not yet committed is kept, not lost with the popover.
@@ -2058,8 +2066,13 @@ export class ProtspaceLegend extends LitElement {
       changedProperties.has('_otherItems'),
       changedProperties.has('selectedAnnotation'),
     );
-    // Settings are the annotation's own: a new one closes them (the sync path flushes first).
-    if (changedProperties.has('selectedAnnotation')) this._settingsAnchor = null;
+    // Settings and the picker are the annotation's own: a new one closes them. The sync paths
+    // flushed first; set from outside, an edit for the old annotation is dropped, not moved.
+    if (changedProperties.has('selectedAnnotation')) {
+      this._settingsPopover?.cancel();
+      this._settingsAnchor = null;
+      this._colorPicker.dismiss();
+    }
   }
 
   private _renderScoreStrips() {

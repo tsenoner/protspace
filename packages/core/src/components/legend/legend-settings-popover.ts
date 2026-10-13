@@ -268,7 +268,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     const value = this._readNumber(field, input, event.currentTarget as PsInput);
     this._setInvalid(field, value === undefined);
     if (value === undefined) {
-      if (this._pending?.field === field) this._cancel();
+      if (this._pending?.field === field) this.cancel();
       return;
     }
     if (this._pending && this._pending.field !== field) this.flush();
@@ -320,7 +320,7 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
 
   private _onReset = () => {
     if (!this.canReset) return;
-    this._cancel();
+    this.cancel();
     this._syncFields();
     this.dispatchEvent(new Event('settings-reset'));
   };
@@ -360,7 +360,8 @@ export class ProtspaceLegendSettingsPopover extends LitElement {
     if (this._invalid.size > 0) this._invalid = new Set();
   }
 
-  private _cancel(): void {
+  /** Drops a number edit still waiting on its debounce. */
+  cancel(): void {
     this._clearTimer();
     this._pending = null;
   }

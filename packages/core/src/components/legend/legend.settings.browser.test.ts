@@ -272,6 +272,27 @@ describe('legend settings popover, mounted', () => {
     expect(legend.maxVisibleValues).toBe(10);
   });
 
+  it('the annotation set from outside closes the popover and drops a value typed for the old one', async () => {
+    const data = categoricalData(TWELVE);
+    const kind = categoricalData(TWELVE, 'kind');
+    data.annotations.kind = kind.annotations.kind;
+    data.annotation_data.kind = kind.annotation_data.kind;
+    const { legend } = await mount(data);
+    await openSettings(legend);
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Max legend items' }), '');
+    await userEvent.keyboard('5');
+
+    // Before the debounce ends, with no picker event: the old annotation cannot be flushed onto.
+    legend.selectedAnnotation = 'kind';
+    await settle(legend);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await settle(legend);
+
+    expect(popover(legend).open).toBe(false);
+    expect(stored('kind')?.maxVisibleValues).not.toBe(5);
+    expect(legend.maxVisibleValues).toBe(10);
+  });
+
   it('a new dataset closes the popover; a value typed is kept for the dataset it was typed for', async () => {
     const { legend } = await mount();
     await openSettings(legend);
