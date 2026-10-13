@@ -1,9 +1,6 @@
 import { memo, type MouseEvent } from 'react';
-import type { ProtspaceImportMenu } from '@protspace/core';
+import { IMPORT_FORMAT_NOTE, type ProtspaceImportMenu } from '@protspace/core';
 import { useWorkbenchStatus } from './use-workbench-status';
-
-const FORMAT_NOTE =
-  '.parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the server for embedding.';
 
 const importMenu = () => document.getElementById('myImportMenu') as ProtspaceImportMenu | null;
 
@@ -28,12 +25,12 @@ export const EmptyState = memo(function EmptyState() {
   return (
     <div className="wb-empty" data-workbench="empty" hidden={datasetPhase !== 'empty'}>
       <p className="wb-empty-title">Drop a file or pick an example</p>
-      <p className="wb-empty-note">{FORMAT_NOTE}</p>
+      <p className="wb-empty-note">{IMPORT_FORMAT_NOTE}</p>
       <div className="wb-empty-actions">
         <ps-button variant="primary" onClick={openFile}>
           Open a file…
         </ps-button>
-        <ps-button variant="secondary" onClick={pickExample}>
+        <ps-button variant="secondary" aria-haspopup="dialog" onClick={pickExample}>
           Pick an example
         </ps-button>
       </div>

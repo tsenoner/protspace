@@ -11,8 +11,11 @@ import type { Placement } from '../kit/position';
 import { importMenuStyles } from './import-menu.styles';
 import type { ExampleDatasetSummary } from './types';
 
-/** Where each kind of file goes (design decision 15): said before anything is uploaded. */
-const FORMAT_NOTE =
+/**
+ * Where each kind of file goes (design decision 15): said before anything is uploaded. Exported
+ * for the host's empty plot, which says the same.
+ */
+export const IMPORT_FORMAT_NOTE =
   '.parquetbundle files are read in your browser. FASTA files (.fasta, .fa, .fna) are sent to the server for embedding.';
 
 /**
@@ -124,7 +127,7 @@ export class ProtspaceImportMenu extends LitElement {
           @click=${this.openFileDialog}
           ><span slot="start">${icon('upload', 16)}</span>Open a file…</ps-button
         >
-        <p class="import-note">${FORMAT_NOTE}</p>
+        <p class="import-note">${IMPORT_FORMAT_NOTE}</p>
       </section>
       ${this.lastFile ? this.renderLastFile(this.lastFile) : nothing}
       ${this.exampleDatasets.length > 0 ? this.renderExamples() : nothing}
