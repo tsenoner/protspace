@@ -181,6 +181,23 @@ describe('legend rows', () => {
     expect(menuItems(legend)[0]).toBe('Show all');
   });
 
+  it('every ⋯ is announced as a menu button, before and after the menu has opened', async () => {
+    const { legend } = await mount(TWELVE);
+    expect(more(legend, 'B')!.getAttribute('aria-haspopup')).toBe('menu');
+
+    await openMenu(legend, 'A');
+    await choose(legend, 'isolate');
+
+    expect(more(legend, 'A')!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(more(legend, 'B')!.getAttribute('aria-haspopup')).toBe('menu');
+  });
+
+  it("Other's disabled handle is hidden from assistive tech; a row's handle is not", async () => {
+    const { legend } = await mount(TWELVE);
+    expect(handle(legend, OTHER).getAttribute('aria-hidden')).toBe('true');
+    expect(handle(legend, 'A').hasAttribute('aria-hidden')).toBe(false);
+  });
+
   it('only one row is tabbable, and focusing row 3 moves the stop there', async () => {
     const { legend } = await mount(TWELVE);
     expect(tabbable(legend, '.legend-item-main')).toEqual(['A']);

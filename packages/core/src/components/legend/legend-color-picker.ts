@@ -30,7 +30,6 @@ interface ColorPickerOptions {
   commitColor(value: string, color: string): void;
   commitShape(value: string, shape: PointShape): void;
   isMultilabel(): boolean;
-  isNumeric(): boolean;
 }
 
 /** One shape as its radio draws it: filled in the text colour, the plus as an outline. */
@@ -129,8 +128,8 @@ export class ColorPickerController implements ReactiveController {
   }
 
   private _renderBody(item: LegendItem, label: string): TemplateResult {
-    const numeric = this.options.isNumeric();
-    const shapesDisabled = numeric || this.options.isMultilabel();
+    // The row menu offers no picker on numeric annotations, so only multilabel disables shapes.
+    const shapesDisabled = this.options.isMultilabel();
     const current: PointShape = SHAPES.includes(item.shape as PointShape)
       ? (item.shape as PointShape)
       : 'circle';
@@ -153,6 +152,7 @@ export class ColorPickerController implements ReactiveController {
           class="shape-picker"
           role="radiogroup"
           aria-label="Shape"
+          aria-describedby=${shapesDisabled ? 'shape-note' : nothing}
           @keydown=${(e: KeyboardEvent) =>
             this._onShapeKeyDown(e, item.value, current, shapesDisabled)}
         >
@@ -174,10 +174,8 @@ export class ColorPickerController implements ReactiveController {
         </div>
       </div>
       ${shapesDisabled
-        ? html`<p class="symbol-picker-note">
-            ${numeric
-              ? 'Shapes unavailable for numeric annotations'
-              : 'Shapes unavailable for multilabel annotations'}
+        ? html`<p id="shape-note" class="symbol-picker-note">
+            Shapes unavailable for multilabel annotations
           </p>`
         : nothing}
     </div>`;

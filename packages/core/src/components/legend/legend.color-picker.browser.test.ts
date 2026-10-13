@@ -311,5 +311,8 @@ describe('legend colour and shape picker', () => {
     expect(legend.shadowRoot!.querySelector('.symbol-picker-note')!.textContent!.trim()).toBe(
       'Shapes unavailable for multilabel annotations',
     );
+    expect(
+      legend.shadowRoot!.querySelector('.shape-picker')!.getAttribute('aria-describedby'),
+    ).toBe('shape-note');
   });
 });

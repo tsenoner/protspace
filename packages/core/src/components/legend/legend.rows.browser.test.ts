@@ -139,6 +139,20 @@ describe('legend rows in a browser', () => {
     expect(menu.open).toBe(false);
   });
 
+  it('a row selected in the plot outlines its symbol in the accent, 2 px', async () => {
+    const legend = await mount();
+    legend.selectedItems = ['Short'];
+    await settle(legend);
+
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--ps-accent)';
+    legend.shadowRoot!.append(probe);
+    const path = part(legend, 'Short', '.legend-symbol path');
+    expect(getComputedStyle(path).stroke).toBe(getComputedStyle(probe).color);
+    expect(getComputedStyle(path).strokeWidth).toBe('2px');
+    probe.remove();
+  });
+
   it('under a coarse pointer rows are 40 px and the actions always show', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });

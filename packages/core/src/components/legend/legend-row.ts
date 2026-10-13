@@ -15,14 +15,13 @@ const OTHER_SYMBOL_COLOR = '#888';
 
 /**
  * A legend symbol drawn with the same paths as the WebGL shader's shapes. The SVG is the size plus
- * 3 px on each side, room for the selected outline. The outline colour of a selected row comes from
- * CSS (`.legend-item.selected .legend-symbol path`), which beats these attributes.
+ * 3 px on each side, room for the selected outline. A selected row's outline comes from CSS
+ * (`.legend-item.selected .legend-symbol path`), which beats these attributes.
  */
 export function renderLegendSymbol(
   shape: string | null,
   color: string,
   size: number = LEGEND_DEFAULTS.symbolSize,
-  selected: boolean = false,
 ): TemplateResult {
   const padding = 3;
   const canvasSize = size + padding * 2;
@@ -32,12 +31,6 @@ export function renderLegendSymbol(
   const path = pathGenerator(size);
   // Some symbol types are drawn as outlines only.
   const isOutlineOnly = LEGEND_STYLES.outlineShapes.has(shapeKey);
-  const strokeWidth = selected
-    ? LEGEND_STYLES.strokeWidth.selected
-    : LEGEND_STYLES.strokeWidth.default;
-  const strokeColor = selected
-    ? LEGEND_STYLES.colors.selectedStroke
-    : LEGEND_STYLES.colors.defaultStroke;
   const validColor = color || '#888888';
 
   return html`
@@ -53,8 +46,10 @@ export function renderLegendSymbol(
         <path
           d="${path}"
           fill="${isOutlineOnly ? 'none' : validColor}"
-          stroke="${isOutlineOnly ? validColor : strokeColor}"
-          stroke-width="${isOutlineOnly ? LEGEND_STYLES.strokeWidth.outline : strokeWidth}"
+          stroke="${isOutlineOnly ? validColor : LEGEND_STYLES.colors.defaultStroke}"
+          stroke-width="${isOutlineOnly
+            ? LEGEND_STYLES.strokeWidth.outline
+            : LEGEND_STYLES.strokeWidth.default}"
         />
       </g>
     </svg>
@@ -64,7 +59,6 @@ export function renderLegendSymbol(
 /** What one row shows, decided by the legend. */
 export interface LegendRowView {
   classes: string;
-  selected: boolean;
   symbolSize: number;
   /** The number of categories in Other; only the Other row has it. */
   otherCount?: number;
@@ -142,7 +136,7 @@ export function renderLegendRow(
         <span class="legend-swatch" part="symbol"
           >${isOther
             ? renderLegendSymbol('circle', OTHER_SYMBOL_COLOR, view.symbolSize)
-            : renderLegendSymbol(item.shape, item.color, view.symbolSize, view.selected)}</span
+            : renderLegendSymbol(item.shape, item.color, view.symbolSize)}</span
         >
         <span class="legend-text" part="text">${label}</span>
       </button>
@@ -182,6 +176,7 @@ export function renderLegendRow(
           type="button"
           class="drag-handle${view.draggable ? '' : ' drag-handle-disabled'}"
           ?disabled=${!view.draggable}
+          aria-hidden=${view.draggable ? nothing : 'true'}
           aria-label=${view.draggable
             ? `Reorder ${displayValue}`
             : `${displayValue} cannot be reordered`}
@@ -201,6 +196,7 @@ export function renderLegendRow(
           ? html`<button
               type="button"
               class="legend-action legend-more"
+              aria-haspopup="menu"
               aria-label=${`More actions for ${displayValue}`}
               tabindex=${tabindex}
               @click=${(e: MouseEvent) => {
