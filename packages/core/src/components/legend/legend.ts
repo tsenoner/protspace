@@ -1786,10 +1786,11 @@ export class ProtspaceLegend extends LitElement {
    * is the dataset's default, which the empty field stands for (its placeholder names it).
    */
   private _fieldShapeSize(): number | null {
+    // The storage read last: this runs at every legend render, the popover closed or not.
     const isDefault =
-      this._persistenceController.loadShapeSize() === null &&
       this._annotationShapeSize === null &&
-      this.shapeSize === defaultShapeSize(this._datasetProteinCount);
+      this.shapeSize === defaultShapeSize(this._datasetProteinCount) &&
+      this._persistenceController.loadShapeSize() === null;
     return isDefault ? null : Math.min(this.shapeSize, LEGEND_DEFAULTS.maxSymbolSize);
   }
 

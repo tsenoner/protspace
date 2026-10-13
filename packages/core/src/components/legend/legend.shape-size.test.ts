@@ -200,6 +200,24 @@ describe('legend shape size', () => {
     }
   });
 
+  it('a render with a size off the default reads no stored size for the closed popover', async () => {
+    const { el, switchTo } = makeLegend();
+    switchTo('a');
+    el.shapeSize = 20;
+    document.body.appendChild(el);
+    try {
+      await el.updateComplete;
+      const getItem = vi.spyOn(localStorage, 'getItem');
+      el.requestUpdate();
+      await el.updateComplete;
+      const keys = getItem.mock.calls.map(([key]) => key);
+      expect(keys.some((key) => key.startsWith('protspace:shape-size:'))).toBe(false);
+      getItem.mockRestore();
+    } finally {
+      el.remove();
+    }
+  });
+
   it('exports the picked size on every annotation', () => {
     const { el, switchTo, store, pick, annotate } = makeLegend();
     store('b', 50);
