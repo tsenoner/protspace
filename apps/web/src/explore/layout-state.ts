@@ -1,6 +1,7 @@
 import { getStorageItem, setStorageItem } from '@protspace/utils';
 import {
   DEFAULT_LAYOUT,
+  DESKTOP_MIN_WIDTH,
   FLOATING_CARD,
   LAYOUT_STORAGE_KEY,
   LEGEND_FRACTION,
@@ -113,6 +114,21 @@ export function updateLayout(patch: Partial<LayoutState>): void {
 /** Opens the sidebar on `panel`: the rail's items, the view bar's Filter and the status chips. */
 export function openPanel(panel: SidebarPanel): void {
   updateLayout({ sidebarOpen: true, panel });
+}
+
+const focusTitle = (): boolean => {
+  const title = document.getElementById('wb-filter-title');
+  // Below 951 px the panel sits under the plot and the page scrolls: let focus bring it into view.
+  title?.focus({ preventScroll: window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`).matches });
+  return title !== null && document.activeElement === title;
+};
+
+/**
+ * Moves focus to the Filter panel's heading, after the panel opened from the view bar's Filter or
+ * the status corner's filter chip. A sidebar still sliding in shows it a frame later.
+ */
+export function focusFilterTitle(): void {
+  if (!focusTitle()) requestAnimationFrame(focusTitle);
 }
 
 export function resetLayoutForTests(): void {

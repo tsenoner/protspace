@@ -1,3 +1,4 @@
+import type { ProtspacePlotTools } from '@protspace/core';
 import { type RecoveryBannerCopy, getLoadRecoveryCopy } from './notifications';
 
 interface RecoveryBannerHandlers {
@@ -18,8 +19,16 @@ interface ShowRecoveryBannerParams {
 const BANNER_ID = 'protspace-recovery-banner';
 const TITLE_ID = 'protspace-recovery-banner-title';
 
+/**
+ * Removes the banner. When one of its buttons held focus, focus goes to the tool strip above it,
+ * as the selection bar's Clear does, rather than falling to `<body>`.
+ */
 export function dismissRecoveryBanner(): void {
-  document.getElementById(BANNER_ID)?.remove();
+  const banner = document.getElementById(BANNER_ID);
+  if (!banner) return;
+  const hadFocus = banner.contains(document.activeElement);
+  banner.remove();
+  if (hadFocus) (document.getElementById('myPlotTools') as ProtspacePlotTools | null)?.focusTool();
 }
 
 function kitButton(

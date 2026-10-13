@@ -39,6 +39,27 @@ test.describe('dataset recovery banner', () => {
     await expect(banner.getByRole('button', { name: 'Clear stored data' })).toBeVisible();
   });
 
+  test('Dismiss removes the banner and hands focus to the tool strip', async ({ page }) => {
+    await seedOpfsState(page, {
+      fileName: 'fake.parquetbundle',
+      status: 'pending',
+      failedAttempts: 1,
+    });
+
+    await page.reload();
+    await dismissTourIfPresent(page);
+
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await banner.getByRole('button', { name: 'Dismiss', exact: true }).click();
+
+    await expect(banner).toHaveCount(0);
+    // The button that held focus went with the banner: focus lands on the tool strip, not <body>.
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('#myPlotTools')?.id ?? null))
+      .toBe('myPlotTools');
+  });
+
   test('does not show banner when persisted dataset is in success state', async ({ page }) => {
     await seedOpfsState(page, {
       fileName: '5K.parquetbundle',

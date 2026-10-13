@@ -1,13 +1,10 @@
 import { Filter } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
-import { openPanel } from '../explore/layout-state';
+import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
-
-const focusFilterTitle = () =>
-  document.getElementById('wb-filter-title')?.focus({ preventScroll: true });
 
 /**
  * The view bar's Filter button (design decision 14): it opens the sidebar's Filter panel, never
@@ -29,7 +26,6 @@ export function FilterControl() {
       // that is still sliding in shows it a frame later.
       flushSync(() => openPanel('filter'));
       focusFilterTitle();
-      if (document.activeElement?.id !== 'wb-filter-title') requestAnimationFrame(focusFilterTitle);
     };
     element.addEventListener('click', onClick);
     return () => element.removeEventListener('click', onClick);

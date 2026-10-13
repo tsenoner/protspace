@@ -19,7 +19,7 @@ import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { DESKTOP_MIN_WIDTH } from './layout-defaults';
-import { getLayout, openPanel, subscribeLayout } from './layout-state';
+import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -415,7 +415,11 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     plotStatus,
     getStatus: getWorkbenchStatus,
     subscribeStatus: subscribeWorkbenchStatus,
-    openFilter: () => openPanel('filter'),
+    // The chip leads where the view bar's Filter does, focus included: the heading, then the draft.
+    openFilter: () => {
+      openPanel('filter');
+      requestAnimationFrame(focusFilterTitle);
+    },
     clearFilter: () => filterController.clear(),
     openLegend: () => openPanel('legend'),
     showAllCategories: () => legendElement.showAllCategories(),
@@ -437,9 +441,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     history: interactionController.history,
     root: document,
     isMac: isMacOrIos,
-    // Every open dialog owns its keys. The figure editor's dialog lives in its element's shadow root
-    // (from Task 4.14), where `ps-dialog[open]` cannot see it, so the element itself counts while it
-    // is in the page (the export handler removes it on close).
+    // Every open dialog owns its keys. The figure editor's dialog lives in its element's shadow
+    // root (from Task 4.14), where `ps-dialog[open]` cannot see it, so the element itself counts
+    // while it is in the page (the export handler removes it on close).
     isModalOpen: () =>
       document.querySelector('dialog[open], ps-dialog[open], protspace-publish-modal') !== null,
     apply(entry, direction) {
@@ -474,7 +478,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     },
   };
 
-  // The recovery banner's "Clear stored data" and "Load default" delete the stored import: ask first.
+  // The recovery banner's "Clear stored data" and "Load default" delete the stored import: ask
+  // first.
   const confirmClear = (fileName: string, action: 'clear' | 'load-default') =>
     confirmAction(getClearStoredDataConfirm(fileName, action));
   const datasetController = createDatasetController({

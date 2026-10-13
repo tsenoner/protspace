@@ -7,8 +7,6 @@ interface ConfirmOptions {
   cancelLabel?: string;
   /** The confirm button reads as destructive. */
   danger?: boolean;
-  /** Where focus goes after the dialog closes, when the control that opened it is gone. */
-  returnFocusTo?: HTMLElement | null;
 }
 
 /**
@@ -48,7 +46,6 @@ export function confirmAction(options: ConfirmOptions): Promise<boolean> {
       // Closes it (a no-op when Escape or the backdrop already did) and returns focus.
       dialog.dismiss();
       dialog.remove();
-      if (options.returnFocusTo?.isConnected) options.returnFocusTo.focus();
       resolve(confirmed);
     };
     const onClose = () => finish(false);

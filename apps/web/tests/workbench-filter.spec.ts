@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   applyFirstCategoryFilter,
   clearStatusChip,
+  closeFilterPanel,
   filterApplyButton,
   filterButton,
   filterPanel,
@@ -152,6 +153,19 @@ test.describe('the Filter panel', () => {
     await expect(filterButton(page)).toHaveAccessibleName('Filter');
     // The clean draft returned to one empty row.
     await expect(conditionRows(page)).toHaveCount(1);
+  });
+
+  test('the filter chip opens the panel and moves focus to its heading', async ({ page }) => {
+    await openExplore(page);
+    await applyFirstCategoryFilter(page);
+    await closeFilterPanel(page);
+
+    const open = statusChip(page, 'filter').getByRole('button', { name: /^Filtered/ });
+    await open.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(filterPanel(page)).toBeVisible();
+    await expect(page.locator('#wb-filter-title')).toBeFocused();
   });
 
   test('after a reload the panel is still Filter, with no filter applied', async ({ page }) => {
