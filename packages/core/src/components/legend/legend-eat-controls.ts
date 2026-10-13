@@ -13,6 +13,7 @@ import {
   NEUTRAL_BOUND,
   normalizeReliability,
   RELIABILITY_BOUNDS,
+  type Annotation,
   type EatReliabilityMode,
   type EatReliabilityState,
 } from '@protspace/utils';
@@ -130,6 +131,8 @@ export interface EatControlsOptions {
   isHostDriven(): boolean;
   /** The selected annotation's key, for the help text. */
   getAnnotation(): string;
+  /** The selected annotation's definition, so a runtime column is named as the picker names it. */
+  getAnnotationDefinition(): Pick<Annotation, 'runtime'> | undefined;
   /** Dispatch `eat-overlay-change` from the legend. */
   emit(detail: EatOverlayChangeDetail): void;
 }
@@ -246,7 +249,10 @@ export class EatReliabilityController implements ReactiveController {
   }
 
   get helpText(): string {
-    const label = annotationLabel(this.options.getAnnotation());
+    const label = annotationLabel(
+      this.options.getAnnotation(),
+      this.options.getAnnotationDefinition(),
+    );
     const effect = EAT_RELIABILITY_EFFECT[this._reliability.mode];
     return `${effect} Curated “${label}” annotations always stay visible. This mirrors a Filter condition on “${label} — EAT confidence”.`;
   }

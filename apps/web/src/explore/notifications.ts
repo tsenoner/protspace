@@ -173,7 +173,7 @@ export function getUnknownExampleDatasetNotification(id: string): NotifyOptions 
 
 /** "1 protein" / "3 proteins": proteins a loaded file holds without coordinates. */
 function unplacedProteins(count: number): string {
-  return `${count.toLocaleString()} protein${count === 1 ? '' : 's'} without coordinates`;
+  return `${countNoun(count, 'protein', 'proteins')} without coordinates`;
 }
 
 /**
@@ -242,7 +242,7 @@ export function getSelectionDisabledNotification({
     title: 'Selection mode disabled.',
     description:
       reason === 'insufficient-data'
-        ? `Selection mode disabled: Only ${dataSize} point${dataSize !== 1 ? 's' : ''} remaining`
+        ? `Selection mode disabled: Only ${countNoun(dataSize, 'protein', 'proteins')} remaining`
         : 'Selection mode disabled',
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,

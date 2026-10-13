@@ -23,7 +23,7 @@
  */
 
 import * as d3 from 'd3';
-import { fitRect, fitScales } from '@protspace/utils';
+import { fitRect, fitScales, formatCount } from '@protspace/utils';
 import type { DataDomain, PlotData, PlotMargin, ScatterplotConfig } from '@protspace/utils';
 import {
   type WebGLStyleGetters,
@@ -242,7 +242,7 @@ export class ExportRenderer {
     }
     if (physicalWidth * physicalHeight > MAX_AREA) {
       throw new Error(
-        `Export area ${(physicalWidth * physicalHeight).toLocaleString()} exceeds limit of ${MAX_AREA.toLocaleString()} pixels`,
+        `Export area ${formatCount(physicalWidth * physicalHeight)} exceeds limit of ${formatCount(MAX_AREA)} pixels`,
       );
     }
 
@@ -441,7 +441,7 @@ export class ExportRenderer {
     // error path, and a figure that is quietly wrong is worse than one that failed.
     if (gl.getError() !== gl.NO_ERROR) {
       throw new Error(
-        `The graphics driver could not allocate memory for ${pointCount.toLocaleString()} points ` +
+        `The graphics driver could not allocate memory for ${formatCount(pointCount)} points ` +
           `at ${physicalWidth}×${physicalHeight}. Export at smaller dimensions, or with fewer points visible.`,
       );
     }

@@ -1,3 +1,4 @@
+import { formatCount } from '@protspace/utils';
 import type { PlotDataPoint, TooltipView } from '@protspace/utils';
 import type { HostMessageEventDetail } from '../../events';
 
@@ -82,17 +83,17 @@ export interface RendererDegradedDetail extends HostMessageEventDetail<
 const MESSAGES: Record<RendererDegradedReason, (c: RendererDegradedContext) => string> = {
   'reduced-label-detail': (c) =>
     `Multi-value markers show up to ${c.stride} segments instead of 8: this device's maximum ` +
-    `texture size (${c.maxTextureSize}) cannot hold the full colour table for ${c.pointCount.toLocaleString()} points. ` +
+    `texture size (${c.maxTextureSize}) cannot hold the full colour table for ${formatCount(c.pointCount)} points. ` +
     `Every point is still drawn.`,
   'label-atlas-unsupported': (c) =>
     `Multi-value markers show a single dominant colour: this device's maximum texture size ` +
-    `(${c.maxTextureSize}) cannot hold a colour table for ${c.pointCount.toLocaleString()} points. Every point is still drawn.`,
+    `(${c.maxTextureSize}) cannot hold a colour table for ${formatCount(c.pointCount)} points. Every point is still drawn.`,
   'label-atlas-allocation-failed': () =>
     'The graphics driver refused the multi-value colour table. Markers show a single dominant colour; every point is still drawn.',
   'label-atlas-out-of-memory': () =>
     'The graphics driver ran out of memory for the multi-value colour table. Markers show a single dominant colour; every point is still drawn.',
   'point-buffer-allocation-failed': (c) =>
-    `The graphics driver refused to allocate memory for ${c.pointCount.toLocaleString()} points. ` +
+    `The graphics driver refused to allocate memory for ${formatCount(c.pointCount)} points. ` +
     `Multi-value markers now show a single dominant colour to free memory, and rendering will retry.`,
   'point-limit-exceeded': (c) =>
     'Nothing is drawn: this dataset has more points than the renderer can draw' +

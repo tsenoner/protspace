@@ -20,6 +20,8 @@ import {
   materializePlotDataPoint,
   getProteinAnnotationValues,
   countNoun,
+  annotationLabel,
+  formatCount,
 } from '@protspace/utils';
 import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -1965,8 +1967,7 @@ export class ProtspaceScatterplot extends LitElement {
         ${this._numericRecomputeRunning
           ? html`
               <div class="plot-indicator" style="left: auto; right: 0.5rem;">
-                Recalculating bins for
-                ${this._numericRecompute.runningAnnotation() ?? 'annotation'}...
+                ${this._recalculatingText()}
               </div>
             `
           : ''}
@@ -1989,7 +1990,14 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   private _formatConnectorStatus(status: ProvenanceConnectorStatus): string {
-    return `${status.missingEndpoints} hidden (off-view)`;
+    return `${formatCount(status.missingEndpoints)} hidden (off view)`;
+  }
+
+  /** "Recalculating bins for EC number…": the running annotation by its display name. */
+  private _recalculatingText(): string {
+    const key = this._numericRecompute.runningAnnotation();
+    const label = key ? annotationLabel(key, this.data?.annotations[key]) : 'annotation';
+    return `Recalculating bins for ${label}…`;
   }
 
   /** Draw a bounded set of EAT source-to-target pairs in the current plot view. */

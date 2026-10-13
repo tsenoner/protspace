@@ -49,4 +49,29 @@ describe('protspace-protein-tooltip links', () => {
     const hover = await mount(false);
     expect(hover.shadowRoot!.querySelector('.resource-links')).toBeNull();
   });
+
+  it('the header shows the label, not the key', async () => {
+    const tooltip = document.createElement('protspace-protein-tooltip');
+    tooltip.view = {
+      ...VIEW,
+      blocks: [
+        {
+          key: 'ec',
+          label: 'EC number',
+          displayValues: ['1.1.1.1'],
+          numericValue: null,
+          numericType: 'float',
+          scores: [],
+          evidence: [],
+          predicted: null,
+        },
+      ],
+    };
+    tooltip.className = 'visible';
+    document.body.append(tooltip);
+    await tooltip.updateComplete;
+
+    const header = tooltip.shadowRoot!.querySelector('.tooltip-annotation-header span')!;
+    expect(header.textContent).toBe('EC number');
+  });
 });

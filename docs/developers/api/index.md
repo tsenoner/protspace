@@ -327,6 +327,15 @@ annotations into the plot tooltip.
 | `label`                 | `string`                                      | Key shown before the value, default `'Color by'`                |
 | `placeholder`           | `string`                                      | Shown while nothing is selected                                 |
 
+Only `annotations` is required; the rest decide what each row says. `annotationDefinitions` (the
+dataset's `annotations` record) names runtime columns, such as an EAT confidence column ("EC
+number — EAT confidence"), and keeps a column of your own that merely ends like one from being
+renamed. `eatAnnotations` adds the EAT badge to annotations that carry transferred predictions.
+`statisticsRows` with `selectedProjection` adds the STATS badge to annotations the bundle scored in
+that projection. A predicted annotation (the registry's flag, else a `predicted_` prefix) carries a
+sparkles mark named "Predicted annotation". The rows are options of a listbox the search field
+controls; Shift+Enter on the highlighted row shows or hides it in the hover tooltip.
+
 Methods: `applySelection(annotation)`, `applyTooltipSelection(names)`, `cancelPending()`.
 
 | Event                        | Detail                   | Description                    |
@@ -358,12 +367,13 @@ label and hint, for hosts that offer the modes elsewhere; `'on'` reads "Always".
 An info button whose card describes the projection on screen. The host places it; the app puts it
 beside the Projection picker.
 
-| Property             | Type                                | Description                                                        |
-| -------------------- | ----------------------------------- | ------------------------------------------------------------------ |
-| `projection`         | `Projection \| null`                | The projection on screen                                           |
-| `statisticsRows`     | `readonly ProjectionStatisticRow[]` | The bundle's optional statistics                                   |
-| `selectedAnnotation` | `string`                            | Annotation the quality section is scored on; `selected-annotation` |
-| `viewIsSubset`       | `boolean`                           | The plot shows a filtered or isolated subset                       |
+| Property                | Type                                          | Description                                                        |
+| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| `projection`            | `Projection \| null`                          | The projection on screen                                           |
+| `statisticsRows`        | `readonly ProjectionStatisticRow[]`           | The bundle's optional statistics                                   |
+| `selectedAnnotation`    | `string`                                      | Annotation the quality section is scored on; `selected-annotation` |
+| `viewIsSubset`          | `boolean`                                     | The plot shows a filtered or isolated subset                       |
+| `annotationDefinitions` | `Record<string, Pick<Annotation, 'runtime'>>` | The dataset's annotation definitions; name runtime columns         |
 
 ### Protein Search
 
@@ -598,13 +608,19 @@ const projection = document.querySelector('protspace-projection-select');
 const colorBy = document.querySelector('protspace-annotation-select');
 
 plot.addEventListener('data-change', (e) => {
-  projection.projections = e.detail.data.projections.map((p) => p.name);
-  colorBy.annotations = Object.keys(e.detail.data.annotations);
+  const data = e.detail.data;
+  projection.projections = data.projections.map((p) => p.name);
+  colorBy.annotations = Object.keys(data.annotations);
+  // Labels for runtime columns, and the EAT and STATS badges.
+  colorBy.annotationDefinitions = data.annotations;
+  colorBy.statisticsRows = data.statisticsRows ?? [];
+  colorBy.selectedProjection = data.projections[0]?.name ?? '';
 });
 projection.addEventListener('projection-change', (e) => {
   plot.selectedProjectionIndex = plot.data.projections.findIndex(
     (p) => p.name === e.detail.projection,
   );
+  colorBy.selectedProjection = e.detail.projection;
 });
 colorBy.addEventListener('annotation-change', (e) => {
   plot.selectedAnnotation = e.detail.annotation;

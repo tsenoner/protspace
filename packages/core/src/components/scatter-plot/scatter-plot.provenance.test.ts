@@ -90,7 +90,7 @@ describe('scatter-plot provenance connector contract', () => {
     const { plot } = makePlot();
 
     expect(plot._formatConnectorStatus({ shown: 0, total: 1, missingEndpoints: 1 })).toBe(
-      '1 hidden (off-view)',
+      '1 hidden (off view)',
     );
   });
 
@@ -115,7 +115,7 @@ describe('scatter-plot provenance connector contract', () => {
 
     const chip = shadow.querySelector('.connector-status');
     expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('1 hidden (off-view)');
+    expect(chip?.textContent).toContain('1 hidden (off view)');
   });
 
   it('suppresses a pair that becomes non-interactable under connector-owned highlighting', () => {
@@ -135,5 +135,28 @@ describe('scatter-plot provenance connector contract', () => {
     expect(overlay.set).not.toHaveBeenCalled();
     expect(overlay.clear).toHaveBeenCalledOnce();
     expect(plot.highlightedProteinIds).toEqual([]);
+  });
+
+  it('groups the hidden connector count', () => {
+    const { plot } = makePlot();
+    expect(plot._formatConnectorStatus({ shown: 0, total: 1234, missingEndpoints: 1234 })).toBe(
+      '1,234 hidden (off view)',
+    );
+  });
+
+  it('names the annotation whose bins are recalculated by its display name', () => {
+    const { plot } = makePlot();
+    const internals = plot as unknown as {
+      _numericRecomputeRunning: boolean;
+      _numericRecompute: { runningAnnotation(): string | null };
+    };
+    internals._numericRecomputeRunning = true;
+    vi.spyOn(internals._numericRecompute, 'runningAnnotation').mockReturnValue('ec');
+
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    litRender(plot.render(), shadow);
+
+    expect(shadow.textContent).toContain('Recalculating bins for EC number…');
   });
 });

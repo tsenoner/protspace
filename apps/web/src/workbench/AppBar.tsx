@@ -2,6 +2,7 @@ import { memo, type MouseEvent } from 'react';
 import { ChevronDown, Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
 import type { ProtspaceImportMenu } from '@protspace/core';
+import { countNoun } from '@protspace/utils';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
 import { HelpMenu } from './HelpMenu';
 import { useWorkbenchStatus } from './use-workbench-status';
@@ -14,7 +15,7 @@ function shownName(datasetName: string): string {
 }
 
 function proteinsText(count: number): string {
-  return `${count.toLocaleString()} ${count === 1 ? 'protein' : 'proteins'}`;
+  return countNoun(count, 'protein', 'proteins');
 }
 
 /**

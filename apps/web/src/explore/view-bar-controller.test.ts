@@ -84,6 +84,7 @@ function setup(data = makeData()) {
     statisticsRows: undefined as unknown,
     selectedAnnotation: '',
     viewIsSubset: false,
+    annotationDefinitions: {} as unknown,
   };
   const root = new EventTarget();
   const interactionController = { handleAnnotationChange: vi.fn() };
@@ -333,6 +334,14 @@ describe('createViewBarController', () => {
 
     expect(m.onUserChange).not.toHaveBeenCalled();
     expect(m.plot.selectedProjectionIndex).toBe(0);
+  });
+
+  it('the projection details name annotations from the dataset definitions', () => {
+    const m = setup();
+    m.projectionSelect.dispatchEvent(
+      new CustomEvent('projection-change', { detail: { projection: 'PCA' } }),
+    );
+    expect(m.projectionMetadata.annotationDefinitions).toBe(m.data.annotations);
   });
 });
 

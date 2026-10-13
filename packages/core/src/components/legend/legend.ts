@@ -426,6 +426,7 @@ export class ProtspaceLegend extends LitElement {
     getScatterplot: () => this._scatterplotController.scatterplot,
     isHostDriven: () => this._hostDriven,
     getAnnotation: () => this.selectedAnnotation,
+    getAnnotationDefinition: () => this.data?.annotations?.[this.selectedAnnotation],
     emit: (detail: EatOverlayChangeDetail) =>
       this.dispatchEvent(
         new CustomEvent<EatOverlayChangeDetail>('eat-overlay-change', {

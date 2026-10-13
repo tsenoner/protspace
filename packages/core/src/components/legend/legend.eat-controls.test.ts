@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
 import './legend';
 import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
-import { EAT_THRESHOLD_COMMIT_DELAY_MS } from './legend-eat-controls';
+import { EAT_THRESHOLD_COMMIT_DELAY_MS, EatReliabilityController } from './legend-eat-controls';
 import type { PsCheckbox } from '../kit/checkbox';
 import type { PsSelect } from '../kit/select';
 
@@ -645,5 +645,24 @@ describe('legend EAT reliability percent boxes', () => {
 
     expect(legend.reliabilityState.min).toBeCloseTo(0.59, 10);
     expect(boxes[0]!.value).toBe('59');
+  });
+});
+
+describe('EAT reliability help text', () => {
+  it('the help text names the annotation by its definition', () => {
+    const make = (definition: Record<string, unknown> | undefined) =>
+      new EatReliabilityController({ addController: vi.fn(), requestUpdate: vi.fn() } as never, {
+        getScatterplot: () => null,
+        isHostDriven: () => false,
+        getAnnotation: () => 'score__eat_confidence',
+        getAnnotationDefinition: () => definition as never,
+        emit: vi.fn(),
+      });
+
+    // Without a definition the name reads as an EAT confidence column; with one, it is the user's.
+    expect(make(undefined).helpText).toContain('“Score — EAT confidence”');
+    expect(make({ kind: 'numeric', values: [], colors: [], shapes: [] }).helpText).toContain(
+      '“Score eat confidence”',
+    );
   });
 });

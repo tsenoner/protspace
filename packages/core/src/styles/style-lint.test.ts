@@ -22,7 +22,6 @@ const MODULES = import.meta.glob<Record<string, CSSResultGroup>>(
  * last test fails while a listed module is already clean, so this list only shrinks.
  */
 const LEGACY = new Set<string>([
-  '../components/control-bar/annotation-select.styles.ts',
   '../components/scatter-plot/projection-metadata/projection-metadata.styles.ts',
   '../components/scatter-plot/scatter-plot.styles.ts',
   '../components/scatter-plot/tooltips/protein-tooltip.styles.ts',

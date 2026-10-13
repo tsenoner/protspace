@@ -1,6 +1,7 @@
 import { Filter } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
+import { countNoun } from '@protspace/utils';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
 import { useLayout } from './use-layout';
 import { useLayoutMode } from './use-layout-mode';
@@ -51,7 +52,7 @@ export function FilterControl() {
             {count}
           </span>
           <span className="sr-only">
-            Filter, {count} {count === 1 ? 'condition' : 'conditions'} applied
+            {`Filter, ${countNoun(count, 'condition', 'conditions')} applied`}
           </span>
         </>
       ) : (

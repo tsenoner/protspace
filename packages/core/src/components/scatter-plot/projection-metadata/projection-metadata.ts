@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import type { PropertyValues } from 'lit';
 import { customElement } from '../../../utils/safe-custom-element';
 import type {
+  Annotation,
   AnnotationStatMetric,
   AnnotationStatSummary,
   ClusterAgreement,
@@ -16,6 +17,8 @@ import {
   annotationLabel,
   annotationStatSummary,
   clusterAgreement,
+  countNoun,
+  formatCount,
   formatStatValue,
   hasAnnotationStats,
   isAutoClusterColumn,
@@ -134,6 +137,9 @@ export class ProtspaceProjectionMetadata extends LitElement {
    * so this only changes how the scope line describes them, never the numbers.
    */
   @property({ type: Boolean }) viewIsSubset = false;
+  /** The dataset's annotation definitions: runtime columns (EAT confidence) are named by them. */
+  @property({ attribute: false })
+  annotationDefinitions: Readonly<Record<string, Pick<Annotation, 'runtime'>>> = {};
 
   /** Whether the Recovers list is showing every annotation or just the best `RECOVERS_COLLAPSED`. */
   @state() private _recoversExpanded = false;
@@ -373,7 +379,10 @@ export class ProtspaceProjectionMetadata extends LitElement {
                 <span
                   >Separation, scored on
                   <span class="stat-annotation-chip"
-                    >${annotationLabel(this.selectedAnnotation)}</span
+                    >${annotationLabel(
+                      this.selectedAnnotation,
+                      this.annotationDefinitions[this.selectedAnnotation],
+                    )}</span
                   ></span
                 >
                 <protspace-info-popover
@@ -488,7 +497,10 @@ export class ProtspaceProjectionMetadata extends LitElement {
       <div class="stat-metric">
         <span class="stat-metric-label">
           <span class="stat-metric-name"
-            >${annotationLabel(entry.annotation)}${entry.categories === null
+            >${annotationLabel(
+              entry.annotation,
+              this.annotationDefinitions[entry.annotation],
+            )}${entry.categories === null
               ? nothing
               : html`<span class="recovers-meta"> · ${entry.categories} cat</span>`}</span
           >
@@ -504,8 +516,11 @@ export class ProtspaceProjectionMetadata extends LitElement {
              coverage reads identically to a high number on all of it. -->
         ${entry.scored !== null && entry.scored !== this._recoversPopulation
           ? html`<span class="recovers-coverage"
-              >${entry.scored.toLocaleString()} of
-              ${this._recoversPopulation?.toLocaleString() ?? 'the dataset'} scored</span
+              >${formatCount(entry.scored)} of
+              ${this._recoversPopulation === null
+                ? 'the dataset'
+                : formatCount(this._recoversPopulation)}
+              scored</span
             >`
           : nothing}
       </div>
@@ -569,17 +584,14 @@ export class ProtspaceProjectionMetadata extends LitElement {
       // K. Saying "categories" there hid that, and left K unstated in the one section whose
       // numbers are about the clusters themselves.
       const isClustering = isAutoClusterColumnName(this.selectedAnnotation);
-      const noun = isClustering
-        ? categories === 1
-          ? 'cluster'
-          : 'clusters'
-        : categories === 1
-          ? 'category'
-          : 'categories';
-      parts.push(`${categories} ${noun}`);
+      parts.push(
+        isClustering
+          ? countNoun(categories, 'cluster', 'clusters')
+          : countNoun(categories, 'category', 'categories'),
+      );
     }
     if (scored !== null) {
-      parts.push(`${scored.toLocaleString()} ${scored === 1 ? 'protein' : 'proteins'} scored`);
+      parts.push(`${countNoun(scored, 'protein', 'proteins')} scored`);
     }
     // Deliberately NOT "full dataset" here. That is true of the faithfulness numbers too —
     // both blocks are computed once at prepare time and neither recomputes on a filter — so
@@ -712,7 +724,7 @@ export class ProtspaceProjectionMetadata extends LitElement {
   private _qualityScopeLine(entries: QualityEntry[]): string {
     const withSize = entries.find((entry) => entry.sampleSize !== null);
     if (!withSize) return '';
-    const proteins = `${withSize.sampleSize!.toLocaleString()} proteins compared`;
+    const proteins = `${countNoun(withSize.sampleSize!, 'protein', 'proteins')} compared`;
     return entries.some((entry) => entry.sampled) ? `${proteins} · subsampled` : proteins;
   }
 

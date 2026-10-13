@@ -14,6 +14,7 @@
 import * as d3 from 'd3';
 import {
   DENSITY_DEFAULT,
+  formatCount,
   plotDataOriginalIndex,
   type DataDomain,
   type PlotData,
@@ -1376,7 +1377,7 @@ export class WebGLRenderer {
       this.sortedDataRef = null;
       this.reportDegraded(
         'point-limit-exceeded',
-        `${pd.length.toLocaleString()} points, at most ${MAX_DRAWABLE_POINTS.toLocaleString()}`,
+        `${formatCount(pd.length)} points, at most ${formatCount(MAX_DRAWABLE_POINTS)}`,
       );
       return;
     }

@@ -65,14 +65,26 @@ describe('explore notifications', () => {
       getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 1 }),
     ).toMatchObject({
       title: 'Selection mode disabled.',
-      description: 'Selection mode disabled: Only 1 point remaining',
+      description: 'Selection mode disabled: Only 1 protein remaining',
       dedupeKey: 'selection-disabled:insufficient-data:1',
     });
     expect(
       getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 0 }).description,
-    ).toBe('Selection mode disabled: Only 0 points remaining');
+    ).toBe('Selection mode disabled: Only 0 proteins remaining');
     expect(getSelectionDisabledNotification({ reason: 'other', dataSize: 5 }).description).toBe(
       'Selection mode disabled',
+    );
+  });
+
+  it('groups and pluralises its counts', () => {
+    expect(
+      getSelectionDisabledNotification({ reason: 'insufficient-data', dataSize: 1234 }).description,
+    ).toBe('Selection mode disabled: Only 1,234 proteins remaining');
+    expect(getExportSuccessNotification('a.parquetbundle', 1).description).toContain(
+      'the 1 protein without coordinates',
+    );
+    expect(getExportSuccessNotification('a.parquetbundle', 1234).description).toContain(
+      'the 1,234 proteins without coordinates',
     );
   });
 

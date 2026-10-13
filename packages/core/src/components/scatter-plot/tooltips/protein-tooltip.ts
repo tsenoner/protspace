@@ -78,7 +78,7 @@ function renderAnnotationBlock(block: AnnotationBlock): TemplateResult {
   return html`
     <div class="tooltip-annotations">
       <div class="tooltip-annotation-header">
-        <span>${block.key}</span>
+        <span>${block.label}</span>
         ${headerType ? html`<span>${ANNOTATION_HEADER_LABELS[headerType]}</span>` : ''}
       </div>
       ${block.numericValue !== null

@@ -1,10 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import './annotation-select';
 import type { ProjectionStatisticRow } from '@protspace/utils';
 import { pushLayer, topLayer } from '../kit/layers';
+import { stubPopoverApi } from '../legend/test-support/popover-stub';
+
+// The list opens in a ps-popover; jsdom only needs the popover calls to exist.
+beforeAll(() => stubPopoverApi());
 
 type AnnotationSelectElement = HTMLElement & {
   annotations: string[];
@@ -62,15 +66,17 @@ describe('protspace-annotation-select tooltip extras', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders a primary indicator only on the selected row', async () => {
+  it('marks only the selected row with the check icon', async () => {
     const el = await setup();
     await openDropdown(el);
 
     const primary = getRowFor(el, 'pfam');
     const other = getRowFor(el, 'gene_name');
 
-    expect(primary.querySelector('.primary-dot')).not.toBeNull();
-    expect(other.querySelector('.primary-dot')).toBeNull();
+    expect(primary.querySelector('.selected-check svg.ps-icon')).not.toBeNull();
+    expect(other.querySelector('.selected-check svg')).toBeNull();
+    expect(primary.querySelector('[role="option"]')!.getAttribute('aria-selected')).toBe('true');
+    expect(other.querySelector('[role="option"]')!.getAttribute('aria-selected')).toBe('false');
   });
 
   it('marks only EAT-capable annotation options with a text badge', async () => {
@@ -192,7 +198,7 @@ describe('protspace-annotation-select annotation names', () => {
     expect(await search('membrane')).toEqual(['Membrane']);
   });
 
-  it('names the selected annotation by label, with the predicted badge', async () => {
+  it('names the selected annotation by label, with the sparkles mark named Predicted annotation', async () => {
     const el = await setup({
       annotations: ['cc_subcellular_location', 'predicted_subcellular_location'],
       selectedAnnotation: 'predicted_subcellular_location',
@@ -201,7 +207,12 @@ describe('protspace-annotation-select annotation names', () => {
     expect(trigger.querySelector('.dropdown-trigger-text')!.textContent!.trim()).toBe(
       'Subcellular location',
     );
-    expect(trigger.querySelector('.predicted-badge')).not.toBeNull();
+    const mark = trigger.querySelector('.predicted-badge')!;
+    expect(mark.getAttribute('role')).toBe('img');
+    expect(mark.getAttribute('aria-label')).toBe('Predicted annotation');
+    expect(mark.hasAttribute('title')).toBe(false);
+    expect(mark.querySelector('svg.ps-icon')).not.toBeNull();
+    expect(mark.textContent!.trim()).toBe('');
 
     el.selectedAnnotation = 'cc_subcellular_location';
     await el.updateComplete;
@@ -546,3 +557,92 @@ async function rowLabelAfterOpen(el: AnnotationSelectElement, annotation: string
   await el.updateComplete;
   return label;
 }
+
+describe('protspace-annotation-select listbox', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const input = (el: AnnotationSelectElement) =>
+    el.shadowRoot!.querySelector('#annotation-search-input') as HTMLInputElement;
+  const press = (el: AnnotationSelectElement, key: string, shiftKey = false) =>
+    input(el).dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, cancelable: true }));
+  /** The annotation of the option the search input points at. */
+  const highlighted = (el: AnnotationSelectElement) =>
+    el
+      .shadowRoot!.getElementById(input(el).getAttribute('aria-activedescendant')!)!
+      .closest('.dropdown-item')!
+      .getAttribute('data-annotation');
+
+  it('rows are options of a listbox the search input controls', async () => {
+    const el = await setup();
+    await openDropdown(el);
+    const root = el.shadowRoot!;
+    const search = input(el);
+
+    expect(search.getAttribute('role')).toBe('combobox');
+    expect(search.getAttribute('aria-expanded')).toBe('true');
+    const listbox = root.getElementById(search.getAttribute('aria-controls')!)!;
+    expect(listbox.getAttribute('role')).toBe('listbox');
+    expect(root.getElementById(search.getAttribute('aria-describedby')!)!.textContent).toBe(
+      'Shift+Enter shows or hides the highlighted annotation in the hover tooltip',
+    );
+
+    const options = Array.from(listbox.querySelectorAll('[role="option"]'));
+    expect(
+      options.map((option) => option.closest('.dropdown-item')!.getAttribute('data-annotation')),
+    ).toHaveLength(3);
+    for (const option of options) {
+      // No control inside an option: the ⓘ and the eye sit beside it, in the row.
+      expect(
+        option.querySelector('button, a, input, [tabindex], protspace-info-popover'),
+      ).toBeNull();
+      expect(option.parentElement!.getAttribute('role')).toBe('none');
+    }
+    for (const toggle of root.querySelectorAll('.tooltip-toggle-btn')) {
+      expect(toggle.getAttribute('tabindex')).toBe('-1');
+    }
+
+    expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+    press(el, 'ArrowDown');
+    await el.updateComplete;
+    expect(root.getElementById(search.getAttribute('aria-activedescendant')!)).toBe(options[0]);
+  });
+
+  it('Shift+Enter toggles the highlighted row in the tooltip', async () => {
+    const el = await setup();
+    const changed = vi.fn();
+    el.addEventListener('tooltip-annotations-change', changed);
+    await openDropdown(el);
+    press(el, 'ArrowDown');
+    await el.updateComplete;
+    // The colouring annotation is always in the tooltip; move on to one that can be toggled.
+    if (highlighted(el) === 'pfam') {
+      press(el, 'ArrowDown');
+      await el.updateComplete;
+    }
+    const annotation = highlighted(el)!;
+
+    press(el, 'Enter', true);
+    await el.updateComplete;
+    expect(el.tooltipAnnotations).toEqual([annotation]);
+    // The list stays open and the colouring is unchanged.
+    expect(el.shadowRoot!.querySelector('.dropdown-menu')).not.toBeNull();
+    expect(el.selectedAnnotation).toBe('pfam');
+
+    press(el, 'Enter', true);
+    await el.updateComplete;
+    expect(el.tooltipAnnotations).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('toggle names use the display name', async () => {
+    const el = await setup({ annotations: ['ec', 'pfam', 'species'], tooltipAnnotations: ['ec'] });
+    await openDropdown(el);
+    const toggle = (annotation: string) =>
+      getRowFor(el, annotation).querySelector('.tooltip-toggle-btn')!.getAttribute('aria-label');
+
+    expect(toggle('ec')).toBe('Hide EC number from hover tooltip');
+    expect(toggle('species')).toBe('Show Species in hover tooltip');
+  });
+});

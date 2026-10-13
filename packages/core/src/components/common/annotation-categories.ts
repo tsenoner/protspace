@@ -47,7 +47,8 @@ const CATEGORY_ORDER: CategoryName[] = [
  *
  * Grouping is by annotation source (from the shared `@protspace/utils` registry), so each source
  * keeps its own section. The "predicted" nature is orthogonal — it is surfaced as a per-row
- * ⚡ badge (see {@link isPredictedAnnotation}), not by pulling predictions into a separate group.
+ * sparkles mark (see {@link isPredictedAnnotation}), not by pulling predictions into a separate
+ * group.
  * Within a section annotations are alphabetical, except Taxonomy, which is ordered by rank depth
  * (general → specific). Shared by annotation-select and query-condition-row.
  */

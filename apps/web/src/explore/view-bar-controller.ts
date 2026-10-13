@@ -95,6 +95,7 @@ export function createViewBarController({
     projectionMetadata.projection = data?.projections[plotElement.selectedProjectionIndex] ?? null;
     projectionMetadata.statisticsRows = data?.statisticsRows;
     projectionMetadata.selectedAnnotation = plotElement.selectedAnnotation;
+    projectionMetadata.annotationDefinitions = data?.annotations ?? {};
     projectionMetadata.viewIsSubset = plotElement.filtersActive || plotElement.isIsolationMode();
   };
 

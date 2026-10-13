@@ -78,6 +78,9 @@ Then `pnpm install` and import it from your entry module.
     projection.projections = data.projections.map((p) => p.name);
     projection.selectedProjection = data.projections[0].name;
     colorBy.annotations = Object.keys(data.annotations);
+    colorBy.annotationDefinitions = data.annotations;
+    colorBy.statisticsRows = data.statisticsRows ?? [];
+    colorBy.selectedProjection = data.projections[0].name;
     colorBy.selectedAnnotation = plot.selectedAnnotation;
   });
 
@@ -86,6 +89,7 @@ Then `pnpm install` and import it from your entry module.
     plot.selectedProjectionIndex = plot.data.projections.findIndex(
       (p) => p.name === e.detail.projection,
     );
+    colorBy.selectedProjection = e.detail.projection;
   });
   colorBy.addEventListener('annotation-change', (e) => {
     plot.selectedAnnotation = e.detail.annotation;

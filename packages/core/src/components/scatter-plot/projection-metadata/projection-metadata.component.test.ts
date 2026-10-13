@@ -11,6 +11,7 @@ type ProjectionMetadataElement = HTMLElement & {
   statisticsRows?: readonly ProjectionStatisticRow[];
   selectedAnnotation: string;
   viewIsSubset: boolean;
+  annotationDefinitions?: Record<string, unknown>;
   updateComplete: Promise<unknown>;
 };
 
@@ -235,6 +236,42 @@ describe('protspace-projection-metadata quality rows', () => {
     const el = await setup({ quality: { continuity: qualityEntry(null, 'local') } });
 
     expect(rows(el)).toEqual([['Continuity', 'N/A']]);
+  });
+
+  it('counts in the plural each number needs', async () => {
+    const one = await setup({
+      quality: { knn_overlap: { ...qualityEntry(0.62, 'local'), sample_size: 1 } },
+    });
+    expect(
+      one.shadowRoot!.querySelector('[data-section="quality"] .section-scope')!.textContent!.trim(),
+    ).toBe('1 protein compared');
+
+    document.body.innerHTML = '';
+    const scored = await setup(
+      { n_components: 2 },
+      {
+        statistics: [statRow({ extra_json: '{"n_categories": 1, "n_labels": 1}' })],
+        selectedAnnotation: 'major_group',
+      },
+    );
+    expect(statsBlock(scored)!.textContent).toContain('1 category · 1 protein scored');
+  });
+
+  it('names the annotation by its definition', async () => {
+    const el = document.createElement('protspace-projection-metadata') as ProjectionMetadataElement;
+    el.projection = { name: 'ProtT5 — UMAP 2', metadata: { n_components: 2 } } as Projection;
+    el.statisticsRows = [statRow({ annotation: 'score__eat_confidence' })];
+    el.selectedAnnotation = 'score__eat_confidence';
+    // A user's column whose name only looks like an EAT confidence one keeps its own name.
+    el.annotationDefinitions = {
+      score__eat_confidence: { kind: 'numeric', values: [], colors: [], shapes: [] },
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.stat-annotation-chip')!.textContent!.trim()).toBe(
+      'Score eat confidence',
+    );
   });
 });
 
