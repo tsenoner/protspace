@@ -2,8 +2,8 @@ import { css } from 'lit';
 
 /**
  * Legend rows (design decision 12): 28 px (40 px under a coarse pointer), the swatch and the name in
- * the main button, the count in tabular figures, and the eye, handle and "⋯" revealed on hover or
- * focus. Hover and focus are CSS only, so the pointer never re-renders the legend. Sortable's states
+ * the main button, the count in tabular figures, and the eye, handle and "⋯" revealed before the
+ * count on hover or focus. Hover and focus are CSS only, so the pointer never re-renders the legend. Sortable's states
  * and the drop highlight live here too. Every colour and type size reads a --ps-* token.
  */
 export const rowStyles = css`
@@ -137,34 +137,42 @@ export const rowStyles = css`
     text-decoration: underline;
   }
 
-  /* Over the end of the row, so showing them never reflows the name. */
+  /*
+   * Between the name and the count. At rest they take no room (the negative margin takes back the
+   * row's gap) yet stay focusable; shown, the name gives way and ends in an ellipsis while the
+   * count stays in view.
+   */
   .legend-item-actions {
-    position: absolute;
-    top: 0;
-    right: var(--ps-space-1);
-    bottom: 0;
     display: flex;
+    flex: none;
     align-items: center;
     gap: var(--ps-space-0-5);
-    padding-left: var(--ps-space-1);
-    background: var(--ps-surface-hover);
+    max-width: 0;
+    margin-inline-start: calc(-1 * var(--ps-space-2));
+    overflow: hidden;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--ps-duration-fast) var(--ps-ease);
   }
 
+  /* The buttons' own padding spaces the icons, so the strip sits half a gap from its neighbours. */
   .legend-item:hover .legend-item-actions,
   .legend-item:focus-within .legend-item-actions,
   .legend-item.picked .legend-item-actions {
+    max-width: none;
+    margin-inline: calc(-1 * var(--ps-space-1));
     opacity: 1;
     pointer-events: auto;
   }
 
-  .legend-item.picked .legend-item-actions {
-    background: var(--ps-accent-tint);
+  /* A shown strip has its own eye: the hidden mark would be a second one. */
+  .legend-item:hover .legend-hidden-mark,
+  .legend-item:focus-within .legend-hidden-mark,
+  .legend-item.picked .legend-hidden-mark {
+    display: none;
   }
 
-  /* Other has no handle to show: its strip is just the eye, over the count and never over View. */
+  /* Other has no handle to show: its strip is just the eye, after View and before the count. */
   .legend-item-other .drag-handle-disabled {
     display: none;
   }
@@ -236,7 +244,7 @@ export const rowStyles = css`
     }
   }
 
-  /* Touch: taller rows, and the actions always shown after the count. */
+  /* Touch: taller rows, and the actions always shown. */
   @media (pointer: coarse) {
     .legend-item {
       height: auto;
@@ -244,11 +252,14 @@ export const rowStyles = css`
     }
 
     .legend-item-actions {
-      position: static;
-      padding-left: 0;
-      background: transparent;
+      max-width: none;
+      margin-inline: calc(-1 * var(--ps-space-1));
       opacity: 1;
       pointer-events: auto;
+    }
+
+    .legend-hidden-mark {
+      display: none;
     }
   }
 

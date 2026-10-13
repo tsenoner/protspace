@@ -129,19 +129,61 @@ describe('legend rows in a browser', () => {
     const legend = await mount();
     const actions = part(legend, 'Short', '.legend-item-actions');
     const label = part(legend, 'Short', '.legend-text');
+    const count = part(legend, 'Short', '.legend-count');
     const before = label.getBoundingClientRect();
+    const countBefore = count.getBoundingClientRect();
     expect(opacity(actions)).toBe('0');
+    // At rest the actions take no room: the count sits one gap after the name's button.
+    expect(actions.getBoundingClientRect().width).toBe(0);
+    expect(
+      countBefore.left - part(legend, 'Short', '.legend-item-main').getBoundingClientRect().right,
+    ).toBeCloseTo(8, 0);
 
     await userEvent.hover(part(legend, 'Short', '.legend-item-main'));
     await expect.poll(() => opacity(actions)).toBe('1');
-    const hovered = label.getBoundingClientRect();
-    expect([hovered.left, hovered.width]).toEqual([before.left, before.width]);
+    expect(label.getBoundingClientRect().left).toBe(before.left);
+    expect(count.getBoundingClientRect().right).toBeCloseTo(countBefore.right, 0);
 
     await userEvent.unhover(part(legend, 'Short', '.legend-item-main'));
     await expect.poll(() => opacity(actions)).toBe('0');
 
     part(legend, 'Short', '.legend-item-main').focus();
     await expect.poll(() => opacity(actions)).toBe('1');
+  });
+
+  it('at 240 px a hovered row shows eye, handle and ⋯ before a count that stays visible, and its name ends in an ellipsis', async () => {
+    const legend = await mount();
+    await userEvent.hover(part(legend, LONG, '.legend-item-main'));
+    const actions = part(legend, LONG, '.legend-item-actions');
+    await expect.poll(() => opacity(actions)).toBe('1');
+
+    const rowBox = row(legend, LONG).getBoundingClientRect();
+    const text = part(legend, LONG, '.legend-text');
+    const count = part(legend, LONG, '.legend-count');
+    const box = (selector: string) => part(legend, LONG, selector).getBoundingClientRect();
+    const [eye, handle, more, countBox] = [
+      box('.legend-eye'),
+      box('.drag-handle'),
+      box('.legend-more'),
+      count.getBoundingClientRect(),
+    ];
+    expect(eye.right).toBeLessThanOrEqual(handle.left + 0.5);
+    expect(handle.right).toBeLessThanOrEqual(more.left + 0.5);
+    expect(more.right).toBeLessThanOrEqual(countBox.left + 0.5);
+    expect(countBox.right).toBeLessThanOrEqual(rowBox.right + 0.5);
+
+    // The count is on top where it is drawn, and drawn in full.
+    expect(count.textContent!.trim()).toBe('123,456');
+    expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+    const y = countBox.top + countBox.height / 2;
+    expect(legend.shadowRoot!.elementFromPoint(countBox.left + 2, y)).toBe(count);
+    expect(legend.shadowRoot!.elementFromPoint(countBox.right - 2, y)).toBe(count);
+
+    // The name gives way to the actions and ends in an ellipsis rather than under them.
+    expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(eye.left + 0.5);
+    expect(getComputedStyle(text).textOverflow).toBe('ellipsis');
+    expect(text.scrollWidth).toBeGreaterThan(text.clientWidth);
+    await userEvent.unhover(part(legend, LONG, '.legend-item-main'));
   });
 
   it('hovering a truncated name shows its full text after 500 ms; a name that fits shows nothing', async () => {

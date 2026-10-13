@@ -94,8 +94,8 @@ const stop = (e: Event) => e.stopPropagation();
 /**
  * One legend row (design decision 12). The main button holds the swatch and the name and toggles
  * the category; its accessible name carries the full name, the count and the state. The eye, the
- * drag handle and "⋯" sit in an overlay the stylesheet reveals on hover and focus, so they never
- * reflow the name. Rows stay plain elements in the legend's shadow root: Sortable needs them as
+ * drag handle and "⋯" sit before the count; the stylesheet reveals them on hover and focus, and the
+ * name gives way to them. Rows stay plain elements in the legend's shadow root: Sortable needs them as
  * direct children of the list, and a list can hold hundreds.
  */
 export function renderLegendRow(
@@ -160,7 +160,6 @@ export function renderLegendRow(
       ${item.isVisible
         ? nothing
         : html`<span class="legend-hidden-mark" aria-hidden="true">${icon('eye-off', 14)}</span>`}
-      <span class="legend-count" part="count">${formatCount(item.count)}</span>
       <span class="legend-item-actions">
         <button
           type="button"
@@ -214,6 +213,7 @@ export function renderLegendRow(
             </button>`
           : nothing}
       </span>
+      <span class="legend-count" part="count">${formatCount(item.count)}</span>
     </div>
   `;
 }
