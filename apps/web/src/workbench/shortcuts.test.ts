@@ -16,6 +16,7 @@ describe('shortcuts', () => {
     expect(groups.map((group) => group.title)).toEqual([
       'Plot',
       'Selection',
+      'History',
       'Search',
       'Legend',
       'Structure viewer',
@@ -51,5 +52,15 @@ describe('shortcuts', () => {
     expect(escapes('Figure editor')).toEqual([
       'Deselect the overlay or inset, then close the editor',
     ]);
+  });
+
+  it('the History group lists undo and redo', () => {
+    const history = SHORTCUT_GROUPS.find((group) => group.title === 'History');
+    expect(history?.items).toEqual([
+      { keys: ['Mod', 'Z'], action: 'Undo the last selection, show-only or filter step' },
+      { keys: ['Shift', 'Mod', 'Z'], action: 'Redo' },
+    ]);
+    expect(formatKeys(['Shift', 'Mod', 'Z'], true)).toBe('⇧⌘Z');
+    expect(formatKeys(['Shift', 'Mod', 'Z'], false)).toBe('Shift+Ctrl+Z');
   });
 });

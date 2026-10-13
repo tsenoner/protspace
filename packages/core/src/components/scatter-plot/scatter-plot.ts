@@ -2323,6 +2323,46 @@ export class ProtspaceScatterplot extends LitElement {
     );
   }
 
+  /**
+   * Undoes one Show only step (the app's undo history). With more than one step it drops the last
+   * and shows the step before it; with one it leaves isolation as `resetIsolation()` does.
+   */
+  popIsolation(): void {
+    if (this._isolationHistory.length === 0) return;
+    if (this._isolationHistory.length === 1) {
+      this.resetIsolation();
+      return;
+    }
+    // A new array: the isolated subset is memoised on the history, so the shorter one recomputes it.
+    this._isolationHistory = this._isolationHistory.slice(0, -1);
+    this.selectedProteinIds = [];
+    // Forget the build, as resetIsolation does: the fast coordinate path would keep the narrower
+    // subset.
+    this._plotDataBuild = null;
+    this._reprocessAndRefresh();
+    this.resetZoom();
+
+    const currentData = this.getCurrentData();
+    this.dispatchEvent(
+      new CustomEvent('data-isolation', {
+        detail: {
+          isolationHistory: this._isolationHistory,
+          isolationMode: this._isolationMode,
+          dataSize: currentData?.protein_ids.length ?? 0,
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    this.dispatchEvent(
+      new CustomEvent('data-change', {
+        detail: { data: currentData, isSplitData: true, isolationMode: true },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   getIsolationHistory(): string[][] {
     return [...this._isolationHistory];
   }

@@ -85,3 +85,14 @@ describe('interaction controller protein clicks', () => {
     expect(requestStructure).not.toHaveBeenCalledWith('P2');
   });
 });
+
+describe('interaction controller undo history', () => {
+  it('the controller owns one history', () => {
+    const { controller } = setup(true);
+    expect(controller.history).toBe(controller.history);
+    controller.history.record({ kind: 'selection', before: [], after: ['p0'] });
+    expect(controller.history.canUndo()).toBe(true);
+    // Each controller has its own: a remount starts with nothing to undo.
+    expect(setup(true).controller.history.canUndo()).toBe(false);
+  });
+});

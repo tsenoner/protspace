@@ -2,6 +2,7 @@ import '@protspace/core'; // Registers all web components
 import type { RendererDegradedDetail } from '@protspace/core';
 import { onEscapeFallback } from '@protspace/core';
 import type { EatReliabilityState } from '@protspace/utils';
+import { isMacOrIos } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getRendererDegradedNotification } from './notifications';
 import { startProductTour } from '../tour/product-tour';
@@ -35,6 +36,7 @@ import { createLoadingOverlayController } from './loading-overlay';
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
+import { createUndoController } from './undo-controller';
 import {
   handleCancelledExampleLoad,
   loadDatasetAfterNavigation,
@@ -313,6 +315,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     selectionBar,
     proteinSearch,
     interactionController,
+    history: interactionController.history,
     registerEscape: onEscapeFallback,
     notify,
   });
@@ -364,6 +367,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
         filterDesktopQuery.removeEventListener('change', listener);
       };
     },
+    // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).
+    onFilterCommitted: (commit) =>
+      interactionController.history.record({ kind: 'filter', ...commit }),
   });
   lifecycle.addCleanup(() => filterController.dispose());
   const statusController = createStatusController({
@@ -388,9 +394,31 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     selectionBar.returnFocus = null;
   });
 
+  // ⌘Z / Ctrl+Z, ⇧ to redo (design decision 13): each controller applies the steps it recorded.
+  const undoController = createUndoController({
+    history: interactionController.history,
+    root: document,
+    isMac: isMacOrIos,
+    // Every open dialog owns its keys. The figure editor's dialog lives in its element's shadow root
+    // (from Task 4.14), where `ps-dialog[open]` cannot see it, so the element itself counts while it
+    // is in the page (the export handler removes it on close).
+    isModalOpen: () =>
+      document.querySelector('dialog[open], ps-dialog[open], protspace-publish-modal') !== null,
+    apply(entry, direction) {
+      if (entry.kind === 'filter') {
+        filterController.restore(direction === 'undo' ? entry.before : entry.after);
+      } else {
+        selectionController.applyHistory(entry, direction);
+      }
+    },
+  });
+  lifecycle.addCleanup(() => undoController.dispose());
+
   // The dataset pipeline's one seam to the controls (explore-controls.ts).
   const controls: ExploreControls = {
     resetForNewDataset() {
+      // The steps name proteins of the dataset that is going away.
+      interactionController.history.clear();
       selectionController.resetForNewDataset();
       viewBarController.resetForNewDataset();
       exportMenu.reset();

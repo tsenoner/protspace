@@ -16,6 +16,8 @@ import {
   getSelectionCopyFailedNotification,
   getSelectionDisabledNotification,
 } from './notifications';
+import type { UndoEntry } from './undo-controller';
+import type { UndoHistory } from './undo-history';
 
 /** Adds `proteinId` to the selection, or removes it when it is already there. */
 export function toggleProteinSelection(
@@ -57,6 +59,8 @@ interface SelectionControllerOptions {
   plotTools: ProtspacePlotTools;
   /** The bar at the bottom of the plot: the count, Show only these, Zoom to them, Copy IDs, Clear. */
   selectionBar: ProtspaceSelectionBar;
+  /** The interaction controller's undo history: selection and show-only steps are recorded here. */
+  history: UndoHistory<UndoEntry>;
   proteinSearch: ProtspaceProteinSearch;
   interactionController: Pick<InteractionController, 'handleSelectionChange'>;
   /**
@@ -73,6 +77,8 @@ interface SelectionController {
   resetForNewDataset(): void;
   /** Leaves isolation: the status corner's ✕ on the isolation chip. */
   resetIsolation(): void;
+  /** Undoes or redoes a selection or isolation step this controller recorded. */
+  applyHistory(entry: Exclude<UndoEntry, { kind: 'filter' }>, direction: 'undo' | 'redo'): void;
   dispose(): void;
 }
 
@@ -86,6 +92,7 @@ export function createSelectionController({
   plotElement,
   plotTools,
   selectionBar,
+  history,
   proteinSearch,
   interactionController,
   registerEscape,
@@ -105,7 +112,15 @@ export function createSelectionController({
     selectionBar.selectedCount = ids.length;
   };
 
-  const commitSelection = (ids: string[], { afterPaint = false } = {}) => {
+  const commitSelection = (
+    ids: string[],
+    { afterPaint = false, record = true }: { afterPaint?: boolean; record?: boolean } = {},
+  ) => {
+    // One undo step per change, recorded at commit time with the arrays as they are: every
+    // caller hands over a fresh array, and nothing mutates one afterwards.
+    if (record && ids !== selected && (ids.length > 0 || selected.length > 0)) {
+      history.record({ kind: 'selection', before: selected, after: ids });
+    }
     const land = () => {
       show(ids);
       plotElement.selectedProteinIds = [...ids];
@@ -189,7 +204,53 @@ export function createSelectionController({
   const onIsolate = () => {
     // Isolation reads the plot's selection: land a search pick still waiting first.
     commit.flush();
+    const selectionBefore = selected;
+    const steps = plotElement.getIsolationHistory().length;
     plotElement.isolateSelection();
+    const layers = plotElement.getIsolationHistory();
+    if (layers.length > steps) {
+      history.record({ kind: 'isolate', layer: layers[layers.length - 1], selectionBefore });
+    }
+  };
+
+  /** Isolates one recorded layer again, as Show only these did. */
+  const isolateLayer = (layer: readonly string[]) => {
+    plotElement.selectedProteinIds = [...layer];
+    plotElement.isolateSelection();
+  };
+
+  const resetIsolation = ({ record = true } = {}) => {
+    const layers = plotElement.getIsolationHistory();
+    const selectionBefore = selected;
+    plotElement.resetIsolation();
+    if (record && layers.length > 0) {
+      history.record({ kind: 'reset-isolation', layers, selectionBefore });
+    }
+  };
+
+  const applyHistory = (
+    entry: Exclude<UndoEntry, { kind: 'filter' }>,
+    direction: 'undo' | 'redo',
+  ) => {
+    // A search pick still waiting lands first, so the step applies to what the user sees.
+    commit.flush();
+    // History entries hold arrays nothing mutates; the commit only reads them.
+    const restore = (ids: readonly string[]) => commitSelection(ids as string[], { record: false });
+    if (entry.kind === 'selection') {
+      restore(direction === 'undo' ? entry.before : entry.after);
+    } else if (entry.kind === 'isolate') {
+      if (direction === 'undo') {
+        plotElement.popIsolation();
+        restore(entry.selectionBefore);
+      } else {
+        isolateLayer(entry.layer);
+      }
+    } else if (direction === 'undo') {
+      for (const layer of entry.layers) isolateLayer(layer);
+      restore(entry.selectionBefore);
+    } else {
+      resetIsolation({ record: false });
+    }
   };
 
   const onZoomToSelection = () => {
@@ -211,8 +272,13 @@ export function createSelectionController({
   };
 
   /** The plot isolated or reset: it emptied its own selection, so only the display follows. */
-  const onIsolation = () => {
+  const onIsolation = (event: Event) => {
     show([]);
+    // An undo can widen the subset again: with two proteins or more, selection works.
+    if (((event as CustomEvent<{ dataSize?: number }>).detail?.dataSize ?? 0) > 1) {
+      plotTools.selectionDisabled = false;
+      selectionBar.canIsolate = true;
+    }
   };
 
   const onIsolationReset = () => {
@@ -279,8 +345,9 @@ export function createSelectionController({
       plotTools.tool = 'pan';
     },
     resetIsolation() {
-      plotElement.resetIsolation();
+      resetIsolation();
     },
+    applyHistory,
     dispose() {
       commit.cancel();
       plotElement.removeEventListener('protein-click', onProteinClick);

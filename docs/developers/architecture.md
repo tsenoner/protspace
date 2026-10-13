@@ -38,6 +38,20 @@ remove the filter (`FilterController.clear()`), leave isolation
 (`SelectionController.resetIsolation()`) or show every category (`legend.showAllCategories()`).
 Neither the scatterplot nor the React shell re-renders for it.
 
+## Undo
+
+⌘Z / Ctrl+Z undoes and ⇧⌘Z / Ctrl+Shift+Z redoes (design decision 13) selection changes, Show only
+these steps and leaving isolation, and filter Apply, Reset and the filter chip's ✕. The history
+(`apps/web/src/explore/undo-history.ts`) is linear and holds each step's protein-id arrays by
+reference, never copies; it keeps at most 100 steps and 2,000,000 ids, dropping the oldest. The
+interaction controller owns it (`interactionController.history`). The selection controller records
+and applies selection and isolation steps (`applyHistory`); the filter controller reports applied
+filters (`onFilterCommitted`) and restores a snapshot's id set without evaluating the query again
+(`restore`). `undo-controller.ts` owns only the keys: a press in a text field (an `INPUT`,
+`TEXTAREA`, `SELECT` or contentEditable anywhere in the composed path), in an open modal or with Alt
+is left alone. A new dataset clears the history. The EAT reliability slider, legend hiding and zoom
+are not recorded.
+
 ## Legend Component
 
 The legend is one element, `protspace-legend`, with one shadow root: its rows must be direct

@@ -1,6 +1,6 @@
 /**
  * The keyboard and pointer shortcuts the explore page has today, for the help menu's dialog. One
- * list, which phase 4 extends (undo and redo). Keys are named as `KeyboardEvent.key` names them,
+ * list; undo and redo are under History. Keys are named as `KeyboardEvent.key` names them,
  * plus 'Mod' for the platform's command key and plain words for pointer gestures.
  *
  * Escape takes one step per press (design decision 11): the open popover, menu, dialog, figure
@@ -36,6 +36,13 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['Click'], action: 'Select a protein and show its structure' },
       { keys: ['Mod', 'Click'], action: 'Add a protein to the selection, or remove it' },
       { keys: ['Escape'], action: 'Clear the selection, then return to Move and zoom' },
+    ],
+  },
+  {
+    title: 'History',
+    items: [
+      { keys: ['Mod', 'Z'], action: 'Undo the last selection, show-only or filter step' },
+      { keys: ['Shift', 'Mod', 'Z'], action: 'Redo' },
     ],
   },
   {

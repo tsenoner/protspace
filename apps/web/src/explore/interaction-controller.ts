@@ -10,6 +10,8 @@ import type { VisualizationData } from '@protspace/utils';
 import { notify } from '../lib/notify';
 import { getLegendErrorNotification } from './notifications';
 import { EatProvenanceResolver } from './eat-provenance';
+import { undoEntrySize, type UndoEntry } from './undo-controller';
+import { createUndoHistory, type UndoHistory } from './undo-history';
 
 interface InteractionControllerOptions {
   legendElement: ProtspaceLegend;
@@ -26,6 +28,11 @@ interface ActiveProvenanceClick {
 }
 
 export interface InteractionController {
+  /**
+   * The undo history (design decision 13): selection, show-only and filter steps, as protein-id
+   * arrays. The selection and filter controllers record and apply their own steps.
+   */
+  history: UndoHistory<UndoEntry>;
   updateLegend(): void;
   getSelectedProteins(): string[];
   /** The selection changed: remember it and show its last protein's structure. */
@@ -46,6 +53,7 @@ export function createInteractionController({
   let selectedProteins: string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
   const eatProvenance = new EatProvenanceResolver();
+  const history = createUndoHistory<UndoEntry>({ size: undoEntrySize });
 
   const resolveProvenanceClick = (click: ActiveProvenanceClick) =>
     eatProvenance.resolve(
@@ -80,6 +88,7 @@ export function createInteractionController({
   };
 
   return {
+    history,
     updateLegend,
     getSelectedProteins() {
       return selectedProteins;

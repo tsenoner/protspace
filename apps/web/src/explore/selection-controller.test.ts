@@ -15,6 +15,8 @@ import {
   mergeProteinSelections,
   toggleProteinSelection,
 } from './selection-controller';
+import { undoEntrySize, type UndoEntry } from './undo-controller';
+import { createUndoHistory } from './undo-history';
 import { ESCAPE_ORDER } from '../../../../packages/core/src/components/kit/layers';
 
 // Lit cannot load in node: AfterPaintCommit and ESCAPE_ORDER are plain TS, read from core's source.
@@ -69,6 +71,8 @@ function setup() {
     resetIsolation: vi.fn(),
     resetZoom: vi.fn(),
     zoomToProteins: vi.fn(() => true),
+    getIsolationHistory: vi.fn((): string[][] => []),
+    popIsolation: vi.fn(),
   });
   const tools = Object.assign(new EventTarget(), {
     tool: 'pan',
@@ -87,6 +91,7 @@ function setup() {
   const interaction = { handleSelectionChange: vi.fn() };
   const escape = fakeEscape();
   const notify = { success: vi.fn(), warning: vi.fn(), error: vi.fn() };
+  const history = createUndoHistory<UndoEntry>({ size: undoEntrySize });
   const controller = createSelectionController({
     plotElement: plot as unknown as ProtspaceScatterplot,
     plotTools: tools as unknown as ProtspacePlotTools,
@@ -95,8 +100,9 @@ function setup() {
     interactionController: interaction,
     registerEscape: escape.register,
     notify,
+    history,
   });
-  return { controller, plot, tools, bar, search, interaction, escape, notify };
+  return { controller, plot, tools, bar, search, interaction, escape, notify, history };
 }
 
 afterEach(() => {
@@ -516,5 +522,163 @@ describe('mergeProteinSelections', () => {
     const result = mergeProteinSelections([], added, true);
     expect(result).toEqual(added);
     expect(result).not.toBe(added);
+  });
+});
+
+/** What the undo controller does for a selection or isolation step: pop it, then apply it. */
+function undo(m: ReturnType<typeof setup>): void {
+  const entry = m.history.undo();
+  if (!entry || entry.kind === 'filter') throw new Error('no selection step to undo');
+  m.controller.applyHistory(entry, 'undo');
+}
+function redo(m: ReturnType<typeof setup>): void {
+  const entry = m.history.redo();
+  if (!entry || entry.kind === 'filter') throw new Error('no selection step to redo');
+  m.controller.applyHistory(entry, 'redo');
+}
+
+/** The plot's isolation, faked: layers the fake's isolate, pop and reset keep, as the plot does. */
+function isolating(m: ReturnType<typeof setup>) {
+  const layers: string[][] = [];
+  const report = () =>
+    fire(m.plot, layers.length > 0 ? 'data-isolation' : 'data-isolation-reset', {
+      isolationHistory: layers,
+      isolationMode: layers.length > 0,
+      dataSize: layers[layers.length - 1]?.length ?? 10,
+    });
+  m.plot.isolateSelection.mockImplementation(() => {
+    if (m.plot.selectedProteinIds.length === 0) return;
+    layers.push([...m.plot.selectedProteinIds]);
+    m.plot.selectedProteinIds = [];
+    report();
+  });
+  m.plot.popIsolation.mockImplementation(() => {
+    layers.pop();
+    report();
+  });
+  m.plot.resetIsolation.mockImplementation(() => {
+    layers.length = 0;
+    report();
+  });
+  m.plot.getIsolationHistory.mockImplementation(() => [...layers]);
+  return { layers };
+}
+
+describe('selection controller: undo history', () => {
+  it('a commit records before and after; undo restores the previous selection; redo re-applies', () => {
+    const m = setup();
+    fire(m.plot, 'protein-click', click('P1', {}));
+    fire(m.plot, 'brush-selection', { proteinIds: ['P2', 'P3'] });
+    const brush = m.history.peekUndo();
+    expect(brush).toMatchObject({ kind: 'selection', before: ['P1'], after: ['P2', 'P3'] });
+
+    undo(m);
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+    expect(m.bar.selectedCount).toBe(1);
+    // Applying a step records none: the click is still the step below.
+    expect(m.history.peekUndo()).toMatchObject({ before: [], after: ['P1'] });
+
+    redo(m);
+    expect(m.plot.selectedProteinIds).toEqual(['P2', 'P3']);
+    expect(m.history.peekUndo()).toBe(brush);
+    expect(m.history.canRedo()).toBe(false);
+  });
+
+  it('an identical commit records nothing', () => {
+    const m = setup();
+    // Clear with nothing selected: an empty selection over an empty one.
+    fire(m.bar, 'clear-selections');
+    expect(m.history.canUndo()).toBe(false);
+  });
+
+  it('a search add records one step', async () => {
+    const m = setup();
+    fire(m.search, 'add-selection', { proteinId: 'P1' });
+    // Recorded when committed, before the plot takes it after the paint.
+    expect(m.history.peekUndo()).toMatchObject({ kind: 'selection', before: [], after: ['P1'] });
+    await afterPaint();
+    m.history.undo();
+    expect(m.history.canUndo()).toBe(false);
+  });
+
+  it("Escape's clear is undoable", async () => {
+    const m = setup();
+    fire(m.search, 'selection-change', { proteinIds: ['P1'] });
+    m.escape.press();
+    await afterPaint();
+    expect(m.plot.selectedProteinIds).toEqual([]);
+
+    undo(m);
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+  });
+
+  it('isolate then undo pops one layer and restores the selection', () => {
+    const m = setup();
+    const iso = isolating(m);
+    fire(m.search, 'selection-change', { proteinIds: ['P1', 'P2'] });
+    fire(m.bar, 'isolate-data');
+    expect(iso.layers).toEqual([['P1', 'P2']]);
+    expect(m.history.peekUndo()).toMatchObject({
+      kind: 'isolate',
+      layer: ['P1', 'P2'],
+      selectionBefore: ['P1', 'P2'],
+    });
+
+    undo(m);
+    expect(m.plot.popIsolation).toHaveBeenCalledOnce();
+    expect(iso.layers).toEqual([]);
+    expect(m.plot.selectedProteinIds).toEqual(['P1', 'P2']);
+
+    redo(m);
+    expect(iso.layers).toEqual([['P1', 'P2']]);
+  });
+
+  it('reset isolation then undo re-isolates every layer', () => {
+    const m = setup();
+    const iso = isolating(m);
+    fire(m.search, 'selection-change', { proteinIds: ['P1', 'P2', 'P3'] });
+    fire(m.bar, 'isolate-data');
+    fire(m.search, 'selection-change', { proteinIds: ['P1', 'P2'] });
+    fire(m.bar, 'isolate-data');
+    fire(m.search, 'selection-change', { proteinIds: ['P1'] });
+
+    m.controller.resetIsolation();
+    expect(iso.layers).toEqual([]);
+    expect(m.history.peekUndo()).toMatchObject({
+      kind: 'reset-isolation',
+      layers: [
+        ['P1', 'P2', 'P3'],
+        ['P1', 'P2'],
+      ],
+      selectionBefore: ['P1'],
+    });
+
+    undo(m);
+    expect(iso.layers).toEqual([
+      ['P1', 'P2', 'P3'],
+      ['P1', 'P2'],
+    ]);
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+
+    redo(m);
+    expect(iso.layers).toEqual([]);
+    // Redo applies the step it took back; it records no new one.
+    expect(m.history.canRedo()).toBe(false);
+    expect(m.history.peekUndo()?.kind).toBe('reset-isolation');
+  });
+
+  it('a waiting search pick is flushed before an undo', async () => {
+    const m = setup();
+    fire(m.plot, 'protein-click', click('P1', {}));
+    fire(m.search, 'add-selection', { proteinId: 'P2' });
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+
+    undo(m);
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+    expect(m.interaction.handleSelectionChange).toHaveBeenLastCalledWith(['P1']);
+    // The pick's own landing, after the paint, does not come back over the undo.
+    await afterPaint();
+    expect(m.plot.selectedProteinIds).toEqual(['P1']);
+    expect(m.search.selectedProteinIds).toEqual(['P1']);
   });
 });
