@@ -915,9 +915,11 @@
 
 /* ── The recovery banner (Task 4.8) ──────────────────────────────────────── */
 
-/* In the plot area, top-centre under the tool strip's row; it never takes focus. */
+/* In the plot area, top-centre under the tool strip's row; it never takes focus. Over the empty
+   state (4), which shows with it after a failed reopen: its buttons are the way out. */
 #protspace-recovery-banner {
   position: absolute;
+  z-index: 5;
   top: 56px;
   left: 50%;
   translate: -50% 0;
@@ -1100,6 +1102,11 @@
 
 .wb-empty[hidden] {
   display: none;
+}
+
+/* With the recovery banner up, the invitation sits at the bottom rather than under the banner. */
+.wb-plot:has(> #protspace-recovery-banner) > .wb-empty {
+  justify-content: flex-end;
 }
 
 .wb-empty > * {
