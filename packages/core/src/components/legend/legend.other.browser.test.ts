@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
 import type { PsPopover } from '../kit/popover';
@@ -232,5 +232,49 @@ describe('the legend’s Other popover', () => {
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     // Inside two shadow roots, the hit retargets to the legend host.
     expect(hit).toBe(legend);
+  });
+  it('in a right-hand sidebar it opens beside the legend, below the sidebar top, and leaves Other readable', async () => {
+    await page.viewport(1440, 900);
+    try {
+      // The workbench at 1440 × 900: app bar and view bar above (92 px), the legend a 300 px
+      // column to the right of the plot, the Other row about two thirds of the way down.
+      // Enough categories under Other for the panel's full height.
+      const counts = Object.fromEntries(
+        Array.from({ length: 300 }, (_, i) => [`family ${String(i).padStart(3, '0')}`, 400 - i]),
+      );
+      const { legend } = await mountLegendWithScatterplot(categoricalData(counts), 'family');
+      legend.style.cssText =
+        'display: block; position: fixed; top: 92px; right: 44px; bottom: 0; width: 300px;';
+      legend.maxVisibleValues = 14;
+      await settle(legend);
+      const other = root(legend).querySelector<HTMLElement>('.legend-item-other')!;
+      expect(other.getBoundingClientRect().top).toBeGreaterThan(450);
+
+      await userEvent.click(viewButton(legend)!);
+      await settle(legend);
+      expect(otherPopover(legend).open).toBe(true);
+
+      const box = panel(legend).getBoundingClientRect();
+      const legendBox = legend.getBoundingClientRect();
+      expect(box.height).toBeGreaterThan(400);
+      expect(box.top).toBeGreaterThanOrEqual(legendBox.top);
+      expect(box.bottom).toBeLessThanOrEqual(900);
+      // Over the plot, not over the list it was opened from.
+      expect(box.right).toBeLessThanOrEqual(legendBox.left + 0.5);
+
+      // The open row's count stays whole and on top beside View and the eye.
+      const count = other.querySelector<HTMLElement>('.legend-count')!;
+      const countBox = count.getBoundingClientRect();
+      expect(count.scrollWidth).toBeLessThanOrEqual(count.clientWidth);
+      expect(countBox.right).toBeLessThanOrEqual(other.getBoundingClientRect().right + 0.5);
+      const y = countBox.top + countBox.height / 2;
+      expect(root(legend).elementFromPoint(countBox.left + 2, y)).toBe(count);
+      expect(root(legend).elementFromPoint(countBox.right - 2, y)).toBe(count);
+      expect(countBox.left).toBeGreaterThanOrEqual(
+        other.querySelector('.view-button')!.getBoundingClientRect().right,
+      );
+    } finally {
+      await page.viewport(414, 896);
+    }
   });
 });

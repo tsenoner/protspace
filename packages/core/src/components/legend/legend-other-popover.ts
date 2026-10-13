@@ -22,6 +22,9 @@ interface OtherRow {
   readonly count: number;
 }
 
+/** The panel's 300 px, the 6 px gap and the 8 px screen margin: the room it needs beside a row. */
+const OTHER_POPOVER_SIDE_ROOM = 314;
+
 const byCountThenName = (a: OtherRow, b: OtherRow) =>
   b.count - a.count || a.name.localeCompare(b.name);
 
@@ -86,10 +89,15 @@ export class ProtspaceLegendOtherPopover extends LitElement {
   }
 
   render() {
+    // Beside the anchor's legend row, over the plot like the colour picker: hung below or above
+    // the View button, the panel is taller than the room and spills over the app bar. A legend
+    // with no room to its left (a full-width sheet) keeps it under View.
+    const row = this.anchor?.closest('.legend-item') ?? null;
+    const beside = row !== null && row.getBoundingClientRect().left >= OTHER_POPOVER_SIDE_ROOM;
     return html`<ps-popover
-      .anchor=${this.anchor}
+      .anchor=${beside ? row : this.anchor}
       .open=${this.open}
-      placement="bottom-end"
+      placement=${beside ? 'left-start' : 'bottom-end'}
       panel-role="dialog"
       panel-label="Other categories"
       @ps-open=${this._onOpen}
