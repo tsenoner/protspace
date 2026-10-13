@@ -1,8 +1,8 @@
 /**
  * Generate `docs/guide/annotations.md` from two sources that share one set of column names:
- *   - the canonical runtime registry in `@protspace/utils` (`ANNOTATION_METADATA`) — friendly label,
+ *   - the canonical runtime registry in `@protspace/utils` (`ANNOTATION_METADATA`): friendly label,
  *     source, predicted flag, and the BRIEF description shown in the in-app info popover; and
- *   - the docs-only `annotation-details.ts` module — the LONG-FORM explanation and authoritative
+ *   - the docs-only `annotation-details.ts` module: the LONG-FORM explanation and authoritative
  *     source link rendered only on the documentation page (never shipped to the app bundle).
  *
  * The popover and the docs page therefore stay in sync on the brief text while the docs add depth.
@@ -80,13 +80,22 @@ function validateDetailKeys(): void {
 function build(): string {
   const lines: string[] = [];
   lines.push('<!--');
-  lines.push('  AUTO-GENERATED — do not edit by hand.');
+  lines.push('  AUTO-GENERATED: do not edit by hand.');
   lines.push('  Brief text + metadata: packages/utils/src/visualization/annotation-metadata.ts');
   lines.push('  Detailed text + source links: docs/scripts/annotation-details.ts');
   lines.push('  Regenerate: pnpm docs:annotations');
   lines.push('-->');
   lines.push('');
   lines.push('# Annotation Reference');
+  lines.push('');
+  lines.push(
+    'This page is the reference for every annotation column you can colour and filter by: what ' +
+      'each value means, how it is produced, and where it comes from. The always-included ' +
+      'identifier columns that only surface in tooltips are covered in ' +
+      '[Using Python CLI](/guide/python-cli), which also documents how to _request_ annotations ' +
+      'when you prepare a dataset, the `-a` groups, custom CSV columns, and the input ' +
+      'requirements of each source.',
+  );
   lines.push('');
   lines.push('## Annotation Value Format (v2 Encoding)');
   lines.push('');
@@ -110,22 +119,23 @@ function build(): string {
   );
   lines.push('');
   lines.push(
-    'Format version 2 is marked in the parquet metadata of the `selected_annotations` table ' +
-      'under the key `protspace_format_version`. Bundles without this key or with version < 2 ' +
-      'are rendered using the legacy parser. See [Data Format Reference](/guide/data-format#encoding-format-v2) ' +
-      'for more detail.',
+    'In a legacy (v1/v2) bundle, format version 2 is marked in the parquet metadata of the ' +
+      '`selected_annotations` table under the key `protspace_format_version`; bundles without ' +
+      'this key are rendered using the legacy parser. A v3 bundle stores its labels already ' +
+      'decoded and carries `protspace_container_version` instead. See ' +
+      '[Data Format Reference](/guide/data-format#version-detection) for more detail.',
   );
   lines.push('');
   lines.push('## Sources');
   lines.push('');
   lines.push(
-    'ProtSpace annotations come from several sources. **Computational predictions** — from a ' +
+    'ProtSpace annotations come from several sources. **Computational predictions**, from a ' +
       'machine-learning model, sequence topology, or 3D structure (Biocentral, the Phobius ' +
-      '`signal_peptide`, and TED) — are flagged with a ⚡ Predicted badge in the app; reference ' +
+      '`signal_peptide`, and TED), are flagged with a ⚡ Predicted badge in the app; reference ' +
       'signature matches (Pfam, CATH-Gene3D, …) and curated or factual data (UniProt, Taxonomy) ' +
       'are not. For each annotation, the **bold lead line** is the same short summary shown in the ' +
-      "app's info popover, and the paragraph beneath it is a fuller explanation — what the value " +
-      'means, how it is produced, and what it looks like — with a link to the authoritative source.',
+      "app's info popover, and the paragraph beneath it is a fuller explanation of what the value " +
+      'means, how it is produced, and what it looks like, with a link to the authoritative source.',
   );
   lines.push('');
 

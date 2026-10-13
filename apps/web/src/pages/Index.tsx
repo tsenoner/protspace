@@ -1,8 +1,9 @@
 import Header from '@/components/Header';
 import Hero from '@/components/Hero';
-import Features from '@/components/Features';
 import Citation from '@/components/Citation';
 import Footer from '@/components/Footer';
+import { FeatureShowcase } from '@/landing/FeatureShowcase';
+import { WorkflowOverview } from '@/landing/WorkflowOverview';
 
 const Index = () => {
   return (
@@ -10,7 +11,8 @@ const Index = () => {
       <Header />
       <main>
         <Hero />
-        <Features />
+        <FeatureShowcase />
+        <WorkflowOverview />
         <Citation />
       </main>
       <Footer />

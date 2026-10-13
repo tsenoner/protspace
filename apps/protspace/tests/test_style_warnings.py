@@ -1,16 +1,18 @@
 """Advisory warnings + palette contract for `protspace style`.
 
 Covers three things:
-- the numeric-column warning (issue #67) — the CLI styling model is
+- the numeric-column warning (tsenoner/protspace-legacy#67) — the CLI styling model is
   categorical-only while the web frontend bins numeric columns into gradients, so
   per-value colors/shapes set via the CLI are silently dropped;
 - the `selectedPaletteId` validation warning (gradient/unknown id → resets to
   kellys in the frontend);
-- a pinned contract keeping the Python palette-id catalog reconciled with the
-  frontend source of truth (see the section at the bottom of this file).
+- a contract keeping the Python palette-id catalog equal to the frontend's,
+  read from its TypeScript source (see the section below).
 """
 
 import logging
+import re
+from pathlib import Path
 
 import pyarrow as pa
 import pytest
@@ -26,7 +28,11 @@ from protspace.utils.add_annotation_style import (
     add_annotation_styles_bundle,
     add_annotation_styles_parquet,
     generate_template,
+    resolve_style_key,
+    style_keys,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _make_bundle(tmp_path, ids, annotation_columns):
@@ -184,45 +190,64 @@ def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplo
     assert not any("kellys" in m for m in messages)
 
 
-# --- pinned contract: keep the Python palette catalog in sync with the frontend ---
+# --- contract: keep the Python palette catalog in sync with the frontend ---
 #
-# The authoritative source is the web frontend:
+# The source of truth is the web frontend, read here from its source (protspace
+# cannot import TypeScript):
 #   packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
 #   packages/utils/src/visualization/numeric-binning.ts
-#                                                   (GRADIENT_COLOR_SCHEME_IDS)
-# These pins make the Python copy a deliberate, reviewed value: changing a palette
-# id trips a test, prompting a matching update to docs/styling.md (Color palettes)
-# and a re-check against the frontend. The test compares the catalog to a literal
-# copy here, so it guards accidental in-repo edits — it cannot read the frontend
-# and does not detect drift from the source of truth.
+#                       (GRADIENT_COLOR_SCHEME_IDS, DEFAULT_NUMERIC_PALETTE_ID)
+# A palette added, renamed or moved between the sets there fails these tests;
+# update add_annotation_style.py and docs/guide/styling.md (Color palettes) to match.
 
-_EXPECTED_CATEGORICAL_PALETTE_IDS = {
-    "kellys",
-    "okabeIto",
-    "tolBright",
-    "set2",
-    "dark2",
-    "tableau10",
-}
-_EXPECTED_GRADIENT_PALETTE_IDS = {"batlow", "viridis", "cividis", "inferno", "plasma"}
+_WEB_VISUALIZATION = REPO_ROOT / "packages" / "utils" / "src" / "visualization"
 
 
-def test_categorical_palette_ids_pinned():
-    assert set(_CATEGORICAL_PALETTE_IDS) == _EXPECTED_CATEGORICAL_PALETTE_IDS
+def _web_source_match(file_name: str, pattern: str) -> re.Match:
+    path = _WEB_VISUALIZATION / file_name
+    match = re.search(pattern, path.read_text(), re.S)
+    assert match, f"{pattern!r} not found in {path}"
+    return match
 
 
-def test_gradient_palette_ids_pinned():
-    assert set(_GRADIENT_PALETTE_IDS) == _EXPECTED_GRADIENT_PALETTE_IDS
+def _web_palette_ids() -> set[str]:
+    """Every key of the web's COLOR_SCHEMES."""
+    block = _web_source_match(
+        "color-scheme.ts", r"export const COLOR_SCHEMES = \{(.*?)\} as const;"
+    ).group(1)
+    ids = set(re.findall(r"^\s*(\w+):", block, re.M))
+    assert ids, f"no palette ids in COLOR_SCHEMES: {block!r}"
+    return ids
 
 
-def test_palette_id_sets_are_disjoint():
-    assert _CATEGORICAL_PALETTE_IDS.isdisjoint(_GRADIENT_PALETTE_IDS)
+def _web_gradient_palette_ids() -> set[str]:
+    block = _web_source_match(
+        "numeric-binning.ts", r"GRADIENT_COLOR_SCHEME_IDS = new Set\(\[(.*?)\]\)"
+    ).group(1)
+    ids = set(re.findall(r"'(\w+)'", block))
+    assert ids, f"no ids in GRADIENT_COLOR_SCHEME_IDS: {block!r}"
+    return ids
+
+
+def test_gradient_palette_ids_match_the_web_app():
+    assert set(_GRADIENT_PALETTE_IDS) == _web_gradient_palette_ids()
+
+
+def test_categorical_palette_ids_match_the_web_app():
+    # The web has no categorical list of its own: it is every scheme that is
+    # not a gradient.
+    web_categorical = _web_palette_ids() - _web_gradient_palette_ids()
+    assert set(_CATEGORICAL_PALETTE_IDS) == web_categorical
 
 
 def test_palette_defaults_belong_to_their_sets():
-    # Frontend defaults: categorical → 'kellys', numeric gradient → 'batlow'.
+    # 'kellys' is what the CLI writes and the frontend resets to; numeric
+    # columns default to the web's DEFAULT_NUMERIC_PALETTE_ID.
     assert "kellys" in _CATEGORICAL_PALETTE_IDS
-    assert "batlow" in _GRADIENT_PALETTE_IDS
+    default_numeric = _web_source_match(
+        "numeric-binning.ts", r"DEFAULT_NUMERIC_PALETTE_ID = '(\w+)'"
+    ).group(1)
+    assert default_numeric in _GRADIENT_PALETTE_IDS
 
 
 # ---------------------------------------------------------------------------
@@ -249,3 +274,20 @@ def test_numeric_style_key_resolves_across_the_int_float_spelling():
 def test_unknown_style_key_still_raises():
     with pytest.raises(ValueError, match="does not exist for annotation"):
         _resolve_style_value("Alien", {"Human", "Mouse"}, "organism")
+
+
+def test_resolve_style_key_answers_what_style_would_accept():
+    # The resolver `protspace style` raises on, for a caller that drops the keys
+    # it would refuse before styling (the showcase build filters its styles).
+    assert resolve_style_key("Human", {"Human", "None"}) == "Human"
+    assert resolve_style_key("__NA__", {"None", "Human"}) == "None"
+    assert resolve_style_key("100.0", {"100"}) == "100"
+    assert resolve_style_key("Alien", {"Human", "Mouse"}) is None
+    # Only the NA spellings `style` folds: "none" (TMbed) is a value of its own.
+    assert resolve_style_key("__NA__", {"none", "Human"}) is None
+
+
+def test_style_keys_are_the_display_values_of_every_cell():
+    cells = ["A|IC;B%3Bc|1.0", None, "A", 7]
+    assert style_keys(cells) == {"A", "B;c", "None", "7"}
+    assert style_keys(["B%3Bc"], decode=False) == {"B%3Bc"}

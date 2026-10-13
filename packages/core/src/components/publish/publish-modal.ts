@@ -343,7 +343,9 @@ export class ProtspacePublishModal extends LitElement {
    * same tick.
    */
   private _scheduleRedraw() {
-    if (this._redrawHandle !== null) return;
+    // A redraw that finishes after disconnect can still arm the settle timer;
+    // a disposed modal must not queue a frame from it.
+    if (this._disposed || this._redrawHandle !== null) return;
     this._redrawHandle = requestAnimationFrame(() => {
       this._redrawHandle = null;
       this._redraw();

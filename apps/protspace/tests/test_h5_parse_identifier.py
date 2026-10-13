@@ -56,6 +56,3 @@ class TestParseIdentifier:
 
     def test_empty_string(self):
         assert parse_identifier("") == ""
-
-    def test_swissprot_6char_accession(self):
-        assert parse_identifier("sp|Q9NR56|MBOA1_HUMAN") == "Q9NR56"

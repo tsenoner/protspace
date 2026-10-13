@@ -1,6 +1,6 @@
 """Tests for CATH names file parsing."""
 
-from src.protspace.data.annotations.retrievers.cath_names import _parse_cath_names
+from protspace.data.annotations.retrievers.cath_names import _parse_cath_names
 
 
 class TestParseCathNames:
@@ -24,7 +24,10 @@ class TestParseCathNames:
         assert names["2.60.40.10"] == "Immunoglobulins"
 
     def test_unnamed_superfamily_has_no_name(self, tmp_path):
-        """An unnamed superfamily must NOT inherit the parent topology name (#57)."""
+        """An unnamed superfamily must NOT inherit the parent topology name.
+
+        See tsenoner/protspace-legacy#57.
+        """
         content = (
             "6.20.10           3s6xC01    :Laminin\n"
             "6.20.10.10        1lmmA01    :\n"
@@ -49,16 +52,3 @@ class TestParseCathNames:
         names = _parse_cath_names(f)
 
         assert names == {"1": "Mainly Alpha"}
-
-    def test_named_superfamily_not_overwritten(self, tmp_path):
-        """A superfamily with its own name should not be overwritten by parent."""
-        content = (
-            "2.60.40           1bqkA00    :Immunoglobulin-like\n"
-            "2.60.40.10        4unuA00    :Immunoglobulins\n"
-        )
-        f = tmp_path / "cath-names.txt"
-        f.write_text(content)
-
-        names = _parse_cath_names(f)
-
-        assert names["2.60.40.10"] == "Immunoglobulins"

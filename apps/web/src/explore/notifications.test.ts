@@ -1,21 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
+  RendererDegradedDetail,
+  RendererDegradedReason,
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
+import type { NotifyOptions } from '../lib/notify';
 import * as notificationMappers from './notifications';
 import {
   getCorruptedPersistedDatasetNotification,
   getDataLoadFailureNotification,
   getDatasetPersistenceFailureNotification,
+  getExampleLoadFailureNotification,
   getExportFailureNotification,
   getExportSuccessNotification,
   getLegendErrorNotification,
+  getRendererDegradedNotification,
   getSelectionDisabledNotification,
 } from './notifications';
+import { TEST_EXAMPLE } from './example-catalog.fixtures';
 import { FastaPrepError } from './fasta-prep-client';
 import { COLAB_NOTEBOOK_URL } from './fasta-prep-limits';
+
+/** The link a notification action opens, or undefined for a callback action. */
+function hrefOf(action: NotifyOptions['action']): string | undefined {
+  return action && 'href' in action ? action.href : undefined;
+}
 
 function dataError(message: string, originalError?: Error): DataErrorEventDetail {
   return {
@@ -179,6 +190,13 @@ describe('explore notifications', () => {
     });
   });
 
+  it('says which proteins of the loaded file a bundle export leaves out', () => {
+    const notice = getExportSuccessNotification('dataset.parquetbundle', 1);
+    expect(notice.title).toBe('Export ready.');
+    expect(notice.description).toMatch(/^dataset\.parquetbundle leaves out the 1 protein without/);
+    expect(notice.description).toMatch(/protspace convert/);
+  });
+
   it('builds clear recovery copy for corrupted persisted datasets and export failures', () => {
     expect(getCorruptedPersistedDatasetNotification('could not be loaded').description).toMatch(
       /loaded the default demo dataset/i,
@@ -193,8 +211,8 @@ describe('explore notifications', () => {
     const action = getDataLoadFailureNotification(dataError('Invalid parquet bundle')).action;
 
     expect(action?.label).toBe('Report this');
-    expect(action?.href).toMatch(/^mailto:hello@protspace\.app\?/);
-    expect(action?.href).toContain('subject=%5BBug%5D%20Dataset%20import%20failed');
+    expect(hrefOf(action)).toMatch(/^mailto:hello@protspace\.app\?/);
+    expect(hrefOf(action)).toContain('subject=%5BBug%5D%20Dataset%20import%20failed');
   });
 
   it('includes the trace id in the "Report this" email body for backend failures', () => {
@@ -207,14 +225,72 @@ describe('explore notifications', () => {
 
     expect(action?.label).toBe('Report this');
     // "Trace ID: job-xyz" survives mailto encoding (space → %20, ':' → %3A).
-    expect(action?.href).toContain('Trace%20ID%3A%20job-xyz');
+    expect(hrefOf(action)).toContain('Trace%20ID%3A%20job-xyz');
+  });
+
+  it('offers Retry first and "Report this" second when an example download fails', () => {
+    const entry = TEST_EXAMPLE;
+    const onRetry = vi.fn();
+
+    const notification = getExampleLoadFailureNotification(
+      entry,
+      new Error('File not found: 500 Internal Server Error'),
+      { source: 'menu', onRetry },
+    );
+
+    expect(notification.title).toBe(`Couldn't load "${entry.label}".`);
+    expect(notification.action).toEqual({ label: 'Retry', onClick: onRetry });
+    expect(notification.secondaryAction?.label).toBe('Report this');
+    expect(hrefOf(notification.secondaryAction)).toContain(
+      `subject=%5BBug%5D%20Example%20dataset%20%22${entry.id}%22%20failed`,
+    );
+  });
+
+  it('dedupes example failures per request kind, so each keeps its own Retry', () => {
+    const entry = TEST_EXAMPLE;
+    const key = (source: 'menu' | 'url') =>
+      getExampleLoadFailureNotification(entry, new Error('x'), { source, onRetry: vi.fn() })
+        .dedupeKey;
+
+    expect(key('menu')).not.toBe(key('url'));
+    expect(key('url')).toBe(key('url'));
+    expect(key('url')).toContain(entry.id);
   });
 
   it('attaches a "Report this" mailto action to the export failure notification', () => {
     const action = getExportFailureNotification(new Error('Disk full')).action;
 
     expect(action?.label).toBe('Report this');
-    expect(action?.href).toMatch(/^mailto:hello@protspace\.app\?/);
-    expect(action?.href).toContain('subject=%5BBug%5D%20Export%20failed');
+    expect(hrefOf(action)).toMatch(/^mailto:hello@protspace\.app\?/);
+    expect(hrefOf(action)).toContain('subject=%5BBug%5D%20Export%20failed');
+  });
+});
+
+describe('getRendererDegradedNotification', () => {
+  const degraded = (reason: RendererDegradedReason, detail?: string): RendererDegradedDetail => ({
+    message: `${reason} message`,
+    severity: 'warning',
+    source: 'scatter-plot',
+    context: { reason, maxTextureSize: 8192, stride: 8, pointCount: 50, detail },
+  });
+
+  it('names contours in the title when they cannot run, and dedupes per reason', () => {
+    const n = getRendererDegradedNotification(
+      degraded('density-unavailable', 'EXT_float_blend missing'),
+    );
+
+    expect(n.title).toBe('Contours unavailable.');
+    expect(n.description).toBe('density-unavailable message');
+    expect(n.dedupeKey).toBe('renderer-degraded:density-unavailable');
+    expect(decodeURIComponent(hrefOf(n.action) ?? '')).toContain(
+      'density-unavailable (maxTextureSize=8192, stride=8, points=50, cause=EXT_float_blend missing)',
+    );
+  });
+
+  it('keeps the quality title for every other reduction', () => {
+    const n = getRendererDegradedNotification(degraded('gamma-pipeline-unavailable'));
+
+    expect(n.title).toBe('Rendering quality reduced.');
+    expect(n.dedupeKey).toBe('renderer-degraded:gamma-pipeline-unavailable');
   });
 });

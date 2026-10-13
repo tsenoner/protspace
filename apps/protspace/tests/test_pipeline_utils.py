@@ -1,5 +1,6 @@
 """Tests for pipeline utility functions."""
 
+import logging
 from collections import Counter
 from unittest.mock import patch
 
@@ -7,6 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from protspace.data.annotations.cache import _migrate_legacy_ted_labels
+from protspace.data.annotations.encoding import (
+    ANNOTATION_CACHE_VERSION,
+    ANNOTATION_CACHE_VERSION_ATTR,
+    annotation_cache_version_attrs,
+)
 from protspace.data.loaders.embedding_set import (
     EmbeddingSet,
     format_param_suffix,
@@ -17,7 +24,6 @@ from protspace.data.processors.pipeline import (
     MethodSpec,
     PipelineConfig,
     ReductionPipeline,
-    _migrate_legacy_ted_labels,
     _run_with_overridden_config,
     disambiguation_suffix,
     parse_method_spec,
@@ -30,36 +36,20 @@ from protspace.data.processors.pipeline import (
 
 
 class TestParseMethodSpec:
-    def test_pca2(self):
-        spec = parse_method_spec("pca2")
-        assert spec.method == "pca"
-        assert spec.dims == 2
-        assert spec.overrides == ()
-
-    def test_umap3(self):
-        spec = parse_method_spec("umap3")
-        assert spec.method == "umap"
-        assert spec.dims == 3
-
-    def test_tsne2(self):
-        spec = parse_method_spec("tsne2")
-        assert spec.method == "tsne"
-        assert spec.dims == 2
-
-    def test_pacmap2(self):
-        spec = parse_method_spec("pacmap2")
-        assert spec.method == "pacmap"
-        assert spec.dims == 2
-
-    def test_mds2(self):
-        spec = parse_method_spec("mds2")
-        assert spec.method == "mds"
-        assert spec.dims == 2
-
-    def test_localmap2(self):
-        spec = parse_method_spec("localmap2")
-        assert spec.method == "localmap"
-        assert spec.dims == 2
+    @pytest.mark.parametrize(
+        "text,method,dims",
+        [
+            ("pca2", "pca", 2),
+            ("umap3", "umap", 3),
+            ("tsne2", "tsne", 2),
+            ("pacmap2", "pacmap", 2),
+            ("mds2", "mds", 2),
+            ("localmap2", "localmap", 2),
+        ],
+    )
+    def test_method_and_dims(self, text, method, dims):
+        spec = parse_method_spec(text)
+        assert (spec.method, spec.dims, spec.overrides) == (method, dims, ())
 
     def test_invalid_no_digits(self):
         with pytest.raises(ValueError):
@@ -130,14 +120,11 @@ class TestMethodSpec:
         spec = MethodSpec("umap", 2, (("n_neighbors", 50),))
         assert spec.overrides_dict == {"n_neighbors": 50}
 
-    def test_equality(self):
+    def test_equal_specs_are_equal_and_hash_alike(self):
         a = parse_method_spec("umap2:n_neighbors=50")
         b = parse_method_spec("umap2:n_neighbors=50")
         assert a == b
-
-    def test_hashable(self):
-        spec = parse_method_spec("umap2:n_neighbors=50")
-        assert hash(spec) == hash(spec)
+        assert hash(a) == hash(b)
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +162,6 @@ class TestParseMethodsArg:
     def test_different_overrides_not_deduped(self):
         result = parse_methods_arg(["umap2:n_neighbors=50", "umap2:n_neighbors=100"])
         assert len(result) == 2
-
-    def test_backward_compatible(self):
-        result = parse_methods_arg(["pca2,umap2,tsne2"])
-        assert len(result) == 3
 
     def test_strips_whitespace(self):
         result = parse_methods_arg(["  pca2 , umap2  "])
@@ -361,6 +344,57 @@ def _cache_pipeline(tmp_path, **overrides):
     )
 
 
+class TestUniProtFailureCacheWriteThroughPipeline:
+    """The guard has to hold on the paths a user actually runs.
+
+    The manager-level tests pin the decision; these pin the wiring, because the
+    pipeline change is a *deletion* of an explicit argument and a future call
+    site could silently reinstate the old behavior.
+    """
+
+    @staticmethod
+    def _fail_one_batch(monkeypatch):
+        from protspace.data.annotations.retrievers import uniprot_retriever
+
+        def fail_batch(_accessions, **_kwargs):
+            raise RuntimeError("temporary UniProt failure")
+
+        monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
+
+    def test_a_lost_batch_does_not_create_the_cache(self, tmp_path, monkeypatch):
+        """The first --keep-tmp run is the one that would bake the empties in."""
+        self._fail_one_batch(monkeypatch)
+        pipeline = _cache_pipeline(tmp_path, annotations=["length"])
+
+        pipeline._fetch_annotations(["P01308"])
+
+        assert not (tmp_path / "all_annotations.parquet").exists()
+
+    def test_refetch_rewrites_the_cache_even_when_a_batch_is_lost(
+        self, tmp_path, monkeypatch
+    ):
+        """--refetch is the documented repair, so it must beat the guard.
+
+        Declining here would strand a cache poisoned by an earlier run and throw
+        away the good data the repair recovered.
+        """
+        self._fail_one_batch(monkeypatch)
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame({"identifier": ["P01308"], "length": ["POISONED"]}).to_parquet(
+            cache_path, index=False
+        )
+        pipeline = _cache_pipeline(
+            tmp_path, annotations=["length"], refetch_stages={"uniprot"}
+        )
+
+        pipeline._fetch_annotations(["P01308"])
+
+        # The repair could not refetch the column, so it removes it instead of
+        # stranding the bad values: the next run then sees `length` missing and
+        # fetches it, rather than reading "POISONED" as cached truth.
+        assert "length" not in pd.read_parquet(cache_path).columns
+
+
 class TestAnnotationCacheMigration:
     def test_legacy_pdb_migration_fetches_newly_required_taxonomy(
         self, tmp_path, monkeypatch
@@ -431,7 +465,7 @@ class TestAnnotationCacheMigration:
             }
         ).to_parquet(cache_path, index=False)
 
-        def fail_batch(_accessions):
+        def fail_batch(_accessions, **_kwargs):
             raise RuntimeError("temporary UniProt failure")
 
         monkeypatch.setattr(uniprot_retriever, "_fetch_many_accessions", fail_batch)
@@ -448,6 +482,63 @@ class TestAnnotationCacheMigration:
         # cache it declined to overwrite: only xref_pdb is genuinely unknown.
         assert result["gene_name"].tolist() == ["LEGACY_GENE"]
         assert result["protein_name"].tolist() == ["Legacy protein"]
+
+    def test_legacy_pdb_refresh_reuses_sources_no_later_change_marks_stale(
+        self, tmp_path, monkeypatch
+    ):
+        """Only UniProt is refetched while the other cached sources are current.
+
+        TED values carry no later semantics change, so an unversioned cache's
+        TED column is reused as the PDB refresh has always promised. (Its
+        InterPro columns would not be: the family and InterPro fix marks them
+        stale too.)
+        """
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        pd.DataFrame(
+            {
+                "identifier": ["P01308"],
+                "xref_pdb": ["True"],
+                "gene_name": ["INS"],
+                "protein_name": ["Insulin"],
+                "uniprot_kb_id": ["INS_HUMAN"],
+                "ted_domains": ["-|90.0"],
+            }
+        ).to_parquet(tmp_path / "all_annotations.parquet", index=False)
+        calls = []
+
+        def uniprot(retriever):
+            calls.append("uniprot")
+            return [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={
+                        "xref_pdb": "1A7F",
+                        "gene_name": "INS",
+                        "protein_name": "Insulin",
+                        "uniprot_kb_id": "INS_HUMAN",
+                    },
+                )
+                for h in retriever.headers
+            ]
+
+        def no_ted(_retriever):
+            raise AssertionError("cached TED values are current and must be reused")
+
+        monkeypatch.setattr(UniProtRetriever, "fetch_annotations", uniprot)
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", no_ted)
+
+        result = _cache_pipeline(
+            tmp_path, annotations=["xref_pdb", "ted_domains"]
+        )._fetch_annotations(["P01308"])
+
+        assert calls == ["uniprot"]
+        assert result["xref_pdb"].tolist() == ["True"]
+        assert result["ted_domains"].tolist() == ["-|90.0"]
 
     def test_legacy_pdb_cache_is_not_refetched_when_pdb_is_not_requested(
         self, tmp_path, monkeypatch
@@ -514,6 +605,9 @@ class TestAnnotationCacheMigration:
                 "gene_name": ["INS"],
                 "protein_name": ["Insulin"],
                 "uniprot_kb_id": ["INS_HUMAN"],
+                # Cached with InterPro, which looked it up: a refresh without
+                # it would have to fetch it from UniProt first.
+                "sequence": ["MALWMRLLPL"],
             }
         )
         cached.attrs = {"protspace_annotation_cache_version": 1}
@@ -542,9 +636,7 @@ class TestAnnotationCacheMigration:
         assert result["xref_pdb"].tolist() == ["True"]
         # Stale at v2, so refreshed from its own source.
         assert result["signal_peptide"].tolist() == ["True"]
-        assert pd.read_parquet(cache_path).attrs == {
-            "protspace_annotation_cache_version": 2
-        }
+        assert pd.read_parquet(cache_path).attrs[ANNOTATION_CACHE_VERSION_ATTR] == 2
 
     def test_unrequested_legacy_pdb_column_is_dropped_before_stamping(
         self, tmp_path, monkeypatch
@@ -588,13 +680,18 @@ class TestAnnotationCacheMigration:
 
         assert result["ted_domains"].tolist() == ["3.40.50.2000|94.2"]
         rewritten = pd.read_parquet(cache_path)
-        assert rewritten.attrs == {"protspace_annotation_cache_version": 1}
+        assert (
+            rewritten.attrs[ANNOTATION_CACHE_VERSION_ATTR] == ANNOTATION_CACHE_VERSION
+        )
         assert "xref_pdb" not in rewritten.columns
 
     def test_legacy_pdb_migration_preserves_cached_taxonomy(
         self, tmp_path, monkeypatch
     ):
         """Migration must retain taxonomy while replacing stale UniProt values."""
+        from protspace.data.annotations.retrievers.interpro_retriever import (
+            InterProRetriever,
+        )
         from protspace.data.annotations.retrievers.uniprot_retriever import (
             ProteinAnnotations,
             UniProtRetriever,
@@ -642,6 +739,21 @@ class TestAnnotationCacheMigration:
         monkeypatch.setattr(
             UniProtRetriever, "fetch_annotations", fetch_current_annotations
         )
+        # The unstamped cache also predates the v2 InterPro fix, so the
+        # requested signal_peptide is refreshed alongside UniProt.
+        monkeypatch.setattr(
+            InterProRetriever,
+            "fetch_annotations",
+            lambda _self: [
+                ProteinAnnotations(
+                    identifier="unresolved", annotations={"signal_peptide": "True"}
+                ),
+                ProteinAnnotations(
+                    identifier="resolved_without_pdb",
+                    annotations={"signal_peptide": "False"},
+                ),
+            ],
+        )
         pipeline = _cache_pipeline(
             tmp_path, annotations=["xref_pdb", "genus", "signal_peptide"]
         )
@@ -655,7 +767,10 @@ class TestAnnotationCacheMigration:
         assert result["signal_peptide"].tolist() == ["True", "False"]
         migrated_cache = pd.read_parquet(cache_path)
         assert migrated_cache["genus"].tolist() == ["", "Homo"]
-        assert migrated_cache.attrs == {"protspace_annotation_cache_version": 1}
+        assert (
+            migrated_cache.attrs[ANNOTATION_CACHE_VERSION_ATTR]
+            == ANNOTATION_CACHE_VERSION
+        )
 
         def fail_if_refetched(_self):
             raise AssertionError("current cache should use the fast path")
@@ -750,6 +865,87 @@ class TestLegacyTedLabelMigration:
 
         assert _migrate_legacy_ted_labels(df) is True
         assert df.loc[0, "ted_domains"] == "-|94.2;1.10.10.10|88.0;-|96.7"
+
+
+# ---------------------------------------------------------------------------
+# complete annotation cache
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteAnnotationCache:
+    def test_fills_only_missing_cached_lengths_from_fasta(self, tmp_path):
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n>cached_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        cached = pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+                {
+                    "identifier": "cached_protein",
+                    "length": "110",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                },
+            ]
+        )
+        cached.to_parquet(cache_path, index=False)
+        embedding_set = _make_es(
+            "test", ["custom_protein", "cached_protein"], fasta_path=fasta_path
+        )
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8", "110"]
+        assert pd.read_parquet(cache_path)["length"].tolist() == ["", "110"]
+
+    def test_still_warns_when_every_cached_annotation_is_empty(self, tmp_path, caplog):
+        """The FASTA length fallback must not mask a wholly empty cache."""
+        fasta_path = tmp_path / "input.fasta"
+        fasta_path.write_text(">custom_protein\nMPEPTIDE\n")
+        cache_path = tmp_path / "all_annotations.parquet"
+        pd.DataFrame(
+            [
+                {
+                    "identifier": "custom_protein",
+                    "length": "",
+                    "gene_name": "",
+                    "protein_name": "",
+                    "uniprot_kb_id": "",
+                }
+            ]
+        ).to_parquet(cache_path, index=False)
+        embedding_set = _make_es("test", ["custom_protein"], fasta_path=fasta_path)
+        pipeline = ReductionPipeline(
+            PipelineConfig(
+                methods=[MethodSpec("pca", 2)],
+                output_path=tmp_path / "out.zip",
+                keep_tmp=True,
+                intermediate_dir=tmp_path,
+                annotations=["length"],
+            )
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = pipeline._fetch_annotations(embedding_set.headers, [embedding_set])
+
+        assert result["length"].tolist() == ["8"]
+        assert "All cached annotations are empty" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -920,7 +1116,11 @@ class TestMergeSameNameSets:
         assert merge_same_name_sets([]) == []
 
     def test_same_name_no_overlap_through_pipeline(self):
-        """Regression test for issue #44: same name, disjoint keys should work."""
+        """Same name, disjoint keys should work.
+
+        Regression test for tsenoner/protspace-legacy#44 (the pre-monorepo Python
+        repo); this repo's own #44 is an unrelated web bug.
+        """
         config = PipelineConfig(methods=[MethodSpec("pca", 2)], output_path=None)
         pipeline = ReductionPipeline(config)
         es1 = _make_es("prot_t5", ["A", "B"])
@@ -1049,3 +1249,464 @@ class TestPrecomputedMDSConfigIsolation:
         assert id(pipeline.base.config) == original_config_id, (
             "base.config reference should be the original dict, not a replacement"
         )
+
+
+# ---------------------------------------------------------------------------
+# Annotation cache identity
+# ---------------------------------------------------------------------------
+
+
+def _write_annotation_cache(cache_dir, identifiers, value):
+    cached = pd.DataFrame(
+        {
+            "identifier": identifiers,
+            "protein_name": [value] * len(identifiers),
+            "gene_name": [value] * len(identifiers),
+            "uniprot_kb_id": [value] * len(identifiers),
+        }
+    )
+    cached.to_parquet(cache_dir / "all_annotations.parquet")
+    return cached
+
+
+def test_a_cache_missing_identifiers_is_filled_in_not_discarded(tmp_path, monkeypatch):
+    """The cache still reaches the manager, which fetches only what it lacks.
+
+    Discarding it instead refetches every source for every identifier, which is
+    hours at Swiss-Prot scale for one added protein.
+    """
+    from protspace.data.annotations.manager import ProteinAnnotationManager
+
+    _write_annotation_cache(tmp_path, ["P1", "P2"], "cached")
+    captured = {}
+
+    def fill_in(manager):
+        captured["headers"] = manager.headers
+        captured["cached_data"] = manager.cached_data
+        return pd.DataFrame(
+            {
+                "identifier": ["P1", "P2", "P3"],
+                "protein_name": ["cached", "cached", "new"],
+            }
+        )
+
+    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", fill_in)
+
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["P1", "P2", "P3"]
+    )
+
+    assert captured["headers"] == ["P1", "P2", "P3"]
+    assert captured["cached_data"]["identifier"].tolist() == ["P1", "P2"]
+    assert result["identifier"].tolist() == ["P1", "P2", "P3"]
+
+
+def test_a_failed_source_while_filling_in_leaves_the_cache_alone(tmp_path, monkeypatch):
+    """A source that failed for the new identifiers must not reach the cache.
+
+    Its columns would be empty for them and indistinguishable from a real
+    absence. Leaving the cache untouched is cheap now that the next run fills in
+    only the identifiers it lacks rather than rebuilding everything.
+    """
+    from protspace.data.annotations.retrievers.interpro_retriever import (
+        InterProRetriever,
+    )
+    from protspace.data.annotations.retrievers.uniprot_retriever import (
+        ProteinAnnotations,
+        UniProtRetriever,
+    )
+
+    cache_path = tmp_path / "all_annotations.parquet"
+    cached = pd.DataFrame(
+        {"identifier": ["OLD1"], "gene_name": ["OLD"], "pfam": ["PF00001"]}
+    )
+    # Current, so this is a fill-in rather than a legacy InterPro refresh.
+    cached.attrs = annotation_cache_version_attrs()
+    cached.to_parquet(cache_path, index=False)
+
+    monkeypatch.setattr(
+        UniProtRetriever,
+        "fetch_annotations",
+        lambda _self: [
+            ProteinAnnotations(
+                identifier="P01308",
+                annotations={"gene_name": "INS", "organism_id": "9606"},
+            )
+        ],
+    )
+
+    def interpro_down(_self):
+        raise RuntimeError("InterPro unavailable")
+
+    monkeypatch.setattr(InterProRetriever, "fetch_annotations", interpro_down)
+
+    result = _cache_pipeline(
+        tmp_path, annotations=["gene_name", "pfam"]
+    )._fetch_annotations(["P01308"])
+
+    assert result.set_index("identifier").loc["P01308", "gene_name"] == "INS"
+    assert pd.read_parquet(cache_path)["identifier"].tolist() == ["OLD1"]
+
+
+class TestRowsOutsideTheRun:
+    """A run for part of the cache must not write values it never fetched.
+
+    A source fetched for the run's proteins has no value for a cached protein
+    outside the run. Writing that row with an empty cell would read as "no
+    annotation" to every later run, which then never fetches it.
+    """
+
+    @staticmethod
+    def _cache(cache_dir, **columns):
+        uniprot = {
+            "gene_name": ["INS", "IGF"],
+            "protein_name": ["Insulin", "IGF"],
+            "uniprot_kb_id": ["INS_HUMAN", "IGF_HUMAN"],
+            "organism_id": ["9606", "9606"],
+            "sequence": ["MALW", "MGKI"],
+        }
+        cached = pd.DataFrame(
+            {"identifier": ["P01308", "P01315"], **uniprot, **columns}
+        )
+        cached.attrs = annotation_cache_version_attrs()
+        cached.to_parquet(cache_dir / "all_annotations.parquet", index=False)
+
+    @staticmethod
+    def _forbid_uniprot(monkeypatch):
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            UniProtRetriever,
+        )
+
+        def cached_only(_self):
+            raise AssertionError("UniProt is cached for every protein")
+
+        monkeypatch.setattr(UniProtRetriever, "fetch_annotations", cached_only)
+
+    def test_a_new_source_is_fetched_later_for_proteins_outside_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path)
+        self._forbid_uniprot(monkeypatch)
+        ted_calls = []
+
+        def ted(retriever):
+            ted_calls.append(list(retriever.headers))
+            return [
+                ProteinAnnotations(identifier=h, annotations={"ted_domains": "-|90.0"})
+                for h in retriever.headers
+            ]
+
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
+        annotations = ["gene_name", "ted_domains"]
+
+        _cache_pipeline(tmp_path, annotations=annotations)._fetch_annotations(
+            ["P01308"]
+        )
+        cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
+        assert cached.set_index("identifier").loc["P01308", "ted_domains"] == "-|90.0"
+        # P01315 was never looked up, so no TED value may be cached for it.
+        assert "P01315" not in cached["identifier"].tolist()
+
+        monkeypatch.undo()
+        monkeypatch.setattr(TedRetriever, "fetch_annotations", ted)
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            UniProtRetriever,
+        )
+
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={"gene_name": "IGF", "organism_id": "9606"},
+                )
+                for h in retriever.headers
+            ],
+        )
+        result = _cache_pipeline(tmp_path, annotations=annotations)._fetch_annotations(
+            ["P01315"]
+        )
+
+        assert ted_calls == [["P01308"], ["P01315"]]
+        assert result.set_index("identifier").loc["P01315", "ted_domains"] == "-|90.0"
+
+    def test_a_refetched_source_keeps_its_cached_values_outside_the_run(
+        self, tmp_path, monkeypatch
+    ):
+        """Adding `smart` for one protein must not blank another's cached `pfam`."""
+        from protspace.data.annotations.retrievers.interpro_retriever import (
+            InterProRetriever,
+        )
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path, pfam=["PF00049|1.0", "PF00219|2.0"])
+        self._forbid_uniprot(monkeypatch)
+        monkeypatch.setattr(
+            InterProRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={"pfam": "PF00049|1.0", "smart": "SM00078|2.0"},
+                )
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(
+            tmp_path, annotations=["gene_name", "pfam", "smart"]
+        )._fetch_annotations(["P01308"])
+
+        cached = pd.read_parquet(tmp_path / "all_annotations.parquet")
+        by_id = cached.set_index("identifier")
+        assert by_id.loc["P01308", "smart"] == "SM00078|2.0"
+        # P01315 has no fetched `smart`, and its cached `pfam` must not be
+        # replaced by the empty value it got from a fetch it was not part of.
+        assert "P01315" not in by_id.index
+
+    def test_a_refetch_for_part_of_the_cache_never_blanks_the_rest(
+        self, tmp_path, monkeypatch
+    ):
+        from protspace.data.annotations.retrievers.ted_retriever import TedRetriever
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+        )
+
+        self._cache(tmp_path, ted_domains=["-|80.0", "-|70.0"])
+        self._forbid_uniprot(monkeypatch)
+        monkeypatch.setattr(
+            TedRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(identifier=h, annotations={"ted_domains": "-|90.0"})
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(
+            tmp_path,
+            annotations=["gene_name", "ted_domains"],
+            refetch_stages=frozenset({"ted"}),
+        )._fetch_annotations(["P01308"])
+
+        by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
+            "identifier"
+        )
+        assert by_id.loc["P01308", "ted_domains"] == "-|90.0"
+        assert "P01315" not in by_id.index
+
+    def test_rows_outside_the_run_are_kept_when_it_adds_no_column(
+        self, tmp_path, monkeypatch
+    ):
+        """Filling in one new protein must not cost the cache its other rows."""
+        from protspace.data.annotations.retrievers.uniprot_retriever import (
+            ProteinAnnotations,
+            UniProtRetriever,
+        )
+
+        self._cache(tmp_path)
+        monkeypatch.setattr(
+            UniProtRetriever,
+            "fetch_annotations",
+            lambda retriever: [
+                ProteinAnnotations(
+                    identifier=h,
+                    annotations={
+                        "gene_name": "GCG",
+                        "protein_name": "Glucagon",
+                        "uniprot_kb_id": "GLUC_HUMAN",
+                        "organism_id": "9606",
+                        "sequence": "MKSI",
+                    },
+                )
+                for h in retriever.headers
+            ],
+        )
+
+        _cache_pipeline(tmp_path, annotations=["gene_name"])._fetch_annotations(
+            ["P01308", "P01275"]
+        )
+
+        by_id = pd.read_parquet(tmp_path / "all_annotations.parquet").set_index(
+            "identifier"
+        )
+        assert by_id.loc["P01275", "gene_name"] == "GCG"
+        assert by_id.loc["P01315", "gene_name"] == "IGF"
+        assert by_id.loc["P01308", "gene_name"] == "INS"
+
+
+@pytest.mark.parametrize(
+    "cached_ids", [["P1", "P2"], ["P1", "P2", "P3"]], ids=["exact", "superset"]
+)
+def test_annotation_cache_covering_the_request_is_reused(
+    tmp_path, monkeypatch, cached_ids
+):
+    from protspace.data.annotations.manager import ProteinAnnotationManager
+
+    cached = _write_annotation_cache(tmp_path, cached_ids, "cached")
+
+    def unexpected_fetch(_manager):
+        pytest.fail("a cache covering every requested identifier should be reused")
+
+    monkeypatch.setattr(ProteinAnnotationManager, "to_pd", unexpected_fetch)
+
+    result = _cache_pipeline(tmp_path, annotations=["protein_name"])._fetch_annotations(
+        ["P2", "P1"]
+    )
+
+    assert result["identifier"].tolist() == cached_ids
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "all_annotations.parquet"), cached
+    )
+
+
+# ---------------------------------------------------------------------------
+# Projection cache identity
+# ---------------------------------------------------------------------------
+
+
+def _recording_pipeline(tmp_path, **overrides):
+    """A pipeline whose reducer records what it was handed and slices it."""
+    pipeline = ReductionPipeline(
+        PipelineConfig(
+            methods=parse_methods_arg(["umap2"]),
+            output_path=None,
+            keep_tmp=True,
+            intermediate_dir=tmp_path,
+            **overrides,
+        )
+    )
+    reduced = []
+
+    def record_input(data, method, dims):
+        reduced.append(data.copy())
+        return {
+            "name": f"{method}{dims}",
+            "dimensions": dims,
+            "info": {},
+            "data": data[:, :dims].copy(),
+        }
+
+    pipeline.base.process_reduction = record_input
+    return pipeline, reduced
+
+
+def test_projection_cache_misses_a_changed_matrix_under_one_name(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+
+    pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.zeros((3, 3), dtype=np.float32))]
+    )
+    changed = pipeline._run_reductions(
+        [_make_es("prot_t5", headers, data=np.full((3, 3), 7.0, dtype=np.float32))]
+    )[0]
+
+    assert len(reduced) == 2
+    np.testing.assert_array_equal(
+        changed["data"], np.full((3, 2), 7.0, dtype=np.float32)
+    )
+
+
+def test_projection_cache_misses_reordered_identifiers(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    reordered = pipeline._run_reductions(
+        [_make_es("prot_t5", headers[::-1], data=data[::-1])]
+    )[0]
+
+    assert len(reduced) == 2
+    # Coordinates are paired positionally with the current identifiers, so a
+    # cache hit here would put P3's row on P1.
+    np.testing.assert_array_equal(reordered["data"], data[::-1][:, :2])
+
+
+def test_projection_cache_misses_a_grown_input(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    rng = np.random.default_rng(0)
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(3)],
+                data=rng.normal(size=(3, 4)).astype(np.float32),
+            )
+        ]
+    )
+    grown = pipeline._run_reductions(
+        [
+            _make_es(
+                "prot_t5",
+                [f"P{i}" for i in range(5)],
+                data=rng.normal(size=(5, 4)).astype(np.float32),
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    assert grown["data"].shape[0] == 5
+
+
+def test_projection_cache_hits_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    first = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+    second = pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])[0]
+
+    assert len(reduced) == 1
+    np.testing.assert_array_equal(second["data"], first["data"])
+
+
+def test_projection_refetch_recomputes_an_unchanged_rerun(tmp_path):
+    pipeline, reduced = _recording_pipeline(
+        tmp_path, refetch_stages=frozenset({"projections"})
+    )
+    headers = ["P1", "P2", "P3"]
+    data = np.full((3, 3), 4.0, dtype=np.float32)
+
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+    pipeline._run_reductions([_make_es("prot_t5", headers, data=data)])
+
+    assert len(reduced) == 2
+
+
+def test_precomputed_projection_cache_misses_a_changed_matrix(tmp_path):
+    pipeline, reduced = _recording_pipeline(tmp_path)
+    headers = ["P1", "P2", "P3"]
+
+    pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2", headers, data=np.zeros((3, 3), np.float32), precomputed=True
+            )
+        ]
+    )
+    changed = pipeline._run_reductions(
+        [
+            _make_es(
+                "MMseqs2",
+                headers,
+                data=np.full((3, 3), 9.0, np.float32),
+                precomputed=True,
+            )
+        ]
+    )[0]
+
+    assert len(reduced) == 2
+    np.testing.assert_array_equal(
+        changed["data"], np.full((3, 2), 9.0, dtype=np.float32)
+    )

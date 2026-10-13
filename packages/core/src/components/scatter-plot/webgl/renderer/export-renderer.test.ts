@@ -9,8 +9,9 @@ import { computePaddedExtent, computeExtent } from './data-extent';
  * `WebGLRenderer` before extraction, proving the move is equal (not redefined).
  *
  * The off-screen GL pipeline (`renderToCanvas`/`initializeOffscreenContext`) is
- * exercised by the renderer-level characterization harness; here we cover only
- * the math that needs no live context.
+ * exercised against a mock GL context in export-renderer.gl.test.ts; here we
+ * cover the math and the input guards that need no context. `computePaddedExtent`
+ * itself is pinned to exact values in data-extent.test.ts.
  */
 
 function makePlotData(xs: number[], ys: number[]): PlotData {
@@ -27,19 +28,6 @@ function makePlotData(xs: number[], ys: number[]): PlotData {
 // Fixed reference dims the export margin scaling anchors to (mirrors the impl).
 const REF_W = 800;
 const REF_H = 600;
-
-describe('computePaddedExtent (export domain helper)', () => {
-  it('returns the padded min/max over the first `length` columns', () => {
-    const xs = new Float32Array([0, 10]);
-    const ys = new Float32Array([0, 20]);
-    const ext = computePaddedExtent(xs, ys, 2);
-    // Padded extent widens past the raw data on every side.
-    expect(ext.xMin).toBeLessThanOrEqual(0);
-    expect(ext.xMax).toBeGreaterThanOrEqual(10);
-    expect(ext.yMin).toBeLessThanOrEqual(0);
-    expect(ext.yMax).toBeGreaterThanOrEqual(20);
-  });
-});
 
 describe('ExportRenderer.createExportScales (static)', () => {
   const config: ScatterplotConfig = {
@@ -160,7 +148,7 @@ describe('ExportRenderer.renderToCanvas (guards)', () => {
     ).toThrow(/No points available/);
   });
 
-  it('throws when a single export dimension exceeds the browser limit', () => {
+  it('throws when a single export dimension exceeds the device limit', () => {
     const pd = makePlotData([0, 1], [0, 1]);
     expect(() =>
       renderer.renderToCanvas(pd, config, style, {
@@ -168,22 +156,43 @@ describe('ExportRenderer.renderToCanvas (guards)', () => {
         height: 100,
         ...baseOptions,
       }),
-    ).toThrow(/exceed browser limit/);
+    ).toThrow(/exceed this device's limit/);
   });
 
-  it('throws when the export area exceeds the pixel-count limit', () => {
+  it('enforces the device texture limit, and names the limit it enforced', () => {
+    // MAX_DIMENSION alone was described as "the browser limit" but is a constant,
+    // so on a device below 8192 the message named a limit that was not the one
+    // being enforced — and the export failed later, inside the driver.
     const pd = makePlotData([0, 1], [0, 1]);
-    // 8000 x 8000 = 64M (within MAX_DIMENSION) but with dpr 3 -> 24000 hits dimension first;
-    // pick dims under MAX_DIMENSION each yet over MAX_AREA: 8000 x 8000 = 64M < 268M, so
-    // use values just under the per-dimension cap whose product exceeds the area cap is
-    // impossible (8192^2 = 67M < 268M). The area guard is unreachable via two valid dims,
-    // so we only assert the dimension guard fires for the larger-than-limit case above.
     expect(() =>
       renderer.renderToCanvas(pd, config, style, {
-        width: 8193,
-        height: 1,
+        width: 4000,
+        height: 100,
         ...baseOptions,
+        deviceMaxTextureSize: 2048,
       }),
-    ).toThrow(/exceed browser limit/);
+    ).toThrow(/exceed this device's limit of 2048px/);
+  });
+
+  it('does not tighten the limit when the device reports more than the cap', () => {
+    const pd = makePlotData([0, 1], [0, 1]);
+    expect(() =>
+      renderer.renderToCanvas(pd, config, style, {
+        width: 4000,
+        height: 100,
+        ...baseOptions,
+        deviceMaxTextureSize: 16384,
+      }),
+    ).not.toThrow(/exceed this device's limit/);
+  });
+
+  it('caps each export dimension at exactly 8192px', () => {
+    // One pixel past the cap is the only case that pins the cap itself: the
+    // 9000px case above would still pass if the cap drifted up to 8999.
+    const pd = makePlotData([0, 1], [0, 1]);
+    const exportAt = (width: number) => () =>
+      renderer.renderToCanvas(pd, config, style, { width, height: 1, ...baseOptions });
+    expect(exportAt(8193)).toThrow(/exceed this device's limit of 8192px/);
+    expect(exportAt(8192)).not.toThrow(/exceed this device's limit/);
   });
 });

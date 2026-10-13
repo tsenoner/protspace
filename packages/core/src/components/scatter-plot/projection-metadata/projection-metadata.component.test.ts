@@ -244,7 +244,7 @@ describe('protspace-projection-metadata annotation quality section', () => {
     expect(statsBlock(otherProjection)).toBeNull();
   });
 
-  it('names the annotation and shows each metric against its embedding ceiling', async () => {
+  it('names the annotation and shows each metric against its embedding reference', async () => {
     const el = await setup(
       { n_components: 2 },
       {
@@ -341,7 +341,7 @@ describe('protspace-projection-metadata annotation quality section', () => {
     expect(popovers[0].description).not.toBe(popovers[1].description);
   });
 
-  it('collapses the ceiling column for a metric missing its embedding row', async () => {
+  it('collapses the embedding column for a metric missing its embedding row', async () => {
     const el = await setup(
       { n_components: 2 },
       {
@@ -355,7 +355,7 @@ describe('protspace-projection-metadata annotation quality section', () => {
     );
 
     const cells = Array.from(statsBlock(el)!.querySelectorAll('.stat-metric-embedding'));
-    // Silhouette has an embedding-space row (a ceiling); Davies-Bouldin has none here.
+    // Silhouette has an embedding-space row (a reference); Davies-Bouldin has none here.
     // Asserted on the rendered text, which is what the reader sees: the cell is kept (the
     // row is display: contents, so dropping it would shift the grid) but left blank.
     expect(cells.map((cell) => cell.textContent!.trim() === '')).toEqual([false, true]);
@@ -396,27 +396,6 @@ describe('metadata sections', () => {
     expect(quality.textContent).not.toContain('N Neighbors');
   });
 
-  it('labels the embedding ceiling instead of abbreviating it', async () => {
-    const el = await setup(
-      { n_neighbors: 15 },
-      {
-        statistics: [
-          statRow(),
-          statRow({ space_kind: 'embedding', space_name: 'prot_t5', value: 0.095 }),
-        ],
-        selectedAnnotation: 'major_group',
-      },
-    );
-
-    const text = el.shadowRoot!.querySelector('.annotation-stats')!.textContent!;
-    // One word. The two headings sit in the grid's auto-sized columns, so a longer phrase
-    // ("Source embedding") set those widths from the heading rather than the number and
-    // starved the metric-name column — measured at 36px against a 120px need. The heading's
-    // own ⓘ carries the full explanation.
-    expect(text).toContain('Embedding');
-    expect(text).not.toContain('emb 0.10');
-  });
-
   it('omits the quality section entirely when there is no faithfulness', async () => {
     const el = await setup({ n_neighbors: 15 });
 
@@ -427,17 +406,17 @@ describe('metadata sections', () => {
     expect(headings).not.toContain('Faithfulness to the embedding');
   });
 
-  it('shows the embedding column header only when some metric has a ceiling', async () => {
-    const withoutCeiling = await setup(
+  it('shows the embedding column header only when some metric has an embedding reference', async () => {
+    const withoutReference = await setup(
       { n_neighbors: 15 },
       { statistics: [statRow()], selectedAnnotation: 'major_group' },
     );
-    expect(statsBlock(withoutCeiling)!.querySelector('.stat-columns')).toBeNull();
-    expect(statsBlock(withoutCeiling)!.querySelector('.stat-metric-label')!.textContent).toContain(
-      'Silhouette',
-    );
+    expect(statsBlock(withoutReference)!.querySelector('.stat-columns')).toBeNull();
+    expect(
+      statsBlock(withoutReference)!.querySelector('.stat-metric-label')!.textContent,
+    ).toContain('Silhouette');
 
-    const withCeiling = await setup(
+    const withReference = await setup(
       { n_neighbors: 15 },
       {
         statistics: [
@@ -447,7 +426,16 @@ describe('metadata sections', () => {
         selectedAnnotation: 'major_group',
       },
     );
-    expect(statsBlock(withCeiling)!.querySelector('.stat-columns')).not.toBeNull();
+    // One word each. The headings sit in the grid's auto-sized columns, so a longer phrase
+    // ("Source embedding") set those widths from the heading rather than the number and
+    // starved the metric-name column — measured at 36px against a 120px need. The heading's
+    // own ⓘ carries the full explanation.
+    const header = statsBlock(withReference)!.querySelector('.stat-columns')!;
+    expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual([
+      '',
+      'Projection',
+      'Embedding',
+    ]);
   });
 
   it('expands a nested quality object inside a JSON field, keeping siblings as parameters', async () => {

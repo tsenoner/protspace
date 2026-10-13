@@ -1,6 +1,27 @@
 ## Performance benchmarking & plotting
 
-### 1. Run benchmarks
+### 1. Fetch the datasets
+
+The benchmark does not read anything the app ships. Its bundles are assets of
+the `perf-datasets` GitHub release, pinned by id, size and sha256 in
+[`datasets.manifest.json`](./datasets.manifest.json). From the **repo root**:
+
+```sh
+pnpm perf:fetch                          # all of them into perf/datasets/ (gitignored)
+pnpm perf:fetch --only 573K_swissprot    # just the ones you need
+```
+
+The fetch verifies every file and fails on a mismatch; a file already there
+with the right bytes is kept. The release holds, under their original names,
+the eleven bundles the app used to serve from `apps/web/public/data/`, plus the
+manuscript's 113K β-lactamase bundle (`beta_lactamase_2026_stats`) and the
+832-protein phosphatase EAT bundle (`phosphatase_eat`), so the ids below and the
+manuscript's perf protocol keep working whatever the Import menu's examples
+become. `apps/protspace/scripts/generate_examples/stage_perf.py`
+stages the release and rewrites the manifest; publishing it is the repository
+owner's step.
+
+### 2. Run benchmarks
 
 From the **repo root**, run the Playwright-based WebGL performance suite:
 
@@ -9,47 +30,149 @@ pnpm perf                        # 10 iterations per scenario (default)
 PERF_ITERATIONS=5 pnpm perf      # override iteration count
 ```
 
-This launches headed browsers (Chrome, Firefox, Safari), loads every dataset
-listed in `apps/web/public/data/datasets.json`, and runs four scenarios per dataset:
+This launches Chrome, Firefox and Safari headless, so no window takes focus
+while it runs; each still renders on the hardware GPU (Chrome through its
+`channel: 'chrome'` headless mode, not the SwiftShader headless shell the E2E
+suite uses). Set `PERF_HEADED=1` to watch the run in headed windows. It loads every dataset
+the manifest marks `"default": true` (the ten of the former
+`apps/web/public/data/datasets.json`), and runs the scenarios in the
+table below against each one.
+The spec serves the in-page suite's `/data/datasets.json` and
+`/data/<id>.parquetbundle` requests from the manifest and `perf/datasets/`; a
+dataset that was never fetched is recorded under `failures`, naming
+`pnpm perf:fetch`, and the rest of the sweep still runs.
+
+The run blocks the Cloudflare Web Analytics beacon that `apps/web/index.html`
+loads. It has no place inside a measured window, and its cross-origin POST was
+reported by WebKit as an uncaught page error, which made the `safari` project
+fail every run. `performance.memory` is Chrome-only, so the heap fields in the
+`load` block are `null` on Firefox and Safari.
 
 #### Scoping to specific datasets
 
 Use `PERF_DATASETS` (comma-separated dataset IDs) to benchmark only the
-datasets you care about. This is especially useful for the large `573K_swissprot`
-dataset, which is too slow to include in every full suite run:
+datasets you care about, including the ones outside the default sweep
+(`573K_swissprot`, `beta_lactamase_2026_stats`, `phosphatase_eat`). This is
+especially useful for the large `573K_swissprot` dataset, which is too slow to
+include in every full suite run:
 
 ```sh
 # Benchmark only the 573K SwissProt dataset, Chrome only
-PERF_DATASETS=573K_swissprot pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot pnpm perf --project=chrome
 
 # Multiple datasets
-PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf -- --project=chrome
+PERF_DATASETS=573K_swissprot,127K_beta_lactamase pnpm perf --project=chrome
 ```
 
+Pass `--project=chrome` directly, with no `--` in front of it. pnpm 10 forwards a
+`--` to the script verbatim, so `pnpm perf -- --project=chrome` reaches Playwright
+as a positional test filter instead of a project filter and every browser project
+runs.
+
+A dataset ID is a **file name**: the in-page suite loads
+`/data/${datasetId}.parquetbundle` (`apps/web/src/perf/webgl-perf-suite.ts`), and
+the spec answers it with the manifest entry of that `file`. So
+`PERF_DATASETS=573K_swissprot` measures `perf/datasets/573K_swissprot.parquetbundle`;
+an id the manifest does not list, such as the ParquetBundle v3 `573K_swissprot_v3`,
+answers 404 and is recorded under `failures`.
+
 The spec passes the IDs to the in-page suite via the `webglPerfDatasets` URL
-parameter, which overrides the default `datasets.json` list.
+parameter, which overrides the default list.
 
-| Scenario           | What it measures                      |
-| ------------------ | ------------------------------------- |
-| `annotationChange` | Re-render after switching annotations |
-| `zoomInOut`        | Zoom-in / zoom-out cycle              |
-| `dragCanvas`       | Pan / drag across the canvas          |
-| `clickPoint`       | Select a point by clicking            |
+Dated copies of runs worth comparing against live in `perf/baselines/`; see the
+README there.
 
-Each browser produces a JSON file saved under `perf/test-results/`, e.g.:
+#### Budgets
+
+The in-page suite runs against two deadlines, so a stalled run produces a
+results file naming what broke instead of an opaque Playwright timeout:
+
+| URL parameter              | Default | Meaning                                                                                                                                     |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `webglPerfBudgetMs`        | 40 min  | Whole run. The results file is emitted when this expires, wherever the sweep has got to; datasets not reached are recorded under `skipped`. |
+| `webglPerfDatasetBudgetMs` | 6 min   | One dataset's load path and readiness gate, shared by every wait in it and capped by the run budget.                                        |
+
+`pnpm perf` derives `webglPerfBudgetMs` from the spec's own download wait, so
+the two cannot drift; the defaults above apply only to a hand-typed
+`?webglPerf=1` in a browser. Raise both, and `SUITE_TIMEOUT_MS` in
+`perf/webgl-perf.spec.ts`, if a legitimately slow sweep needs longer.
+
+| Scenario           | What it measures                                                      |
+| ------------------ | --------------------------------------------------------------------- |
+| `annotationChange` | Re-render after switching annotations                                 |
+| `zoomInOut`        | Zoom-in / zoom-out cycle                                              |
+| `zoomFarOut`       | Zoom to the low end of the zoom extent (k = 0.1) and back             |
+| `dragCanvas`       | Pan / drag across the canvas, settling after every step               |
+| `dragContinuous`   | Sustained drag: one pan per animation frame, never waiting for settle |
+| `densityZoom`      | The `zoomInOut` cycle with `densityLayer: 'on'` forced on the plot    |
+| `contourDrag`      | `dragContinuous` with `densityLayer: 'on'`                            |
+| `clickPoint`       | Select a point by clicking                                            |
+
+Every pass records `durationMs` (CPU submission time: the window around
+`render()`, which returns as soon as the commands are queued) and `gpuSyncedMs`
+(the same window extended until the GPU has finished, via a one-pixel
+`readPixels`). A shader that costs the GPU tens of milliseconds is invisible in
+the first and visible in the second. The sync is perf-only: it sits behind the
+recording token, so production frames never make the call.
+
+The camera scenarios (`zoomInOut`, `zoomFarOut`, `dragCanvas`, `dragContinuous`,
+`densityZoom`, `contourDrag`)
+are asserted to upload zero bytes per pass and to draw every point handed to the
+renderer. That is the #456 regression gate, and it is machine-independent: the
+camera is a shader uniform, so moving it cannot require an upload.
+
+Each browser produces a JSON file under its own directory in
+`perf/test-results/` (Playwright names the inner directory after the test, so
+the exact name tracks the test title):
 
 ```
 perf/test-results/
-  webgl-perf-suite-chrome/
-    webgl-perf-suite-chrome.json
-  webgl-perf-suite-firefox/
-    webgl-perf-suite-firefox.json
-  webgl-perf-suite-safari/
-    webgl-perf-suite-safari.json
+  chrome/
+    webgl-perf-…-chrome/
+      webgl-perf-suite-chrome.json
+      webgl-perf-suite-chrome-cdp.json
+  firefox/
+    webgl-perf-…-firefox/
+      webgl-perf-suite-firefox.json
+  safari/
+    webgl-perf-…-safari/
+      webgl-perf-suite-safari.json
 ```
 
+The per-browser split matters: Playwright deletes the output directory of every
+_selected_ project when a run starts, so with one shared directory
+`pnpm perf -- --project=chrome` used to delete the Firefox and Safari results
+from the previous full run, and the plotter would then quietly draw
+single-browser charts. The plotter searches recursively, so it needs no change.
+
+A completed run prints `[WebServer] @protspace/app:dev: ELIFECYCLE Command
+failed.` just before its result line. That is the dev server reacting to the
+`SIGINT` Playwright sends to shut it down, not a test failure — read the
+`N passed` line below it. The signal is what stops the server leaking the port
+into the next run; see the `gracefulShutdown` comment in `playwright.config.ts`.
+
 Each JSON contains per-dataset, per-scenario render-pass timings, dataset
-metadata (point count), and browser/hardware metadata collected at runtime.
+metadata (point count), and browser/hardware metadata collected at runtime, in a
+top-level `results` array.
+
+Datasets that did not produce measurements are recorded beside `results`, never
+inside it, under two further top-level arrays:
+
+| Key        | Holds                                                    |
+| ---------- | -------------------------------------------------------- |
+| `failures` | `{ datasetId, error }` for each dataset that threw       |
+| `skipped`  | `{ datasetId, reason }` for each dataset never attempted |
+
+They sit outside `results` because `plot_perf_results.py` yields every member of
+`results` as a dataset payload — a failure record in there would plot as a
+phantom dataset with empty bars. The spec fails the run on either array being
+non-empty and prints its contents, so a partial sweep still names what broke.
+
+The run loads every dataset as a _demo_ load, so it neither writes the bundle to
+OPFS nor replaces whatever dataset you had persisted for reload. That also keeps
+the persist — a full copy of a bundle, awaited before render — out of
+`loadDurationMs`; before this, load timings included it and WebKit failed the
+write outright on large bundles.
 
 #### Per-dataset `load` metrics and CDP heap sidecar
 
@@ -87,7 +210,7 @@ perf/test-results/webgl-perf-suite-chrome/
 
 The CDP sidecar is best-effort and is silently skipped on Firefox and Safari.
 
-### 2. Generate plots
+### 3. Generate plots
 
 #### Setup (kept entirely in `perf/`)
 

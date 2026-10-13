@@ -2,6 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
+    // Without it `composite` roots the output at this directory, so declarations land in
+    // dist/src/ instead of where package.json's `types` points (dist/index.d.ts).
+    "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "composite": true,

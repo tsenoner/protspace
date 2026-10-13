@@ -1,0 +1,31 @@
+{
+  "$comment": "Fig. 3: ten families plus Other in Kelly's size-descending colours; class C first in the legend and painted on top.",
+  "protein_families": {
+    "sortMode": "manual",
+    "maxVisibleValues": 10,
+    "pinnedValues": [
+      "class-C beta-lactamase family",
+      "metallo-beta-lactamase superfamily",
+      "class-A beta-lactamase family",
+      "DNA repair metallo-beta-lactamase (DRMBL) family",
+      "beta-lactamase family",
+      "class-D beta-lactamase family",
+      "hcp beta-lactamase family",
+      "P-Pant transferase superfamily",
+      "OBAP family",
+      "calreticulin family"
+    ],
+    "colors": {
+      "metallo-beta-lactamase superfamily": "#F3C300",
+      "class-A beta-lactamase family": "#875692",
+      "DNA repair metallo-beta-lactamase (DRMBL) family": "#F38400",
+      "beta-lactamase family": "#A1CAF1",
+      "class-D beta-lactamase family": "#BE0032",
+      "class-C beta-lactamase family": "#C2B280",
+      "hcp beta-lactamase family": "#008856",
+      "P-Pant transferase superfamily": "#E68FAC",
+      "OBAP family": "#0067A5",
+      "calreticulin family": "#F99379"
+    }
+  }
+}

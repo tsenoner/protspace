@@ -77,7 +77,6 @@ def test_to_arrow_has_ten_column_schema():
         "extra_json",
     ]
     assert table.schema.names == names
-    assert len(names) == 10
     assert table.num_rows == 1
     assert table.column("value")[0].as_py() == pytest.approx(0.42)
 
@@ -108,15 +107,6 @@ def test_statrow_carries_annotation_column():
     report.add([row])
     tbl = report.to_arrow()
     assert tbl.column("annotation").to_pylist() == ["major_group"]
-
-
-def test_statcontext_defaults_annotations_none():
-    import numpy as np
-
-    from protspace.stats.base import StatContext
-
-    ctx = StatContext("projection", "P", coords=np.zeros((3, 2)), ids=["a", "b", "c"])
-    assert ctx.annotations is None
 
 
 # --------------------------------------------------------------------------- #
@@ -298,12 +288,15 @@ def test_cluster_self_validity_matches_direct_annotation_scoring():
     assert pipeline_rows  # the guard is worthless if it compares two empty lists
 
     # Rebuild the labels the way an out-of-band re-score must: from the membership
-    # column already in the bundle, with the `|silhouette` confidence stripped.
+    # column already in the bundle, read as it is.
     column = next(o for o in outs if isinstance(o, AnnotationColumn))
-    labels = {pid: str(v).split("|", 1)[0] for pid, v in column.values.items()}
     direct = AnnotationValidityStatistic(label_kind="kmeans_elbow").compute(
         StatContext(
-            "projection", "PCA_2", coords=X, ids=ids, annotations={column.name: labels}
+            "projection",
+            "PCA_2",
+            coords=X,
+            ids=ids,
+            annotations={column.name: column.values},
         )
     )
 
@@ -471,6 +464,75 @@ def test_faithfulness_skip_row_routes_to_projection_metadata():
     )
     assert len(rows) == 1 and rows[0].extra.get("skipped") == "n_too_large"
     assert rows[0].destination == "projection_metadata"
+
+
+def _large_faithfulness_ctx(n, dim=4, sample_threshold=60, dtype=float):
+    rng = np.random.default_rng(7)
+    return StatContext(
+        "projection",
+        "P",
+        coords=rng.normal(size=(n, 2)),
+        ids=[f"p{i:06d}" for i in range(n)],
+        embedding=rng.normal(size=(n, dim)).astype(dtype),
+        embedding_name="e",
+        params={"sample_threshold": sample_threshold},
+    )
+
+
+def test_faithfulness_has_no_default_size_ceiling():
+    """Above the old 20,000-row default ceiling faithfulness still scores the
+    bounded subsample instead of emitting a single ``n_too_large`` skip row."""
+    rows = FaithfulnessStatistic().compute(_large_faithfulness_ctx(20_001))
+    by_metric = {r.metric: r for r in rows}
+    assert set(by_metric) == {
+        "knn_overlap",
+        "trustworthiness",
+        "continuity",
+        "random_triplet",
+        "spearman_distance",
+    }
+    for row in rows:
+        assert "skipped" not in row.extra, row.metric
+        assert row.extra["sampled"] is True
+        assert row.extra["sample_size"] == 60
+        assert np.isfinite(row.value), row.metric
+
+
+def test_faithfulness_upcasts_only_the_subsample():
+    """The float64 upcast happens after the subsample, so a large float32
+    embedding is never copied in full (a full float64 copy here is ~41 MB). n
+    stays under any plausible ceiling so the test isolates the gather order."""
+    import tracemalloc
+
+    stat = FaithfulnessStatistic()
+    stat.compute(_large_faithfulness_ctx(200))  # warm the function-local imports
+    ctx = _large_faithfulness_ctx(19_999, dim=256, dtype=np.float32)
+    tracemalloc.start()
+    try:
+        stat.compute(ctx)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < ctx.embedding.nbytes / 2, peak
+
+
+def test_faithfulness_rejects_misaligned_inputs():
+    """Only the subsampled rows are gathered, so a row-count mismatch between the
+    embedding and the coords/ids must be rejected explicitly rather than scoring
+    misaligned rows whenever the draw happens to stay in bounds."""
+    n = 200
+    rng = np.random.default_rng(0)
+    ctx = StatContext(
+        "projection",
+        "P",
+        coords=rng.normal(size=(n + 1, 2)),
+        ids=[f"p{i:04d}" for i in range(n + 1)],
+        embedding=rng.normal(size=(n, 4)),
+        embedding_name="e",
+        params={"sample_threshold": 60},
+    )
+    with pytest.raises(ValueError, match="not row-aligned"):
+        FaithfulnessStatistic().compute(ctx)
 
 
 # --------------------------------------------------------------------------- #
@@ -933,22 +995,6 @@ def test_kmeans_elbow_subsample_is_row_order_invariant_with_ids():
     assert m1 == m2  # per-id membership invariant to input row order
 
 
-def test_elbow_result_has_no_silhouette_optimal_k():
-    """The write-only silhouette_optimal_k field/sweep was removed."""
-    from dataclasses import fields
-
-    X, _ = _blobs(n=200, centers=3, dim=2, seed=44)
-    res = kmeans_elbow(X, rng_seed=42)
-    assert "silhouette_optimal_k" not in {f.name for f in fields(res)}
-    ctx = StatContext("projection", "P", coords=X, ids=[str(i) for i in range(len(X))])
-    meta = next(
-        r
-        for r in ClusterValidityStatistic().compute(ctx)
-        if isinstance(r, StatRow) and r.metric == "n_clusters"
-    )
-    assert "silhouette_optimal_k" not in meta.extra
-
-
 def test_cluster_silhouette_matches_sklearn_on_the_membership_labels():
     """The silhouette reported for a cluster column is sklearn's silhouette on exactly
     the labels that column carries — not on some other labelling. (This used to pin the
@@ -1121,6 +1167,8 @@ def test_faithfulness_emits_global_metrics_tagged_by_scope():
 
 
 def test_global_metrics_higher_for_faithful_projection():
+    """The only test that catches the global metrics ignoring the projection:
+    a faithful PCA must score above random coordinates, not just above a bar."""
     X, _ = _blobs(n=150, centers=5, dim=8, seed=55)
     faithful = PCA(n_components=2, random_state=0).fit_transform(X)
     rand = np.random.default_rng(0).normal(size=(150, 2))
@@ -1181,7 +1229,7 @@ def test_align_positional_fallback_when_no_ids_and_rowcounts_match():
 def test_align_returns_views_on_identity_match_without_copy():
     """When every row matches in order (the common single-embedding path), `_align`
     must return the source arrays as-is — not a full fancy-index copy that would
-    waste ~GB at 570k scale when faithfulness then skips past its ceiling."""
+    waste ~GB at 570k scale when faithfulness reads only its bounded subsample."""
     from protspace.stats.driver import _align
 
     ids = [f"p{i}" for i in range(5)]

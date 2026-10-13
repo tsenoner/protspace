@@ -3,7 +3,11 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render } from 'lit';
-import { renderSettingsDialog, type SettingsDialogCallbacks } from './legend-settings-dialog';
+import {
+  renderSettingsDialog,
+  type SettingsDialogCallbacks,
+  type SettingsDialogState,
+} from './legend-settings-dialog';
 import type { LegendPersistedSettings, LegendSortMode } from './types';
 import {
   DEFAULT_NUMERIC_PALETTE_ID,
@@ -19,7 +23,7 @@ type LegendTestElement = HTMLElement & {
   data?: {
     annotations?: Record<string, { kind?: 'categorical' | 'numeric'; values: string[] }>;
     protein_ids?: string[];
-    numeric_annotation_data?: Record<string, Array<number | null>>;
+    numeric_annotation_data?: Record<string, Float64Array>;
   };
   proteinIds: string[];
   annotationData: { name: string; values: string[]; kind?: 'categorical' | 'numeric' };
@@ -48,7 +52,7 @@ type LegendTestElement = HTMLElement & {
       data?: {
         protein_ids?: string[];
         annotations?: Record<string, { kind?: 'categorical' | 'numeric'; values: string[] }>;
-        numeric_annotation_data?: Record<string, Array<number | null>>;
+        numeric_annotation_data?: Record<string, Float64Array>;
       };
       dispatchEvent?: (event: Event) => boolean;
     } | null;
@@ -104,6 +108,7 @@ function renderSettingsDialogToContainer(overrides = {}) {
       {
         maxVisibleValues: 25,
         shapeSize: 12,
+        defaultShapeSize: 10,
         enableDuplicateStackUI: false,
         selectedAnnotation: 'score',
         annotationSortModes: {},
@@ -125,18 +130,6 @@ function renderSettingsDialogToContainer(overrides = {}) {
 }
 
 describe('renderSettingsDialog', () => {
-  it('does not render manual annotation type override controls', () => {
-    const { container } = renderSettingsDialogToContainer();
-    const select = container.querySelector('#annotation-type-override') as HTMLSelectElement | null;
-
-    expect(select).toBeNull();
-
-    const sections = [...container.querySelectorAll('.settings-section-title')].map((section) =>
-      section.textContent?.trim(),
-    );
-    expect(sections).not.toContain('Annotation type');
-  });
-
   it('keeps "By separation" checked on reload, before this projection\'s scores arrive', () => {
     // The deliberate reload case: hasCategoryScores is false (statistics have not synced
     // yet) but the persisted sort mode is still 'silhouette-desc'. Dropping the option here
@@ -158,6 +151,141 @@ describe('renderSettingsDialog', () => {
       ?.closest('label')
       ?.textContent?.trim();
     expect(checkedLabel).toBe('By separation');
+  });
+});
+
+/**
+ * The dialog's copy, numeric and categorical. These were checked only by the
+ * numeric-binning e2e dialog reads; the rendering is the same here, without a browser.
+ */
+describe('settings dialog copy', () => {
+  const text = (el: Element | null | undefined) => el?.textContent?.trim() ?? '';
+  const fieldLabel = (container: HTMLElement, inputId: string) =>
+    text(
+      container
+        .querySelector(`#${inputId}`)
+        ?.closest('.other-items-list-item')
+        ?.querySelector('.other-items-list-item-label'),
+    );
+  const sortingLabels = (container: HTMLElement) =>
+    [...container.querySelectorAll('input[type="radio"][name^="sort-type-"]')].map((input) =>
+      text(input.closest('label')),
+    );
+  const selectOptions = (container: HTMLElement, selectId: string) => [
+    ...((container.querySelector(`#${selectId}`) as HTMLSelectElement | null)?.options ?? []),
+  ];
+
+  it('names the numeric controls and offers the gradient palettes', () => {
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'length',
+      isNumericAnnotation: true,
+      selectedPaletteId: 'batlow',
+      selectedNumericStrategy: 'quantile',
+    });
+
+    expect(text(container.querySelector('#legend-settings-title'))).toBe('Legend settings: length');
+    expect(fieldLabel(container, 'max-visible-input')).toBe('Max legend items');
+    expect(fieldLabel(container, 'shape-size-input')).toBe('Point size');
+    expect(sortingLabels(container)).toEqual(['By numeric value', 'Manual order']);
+    expect(selectOptions(container, 'palette-select').map(text)).toEqual([
+      'Batlow - Scientific sequential gradient',
+      'Cividis - Colorblind-friendly sequential gradient',
+      'Inferno - High-contrast sequential gradient',
+      'Plasma - Vivid sequential gradient',
+      'Viridis - Perceptually uniform sequential gradient',
+    ]);
+    expect(container.querySelector('.color-palette-gradient-bar')?.getAttribute('aria-label')).toBe(
+      'Batlow continuous gradient preview',
+    );
+    expect([...container.querySelectorAll('.color-palette-gradient-scale span')].map(text)).toEqual(
+      ['Low', 'High'],
+    );
+    expect(
+      selectOptions(container, 'numeric-distribution-select').map((option) => [
+        option.value,
+        text(option),
+      ]),
+    ).toEqual([
+      ['linear', 'Linear'],
+      ['quantile', 'Quantile'],
+      ['logarithmic', 'Logarithmic'],
+    ]);
+  });
+
+  it('names the categorical controls and offers no gradient palette or preview', () => {
+    const { container } = renderSettingsDialogToContainer({
+      selectedAnnotation: 'family',
+      isNumericAnnotation: false,
+      selectedPaletteId: 'kellys',
+    });
+
+    expect(text(container.querySelector('#legend-settings-title'))).toBe('Legend settings: family');
+    expect(fieldLabel(container, 'max-visible-input')).toBe('Max legend items');
+    expect(fieldLabel(container, 'shape-size-input')).toBe('Shape size');
+    expect(sortingLabels(container)).toEqual(['By category size', 'Alphabetical', 'Manual order']);
+    expect(selectOptions(container, 'palette-select').map((option) => option.value)).toEqual([
+      'dark2',
+      'kellys',
+      'okabeIto',
+      'set2',
+      'tableau10',
+      'tolBright',
+    ]);
+    expect(container.querySelector('.color-palette-gradient-bar')).toBeNull();
+    expect(container.querySelector('#numeric-distribution-select')).toBeNull();
+  });
+});
+
+describe('shape size input', () => {
+  function typeSize(value: string) {
+    const { container, callbacks } = renderSettingsDialogToContainer();
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    return { input, callbacks };
+  }
+
+  function renderSize(state: Partial<SettingsDialogState>) {
+    const { container } = renderSettingsDialogToContainer(state);
+    const input = container.querySelector('#shape-size-input') as HTMLInputElement;
+    const hint = input.parentElement?.querySelector('.settings-note')?.textContent ?? '';
+    return { input, hint };
+  }
+
+  it('accepts sizes down to 1', () => {
+    const { input, callbacks } = typeSize('1');
+    expect(input.min).toBe('1');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(1);
+  });
+
+  it("suggests the dataset's own default and names it in a hint", () => {
+    const { input, hint } = renderSize({ shapeSize: 2, defaultShapeSize: 2 });
+    expect(input.value).toBe('2');
+    expect(input.placeholder).toBe('2');
+    expect(hint).toContain('Default for this dataset: 2');
+  });
+
+  it('caps typed sizes at 64', () => {
+    const { input, callbacks } = typeSize('100');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(64);
+    expect(input.value).toBe('64');
+  });
+
+  it('reports an emptied field as no size, so Save applies the default', () => {
+    const { callbacks } = typeSize('');
+    expect(callbacks.onShapeSizeChange).toHaveBeenCalledWith(null);
+  });
+
+  it('ignores a size below 1', () => {
+    const { callbacks } = typeSize('0');
+    expect(callbacks.onShapeSizeChange).not.toHaveBeenCalled();
+  });
+
+  it('shows an emptied field as empty, with the default as placeholder', () => {
+    const { input, hint } = renderSize({ shapeSize: null, defaultShapeSize: 2 });
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('2');
+    expect(hint).toContain('clear the field to use it');
   });
 });
 
@@ -208,19 +336,6 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         section.textContent?.trim(),
       ),
     ).toContain('Bin order');
-  });
-
-  it('does not render an "Include shapes" checkbox', () => {
-    const el = createLegend();
-    configureOpenSettingsDialog(el, DEFAULT_NUMERIC_PALETTE_ID);
-    const container = document.createElement('div');
-
-    render(el._renderSettingsDialog(), container);
-
-    const labels = Array.from(container.querySelectorAll('label')).map((l) =>
-      (l.textContent ?? '').trim(),
-    );
-    expect(labels).not.toContain('Include shapes');
   });
 
   it('normalizes palette changes using the inferred numeric annotation type', () => {
@@ -342,7 +457,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
             score: { kind: 'numeric', values: [] },
           },
           numeric_annotation_data: {
-            score: [1, 2],
+            score: new Float64Array([1, 2]),
           },
         },
       },
@@ -359,7 +474,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         score: { kind: 'numeric', values: [] },
       },
       numeric_annotation_data: {
-        score: [1, 2],
+        score: new Float64Array([1, 2]),
       },
     });
   });
@@ -383,7 +498,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
             score: { kind: 'numeric', values: [] },
           },
           numeric_annotation_data: {
-            score: [1, 2],
+            score: new Float64Array([1, 2]),
           },
         },
       },
@@ -411,7 +526,7 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
         score: { kind: 'numeric', values: [] },
       },
       numeric_annotation_data: {
-        score: [1, 2],
+        score: new Float64Array([1, 2]),
       },
     };
     el._numericSettingsByAnnotation = {};
@@ -433,5 +548,29 @@ describe('ProtspaceLegend settings dialog numeric inference integration', () => 
 
     expect(syncNumericAnnotationSettings).toHaveBeenCalled();
     expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+});
+
+/** The header's reverse button is named for what it does to the current order. */
+describe('legend header reverse button', () => {
+  it.each([
+    ['categorical', 'size-desc', 'Reverse z-order (keep Other last)'],
+    ['numeric', 'alpha-asc', 'Show high to low'],
+    ['numeric', 'alpha-desc', 'Show low to high'],
+    ['numeric', 'manual', 'Reverse manual order'],
+  ] as const)('labels it for a %s legend in %s order', (kind, sortMode, label) => {
+    const el = document.createElement('protspace-legend') as LegendTestElement & {
+      render: () => unknown;
+    };
+    el.selectedAnnotation = 'score';
+    el.annotationData = { name: 'score', values: ['1', '2'], kind };
+    el._annotationSortModes = { score: sortMode };
+    const container = document.createElement('div');
+
+    render(el.render(), container);
+
+    const button = container.querySelector('button.reverse-button');
+    expect(button?.getAttribute('aria-label')).toBe(label);
+    expect(button?.getAttribute('title')).toBe(label);
   });
 });

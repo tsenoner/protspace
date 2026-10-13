@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ProtSpaceExporter, createExporter } from './export-utils';
-import type { ExportableElement, ExportableData, ExportOptions } from './export-utils';
+import type { ExportableElement, ExportableData } from './export-utils';
 import { NA_VALUE } from './missing-values';
 
 /**
@@ -38,216 +38,84 @@ describe('createExporter', () => {
     const exporter = createExporter(mockElement, ['P1', 'P2']);
     expect(exporter).toBeInstanceOf(ProtSpaceExporter);
   });
-
-  it('creates an exporter with all parameters', () => {
-    const mockElement = createMockElement();
-    const exporter = createExporter(mockElement, ['P1']);
-    expect(exporter).toBeInstanceOf(ProtSpaceExporter);
-  });
 });
 
 describe('ProtSpaceExporter.validateCanvasDimensions', () => {
-  it('should accept small dimensions', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](2000, 1000);
+  // 95% of the 8192px per-side limit = 7782px. The area check behind it is
+  // unreachable today (7782² ≈ 60.6M px < 0.95 × 268M px), so no row claims it.
+  it.each([
+    [2000, 1000],
+    [6000, 3000],
+    [7700, 4000],
+    [7000, 2000],
+    [2000, 7000],
+    [7782, 7782],
+    [100, 100],
+  ])('accepts %ix%i', (width, height) => {
+    const result = ProtSpaceExporter['validateCanvasDimensions'](width, height);
     expect(result.isValid).toBe(true);
     expect(result.reason).toBeUndefined();
   });
 
-  it('should accept 6000px dimensions', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](6000, 3000);
-    expect(result.isValid).toBe(true);
-    expect(result.reason).toBeUndefined();
-  });
-
-  it('should accept dimensions up to ~7782px (95% of 8192)', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](7700, 4000);
-    expect(result.isValid).toBe(true);
-  });
-
-  it('should reject dimensions exceeding 8192px limit', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](8500, 4000);
+  it.each([
+    [8500, 4000],
+    [9000, 1000],
+    [1000, 9000],
+    [7783, 7783],
+    [20000, 20000],
+  ])('rejects %ix%i (per-side limit)', (width, height) => {
+    const result = ProtSpaceExporter['validateCanvasDimensions'](width, height);
     expect(result.isValid).toBe(false);
     expect(result.reason).toContain('8192px');
   });
-
-  it('should reject very large dimensions that exceed area limit', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](20000, 20000);
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toBeDefined();
-  });
-
-  it('should handle non-square aspect ratios', () => {
-    // Wide but within limits
-    const result1 = ProtSpaceExporter['validateCanvasDimensions'](7000, 2000);
-    expect(result1.isValid).toBe(true);
-
-    // Tall but within limits
-    const result2 = ProtSpaceExporter['validateCanvasDimensions'](2000, 7000);
-    expect(result2.isValid).toBe(true);
-  });
-
-  it('should reject if width exceeds limit', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](9000, 1000);
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain('limit');
-  });
-
-  it('should reject if height exceeds limit', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](1000, 9000);
-    expect(result.isValid).toBe(false);
-    expect(result.reason).toContain('limit');
-  });
-
-  it('should accept maximum safe dimensions', () => {
-    // 95% of 8192 = 7782
-    const maxSafe = Math.floor(8192 * 0.95);
-    const result = ProtSpaceExporter['validateCanvasDimensions'](maxSafe, maxSafe);
-    expect(result.isValid).toBe(true);
-  });
-
-  it('should accept very small dimensions', () => {
-    const result = ProtSpaceExporter['validateCanvasDimensions'](100, 100);
-    expect(result.isValid).toBe(true);
-  });
 });
 
-describe('Export scale factor calculations', () => {
-  const BASE_FONT_SIZE = 24;
-
-  it('calculates correct scale factor for default font size', () => {
-    const fontSizePx = 24;
-    const scaleFactor = fontSizePx / BASE_FONT_SIZE;
-    expect(scaleFactor).toBe(1.0);
+describe('generateExportFileName', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Midday UTC: the date part comes from toISOString().
+    vi.setSystemTime(new Date('2024-01-15T12:00:00Z'));
   });
 
-  it('calculates correct scale factor for smaller font', () => {
-    const fontSizePx = 12;
-    const scaleFactor = fontSizePx / BASE_FONT_SIZE;
-    expect(scaleFactor).toBe(0.5);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('calculates correct scale factor for larger font', () => {
-    const fontSizePx = 48;
-    const scaleFactor = fontSizePx / BASE_FONT_SIZE;
-    expect(scaleFactor).toBe(2.0);
+  const fileNameFor = (overrides: Partial<ExportableElement>, extension = 'png') =>
+    createExporter(createMockElement(overrides))['generateExportFileName'](extension);
+
+  it('sanitises and lowercases names and strips a trailing _2/_3 dimension suffix', () => {
+    const name = fileNameFor({
+      getCurrentData: (): ExportableData => ({
+        protein_ids: [],
+        annotations: {},
+        annotation_data: {},
+        projections: [{ name: 'UMAP 3D_3' }],
+      }),
+      selectedAnnotation: 'Gene Name (EC)',
+    });
+    expect(name).toBe('protspace_umap_3d_gene_name__ec__2024-01-15.png');
   });
 
-  it('handles minimum font size', () => {
-    const fontSizePx = 8;
-    const scaleFactor = fontSizePx / BASE_FONT_SIZE;
-    expect(scaleFactor).toBeCloseTo(0.333, 2);
+  it('uses the selected projection index', () => {
+    expect(fileNameFor({ selectedProjectionIndex: 0 }, 'pdf')).toBe(
+      'protspace_pca_species_2024-01-15.pdf',
+    );
+    expect(fileNameFor({ selectedProjectionIndex: 1 })).toBe(
+      'protspace_umap_species_2024-01-15.png',
+    );
   });
 
-  it('handles maximum font size', () => {
-    const fontSizePx = 120;
-    const scaleFactor = fontSizePx / BASE_FONT_SIZE;
-    expect(scaleFactor).toBe(5.0);
-  });
-});
-
-describe('Export options validation', () => {
-  it('accepts valid export options', () => {
-    const options: ExportOptions = {
-      targetWidth: 2048,
-      targetHeight: 1024,
-      legendWidthPercent: 25,
-      legendScaleFactor: 1.0,
-      includeSelection: false,
-      backgroundColor: '#ffffff',
-    };
-
-    expect(options.targetWidth).toBe(2048);
-    expect(options.targetHeight).toBe(1024);
-    expect(options.legendWidthPercent).toBe(25);
-    expect(options.legendScaleFactor).toBe(1.0);
-  });
-
-  it('handles optional properties', () => {
-    const minimalOptions: ExportOptions = {};
-
-    expect(minimalOptions.targetWidth).toBeUndefined();
-    expect(minimalOptions.targetHeight).toBeUndefined();
-    expect(minimalOptions.legendWidthPercent).toBeUndefined();
-  });
-
-  it('accepts custom export name', () => {
-    const options: ExportOptions = {
-      exportName: 'my_custom_export.png',
-    };
-
-    expect(options.exportName).toBe('my_custom_export.png');
-  });
-
-  it('accepts includeLegend option', () => {
-    const withLegend: ExportOptions = { includeLegend: true };
-    const withoutLegend: ExportOptions = { includeLegend: false };
-
-    expect(withLegend.includeLegend).toBe(true);
-    expect(withoutLegend.includeLegend).toBe(false);
-  });
-
-  it('defaults includeLegend to undefined (resolved to true by getOptionsWithDefaults)', () => {
-    const options: ExportOptions = {};
-    expect(options.includeLegend).toBeUndefined();
-  });
-});
-
-describe('Export filename generation', () => {
-  it('generates consistent filename format', () => {
-    // Expected format: protspace_{projection}_{annotation}_{date}.{ext}
-    const pattern = /^protspace_[a-z0-9_-]+_[a-z0-9_-]+_\d{4}-\d{2}-\d{2}\.(png|pdf)$/;
-
-    expect('protspace_pca_species_2024-01-15.png').toMatch(pattern);
-    expect('protspace_umap_gene_2024-12-31.pdf').toMatch(pattern);
-  });
-
-  it('sanitizes projection names', () => {
-    // Spaces and special chars should be replaced with underscores
-    const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-
-    expect(sanitize('PCA 2D')).toBe('pca_2d');
-    expect(sanitize('UMAP@3D')).toBe('umap_3d');
-    expect(sanitize('t-SNE')).toBe('t-sne');
-  });
-
-  it('removes dimension suffix from projection names', () => {
-    const removeDimensionSuffix = (name: string) => name.replace(/_[23]$/, '');
-
-    expect(removeDimensionSuffix('pca_2')).toBe('pca');
-    expect(removeDimensionSuffix('umap_3')).toBe('umap');
-    expect(removeDimensionSuffix('tsne_2d')).toBe('tsne_2d'); // Only removes _2 or _3
-  });
-});
-
-describe('Export aspect ratio calculations', () => {
-  it('maintains aspect ratio when scaling width', () => {
-    const originalWidth = 2048;
-    const originalHeight = 1024;
-    const newWidth = 4096;
-
-    const aspectRatio = originalWidth / originalHeight;
-    const newHeight = Math.round(newWidth / aspectRatio);
-
-    expect(newHeight).toBe(2048);
-  });
-
-  it('maintains aspect ratio when scaling height', () => {
-    const originalWidth = 2048;
-    const originalHeight = 1024;
-    const newHeight = 2048;
-
-    const aspectRatio = originalWidth / originalHeight;
-    const newWidth = Math.round(newHeight * aspectRatio);
-
-    expect(newWidth).toBe(4096);
-  });
-
-  it('handles non-standard aspect ratios', () => {
-    const width = 1920;
-    const height = 1080;
-    const aspectRatio = width / height;
-
-    expect(aspectRatio).toBeCloseTo(16 / 9, 2);
+  it('falls back to "unknown" without projections or a selected annotation', () => {
+    const name = fileNameFor({
+      getCurrentData: (): ExportableData => ({
+        protein_ids: [],
+        annotations: {},
+        annotation_data: {},
+      }),
+      selectedAnnotation: '',
+    });
+    expect(name).toBe('protspace_unknown_unknown_2024-01-15.png');
   });
 });
 
@@ -321,109 +189,6 @@ describe('N/A handling in export', () => {
       const naItem = items.find((it) => it.value === NA_VALUE);
       expect(naItem).toBeDefined();
       expect(naItem!.count).toBe(1);
-    });
-  });
-
-  describe('exportProteinIds N/A visibility', () => {
-    it('should exclude N/A proteins when __NA__ is hidden', () => {
-      const data: ExportableData = {
-        protein_ids: ['P1', 'P2', 'P3'],
-        annotations: {
-          species: {
-            values: ['human', 'mouse', null],
-            colors: ['#ff0000', '#00ff00', '#888888'],
-            shapes: ['circle', 'square', 'triangle'],
-          },
-        },
-        annotation_data: { species: [[0], [1], [2]] },
-      };
-
-      // Simulate the visibility filtering logic from exportProteinIds
-      const hiddenValues = [NA_VALUE];
-      const hiddenSet = new Set(hiddenValues);
-      const annotationInfo = data.annotations.species;
-      const indices = data.annotation_data.species;
-
-      const visibleIds = data.protein_ids.filter((_id, i) => {
-        const viArray = indices[i];
-        if (!Array.isArray(viArray) || viArray.length === 0) {
-          return !hiddenSet.has(NA_VALUE);
-        }
-        return viArray.some((vi) => {
-          const value =
-            typeof vi === 'number' && vi >= 0 && vi < annotationInfo.values.length
-              ? (annotationInfo.values[vi] ?? null)
-              : null;
-          const key = value === null ? NA_VALUE : String(value);
-          return !hiddenSet.has(key);
-        });
-      });
-
-      expect(visibleIds).toEqual(['P1', 'P2']);
-      expect(visibleIds).not.toContain('P3');
-    });
-
-    it('should include N/A proteins when __NA__ is not hidden', () => {
-      const data: ExportableData = {
-        protein_ids: ['P1', 'P2', 'P3'],
-        annotations: {
-          species: {
-            values: ['human', 'mouse', null],
-            colors: ['#ff0000', '#00ff00', '#888888'],
-            shapes: ['circle', 'square', 'triangle'],
-          },
-        },
-        annotation_data: { species: [[0], [1], [2]] },
-      };
-
-      const hiddenValues: string[] = [];
-      const hiddenSet = new Set(hiddenValues);
-      const annotationInfo = data.annotations.species;
-      const indices = data.annotation_data.species;
-
-      const visibleIds = data.protein_ids.filter((_id, i) => {
-        const viArray = indices[i];
-        if (!Array.isArray(viArray) || viArray.length === 0) {
-          return !hiddenSet.has(NA_VALUE);
-        }
-        return viArray.some((vi) => {
-          const value =
-            typeof vi === 'number' && vi >= 0 && vi < annotationInfo.values.length
-              ? (annotationInfo.values[vi] ?? null)
-              : null;
-          const key = value === null ? NA_VALUE : String(value);
-          return !hiddenSet.has(key);
-        });
-      });
-
-      expect(visibleIds).toEqual(['P1', 'P2', 'P3']);
-    });
-
-    it('should exclude proteins with missing annotation data when __NA__ is hidden', () => {
-      const data: ExportableData = {
-        protein_ids: ['P1', 'P2'],
-        annotations: {
-          species: {
-            values: ['human'],
-            colors: ['#ff0000'],
-            shapes: ['circle'],
-          },
-        },
-        annotation_data: { species: [[0], []] }, // P2 has empty annotation data
-      };
-
-      const hiddenValues = [NA_VALUE];
-      const hiddenSet = new Set(hiddenValues);
-
-      const visibleIds = data.protein_ids.filter((_id, i) => {
-        const viArray = data.annotation_data.species[i];
-        if (!Array.isArray(viArray) || viArray.length === 0) {
-          return !hiddenSet.has(NA_VALUE);
-        }
-        return true;
-      });
-
-      expect(visibleIds).toEqual(['P1']);
     });
   });
 });

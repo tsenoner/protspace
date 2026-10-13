@@ -1,0 +1,59 @@
+name: Biocentral canary
+
+# Early warning that the live Biocentral server and the client protspace ships no longer
+# agree. Biocentral's v2 server broke every released biocentral-api 1.x client at once,
+# with no notice, and the first anyone knew was a user's bug report while the hosted
+# FASTA upload was down. Nothing else here could have noticed: every other test mocks the
+# server.
+#
+# It runs the live checks in apps/protspace/tests/test_biocentral_live.py against the
+# client the LOCK pins (the one CI and the prep image use), once a day: a server major the
+# client refuses, or a server that answers in words the package no longer reads. Three
+# small requests, one of them an embedding and one a prediction, to a shared research
+# server.
+#
+# RED MEANS ACT. An unreachable server skips rather than fails, because an outage has its
+# own status page and a monitor that cries wolf gets ignored. GitHub emails the workflow's
+# last editor when a scheduled run fails. The fix is almost always a deliberate bump of the
+# `biocentral-api` cap, run against the new client with the whole suite.
+#
+# Only the locked runtime dependencies are installed, plus pytest: the dev group pulls in
+# torch and Jupyter, which would make a daily check slower than the check itself.
+
+on:
+  schedule:
+    # Daily, off the hour so it is not queued behind everyone else's :00 jobs.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/biocentral-canary.yml'
+      - 'apps/protspace/tests/test_biocentral_live.py'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/protspace
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'uv.lock'
+          python-version: '3.12'
+
+      - name: Install the locked runtime dependencies
+        run: uv sync --locked --no-dev
+
+      - name: Check the live server against the locked client and the package's own reading of it
+        env:
+          PROTSPACE_LIVE_BIOCENTRAL: '1'
+        run: uv run --no-sync --with pytest pytest tests/test_biocentral_live.py -v -rs -p no:cacheprovider

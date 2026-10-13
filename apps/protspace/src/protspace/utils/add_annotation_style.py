@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 from protspace.data.annotations.encoding import to_display_value
@@ -33,7 +34,7 @@ _SETTINGS_KEYS = {
 # Built-in palette IDs, mirrored from the web frontend — the source of truth:
 # packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
 # numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
-# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
+# categorical id; numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
 # Keep this list in sync with those files.
 _CATEGORICAL_PALETTE_IDS = frozenset(
     {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
@@ -86,9 +87,10 @@ def _resolve_na(value: str, all_values: set[str]) -> str | None:
     """If *value* is an NA-like label, return the matching label in *all_values*.
 
     Different data sources represent missing values as ``""``, ``"<NA>"``,
-    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel.  ``"None"`` is what
-    ``str()`` yields for a parquet NULL, which is how the frontend writer stores
-    a missing categorical cell.  This helper maps between them so styles using
+    ``"NaN"``, or the frontend's ``"__NA__"`` sentinel; a v3 bundle's missing
+    cell decodes as ``""``.  ``"None"`` is what ``str()`` yields for a parquet
+    NULL, which is how a v2 bundle exported by a web build before v3 stored a
+    missing categorical cell.  This helper maps between them so styles using
     one form still work when the data uses another.  Returns *None* when no
     match is found.
     """
@@ -122,18 +124,32 @@ def _resolve_numeric(value: str, all_values: set[str]) -> str | None:
     return None
 
 
+def resolve_style_key(value: str, values: set[str]) -> str | None:
+    """Return the key in *values* that a styles file's *value* refers to, or None.
+
+    The value itself; else, for an NA-like label, the NA spelling the data uses
+    (:func:`_resolve_na`); else the same number spelled another way
+    (:func:`_resolve_numeric`). ``protspace style`` refuses a key this returns
+    None for, so a caller can drop such keys before styling.
+    """
+    if value in values:
+        return value
+    for resolver in (_resolve_na, _resolve_numeric):
+        resolved = resolver(value, values)
+        if resolved is not None:
+            return resolved
+    return None
+
+
 def _resolve_style_value(value: str, all_values: set[str], annotation: str) -> str:
     """Return the key in *all_values* that a styles file's *value* refers to.
 
     Raises:
         ValueError: when *value* names no value of *annotation*.
     """
-    if value in all_values:
-        return value
-    for resolver in (_resolve_na, _resolve_numeric):
-        resolved = resolver(value, all_values)
-        if resolved is not None:
-            return resolved
+    resolved = resolve_style_key(value, all_values)
+    if resolved is not None:
+        return resolved
     raise ValueError(
         f"Value '{value}' does not exist for annotation '{annotation}'. "
         f"Available values: {sorted(all_values)}"
@@ -188,9 +204,20 @@ def _annotation_display_values(reader, annotation: str) -> set[str]:
     plot/legend groups by — not the raw percent-encoded wire cells. NA-like
     labels carry no reserved char, so they pass through unchanged.
     """
-    decode = reader.should_decode()
+    return style_keys(
+        reader.get_all_annotation_values(annotation), decode=reader.should_decode()
+    )
+
+
+def style_keys(cells: Iterable[object], *, decode: bool = True) -> set[str]:
+    """The keys a styles file names a column's values by.
+
+    Every display value (:func:`_to_display_value`) of every cell, read as
+    ``str()``, so a null cell is ``"None"``. ``decode`` as for
+    :func:`_to_display_value`: true for a v2 (or later) table.
+    """
     values: set[str] = set()
-    for raw in reader.get_all_annotation_values(annotation):
+    for raw in cells:
         values.update(_to_display_value(str(raw), decode=decode))
     return values
 
@@ -201,8 +228,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
     The CLI styling model is categorical-only, but the web frontend bins numeric
     columns into gradient ranges — so per-value colors/shapes/pins set via the
     CLI silently do not apply. Naming the column + its distinct-value count makes
-    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
-    annotations).
+    that visible instead of a surprise. See https://protspace.app/docs/guide/styling#numeric-annotations.
     """
     from protspace.stats.annotation_select import _is_missing, _is_numeric
 
@@ -215,7 +241,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
         "--generate-template lists every number as its own category. Pre-bin it into "
         "categorical range labels (e.g. '100-200') or color it as a continuous "
         "gradient in the web app (https://protspace.app/explore). "
-        "See docs/styling.md#numeric-annotations.",
+        "See https://protspace.app/docs/guide/styling#numeric-annotations.",
         annotation,
         len(cleaned),
     )
@@ -226,8 +252,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
     """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
 
     For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
-    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
-    Color palettes). Naming the offending id makes that reset visible instead of a
+    silently resets a gradient or unknown id to ``kellys`` (see https://protspace.app/docs/guide/styling#color-palettes). Naming the offending id makes that reset visible instead of a
     surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
     callers skip this check for numeric columns.
     """
@@ -242,7 +267,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
         "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
-        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        "'kellys'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
         annotation,
         reason,
         ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
@@ -287,7 +312,7 @@ def generate_template(input_file: str) -> dict:
         template[annotation] = {
             "sortMode": "size-desc",
             "maxVisibleValues": 10,
-            "shapeSize": 30,
+            "shapeSize": 10,
             "selectedPaletteId": "kellys",
             "hiddenValues": [],
             "colors": colors,
@@ -351,8 +376,9 @@ def add_annotation_styles_bundle(
     forwarded to the settings converter.
     """
     from protspace.data.io.bundle import (
+        SETTINGS_FILENAME,
         extract_bundle_to_dir,
-        read_bundle,
+        read_settings_from_file,
         replace_settings_in_bundle,
     )
     from protspace.data.io.settings_converter import visualization_state_to_settings
@@ -361,8 +387,13 @@ def add_annotation_styles_bundle(
     temp_dir = extract_bundle_to_dir(Path(bundle_file))
     reader = ArrowReader(Path(temp_dir))
 
-    # Read existing settings from the bundle (if any) to preserve extra fields
-    _, existing_settings = read_bundle(Path(bundle_file))
+    # Read existing settings (if any) to preserve extra fields.  From the
+    # extracted copy, not the bundle again: this command reads the bundle once
+    # (and so logs a legacy-format warning once).
+    settings_path = Path(temp_dir) / SETTINGS_FILENAME
+    existing_settings = (
+        read_settings_from_file(settings_path) if settings_path.exists() else None
+    )
 
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}
@@ -385,7 +416,7 @@ def add_annotation_styles_bundle(
 
         all_values = set(value_frequencies.get(annotation, {}))
         # selectedPaletteId is the categorical palette; a numeric column reads it as
-        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # its gradient instead (a gradient id applies — see https://protspace.app/docs/guide/styling), so the
         # categorical-palette check only runs when the column is not numeric.
         if not _warn_if_numeric(annotation, all_values):
             _warn_if_bad_palette(annotation, styles)
@@ -437,11 +468,11 @@ def dump_settings(input_file: str) -> None:
     data_format = detect_data_format(input_file)
 
     if data_format == "parquetbundle":
-        from protspace.data.io.bundle import read_bundle
+        from protspace.data.io.bundle import read_settings_from_bundle
 
-        _, settings = read_bundle(Path(input_file))
+        settings = read_settings_from_bundle(Path(input_file))
         if settings is None:
-            print("No settings found in bundle (3-part bundle).")
+            print("No settings found in bundle.")
         else:
             print(json.dumps(settings, indent=2))
     elif data_format == "parquet":

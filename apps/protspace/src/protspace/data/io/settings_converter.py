@@ -17,11 +17,11 @@ import re
 NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
 NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
 NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
-# Every spelling a missing cell can arrive under. "None" is what ``str()`` yields
-# for a parquet NULL, which is how the frontend writer now stores a missing
-# categorical cell (it no longer writes the __NA__ sentinel), so without it a
-# styled N/A group lands under the key "None" and the frontend's __NA__ lookup
-# misses it.
+# Every spelling a missing cell can arrive under. A v3 bundle's missing cell
+# decodes as "". "None" is what ``str()`` yields for a parquet NULL, which is
+# how a v2 bundle exported by a web build before v3 stored a missing categorical
+# cell (it no longer wrote the __NA__ sentinel), so without it a styled N/A group
+# lands under the key "None" and the frontend's __NA__ lookup misses it.
 _NA_LABELS = {"", "<NA>", "NaN", "__NA__", "None"}
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
 
@@ -93,7 +93,7 @@ _ANNOTATION_SETTINGS_KEYS = frozenset(
 )
 
 
-def _is_frontend_envelope(settings: object) -> bool:
+def is_frontend_envelope(settings: object) -> bool:
     """True only for the frontend's nested part-4 shape.
 
     Bare key presence is not a safe discriminator: annotation names come from
@@ -136,9 +136,7 @@ def unwrap_settings(settings: dict) -> dict:
     frontend-written dict hits scalar envelope values (``eatOverlayEnabled`` is a
     bool) and every legend colour/shape is silently dropped.
     """
-    return (
-        settings[LEGEND_SETTINGS_KEY] if _is_frontend_envelope(settings) else settings
-    )
+    return settings[LEGEND_SETTINGS_KEY] if is_frontend_envelope(settings) else settings
 
 
 def rewrap_settings(settings: dict, template: dict | None) -> dict:
@@ -155,7 +153,7 @@ def rewrap_settings(settings: dict, template: dict | None) -> dict:
     which that function filters out — so replacing the map wholesale would drop
     every numeric annotation's ``numericSettings``, palette and hidden values.
     """
-    if not _is_frontend_envelope(template):
+    if not is_frontend_envelope(template):
         return settings
     return {
         **template,
@@ -287,7 +285,7 @@ def visualization_state_to_settings(
         else:
             ann_settings = {
                 "includeShapes": bool(shapes),
-                "shapeSize": 30,
+                "shapeSize": 10,
                 "sortMode": "size-desc",
                 "hiddenValues": [],
                 "enableDuplicateStackUI": False,

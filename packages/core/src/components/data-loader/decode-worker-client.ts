@@ -1,10 +1,10 @@
 import DecodeWorker from './decode.worker?worker&inline';
-import type { VisualizationData, BundleSettings } from '@protspace/utils';
+import type { DecodedParquetBundle } from './utils/bundle';
 
-export interface WorkerDecodeResult {
-  data: VisualizationData;
-  settings: BundleSettings | null;
-}
+export type WorkerDecodeResult = DecodedParquetBundle;
+
+/** What decode.worker.ts posts back: the whole decoded bundle, or the error message. */
+type WorkerDecodeMessage = ({ ok: true } & DecodedParquetBundle) | { ok: false; error?: string };
 
 export function isWorkerDecodeSupported(): boolean {
   return typeof Worker !== 'undefined';
@@ -32,15 +32,10 @@ export function decodeBundleInWorker(arrayBuffer: ArrayBuffer): Promise<WorkerDe
     }
     const cleanup = () => worker.terminate();
     worker.onmessage = (event: MessageEvent) => {
-      const d = event.data as {
-        ok: boolean;
-        data?: VisualizationData;
-        settings?: BundleSettings | null;
-        error?: string;
-      };
+      const d = event.data as WorkerDecodeMessage | undefined;
       cleanup();
       if (d?.ok) {
-        resolve({ data: d.data as VisualizationData, settings: d.settings ?? null });
+        resolve(d);
       } else {
         reject(new Error(d?.error || 'worker decode failed'));
       }

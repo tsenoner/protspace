@@ -80,9 +80,9 @@ def _align(emb_set, red_ids, coords):
     and the row counts already match (the common single-embedding prepare path).
     """
     emb_headers = list(emb_set.headers)
-    # Keep the native dtype (float32): faithfulness upcasts only its bounded
-    # subsample, so a full float64 copy of a 570k-row embedding per projection
-    # would be wasted — especially when faithfulness then skips past its ceiling.
+    # Keep the native dtype (float32): faithfulness gathers and upcasts only its
+    # bounded subsample, so a full float64 copy of a 570k-row embedding per
+    # projection would be wasted.
     emb_data = np.asarray(emb_set.data)
 
     if not red_ids:
@@ -109,8 +109,8 @@ def _align(emb_set, red_ids, coords):
     if not ids:
         return None
     # Avoid a full fancy-index COPY of the embedding when every row matched in
-    # order (the common single-embedding path): faithfulness may then skip past its
-    # hard ceiling and discard it, so a ~GB copy at 570k scale would be pure waste.
+    # order (the common single-embedding path): faithfulness reads only its bounded
+    # subsample of it, so a ~GB copy at 570k scale would be pure waste.
     # Return the source array as a view when the selection is the identity; gather
     # only when the join actually drops or reorders rows.
     m = len(ids)

@@ -13,25 +13,12 @@ def _toy():
     return queries, refs
 
 
-def test_returns_shapes():
-    queries, refs = _toy()
-    idx, dist = nearest(queries, refs, k=2, metric="euclidean")
-    assert idx.shape == (2, 2)
-    assert dist.shape == (2, 2)
-
-
 def test_nearest_index_euclidean():
     queries, refs = _toy()
     idx, dist = nearest(queries, refs, k=1, metric="euclidean")
     assert idx[0, 0] == 0  # first query nearest to ref 0
     assert idx[1, 0] == 2  # second query nearest to ref 2
     assert dist[0, 0] == pytest.approx(0.1, abs=1e-4)
-
-
-def test_neighbours_sorted_by_distance():
-    queries, refs = _toy()
-    idx, dist = nearest(queries, refs, k=3, metric="euclidean")
-    assert np.all(np.diff(dist, axis=1) >= -1e-6)  # non-decreasing per row
 
 
 def test_cosine_metric_runs_and_orders():

@@ -1,5 +1,14 @@
-import type { VisualizationData, NumericAnnotationType, PredictedCell } from '../types.js';
-import { getProteinAnnotationIndices } from './annotation-data-access.js';
+import type {
+  CsrAnnotationData,
+  VisualizationData,
+  NumericAnnotationType,
+  PredictedCell,
+} from '../types.js';
+import {
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
+} from './annotation-data-access.js';
 import { isAutoClusterColumnName } from './annotation-statistics.js';
 import { getPredictedCell, getPredictedCellValues } from './eat-overlay.js';
 import { getNumericBinLabelMap } from './numeric-binning.js';
@@ -18,11 +27,13 @@ export function getProteinAnnotationValues(
   const annotation = data.annotations[annotationKey];
   const annotationRows = data.annotation_data?.[annotationKey];
   if (!annotation || !annotationRows || !Array.isArray(annotation.values)) return [];
-  const indices = getProteinAnnotationIndices(annotationRows, proteinIdx);
-  if (indices.length === 0) return [];
-  const out: string[] = new Array(indices.length);
-  for (let k = 0; k < indices.length; k++) {
-    out[k] = toInternalValue(annotation.values[indices[k]]);
+  const count = getProteinAnnotationCount(annotationRows, proteinIdx);
+  if (count === 0) return [];
+  const out: string[] = new Array(count);
+  for (let k = 0; k < count; k++) {
+    out[k] = toInternalValue(
+      annotation.values[getProteinAnnotationIndexAt(annotationRows, proteinIdx, k)],
+    );
   }
   return out;
 }
@@ -43,12 +54,25 @@ export function getProteinDisplayValues(
   return values.map((v) => labelMap.get(v) ?? v);
 }
 
+/**
+ * A numeric column's value at `index`, or null where it is missing: the column's NaN, or
+ * an index past its end. The one place that turns the in-memory NaN back into the null
+ * every consumer tests for.
+ */
+export function readNumericValue(
+  values: ArrayLike<number> | undefined,
+  index: number,
+): number | null {
+  const value = values?.[index];
+  return value !== undefined && Number.isFinite(value) ? value : null;
+}
+
 export function getProteinNumericValue(
   data: VisualizationData,
   proteinIdx: number,
   annotationKey: string,
 ): number | null {
-  return data.numeric_annotation_data?.[annotationKey]?.[proteinIdx] ?? null;
+  return readNumericValue(data.numeric_annotation_data?.[annotationKey], proteinIdx);
 }
 
 export function getProteinNumericType(
@@ -59,13 +83,29 @@ export function getProteinNumericType(
   return annotation?.numericType ?? annotation?.numericMetadata?.numericType ?? 'float';
 }
 
+/** The column's CSR storage, when that is how it is stored. */
+function csrColumn(data: VisualizationData, annotationKey: string): CsrAnnotationData | null {
+  const rows = data.annotation_data?.[annotationKey];
+  return rows && isCsrAnnotationData(rows) ? rows : null;
+}
+
 export function getProteinScores(
   data: VisualizationData,
   proteinIdx: number,
   annotationKey: string,
 ): (number[] | null)[] {
-  const scores = data.annotation_scores?.[annotationKey]?.[proteinIdx];
-  return Array.isArray(scores) ? scores : [];
+  const nested = data.annotation_scores?.[annotationKey]?.[proteinIdx];
+  if (Array.isArray(nested)) return nested;
+  const csr = csrColumn(data, annotationKey);
+  if (!csr?.scores || proteinIdx < 0 || proteinIdx >= csr.length) return [];
+  const scores = csr.scores;
+  const out: (number[] | null)[] = [];
+  for (let hit = csr.offsets[proteinIdx]; hit < csr.offsets[proteinIdx + 1]; hit++) {
+    const from = scores.offsets[hit];
+    const to = scores.offsets[hit + 1];
+    out.push(to > from ? Array.from(scores.values.subarray(from, to)) : null);
+  }
+  return out;
 }
 
 export function getProteinEvidence(
@@ -73,8 +113,17 @@ export function getProteinEvidence(
   proteinIdx: number,
   annotationKey: string,
 ): (string | null)[] {
-  const evidence = data.annotation_evidence?.[annotationKey]?.[proteinIdx];
-  return Array.isArray(evidence) ? evidence : [];
+  const nested = data.annotation_evidence?.[annotationKey]?.[proteinIdx];
+  if (Array.isArray(nested)) return nested;
+  const csr = csrColumn(data, annotationKey);
+  if (!csr?.evidence || proteinIdx < 0 || proteinIdx >= csr.length) return [];
+  const evidence = csr.evidence;
+  const out: (string | null)[] = [];
+  for (let hit = csr.offsets[proteinIdx]; hit < csr.offsets[proteinIdx + 1]; hit++) {
+    const code = evidence.codes[hit];
+    out.push(code >= 0 ? (evidence.dict[code] ?? null) : null);
+  }
+  return out;
 }
 
 /**

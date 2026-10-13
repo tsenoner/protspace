@@ -16,6 +16,14 @@ export type ScalePair = {
   y: d3.ScaleLinear<number, number>;
 };
 
+/** Whether `count` values of `values` from `start` are all finite. */
+function allFinite(values: ArrayLike<number>, count: number, start = 0): boolean {
+  for (let i = start; i < start + count; i++) {
+    if (!Number.isFinite(values[i])) return false;
+  }
+  return true;
+}
+
 export class DataProcessor {
   static processVisualizationData(
     data: VisualizationData,
@@ -37,17 +45,22 @@ export class DataProcessor {
     const n = proteinIds.length;
 
     const isolating = isolationMode && !!isolationHistory && isolationHistory.length > 0;
+    // A protein the projection does not cover has NaN coordinates. It is culled here, the
+    // one step every consumer's PlotData comes from, so nothing downstream (scale domains,
+    // GPU buffers, depth sort, picking, lasso, contours, stacks, exports) ever sees it.
+    const hasMissing = !allFinite(src, n * dim);
 
-    if (visibleProteinIds || isolating) {
-      // Two-pass cull: find surviving protein indices. A survivor must pass the
-      // query filter (visibleProteinIds, when present) AND appear in EVERY
-      // isolation layer set. Both are id-membership intersections, so each kept
-      // slot records its GLOBAL index into protein_ids (originalIndices) — style
-      // getters and tooltips resolve annotation values by that index, and a
-      // slice-local index would mis-resolve points under a non-prefix filter.
+    if (visibleProteinIds || isolating || hasMissing) {
+      // Two-pass cull: find surviving protein indices. A survivor must have finite
+      // coordinates, pass the query filter (visibleProteinIds, when present) AND appear
+      // in EVERY isolation layer set. Each kept slot records its GLOBAL index into
+      // protein_ids (originalIndices) — style getters and tooltips resolve annotation
+      // values by that index, and a slice-local index would mis-resolve points under a
+      // non-prefix filter.
       const layerSets = isolating ? isolationHistory.map((layer) => new Set(layer)) : null;
       const survivors: number[] = [];
       for (let i = 0; i < n; i++) {
+        if (hasMissing && !allFinite(src, dim, i * dim)) continue;
         const id = proteinIds[i];
         if (visibleProteinIds && !visibleProteinIds.has(id)) continue;
         if (layerSets && !layerSets.every((s) => s.has(id))) continue;
@@ -88,7 +101,7 @@ export class DataProcessor {
       return { length: count, xs, ys, zs, originalIndices, proteinIds };
     }
 
-    // No query filter, no isolation: identity mapping (originalIndices = null).
+    // No missing coordinate, query filter or isolation: identity mapping (originalIndices = null).
     const xs = new Float32Array(n);
     const ys = new Float32Array(n);
     const zs = is3D ? new Float32Array(n) : null;

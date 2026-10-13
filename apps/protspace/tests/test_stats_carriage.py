@@ -160,7 +160,7 @@ def test_build_cluster_legend_settings_produces_valid_envelope():
     # just types) so a regression like maxVisibleValues=0 — which would hide every
     # legend entry — is caught rather than passing an isinstance-only check.
     assert env["maxVisibleValues"] == 10  # max(10, len(labels)); 2 labels → 10
-    assert env["shapeSize"] == 30
+    assert env["shapeSize"] == 10
     assert env["sortMode"] == "size-desc"
     assert env["enableDuplicateStackUI"] is False
     assert env["hiddenValues"] == []
@@ -302,9 +302,10 @@ def test_router_multi_embedding_routes_each_projection_to_its_own_scores():
     assert qa != qb  # each projection scored against its own embedding
 
 
-def test_legend_settings_strip_attached_silhouette_score():
-    """Membership values carry a `|silhouette` confidence; the auto legend must key
-    categories by the bare `cluster N` label (stripping the attached score)."""
+def test_legend_settings_key_a_score_suffixed_value_by_its_bare_label():
+    """Membership values are plain `cluster N` labels, but a `value|score` cell (the
+    ECO / InterPro convention) must still key its legend category by the bare label,
+    not as a category of its own."""
     from protspace.stats.base import AnnotationColumn, StatsReport
     from protspace.stats.carriage import build_cluster_legend_settings
 

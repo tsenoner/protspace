@@ -1,7 +1,7 @@
 // F-04: NumericRecomputeRunner unit characterization.
 //
 // The runner owns the numeric-annotation recompute lifecycle extracted verbatim
-// from `_scheduleNumericAnnotationRefresh` (scatter-plot.ts L839-915):
+// from the component's `_scheduleNumericAnnotationRefresh`:
 //   - a monotonically-increasing job id captured per schedule(),
 //   - a synchronous requestUpdate + running-state mirror (setRunning(true)),
 //   - a deferred (RAF) body that bails when its job id was superseded
@@ -86,6 +86,9 @@ describe('NumericRecomputeRunner', () => {
     r.schedule();
     expect(r.runningAnnotation()).toBe('plddt');
     host.selectedAnnotation = 'charge'; // changes after schedule(), before the RAF
+    // The busy text (scatter-plot render) names the job being computed, not the
+    // host's live selection.
+    expect(r.runningAnnotation()).toBe('plddt');
     raf.forEach((cb) => cb());
     expect(r.runningAnnotation()).toBe(null);
   });
@@ -101,7 +104,11 @@ describe('NumericRecomputeRunner', () => {
     expect(order).toEqual(['running:true', 'body', 'running:false']);
   });
 
-  it('a superseding schedule() invalidates the prior job (stale RAF is a no-op)', () => {
+  // schedule() cancels the prior RAF itself, so these unit tests never reach the
+  // `jobId !== this._jobId` guard: it is a backstop for a RAF that fires anyway,
+  // covered at host level by scatter-plot.numeric-recompute.test.ts (its stubbed
+  // RAF queue is untouched by cancelAnimationFrame, so the stale RAF does fire).
+  it('a superseding schedule() cancels the prior RAF, so only the latest job runs', () => {
     const host = makeHost();
     const r = new NumericRecomputeRunner(host);
     r.schedule();
@@ -137,7 +144,7 @@ describe('NumericRecomputeRunner', () => {
     expect(host.running).toEqual([true, false]); // schedule set true, cancel set false
   });
 
-  it('cancel() invalidates an in-flight job whose RAF already fired its handle clear', () => {
+  it('a fresh schedule() after cancel() runs its body exactly once', () => {
     const host = makeHost();
     const r = new NumericRecomputeRunner(host);
     r.schedule();

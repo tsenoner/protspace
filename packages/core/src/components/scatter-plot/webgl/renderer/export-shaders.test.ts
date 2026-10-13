@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { POINT_FRAGMENT_SHADER, POINT_VERTEX_SHADER } from './export-shaders';
+import {
+  GAMMA_FRAGMENT_SHADER,
+  POINT_FRAGMENT_SHADER,
+  POINT_VERTEX_SHADER,
+} from './export-shaders';
+
+describe('gamma correction shader', () => {
+  it('un-premultiplies before handing the frame to the compositor', () => {
+    expect(GAMMA_FRAGMENT_SHADER).toContain('linear.rgb / linear.a');
+  });
+});
 
 describe('point shaders', () => {
   it('passes the transferred-annotation flag through as a flat varying', () => {
@@ -108,6 +118,42 @@ describe('point shaders', () => {
     it('anti-aliases the outline inner edge', () => {
       // The old inner edge was a hard `if` threshold on a field whose outer edge is smoothed.
       expect(POINT_FRAGMENT_SHADER).toMatch(/smoothstep\([^)]*outline/i);
+    });
+  });
+
+  describe('multi-label atlas sampling', () => {
+    it('declares highp int, so the atlas index is defined past 32767 points', () => {
+      // ES 3.00 defaults fragment int to mediump (>= 16 bits). v_pointIndex and the
+      // index derived from it exceed that at any dataset past ~32K points, so on a
+      // driver honouring the minimum they were undefined — on exactly the low-end
+      // hardware the atlas limits are about.
+      expect(POINT_FRAGMENT_SHADER).toContain('precision highp int;');
+    });
+
+    it('refuses to sample beyond what the atlas covers', () => {
+      // Zero capacity means "no atlas": every marker must fall through to its
+      // dominant colour rather than sampling storage that was never allocated,
+      // which rendered solid black discs.
+      expect(POINT_FRAGMENT_SHADER).toContain('uniform int u_labelAtlasCapacity;');
+      expect(POINT_FRAGMENT_SHADER).toContain(
+        'if (v_labelCount > 1.5 && v_pointIndex < u_labelAtlasCapacity)',
+      );
+    });
+
+    it('clamps the slice count to the reserved stride', () => {
+      // Unclamped, a point with more colours than the stride indexed into the NEXT
+      // point's texels and painted an unrelated protein's colours.
+      expect(POINT_FRAGMENT_SHADER).toContain(
+        'float count = min(floor(v_labelCount + 0.5), float(u_maxLabels));',
+      );
+    });
+
+    it('clamps the slice index to the last slice of this point', () => {
+      // atan(+0, x < 0) is exactly +PI, so the normalised sweep reaches 1.0 on the
+      // middle pixel row of any odd-height sprite and sliceIndex reached `count`.
+      expect(POINT_FRAGMENT_SHADER).toContain(
+        'float sliceIndex = min(floor(normalizedAngle * count), count - 1.0);',
+      );
     });
   });
 });

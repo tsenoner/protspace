@@ -6,19 +6,25 @@ import {
   waitForExploreDataLoad,
   getFirstLegendItemValue,
 } from './helpers/explore';
+import {
+  distinctCanvasColors,
+  simulateTextureLimit,
+  simulatedGlStats,
+} from './helpers/gl-simulation';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const SPROT_FIXTURE = path.resolve(SPEC_DIR, 'fixtures/sprot_50.parquetbundle');
+// The Swiss-Prot bundle from the perf-datasets release, fetched by
+// `pnpm perf:fetch --only 573K_swissprot` into the gitignored perf/datasets/.
+const SPROT_FIXTURE = path.resolve(SPEC_DIR, '../../../perf/datasets/573K_swissprot.parquetbundle');
 const fixtureAvailable = fs.existsSync(SPROT_FIXTURE);
+const MISSING_FIXTURE =
+  'perf/datasets/573K_swissprot.parquetbundle not present; run `pnpm perf:fetch --only 573K_swissprot`.';
 
-test.describe('large bundle load (sprot_50, 573k proteins)', () => {
-  test.skip(
-    !fixtureAvailable,
-    'Fixture sprot_50.parquetbundle not present; copy from protspace/data/other/sprot/.',
-  );
+test.describe('large bundle load (Swiss-Prot, 573k proteins)', () => {
+  test.skip(!fixtureAvailable, MISSING_FIXTURE);
   test.setTimeout(120_000);
 
-  test('loads sprot_50 without OOM and renders the legend', async ({ page }) => {
+  test('loads Swiss-Prot without OOM and renders the legend', async ({ page }) => {
     let pageCrashed = false;
     const consoleErrors: string[] = [];
 
@@ -60,10 +66,10 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
       .locator('input[type="file"]')
       .setInputFiles(SPROT_FIXTURE);
 
-    await waitForExploreDataLoad(page, 90_000);
+    await waitForExploreDataLoad(page, { timeout: 90_000, proteinCount: 573_649 });
 
     // Verify page did not OOM-crash (Aw, Snap = error code 5).
-    expect(pageCrashed, 'Page crashed (OOM) during or after loading sprot_50').toBe(false);
+    expect(pageCrashed, 'Page crashed (OOM) during or after loading Swiss-Prot').toBe(false);
     expect(consoleErrors).toEqual([]);
 
     // Verify all 573,649 proteins loaded (evaluate only the count, not the full array).
@@ -113,7 +119,7 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
       // path renders non-empty content into the tooltip element.
       if (annotation === 'gene_name') {
         const tooltipText = await page.evaluate(() => {
-          const plot = document.querySelector('protspace-scatterplot') as
+          const plot = document.querySelector('protspace-scatterplot') as unknown as
             | (HTMLElement & {
                 // _plotData is a columnar PlotData; build a boxed PlotDataPoint for slot 0.
                 _plotData?: {
@@ -188,5 +194,54 @@ test.describe('large bundle load (sprot_50, 573k proteins)', () => {
         ).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+/**
+ * The reduced-stride path, which only a real large bundle reaches.
+ *
+ * At 573,649 proteins the atlas is 2048 x 2241, so a device reporting the
+ * WebGL2 floor of 2048 cannot hold it — this is the case the issue reported, on
+ * the dataset the app ships. The demo dataset is far too small to reach it
+ * (2048 x 31), which is why this lives here rather than in the default suite.
+ */
+test.describe('label atlas at Swiss-Prot scale on a floor-limit device', () => {
+  test.skip(!fixtureAvailable, MISSING_FIXTURE);
+  test.setTimeout(180_000);
+
+  test('reduces slices to fit, and still draws every protein', async ({ page }) => {
+    await simulateTextureLimit(page, 2048);
+
+    await page.goto('/explore');
+    await dismissTourIfPresent(page);
+
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+    await page
+      .locator('protspace-data-loader')
+      .locator('input[type="file"]')
+      .setInputFiles(SPROT_FIXTURE);
+    await waitForExploreDataLoad(page, { timeout: 120_000, proteinCount: 573_649 });
+
+    // Nothing the device would refuse was ever issued. On the pre-fix renderer
+    // this records [[2048, 2241]] and then a refused update on every restage.
+    const stats = await simulatedGlStats(page);
+    expect(
+      stats.refusedAllocations,
+      `renderer issued allocations the device refuses: ${JSON.stringify(stats.refusedAllocations)}`,
+    ).toEqual([]);
+    expect(stats.refusedUpdates).toBe(0);
+
+    // Fidelity drops; coverage does not.
+    const proteinCount = await page.evaluate(() => {
+      const plot = document.querySelector('#myPlot') as
+        | (Element & { data?: { protein_ids?: { length?: number } } })
+        | null;
+      return plot?.data?.protein_ids?.length ?? 0;
+    });
+    expect(proteinCount).toBe(573_649);
+
+    const colors = await distinctCanvasColors(page);
+    expect(colors.length).toBeGreaterThan(1);
+    expect(colors.every((c) => c === '0,0,0')).toBe(false);
   });
 });

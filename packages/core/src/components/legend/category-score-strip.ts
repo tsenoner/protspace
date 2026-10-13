@@ -1,8 +1,8 @@
-import { LitElement, html, css, svg, nothing } from 'lit';
+import { LitElement, html, svg, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
 import { formatStatValue } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
-import { srOnlyMixin } from '../../styles/mixins';
+import { categoryScoreStripStyles } from './category-score-strip.styles';
 import '../common/info-popover';
 
 /** One category's position on a score axis, painted in its legend colour. */
@@ -10,8 +10,11 @@ export interface ScoreStripPoint {
   category: string;
   value: number;
   color: string;
-  /** The same metric on the source embedding, this category's ceiling, shown in the tooltip. */
-  ceiling?: number | null;
+  /**
+   * The same metric on the source embedding, the reference this category's projection score
+   * is read against, shown in the tooltip.
+   */
+  embedding?: number | null;
 }
 
 const STRIP_HEIGHT = 44;
@@ -58,87 +61,7 @@ class ProtspaceScoreStrip extends LitElement {
   @property({ type: Array }) domain: [number, number] = [-1, 1];
   @property({ type: Boolean, attribute: 'higher-is-better' }) higherIsBetter = true;
 
-  static styles = [
-    srOnlyMixin,
-    css`
-      :host {
-        display: block;
-      }
-
-      .strip-header {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        font-size: var(--text-sm);
-        color: var(--legend-text-secondary);
-        padding: 0 0.25rem;
-      }
-
-      .strip-label {
-        font-weight: 600;
-        color: var(--legend-text-color);
-        /* Keeps the ⓘ on the label's baseline rather than letting the 18px button
-           stretch the header row. */
-        display: inline-flex;
-        align-items: center;
-        gap: 0.15rem;
-      }
-
-      /* Centring lands the readout on the axis line: the svg's layout box is
-       STRIP_HEIGHT tall and the axis sits at its midpoint. */
-      .strip-body {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      svg {
-        display: block;
-        width: 100%;
-        overflow: visible;
-        /* Without a zero min-width the intrinsic svg width would keep the flex item
-         from shrinking, and the gutter would push the axis out of the panel. */
-        flex: 1;
-        min-width: 0;
-      }
-
-      /* Fixed width and tabular figures: the gutter must not resize as the hover
-       moves between categories, or every dot would shift with it. */
-      .strip-value {
-        flex: none;
-        min-width: 3rem;
-        text-align: right;
-        font-size: var(--text-sm);
-        font-variant-numeric: tabular-nums;
-        color: var(--legend-text-color);
-      }
-
-      .strip-value.is-empty {
-        color: var(--legend-text-secondary);
-      }
-
-      .axis {
-        stroke: var(--legend-border);
-        stroke-width: 1;
-      }
-
-      circle {
-        stroke: var(--legend-bg);
-        stroke-width: 1;
-        cursor: pointer;
-      }
-
-      circle.is-highlighted {
-        stroke: var(--legend-text-color);
-        stroke-width: 2;
-      }
-
-      .bound {
-        font-size: var(--text-caption);
-        fill: var(--legend-text-secondary);
-      }
-    `,
-  ];
+  static styles = categoryScoreStripStyles;
 
   render() {
     if (this.points.length === 0) return nothing;
@@ -193,7 +116,9 @@ class ProtspaceScoreStrip extends LitElement {
             @mouseleave=${() => this._emitHover(null)}
             @click=${() => this._emitClick(point.category)}
           ><title>${point.category}: ${formatStatValue(point.value)}${
-            point.ceiling == null ? '' : ` (embedding ceiling ${formatStatValue(point.ceiling)})`
+            point.embedding == null
+              ? ''
+              : ` (embedding reference ${formatStatValue(point.embedding)})`
           }</title></circle>`,
           )}
           <text class="bound" x="${PADDING}%" y="${STRIP_HEIGHT - 4}" text-anchor="start">
@@ -212,10 +137,9 @@ class ProtspaceScoreStrip extends LitElement {
       </div>
       <!-- The strip's only accessible surface. The dots carry their values in <title>, but the
            <svg> is role="img" with an aria-label, which replaces its whole subtree in the
-           accessibility tree, and the legend rows deliberately do not repeat the number (see
-           legend.score-sync.test.ts, "keeps a scored row down to its label and count"). Without
-           this list the per-category scores — the entire point of the strip — are unreachable
-           to assistive tech. -->
+           accessibility tree, and the legend rows deliberately do not repeat the number (a
+           scored row shows only its label and count). Without this list the per-category
+           scores — the entire point of the strip — are unreachable to assistive tech. -->
       <ul class="sr-only">
         ${this.points.map(
           (point) => html`<li>${point.category}: ${formatStatValue(point.value)}</li>`,

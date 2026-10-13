@@ -140,8 +140,9 @@ export interface AnnotationStatMetric {
   label: string;
   value: number;
   /**
-   * The same metric scored on the source embedding, the separability "ceiling" a 2D
-   * projection is measured against. `null` when the bundle has no embedding-space row.
+   * The same metric scored on the source embedding, the reference a 2D projection is
+   * compared with (not a ceiling: a projection can score higher). `null` when the bundle
+   * has no embedding-space row.
    */
   embedding: number | null;
   /** False for Davies–Bouldin; true for every other metric currently emitted. */
@@ -186,34 +187,34 @@ function toMetric(
 }
 
 /**
- * The source-embedding ceiling per metric: the same metric scored on the embedding a 2D
- * projection is measured against, keyed by metric.
+ * The source-embedding reference per metric: the same metric scored on the embedding a 2D
+ * projection is compared with, keyed by metric.
  *
  * A bundle prepared from several embeddings carries one row per (annotation, metric, embedding) —
  * the driver runs the embedding pass once per embedding set — and nothing in the tidy schema links
  * a projection back to the embedding it came from. A metric scored on more than one embedding
- * therefore has no ceiling that can be attributed to this projection: it maps to `null` rather
+ * therefore has no reference that can be attributed to this projection: it maps to `null` rather
  * than to some other embedding's number. A metric with no embedding row at all is simply absent.
  *
  * Shared by the aggregate and per-category selectors so the rule is written once and both scope it
  * the same way — per metric, not per annotation, so one metric scored on two embeddings cannot
- * suppress the ceiling of a metric scored on one. Per-category rows carry one embedding row per
+ * suppress the reference of a metric scored on one. Per-category rows carry one embedding row per
  * (metric, embedding, category), which the same-source check tolerates.
  */
-function embeddingCeilings(
+function embeddingReferences(
   rows: readonly ProjectionStatisticRow[],
 ): Map<string, { source: string; value: number } | null> {
-  const ceilings = new Map<string, { source: string; value: number } | null>();
+  const references = new Map<string, { source: string; value: number } | null>();
   for (const row of rows) {
     if (row.space_kind !== 'embedding' || row.stat_family !== 'annotation_validity') continue;
-    const entry = ceilings.get(row.metric);
+    const entry = references.get(row.metric);
     if (entry === undefined) {
-      ceilings.set(row.metric, { source: row.space_name, value: row.value });
+      references.set(row.metric, { source: row.space_name, value: row.value });
     } else if (entry !== null && entry.source !== row.space_name) {
-      ceilings.set(row.metric, null);
+      references.set(row.metric, null);
     }
   }
-  return ceilings;
+  return references;
 }
 
 /** Position of `key` in `order`; unknown keys (a newer backend adding one) sort last. */
@@ -242,7 +243,7 @@ export function annotationStatSummary(
   if (!statistics?.length || !annotation) return null;
 
   // A non-finite value (NaN/null from a foreign writer) is not a score: it must not switch
-  // the ⓘ icon on, and a NaN ceiling would defeat the `embedding === null` column collapse.
+  // the ⓘ icon on, and a NaN reference would defeat the `embedding === null` column collapse.
   // Per-category rows are excluded here rather than at each use: this summary is the
   // whole-annotation view, and `annotationCategoryScores` is the per-category one.
   const forAnnotation = statistics.filter(
@@ -254,7 +255,7 @@ export function annotationStatSummary(
   );
   if (forAnnotation.length === 0) return null;
 
-  const ceilings = embeddingCeilings(forAnnotation);
+  const references = embeddingReferences(forAnnotation);
 
   const inProjection = forAnnotation.filter(
     (row) => row.space_kind === 'projection' && row.space_name === projectionName,
@@ -262,7 +263,7 @@ export function annotationStatSummary(
 
   const validity = inProjection
     .filter((row) => row.stat_family === 'annotation_validity')
-    .map((row) => toMetric(row, ceilings.get(row.metric)?.value ?? null))
+    .map((row) => toMetric(row, references.get(row.metric)?.value ?? null))
     .sort(byMetricOrder);
 
   if (validity.length === 0) return null;
@@ -491,7 +492,7 @@ export interface CategoryScore {
   category: string;
   /** Silhouette in the selected projection. Never null for a returned entry. */
   silhouette: number | null;
-  /** The same metric on the source embedding: this category's ceiling. */
+  /** The same metric on the source embedding: this category's reference, not a ceiling. */
   silhouetteEmbedding: number | null;
   /** Per-cluster Davies-Bouldin: overlap with the single worst rival category. */
   daviesBouldin: number | null;
@@ -523,7 +524,7 @@ export function annotationCategoryScores(
   if (rows.length === 0) return [];
 
   // Literally the same rule as the aggregate summary, via the same helper.
-  const ceilings = embeddingCeilings(rows);
+  const references = embeddingReferences(rows);
 
   const byCategory = new Map<string, CategoryScore>();
   const entryFor = (category: string): CategoryScore => {
@@ -543,7 +544,7 @@ export function annotationCategoryScores(
   for (const row of rows) {
     const entry = entryFor(row.category as string);
     if (row.space_kind === 'embedding') {
-      if (row.metric === 'silhouette' && ceilings.get('silhouette') !== null) {
+      if (row.metric === 'silhouette' && references.get('silhouette') !== null) {
         entry.silhouetteEmbedding = row.value;
       }
       continue;

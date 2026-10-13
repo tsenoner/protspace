@@ -48,7 +48,10 @@ interface NumericSummary {
   allIntegers: boolean;
 }
 
-const numericSummaryCache = new WeakMap<Array<number | null | undefined>, NumericSummary>();
+/** A numeric column as the binning reads it: NaN, null and undefined all mean missing. */
+type NumericValues = ArrayLike<number | null | undefined>;
+
+const numericSummaryCache = new WeakMap<NumericValues, NumericSummary>();
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -116,7 +119,7 @@ export function resolveNumericAnnotationDisplaySettings({
 }
 
 function createSummary(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   options: { includeSortedValues?: boolean } = {},
 ): NumericSummary {
   const includeSortedValues = options.includeSortedValues === true;
@@ -134,7 +137,8 @@ function createSummary(
   const distinctValues = new Set<number>();
   const finiteValues = includeSortedValues ? ([] as number[]) : null;
 
-  for (const value of values) {
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       continue;
     }
@@ -583,7 +587,7 @@ function createBinColors(
 }
 
 export function materializeNumericAnnotation(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   settings: NumericAnnotationDisplaySettings,
   numericType?: NumericAnnotationType,
 ): {
@@ -640,24 +644,27 @@ export function materializeNumericAnnotation(
 
   const edges = createEdges(summary, effectiveSettings);
   const counts = new Array(Math.max(0, edges.length - 1)).fill(0);
-  const observedRanges: Array<ObservedBinRange | null> = Array.from(
-    { length: counts.length },
-    () => null,
-  );
-  const rawBinIndices = values.map((value) => {
-    if (value == null || !Number.isFinite(value)) return -1;
+  // A preallocated loop with per-bin min/max in typed arrays: one pass, no per-row object
+  // allocation and no `Int32Array.from(mapFn)` slow path (this runs over every row on each
+  // numeric selection and bin-setting change). Math.min/Math.max keep -0 handling exact.
+  const binMin = new Float64Array(counts.length).fill(Infinity);
+  const binMax = new Float64Array(counts.length).fill(-Infinity);
+  const rawBinIndices = new Int32Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value == null || !Number.isFinite(value)) {
+      rawBinIndices[i] = -1;
+      continue;
+    }
     const binIndex = assignBinIndex(value, edges);
     counts[binIndex] += 1;
-    const currentRange = observedRanges[binIndex];
-    observedRanges[binIndex] =
-      currentRange === null
-        ? { min: value, max: value }
-        : {
-            min: Math.min(currentRange.min, value),
-            max: Math.max(currentRange.max, value),
-          };
-    return binIndex;
-  });
+    binMin[binIndex] = Math.min(binMin[binIndex], value);
+    binMax[binIndex] = Math.max(binMax[binIndex], value);
+    rawBinIndices[i] = binIndex;
+  }
+  const observedRanges: Array<ObservedBinRange | null> = counts.map((count: number, bin: number) =>
+    count > 0 ? { min: binMin[bin], max: binMax[bin] } : null,
+  );
 
   const allBins = counts.map((count, index) => ({
     id: createNumericBinId(effectiveSettings.strategy, edges[index], edges[index + 1]),

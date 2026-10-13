@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { VisualizationData, PlotDataPoint, AnnotationData } from '@protspace/utils';
-import type { VisibilityInputs, VisibilityModel } from './visibility-model';
+import { NA_VALUE } from '@protspace/utils';
+import type { VisibilityInputs } from './visibility-model';
 import { computeVisibilityModel } from './visibility-model';
 
 /**
@@ -60,6 +61,81 @@ function baseInputs(overrides: Partial<VisibilityInputs> = {}): VisibilityInputs
 }
 
 describe('computeVisibilityModel', () => {
+  describe('focusedValues (Shift+hover)', () => {
+    it('keeps focused and multi-label points in focus; highlight wins; zero-value base fades', () => {
+      const data = makeData(['A', 'B', null], [[0], [1], [0, 1], []]);
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(model.baseOpacityOf(point('p3', 3))).toBe(OPACITIES.faded);
+    });
+
+    it('a plain out-of-focus point fades; a focused one renders at selected opacity', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      const model = computeVisibilityModel(baseInputs({ data, focusedValues: ['A'] }));
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.faded);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+      expect(model.isInteractive(point('p1', 1))).toBe(true);
+    });
+
+    it('a non-empty selection outranks focus: points follow selection fading', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], selectedProteinIds: ['p1'] }),
+      );
+      // Selected but out of focus → selected opacity.
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      // In focus but not selected → faded by the selection, not lifted by focus.
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+    });
+
+    it('a highlighted out-of-focus point keeps full (selected) opacity', () => {
+      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
+      const model = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], highlightedProteinIds: ['p1'] }),
+      );
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(model.baseOpacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+    });
+
+    it('hidden beats focus: a legend-hidden value stays at opacity 0', () => {
+      const data = makeData(['A', 'B', 'C'], Int32Array.of(0, 1, 2));
+      // The focused value itself is hidden.
+      const focusedHidden = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], hiddenAnnotationValues: ['A'] }),
+      );
+      expect(focusedHidden.opacityOf(point('p0', 0))).toBe(0);
+      expect(focusedHidden.isInteractive(point('p0', 0))).toBe(false);
+      // An out-of-focus hidden value stays at 0, not the faded tier.
+      const otherHidden = computeVisibilityModel(
+        baseInputs({ data, focusedValues: ['A'], hiddenAnnotationValues: ['B'] }),
+      );
+      expect(otherHidden.opacityOf(point('p1', 1))).toBe(0);
+      expect(otherHidden.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+    });
+
+    it('focusing N/A keeps null and literal __NA__ points in focus', () => {
+      // p0 → null, p1 → literal "__NA__", p2 → 'A', p3 → out-of-range bin (resolves to N/A).
+      const data = makeData([null, NA_VALUE, 'A'], Int32Array.of(0, 1, 2, 7));
+      const naFocus = computeVisibilityModel(baseInputs({ data, focusedValues: [NA_VALUE] }));
+      expect(naFocus.opacityOf(point('p0', 0))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p3', 3))).toBe(OPACITIES.selected);
+      expect(naFocus.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
+      // Focusing a real value fades the N/A points.
+      const aFocus = computeVisibilityModel(baseInputs({ data, focusedValues: ['A'] }));
+      expect(aFocus.opacityOf(point('p0', 0))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p1', 1))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p3', 3))).toBe(OPACITIES.faded);
+      expect(aFocus.opacityOf(point('p2', 2))).toBe(OPACITIES.selected);
+    });
+  });
+
   // ── #6a: reliability dimming removed — predicted points render at base
   // opacity, identical to observed points, distinguished only by the hollow
   // ring glyph (drawn elsewhere). Confidence no longer feeds opacity at all.
@@ -186,6 +262,41 @@ describe('computeVisibilityModel', () => {
       const data = makeData(['A', 'B'], [[0], []]);
       const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: [] }));
       expect(model.opacityOf(point('p1', 1))).toBe(0);
+    });
+  });
+
+  // ── CSR storage (bundle format v3) — same rule 3/4 semantics ──────────────
+  describe('CSR storage: hidden iff every code hidden', () => {
+    // p0 → [A, B], p1 → [C], p2 → [] (empty row), p3 → [A]
+    const csr = (): AnnotationData => ({
+      kind: 'csr',
+      offsets: Int32Array.of(0, 2, 3, 3, 4),
+      codes: Int32Array.of(0, 1, 2, 0),
+      length: 4,
+    });
+
+    it('partially hidden CSR row stays visible', () => {
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: ['A'] }));
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
+    });
+
+    it('CSR row with every code hidden → opacity 0', () => {
+      // C stays visible so the all-hidden escape hatch cannot fire.
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(
+        baseInputs({ data, hiddenAnnotationValues: ['A', 'B'] }),
+      );
+      expect(model.opacityOf(point('p0', 0))).toBe(0);
+      expect(model.opacityOf(point('p3', 3))).toBe(0);
+      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.base);
+    });
+
+    it('empty CSR row → hidden even with an empty hidden set', () => {
+      const data = makeData(['A', 'B', 'C'], csr());
+      const model = computeVisibilityModel(baseInputs({ data, hiddenAnnotationValues: [] }));
+      expect(model.opacityOf(point('p2', 2))).toBe(0);
+      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
     });
   });
 
@@ -345,43 +456,6 @@ describe('computeVisibilityModel', () => {
     });
   });
 
-  // ── F-45 removal guard: tierOf / DisplayTier are gone ─────────────────────
-  // tierOf was a convenience view with no live readers; the opacity/depth
-  // contract carriers (opacityOf / baseOpacityOf / isInteractive) carry all
-  // behavior. This guard locks tierOf's removal while proving those carriers
-  // — and the full hidden/selected/faded/base distinctions they encode — remain.
-  describe('F-45: model exposes no tierOf, distinctions live in opacity carriers', () => {
-    it('the model surface has no tierOf member', () => {
-      const data = makeData(['A'], Int32Array.of(0));
-      const model = computeVisibilityModel(baseInputs({ data }));
-      expect((model as Record<string, unknown>).tierOf).toBeUndefined();
-    });
-
-    it('hidden / selected / faded distinctions survive via opacityOf + isInteractive', () => {
-      const data = makeData(['A', 'B', 'C', 'D'], Int32Array.of(0, 1, 2, 3));
-      const model = computeVisibilityModel(
-        baseInputs({
-          data,
-          hiddenAnnotationValues: ['A'], // p0 hidden
-          selectedProteinIds: ['p1'], // p1 selected (=> p2,p3 faded)
-        }),
-      );
-      // hidden → opacity 0, non-interactive
-      expect(model.opacityOf(point('p0', 0))).toBe(0);
-      expect(model.isInteractive(point('p0', 0))).toBe(false);
-      // selected → selected opacity (never collapsed into base)
-      expect(model.opacityOf(point('p1', 1))).toBe(OPACITIES.selected);
-      // faded → faded opacity (distinct from base and selected)
-      expect(model.opacityOf(point('p2', 2))).toBe(OPACITIES.faded);
-    });
-
-    it('base opacity when no selection and not hidden', () => {
-      const data = makeData(['A', 'B'], Int32Array.of(0, 1));
-      const model = computeVisibilityModel(baseInputs({ data }));
-      expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
-    });
-  });
-
   // ── Edge: accessor behavior when annotation/annotation_data missing ────────
   describe('edge: selected annotation references missing data (replicate getOpacity)', () => {
     it('annotation_data lacks the selected key → every point opacity 0 (vacuous), !allHidden', () => {
@@ -457,17 +531,6 @@ describe('computeVisibilityModel', () => {
       expect(model.allHidden).toBe(true);
       expect(model.opacityOf(point('p0', 0))).toBe(OPACITIES.base);
     });
-  });
-
-  // ── Type-surface smoke: all four exports are exercised ─────────────────────
-  it('exposes the VisibilityModel surface', () => {
-    const data = makeData(['A'], Int32Array.of(0));
-    const inputs: VisibilityInputs = baseInputs({ data });
-    const model: VisibilityModel = computeVisibilityModel(inputs);
-    expect(typeof model.opacityOf(point('p0', 0))).toBe('number');
-    expect(typeof model.baseOpacityOf(point('p0', 0))).toBe('number');
-    expect(typeof model.isInteractive(point('p0', 0))).toBe('boolean');
-    expect(typeof model.allHidden).toBe('boolean');
   });
 
   // ── Two-level memo support: `previous` lets the O(N) hidden mask be reused ──

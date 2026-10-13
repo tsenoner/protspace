@@ -56,6 +56,32 @@ export const layoutStyles = css`
     display: inline-flex;
   }
 
+  /* Contour mode menu: label over a one-line hint */
+  .density-menu {
+    width: 17rem;
+  }
+
+  .density-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .density-item-label {
+    color: var(--text-dark);
+  }
+
+  .density-item.selected .density-item-label {
+    color: var(--primary);
+  }
+
+  .density-item-hint {
+    font-size: var(--text-sm);
+    font-weight: var(--font-normal);
+    color: var(--text-secondary);
+    white-space: normal;
+  }
+
   .search-group {
     flex: 1 1 auto;
     min-width: 300px;
@@ -80,44 +106,6 @@ export const layoutStyles = css`
     background-position: right var(--spacing-sm) center;
     background-color: var(--surface);
     padding-right: calc(var(--spacing-lg) + var(--spacing-md));
-  }
-
-  /* Selection tool toggle (rectangle / lasso) */
-  .tool-toggle {
-    display: inline-flex;
-    align-items: center;
-    border: var(--border-width) solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-
-  .tool-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 6px;
-    border: none;
-    background: var(--surface);
-    color: var(--muted);
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      color 0.15s;
-  }
-
-  .tool-toggle-btn:hover {
-    background: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  .tool-toggle-btn.active {
-    background: var(--primary);
-    color: var(--text-light);
-  }
-
-  .tool-toggle-btn .icon {
-    width: 16px;
-    height: 16px;
   }
 
   /* Settings indicator for files with custom legend settings */
