@@ -39,23 +39,23 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 3. Legend (plan: `plans/phase-3-legend.md`)
 
-- [ ] 3.1 Legend behaviour pinned before the split: DOM contract, API, header, keyboard reorder,
+- [x] 3.1 Legend behaviour pinned before the split: DOM contract, API, header, keyboard reorder,
       colour picker, Escape order and stored settings
-- [ ] 3.2 Header, row, list and score-strip templates split out of `legend.ts`
-- [ ] 3.3 EAT controls split into a controller
-- [ ] 3.4 Colour picker and keyboard model split into controllers
-- [ ] 3.5 Item and settings computations moved to pure functions
-- [ ] 3.6 Rows: 28 px, truncated names, hover actions, hidden state, "⋯" menu
-- [ ] 3.7 Rows: one Tab stop, the full name on hover; e2e legend helpers
-- [ ] 3.8 Colour and shape picker on the kit; keyboard reorder on the layer stack
-- [ ] 3.9 Header: display name, predicted icon, sort button showing the active order, settings
-- [ ] 3.10 "Other" popover with search and "Add to legend", replacing the extract dialog
-- [ ] 3.11 Settings popover element: palette swatches, debounced fields, Reset
-- [ ] 3.12 Settings apply live from the popover; the dialogs and focus trap go; persisted settings
+- [x] 3.2 Header, row, list and score-strip templates split out of `legend.ts`
+- [x] 3.3 EAT controls split into a controller
+- [x] 3.4 Colour picker and keyboard model split into controllers
+- [x] 3.5 Item and settings computations moved to pure functions
+- [x] 3.6 Rows: 28 px, truncated names, hover actions, hidden state, "⋯" menu
+- [x] 3.7 Rows: one Tab stop, the full name on hover; e2e legend helpers
+- [x] 3.8 Colour and shape picker on the kit; keyboard reorder on the layer stack
+- [x] 3.9 Header: display name, predicted icon, sort button showing the active order, settings
+- [x] 3.10 "Other" popover with search and "Add to legend", replacing the extract dialog
+- [x] 3.11 Settings popover element: palette swatches, debounced fields, Reset
+- [x] 3.12 Settings apply live from the popover; the dialogs and focus trap go; persisted settings
       stay compatible
-- [ ] 3.13 Legend e2e on the settings popover
-- [ ] 3.14 EAT controls and score strips on the kit and tokens
-- [ ] 3.15 Legend styles on `--ps-*` tokens, legend modules leave the lint allowlist
+- [x] 3.13 Legend e2e on the settings popover
+- [x] 3.14 EAT controls and score strips on the kit and tokens
+- [x] 3.15 Legend styles on `--ps-*` tokens, legend modules leave the lint allowlist
 
 ## 4. Workflows (plan: `plans/phase-4-workflows.md`)
 
