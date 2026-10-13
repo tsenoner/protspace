@@ -480,3 +480,31 @@ describe('exportPDF reports the file it saved', () => {
     expect(save).toHaveBeenCalledWith(name);
   });
 });
+
+describe('the quick export legend', () => {
+  it('is titled with the annotation display name, not its key', () => {
+    const element = createMockElement({
+      selectedAnnotation: 'ec',
+      getCurrentData: () => ({
+        protein_ids: ['P1'],
+        annotations: { ec: { values: ['1.1.1.1'], colors: ['#ff0000'], shapes: ['circle'] } },
+        annotation_data: { ec: [[0]] },
+        projections: [{ name: 'PCA_2' }],
+      }),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const internals = createExporter(element) as any;
+    vi.spyOn(internals, 'readLegendExportState').mockReturnValue(null);
+    vi.spyOn(internals, 'buildLegendItems').mockReturnValue([]);
+    const render = vi
+      .spyOn(internals, 'renderLegendToCanvas')
+      .mockReturnValue({} as HTMLCanvasElement);
+
+    internals.generateLegendCanvas(
+      { width: 300, height: 200 },
+      internals.getOptionsWithDefaults({}),
+    );
+
+    expect(render.mock.calls[0][4]).toBe('EC number');
+  });
+});

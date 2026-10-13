@@ -4,7 +4,8 @@
 
 import { SHAPE_PATH_GENERATORS, renderPathOnCanvas, toDisplayValue } from './shapes';
 import { NA_VALUE } from './missing-values';
-import type { AnnotationData } from '../types.js';
+import type { Annotation, AnnotationData } from '../types.js';
+import { annotationLabel } from './annotation-metadata.js';
 import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
@@ -21,6 +22,7 @@ export interface ExportableData {
       values: (string | null)[];
       colors: string[];
       shapes: string[];
+      runtime?: Annotation['runtime'];
       numericMetadata?: {
         bins?: Array<{ id: string; label: string }>;
       };
@@ -220,13 +222,16 @@ export class ProtSpaceExporter {
     // If legendWidthPercent is 25%, then legend takes 25% and scatterplot takes 75%
     const legendPercent = (options.legendWidthPercent || 25) / 100;
     const legendWidth = Math.round(scatterCanvas.width * (legendPercent / (1 - legendPercent)));
+    // Titled like the figure editor's legend: the display name, not the column key.
+    const annotation = annotationNameFromLegend || this.element.selectedAnnotation;
+    const definition = this.element.getCurrentData()?.annotations?.[annotation];
 
     return this.renderLegendToCanvas(
       legendItems,
       legendWidth,
       scatterCanvas.height,
       options,
-      annotationNameFromLegend || this.element.selectedAnnotation,
+      annotation ? annotationLabel(annotation, definition) : annotation,
       options.legendScaleFactor,
     );
   }
