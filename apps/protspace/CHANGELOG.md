@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v4.16.3 (2026-10-13)
+
+### Bug Fixes
+
+- **reader**: Read a .parquetbundle directly instead of refusing it
+  ([`ed1d127`](https://github.com/tsenoner/protspace/commit/ed1d12737089df465b896b4ac3c85c405a1c73cf))
+
+### Chores
+
+- **protspace**: Ban src.* imports with ruff TID251
+  ([`cca83a1`](https://github.com/tsenoner/protspace/commit/cca83a173c127462c4d019cae3879290837861be))
+
+### Refactoring
+
+- **reader**: Fold the path check into _load_data and test it
+  ([`d662690`](https://github.com/tsenoner/protspace/commit/d662690b5869f0361bd23342b2c61264beb194d9))
+
+### Testing
+
+- **protspace**: Import protspace, not src.protspace, in the tests
+  ([`238d432`](https://github.com/tsenoner/protspace/commit/238d432afda2adc43d23c2a9c44722cd751d4a51))
+
+- **protspace**: Match the remaining transfer CLI errors through plain()
+  ([`aa15d57`](https://github.com/tsenoner/protspace/commit/aa15d57a6bf0979d35616a6ce6a0bad08f0e14b8))
+
+- **protspace**: Pin the embed usage errors and the MDS max(s) shift
+  ([`07a8403`](https://github.com/tsenoner/protspace/commit/07a8403fc4b3dde50475a0ffc473a4c80dec9639))
+
+- **protspace**: Reuse plain() and one _forbid helper in the audit tests
+  ([`7aa03f1`](https://github.com/tsenoner/protspace/commit/7aa03f1da2d0749035fabc96673ae7437040b01e))
+
+
 ## v4.16.2 (2026-10-07)
 
 ### Bug Fixes
@@ -885,6 +917,9 @@
 
 - **prepare**: Make -f reach every HDF5 input and reject a path that is not there
   ([`0591944`](https://github.com/tsenoner/protspace/commit/0591944008d7a79786a36ccab125f8970a004d57))
+
+- **reader**: Raise instead of returning an empty dataset for a bad path
+  ([`a6b00ec`](https://github.com/tsenoner/protspace/commit/a6b00ec52d7d2fbe586ba8a963ceca2a6b30c5da))
 
 ### Build System
 
