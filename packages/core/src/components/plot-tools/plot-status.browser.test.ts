@@ -161,6 +161,22 @@ describe('protspace-plot-status', () => {
     );
   });
 
+  it('an ✕ press that leaves its chip never pulls focus later', async () => {
+    const el = await mount({ hiddenCategories: 1 });
+    // The host ignores status-clear: the chip stays.
+    inner(clearButton(el, 'hidden')).focus();
+    await userEvent.keyboard('{Enter}');
+    await el.updateComplete;
+    expect(chips(el)).toHaveLength(1);
+
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    el.hiddenCategories = 0;
+    await el.updateComplete;
+    expect(document.activeElement).toBe(outside);
+  });
+
   it('the count is role=status', async () => {
     await mount({ count: 42 });
     await expect.element(page.getByRole('status')).toHaveTextContent('42 proteins');

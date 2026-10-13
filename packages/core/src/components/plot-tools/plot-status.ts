@@ -79,6 +79,12 @@ export class ProtspacePlotStatus extends LitElement {
     const kind = this._focusAfterClear;
     if (!kind || this._chips().some((chip) => chip.kind === kind)) return;
     this._focusAfterClear = null;
+    // Never pull focus from where the user moved it outside the corner. (Inside, Lit may have
+    // reused the pressed ✕'s node for the next chip, which then still holds focus.)
+    const active = document.activeElement;
+    if (!this.shadowRoot!.activeElement && active && active !== document.body && active !== this) {
+      return;
+    }
     // Focus was on the ✕ of a chip that has gone: the next chip, else the count.
     const later = KIND_ORDER.slice(KIND_ORDER.indexOf(kind) + 1);
     const next = this._chips().find((chip) => later.includes(chip.kind));
