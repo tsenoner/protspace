@@ -93,6 +93,12 @@ describe('query-builder Apply gating', () => {
     expect(reason()).toBe('');
   });
 
+  it('announces the reason when it changes (a polite live region)', async () => {
+    builder.query = [createCondition()];
+    await settle();
+    expect(shadow().querySelector('#apply-reason')!.getAttribute('aria-live')).toBe('polite');
+  });
+
   it('names the condition that still needs a value', async () => {
     builder.query = [human(), createCondition({ annotation: 'organism', logicalOp: 'AND' })];
     await settle();

@@ -355,7 +355,9 @@ export class ProtspaceQueryBuilder extends LitElement {
               ? `${formatCount(this._matchedIndices.size)} of ${countNoun(total, 'protein', 'proteins')} match`
               : ''}
           </p>
-          <p id="apply-reason" class="apply-reason">${block ? applyBlockText(block) : ''}</p>
+          <p id="apply-reason" class="apply-reason" aria-live="polite">
+            ${block ? applyBlockText(block) : ''}
+          </p>
           <div class="query-footer-buttons">
             <ps-button class="query-footer-reset" variant="danger" @click=${this._handleReset}
               >Reset</ps-button
