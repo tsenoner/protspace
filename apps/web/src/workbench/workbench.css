@@ -655,12 +655,17 @@
   display: none;
 }
 
-/* One 44 px header row, docked and floating: its links truncate rather than wrap. */
+/* One 44 px header row, docked and floating; the resource links wrap in their own row below. */
 .workbench #myStructureViewer::part(header) {
   box-sizing: border-box;
   height: 44px;
   padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
   border-radius: 0;
+}
+
+/* The links row lines up with the header's 12 px start. */
+.workbench #myStructureViewer::part(links) {
+  padding-inline: var(--ps-space-3) var(--ps-space-1);
 }
 
 /* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */

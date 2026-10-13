@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
+  createStructureProteinChangeDetail,
 } from './structure-viewer.events';
 
 describe('structure-viewer events', () => {
@@ -31,5 +32,9 @@ describe('structure-viewer events', () => {
       },
       originalError,
     });
+  });
+
+  it('builds structure-protein-change details', () => {
+    expect(createStructureProteinChangeDetail('P12345')).toEqual({ proteinId: 'P12345' });
   });
 });

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { render } from 'lit';
 import { describe, it, expect } from 'vitest';
 import {
   buildAlphaFoldUrl,
@@ -5,9 +7,10 @@ import {
   buildInterProUrl,
   buildTedUrl,
   RESOURCE_LINKS,
-} from './header-links';
+  renderResourceLinks,
+} from './resource-links';
 
-describe('header-links', () => {
+describe('resource-links', () => {
   describe('buildAlphaFoldUrl', () => {
     it('builds the correct AlphaFold DB URL', () => {
       expect(buildAlphaFoldUrl('P0DQE9')).toBe('https://alphafold.ebi.ac.uk/entry/P0DQE9');
@@ -80,6 +83,34 @@ describe('header-links', () => {
         ['InterPro', 'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/'],
         ['TED', 'https://ted.cathdb.info/uniprot/W6JQJ9'],
       ]);
+    });
+  });
+
+  describe('renderResourceLinks', () => {
+    it('renderResourceLinks gives every link a new-tab hint and no title', () => {
+      const host = document.createElement('div');
+      render(renderResourceLinks('W6JQJ9.2'), host);
+
+      const list = host.querySelector('ul.resource-links')!;
+      expect(list.getAttribute('part')).toBe('links');
+      expect(list.getAttribute('role')).toBe('list');
+      expect(list.getAttribute('aria-label')).toBe('External resources');
+      const links = Array.from(host.querySelectorAll<HTMLAnchorElement>('li > a.header-link'));
+      expect(
+        links.map((link) => [
+          link.querySelector('.header-link-label')?.textContent,
+          link.getAttribute('href'),
+        ]),
+      ).toEqual(RESOURCE_LINKS.map((resource) => [resource.label, resource.build('W6JQJ9.2')]));
+      for (const link of links) {
+        expect(link.hasAttribute('title')).toBe(false);
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(link.querySelector('.resource-links-hint')?.textContent).toBe(
+          ' (opens in a new tab)',
+        );
+        expect(link.querySelector('svg.ps-icon')).not.toBeNull();
+      }
     });
   });
 });

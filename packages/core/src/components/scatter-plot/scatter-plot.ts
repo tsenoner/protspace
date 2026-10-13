@@ -1863,6 +1863,7 @@ export class ProtspaceScatterplot extends LitElement {
         style="${this._getTooltipStyle()}"
         .view=${shown.view}
         .actions=${pinned ? this.tooltipActions : NO_TOOLTIP_ACTIONS}
+        .links=${pinned}
         @protein-tooltip-action=${this._handleTooltipAction}
       ></protspace-protein-tooltip>
     `;

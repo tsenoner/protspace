@@ -38,7 +38,6 @@ const structureViewerStylesCore = css`
     gap: 0.5rem;
     padding: 0.4rem 0.4rem 0.4rem 1.2rem;
     background: var(--protspace-viewer-header-bg);
-    border-bottom: 1px solid var(--protspace-viewer-border);
     border-radius: 6px 6px 0 0;
   }
 
@@ -79,81 +78,37 @@ const structureViewerStylesCore = css`
     color: var(--ps-text-muted);
   }
 
-  /*
-   * One line, so the header keeps its height in a narrow sidebar: links that do not fit wrap onto
-   * a second line that is clipped away whole, never cut mid-word. Focusing a clipped link scrolls
-   * it into the line.
-   */
-  .header-links {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    column-gap: 0.35rem;
-    max-height: 1.5em;
-    overflow: hidden;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 0.75rem;
-    line-height: 1.5;
-  }
-
-  .header-links-item {
+  /* With several selected proteins the id is a ghost button that opens the menu of them. */
+  .protein-pick {
     display: inline-flex;
-    align-items: baseline;
-  }
-
-  .header-link {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.1rem;
-    color: var(--ps-accent-text);
-    text-decoration: none;
+    align-items: center;
+    gap: var(--ps-space-1);
+    min-height: var(--ps-control-sm);
+    padding: 0 var(--ps-space-1-5);
+    border: 0;
+    border-radius: var(--ps-radius);
+    background: transparent;
+    color: var(--ps-text-muted);
+    font-family: inherit;
+    font-size: var(--ps-text-base);
     cursor: pointer;
-    transition: color 0.2s;
   }
 
-  /*
-   * Underline the label only. A text-decoration set on the anchor propagates
-   * into its descendants and cannot be cancelled there, so underlining the
-   * anchor would drag the arrow under the same line.
-   */
-  .header-link-label {
-    text-underline-offset: 2px;
+  .protein-pick:hover,
+  .protein-pick[aria-expanded='true'] {
+    background: var(--ps-surface-hover);
+    color: var(--ps-text);
   }
 
-  /*
-   * The separator is a CSS rule rather than a hand-placed element, so adding a
-   * resource cannot forget one or misplace it. It hangs off the list item, not
-   * the link, so it stays out of the link's name, click area and focus ring,
-   * and it leads its own item, so a link clipped off the line takes its
-   * separator with it and the line ends on a label. The empty alt text keeps
-   * screen readers from announcing it; the first declaration is the fallback
-   * for engines without that syntax.
-   */
-  .header-links-item:not(:first-child)::before {
-    content: '·';
-    content: '·' / '';
-    margin-right: 0.35rem;
-    color: var(--protspace-viewer-text-muted);
-    opacity: 0.5;
-  }
-
-  .header-link-external {
-    font-size: 0.85em;
-    line-height: 1;
-    opacity: 0.7;
-  }
-
-  .header-link:hover .header-link-label,
-  .header-link:focus-visible .header-link-label {
-    text-decoration: underline;
-  }
-
-  .header-link:focus-visible {
+  .protein-pick:focus-visible {
     outline: var(--ps-focus-width) solid var(--ps-focus);
     outline-offset: var(--ps-focus-offset);
-    border-radius: 2px;
+  }
+
+  /* The links row continues the header's band and ends it with the header's line. */
+  .resource-links {
+    background: var(--protspace-viewer-header-bg);
+    border-bottom: 1px solid var(--protspace-viewer-border);
   }
 
   .close-button {
@@ -270,6 +225,12 @@ const structureViewerStylesCore = css`
 
   .color-toolbar-label {
     font-weight: 600;
+  }
+
+  /* The TED button's ps-tooltip follows it, so the mixin's :last-child misses its end corners. */
+  .segmented > .segmented-btn:has(+ ps-tooltip:last-child) {
+    border-top-right-radius: calc(var(--radius) - var(--border-width));
+    border-bottom-right-radius: calc(var(--radius) - var(--border-width));
   }
 
   /* Bridge the viewer's theming hooks into the shared segmented control */

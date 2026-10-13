@@ -161,7 +161,7 @@ holds any, a plain click on a protein pins its tooltip at the protein with one b
 The pin ends on Escape, a press outside the plot, the next click, a zoom or pan, a data or
 projection change, or when `tooltipActions` becomes empty. Hovers over other proteins leave it. A button dispatches
 `tooltip-action` (bubbles, composed) with the action's `id` and the pinned `proteinId`
-(`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only.
+(`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only. A pinned tooltip also lists the protein's AlphaFold, UniProt, InterPro and TED links above its buttons.
 
 Escape follows the kit's one layer stack (`ESCAPE_ORDER`, `onEscapeFallback` and `pushLayer`,
 exported from `@protspace/core`). An expanded duplicate stack and a pinned tooltip are layers: the
@@ -617,14 +617,15 @@ colorBy.addEventListener('annotation-change', (e) => {
 
 ### Properties
 
-| Property          | Type             | Default               | Description           |
-| ----------------- | ---------------- | --------------------- | --------------------- |
-| `proteinId`       | `string \| null` | `null`                | Structure to display  |
-| `title`           | `string`         | `'Protein Structure'` | Panel title           |
-| `height`          | `string`         | `'400px'`             | Viewer height         |
-| `showHeader`      | `boolean`        | `true`                | Show the panel header |
-| `showCloseButton` | `boolean`        | `true`                | Show the close button |
-| `showTips`        | `boolean`        | `true`                | Show interaction tips |
+| Property          | Type                | Default               | Description                                                                                  |
+| ----------------- | ------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| `proteinId`       | `string \| null`    | `null`                | Structure to display                                                                         |
+| `title`           | `string`            | `'Protein Structure'` | Panel title                                                                                  |
+| `height`          | `string`            | `'400px'`             | Viewer height                                                                                |
+| `showHeader`      | `boolean`           | `true`                | Show the panel header                                                                        |
+| `showCloseButton` | `boolean`           | `true`                | Show the close button                                                                        |
+| `showTips`        | `boolean`           | `true`                | Show interaction tips                                                                        |
+| `proteinChoices`  | `readonly string[]` | `[]`                  | Selected proteins the header offers; with more than one, the id opens a menu of the first 50 |
 
 ### HTML attributes
 
@@ -632,18 +633,20 @@ colorBy.addEventListener('annotation-change', (e) => {
 
 ### Events
 
-| Event             | Detail                                                   | Description                           |
-| ----------------- | -------------------------------------------------------- | ------------------------------------- |
-| `structure-load`  | `{ proteinId, status, data? }`                           | Lifecycle event for loading or loaded |
-| `structure-error` | `{ message, severity, source, context, originalError? }` | Host-consumed error event             |
-| `structure-close` | `{ proteinId }`                                          | Viewer closed                         |
+| Event                      | Detail                                                   | Description                                                               |
+| -------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `structure-load`           | `{ proteinId, status, data? }`                           | Lifecycle event for loading or loaded                                     |
+| `structure-error`          | `{ message, severity, source, context, originalError? }` | Host-consumed error event                                                 |
+| `structure-close`          | `{ proteinId }`                                          | Viewer closed                                                             |
+| `structure-protein-change` | `{ proteinId }`                                          | The user picked another selected protein (`StructureProteinChangeDetail`) |
 
 ### Slots and parts
 
-| Name                    | Description                                              |
-| ----------------------- | -------------------------------------------------------- |
-| `header-actions` (slot) | Buttons placed in the header, before the close button    |
-| `header` (part)         | The header row: title, protein id, links and the buttons |
+| Name                    | Description                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `header-actions` (slot) | Buttons placed in the header, before the close button                                             |
+| `header` (part)         | The header row: title, protein id (a picker with several choices) and the buttons                 |
+| `links` (part)          | The resource links (AlphaFold, UniProt, InterPro, TED) in their own wrapping row under the header |
 
 ### Example
 

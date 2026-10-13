@@ -367,6 +367,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     legendElement,
     plotElement,
     requestStructure: (proteinId) => structureController.request(proteinId),
+    showSelection: (proteinIds) => structureController.select(proteinIds),
   });
 
   const selectionController = createSelectionController({

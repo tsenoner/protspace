@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RESOURCE_LINKS } from './header-links';
+import { RESOURCE_LINKS } from '../common/resource-links';
 import './structure-viewer';
 
 const PROTEIN_ID = 'W6JQJ9.2';
@@ -35,7 +35,7 @@ describe('protspace-structure-viewer resource links', () => {
 
     // Assert the whole row, in order: a `.find()` on one label alone would
     // still pass if its peers had disappeared. The URLs themselves are pinned
-    // in header-links.test.ts.
+    // in resource-links.test.ts.
     expect(
       links.map((link) => [
         link.querySelector('.header-link-label')?.textContent?.trim(),
@@ -46,8 +46,12 @@ describe('protspace-structure-viewer resource links', () => {
     for (const link of links) {
       expect(link.getAttribute('target')).toBe('_blank');
       expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-      // The separator is drawn on the list item; a link must not contain it.
-      expect(link.parentElement?.matches('ul[role="list"] > li.header-links-item')).toBe(true);
+      // The new tab is announced by a hidden hint, not a native title tooltip.
+      expect(link.hasAttribute('title')).toBe(false);
+      expect(link.querySelector('.resource-links-hint')?.textContent).toBe(' (opens in a new tab)');
+      // The links have their own row below the header, so a narrow panel wraps them.
+      expect(link.parentElement?.matches('ul[part="links"] > li.resource-links-item')).toBe(true);
+      expect(link.closest('.header')).toBeNull();
     }
   });
 
@@ -64,6 +68,20 @@ describe('protspace-structure-viewer resource links', () => {
     // A Lucide icon, not the old text glyph.
     expect(button.querySelector('svg.ps-icon')).not.toBeNull();
     expect(button.textContent?.trim()).toBe('');
+  });
+
+  it('with one choice the protein id is plain text', async () => {
+    const root = await mount();
+    const viewer = root.host as HTMLElement & {
+      proteinChoices: readonly string[];
+      updateComplete: Promise<unknown>;
+    };
+    viewer.proteinChoices = [PROTEIN_ID];
+    await viewer.updateComplete;
+    const id = root.querySelector('.protein-id')!;
+    expect(id.tagName).toBe('SPAN');
+    expect(id.textContent).toBe(PROTEIN_ID);
+    expect(root.querySelector('ps-menu')).toBeNull();
   });
 });
 

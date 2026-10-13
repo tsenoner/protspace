@@ -5,6 +5,8 @@ import { toDisplayValue, toInternalValue } from '@protspace/utils';
 import type { AnnotationBlock, NumericAnnotationType, TooltipView } from '@protspace/utils';
 import { proteinTooltipStyles } from './protein-tooltip.styles';
 import '../../kit/button';
+import { renderResourceLinks } from '../../common/resource-links';
+import { resourceLinkStyles } from '../../common/resource-links.styles';
 import type { TooltipAction } from '../scatter-plot.events';
 import {
   getAnnotationHeaderType,
@@ -135,8 +137,10 @@ class ProtspaceProteinTooltip extends LitElement {
   @property({ type: Object }) view: TooltipView | null = null;
   /** Buttons under the details while the tooltip is pinned; each dispatches `protein-tooltip-action`. */
   @property({ attribute: false }) actions: readonly TooltipAction[] = [];
+  /** The protein's resource links above the actions; the plot sets it while the tooltip is pinned. */
+  @property({ type: Boolean }) links = false;
 
-  static styles = proteinTooltipStyles;
+  static styles = [proteinTooltipStyles, resourceLinkStyles];
 
   render() {
     if (!this.view) {
@@ -172,6 +176,9 @@ class ProtspaceProteinTooltip extends LitElement {
             : ''}
           ${view.blocks.map((block) => renderAnnotationBlock(block))}
         </div>
+        ${this.links
+          ? html`<div class="tooltip-links">${renderResourceLinks(view.proteinId)}</div>`
+          : ''}
         ${this.actions.length > 0
           ? html`<div class="tooltip-actions">
               ${this.actions.map(

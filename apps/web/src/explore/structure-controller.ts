@@ -1,6 +1,7 @@
 import type {
   ProtspaceScatterplot,
   ProtspaceStructureViewer,
+  StructureProteinChangeDetail,
   TooltipAction,
   TooltipActionDetail,
 } from '@protspace/core';
@@ -24,7 +25,13 @@ export function isStructureVisible(layout: LayoutState, desktop: boolean): boole
 export interface StructureController {
   /** Shows `proteinId` now if the structure can be seen, or keeps it until it can. */
   request(proteinId: string): void;
-  /** Forgets the protein (a new dataset). Closes the viewer only if it holds one. */
+  /**
+   * The selection changed: offer its proteins in the header and choose which one shows. A single
+   * protein added to the selection shows; else the shown (or waiting) one stays while it is still
+   * selected; else the selection's last. An empty selection only clears the offer.
+   */
+  select(proteinIds: readonly string[]): void;
+  /** Forgets the protein and the choices (a new dataset). Closes the viewer only if it holds one. */
   clear(): void;
   dispose(): void;
 }
@@ -38,6 +45,24 @@ interface StructureControllerOptions {
   >;
   /** `matchMedia('(min-width: 951px)')` in the app; a fake in tests. */
   desktopQuery: Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>;
+}
+
+/**
+ * The one protein `next` adds to `previous`, or null when it adds none or several, or drops one.
+ * Lengths are compared first, and an appended protein (a ⌘-click) needs no set, so a large
+ * selection change costs a length check.
+ */
+function singleAddition(previous: readonly string[], next: readonly string[]): string | null {
+  if (next.length !== previous.length + 1) return null;
+  if (previous.every((id, index) => next[index] === id)) return next[next.length - 1];
+  const known = new Set(previous);
+  let added: string | null = null;
+  for (const id of next) {
+    if (known.has(id)) continue;
+    if (added !== null) return null;
+    added = id;
+  }
+  return added;
 }
 
 /**
@@ -60,6 +85,8 @@ export function createStructureController({
 
   // The protein waiting for the structure to be seen; null once it loads or is forgotten.
   let waiting: string | null = null;
+  // The selection the header offers, as select() last received it.
+  let choices: readonly string[] = [];
 
   const visible = () => isStructureVisible(getLayout(), desktopQuery.matches);
   const publish = (proteinId: string | null) =>
@@ -80,6 +107,26 @@ export function createStructureController({
     publish(proteinId);
     if (visible()) load(proteinId);
     else waiting = proteinId;
+  };
+
+  const select = (proteinIds: readonly string[]) => {
+    const previous = choices;
+    choices = proteinIds;
+    viewer.proteinChoices = proteinIds;
+    if (proteinIds.length === 0) return;
+    const added = singleAddition(previous, proteinIds);
+    if (added !== null) {
+      request(added);
+      return;
+    }
+    const shown = waiting ?? viewer.proteinId;
+    if (shown !== null && proteinIds.includes(shown)) return;
+    request(proteinIds[proteinIds.length - 1]);
+  };
+  // The user picked another selected protein in the header; the viewer is loading it.
+  const onProteinChange = (event: Event) => {
+    waiting = null;
+    publish((event as CustomEvent<StructureProteinChangeDetail>).detail.proteinId);
   };
 
   // "View structure" is offered only where a click cannot show the structure: docked in a
@@ -116,12 +163,16 @@ export function createStructureController({
   const unsubscribe = subscribeLayout(onLayoutChange);
   desktopQuery.addEventListener('change', onLayoutChange);
   viewer.addEventListener('structure-close', forget);
+  viewer.addEventListener('structure-protein-change', onProteinChange);
   plotElement.addEventListener('tooltip-action', onTooltipAction);
   offerViewStructure();
 
   return {
     request,
+    select,
     clear() {
+      choices = [];
+      viewer.proteinChoices = [];
       // close() dispatches structure-close, which forgets the protein.
       if (viewer.proteinId) viewer.close();
       else forget();
@@ -130,6 +181,7 @@ export function createStructureController({
       unsubscribe();
       desktopQuery.removeEventListener('change', onLayoutChange);
       viewer.removeEventListener('structure-close', forget);
+      viewer.removeEventListener('structure-protein-change', onProteinChange);
       plotElement.removeEventListener('tooltip-action', onTooltipAction);
     },
   };

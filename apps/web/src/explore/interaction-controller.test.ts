@@ -17,6 +17,7 @@ function setup(autoSync: boolean) {
     plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
     legendElement: legendElement as never,
     requestStructure: vi.fn(),
+    showSelection: vi.fn(),
   });
   return { controller, legendElement };
 }
@@ -43,21 +44,25 @@ describe('interaction controller legend updates', () => {
 });
 
 describe('interaction controller structure requests', () => {
-  it("a selection requests its last protein's structure", () => {
+  it('a selection passes its ids to showSelection', () => {
     const requestStructure = vi.fn();
+    const showSelection = vi.fn();
     const controller = createInteractionController({
       plotElement: { selectedAnnotation: 'family', getCurrentData: () => data } as never,
       legendElement: { autoSync: true, forceSync: vi.fn() } as never,
       requestStructure,
+      showSelection,
     });
 
     controller.handleSelectionChange(['p0', 'p1']);
-    expect(requestStructure).toHaveBeenCalledExactlyOnceWith('p1');
-    expect(controller.getSelectedProteins()).toEqual(['p0', 'p1']);
+    expect(showSelection).toHaveBeenCalledExactlyOnceWith(['p0', 'p1']);
+    // The controller's own copy, not a second one per change.
+    expect(showSelection.mock.calls[0][0]).toBe(controller.getSelectedProteins());
+    expect(requestStructure).not.toHaveBeenCalled();
 
-    // Clearing the selection leaves the structure as it is.
+    // An empty selection still reaches the structure, which only clears its choices.
     controller.handleSelectionChange([]);
-    expect(requestStructure).toHaveBeenCalledOnce();
+    expect(showSelection).toHaveBeenLastCalledWith([]);
     expect(controller.getSelectedProteins()).toEqual([]);
   });
 });
@@ -69,6 +74,7 @@ describe('interaction controller protein clicks', () => {
       plotElement: { clearProvenanceConnectors: vi.fn() } as never,
       legendElement: { autoSync: true, forceSync: vi.fn() } as never,
       requestStructure,
+      showSelection: vi.fn(),
     });
     const click = (detail: object) =>
       controller.handleProteinClick(new CustomEvent('protein-click', { detail }));

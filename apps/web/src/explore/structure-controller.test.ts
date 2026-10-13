@@ -16,6 +16,7 @@ function fakeViewer() {
     showTips: true,
     title: 'Protein Structure',
     proteinId: null as string | null,
+    proteinChoices: [] as readonly string[],
     style: {
       display: 'none',
       removeProperty(name: string) {
@@ -33,6 +34,7 @@ function fakeViewer() {
     }),
     addEventListener: events.addEventListener.bind(events),
     removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
   };
   return viewer;
 }
@@ -237,5 +239,84 @@ describe('createStructureController', () => {
     );
     expect(getLayout().sidebarOpen).toBe(false);
     expect(viewer.loadProtein).not.toHaveBeenCalled();
+  });
+});
+
+describe('createStructureController selection', () => {
+  it('select shows a single added protein', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('B');
+    controller.select(['A', 'B', 'C']);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('C');
+    // Added anywhere, not only at the end.
+    controller.select(['D', 'A', 'B', 'C']);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('D');
+    expect(viewer.proteinChoices).toEqual(['D', 'A', 'B', 'C']);
+    expect(getWorkbenchStatus().structureProteinId).toBe('D');
+  });
+
+  it('select keeps the shown protein while it stays selected and does not reload', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    controller.select(['B', 'C', 'D']);
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('B');
+    expect(viewer.proteinChoices).toEqual(['B', 'C', 'D']);
+    expect(getWorkbenchStatus().structureProteinId).toBe('B');
+  });
+
+  it('select falls back to the last when the shown one leaves', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    controller.select(['C', 'D']);
+    expect(viewer.loadProtein).toHaveBeenCalledTimes(2);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('D');
+  });
+
+  it('select([]) keeps the structure and clears the choices', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    controller.select([]);
+    expect(viewer.loadProtein).toHaveBeenCalledOnce();
+    expect(viewer.proteinId).toBe('B');
+    expect(viewer.proteinChoices).toEqual([]);
+    expect(getWorkbenchStatus().structureProteinId).toBe('B');
+  });
+
+  it('structure-protein-change publishes the picked protein', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    // The viewer loads the pick itself, then tells the controller.
+    viewer.proteinId = 'A';
+    viewer.dispatchEvent(
+      new CustomEvent('structure-protein-change', { detail: { proteinId: 'A' } }),
+    );
+    expect(getWorkbenchStatus().structureProteinId).toBe('A');
+    // The picked protein then stays while it is selected.
+    controller.select(['B', 'A']);
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('B');
+  });
+
+  it('clear empties the choices', () => {
+    const { viewer, controller } = setup();
+    controller.select(['A', 'B']);
+    controller.clear();
+    expect(viewer.proteinChoices).toEqual([]);
+    // A new selection after a clear compares with nothing.
+    controller.select(['C']);
+    expect(viewer.loadProtein).toHaveBeenLastCalledWith('C');
+  });
+
+  it('while hidden, select only updates waiting', () => {
+    const { viewer, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.select(['A', 'B']);
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+    expect(viewer.proteinChoices).toEqual(['A', 'B']);
+    expect(getWorkbenchStatus().structureProteinId).toBe('B');
+    // The waiting protein counts as shown: it stays while it is selected.
+    controller.select(['B']);
+    updateLayout({ sidebarOpen: true });
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('B');
   });
 });

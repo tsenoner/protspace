@@ -54,6 +54,7 @@ function setup(data = makeData()) {
     plotElement: plotElement as never,
     legendElement: { autoSync: true, forceSync: vi.fn() } as never,
     requestStructure: vi.fn(),
+    showSelection: vi.fn(),
   });
   return { controller, currentView, plotElement };
 }

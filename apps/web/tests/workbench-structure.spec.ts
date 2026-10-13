@@ -1,7 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { LAYOUT_STORAGE_KEY } from '../src/explore/layout-defaults';
 import { PHOSPHATASE_1587_FIXTURE } from './helpers/fixtures';
-import { importUserFile, openExplore, waitForExploreDataLoad } from './helpers/explore';
+import {
+  chooseTool,
+  getSelectedProteinIds,
+  importUserFile,
+  openExplore,
+  waitForExploreDataLoad,
+} from './helpers/explore';
 import {
   clickProteinNearPlotCentre,
   collapseSidebar,
@@ -199,7 +205,7 @@ test('Pop out floats the card over the plot without resizing it', async ({ page 
   const body = (await page.locator('[data-workbench="body"]').boundingBox())!;
   expectNear((await page.locator('#myLegend').boundingBox())!.height, body.height);
   await expect(page.getByRole('button', { name: 'Dock structure' })).toBeVisible();
-  // The header keeps one 44 px row, links included, docked and floating.
+  // The header keeps one 44 px row; the links wrap in their own row below it.
   expectNear((await page.locator('#myStructureViewer .header').boundingBox())!.height, 44);
   expect(await plot.boundingBox()).toEqual(before);
   expect(await resizes()).toBe(0);
@@ -557,4 +563,72 @@ test.describe('on a touch screen', () => {
     expectNear(moved.y, start.y - 80);
     expect((await readLayout(page))!.floatingRect).not.toBeNull();
   });
+});
+
+test('a box selection of several proteins lets the header pick which one shows', async ({
+  page,
+}) => {
+  await openExplore(page);
+  await chooseTool(page, 'Box select');
+  const box = (await page.locator('#myPlot').boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => (await getSelectedProteinIds(page)).length).toBeGreaterThan(1);
+
+  const viewer = page.locator('#myStructureViewer');
+  const pick = viewer.getByRole('button', { name: /^Structure protein: / });
+  await expect(pick).toBeVisible();
+  const shown = await viewer.evaluate(
+    (element) => (element as unknown as { proteinId: string | null }).proteinId,
+  );
+  expect(shown).not.toBeNull();
+
+  await pick.click();
+  await expect(viewer.getByRole('menuitemradio', { name: shown!, exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  const other = viewer.getByRole('menuitemradio', { checked: false }).first();
+  const otherId = (await other.textContent())!.trim();
+  await other.click();
+
+  await expect(viewer).toHaveJSProperty('proteinId', otherId);
+  await expect(pick).toContainText(otherId);
+  // The pick is the protein the rest of the shell shows too, and the selection is unchanged.
+  expect((await getSelectedProteinIds(page)).length).toBeGreaterThan(1);
+});
+
+test('the TED link is clickable docked at 240 px and floating at 280 px', async ({ page }) => {
+  await seedLayout(page, { sidebarWidth: 240 });
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  const ted = page.locator('#myStructureViewer').getByRole('link', { name: /^TED/ });
+  await expect(ted).toBeVisible();
+  // Actionable: visible, stable and the topmost element at its centre.
+  await ted.click({ trial: true });
+
+  await seedLayout(page, {
+    structurePlacement: 'floating',
+    floatingRect: { x: 40, y: 40, width: 280, height: 320 },
+  });
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await expect(workbench(page)).toHaveAttribute('data-structure', 'floating');
+  expectNear((await structurePanel(page).boundingBox())!.width, 280);
+  await expect(ted).toBeVisible();
+  await ted.click({ trial: true });
+});
+
+test('the pinned View structure tooltip offers the links', async ({ page }) => {
+  await openExplore(page);
+  await collapseSidebar(page);
+  await clickProteinNearPlotCentre(page);
+
+  const tooltip = page.locator('#myPlot protspace-protein-tooltip');
+  await expect(tooltip.getByRole('button', { name: 'View structure' })).toBeVisible();
+  const links = tooltip.getByRole('link');
+  await expect(links).toHaveText([/AlphaFold/, /UniProt/, /InterPro/, /TED/]);
+  await links.last().click({ trial: true });
 });

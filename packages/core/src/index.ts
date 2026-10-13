@@ -58,6 +58,7 @@ export type {
   StructureErrorEventDetail,
   StructureLoadDetail,
   StructureLoadEvent,
+  StructureProteinChangeDetail,
 } from './components/structure-viewer/types';
 export type { HostMessageEventDetail, HostMessageSeverity } from './events';
 

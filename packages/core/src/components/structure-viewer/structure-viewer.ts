@@ -1,7 +1,7 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, nothing, type PropertyValues } from 'lit';
 import { property, state, query } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
-import { StructureService, getBaseAccession } from '@protspace/utils';
+import { StructureService, formatCount, getBaseAccession } from '@protspace/utils';
 import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import {
@@ -10,24 +10,36 @@ import {
   type MolstarViewer,
   type StructureColorMode,
 } from './molstar-loader';
-import { RESOURCE_LINKS } from './header-links';
+import { renderResourceLinks } from '../common/resource-links';
+import { resourceLinkStyles } from '../common/resource-links.styles';
+import '../kit/menu';
+import type { PsMenu } from '../kit/menu';
+import '../kit/tooltip';
 import { icon } from '../kit/icon';
 import {
   createStructureErrorEventDetail,
   createStructureLoadDetail,
+  createStructureProteinChangeDetail,
 } from './structure-viewer.events';
 import type { StructureErrorEvent, StructureLoadEvent } from './types';
 import type { ProteinClickDetail } from '../scatter-plot/scatter-plot.events';
+
+/** The most selected proteins the header's menu lists; the shown one is always added. */
+export const MAX_STRUCTURE_CHOICES = 50;
+/** Above this many choices the menu gets a search field. */
+const SEARCHABLE_CHOICES = 8;
 
 /**
  * A protein's 3D structure (Mol*), its resource links and colouring.
  *
  * @slot header-actions - Buttons placed in the header, before the close button.
- * @csspart header - The header row: title, protein id, links and actions.
+ * @csspart header - The header row: title, protein id (a picker with several choices) and actions.
+ * @csspart links - The resource links, in their own wrapping row under the header.
+ * @fires structure-protein-change - `{ proteinId }`: the user picked another selected protein.
  */
 @customElement('protspace-structure-viewer')
 export class ProtspaceStructureViewer extends LitElement {
-  static styles = structureViewerStyles;
+  static styles = [structureViewerStyles, resourceLinkStyles];
 
   // Properties
   @property({ type: String }) proteinId: string | null = null;
@@ -36,6 +48,12 @@ export class ProtspaceStructureViewer extends LitElement {
   @property({ type: Boolean }) showCloseButton = true;
   @property({ type: Boolean }) showTips = true;
   @property({ type: String }) height = '400px';
+  /**
+   * The selected proteins the header offers, in selection order. With more than one, the
+   * protein id opens a menu of them; a pick shows it and fires `structure-protein-change`.
+   * Empty, the default, leaves the id plain text.
+   */
+  @property({ attribute: false }) proteinChoices: readonly string[] = [];
 
   // Auto-sync properties
   @property({ type: String, attribute: 'scatterplot-selector' })
@@ -51,11 +69,18 @@ export class ProtspaceStructureViewer extends LitElement {
   @state() private _viewer: MolstarViewer | null = null;
   @state() private _structureData: StructureData | null = null;
   @state() private _colorMode: StructureColorMode = 'plddt';
+  @state() private _pickOpen = false;
+  @query('.protein-pick') private _pickButton?: HTMLButtonElement;
+  @query('ps-menu.protein-menu') private _pickMenu?: PsMenu;
   private _loadController: AbortController | null = null;
   private _scatterplotElement: Element | null = null;
 
   // Refs
   @query('.viewer-content') private _viewerContainer!: HTMLElement;
+
+  protected willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has('proteinChoices') && this.proteinChoices.length <= 1) this._pickOpen = false;
+  }
 
   protected updated(changedProperties: Map<string | number | symbol, unknown>) {
     if (changedProperties.has('proteinId')) {
@@ -73,6 +98,10 @@ export class ProtspaceStructureViewer extends LitElement {
     }
     if (changedProperties.has('height')) {
       this.style.height = this.height;
+    }
+    // The menu anchors to the id button, which exists only while there is a choice to make.
+    if (this._pickMenu && this._pickMenu.anchor !== (this._pickButton ?? null)) {
+      this._pickMenu.anchor = this._pickButton ?? null;
     }
   }
 
@@ -349,13 +378,75 @@ export class ProtspaceStructureViewer extends LitElement {
     );
   }
 
-  /** Focus scrolls a clipped link into the one-line list; leaving puts the line back. */
-  private _resetLinksScroll = (event: FocusEvent) => {
-    (event.currentTarget as HTMLElement).scrollTop = 0;
-  };
-
   private _handleClose() {
     this.close(); // Use internal close method
+  }
+
+  private _togglePick = () => {
+    this._pickOpen = !this._pickOpen;
+  };
+
+  private _onPickClose = (event: Event) => {
+    // The menu's own events stay inside; the viewer's is structure-protein-change.
+    event.stopPropagation();
+    this._pickOpen = false;
+  };
+
+  private _onPick = (event: Event) => {
+    event.stopPropagation();
+    const { value } = (event as CustomEvent<{ value: string }>).detail;
+    this._pickOpen = false;
+    if (!value || value === this.proteinId) return;
+    this.proteinId = value;
+    this.dispatchEvent(
+      new CustomEvent('structure-protein-change', {
+        detail: createStructureProteinChangeDetail(value),
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
+
+  /** The id, or with several selected proteins a button that opens the menu of them. */
+  private _renderProteinId(proteinId: string) {
+    const count = this.proteinChoices.length;
+    if (count <= 1) return html`<span class="protein-id">${proteinId}</span>`;
+    return html`<button
+        type="button"
+        class="protein-id protein-pick"
+        aria-label=${`Structure protein: ${proteinId}, choose from ${formatCount(count)} selected`}
+        @click=${this._togglePick}
+      >
+        <span>${proteinId}</span>${icon('chevron-down', 14)}
+      </button>
+      <ps-menu
+        class="protein-menu"
+        label="Selected proteins"
+        search-placeholder="Search selected proteins"
+        .open=${this._pickOpen}
+        ?searchable=${count > SEARCHABLE_CHOICES}
+        @ps-select=${this._onPick}
+        @ps-close=${this._onPickClose}
+        >${this._pickOpen ? this._renderChoices(proteinId) : nothing}</ps-menu
+      >`;
+  }
+
+  /**
+   * The first 50 selected proteins in selection order, plus the shown one. A selection can hold
+   * hundreds of thousands, so only these render, and only while the menu is open.
+   */
+  private _renderChoices(shown: string) {
+    const all = this.proteinChoices;
+    const first = all.length > MAX_STRUCTURE_CHOICES ? all.slice(0, MAX_STRUCTURE_CHOICES) : all;
+    const offered = first.includes(shown) ? first : [...first, shown];
+    return html`${all.length > MAX_STRUCTURE_CHOICES
+      ? html`<ps-menu-label
+          >First ${MAX_STRUCTURE_CHOICES} of ${formatCount(all.length)} selected</ps-menu-label
+        >`
+      : nothing}${offered.map(
+      (id) =>
+        html`<ps-menu-item type="radio" value=${id} .checked=${id === shown}>${id}</ps-menu-item>`,
+    )}`;
   }
 
   private get _hasTedDomains(): boolean {
@@ -413,31 +504,8 @@ export class ProtspaceStructureViewer extends LitElement {
               <div class="header-info">
                 <div class="header-title-row">
                   <span class="title">${icon('box')}${this.title}</span>
-                  <span class="protein-id">${proteinId}</span>
+                  ${this._renderProteinId(proteinId)}
                 </div>
-                <ul
-                  class="header-links"
-                  role="list"
-                  aria-label="External resources"
-                  @focusout=${this._resetLinksScroll}
-                >
-                  ${RESOURCE_LINKS.map(
-                    (resource) => html`
-                      <li class="header-links-item">
-                        <a
-                          class="header-link"
-                          href=${resource.build(proteinId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Open in ${resource.label} (opens in a new tab)"
-                        >
-                          <span class="header-link-label">${resource.label}</span
-                          ><span class="header-link-external" aria-hidden="true">↗</span>
-                        </a>
-                      </li>
-                    `,
-                  )}
-                </ul>
               </div>
               <div class="header-actions">
                 <slot name="header-actions"></slot>
@@ -453,6 +521,7 @@ export class ProtspaceStructureViewer extends LitElement {
                   : ''}
               </div>
             </div>
+            ${renderResourceLinks(proteinId)}
           `
         : ''}
 
@@ -501,11 +570,11 @@ export class ProtspaceStructureViewer extends LitElement {
                   data-color-mode="ted-domains"
                   aria-pressed=${this._colorMode === 'ted-domains'}
                   .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
-                  title=${this._tedButtonTitle}
                   @click=${() => this._handleColorModeChange('ted-domains')}
                 >
                   TED domains
                 </button>
+                <ps-tooltip text=${this._tedButtonTitle}></ps-tooltip>
               </div>
             </div>
           `

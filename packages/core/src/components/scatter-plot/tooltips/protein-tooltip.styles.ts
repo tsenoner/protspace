@@ -32,6 +32,12 @@ export const proteinTooltipStyles = css`
     border-top: 1px solid var(--ps-border);
   }
 
+  /* A pinned tooltip's resource links: the only way to them while the structure is hidden. */
+  .tooltip-links {
+    padding-top: var(--ps-space-2);
+    border-top: 1px solid var(--ps-border);
+  }
+
   .tooltip {
     box-sizing: border-box;
     background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));

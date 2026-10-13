@@ -18,6 +18,8 @@ interface InteractionControllerOptions {
   plotElement: ProtspaceScatterplot;
   /** Asks for a protein's structure; the structure controller decides when it loads. */
   requestStructure(proteinId: string): void;
+  /** Offers the selection's proteins to the structure, which picks the one to show. */
+  showSelection(proteinIds: readonly string[]): void;
 }
 
 interface ActiveProvenanceClick {
@@ -35,7 +37,7 @@ export interface InteractionController {
   history: UndoHistory<UndoEntry>;
   updateLegend(): void;
   getSelectedProteins(): string[];
-  /** The selection changed: remember it and show its last protein's structure. */
+  /** The selection changed: remember it and offer it to the structure. */
   handleSelectionChange(proteinIds: readonly string[]): void;
   handleProteinClick(event: Event): void;
   handlePlotDataChange(): void;
@@ -49,6 +51,7 @@ export function createInteractionController({
   legendElement,
   plotElement,
   requestStructure,
+  showSelection,
 }: InteractionControllerOptions): InteractionController {
   let selectedProteins: string[] = [];
   let activeProvenanceClick: ActiveProvenanceClick | null = null;
@@ -95,10 +98,7 @@ export function createInteractionController({
     },
     handleSelectionChange(proteinIds) {
       selectedProteins = [...proteinIds];
-
-      if (selectedProteins.length > 0) {
-        requestStructure(selectedProteins[selectedProteins.length - 1]);
-      }
+      showSelection(selectedProteins);
     },
     handleProteinClick(event) {
       const detail = (event as CustomEvent<Partial<ProteinClickDetail>>).detail;

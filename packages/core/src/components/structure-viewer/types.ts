@@ -3,6 +3,7 @@ export type {
   StructureErrorEventDetail,
   StructureLoadDetail,
   StructureLoadEvent,
+  StructureProteinChangeDetail,
 } from './structure-viewer.events';
 
 import type { StructureErrorEventDetail } from './structure-viewer.events';
