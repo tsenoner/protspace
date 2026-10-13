@@ -96,12 +96,19 @@ describe('resource-links', () => {
       expect(list.getAttribute('role')).toBe('list');
       expect(list.getAttribute('aria-label')).toBe('External resources');
       const links = Array.from(host.querySelectorAll<HTMLAnchorElement>('li > a.header-link'));
-      expect(
-        links.map((link) => [
-          link.querySelector('.header-link-label')?.textContent,
-          link.getAttribute('href'),
-        ]),
-      ).toEqual(RESOURCE_LINKS.map((resource) => [resource.label, resource.build('W6JQJ9.2')]));
+      // Literal URLs, not RESOURCE_LINKS: a wrong builder wired into the row must fail here.
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([
+        'https://alphafold.ebi.ac.uk/entry/W6JQJ9',
+        'https://www.uniprot.org/uniprotkb/W6JQJ9/entry',
+        'https://www.ebi.ac.uk/interpro/protein/UniProt/W6JQJ9/',
+        'https://ted.cathdb.info/uniprot/W6JQJ9',
+      ]);
+      expect(links.map((link) => link.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+        'AlphaFold (opens in a new tab)',
+        'UniProt (opens in a new tab)',
+        'InterPro (opens in a new tab)',
+        'TED (opens in a new tab)',
+      ]);
       for (const link of links) {
         expect(link.hasAttribute('title')).toBe(false);
         expect(link.getAttribute('target')).toBe('_blank');
@@ -109,7 +116,7 @@ describe('resource-links', () => {
         expect(link.querySelector('.resource-links-hint')?.textContent).toBe(
           ' (opens in a new tab)',
         );
-        expect(link.querySelector('svg.ps-icon')).not.toBeNull();
+        expect(link.querySelector('svg.ps-icon')!.getAttribute('aria-hidden')).toBe('true');
       }
     });
   });

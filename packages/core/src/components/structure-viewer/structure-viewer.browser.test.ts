@@ -1,5 +1,6 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { adoptTheme } from '../kit/adopt-theme';
+import { deepActiveElement } from '../kit/focus';
 import { userEvent } from 'vitest/browser';
 import { MAX_STRUCTURE_CHOICES, type ProtspaceStructureViewer } from './structure-viewer';
 import './structure-viewer';
@@ -62,9 +63,7 @@ describe('protspace-structure-viewer color mode', () => {
     expect(getComputedStyle(pressed).backgroundColor).toBe('rgb(0, 122, 181)');
     expect(getComputedStyle(pressed).color).toBe('rgb(255, 255, 255)');
   });
-});
 
-describe('protspace-structure-viewer colour modes', () => {
   it('hovering the disabled TED button shows why it is disabled', async () => {
     // requestAnimationFrame is stubbed, so the structure never loads and TED stays disabled.
     const viewer = await mount();
@@ -103,6 +102,10 @@ describe('protspace-structure-viewer links row', () => {
         box.top + box.height / 2,
       );
       expect(link.contains(hit)).toBe(true);
+      // The new-tab hint is read, not seen.
+      expect(
+        link.querySelector('.resource-links-hint')!.getBoundingClientRect().width,
+      ).toBeLessThanOrEqual(1);
     }
   });
 });
@@ -134,6 +137,10 @@ describe('protspace-structure-viewer protein choices', () => {
     expect(items(viewer)).toHaveLength(0);
     const changed = vi.fn();
     viewer.addEventListener('structure-protein-change', changed);
+    // It leaves the viewer: bubbles and composed, so the shell hears it.
+    const onDocument = vi.fn();
+    document.addEventListener('structure-protein-change', onDocument);
+    onTestFinished(() => document.removeEventListener('structure-protein-change', onDocument));
 
     await open(viewer);
     expect(items(viewer).map((item) => item.textContent!.trim())).toEqual([
@@ -148,8 +155,36 @@ describe('protspace-structure-viewer protein choices', () => {
     expect(viewer.proteinId).toBe('P22222');
     expect(changed).toHaveBeenCalledOnce();
     expect((changed.mock.calls[0][0] as CustomEvent).detail).toEqual({ proteinId: 'P22222' });
+    expect(onDocument).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(pickButton(viewer).getAttribute('aria-expanded')).toBe('false'));
     expect(items(viewer)).toHaveLength(0);
+
+    // Re-picking the shown one changes nothing and dispatches nothing.
+    await open(viewer);
+    items(viewer)
+      .find((item) => item.checked)!
+      .click();
+    await viewer.updateComplete;
+    expect(viewer.proteinId).toBe('P22222');
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('from the keyboard, focus lands on the checked item and Escape returns it to the id', async () => {
+    const viewer = await mount();
+    viewer.proteinChoices = ['P11111', 'P12345', 'P22222'];
+    await viewer.updateComplete;
+    await vi.waitFor(() => expect(pickButton(viewer).getAttribute('aria-haspopup')).toBe('menu'));
+
+    await open(viewer);
+    const checked = items(viewer).find((item) => item.checked)!;
+    await vi.waitFor(() => {
+      const focused = deepActiveElement();
+      expect(focused === checked || checked.shadowRoot!.contains(focused)).toBe(true);
+    });
+
+    await userEvent.keyboard('{Escape}');
+    await vi.waitFor(() => expect(deepActiveElement()).toBe(pickButton(viewer)));
+    expect(pickButton(viewer).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('the menu renders at most 50 items and says how many were left out', async () => {
@@ -187,7 +222,18 @@ describe('protspace-structure-viewer protein choices', () => {
     viewer.proteinChoices = ids(9);
     await viewer.updateComplete;
     expect(menu.searchable).toBe(true);
+    expect(menu.getAttribute('search-placeholder')).toBe('Search proteins');
     await open(viewer);
     expect(menu.shadowRoot!.querySelector('input[type="search"]')).not.toBeNull();
+  });
+
+  it('above 50 choices the search says it searches the first 50', async () => {
+    const viewer = await mount();
+    viewer.proteinChoices = ids(60);
+    viewer.proteinId = ids(60)[0];
+    await viewer.updateComplete;
+    expect(viewer.shadowRoot!.querySelector('ps-menu')!.getAttribute('search-placeholder')).toBe(
+      `Search the first ${MAX_STRUCTURE_CHOICES}`,
+    );
   });
 });

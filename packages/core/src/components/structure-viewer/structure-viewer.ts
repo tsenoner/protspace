@@ -422,7 +422,9 @@ export class ProtspaceStructureViewer extends LitElement {
       <ps-menu
         class="protein-menu"
         label="Selected proteins"
-        search-placeholder="Search selected proteins"
+        search-placeholder=${count > MAX_STRUCTURE_CHOICES
+          ? `Search the first ${MAX_STRUCTURE_CHOICES}`
+          : 'Search proteins'}
         .open=${this._pickOpen}
         ?searchable=${count > SEARCHABLE_CHOICES}
         @ps-select=${this._onPick}
