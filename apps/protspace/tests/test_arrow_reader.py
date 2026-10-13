@@ -1,31 +1,63 @@
-"""ArrowReader rejects a path that cannot yield any ProtSpace table.
-
-Every probe in ``_load_data`` falls back to an empty frame when its file is
-missing, so without the up-front check a bad path read as an empty dataset.
-"""
+"""ArrowReader reads a .parquetbundle directly, and refuses a path that holds
+no ProtSpace data instead of reading it as an empty dataset."""
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from protspace.data.annotations.encoding import stamp_format_version
+from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.arrow_reader import ArrowReader
 
-
-def test_bundle_file_points_at_extract_bundle_to_dir(tmp_path):
-    bundle = tmp_path / "data.parquetbundle"
-    bundle.write_bytes(b"")
-    with pytest.raises(ValueError, match="extract_bundle_to_dir"):
-        ArrowReader(bundle)
+SETTINGS = {"cath": {"categories": {"a": {"color": "#ff0000", "shape": "circle"}}}}
 
 
-def test_other_file_is_rejected(tmp_path):
+@pytest.fixture
+def bundle(tmp_path):
+    path = tmp_path / "data.parquetbundle"
+    write_bundle(
+        [
+            stamp_format_version(
+                pa.table({"protein_id": ["P1", "P2"], "cath": ["a", "b"]})
+            ),
+            pa.table(
+                {"projection_name": ["pca2"], "dimensions": [2], "info_json": ["{}"]}
+            ),
+            pa.table(
+                {
+                    "projection_name": ["pca2", "pca2"],
+                    "identifier": ["P1", "P2"],
+                    "x": [0.0, 1.0],
+                    "y": [0.0, 1.0],
+                    "z": [None, None],
+                }
+            ),
+        ],
+        path,
+        settings=SETTINGS,
+    )
+    return path
+
+
+def test_bundle_reads_like_its_extracted_directory(bundle, tmp_path):
+    from_bundle = ArrowReader(bundle)
+    from_dir = ArrowReader(extract_bundle_to_dir(bundle, tmp_path / "out"))
+
+    assert from_bundle.get_data() == from_dir.get_data()
+    assert from_bundle.settings == from_dir.settings == SETTINGS
+    assert sorted(from_bundle.get_protein_ids()) == ["P1", "P2"]
+    assert from_bundle.get_projection_names() == ["pca2"]
+    assert from_bundle.get_format_version() == 2
+
+
+def test_file_that_is_not_a_bundle_is_rejected(tmp_path):
     other = tmp_path / "selected_annotations.parquet"
     pq.write_table(pa.table({"protein_id": ["P1"]}), other)
-    with pytest.raises(ValueError, match="expects a directory of .parquet files.$"):
+    with pytest.raises(ValueError, match="parquetbundle"):
         ArrowReader(other)
 
 
-def test_missing_directory_is_not_found(tmp_path):
+def test_missing_path_is_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
         ArrowReader(tmp_path / "missing")
 

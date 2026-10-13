@@ -28,27 +28,30 @@ def _read_format_version(schema_metadata: dict | None) -> int:
 class ArrowReader:
     """Read and manipulate ProtSpace data from Parquet files or a dict.
 
-    Accepts either a ``Path`` to a directory of Parquet files or a
-    pre-built ``dict`` (the same structure previously handled by the
-    legacy ``JsonReader``).
+    Accepts a ``Path`` to a ``.parquetbundle`` file or to a directory of
+    Parquet files, or a pre-built ``dict`` (the same structure previously
+    handled by the legacy ``JsonReader``).
     """
 
     def __init__(self, source: Path | dict):
         """
         Args:
-            source: Path to directory containing .parquet files, or a
-                pre-built data dict (protein_data, projections, …).
+            source: Path to a .parquetbundle file or to a directory
+                containing .parquet files, or a pre-built data dict
+                (protein_data, projections, …).
         """
         if isinstance(source, dict):
             # Direct dict input
             self.data = source
             self.data_path = None
+            self.settings = None
             self._protein_annotations_df = None
             self._projections_metadata_df = None
             self._projections_data_df = None
         else:
             # Parquet file loading
             self.data_path = Path(source)
+            self.settings = None
             self._protein_annotations_df = None
             self._projections_metadata_df = None
             self._projections_data_df = None
@@ -61,71 +64,61 @@ class ArrowReader:
             self._build_data_structure()
 
     def _load_data(self):
-        """Load data from Parquet files.
+        """Load the core tables from a .parquetbundle file or a directory."""
+        path = self.data_path
+        if path.is_file():
+            tables = self._read_bundle(path)
+        elif path.is_dir():
+            tables = self._read_directory(path)
+        else:
+            raise FileNotFoundError(f"No such file or directory: '{path}'")
 
-        Each table falls back to an empty frame when absent, so at least one
-        must exist; a bad path would otherwise read as an empty dataset.
+        annotations, metadata, projections = tables
+        if annotations is not None:
+            self._protein_annotations_df = annotations.to_pandas()
+            self.data["format_version"] = _read_format_version(
+                annotations.schema.metadata
+            )
+        else:
+            self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
+        self._projections_metadata_df = (
+            metadata.to_pandas()
+            if metadata is not None
+            else pd.DataFrame(columns=["projection_name", "dimensions", "info_json"])
+        )
+        self._projections_data_df = (
+            projections.to_pandas()
+            if projections is not None
+            else pd.DataFrame(columns=["projection_name", "identifier", "x", "y", "z"])
+        )
+
+    def _read_bundle(self, path: Path) -> tuple[pa.Table, pa.Table, pa.Table]:
+        """Read a bundle in memory, whatever its container version."""
+        from protspace.data.io.bundle import read_bundle_contents
+
+        contents = read_bundle_contents(path)
+        self.settings = contents.settings
+        return contents.annotations, contents.metadata, contents.projections
+
+    def _read_directory(self, path: Path) -> tuple[pa.Table | None, ...]:
+        """Read the core tables a directory holds; a missing one reads as None.
+
+        An annotations-only directory is valid, but one holding none of the core
+        tables is not ProtSpace data and must not read as an empty dataset.
         """
         from protspace.data.io.bundle import CORE_FILENAMES
 
-        # Checked before the try so these errors are not re-wrapped below.
-        path = self.data_path
-        if path.is_file():
-            hint = (
-                " Extract it first with protspace.data.io.extract_bundle_to_dir()."
-                if path.suffix.lower() == ".parquetbundle"
-                else ""
-            )
-            raise ValueError(
-                f"'{path}' is a file; ArrowReader expects a directory of .parquet "
-                f"files.{hint}"
-            )
-        if not path.is_dir():
-            raise FileNotFoundError(f"No such directory: '{path}'")
         core_paths = [path / name for name in CORE_FILENAMES]
         if not any(p.exists() for p in core_paths):
             raise ValueError(
                 f"Directory '{path}' contains none of {', '.join(CORE_FILENAMES)}."
             )
-
         try:
-            (
-                protein_annotations_path,
-                projections_metadata_path,
-                projections_data_path,
-            ) = core_paths
-
-            if protein_annotations_path.exists():
-                annotations_table = pq.read_table(str(protein_annotations_path))
-                self._protein_annotations_df = annotations_table.to_pandas()
-                self.data["format_version"] = _read_format_version(
-                    annotations_table.schema.metadata
-                )
-            else:
-                self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
-
-            if projections_metadata_path.exists():
-                self._projections_metadata_df = pq.read_table(
-                    str(projections_metadata_path)
-                ).to_pandas()
-            else:
-                self._projections_metadata_df = pd.DataFrame(
-                    columns=["projection_name", "dimensions", "info_json"]
-                )
-
-            if projections_data_path.exists():
-                self._projections_data_df = pq.read_table(
-                    str(projections_data_path)
-                ).to_pandas()
-            else:
-                self._projections_data_df = pd.DataFrame(
-                    columns=["projection_name", "identifier", "x", "y", "z"]
-                )
-
+            return tuple(
+                pq.read_table(str(p)) if p.exists() else None for p in core_paths
+            )
         except Exception as e:
-            raise ValueError(
-                f"Error loading Arrow data from {self.data_path}: {e}"
-            ) from e
+            raise ValueError(f"Error loading Arrow data from {path}: {e}") from e
 
     def _build_data_structure(self):
         """Build the data structure matching the ProtSpace data schema."""
@@ -186,35 +179,39 @@ class ArrowReader:
     def _load_visualization_state(self):
         """Load visualization state.
 
-        Priority: visualization_state.json > settings.parquet (from bundle).
+        A bundle carries it in its settings part. A directory may hold
+        visualization_state.json, which wins over settings.parquet.
         """
-        viz_state_path = self.data_path / "visualization_state.json"
-        if viz_state_path.exists():
-            try:
-                with open(viz_state_path) as f:
-                    viz_state = json.load(f)
-                    self.data["visualization_state"] = viz_state
-                    return
-            except (json.JSONDecodeError, FileNotFoundError):
-                pass
+        if self.data_path.is_dir():
+            viz_state_path = self.data_path / "visualization_state.json"
+            if viz_state_path.exists():
+                try:
+                    with open(viz_state_path) as f:
+                        self.data["visualization_state"] = json.load(f)
+                        return
+                except (json.JSONDecodeError, FileNotFoundError):
+                    pass
 
-        # Fall back to settings.parquet (extracted from a 4-part bundle)
-        settings_path = self.data_path / "settings.parquet"
-        if settings_path.exists():
-            try:
-                from protspace.data.io.bundle import read_settings_from_file
-                from protspace.data.io.settings_converter import (
-                    settings_to_visualization_state,
-                )
+        try:
+            from protspace.data.io.bundle import (
+                SETTINGS_FILENAME,
+                read_settings_from_file,
+            )
+            from protspace.data.io.settings_converter import (
+                settings_to_visualization_state,
+            )
 
-                settings = read_settings_from_file(settings_path)
+            settings_path = self.data_path / SETTINGS_FILENAME
+            if self.data_path.is_dir() and settings_path.exists():
+                self.settings = read_settings_from_file(settings_path)
+            if self.settings:
                 self.data["visualization_state"] = settings_to_visualization_state(
-                    settings
+                    self.settings
                 )
-            except Exception:
-                logger.debug(
-                    "Failed to load visualization state from settings", exc_info=True
-                )
+        except Exception:
+            logger.debug(
+                "Failed to load visualization state from settings", exc_info=True
+            )
 
     def save_data(self, output_path: Path = None):
         """Save the current data back to parquet files."""
