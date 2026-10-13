@@ -56,6 +56,14 @@ Use `aria-live` and related accessibility primitives for assistive feedback with
 
 - Example: legend status announcements
 
+### Plot status
+
+The scatterplot reports what a status display shows instead of every host reading its state:
+`view-status-change` (`{ count, zoomedIn }`, when either changed) and `hidden-values-change`
+(`{ count }`, when the number of hidden category values changed). The app shows them, with the
+isolation and the applied filter, in `protspace-plot-status`; an embedder without it keeps the
+plot's own count (`hide-status` off).
+
 ## Event Contract
 
 Host-consumed warning and error events share the `HostMessageEventDetail` shape defined in

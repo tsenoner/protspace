@@ -88,6 +88,10 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & { id?: string },
         HTMLElement
       >;
+      'protspace-plot-status': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { id?: string },
+        HTMLElement
+      >;
       'protspace-protein-search': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
         HTMLElement
@@ -103,6 +107,7 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement> & {
           id?: string;
           'data-driver-id'?: string;
+          'hide-status'?: string;
         },
         HTMLElement
       >;

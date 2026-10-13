@@ -317,11 +317,28 @@ export const selectionBarAction = (
   name: 'Show only these' | 'Zoom to them' | 'Copy IDs' | 'Clear',
 ): Locator => selectionBar(page).getByRole('button', { name, exact: true });
 
-/** Reset, beside the plot's tool strip while the plot is isolated. */
-const isolationReset = (page: Page): Locator =>
-  page
-    .getByRole('group', { name: 'Isolation', exact: true })
-    .getByRole('button', { name: 'Reset', exact: true });
+type StatusChipKind = 'filter' | 'isolation' | 'hidden';
+
+const STATUS_CLEAR_NAMES: Readonly<Record<StatusChipKind, string>> = {
+  filter: 'Remove filter',
+  isolation: 'Show all proteins',
+  hidden: 'Show hidden categories',
+};
+
+/** The plot's bottom-left corner: the protein count and a chip per narrowing. */
+export const plotStatus = (page: Page): Locator => page.locator('#myPlotStatus');
+
+/** The status corner's chip for one narrowing (filtered, isolated, categories hidden). */
+export const statusChip = (page: Page, kind: StatusChipKind): Locator =>
+  plotStatus(page).locator(`.status-chip[data-kind="${kind}"]`);
+
+/** Presses a chip's ✕ by its name and waits until the chip is gone. */
+export async function clearStatusChip(page: Page, kind: StatusChipKind): Promise<void> {
+  await statusChip(page, kind)
+    .getByRole('button', { name: STATUS_CLEAR_NAMES[kind], exact: true })
+    .click();
+  await expect(statusChip(page, kind)).toHaveCount(0);
+}
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 
@@ -573,9 +590,9 @@ export async function isolateSelection(page: Page): Promise<void> {
   await expect.poll(() => isIsolated(page)).toBe(true);
 }
 
-/** Leaves isolation with Reset and waits until the plot shows the full dataset again. */
+/** Leaves isolation with the isolation chip's ✕ and waits until the plot shows the full dataset. */
 export async function resetIsolation(page: Page): Promise<void> {
-  await isolationReset(page).click();
+  await clearStatusChip(page, 'isolation');
   await expect.poll(() => isIsolated(page)).toBe(false);
 }
 

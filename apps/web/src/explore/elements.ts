@@ -11,6 +11,7 @@ import type {
   ProtspaceQueryBuilder,
   ProtspaceScatterplot,
   ProtspaceSelectionBar,
+  ProtspacePlotStatus,
   ProtspaceStructureViewer,
   DataLoader as ProtspaceDataLoader,
   PsButton,
@@ -33,6 +34,7 @@ interface ExploreElements {
   projectionMetadata: ProtspaceProjectionMetadata;
   plotTools: ProtspacePlotTools;
   selectionBar: ProtspaceSelectionBar;
+  plotStatus: ProtspacePlotStatus;
   proteinSearch: ProtspaceProteinSearch;
 }
 
@@ -51,6 +53,7 @@ const REQUIRED_TAGS = [
   'protspace-projection-metadata',
   'protspace-plot-tools',
   'protspace-selection-bar',
+  'protspace-plot-status',
   'protspace-protein-search',
 ] as const;
 
@@ -82,6 +85,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
   ) as ProtspaceProjectionMetadata | null;
   const plotTools = doc.getElementById('myPlotTools') as ProtspacePlotTools | null;
   const selectionBar = doc.getElementById('mySelectionBar') as ProtspaceSelectionBar | null;
+  const plotStatus = doc.getElementById('myPlotStatus') as ProtspacePlotStatus | null;
   const proteinSearch = doc.getElementById('myProteinSearch') as ProtspaceProteinSearch | null;
 
   if (
@@ -100,6 +104,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
     !projectionMetadata ||
     !plotTools ||
     !selectionBar ||
+    !plotStatus ||
     !proteinSearch
   ) {
     console.error('Could not find one or more required explore elements.', {
@@ -118,6 +123,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
       projectionMetadata,
       plotTools,
       selectionBar,
+      plotStatus,
       proteinSearch,
     });
     return null;
@@ -139,6 +145,7 @@ export function getElements(doc: Document = document): ExploreElements | null {
     projectionMetadata,
     plotTools,
     selectionBar,
+    plotStatus,
     proteinSearch,
   };
 }

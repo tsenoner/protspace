@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { waitForExploreDataLoad, waitForExploreInteractionReady } from './helpers/explore';
+import {
+  plotStatus,
+  waitForExploreDataLoad,
+  waitForExploreInteractionReady,
+} from './helpers/explore';
 
 type HitTestablePlot = HTMLElement & {
   pickInteractivePointAt(mouseX: number, mouseY: number): unknown;
@@ -19,14 +23,14 @@ test.describe('scatterplot zoom indicator (#343)', () => {
       x: bounds!.x + bounds!.width / 2,
       y: bounds!.y + bounds!.height / 2,
     };
-    // The EAT connector chip is also a status; pin the point-count one.
-    const pointCountChip = plot.getByRole('status').filter({ hasText: 'points' });
+    // The status corner's count; the plot itself draws none in the app (hide-status).
+    const pointCountChip = plotStatus(page).getByRole('status');
     await expect(pointCountChip).toHaveAttribute('aria-live', 'polite');
-    await expect(pointCountChip).toHaveText(/^\s*\d+ points\s*$/);
+    await expect(pointCountChip).toHaveText(/^\s*[\d,]+ proteins\s*$/);
 
     await page.mouse.move(center.x, center.y);
     await page.mouse.wheel(0, -500);
-    await expect(pointCountChip).toHaveText(/^\s*\d+ points · Zoomed in\s*$/);
+    await expect(pointCountChip).toHaveText(/^\s*[\d,]+ proteins · Zoomed in\s*$/);
 
     // Reset on background, as documented: clicks that land on a protein also select it,
     // and Explore then opens the structure viewer and fetches the model from AlphaFold.
@@ -43,6 +47,6 @@ test.describe('scatterplot zoom indicator (#343)', () => {
     expect(background).not.toBeNull();
 
     await page.mouse.dblclick(background!.x, background!.y);
-    await expect(pointCountChip).toHaveText(/^\s*\d+ points\s*$/);
+    await expect(pointCountChip).toHaveText(/^\s*[\d,]+ proteins\s*$/);
   });
 });

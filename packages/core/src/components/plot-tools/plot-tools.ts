@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from 'lit';
+import { LitElement, html } from 'lit';
 import { property } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
@@ -16,14 +16,13 @@ const TOOLS: ReadonlyArray<{ tool: PlotTool; icon: IconName; label: string }> = 
 ];
 
 /**
- * The plot's tool strip (design decision 1): a vertical toolbar for the plot's top-left corner,
- * and beside it, while the plot is isolated, Reset. The selection's own actions are the selection
- * bar's (`protspace-selection-bar`). It reports choices; the host's selection controller sets the
- * plot and these properties.
+ * The plot's tool strip (design decision 1): a vertical toolbar for the plot's top-left corner.
+ * The selection's actions are the selection bar's (`protspace-selection-bar`); leaving isolation is
+ * the status corner's (`protspace-plot-status`). It reports choices; the host's selection
+ * controller sets the plot and these properties.
  *
  * @fires plot-tool-change - `{ tool: PlotTool }`
  * @fires fit-view - `{}`
- * @fires reset-isolation - `{}`
  */
 @customElement('protspace-plot-tools')
 export class ProtspacePlotTools extends LitElement {
@@ -32,7 +31,6 @@ export class ProtspacePlotTools extends LitElement {
   @property() tool: PlotTool = 'pan';
   /** Box and Lasso are off: the view holds too few points to select from. */
   @property({ type: Boolean, attribute: 'selection-disabled' }) selectionDisabled = false;
-  @property({ type: Boolean }) isolated = false;
 
   render() {
     return html`
@@ -66,33 +64,12 @@ export class ProtspacePlotTools extends LitElement {
           @click=${() => this.emit('fit-view')}
         ></ps-icon-button>
       </div>
-      ${this.isolated
-        ? html`<div class="selection" role="group" aria-label="Isolation">
-            <ps-button size="sm" variant="ghost" @click=${this.resetIsolation}>Reset</ps-button>
-          </div>`
-        : nothing}
     `;
   }
 
   /** The toolbar's one Tab stop (roving tabindex): the current tool, or Move and zoom. */
   private get tabStop(): PlotTool {
     return this.tool !== 'pan' && this.selectionDisabled ? 'pan' : this.tool;
-  }
-
-  /** Set when Reset had focus: leaving isolation removes it. */
-  private restoreFocus = false;
-
-  private resetIsolation = () => {
-    this.restoreFocus = this.shadowRoot!.activeElement !== null;
-    this.emit('reset-isolation');
-  };
-
-  protected updated(): void {
-    if (!this.restoreFocus) return;
-    this.restoreFocus = false;
-    // Reset is still there.
-    if (this.shadowRoot!.activeElement) return;
-    this.focusTool();
   }
 
   /** Focuses the tool strip's one Tab stop: the current tool, or Move and zoom. */

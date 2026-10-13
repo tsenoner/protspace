@@ -27,6 +27,17 @@ The scatter plot draws its points with WebGL2. [Render pipeline](./render-pipeli
 a frame is drawn: staging, the per-category style table, the selection marks, the projection glide,
 the render loop and the device limits. It also lists the checks that keep the pipeline fast.
 
+## Plot status
+
+The plot's bottom-left corner is `protspace-plot-status`: the visible protein count and a chip
+for each way the view is narrowed (filtered, isolated, categories hidden). In the app,
+`apps/web/src/explore/status-controller.ts` feeds it from the scatterplot's `view-status-change`,
+`hidden-values-change`, `data-isolation` and `data-isolation-reset` events and from the status
+store's `appliedFilterConditions`, and runs its chip actions: open the filter or the legend,
+remove the filter (`FilterController.clear()`), leave isolation
+(`SelectionController.resetIsolation()`) or show every category (`legend.showAllCategories()`).
+Neither the scatterplot nor the React shell re-renders for it.
+
 ## Legend Component
 
 The legend is one element, `protspace-legend`, with one shadow root: its rows must be direct

@@ -4,6 +4,7 @@ import {
   importMenu,
   importUserFile,
   openExplore,
+  statusChip,
   waitForExploreInteractionReady,
   waitForProteinCount,
 } from './helpers/explore';
@@ -75,7 +76,7 @@ async function engageIsolation(page: Page, sampleSize = 100): Promise<void> {
   }, sampleSize);
 }
 
-/** The plot's own isolation flag; the Reset button shows the controls' mirror of it. */
+/** The plot's own isolation flag; the isolation chip shows the controls' mirror of it. */
 async function readIsolationMode(page: Page): Promise<boolean> {
   return page.evaluate(() => {
     const plot = document.querySelector('#myPlot') as
@@ -85,10 +86,8 @@ async function readIsolationMode(page: Page): Promise<boolean> {
   });
 }
 
-function resetButton(page: Page) {
-  return page
-    .getByRole('group', { name: 'Isolation', exact: true })
-    .getByRole('button', { name: 'Reset', exact: true });
+function isolationChip(page: Page) {
+  return statusChip(page, 'isolation');
 }
 
 test.describe('Dataset swap clears isolation state (#222)', () => {
@@ -98,13 +97,13 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
 
   test('Reset clears when swapping demo → custom while isolated', async ({ page }) => {
     await engageIsolation(page);
-    await expect(resetButton(page)).toBeVisible();
+    await expect(isolationChip(page)).toBeVisible();
     expect(await readIsolationMode(page)).toBe(true);
 
     await importUserFile(page, CUSTOM_5K_BUNDLE_PATH);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
-    await expect(resetButton(page)).toHaveCount(0);
+    await expect(isolationChip(page)).toHaveCount(0);
     expect(await readIsolationMode(page)).toBe(false);
   });
 
@@ -115,13 +114,13 @@ test.describe('Dataset swap clears isolation state (#222)', () => {
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await engageIsolation(page);
-    await expect(resetButton(page)).toBeVisible();
+    await expect(isolationChip(page)).toBeVisible();
     expect(await readIsolationMode(page)).toBe(true);
 
     await loadDemoDataset(page);
     await waitForProteinCount(page, demoCount);
 
-    await expect(resetButton(page)).toHaveCount(0);
+    await expect(isolationChip(page)).toHaveCount(0);
     expect(await readIsolationMode(page)).toBe(false);
   });
 });

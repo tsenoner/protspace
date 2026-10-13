@@ -13,6 +13,7 @@ export { DENSITY_MODE_LABELS } from '@protspace/utils';
 export { ProtspacePlotTools } from './components/plot-tools/plot-tools';
 export type { PlotTool } from './components/plot-tools/plot-tools';
 export { ProtspaceSelectionBar } from './components/plot-tools/selection-bar';
+export { ProtspacePlotStatus, type StatusChipKind } from './components/plot-tools/plot-status';
 export { ProtspaceProteinSearch } from './components/control-bar/search';
 export { AfterPaintCommit } from './utils/after-paint-commit';
 // The filter's query builder and its pure query helpers; the app's filter controller drives them.

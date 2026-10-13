@@ -71,6 +71,8 @@ interface SelectionControllerOptions {
 interface SelectionController {
   /** A new dataset: drop a search pick still waiting and return the tool strip to Move. */
   resetForNewDataset(): void;
+  /** Leaves isolation: the status corner's ✕ on the isolation chip. */
+  resetIsolation(): void;
   dispose(): void;
 }
 
@@ -207,19 +209,12 @@ export function createSelectionController({
       );
   };
 
-  const onResetIsolation = () => {
-    plotElement.resetIsolation();
-    plotTools.isolated = false;
-  };
-
   /** The plot isolated or reset: it emptied its own selection, so only the display follows. */
-  const onIsolation = (event: Event) => {
-    plotTools.isolated = (event as CustomEvent<{ isolationMode: boolean }>).detail.isolationMode;
+  const onIsolation = () => {
     show([]);
   };
 
-  const onIsolationReset = (event: Event) => {
-    plotTools.isolated = (event as CustomEvent<{ isolationMode: boolean }>).detail.isolationMode;
+  const onIsolationReset = () => {
     show([]);
     // Back to the full data: selection works again.
     plotTools.selectionDisabled = false;
@@ -273,9 +268,6 @@ export function createSelectionController({
   selectionBar.addEventListener('isolate-data', onIsolate);
   selectionBar.addEventListener('zoom-to-selection', onZoomToSelection);
   selectionBar.addEventListener('copy-selection', onCopySelection);
-  // Clear and Show only these hide the bar they were pressed in: focus goes to the tool strip.
-  selectionBar.returnFocus = () => plotTools.focusTool();
-  plotTools.addEventListener('reset-isolation', onResetIsolation);
 
   return {
     resetForNewDataset() {
@@ -284,6 +276,9 @@ export function createSelectionController({
       // The tool strip only: the data renderer resets the plot's own selection mode with its data.
       tool = 'pan';
       plotTools.tool = 'pan';
+    },
+    resetIsolation() {
+      plotElement.resetIsolation();
     },
     dispose() {
       commit.cancel();
@@ -303,8 +298,6 @@ export function createSelectionController({
       selectionBar.removeEventListener('isolate-data', onIsolate);
       selectionBar.removeEventListener('zoom-to-selection', onZoomToSelection);
       selectionBar.removeEventListener('copy-selection', onCopySelection);
-      selectionBar.returnFocus = null;
-      plotTools.removeEventListener('reset-isolation', onResetIsolation);
       releaseSelectionEscape();
       releaseToolEscape();
     },

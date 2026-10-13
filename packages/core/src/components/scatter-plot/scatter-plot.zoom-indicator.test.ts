@@ -3,7 +3,7 @@
  *
  * Issue #343: the plot's existing point-count chip exposes whether the active
  * D3 view is zoomed in. The full transform remains non-reactive; only
- * crossings between identity and k > 1 schedule a Lit update for the marker.
+ * crossings between identity and k > 1 schedule a Lit update for the marker, and only a changed count or flag is reported to the host (view-status-change).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as d3 from 'd3';
@@ -61,7 +61,7 @@ describe('scatterplot zoom indicator (#343)', () => {
 
     const chip = statusChip(plot);
     expect(chip?.getAttribute('aria-live')).toBe('polite');
-    expect(chip?.textContent?.trim()).toBe('1 points · Zoomed in');
+    expect(chip?.textContent?.trim()).toBe('1 protein · Zoomed in');
   });
 
   it('schedules a Lit update only when the zoomed-in boundary changes', async () => {
@@ -78,7 +78,7 @@ describe('scatterplot zoom indicator (#343)', () => {
     host.onTransform(d3.zoomIdentity.translate(30, 20));
     expect(plot.isUpdatePending).toBe(true);
     await plot.updateComplete;
-    expect(statusChip(plot)?.textContent?.trim()).toBe('1 points');
+    expect(statusChip(plot)?.textContent?.trim()).toBe('1 protein');
 
     host.onTransform(d3.zoomIdentity.scale(0.5));
     expect(plot.isUpdatePending).toBe(false);
@@ -102,6 +102,56 @@ describe('scatterplot zoom indicator (#343)', () => {
     plot._interactionHost().onTransform(d3.zoomIdentity.scale(1.0000000000000002));
     await plot.updateComplete;
 
-    expect(statusChip(plot)?.textContent?.trim()).toBe('1 points');
+    expect(statusChip(plot)?.textContent?.trim()).toBe('1 protein');
+  });
+
+  it('view-status-change fires once per boundary crossing, not per zoom frame', async () => {
+    const plot = await makePlot();
+    const reports: Array<{ count: number; zoomedIn: boolean }> = [];
+    plot.addEventListener('view-status-change', (event) =>
+      reports.push((event as CustomEvent<{ count: number; zoomedIn: boolean }>).detail),
+    );
+    const host = plot._interactionHost();
+    for (const t of [
+      d3.zoomIdentity.scale(2),
+      d3.zoomIdentity.scale(3),
+      d3.zoomIdentity.scale(4),
+      d3.zoomIdentity,
+    ]) {
+      host.onTransform(t);
+      await plot.updateComplete;
+    }
+    expect(reports).toEqual([
+      { count: 1, zoomedIn: true },
+      { count: 1, zoomedIn: false },
+    ]);
+  });
+
+  it('hide-status hides the count but not the recalculating note', async () => {
+    const plot = await makePlot();
+    plot.hideStatus = true;
+    plot._numericRecomputeRunning = true;
+    await plot.updateComplete;
+    expect(statusChip(plot)).toBeNull();
+    const notes = [...plot.shadowRoot!.querySelectorAll('.plot-indicator')].map((note) =>
+      note.textContent!.trim(),
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/^Recalculating bins for/);
+  });
+
+  it('hidden-values-change reports the number of hidden values when it changes', async () => {
+    const plot = await makePlot();
+    const counts: number[] = [];
+    plot.addEventListener('hidden-values-change', (event) =>
+      counts.push((event as CustomEvent<{ count: number }>).detail.count),
+    );
+    plot.hiddenAnnotationValues = ['A'];
+    await plot.updateComplete;
+    plot.hiddenAnnotationValues = ['A'];
+    await plot.updateComplete;
+    plot.hiddenAnnotationValues = [];
+    await plot.updateComplete;
+    expect(counts).toEqual([1, 0]);
   });
 });

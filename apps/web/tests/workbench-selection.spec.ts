@@ -2,15 +2,22 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   appBar,
   chooseTool,
+  clearStatusChip,
+  clickLegendItem,
+  getFirstLegendItemValue,
   getSelectedProteinIds,
   importTrigger,
+  isLegendItemHidden,
   isolateSelection,
   openExplore,
   plotArea,
+  plotStatus,
+  queryBuilder,
   resetIsolation,
   searchInput,
   selectionBar,
   selectionBarAction,
+  statusChip,
 } from './helpers/explore';
 
 const toolStrip = (page: Page) => page.getByRole('toolbar', { name: 'Plot tools' });
@@ -38,6 +45,30 @@ async function selectBySearch(page: Page, ids: string[]): Promise<void> {
     await searchInput(page).press('Enter');
   }
   await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids);
+}
+
+/**
+ * A one-condition filter keeping the first ten proteins, reported as the Filter's Apply reports
+ * it: the filter controller hears the builder's query-changed and query-apply.
+ */
+async function applyOneConditionFilter(page: Page): Promise<void> {
+  await page.locator('#myQueryBuilder').evaluate((builder) => {
+    const plot = document.querySelector('#myPlot') as Element & { selectedAnnotation: string };
+    const query = [
+      {
+        id: 'e2e-filter',
+        kind: 'categorical',
+        annotation: plot.selectedAnnotation,
+        values: ['e2e'],
+      },
+    ];
+    builder.dispatchEvent(new CustomEvent('query-changed', { detail: { query } }));
+    builder.dispatchEvent(
+      new CustomEvent('query-apply', {
+        detail: { matchedIndices: new Set(Array.from({ length: 10 }, (_, i) => i)) },
+      }),
+    );
+  });
 }
 
 test.describe('plot tools and selection', () => {
@@ -124,10 +155,10 @@ test.describe('plot tools and selection', () => {
 
     await isolateSelection(page);
     await expect(selectionBar(page)).toBeHidden();
-    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toBeVisible();
+    await expect(statusChip(page, 'isolation')).toBeVisible();
 
     await resetIsolation(page);
-    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toHaveCount(0);
+    await expect(statusChip(page, 'isolation')).toHaveCount(0);
   });
 
   test('a box selection shows the bar with its count; Clear empties it and focus stays on the tool strip', async ({
@@ -253,5 +284,76 @@ test.describe('plot tools and selection', () => {
       if (width < 1024) await expect(page.locator('.wb-dataset-count')).toBeHidden();
       else await expect(page.locator('.wb-dataset-count')).toBeVisible();
     }
+  });
+
+  test('Show only these shows the isolation chip with its size and 1 step; its ✕ returns the full view', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await selectBySearch(page, await proteinIds(page, 2));
+
+    await selectionBarAction(page, 'Show only these').click();
+
+    await expect(statusChip(page, 'isolation')).toContainText('Showing only 2 proteins · 1 step');
+    // The bar it was pressed in is gone: focus moved to the chip that took its place.
+    await expect(
+      statusChip(page, 'isolation').getByRole('button', { name: 'Show all proteins', exact: true }),
+    ).toBeFocused();
+
+    await clearStatusChip(page, 'isolation');
+    await expect
+      .poll(() =>
+        page
+          .locator('#myPlot')
+          .evaluate((plot) =>
+            (plot as HTMLElement & { isIsolationMode(): boolean }).isIsolationMode(),
+          ),
+      )
+      .toBe(false);
+    // Its chip is gone and no other shows: focus stays in the corner, on the count.
+    await expect(plotStatus(page).getByRole('status')).toBeFocused();
+  });
+
+  test("hiding a legend category shows '1 category hidden'; its ✕ shows it again", async ({
+    page,
+  }) => {
+    await openExplore(page);
+    const value = await getFirstLegendItemValue(page);
+    await clickLegendItem(page, value);
+    await expect.poll(() => isLegendItemHidden(page, value)).toBe(true);
+    await expect(statusChip(page, 'hidden')).toContainText('1 category hidden');
+
+    await clearStatusChip(page, 'hidden');
+    await expect.poll(() => isLegendItemHidden(page, value)).toBe(false);
+  });
+
+  test("applying a filter shows 'Filtered · 1 condition'; the chip opens the filter; its ✕ removes the filter", async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await applyOneConditionFilter(page);
+    await expect(statusChip(page, 'filter')).toContainText('Filtered · 1 condition');
+
+    await statusChip(page, 'filter')
+      .getByRole('button', { name: 'Filtered · 1 condition', exact: true })
+      .click();
+    await expect(queryBuilder(page)).toBeVisible();
+    // Close the Filter (a dialog until Task 4.5) so the chip is reachable again.
+    await page.keyboard.press('Escape');
+
+    await clearStatusChip(page, 'filter');
+    expect(
+      await page
+        .locator('#myPlot')
+        .evaluate((plot) => (plot as HTMLElement & { filtersActive: boolean }).filtersActive),
+    ).toBe(false);
+  });
+
+  test('the status corner shows the protein count; the plot draws none of its own', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await expect(plotStatus(page).getByRole('status')).toHaveText(/^\s*[\d,]+ proteins\s*$/);
+    await expect(page.locator('#myPlot .plot-indicator')).toHaveCount(0);
   });
 });

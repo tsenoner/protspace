@@ -35,6 +35,8 @@ interface FilterControllerOptions {
 export interface FilterController {
   /** Opens the Filter dialog on the current data, with one empty condition when there is none. */
   open(): void;
+  /** The status corner's filter ✕: removes the applied filter; the next opening starts afresh. */
+  clear(): void;
   /** The colouring annotation changed: move the reliability control to its column's state. */
   setSelectedAnnotation(annotation: string): void;
   /** The legend's reliability control: replaces its base's condition and applies the query. */
@@ -240,6 +242,12 @@ export function createFilterController({
       queryBuilder.data = snapshot;
       queryBuilder.query = query;
       dialog.open = true;
+    },
+    clear() {
+      clearFilterChannel();
+      setQuery([]);
+      // The reliability condition went with the query: pull the legend control back.
+      mirrorToLegend();
     },
     setSelectedAnnotation,
     setEatReliability(baseKey, state) {

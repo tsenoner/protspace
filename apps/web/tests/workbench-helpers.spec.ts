@@ -29,6 +29,7 @@ import {
   selectProjection,
   setContours,
   sidebar,
+  statusChip,
   waitForProteinCount,
   type ViewState,
 } from './helpers/explore';
@@ -204,9 +205,9 @@ test.describe('explore helpers', () => {
 
     await selectBoth();
     await isolateSelection(page);
-    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toBeVisible();
+    await expect(statusChip(page, 'isolation')).toBeVisible();
     await resetIsolation(page);
-    await expect(page.getByRole('group', { name: 'Isolation', exact: true })).toHaveCount(0);
+    await expect(statusChip(page, 'isolation')).toHaveCount(0);
 
     await selectBoth();
     await clearSelection(page);

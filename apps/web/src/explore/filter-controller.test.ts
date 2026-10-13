@@ -499,6 +499,26 @@ describe('filter controller: EAT reliability slider <-> query mirror', () => {
     // Identity, not equality: the guard must skip the rewrite entirely.
     expect(m.queryBuilder.query).toBe(before);
   });
+
+  it('clear releases the channel, publishes 0 and mirrors the reliability control back', () => {
+    threshold(m.controller, 'family', 0.5);
+    expect(m.plot.filtersActive).toBe(true);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(1);
+    m.legend.setReliabilityState.mockClear();
+
+    m.controller.clear();
+
+    expect(m.plot.filtersActive).toBe(false);
+    expect(m.plot.filteredProteinIds).toEqual([]);
+    expect(getWorkbenchStatus().appliedFilterConditions).toBe(0);
+    expect(m.queryBuilder.query).toEqual([]);
+    expect(m.legend.setReliabilityState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min: 0 }),
+    );
+    // The next opening seeds one empty row.
+    m.controller.open();
+    expect(m.queryBuilder.query).toHaveLength(1);
+  });
 });
 
 describe('filter controller: per-base EAT reliability (multi-EAT)', () => {

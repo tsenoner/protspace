@@ -327,23 +327,23 @@ describe('scatter-plot visible point count', () => {
 
     it('builds no id table for the first point count', async () => {
       const { sp, idle, label } = await load(makeFamilyData());
-      expect(label()).toBe('6 points');
+      expect(label()).toBe('6 proteins');
       expect(sp._style.model().idsUniqueIfIndexed()).toBeNull();
       // With every id once, the idle build leaves the label alone.
       idle.run();
       expect(sp._style.model().idsUniqueIfIndexed()).toBe(true);
       expect(sp.isUpdatePending).toBe(false);
-      expect(label()).toBe('6 points');
+      expect(label()).toBe('6 proteins');
     });
 
     it('counts a repeated protein id once from the idle build of the id table on', async () => {
       const d = makeFamilyData({ n: 2 });
       const { sp, idle, label } = await load({ ...d, protein_ids: ['dup', 'dup'] });
       // Each slot counts until the idle build finds the repeat.
-      expect(label()).toBe('2 points');
+      expect(label()).toBe('2 proteins');
       idle.run();
       await sp.updateComplete;
-      expect(label()).toBe('1 points');
+      expect(label()).toBe('1 protein');
     });
   });
 

@@ -73,7 +73,6 @@ function setup() {
   const tools = Object.assign(new EventTarget(), {
     tool: 'pan',
     selectionDisabled: false,
-    isolated: false,
     focusTool: vi.fn(),
   });
   const bar = Object.assign(new EventTarget(), {
@@ -278,7 +277,7 @@ describe('selection controller: the selection bar and the plot tools', () => {
     expect(m.notify.success).not.toHaveBeenCalled();
   });
 
-  it("the bar's count follows every commit, and Clear and Show only hand focus to the tools", () => {
+  it("the bar's count follows every commit", () => {
     const m = setup();
     fire(m.plot, 'protein-click', click('P1', {}));
     expect(m.bar.selectedCount).toBe(1);
@@ -286,19 +285,12 @@ describe('selection controller: the selection bar and the plot tools', () => {
     expect(m.bar.selectedCount).toBe(3);
     fire(m.search, 'remove-selection', { proteinId: 'P2' });
     expect(m.bar.selectedCount).toBe(2);
-
-    m.bar.returnFocus!('clear');
-    expect(m.tools.focusTool).toHaveBeenCalledOnce();
   });
 
-  it('Reset resets isolation', () => {
+  it('resetIsolation resets the plot', () => {
     const m = setup();
-    m.tools.isolated = true;
-
-    fire(m.tools, 'reset-isolation');
-
+    m.controller.resetIsolation();
     expect(m.plot.resetIsolation).toHaveBeenCalledOnce();
-    expect(m.tools.isolated).toBe(false);
   });
 
   it('Fit to view resets the zoom', () => {
@@ -335,7 +327,6 @@ describe('selection controller: plot events', () => {
 
     expect(m.search.selectedProteinIds).toEqual([]);
     expect(m.bar.selectedCount).toBe(0);
-    expect(m.tools.isolated).toBe(true);
     // The plot cleared its own selection when it isolated.
     expect(m.interaction.handleSelectionChange).not.toHaveBeenCalled();
   });
@@ -361,7 +352,6 @@ describe('selection controller: plot events', () => {
     fire(m.plot, 'data-isolation-reset', { isolationMode: false, isolationHistory: [] });
     expect(m.tools.selectionDisabled).toBe(false);
     expect(m.bar.canIsolate).toBe(true);
-    expect(m.tools.isolated).toBe(false);
   });
 
   it("data-change hands the search the dataset's ids and the plot's selection", () => {
@@ -429,7 +419,6 @@ describe('selection controller: lifecycle', () => {
     fire(m.plot, 'protein-click', click('P1', {}));
     expect(m.escape.press()).toBe(false);
     fire(m.bar, 'clear-selections');
-    expect(m.bar.returnFocus).toBeNull();
 
     expect(m.plot.selectedProteinIds).toEqual([]);
   });

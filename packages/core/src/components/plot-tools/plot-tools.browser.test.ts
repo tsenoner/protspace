@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
-import type { PsButton, PsIconButton } from '../kit/button';
+import type { PsIconButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
 import type { PsTooltip } from '../kit/tooltip';
 import type { ProtspacePlotTools } from './plot-tools';
@@ -25,8 +25,6 @@ const tool = (el: ProtspacePlotTools, label: string) =>
     button.label.startsWith(label),
   )!;
 const inner = (button: Element) => button.shadowRoot!.querySelector('button')!;
-const textButtons = (el: ProtspacePlotTools) =>
-  [...el.shadowRoot!.querySelectorAll('.selection ps-button')].map((b) => b.textContent!.trim());
 
 describe('protspace-plot-tools', () => {
   it('names Move and zoom, Box select, Lasso select and Fit to view, and presses the current tool', async () => {
@@ -71,21 +69,6 @@ describe('protspace-plot-tools', () => {
     inner(tool(el, 'Fit to view')).click();
 
     expect(onFit).toHaveBeenCalledOnce();
-  });
-
-  it('Reset shows in the Isolation group while isolated', async () => {
-    const el = await mount();
-    expect(el.shadowRoot!.querySelector('[role="group"]')).toBeNull();
-
-    el.isolated = true;
-    await el.updateComplete;
-    await expect.element(page.getByRole('group', { name: 'Isolation' })).toBeInTheDocument();
-    expect(textButtons(el)).toEqual(['Reset']);
-
-    const onReset = vi.fn();
-    el.addEventListener('reset-isolation', onReset);
-    inner(el.shadowRoot!.querySelector('.selection ps-button')!).click();
-    expect(onReset).toHaveBeenCalledOnce();
   });
 
   it('with selection disabled, Box and Lasso are disabled', async () => {
@@ -146,19 +129,10 @@ describe('protspace-plot-tools', () => {
     expect(deepActiveElement()).toBe(inner(tool(el, 'Fit to view')));
   });
 
-  it('Reset hands focus to the current tool when it disappears', async () => {
+  it('holds the tools only: no group beside the strip', async () => {
     const el = await mount();
-    el.tool = 'rectangle';
-    el.isolated = true;
-    el.addEventListener('reset-isolation', () => (el.isolated = false));
-    await el.updateComplete;
-    const reset = el.shadowRoot!.querySelector<PsButton>('.selection ps-button')!;
-    await reset.updateComplete;
-
-    inner(reset).focus();
-    await userEvent.keyboard('{Enter}');
-    await el.updateComplete;
-    expect(deepActiveElement()).toBe(inner(tool(el, 'Box select')));
+    expect(el.shadowRoot!.querySelector('[role="group"]')).toBeNull();
+    expect('isolated' in el).toBe(false);
   });
 
   it('focusTool focuses the current tool', async () => {

@@ -237,7 +237,7 @@ const steps: DriveStep[] = [
     popover: {
       title: 'Selection Tools',
       description:
-        '<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again, and <strong>Fit to view</strong> shows every point. Press <kbd>Esc</kbd> to clear the current selection; press it again to return to Move and zoom.<br><br>With a selection, <strong>Clear</strong> deselects all and <strong>Isolate</strong> focuses on the selected proteins; <strong>Reset</strong> restores the full dataset.',
+        '<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again, and <strong>Fit to view</strong> shows every point. Press <kbd>Esc</kbd> to clear the current selection; press it again to return to Move and zoom.<br><br>With a selection, the bar at the bottom of the plot offers <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>; the ✕ on the <strong>Showing only</strong> chip shows every protein again.',
       onPrevClick: async (_el, _step, opts) => movePrevious(opts),
       onNextClick: async (_el, _step, opts) => moveNext(opts),
     },

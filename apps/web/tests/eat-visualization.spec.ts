@@ -10,6 +10,7 @@ import {
   filterButton,
   isolateSelection,
   openExportMenu,
+  plotStatus,
   projectionTrigger,
   resetIsolation,
   searchInput,
@@ -818,7 +819,6 @@ test('keeps curated points visible while the reliability filter hides low-confid
   await loadEatFixture(page);
   await selectAnnotation(page, 'ec');
 
-  const plot = page.locator('protspace-scatterplot');
   const legend = page.locator('protspace-legend');
   const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
   const thresholdPercent = eatGroup.getByRole('spinbutton', {
@@ -872,7 +872,7 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedVisible: 119,
       predictedExpectedVisible: 119,
     });
-  await expect(plot.locator('.plot-indicator').first()).toHaveText('738 points');
+  await expect(plotStatus(page).locator('.status-count')).toHaveText('738 proteins');
 
   // 100%: only the 4 transfers at full reliability survive — still no curated
   // point is dropped, which is the whole point of the filter.

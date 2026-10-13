@@ -19,6 +19,7 @@ import {
   clonePlotData,
   materializePlotDataPoint,
   getProteinAnnotationValues,
+  countNoun,
 } from '@protspace/utils';
 import type { DataDomain, ScalePair } from '@protspace/utils';
 import type { LegendSortMode } from '../legend/types';
@@ -166,6 +167,11 @@ export class ProtspaceScatterplot extends LitElement {
   @property({ type: Object }) config: Partial<ScatterplotConfig> = {};
   @property({ type: Boolean, attribute: 'eat-overlay-enabled' }) eatOverlayEnabled = true;
   /**
+   * The host shows the count elsewhere (the app's status corner): the plot does not draw its own.
+   * The recalculating note and the connector status still show.
+   */
+  @property({ type: Boolean, attribute: 'hide-status' }) hideStatus = false;
+  /**
    * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
    * Escape, a press outside the plot, the next click, a zoom or pan, a data or projection
    * change, or until this becomes empty. Hovers over other proteins leave it. A button dispatches
@@ -208,6 +214,9 @@ export class ProtspaceScatterplot extends LitElement {
   @state() private _numericRecomputeRunning = false;
   @state() private _connectorStatus: ProvenanceConnectorStatus | null = null;
   @state() private _isZoomedIn = false;
+  // What view-status-change and hidden-values-change last reported, so each fires on a change only.
+  private _lastViewStatus: { count: number; zoomedIn: boolean } | null = null;
+  private _lastHiddenCount = 0;
 
   // Queries
   @query('canvas') private _canvas?: HTMLCanvasElement;
@@ -679,6 +688,42 @@ export class ProtspaceScatterplot extends LitElement {
         }),
       );
     }
+    this._reportStatus(changedProperties);
+  }
+
+  /**
+   * Tells the host what a status display shows. `view-status-change` fires when the visible count
+   * or the zoomed-in flag changed since the last report: a zoom frame that crosses no boundary
+   * schedules no update, so it reports nothing. `hidden-values-change` fires when the number of
+   * hidden category values changed.
+   */
+  private _reportStatus(changedProperties: Map<string, unknown>): void {
+    if (changedProperties.has('hiddenAnnotationValues')) {
+      const count = this.hiddenAnnotationValues.length;
+      if (count !== this._lastHiddenCount) {
+        this._lastHiddenCount = count;
+        this.dispatchEvent(
+          new CustomEvent('hidden-values-change', {
+            detail: { count },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    }
+    if (!this.data) return;
+    const count = this._getVisiblePointCount();
+    const zoomedIn = this._isZoomedIn;
+    const last = this._lastViewStatus;
+    if (last && last.count === count && last.zoomedIn === zoomedIn) return;
+    this._lastViewStatus = { count, zoomedIn };
+    this.dispatchEvent(
+      new CustomEvent('view-status-change', {
+        detail: { count, zoomedIn },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private _reconcileProvenanceConnectors(changedProperties: Map<string, unknown>): void {
@@ -1946,10 +1991,12 @@ export class ProtspaceScatterplot extends LitElement {
         ></svg>
 
         ${this._renderTooltip()}
-        ${this.data
+        ${this.data && !this.hideStatus
           ? html`
               <div class="plot-indicator" role="status" aria-live="polite">
-                ${`${this._getVisiblePointCount()} points${this._isZoomedIn ? ' · Zoomed in' : ''}`}
+                ${`${countNoun(this._getVisiblePointCount(), 'protein', 'proteins')}${
+                  this._isZoomedIn ? ' · Zoomed in' : ''
+                }`}
               </div>
             `
           : ''}

@@ -927,6 +927,23 @@ export class ProtspaceLegend extends LitElement {
     this._eatControls.mirror(state);
   }
 
+  /**
+   * Shows every category again: the status corner's "N categories hidden" ✕. Like the
+   * double-click that restores the full set, it syncs the plot, stores the settings and announces
+   * it, without a `legend-item-click`.
+   */
+  public showAllCategories(): void {
+    if (this._hiddenValues.length === 0) return;
+    this._legendItems = this._legendItems.map((item) =>
+      item.isVisible ? item : { ...item, isVisible: true },
+    );
+    this._hiddenValues = [];
+    this._announceStatus('All items shown');
+    this._scatterplotController.syncHiddenValues();
+    this._persistenceController.saveSettings();
+    this.requestUpdate();
+  }
+
   private _handleScatterplotDataChange(
     data: ScatterplotData,
     selectedAnnotation: string,

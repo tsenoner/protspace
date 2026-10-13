@@ -10,22 +10,23 @@ it exists on `main`.
 
 ## Components
 
-| Component                                   | Tag                               | Purpose                                         |
-| ------------------------------------------- | --------------------------------- | ----------------------------------------------- |
-| [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                   |
-| [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                   |
-| [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                               |
-| [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations                |
-| [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                            |
-| [Projection Metadata](#projection-metadata) | `<protspace-projection-metadata>` | Details of the projection on screen             |
-| [Protein Search](#protein-search)           | `<protspace-protein-search>`      | Find and select proteins by ID                  |
-| [Query Builder](#query-builder)             | `<protspace-query-builder>`       | Filter conditions                               |
-| [Import Menu](#import-menu)                 | `<protspace-import-menu>`         | Load a file or an example dataset               |
-| [Export Menu](#export-menu)                 | `<protspace-export-menu>`         | Image, ID and Parquet export                    |
-| [Plot Tools](#plot-tools)                   | `<protspace-plot-tools>`          | Move, box and lasso tools; Reset while isolated |
-| [Selection Bar](#selection-bar)             | `<protspace-selection-bar>`       | The selection's count and actions               |
-| [Structure Viewer](#structure-viewer)       | `<protspace-structure-viewer>`    | 3D protein structures via Mol\*                 |
-| [Data Loader](#data-loader)                 | `<protspace-data-loader>`         | `.parquetbundle` / FASTA loading                |
+| Component                                   | Tag                               | Purpose                                       |
+| ------------------------------------------- | --------------------------------- | --------------------------------------------- |
+| [Scatterplot](#scatterplot)                 | `<protspace-scatterplot>`         | Main projection visualization                 |
+| [Legend](#legend)                           | `<protspace-legend>`              | Category filtering and colors                 |
+| [Projection Select](#projection-select)     | `<protspace-projection-select>`   | Projection picker                             |
+| [Annotation Select](#annotation-select)     | `<protspace-annotation-select>`   | Color by and tooltip annotations              |
+| [Contours Menu](#contours-menu)             | `<protspace-contours-menu>`       | Density contour mode                          |
+| [Projection Metadata](#projection-metadata) | `<protspace-projection-metadata>` | Details of the projection on screen           |
+| [Protein Search](#protein-search)           | `<protspace-protein-search>`      | Find and select proteins by ID                |
+| [Query Builder](#query-builder)             | `<protspace-query-builder>`       | Filter conditions                             |
+| [Import Menu](#import-menu)                 | `<protspace-import-menu>`         | Load a file or an example dataset             |
+| [Export Menu](#export-menu)                 | `<protspace-export-menu>`         | Image, ID and Parquet export                  |
+| [Plot Tools](#plot-tools)                   | `<protspace-plot-tools>`          | Move, box and lasso tools                     |
+| [Selection Bar](#selection-bar)             | `<protspace-selection-bar>`       | The selection's count and actions             |
+| [Plot Status](#plot-status)                 | `<protspace-plot-status>`         | The plot's count and how the view is narrowed |
+| [Structure Viewer](#structure-viewer)       | `<protspace-structure-viewer>`    | 3D protein structures via Mol\*               |
+| [Data Loader](#data-loader)                 | `<protspace-data-loader>`         | `.parquetbundle` / FASTA loading              |
 
 Importing `@protspace/core` registers all of them as side effects.
 
@@ -78,11 +79,12 @@ interactions.
 | `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied |
 | `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration         |
 | `tooltipActions`                    | `readonly TooltipAction[]`            | `[]`          | Buttons a pinned tooltip offers (see below)    |
+| `hideStatus`                        | `boolean`                             | `false`       | Leave out the plot's own count; `hide-status`  |
 
 ### HTML attributes
 
-Three properties have explicit kebab-case attributes: `selection-tool`, `filters-active` and
-`eat-overlay-enabled`. The rest are reachable from markup under their implicit all-lowercase names
+Four properties have explicit kebab-case attributes: `selection-tool`, `filters-active`,
+`eat-overlay-enabled` and `hide-status`. The rest are reachable from markup under their implicit all-lowercase names
 (for example `selectedannotation`, `projectionplane`); no scatterplot property is
 `attribute: false`. Set the object and array properties from JavaScript.
 
@@ -131,18 +133,20 @@ points.
 
 All scatterplot events bubble.
 
-| Event                    | Detail                                           | Description                         |
-| ------------------------ | ------------------------------------------------ | ----------------------------------- |
-| `protein-click`          | `{ proteinId, point, view, modifierKeys }`       | A point was clicked                 |
-| `protein-hover`          | `{ proteinId, point, view }`                     | The pointer entered a point         |
-| `tooltip-action`         | `{ id, proteinId }`                              | A pinned tooltip's action pressed   |
-| `brush-selection`        | `{ proteinIds, isMultiple, idsUnique }`          | Rectangle/lasso selection committed |
-| `data-change`            | `{ data }`                                       | The displayed dataset changed       |
-| `data-isolation`         | `{ isolationHistory, isolationMode, dataSize }`  | Isolation applied                   |
-| `data-isolation-reset`   | `{ isolationHistory, isolationMode, dataSize? }` | Isolation cleared                   |
-| `auto-disable-selection` | `{ reason, dataSize }`                           | Selection mode turned itself off    |
-| `file-dropped`           | `{ file }`                                       | A file was dropped on the plot      |
-| `renderer-degraded`      | `{ message, severity, source, context }`         | A rendering capability was reduced  |
+| Event                    | Detail                                           | Description                                     |
+| ------------------------ | ------------------------------------------------ | ----------------------------------------------- |
+| `protein-click`          | `{ proteinId, point, view, modifierKeys }`       | A point was clicked                             |
+| `protein-hover`          | `{ proteinId, point, view }`                     | The pointer entered a point                     |
+| `tooltip-action`         | `{ id, proteinId }`                              | A pinned tooltip's action pressed               |
+| `brush-selection`        | `{ proteinIds, isMultiple, idsUnique }`          | Rectangle/lasso selection committed             |
+| `data-change`            | `{ data }`                                       | The displayed dataset changed                   |
+| `data-isolation`         | `{ isolationHistory, isolationMode, dataSize }`  | Isolation applied                               |
+| `data-isolation-reset`   | `{ isolationHistory, isolationMode, dataSize? }` | Isolation cleared                               |
+| `auto-disable-selection` | `{ reason, dataSize }`                           | Selection mode turned itself off                |
+| `file-dropped`           | `{ file }`                                       | A file was dropped on the plot                  |
+| `renderer-degraded`      | `{ message, severity, source, context }`         | A rendering capability was reduced              |
+| `view-status-change`     | `{ count, zoomedIn }`                            | The visible count or the zoomed-in flag changed |
+| `hidden-values-change`   | `{ count }`                                      | The number of hidden category values changed    |
 
 `modifierKeys` on `protein-click` is `{ ctrl, meta, shift, alt }`. `view` is the tooltip-friendly
 projection of the protein's annotations; `point` is the bare plot point.
@@ -234,6 +238,7 @@ Enter or when the field loses focus. The parts `dialog-overlay` and `dialog-cont
 | ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------ |
 | `applyShapeSize(size, datasetHash?)` | `void`                | Apply a dataset-wide shape size, e.g. a bundle's top-level `shapeSize`, and store it |
 | `pickedShapeSize` (getter)           | `number \| undefined` | The dataset-wide shape size, or `undefined` while none was picked or applied         |
+| `showAllCategories()`                | `void`                | Show every hidden category, sync the plot and store the settings                     |
 
 Pass `datasetHash` to `applyShapeSize` when the legend has not computed the new dataset's hash yet.
 A size above 64 is applied and stored as 64. Write `pickedShapeSize`, not `shapeSize`, into a bundle's top-level `shapeSize`: the live
@@ -442,26 +447,25 @@ holds the default sizes.
 
 ### Plot Tools
 
-The plot's tool strip, and beside it, while the plot is isolated, Reset.
+The plot's tool strip.
 
 | Property            | Type                              | Description                                 |
 | ------------------- | --------------------------------- | ------------------------------------------- |
 | `tool`              | `'pan' \| 'rectangle' \| 'lasso'` | Pressed tool (`PlotTool`)                   |
 | `selectionDisabled` | `boolean`                         | Box and Lasso are off; `selection-disabled` |
-| `isolated`          | `boolean`                         | Reset shows while true                      |
 
 | Event              | Detail     | Description             |
 | ------------------ | ---------- | ----------------------- |
 | `plot-tool-change` | `{ tool }` | A tool was chosen       |
 | `fit-view`         | `{}`       | Fit to view was pressed |
-| `reset-isolation`  | `{}`       | Reset was pressed       |
 
 `focusTool()` focuses the strip's one Tab stop (the current tool). On the scatterplot, `pan` is
 `selectionMode = false`; `rectangle` and `lasso` are `selectionMode = true` with that
 `selectionTool`. `fit-view` maps to `resetZoom()`.
 
 **BREAKING:** `selectedCount` (`selected-count`), Clear and Isolate, and their `clear-selections`
-and `isolate-data` events moved to the selection bar.
+and `isolate-data` events moved to the selection bar; `isolated`, Reset and `reset-isolation`
+moved to the status corner (the isolation chip's ✕).
 
 ### Selection Bar
 
@@ -482,6 +486,33 @@ reports presses; the host acts and sets `selectedCount`.
 | `zoom-to-selection` | `{}`   | Zoom to them was pressed    |
 | `copy-selection`    | `{}`   | Copy IDs was pressed        |
 | `clear-selections`  | `{}`   | Clear was pressed           |
+
+### Plot Status
+
+`<protspace-plot-status>` sits in the bottom-left corner of its positioned parent: the visible
+protein count ("7,831 proteins · Zoomed in", a polite status) and a chip for each way the view is
+narrowed, in this order: "Filtered · 2 conditions", "Showing only 1,204 proteins · 2 steps" and
+"4 categories hidden". Each chip has an ✕ ("Remove filter", "Show all proteins", "Show hidden
+categories"); the filter and hidden chips' text opens the place to change them. It reports
+presses; the host acts and sets the properties (all JavaScript only).
+
+| Property           | Type                                      | Description                     |
+| ------------------ | ----------------------------------------- | ------------------------------- |
+| `count`            | `number \| null`                          | Visible proteins; null hides it |
+| `zoomedIn`         | `boolean`                                 | Appends " · Zoomed in"          |
+| `filterConditions` | `number`                                  | The filter chip shows above 0   |
+| `isolation`        | `{ steps: number; size: number } \| null` | The isolation chip              |
+| `hiddenCategories` | `number`                                  | The hidden chip shows above 0   |
+
+| Event          | Detail                                          | Description           |
+| -------------- | ----------------------------------------------- | --------------------- |
+| `status-open`  | `{ kind: 'filter' \| 'hidden' }`                | A chip's text pressed |
+| `status-clear` | `{ kind: 'filter' \| 'isolation' \| 'hidden' }` | A chip's ✕ pressed    |
+
+`focusChip(kind)` focuses a chip's first control and returns false when that chip does not show.
+When an ✕ removes its chip while focused, focus moves to the next chip, else to the count. Feed it
+from the scatterplot's `view-status-change`, `hidden-values-change`, `data-isolation` and
+`data-isolation-reset`, and give the plot `hide-status` so the count is not drawn twice.
 
 ### Example
 

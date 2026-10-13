@@ -13,6 +13,7 @@ import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
 import { DESKTOP_MIN_WIDTH } from './layout-defaults';
+import { updateLayout } from './layout-state';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -32,6 +33,7 @@ import { EXAMPLE_DATASETS, EXAMPLES_DOCS_URL, toExampleDatasetSummary } from './
 import { createLoadQueue } from './load-queue';
 import { createLoadingOverlayController } from './loading-overlay';
 import { createSelectionController } from './selection-controller';
+import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
 import {
   handleCancelledExampleLoad,
@@ -41,7 +43,12 @@ import {
 import { NOOP_CONTROLLER, type ExploreController } from './types';
 import { createViewBarController } from './view-bar-controller';
 import { createViewController } from './view-controller';
-import { createDatasetNamePublisher, setWorkbenchStatus } from './workbench-status';
+import {
+  createDatasetNamePublisher,
+  getWorkbenchStatus,
+  setWorkbenchStatus,
+  subscribeWorkbenchStatus,
+} from './workbench-status';
 
 function addTrackedEventListener(
   lifecycle: ReturnType<typeof createLifecycle>,
@@ -78,6 +85,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     projectionMetadata,
     plotTools,
     selectionBar,
+    plotStatus,
     proteinSearch,
   } = elements;
   const lifecycle = createLifecycle();
@@ -346,6 +354,27 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => filterController.dispose());
   addTrackedEventListener(lifecycle, filterButton, 'click', () => filterController.open());
+  const statusController = createStatusController({
+    plotElement,
+    plotStatus,
+    getStatus: getWorkbenchStatus,
+    subscribeStatus: subscribeWorkbenchStatus,
+    openFilter: () => filterController.open(),
+    clearFilter: () => filterController.clear(),
+    openLegend: () => updateLayout({ sidebarOpen: true }),
+    showAllCategories: () => legendElement.showAllCategories(),
+    resetIsolation: () => selectionController.resetIsolation(),
+  });
+  lifecycle.addCleanup(() => statusController.dispose());
+  // Clear and Show only these hide the bar they were pressed in. Show only these hands focus to
+  // the isolation chip that takes its place, Clear to the tool strip.
+  selectionBar.returnFocus = (action) => {
+    if (action === 'isolate' && plotStatus.focusChip('isolation')) return;
+    plotTools.focusTool();
+  };
+  lifecycle.addCleanup(() => {
+    selectionBar.returnFocus = null;
+  });
 
   // The dataset pipeline's one seam to the controls (explore-controls.ts).
   const controls: ExploreControls = {

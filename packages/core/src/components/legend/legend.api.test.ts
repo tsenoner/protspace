@@ -27,6 +27,7 @@ const METHODS: Record<string, number> = {
   applyShapeSize: 2,
   applyEatSettings: 2,
   setReliabilityState: 1,
+  showAllCategories: 0,
 };
 const GETTERS = ['hasFileSettings', 'reliabilityThreshold', 'pickedShapeSize', 'reliabilityState'];
 
@@ -125,5 +126,34 @@ describe('legend public API', () => {
     legend.addEventListener(LEGEND_EVENTS.DOWNLOAD, onDownload);
     await legend.downloadAsImage();
     expect(onDownload).toHaveBeenCalledOnce();
+  });
+
+  it('showAllCategories shows every hidden row, syncs the plot and persists', async () => {
+    const { legend, plot } = await mountLegendWithScatterplot(categoricalData(TWELVE), 'family');
+    await settleLegend(legend);
+    const main = (value: string) =>
+      legend.shadowRoot!.querySelector<HTMLElement>(
+        `.legend-item[data-value="${value}"] .legend-item-main`,
+      )!;
+    for (const value of ['A', 'B']) {
+      main(value).dispatchEvent(
+        new MouseEvent('click', { bubbles: true, composed: true, detail: 1 }),
+      );
+    }
+    await settleLegend(legend);
+    expect(plot.hiddenAnnotationValues).toEqual(expect.arrayContaining(['A', 'B']));
+    const onItem = vi.fn();
+    legend.addEventListener(LEGEND_EVENTS.ITEM_CLICK, onItem);
+    const setItem = vi.spyOn(localStorage, 'setItem');
+
+    legend.showAllCategories();
+    await settleLegend(legend);
+
+    expect(plot.hiddenAnnotationValues).toEqual([]);
+    expect(main('A').getAttribute('aria-pressed')).toBe('true');
+    expect(main('B').getAttribute('aria-pressed')).toBe('true');
+    expect(setItem).toHaveBeenCalled();
+    expect(String(setItem.mock.lastCall![1])).toContain('"hiddenValues":[]');
+    expect(onItem).not.toHaveBeenCalled();
   });
 });
