@@ -573,6 +573,11 @@ selected: the count, then Show only these, Zoom to them, Copy IDs and Clear, in 
 "Selection" with one Tab stop (the arrow keys move between the buttons). It hides itself at 0 and
 reports presses; the host acts and sets `selectedCount`.
 
+At 640 px wide and below it fits a phone's plot: each action shows as a 40 px icon button
+(Show only these, Zoom to them, Copy IDs, Clear keep their names), the count reads "12 selected"
+(the live region still says "12 proteins selected"), and the bar stays 12 px inside its parent's
+edges.
+
 | Property        | Type                                               | Description                                                                           |
 | --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `selectedCount` | `number`                                           | How many proteins are selected; `selected-count`                                      |

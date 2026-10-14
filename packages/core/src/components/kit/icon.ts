@@ -11,6 +11,7 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronUp,
   CircleHelp,
   Copy,
   Download,
@@ -39,6 +40,7 @@ import {
   Undo2,
   Upload,
   X,
+  ZoomIn,
   type IconNode,
 } from 'lucide';
 
@@ -54,6 +56,7 @@ const ICONS = {
   box: Box,
   check: Check,
   'chevron-down': ChevronDown,
+  'chevron-up': ChevronUp,
   'circle-help': CircleHelp,
   copy: Copy,
   download: Download,
@@ -82,6 +85,7 @@ const ICONS = {
   'undo-2': Undo2,
   upload: Upload,
   x: X,
+  'zoom-in': ZoomIn,
 } satisfies Record<string, IconNode>;
 
 export type IconName = keyof typeof ICONS;

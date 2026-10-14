@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsButton } from '../kit/button';
@@ -8,6 +8,10 @@ import './selection-bar';
 
 beforeAll(() => adoptTheme());
 afterEach(() => document.body.replaceChildren());
+// Vitest's default page is 414 px wide, a phone; the tests below the phone block are desktop's.
+beforeEach(async () => {
+  await page.viewport(1024, 768);
+});
 
 async function mount(count = 3, parent: HTMLElement = document.body) {
   const el = document.createElement('protspace-selection-bar');
@@ -214,5 +218,60 @@ describe('protspace-selection-bar', () => {
     expect(Math.abs(bar.left + bar.width / 2 - (box.left + box.width / 2))).toBeLessThanOrEqual(1);
     expect(Math.abs(box.bottom - bar.bottom - 12)).toBeLessThanOrEqual(1);
     expect(Math.abs(bar.height - 38)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('protspace-selection-bar on a phone', () => {
+  const NAMES = ['Show only these', 'Zoom to them', 'Copy IDs', 'Clear'];
+
+  it('at 360 px wide the bar fits inside a 336 px host and every action keeps its accessible name', async () => {
+    await page.viewport(360, 740);
+    // The plot area: 360 px wide, so 336 px between the bar's 12 px margins.
+    const parent = document.createElement('div');
+    parent.style.cssText = 'position: relative; width: 360px; height: 400px';
+    document.body.append(parent);
+    const el = await mount(12345, parent);
+    await Promise.all(buttons(el).map((b) => b.updateComplete));
+
+    const box = parent.getBoundingClientRect();
+    const bar = el.shadowRoot!.querySelector('.bar')!.getBoundingClientRect();
+    expect(bar.left).toBeGreaterThanOrEqual(box.left + 12 - 1);
+    expect(bar.right).toBeLessThanOrEqual(box.right - 12 + 1);
+    expect(Math.abs(bar.left + bar.width / 2 - (box.left + box.width / 2))).toBeLessThanOrEqual(1);
+
+    const short = el.shadowRoot!.querySelector('.selection-count-short')!;
+    expect(short.textContent!.trim()).toBe('12,345 selected');
+    expect(getComputedStyle(el.shadowRoot!.querySelector('.selection-count')!).display).toBe(
+      'none',
+    );
+    // The live region still says it in full.
+    expect(el.shadowRoot!.querySelector('[role="status"]')!.textContent!.trim()).toBe(
+      '12,345 proteins selected',
+    );
+
+    for (const name of NAMES) {
+      await expect.element(page.getByRole('button', { name, exact: true })).toBeInTheDocument();
+      const b = button(el, name);
+      expect(b.querySelector('.action-icon svg')).not.toBeNull();
+      expect(b.querySelector('.action-label')!.getBoundingClientRect().width).toBeLessThanOrEqual(
+        1,
+      );
+      expect(inner(b).getBoundingClientRect().width).toBeGreaterThanOrEqual(40);
+    }
+  });
+
+  it('above 640 px labels are visible', async () => {
+    await page.viewport(1024, 768);
+    const el = await mount(3);
+    await Promise.all(buttons(el).map((b) => b.updateComplete));
+    expect(countText(el)).toBe('3 proteins selected');
+    expect(getComputedStyle(el.shadowRoot!.querySelector('.selection-count-short')!).display).toBe(
+      'none',
+    );
+    for (const name of NAMES) {
+      const b = button(el, name);
+      expect(b.querySelector('.action-label')!.getBoundingClientRect().width).toBeGreaterThan(1);
+      expect(getComputedStyle(b.querySelector('.action-icon')!).display).toBe('none');
+    }
   });
 });

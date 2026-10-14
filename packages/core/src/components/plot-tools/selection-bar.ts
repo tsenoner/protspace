@@ -1,25 +1,32 @@
 import { LitElement, html, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { countNoun } from '@protspace/utils';
+import { countNoun, formatCount } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import '../kit/button';
 import type { PsButton } from '../kit/button';
+import { icon, type IconName } from '../kit/icon';
 import { selectionBarStyles } from './selection-bar.styles';
 
 type SelectionAction = 'isolate' | 'zoom' | 'copy' | 'clear';
 
-const ACTIONS: ReadonlyArray<{ action: SelectionAction; label: string; event: string }> = [
-  { action: 'isolate', label: 'Show only these', event: 'isolate-data' },
-  { action: 'zoom', label: 'Zoom to them', event: 'zoom-to-selection' },
-  { action: 'copy', label: 'Copy IDs', event: 'copy-selection' },
-  { action: 'clear', label: 'Clear', event: 'clear-selections' },
+const ACTIONS: ReadonlyArray<{
+  action: SelectionAction;
+  label: string;
+  event: string;
+  icon: IconName;
+}> = [
+  { action: 'isolate', label: 'Show only these', event: 'isolate-data', icon: 'target' },
+  { action: 'zoom', label: 'Zoom to them', event: 'zoom-to-selection', icon: 'zoom-in' },
+  { action: 'copy', label: 'Copy IDs', event: 'copy-selection', icon: 'copy' },
+  { action: 'clear', label: 'Clear', event: 'clear-selections', icon: 'x' },
 ];
 
 /**
  * The selection's actions at the bottom of the plot, shown while proteins are selected (design
  * decision 13): the count, then Show only these, Zoom to them, Copy IDs and Clear. A toolbar with
  * one Tab stop; the arrow keys move between its buttons. It reports presses; the host's selection
- * controller acts and sets `selectedCount`.
+ * controller acts and sets `selectedCount`. On a phone (≤ 640 px) it fits a 360 px plot: icons, the
+ * labels kept as the buttons' names, and a short count.
  *
  * @fires isolate-data - `{}`
  * @fires zoom-to-selection - `{}`
@@ -85,8 +92,11 @@ export class ProtspaceSelectionBar extends LitElement {
         <span class="selection-count" aria-hidden="true"
           >${countNoun(this.selectedCount, 'protein', 'proteins')} selected</span
         >
+        <span class="selection-count-short" aria-hidden="true"
+          >${formatCount(this.selectedCount)} selected</span
+        >
         ${ACTIONS.map(
-          ({ action, label }) =>
+          ({ action, label, icon: name }) =>
             html`<ps-button
               size="sm"
               variant="ghost"
@@ -94,7 +104,8 @@ export class ProtspaceSelectionBar extends LitElement {
               tabindex=${action === stop ? '0' : '-1'}
               ?disabled=${!this._isEnabled(action)}
               @click=${() => this._press(action)}
-              >${label}</ps-button
+              ><span slot="start" class="action-icon" aria-hidden="true">${icon(name, 16)}</span
+              ><span class="action-label">${label}</span></ps-button
             >`,
         )}
       </div>`;
