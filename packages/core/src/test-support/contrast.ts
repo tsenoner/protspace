@@ -16,8 +16,8 @@ function rules(): Array<[string, string]> {
   ]);
 }
 
-/** The --ps-* values declared by the rules whose selector is exactly `selector`, merged. */
-function declared(selector: string): Map<string, string> {
+/** The --ps-* values the rules with exactly this selector declare, merged; no fallback to :root. */
+export function declaredIn(selector: ThemeBlock): Map<string, string> {
   const values = new Map<string, string>();
   for (const [ruleSelector, body] of rules()) {
     if (ruleSelector !== selector) continue;
@@ -32,8 +32,12 @@ function declared(selector: string): Map<string, string> {
  * the roles; anything it leaves out (sizes, the fixed paper roles) falls back to :root, as in CSS.
  */
 export function tokensOf(selector: ThemeBlock): Map<string, string> {
-  const light = declared(':root');
-  return selector === ':root' ? light : new Map([...light, ...declared(selector)]);
+  const light = declaredIn(':root');
+  if (selector === ':root') return light;
+  const own = declaredIn(selector);
+  // A reformatted selector would otherwise make every dark gate measure the light values.
+  if (own.size === 0) throw new Error(`theme.ts has no rule ${selector}`);
+  return new Map([...light, ...own]);
 }
 
 const hexByte = (n: number) => Math.round(n).toString(16).padStart(2, '0');

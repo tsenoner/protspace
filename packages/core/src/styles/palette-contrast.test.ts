@@ -21,9 +21,11 @@ const GATES = {
 type Gated = keyof typeof GATES;
 
 /**
- * Colours below their gate, kept because a palette is a published standard and the point's
- * outline still bounds them (the rim darkening is reviewed at the phase exit). Only shrinks: the
- * last test fails while a listed colour passes.
+ * Colours below their gate, kept because a palette is a published standard. On the dark plot
+ * these points are close to invisible: the outline darkens the point's own colour
+ * (point-shaders.ts, `finalColor * 0.5`), so nothing bounds them. Whether to give them a light rim
+ * in dark or accept it is an open user decision for the phase 6 exit (block-3 review B, M1).
+ * Only shrinks: the last test fails while a listed colour passes.
  */
 const ALLOWED: Record<Gated, readonly string[]> = {
   kellys: ['#2B3D26', '#222222'], // Dark Olive Green 1.6:1, Very Dark Gray 1.2:1

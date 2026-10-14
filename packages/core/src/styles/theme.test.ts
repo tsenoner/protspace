@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { NA_DEFAULT_COLOR } from '@protspace/utils';
 import { NEUTRAL_VALUE_COLOR } from '../components/scatter-plot/config';
-import { contrast, tokensOf, toHex } from '../test-support/contrast';
+import { contrast, declaredIn, tokensOf, toHex } from '../test-support/contrast';
 
 const THEMES = [':root', ":root[data-theme='dark']"] as const;
 const SURFACES = [
@@ -120,10 +120,32 @@ it('light --ps-plot-other equals NEUTRAL_VALUE_COLOR and light --ps-plot-na equa
 
 it('both role blocks define --ps-plot-bg, --ps-plot-other and --ps-plot-na', () => {
   for (const sel of [':root', ":root[data-theme='dark']", ":root[data-theme='system']"] as const) {
-    const t = tokensOf(sel);
+    const t = declaredIn(sel);
     for (const name of ['--ps-plot-bg', '--ps-plot-other', '--ps-plot-na']) {
       expect(t.get(name), `${name} in ${sel}`).toMatch(/^#[0-9a-f]{6}$/);
     }
   }
-  expect(tokensOf(":root[data-theme='dark']").get('--ps-plot-bg')).toBe('#0b1120');
+  expect(declaredIn(":root[data-theme='dark']").get('--ps-plot-bg')).toBe('#0b1120');
+});
+
+// The dark gates read the dark block with a :root fallback; a role the dark block forgot would be
+// measured at its light value. Sizes and the fixed paper roles are the only light-only tokens.
+it('the dark and system blocks redeclare every light colour role', () => {
+  const light = declaredIn(':root');
+  const fixed = new Set(['--ps-paper', '--ps-paper-check']);
+  const roles = [...light]
+    .filter(([name, value]) => !fixed.has(name) && /#|rgb\(|^none$|invert\(/.test(value))
+    .map(([name]) => name)
+    .sort();
+  for (const sel of [":root[data-theme='dark']", ":root[data-theme='system']"] as const)
+    expect([...declaredIn(sel).keys()].sort(), sel).toEqual(roles);
+});
+
+it('the system block carries the dark values', () => {
+  expect(tokensOf(":root[data-theme='system']").get('--ps-surface')).toBe(
+    tokensOf(":root[data-theme='dark']").get('--ps-surface'),
+  );
+  expect(tokensOf(":root[data-theme='system']").get('--ps-surface')).not.toBe(
+    tokensOf(':root').get('--ps-surface'),
+  );
 });
