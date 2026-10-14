@@ -82,18 +82,18 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 5. Phones and tablets (plan: `plans/phase-5-mobile.md`)
 
-- [ ] 5.1 The mobile branch's phone tests ported to the workbench (Playwright `mobile` project)
-- [ ] 5.2 Four layout modes (desktop, tablet, phone, landscape) from one source
-- [ ] 5.3 Tablet layout (641–950 px) with Legend and Filter tabs
-- [ ] 5.4 Phone bars: app bar, search button, view bar
-- [ ] 5.5 The More sheet
-- [ ] 5.6 Phone bottom panel: fixed screen, tabs, fold, selection bar, toasts
-- [ ] 5.7 Tap, pinch and touch tooltips on the plot
-- [ ] 5.8 Structure bottom sheet that opens folded; the tooltip rule while it is expanded
-- [ ] 5.9 Landscape phone layout
-- [ ] 5.10 Kit and popovers on touch screens; dialogs that fit a phone
-- [ ] 5.11 Legend rows on touch
-- [ ] 5.12 Touch targets and phone fit for the remaining controls
+- [x] 5.1 The mobile branch's phone tests ported to the workbench (Playwright `mobile` project)
+- [x] 5.2 Four layout modes (desktop, tablet, phone, landscape) from one source
+- [x] 5.3 Tablet layout (641–950 px) with Legend and Filter tabs
+- [x] 5.4 Phone bars: app bar, search button, view bar
+- [x] 5.5 The More sheet
+- [x] 5.6 Phone bottom panel: fixed screen, tabs, fold, selection bar, toasts
+- [x] 5.7 Tap, pinch and touch tooltips on the plot
+- [x] 5.8 Structure bottom sheet that opens folded; the tooltip rule while it is expanded
+- [x] 5.9 Landscape phone layout
+- [x] 5.10 Kit and popovers on touch screens; dialogs that fit a phone
+- [x] 5.11 Legend rows on touch
+- [x] 5.12 Touch targets and phone fit for the remaining controls
 
 ## 6. Dark mode (plan: `plans/phase-6-dark-mode.md`)
 
