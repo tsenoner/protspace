@@ -80,10 +80,17 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
 const TOUCH_TOOLTIP_CLEARANCE = 16;
 
 /**
+ * Space (px) a tap-pinned tooltip leaves free at the plot's bottom: the selection bar a tap's
+ * selection shows there, 50 px tall under a coarse pointer and 12 px up, sits over the plot and
+ * would cover the card's actions.
+ */
+export const TOUCH_TOOLTIP_BOTTOM_RESERVE = 62;
+
+/**
  * Placement for a tooltip a tap pinned. A finger has no cursor to sit beside, and on a phone the
  * plot is barely wider than the card, so the card is centred on the protein and kept wholly inside
- * the plot (TOOLTIP_EDGE_PADDING from every edge): above the protein when it fits, else below it,
- * else against the plot edge farther from it. It takes the hover tooltip's width.
+ * the plot (TOOLTIP_EDGE_PADDING from every edge, TOUCH_TOOLTIP_BOTTOM_RESERVE from the bottom):
+ * above the protein when it fits, else below it, else against the plot edge farther from it. It takes the hover tooltip's width.
  */
 export function computeTouchTooltipStyle(input: TooltipStyleInput): string {
   const { x, y, height, viewportWidth, viewportHeight } = input;
@@ -92,12 +99,14 @@ export function computeTouchTooltipStyle(input: TooltipStyleInput): string {
 
   const left = Math.max(pad, Math.min(x - width / 2, viewportWidth - width - pad));
 
+  const floor = viewportHeight - TOUCH_TOOLTIP_BOTTOM_RESERVE;
   const above = y - TOUCH_TOOLTIP_CLEARANCE - height;
   const below = y + TOUCH_TOOLTIP_CLEARANCE;
   let top: number;
-  if (above >= pad) top = above;
-  else if (below + height <= viewportHeight - pad) top = below;
-  else top = y > viewportHeight / 2 ? pad : viewportHeight - height - pad;
+  // Above a protein inside the bar's strip, the card still ends on the strip.
+  if (above >= pad) top = Math.min(above, floor - height);
+  else if (below + height <= floor) top = below;
+  else top = y > viewportHeight / 2 ? pad : floor - height;
   top = Math.max(pad, top);
 
   return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px;`;

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeTooltipStyle,
   computeTouchTooltipStyle,
+  TOUCH_TOOLTIP_BOTTOM_RESERVE,
   TOOLTIP_EDGE_PADDING,
   TOOLTIP_MAX_WIDTH,
   TOOLTIP_ANCHOR_OFFSET_X,
@@ -118,7 +119,7 @@ describe('computeTouchTooltipStyle', () => {
         expect(left).toBeGreaterThanOrEqual(TOOLTIP_EDGE_PADDING);
         expect(left + width).toBeLessThanOrEqual(374 - TOOLTIP_EDGE_PADDING);
         expect(top).toBeGreaterThanOrEqual(TOOLTIP_EDGE_PADDING);
-        expect(top + phone.height).toBeLessThanOrEqual(400 - TOOLTIP_EDGE_PADDING);
+        expect(top + phone.height).toBeLessThanOrEqual(400 - TOUCH_TOOLTIP_BOTTOM_RESERVE);
       }
     }
   });
@@ -138,10 +139,21 @@ describe('computeTouchTooltipStyle', () => {
   });
 
   it('puts the card against the plot edge farther from the protein when neither side fits', () => {
-    const short = { ...phone, viewportHeight: 200 };
-    expect(box(computeTouchTooltipStyle({ ...short, y: 150 })).top).toBe(TOOLTIP_EDGE_PADDING);
-    expect(box(computeTouchTooltipStyle({ ...short, y: 50 })).top).toBe(
-      200 - 140 - TOOLTIP_EDGE_PADDING,
+    const short = { ...phone, viewportHeight: 250 };
+    expect(box(computeTouchTooltipStyle({ ...short, y: 160 })).top).toBe(TOOLTIP_EDGE_PADDING);
+    expect(box(computeTouchTooltipStyle({ ...short, y: 60 })).top).toBe(
+      250 - 140 - TOUCH_TOOLTIP_BOTTOM_RESERVE,
+    );
+  });
+
+  it('keeps the card clear of the selection bar a tap shows at the plot bottom', () => {
+    // A tap selects its protein, so the bar (50 px under a coarse pointer, 12 px up) shows too.
+    expect(TOUCH_TOOLTIP_BOTTOM_RESERVE).toBe(62);
+    const tall = { ...phone, height: 200 };
+    expect(box(computeTouchTooltipStyle({ ...tall, y: 100 })).top).toBe(100 + 16);
+    // Below would end in the bar's strip (166 + 200 > 338): the card rests on the strip instead.
+    expect(box(computeTouchTooltipStyle({ ...tall, y: 150 })).top).toBe(
+      400 - 200 - TOUCH_TOOLTIP_BOTTOM_RESERVE,
     );
   });
 
