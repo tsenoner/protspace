@@ -12,15 +12,13 @@ import { ChevronDown, Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
 import type { ProtspaceImportMenu, ProtspaceProteinSearch } from '@protspace/core';
 import { countNoun } from '@protspace/utils';
-import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
+import { FEEDBACK_HREF, GITHUB_REPO_URL } from '@/lib/support';
 import { hasStructureSheet } from '../explore/layout-mode';
 import { HelpMenu } from './HelpMenu';
 import { SearchToggle } from './SearchToggle';
 import { useAppBarSides } from './use-app-bar-sides';
 import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
-
-const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
 
 /** An example's label reads "name · proteins · size"; the bar shows the name and its own count. */
 function shownName(datasetName: string): string {

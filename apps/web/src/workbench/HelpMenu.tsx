@@ -1,7 +1,7 @@
 import type { PsMenu } from '@protspace/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DOCS_URL } from '@/config';
+import { openDocumentation, startTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
 
 /**
@@ -21,15 +21,11 @@ export function HelpMenu() {
     const onSelect = (event: Event) => {
       const { value } = (event as CustomEvent<{ value: string }>).detail;
       // Synchronous, inside the user's click or key press, so the browser allows the new tab.
-      if (value === 'docs') window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
+      if (value === 'docs') openDocumentation();
       // ps-menu has closed and refocused Help before it dispatches the pick, so the dialog
       // records Help as the element to return focus to.
       if (value === 'shortcuts') setShortcutsOpen(true);
-      if (value === 'tour') {
-        void import('../tour/product-tour').then(({ startProductTour }) =>
-          startProductTour({ force: true }),
-        );
-      }
+      if (value === 'tour') startTour();
     };
     element.addEventListener('ps-select', onSelect);
     return () => element.removeEventListener('ps-select', onSelect);

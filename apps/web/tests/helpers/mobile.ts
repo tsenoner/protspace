@@ -309,3 +309,29 @@ export const bottomPanel = (page: Page): Locator => page.locator('[data-workbenc
 /** The phone app bar's search button; it opens search over the bar. */
 export const searchToggle = (page: Page): Locator =>
   appBar(page).getByRole('button', { name: 'Search proteins', exact: true });
+
+/**
+ * Applies a one-condition filter keeping the first ten proteins, as the Filter panel's Apply
+ * reports it (the filter controller hears the builder's query-changed and query-apply), without
+ * driving the builder's pickers on a small screen. Resolves once the status corner shows the chip.
+ */
+export async function applyFilterKeepingTen(page: Page): Promise<void> {
+  await page.locator('#myQueryBuilder').evaluate((builder) => {
+    const plot = document.querySelector('#myPlot') as Element & { selectedAnnotation: string };
+    const query = [
+      {
+        id: 'e2e-filter',
+        kind: 'categorical',
+        annotation: plot.selectedAnnotation,
+        values: ['e2e'],
+      },
+    ];
+    builder.dispatchEvent(new CustomEvent('query-changed', { detail: { query } }));
+    builder.dispatchEvent(
+      new CustomEvent('query-apply', {
+        detail: { matchedIndices: new Set(Array.from({ length: 10 }, (_, i) => i)) },
+      }),
+    );
+  });
+  await expect(page.locator('#myPlotStatus .status-chip[data-kind="filter"]')).toBeVisible();
+}

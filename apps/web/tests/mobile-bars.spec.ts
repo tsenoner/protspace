@@ -10,6 +10,7 @@ import {
   getContoursMode,
   getSelectedProteinIds,
   getViewState,
+  importMenu,
   importTrigger,
   projectionTrigger,
   queryBuilder,
@@ -18,6 +19,7 @@ import {
   waitForExploreDataLoad,
 } from './helpers/explore';
 import {
+  applyFilterKeepingTen,
   bottomPanel,
   box,
   emptyPlotSpot,
@@ -142,7 +144,6 @@ for (const { label, viewport } of PHONES) {
 
 test.describe('the bars on a phone', () => {
   test('C3: the More sheet opens on screen and runs an action', async ({ page }) => {
-    test.fixme(true, 'task 5.5');
     await openExplorePhone(page);
     const rows = await openMoreSheet(page);
     await expectWithinViewport(page, moreSheet(page));
@@ -170,7 +171,6 @@ test.describe('the bars on a phone', () => {
   test('C4: Export in the sheet opens the Export menu, which an outside tap closes', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.5');
     await openExplorePhone(page);
     let rows = await openMoreSheet(page);
     await rows.getByRole('button', { name: /^Export/ }).tap();
@@ -477,5 +477,95 @@ test.describe('search on a phone', () => {
     await expect(searchToggle(page)).toBeVisible();
     await expectWithinViewport(page, searchToggle(page));
     await expectNoHorizontalOverflow(page);
+  });
+});
+
+test.describe('the More sheet', () => {
+  test.beforeEach(async ({ page }) => {
+    await openExplorePhone(page);
+  });
+
+  test('Import data opens the Import panel under the dataset name', async ({ page }) => {
+    const rows = await openMoreSheet(page);
+    await rows.getByRole('button', { name: 'Import data', exact: true }).tap();
+
+    await expect(moreSheet(page)).toBeHidden();
+    const panel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
+    await expect(panel).toBeVisible();
+    await expectWithinViewport(page, panel);
+    const dataset = await box(datasetSwitcher(page));
+    expect((await box(panel)).y).toBeGreaterThanOrEqual(dataset.y + dataset.height - 1);
+    await expect(datasetSwitcher(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test("Filter in the sheet shows the Filter tab's panel and focuses its heading", async ({
+    page,
+  }) => {
+    const rows = await openMoreSheet(page);
+    await rows.getByRole('button', { name: /^Filter/ }).tap();
+
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(page.locator('.workbench')).toHaveAttribute('data-panel', 'filter');
+    await expect(filterPanel(page)).toBeVisible();
+    await expect(page.locator('#wb-filter-title')).toBeFocused();
+  });
+
+  test('Help & shortcuts reveals three rows; Keyboard shortcuts opens the shortcuts dialog', async ({
+    page,
+  }) => {
+    const rows = await openMoreSheet(page);
+    const help = rows.getByRole('button', { name: 'Help & shortcuts', exact: true });
+    const shortcutsRow = rows.getByRole('button', {
+      name: 'Keyboard shortcuts',
+      exact: true,
+    });
+    await expect(help).toHaveAttribute('aria-expanded', 'false');
+    await expect(shortcutsRow).toBeHidden();
+
+    await help.tap();
+    await expect(help).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Documentation', 'Keyboard shortcuts', 'Take the tour']) {
+      await expect(rows.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+
+    await shortcutsRow.tap();
+    await expect(moreSheet(page)).toBeHidden();
+    const shortcuts = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    await expect(shortcuts).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(shortcuts).toBeHidden();
+    await expect(moreButton(page)).toBeFocused();
+  });
+
+  test('the More dot shows with a filter applied', async ({ page }) => {
+    await expect(moreButton(page)).toHaveAccessibleName('More view options');
+    await expect(viewBar(page).locator('.wb-more-dot')).toBeHidden();
+
+    await applyFilterKeepingTen(page);
+    await expect(moreButton(page)).toHaveAccessibleName('More view options, 1 active');
+    await expect(viewBar(page).locator('.wb-more-dot')).toBeVisible();
+
+    const rows = await openMoreSheet(page);
+    await expect(rows.getByRole('button', { name: /^Filter/ })).toContainText('1 condition');
+  });
+
+  test('Escape closes the sheet, then a second Escape clears the selection', async ({ page }) => {
+    // Selected through search, so no pinned tooltip takes the second Escape.
+    const { id } = await proteinNear(page, 0.5, 0.5);
+    await searchToggle(page).tap();
+    await searchInput(page).fill(id);
+    await searchInput(page).press('Enter');
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
+    await appBar(page).getByRole('button', { name: 'Close search', exact: true }).tap();
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+
+    await openMoreSheet(page);
+    await page.keyboard.press('Escape');
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(moreButton(page)).toBeFocused();
+    expect(await getSelectedProteinIds(page)).toEqual([id]);
+
+    await page.keyboard.press('Escape');
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
   });
 });

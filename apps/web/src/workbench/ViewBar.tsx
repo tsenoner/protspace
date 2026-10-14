@@ -27,7 +27,7 @@ export const ViewBar = memo(function ViewBar() {
       <protspace-contours-menu id="myContoursMenu" data-view-item=""></protspace-contours-menu>
       <span className="wb-view-sep" aria-hidden="true"></span>
       <FilterControl />
-      <MoreMenu stage={stage} />
+      <MoreMenu stage={stage} mode={mode} />
     </div>
   );
 });

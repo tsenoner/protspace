@@ -1356,3 +1356,75 @@
     height: var(--ps-touch-target);
   }
 }
+
+/* ── The More sheet (Task 5.5, decision 17; light DOM in a ps-dialog size="sheet") ──
+   Rows of 48 px, edge to edge: a 16 px icon, the label, then a value or a chevron. Help &
+   shortcuts unfolds its three entries below itself, indented to the labels. */
+.wb-sheet-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  /* 16 px on the left, as in the mockup: the scale has no 16 px step. */
+  padding: 0 var(--ps-space-3) 0 16px;
+  border: 0;
+  border-top: 1px solid var(--ps-border);
+  background: transparent;
+  color: var(--ps-text);
+  font: inherit;
+  font-weight: var(--ps-weight-medium);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.wb-sheet-rows > .wb-sheet-row:first-child {
+  border-top: 0;
+}
+
+.wb-sheet-row-static {
+  cursor: default;
+}
+
+:is(button, a).wb-sheet-row:hover {
+  background: var(--ps-surface-hover);
+}
+
+.wb-sheet-row:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: calc(-1 * var(--ps-focus-width));
+}
+
+.wb-sheet-icon,
+.wb-sheet-chevron {
+  flex: none;
+  color: var(--ps-text-muted);
+}
+
+.wb-sheet-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-sheet-value {
+  flex: none;
+  color: var(--ps-text-muted);
+  font-weight: 400;
+}
+
+.wb-sheet-row ps-segmented {
+  flex: none;
+}
+
+/* The entries under Help & shortcuts line up with the labels above: 16 + 16 icon + 12 gap. */
+.wb-sheet-subrow {
+  padding-left: 44px;
+  font-weight: 400;
+}
