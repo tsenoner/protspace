@@ -115,6 +115,17 @@ test.describe('the plot on a touch screen', () => {
     expect(card.y).toBeGreaterThanOrEqual(plot.y);
     expect(card.x + card.width).toBeLessThanOrEqual(plot.x + plot.width);
     expect(card.y + card.height).toBeLessThanOrEqual(plot.y + plot.height);
+    // The tool strip and the status corner, which stack above the plot, cover none of it; the
+    // status corner has risen over the selection bar the tap shows.
+    await expect(selectionBar(page)).toBeVisible();
+    const tools = await box(page.getByRole('toolbar', { name: 'Plot tools', exact: true }));
+    const status = await box(page.locator('#myPlotStatus'));
+    await expect
+      .poll(async () => {
+        const shown = await box(plotTooltip(page));
+        return [overlaps(shown, tools), overlaps(shown, status)];
+      })
+      .toEqual([false, false]);
     // Nothing inside the card is cut off.
     const clipped = await plotTooltip(page).evaluate((element) => {
       const inner = element.shadowRoot!.querySelector('.tooltip')!;
@@ -316,6 +327,25 @@ test.describe('structure sheet', () => {
     await expect(root).toHaveAttribute('data-sheet', 'folded');
     await settle(page);
     expect(await resizes()).toBe(0);
+  });
+
+  test('the grip and the header row toggle the sheet; the close button does not', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    const root = page.locator('.workbench');
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+
+    const grip = await box(structureSheet(page).locator('.wb-sheet-grip'));
+    await tap(page, { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 });
+    await expect(root).toHaveAttribute('data-sheet', 'expanded');
+    // The title inside the viewer's header part: no control on the path.
+    await structureSheet(page).locator('#myStructureViewer .header .title').tap();
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    await structureSheet(page).getByRole('button', { name: 'Close structure', exact: true }).tap();
+    await expect(root).toHaveAttribute('data-structure', 'none');
+    await expect(root).not.toHaveAttribute('data-sheet');
   });
 
   test('the last legend row can be scrolled above the folded sheet', async ({ page }) => {

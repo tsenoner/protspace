@@ -47,6 +47,7 @@ import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-st
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
+import { bindTouchTooltipInsets } from './touch-tooltip-insets';
 import { createUndoController, type UndoEntry } from './undo-controller';
 import {
   handleCancelledExampleLoad,
@@ -109,6 +110,8 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     layoutMode: { get: getLayoutMode, subscribe: subscribeLayoutMode },
   });
   lifecycle.addCleanup(() => structureController.dispose());
+  // A tap-pinned tooltip stays clear of the tool strip and the status corner over the plot.
+  lifecycle.addCleanup(bindTouchTooltipInsets(plotElement, plotTools, plotStatus));
 
   importMenu.exampleDatasets = EXAMPLE_DATASETS.map(toExampleDatasetSummary);
   importMenu.examplesDocsUrl = EXAMPLES_DOCS_URL;
