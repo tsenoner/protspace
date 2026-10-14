@@ -275,3 +275,26 @@ export async function touchTargetsBelow(page: Page, root: Locator, min = 40): Pr
     min,
   );
 }
+
+// ─── Page fit ──────────────────────────────────────────────────────────────────
+
+/** Asserts that nothing pushes the document wider than the window. */
+export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(scrollWidth, 'the page does not scroll sideways').toBeLessThanOrEqual(clientWidth);
+}
+
+/** Asserts that the page does not scroll: it is one fixed screen. */
+export async function expectNoPageScroll(page: Page): Promise<void> {
+  const { scrollHeight, clientHeight } = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    clientHeight: document.documentElement.clientHeight,
+  }));
+  expect(scrollHeight, 'the page does not scroll').toBeLessThanOrEqual(clientHeight + 1);
+}
+
+/** The panel under the plot on phones and tablets: the sidebar, holding the legend or Filter. */
+export const bottomPanel = (page: Page): Locator => page.locator('[data-workbench="sidebar"]');
