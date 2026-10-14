@@ -155,4 +155,39 @@ describe('legend header', () => {
     const sort = await headerButton(legend, 'sort-button');
     expect(sort.hasAttribute('hidden')).toBe(true);
   });
+
+  it('the header has header-start before the title and header-end after settings', async () => {
+    const legend = await mount(categoricalData(TWELVE), 'family');
+    const header = legend.shadowRoot!.querySelector('.legend-header')!;
+    const start = header.querySelector('slot[name="header-start"]');
+    const end = header.querySelector('slot[name="header-end"]');
+    expect(header.firstElementChild).toBe(start);
+    expect(start!.nextElementSibling!.classList.contains('legend-title')).toBe(true);
+    expect(header.lastElementChild).toBe(end);
+    expect(end!.previousElementSibling!.classList.contains('settings-button')).toBe(true);
+  });
+
+  it('slotted children render in order', async () => {
+    const legend = await mount(categoricalData(TWELVE), 'family');
+    const tabs = document.createElement('div');
+    tabs.slot = 'header-start';
+    const fold = document.createElement('button');
+    fold.slot = 'header-end';
+    // Light-DOM order does not matter: each child goes to its named slot.
+    legend.append(fold, tabs);
+    await legend.updateComplete;
+
+    const root = legend.shadowRoot!;
+    const assigned = (name: string) =>
+      root.querySelector<HTMLSlotElement>(`slot[name="${name}"]`)!.assignedElements();
+    expect(assigned('header-start')).toEqual([tabs]);
+    expect(assigned('header-end')).toEqual([fold]);
+  });
+
+  it('the title has part title', async () => {
+    const legend = await mount(categoricalData(TWELVE), 'family');
+    const title = legend.shadowRoot!.querySelector('.legend-header .legend-title')!;
+    expect(title.tagName).toBe('H3');
+    expect(title.getAttribute('part')).toBe('title');
+  });
 });

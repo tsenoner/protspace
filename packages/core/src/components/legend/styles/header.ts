@@ -54,4 +54,10 @@ export const headerStyles = css`
   .sort-button[hidden] {
     display: none;
   }
+
+  /* The host's own controls (tabs, a fold chevron) keep their size; an empty slot is no flex
+     item (a slot is display: contents), so it adds no gap. */
+  ::slotted(*) {
+    flex: none;
+  }
 `;

@@ -217,9 +217,19 @@ Category filtering and color mapping with automatic settings persistence.
 
 ### CSS parts
 
-`container`, `header`, `items`, `item`, `symbol`, `text`, `count` and `empty`. The
-`predicted-note` part is gone: a predicted annotation shows a sparkles icon in the header, with
-its note in the icon's tooltip.
+`container`, `header`, `title`, `items`, `item`, `symbol`, `text`, `count` and `empty`. `title`
+is the header's annotation name. The `predicted-note` part is gone: a predicted annotation shows
+a sparkles icon in the header, with its note in the icon's tooltip.
+
+### Slots
+
+| Name           | Description                                                             |
+| -------------- | ----------------------------------------------------------------------- |
+| `header-start` | Controls placed at the start of the 44 px header row, before the title  |
+| `header-end`   | Controls placed at the end of the header row, after the settings button |
+
+An empty slot takes no room. The demo app puts its Legend/Filter tabs in `header-start` below
+951 px and, on phones, the panel's fold button in `header-end`.
 
 ### Events
 

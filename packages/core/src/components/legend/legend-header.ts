@@ -93,8 +93,10 @@ function isReversed(mode: LegendSortMode): boolean {
 }
 
 /**
- * The 44 px legend header: title, predicted mark, info, then sort and settings. The title is
- * one line ending in an ellipsis; the legend's shared name tooltip shows it in full.
+ * The 44 px legend header: an optional `header-start` slot, the title, predicted mark, info, then
+ * sort, settings and an optional `header-end` slot. The host puts its own controls in the slots
+ * (the workbench's Legend/Filter tabs and its fold chevron); an empty slot takes no room. The
+ * title is one line ending in an ellipsis; the legend's shared name tooltip shows it in full.
  */
 export function renderLegendHeader(
   model: LegendHeaderModel,
@@ -104,7 +106,10 @@ export function renderLegendHeader(
   // aria-haspopup and aria-expanded are static: the sort menu exists only while open, and
   // ps-menu records these closed-state values when it mounts and restores them when it goes.
   return html`<div class="legend-header" part="header">
-    <h3 class="legend-title" @pointerenter=${handlers.onTitlePointerEnter}>${model.title}</h3>
+    <slot name="header-start"></slot>
+    <h3 class="legend-title" part="title" @pointerenter=${handlers.onTitlePointerEnter}>
+      ${model.title}
+    </h3>
     ${model.predicted
       ? html`<span class="legend-predicted" role="img" aria-label="Predicted annotation"
             >${icon('sparkles', 14)}</span
@@ -131,6 +136,7 @@ export function renderLegendHeader(
       aria-expanded=${model.settingsOpen ? 'true' : 'false'}
       @click=${(e: Event) => handlers.onSettings(e.currentTarget as HTMLElement)}
     ></ps-icon-button>
+    <slot name="header-end"></slot>
   </div>`;
 }
 
