@@ -256,6 +256,11 @@ const structureViewerStylesCore = css`
     font-weight: 600;
   }
 
+  /* The body part only groups the rows for a host; it adds no box. */
+  .body {
+    display: contents;
+  }
+
   /* Spin animation provided by overlayMixins */
 
   /* ----------------------------- Responsive ------------------------------------ */

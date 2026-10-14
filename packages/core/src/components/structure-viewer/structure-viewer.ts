@@ -120,6 +120,7 @@ export class ProtspaceStructureViewer extends LitElement {
     if (this._scatterplotElement && this._proteinClickHandler) {
       this._scatterplotElement.removeEventListener('protein-click', this._proteinClickHandler);
       this._scatterplotElement.removeEventListener('protein-hover', this._proteinHoverHandler);
+      this._scatterplotElement.removeEventListener('pointerdown', this._plotPointerDownHandler);
     }
   }
 
@@ -128,13 +129,25 @@ export class ProtspaceStructureViewer extends LitElement {
   /**
    * The first point the pointer rests on is the earliest sign the user may open a structure, and
    * it comes seconds before the click. Prefetching then (rather than on page load) keeps the
-   * ~1.3 MB download off every visit that never reaches a structure, touch devices included.
+   * ~1.3 MB download off every visit that never reaches a structure. Touch has no hover: the first
+   * finger on the plot is the sign there.
    */
   private _proteinHoverHandler: (e: Event) => void = (e: Event) => {
     if ((e as CustomEvent).detail?.proteinId == null) return;
-    this._scatterplotElement?.removeEventListener('protein-hover', this._proteinHoverHandler);
-    prefetchMolstar();
+    this._prefetchOnce();
   };
+
+  private _plotPointerDownHandler: (e: Event) => void = (e: Event) => {
+    if ((e as PointerEvent).pointerType !== 'touch') return;
+    this._prefetchOnce();
+  };
+
+  /** Prefetches Mol* and stops listening for either sign. */
+  private _prefetchOnce(): void {
+    this._scatterplotElement?.removeEventListener('protein-hover', this._proteinHoverHandler);
+    this._scatterplotElement?.removeEventListener('pointerdown', this._plotPointerDownHandler);
+    prefetchMolstar();
+  }
 
   private _setupAutoSync() {
     // Find scatterplot element
@@ -145,6 +158,7 @@ export class ProtspaceStructureViewer extends LitElement {
         // Listen for protein clicks
         this._scatterplotElement.addEventListener('protein-click', this._proteinClickHandler);
         this._scatterplotElement.addEventListener('protein-hover', this._proteinHoverHandler);
+        this._scatterplotElement.addEventListener('pointerdown', this._plotPointerDownHandler);
 
         // Initially hide if autoShow is enabled
         if (this.autoShow && !this.proteinId) {
@@ -527,75 +541,78 @@ export class ProtspaceStructureViewer extends LitElement {
           `
         : ''}
 
-      <div class="viewer-container">
-        ${this._isLoading
-          ? html`
-              <div class="loading-overlay">
-                <div class="loading-spinner"></div>
-                <div class="loading-text">Loading protein structure...</div>
-              </div>
-            `
-          : ''}
-        ${this._error
-          ? html`
-              <div class="error-container">
-                <div class="error-title">${this._error}</div>
-              </div>
-            `
-          : ''}
+      <!-- Everything under the links: a host may hide it (the phone's folded sheet). -->
+      <div class="body" part="body">
+        <div class="viewer-container">
+          ${this._isLoading
+            ? html`
+                <div class="loading-overlay">
+                  <div class="loading-spinner"></div>
+                  <div class="loading-text">Loading protein structure...</div>
+                </div>
+              `
+            : ''}
+          ${this._error
+            ? html`
+                <div class="error-container">
+                  <div class="error-title">${this._error}</div>
+                </div>
+              `
+            : ''}
 
-        <div class="viewer-content"></div>
+          <div class="viewer-content"></div>
+        </div>
+
+        ${!this._error
+          ? html`
+              <div class="color-toolbar">
+                <span class="color-toolbar-label">Color by</span>
+                <div
+                  class="segmented color-mode-group"
+                  role="group"
+                  aria-label="Structure color mode"
+                >
+                  <button
+                    type="button"
+                    class="segmented-btn"
+                    data-color-mode="plddt"
+                    aria-pressed=${this._colorMode === 'plddt'}
+                    .disabled=${!this._canChangeColorMode}
+                    @click=${() => this._handleColorModeChange('plddt')}
+                  >
+                    pLDDT
+                  </button>
+                  <button
+                    type="button"
+                    class="segmented-btn"
+                    data-color-mode="ted-domains"
+                    aria-pressed=${this._colorMode === 'ted-domains'}
+                    .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
+                    @click=${() => this._handleColorModeChange('ted-domains')}
+                  >
+                    TED domains
+                  </button>
+                  <ps-tooltip text=${this._tedButtonTitle}></ps-tooltip>
+                </div>
+              </div>
+            `
+          : ''}
+        ${this.showTips && !this._error
+          ? html`
+              <div class="tips">
+                <span class="interaction-tip">
+                  <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move.
+                  Scroll to zoom.
+                </span>
+                <span class="color-description">
+                  ${this._colorMode === 'ted-domains'
+                    ? 'Colors distinguish TED domains; gray residues are unassigned.'
+                    : 'Colors show pLDDT confidence (blue = high, red = low).'}
+                </span>
+              </div>
+            `
+          : ''}
       </div>
-
-      ${!this._error
-        ? html`
-            <div class="color-toolbar">
-              <span class="color-toolbar-label">Color by</span>
-              <div
-                class="segmented color-mode-group"
-                role="group"
-                aria-label="Structure color mode"
-              >
-                <button
-                  type="button"
-                  class="segmented-btn"
-                  data-color-mode="plddt"
-                  aria-pressed=${this._colorMode === 'plddt'}
-                  .disabled=${!this._canChangeColorMode}
-                  @click=${() => this._handleColorModeChange('plddt')}
-                >
-                  pLDDT
-                </button>
-                <button
-                  type="button"
-                  class="segmented-btn"
-                  data-color-mode="ted-domains"
-                  aria-pressed=${this._colorMode === 'ted-domains'}
-                  .disabled=${!this._canChangeColorMode || !this._hasTedDomains}
-                  @click=${() => this._handleColorModeChange('ted-domains')}
-                >
-                  TED domains
-                </button>
-                <ps-tooltip text=${this._tedButtonTitle}></ps-tooltip>
-              </div>
-            </div>
-          `
-        : ''}
-      ${this.showTips && !this._error
-        ? html`
-            <div class="tips">
-              <span class="interaction-tip">
-                <strong>Tip:</strong> Left-click and drag to rotate. Click and drag to move. Scroll
-                to zoom.
-              </span>
-              <span class="color-description">
-                ${this._colorMode === 'ted-domains'
-                  ? 'Colors distinguish TED domains; gray residues are unassigned.'
-                  : 'Colors show pLDDT confidence (blue = high, red = low).'}
-              </span>
-            </div>
-          `
-        : ''}
     `;
   }
 }

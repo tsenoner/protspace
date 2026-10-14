@@ -70,6 +70,18 @@ describe('protspace-structure-viewer resource links', () => {
     expect(button.textContent?.trim()).toBe('');
   });
 
+  it('the body part wraps the viewer and the colour toolbar, and nothing of the header', async () => {
+    const root = await mount();
+    const body = root.querySelector<HTMLElement>('[part="body"]')!;
+    expect(body).not.toBeNull();
+    expect(body.querySelector('.viewer-container .viewer-content')).not.toBeNull();
+    expect(body.querySelector('.color-toolbar')).not.toBeNull();
+    // mount() keeps showTips at its default, true.
+    expect(body.querySelector('.tips')).not.toBeNull();
+    expect(body.contains(root.querySelector('[part="header"]'))).toBe(false);
+    expect(body.contains(root.querySelector('[part="links"]'))).toBe(false);
+  });
+
   it('with one choice the protein id is plain text', async () => {
     const root = await mount();
     const viewer = root.host as HTMLElement & {

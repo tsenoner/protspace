@@ -691,11 +691,15 @@ colorBy.addEventListener('annotation-change', (e) => {
 
 ### Slots and parts
 
-| Name                    | Description                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `header-actions` (slot) | Buttons placed in the header, before the close button                                             |
-| `header` (part)         | The header row: title, protein id (a picker with several choices) and the buttons                 |
-| `links` (part)          | The resource links (AlphaFold, UniProt, InterPro, TED) in their own wrapping row under the header |
+| Name                    | Description                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `header-actions` (slot) | Buttons placed in the header, before the close button                                                          |
+| `header` (part)         | The header row: title, protein id (a picker with several choices) and the buttons                              |
+| `links` (part)          | The resource links (AlphaFold, UniProt, InterPro, TED) in their own wrapping row under the header              |
+| `body` (part)           | Everything under the links: the 3D view, the colour toolbar and the tips. It adds no box (`display: contents`) |
+
+With `auto-sync`, the viewer prefetches Mol\* (about 1.3 MB) once, on the plot's first hovered
+point or its first touch `pointerdown`, whichever comes first.
 
 ### Example
 
