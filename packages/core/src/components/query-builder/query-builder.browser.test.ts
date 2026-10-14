@@ -138,4 +138,50 @@ describe('protspace-query-builder in a narrow panel', () => {
       await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }
   });
+
+  it('under a coarse pointer a chip’s remove target never covers another chip', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const values = ['Human', 'Mouse', 'Yeast', 'Fly', 'Worm', 'Frog'];
+      const builder = await mount([createCondition({ annotation: 'organism', values })], 200);
+      const row = rows(builder)[0].shadowRoot!;
+      const chips = [...row.querySelectorAll<HTMLElement>('.value-chip')];
+      const lines = new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top)));
+      expect(lines.size).toBeGreaterThan(1);
+      for (const [i, chip] of chips.entries()) {
+        const c = chip.getBoundingClientRect();
+        const midY = c.top + c.height / 2;
+        // The chip's own left edge and its top and bottom edges belong to it, not to a
+        // neighbour's remove target.
+        for (const [x, y] of [
+          [c.left + 3, midY],
+          [c.left + c.width / 3, c.top + 1],
+          [c.left + c.width / 3, c.bottom - 1],
+        ]) {
+          const hit = row.elementFromPoint(x, y)!;
+          expect(hit.closest('.value-chip'), `chip ${i} at ${x},${y}`).toBe(chip);
+        }
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+
+  it('a picker opened near the bottom of the screen opens upward and stays on it', async () => {
+    const builder = await mount([createCondition()]);
+    builder.style.cssText =
+      'display: block; width: 360px; height: 160px; position: fixed; left: 0; bottom: 40px';
+    await builder.updateComplete;
+    const row = rows(builder)[0];
+    row.shadowRoot!.querySelector<HTMLButtonElement>('.annotation-select-trigger')!.click();
+    await row.updateComplete;
+
+    const picker = row.shadowRoot!.querySelector<HTMLElement>('.annotation-picker')!;
+    const box = picker.getBoundingClientRect();
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.bottom).toBeLessThanOrEqual(innerHeight - 8);
+    const trigger = row.shadowRoot!.querySelector('.annotation-select-trigger')!;
+    expect(box.bottom).toBeLessThanOrEqual(trigger.getBoundingClientRect().top);
+  });
 });

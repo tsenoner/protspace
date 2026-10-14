@@ -305,8 +305,15 @@ export const queryBuilderStyles = [
     }
 
     /* Touch: a 40 px target around the ×. The negative margins take back what it adds, so the
-       chip stays 22 px tall and about as wide; the target overhangs it on every side. */
+       chip stays 22 px tall and about as wide; the target overhangs it by 9 px above and below
+       and 12 px to the right. The row's gaps match those overhangs, so no target reaches into a
+       neighbouring chip, where a press would remove the wrong value. */
     @media (pointer: coarse) {
+      .value-chips {
+        column-gap: var(--ps-space-3);
+        row-gap: calc(var(--ps-touch-target) - 22px);
+      }
+
       .value-chip-remove {
         min-width: var(--ps-touch-target);
         min-height: var(--ps-touch-target);
@@ -335,12 +342,17 @@ export const queryBuilderStyles = [
 
     /* ── The annotation and value pickers ────────────────────────────────── */
 
-    /* position: fixed against a measured trigger, so a scrolling panel cannot clip them. */
+    /* position: fixed against a measured trigger, so a scrolling panel cannot clip them.
+       placePicker opens them above the trigger when below lacks room, and --picker-room caps
+       the height so the list scrolls inside the screen. */
     .annotation-picker,
     .value-picker {
       position: fixed;
       z-index: 1001;
+      display: flex;
+      flex-direction: column;
       box-sizing: border-box;
+      max-height: var(--picker-room, none);
       min-width: 200px;
       max-width: 280px;
       padding: var(--ps-space-2);
@@ -364,6 +376,7 @@ export const queryBuilderStyles = [
 
     .annotation-picker-input,
     .value-picker-input {
+      flex: none;
       width: 100%;
       margin-bottom: var(--ps-space-1);
     }
@@ -384,6 +397,7 @@ export const queryBuilderStyles = [
     .value-picker-list {
       display: flex;
       flex-direction: column;
+      min-height: 0;
       max-height: 15rem;
       overflow-y: auto;
       scrollbar-width: thin;
@@ -445,6 +459,7 @@ export const queryBuilderStyles = [
     }
 
     .value-picker-footer {
+      flex: none;
       margin-top: var(--ps-space-1);
       padding-top: var(--ps-space-1);
       border-top: 1px solid var(--ps-border);

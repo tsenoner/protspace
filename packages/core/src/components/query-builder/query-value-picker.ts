@@ -9,6 +9,7 @@ import { resolveAnnotationInternalValues } from './query-evaluate';
 import { isNAValue } from '@protspace/utils';
 import { displayFilterValue } from './query-presence';
 import { queryBuilderStyles } from './query-builder.styles';
+import { pickerStyle, type PickerPlacement } from './picker-placement';
 import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dropdown-helpers';
 import { pushLayer } from '../kit/layers';
 
@@ -39,8 +40,8 @@ class ProtspaceQueryValuePicker extends LitElement {
   @property({ type: String }) logicalOp: LogicalOp | undefined = undefined;
   @property({ type: Array }) selectedValues: string[] = [];
   @property({ type: Boolean }) open: boolean = false;
-  @property({ type: Number }) triggerTop: number = 0;
-  @property({ type: Number }) triggerLeft: number = 0;
+  /** Where to open, from `placePickerAt` on the trigger. */
+  @property({ type: Object }) placement: PickerPlacement = { top: 0, left: 0, room: 0 };
 
   @state() private _searchQuery: string = '';
   /** Index into the *currently filtered* list, or -1 for "nothing highlighted". */
@@ -360,7 +361,7 @@ class ProtspaceQueryValuePicker extends LitElement {
     const activeIndex = this._highlightIndex < filteredValues.length ? this._highlightIndex : -1;
 
     return html`
-      <div class="value-picker" style="top:${this.triggerTop}px;left:${this.triggerLeft}px">
+      <div class="value-picker" style=${pickerStyle(this.placement)}>
         <input
           class="value-picker-input"
           type="text"

@@ -13,6 +13,7 @@ import { handleListboxKeydown, scrollHighlightedIntoView } from '../../utils/dro
 import { pushLayer } from '../kit/layers';
 import { isNumericAnnotation } from '@protspace/utils';
 import { queryBuilderStyles } from './query-builder.styles';
+import { pickerStyle, placePickerAt, type PickerPlacement } from './picker-placement';
 import { renderValueChip } from './query-presence';
 import '../kit/button';
 import './query-value-picker';
@@ -42,8 +43,8 @@ class ProtspaceQueryConditionRow extends LitElement {
   @state() private _annotationSearch: string = '';
   /** Index into the *filtered* annotation list; -1 means nothing highlighted. */
   @state() private _annotationHighlightIndex: number = -1;
-  @state() private _pickerPos = { top: 0, left: 0 };
-  @state() private _valuePickerPos = { top: 0, left: 0 };
+  @state() private _pickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
+  @state() private _valuePickerPos: PickerPlacement = { top: 0, left: 0, room: 0 };
 
   @litQuery('.annotation-picker-input') private _annotationInputEl?: HTMLInputElement;
   /** Releases the annotation picker's layer; set while the picker is shown. */
@@ -157,9 +158,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     }
     this._showAnnotationPicker = true;
     this._annotationHighlightIndex = -1;
-    const btn = e.currentTarget as HTMLElement;
-    const rect = btn.getBoundingClientRect();
-    this._pickerPos = { top: rect.bottom + 4, left: rect.left };
+    this._pickerPos = placePickerAt(e.currentTarget as HTMLElement);
   }
 
   private _handleAnnotationPickerKeydown(e: KeyboardEvent) {
@@ -272,7 +271,7 @@ class ProtspaceQueryConditionRow extends LitElement {
     return html`
       <div
         class="annotation-picker"
-        style="top:${this._pickerPos.top}px;left:${this._pickerPos.left}px"
+        style=${pickerStyle(this._pickerPos)}
         @click=${(e: Event) => e.stopPropagation()}
       >
         <input
@@ -346,9 +345,7 @@ class ProtspaceQueryConditionRow extends LitElement {
           @click=${(e: Event) => {
             this._showValuePicker = !this._showValuePicker;
             if (this._showValuePicker) {
-              const btn = e.currentTarget as HTMLElement;
-              const rect = btn.getBoundingClientRect();
-              this._valuePickerPos = { top: rect.bottom + 4, left: rect.left };
+              this._valuePickerPos = placePickerAt(e.currentTarget as HTMLElement);
             }
           }}
         >
@@ -362,8 +359,7 @@ class ProtspaceQueryConditionRow extends LitElement {
         .logicalOp=${this.condition.logicalOp}
         .selectedValues=${this.condition.values}
         .open=${this._showValuePicker}
-        .triggerTop=${this._valuePickerPos.top}
-        .triggerLeft=${this._valuePickerPos.left}
+        .placement=${this._valuePickerPos}
         @value-selected=${this._handleValueSelected}
         @picker-close=${this._handleValuePickerClose}
       ></protspace-query-value-picker>

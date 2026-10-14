@@ -34,8 +34,7 @@ interface ValuePickerEl extends HTMLElement {
   logicalOp: LogicalOp | undefined;
   selectedValues: string[];
   open: boolean;
-  triggerTop: number;
-  triggerLeft: number;
+  placement: { top?: number; bottom?: number; left: number; room: number };
   updateComplete: Promise<unknown>;
 }
 
@@ -137,14 +136,14 @@ describe('query-value-picker', () => {
       expect(footer(el)).toBe('5 of 5 values shown');
     });
 
-    it('positions itself at the trigger coordinates', async () => {
+    it('positions itself at the placement it is given', async () => {
       const el = await mount();
-      el.triggerTop = 120;
-      el.triggerLeft = 40;
+      el.placement = { bottom: 120, left: 40, room: 200 };
       await el.updateComplete;
       const panel = el.shadowRoot!.querySelector('.value-picker') as HTMLElement;
-      expect(panel.style.top).toBe('120px');
+      expect(panel.style.bottom).toBe('120px');
       expect(panel.style.left).toBe('40px');
+      expect(panel.style.getPropertyValue('--picker-room')).toBe('200px');
     });
 
     it('drops already-selected values from the list', async () => {
