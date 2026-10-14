@@ -6,6 +6,7 @@
  */
 import { expect, type Locator, type Page } from '@playwright/test';
 import {
+  appBar,
   dismissTourIfPresent,
   viewBar,
   waitForExploreDataLoad,
@@ -298,3 +299,7 @@ export async function expectNoPageScroll(page: Page): Promise<void> {
 
 /** The panel under the plot on phones and tablets: the sidebar, holding the legend or Filter. */
 export const bottomPanel = (page: Page): Locator => page.locator('[data-workbench="sidebar"]');
+
+/** The phone app bar's search button; it opens search over the bar. */
+export const searchToggle = (page: Page): Locator =>
+  appBar(page).getByRole('button', { name: 'Search proteins', exact: true });
