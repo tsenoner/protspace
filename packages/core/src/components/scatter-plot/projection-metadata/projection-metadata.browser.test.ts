@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { cdp, page, userEvent } from 'vitest/browser';
 import type { Projection } from '@protspace/utils';
 import { topLayer } from '../../kit/layers';
 import './projection-metadata';
@@ -66,5 +67,66 @@ describe('protspace-projection-metadata with an open info popover', () => {
     await el.updateComplete;
     expect(card().classList.contains('is-pinned'), 'the second Escape closes the card').toBe(false);
     expect(topLayer()).toBeUndefined();
+  });
+});
+
+/** A projection with enough parameters for a card taller than a phone's plot. */
+function tallProjection(): Projection {
+  const metadata: Record<string, unknown> = { n_components: 2 };
+  for (let i = 0; i < 40; i++) metadata[`parameter_${i}`] = i;
+  return { name: 'ProtT5 — UMAP 2', metadata } as Projection;
+}
+
+async function mountAt(style: string): Promise<ProjectionMetadataElement> {
+  const el = document.createElement('protspace-projection-metadata') as ProjectionMetadataElement;
+  el.projection = tallProjection();
+  el.style.cssText = style;
+  document.body.append(el);
+  await el.updateComplete;
+  return el;
+}
+
+describe('protspace-projection-metadata on a phone', () => {
+  it('the card stays inside a 390 × 420 screen beside the right edge and scrolls', async () => {
+    await page.viewport(390, 420);
+    try {
+      // The details button sits far right on a phone's view bar.
+      const el = await mountAt('position: fixed; left: 300px; top: 60px');
+      (el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement).click();
+      await el.updateComplete;
+      await frame();
+      const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+      const box = card.getBoundingClientRect();
+      expect(box.left).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(box.right).toBeLessThanOrEqual(390 - 8 + 0.5);
+      expect(box.bottom).toBeLessThanOrEqual(420 - 8 + 0.5);
+      expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
+  it('under touch a hover reveals nothing and a second tap closes the card', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(hover: none)').matches).toBe(true);
+      const el = await mountAt('position: fixed; left: 40px; top: 40px');
+      const trigger = el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement;
+      const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+      // A tap leaves the pointer "over" the button: :hover must not hold the card open.
+      await userEvent.hover(trigger);
+      // Past the card's 0.2 s fade: a transition starting now would still read hidden.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(getComputedStyle(card).visibility).toBe('hidden');
+      trigger.click();
+      await el.updateComplete;
+      await expect.poll(() => getComputedStyle(card).visibility).toBe('visible');
+      trigger.click();
+      await el.updateComplete;
+      await expect.poll(() => getComputedStyle(card).visibility).toBe('hidden');
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

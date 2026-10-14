@@ -185,16 +185,36 @@ export class ProtspaceProjectionMetadata extends LitElement {
   }
 
   /**
-   * Caps the card at the room left below it in the viewport. The card opens from the view bar
-   * now, with the whole plot height free below it, so the viewport is the bound; a measured cap
-   * still beats a CSS one because the card's top depends on where the bar sits.
+   * Caps the card at the room left below it in the viewport, and keeps it inside the viewport's
+   * width. The card opens from the view bar, with the whole plot height free below it, so the
+   * viewport is the bound; a measured cap still beats a CSS one because the card's top depends on
+   * where the bar sits.
    */
   private _updateMaxHeight(): void {
     const content = this.shadowRoot?.querySelector('.content') as HTMLElement | null;
     if (!content) return;
     const { MIN_CARD_HEIGHT, CARD_MARGIN } = ProtspaceProjectionMetadata;
     const available = window.innerHeight - content.getBoundingClientRect().top - CARD_MARGIN;
-    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available)}px`;
+    // max-height caps the content box: the card's borders come on top of it.
+    const borders = content.offsetHeight - content.clientHeight;
+    content.style.maxHeight = `${Math.max(MIN_CARD_HEIGHT, available - borders)}px`;
+    this._keepInsideViewport(content);
+  }
+
+  /**
+   * Slides the card left when it would cross the viewport's right edge (the button sits far right
+   * on a phone's view bar), never past the left margin. Measured from the host, so the card's own
+   * inline offset never feeds back into the next measurement.
+   */
+  private _keepInsideViewport(content: HTMLElement): void {
+    const { CARD_MARGIN } = ProtspaceProjectionMetadata;
+    const hostLeft = this.getBoundingClientRect().left;
+    const overflow = hostLeft + content.offsetWidth - (window.innerWidth - CARD_MARGIN);
+    if (overflow <= 0) {
+      content.style.left = '';
+      return;
+    }
+    content.style.left = `${Math.max(CARD_MARGIN, hostLeft - overflow) - hostLeft}px`;
   }
 
   private _onWindowResize = () => this._updateMaxHeight();

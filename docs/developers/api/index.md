@@ -319,6 +319,13 @@ A picker's `applySelection()` applies at once, fires its event and drops a pick 
 contours menu's fires none); `cancelPending()` drops the waiting pick without applying anything, as
 a new dataset does. Every event below bubbles and is composed.
 
+On a phone, a panel that opens beside its anchor (an ⓘ bubble, the colour picker or the Other
+popover beside a full-width legend row) opens below the anchor, or above it, when neither side has
+room, and stays 8 px inside the screen. Every kit popover, menu and tooltip publishes the room it
+has as `--available-height` and `--available-width` on its panel. Kit dialogs fit a phone, upright
+(640 px wide or less) or on its side (500 px tall or less): `size="full"` fills the screen edge to
+edge, and `md` and `lg` leave 8 px on each side.
+
 ### Projection Select
 
 The projection picker: radio items behind a "Projection" trigger that shows the current value.
@@ -398,6 +405,10 @@ beside the Projection picker.
 | `selectedAnnotation`    | `string`                                      | Annotation the quality section is scored on; `selected-annotation` |
 | `viewIsSubset`          | `boolean`                                     | The plot shows a filtered or isolated subset                       |
 | `annotationDefinitions` | `Record<string, Pick<Annotation, 'runtime'>>` | The dataset's annotation definitions; name runtime columns         |
+
+The card stays inside the screen and scrolls when it is taller than the room below the button.
+Hovering opens it only with a pointer that can hover; on a touch screen a tap on the button opens
+and closes it.
 
 ### Protein Search
 

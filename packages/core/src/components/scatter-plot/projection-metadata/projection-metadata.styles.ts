@@ -61,7 +61,7 @@ export const projectionMetadataStyles = [
          inside that, resolves below the floor, and min-width wins — measured in Chrome at
          242-258px, never the 320px the max-width implies. That is what squeezed the
          metric-name column and forced Calinski-Harabasz onto two lines. */
-      width: 20rem;
+      width: min(20rem, calc(100vw - 16px));
       min-width: 15rem;
       max-width: 20rem;
       /* The card runs ~700px tall, ~1030px for a cluster column, from a 48px top offset —
@@ -107,12 +107,21 @@ export const projectionMetadataStyles = [
       height: var(--card-gap);
     }
 
-    :host(:hover) .content,
     .content.is-pinned,
     .trigger:focus-visible + .content {
       pointer-events: auto;
       opacity: 1;
       visibility: visible;
+    }
+
+    /* Hover reveals the card only for a pointer that can hover. After a tap a touch screen keeps
+       :hover on the button, so a hover rule would hold the card open past a second tap. */
+    @media (hover: hover) {
+      :host(:hover) .content {
+        pointer-events: auto;
+        opacity: 1;
+        visibility: visible;
+      }
     }
 
     .header {

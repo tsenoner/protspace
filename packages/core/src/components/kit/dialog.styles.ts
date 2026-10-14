@@ -1,4 +1,5 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+import { COMPACT_MEDIA } from '../../utils/breakpoints';
 import { focusRing, kitHost, reducedMotion } from './kit-shared.styles';
 
 export const dialogStyles = [
@@ -98,6 +99,40 @@ export const dialogStyles = [
     }
     footer[hidden] {
       display: none;
+    }
+
+    /* Phones, upright or on their side: a full dialog is the screen, md and lg leave 8 px a side.
+       The native dialog's own max-width (100% - 2em - 6px) would cap them, so it goes. sm and
+       sheet keep their rules. */
+    @media ${unsafeCSS(COMPACT_MEDIA)} {
+      :host([size='full']) dialog {
+        width: 100vw;
+        height: 100dvh;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+          env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+      }
+      :host([size='full']) .frame {
+        max-height: none;
+      }
+      :host([size='md']) dialog {
+        width: min(480px, calc(100vw - 16px));
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+      }
+      :host([size='lg']) dialog {
+        width: min(720px, calc(100vw - 16px));
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+      }
+      :host([size='md']) .frame,
+      :host([size='lg']) .frame {
+        max-height: calc(100dvh - 18px);
+      }
     }
   `,
 ];

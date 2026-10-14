@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { page } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import { ESCAPE_ORDER, onEscapeFallback, topLayer } from './layers';
 import type { PsPopover } from './popover';
@@ -238,5 +239,98 @@ describe('ps-popover', () => {
     expect(p.scrollHeight).toBeGreaterThan(p.clientHeight);
     p.scrollTop = p.scrollHeight;
     expect(p.scrollTop).toBeGreaterThan(0);
+  });
+});
+
+/** A popover beside an anchor; `anchorStyle` places the anchor. */
+async function beside(placement: 'right-start' | 'left-start', anchorStyle: string) {
+  document.body.innerHTML = `
+    <button id="row" style="position: fixed; ${anchorStyle}">Row</button>
+    <ps-popover placement="${placement}">
+      <p style="width: 300px; height: 120px; margin: 0">Bubble</p>
+    </ps-popover>`;
+  const anchor = document.getElementById('row')!;
+  const pop = document.querySelector('ps-popover')!;
+  pop.anchor = anchor;
+  pop.open = true;
+  await settle(pop);
+  return { anchor, pop };
+}
+
+/** A full-width row on a 375 px phone: 8 px from each edge. */
+const FULL_WIDTH_ROW = 'left: 8px; top: 120px; width: 359px; height: 40px';
+
+describe('ps-popover beside a full-width anchor on a phone', () => {
+  beforeAll(async () => {
+    await page.viewport(375, 667);
+  });
+  afterAll(async () => {
+    await page.viewport(414, 896);
+  });
+
+  it('a right-start panel beside a 359 px wide anchor stays within [8, 367] and falls below it', async () => {
+    const { anchor, pop } = await beside('right-start', FULL_WIDTH_ROW);
+    const rect = panel(pop).getBoundingClientRect();
+    expect(rect.left).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(rect.right).toBeLessThanOrEqual(367 + 0.5);
+    expect(rect.top).toBeGreaterThanOrEqual(anchor.getBoundingClientRect().bottom - 0.5);
+  });
+
+  it('a left-start panel likewise', async () => {
+    const { anchor, pop } = await beside('left-start', FULL_WIDTH_ROW);
+    const rect = panel(pop).getBoundingClientRect();
+    expect(rect.left).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(rect.right).toBeLessThanOrEqual(367 + 0.5);
+    expect(rect.top).toBeGreaterThanOrEqual(anchor.getBoundingClientRect().bottom - 0.5);
+  });
+
+  it('publishes the room it has as --available-width', async () => {
+    const { pop } = await beside('right-start', FULL_WIDTH_ROW);
+    const width = Number.parseFloat(panel(pop).style.getPropertyValue('--available-width'));
+    expect(width).toBeCloseTo(375 - 16, 0);
+  });
+
+  it('a beside panel with room keeps its side', async () => {
+    const { anchor, pop } = await beside(
+      'right-start',
+      'left: 8px; top: 120px; width: 40px; height: 40px',
+    );
+    expect(panel(pop).getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      anchor.getBoundingClientRect().right,
+    );
+  });
+});
+
+describe('ps-popover placements on a desktop screen', () => {
+  beforeAll(async () => {
+    await page.viewport(1280, 720);
+  });
+  afterAll(async () => {
+    await page.viewport(414, 896);
+  });
+
+  it('a bottom-start panel still opens under its anchor at the anchor’s left', async () => {
+    document.body.innerHTML = `
+      <button id="row" style="position: fixed; left: 200px; top: 100px">Open</button>
+      <ps-popover><p style="width: 300px; margin: 0">Panel</p></ps-popover>`;
+    const anchor = document.getElementById('row')!;
+    const pop = document.querySelector('ps-popover')!;
+    pop.anchor = anchor;
+    pop.open = true;
+    await settle(pop);
+    const rect = panel(pop).getBoundingClientRect();
+    const box = anchor.getBoundingClientRect();
+    expect(rect.left).toBeCloseTo(box.left, 0);
+    expect(rect.top).toBeCloseTo(box.bottom + 6, 0);
+  });
+
+  it('a left-start panel beside a row with room on its left stays on the left', async () => {
+    const { anchor, pop } = await beside(
+      'left-start',
+      'left: 900px; top: 300px; width: 300px; height: 28px',
+    );
+    const rect = panel(pop).getBoundingClientRect();
+    expect(rect.right).toBeLessThanOrEqual(anchor.getBoundingClientRect().left + 0.5);
+    expect(rect.top).toBeCloseTo(anchor.getBoundingClientRect().top, 0);
   });
 });

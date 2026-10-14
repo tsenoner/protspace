@@ -273,4 +273,28 @@ describe('protspace-info-popover on ps-popover', () => {
     expect(outer.open).toBe(false);
     expect(outerClosed).toHaveBeenCalledOnce();
   });
+
+  it('a side bubble from a full-width row at 375 px stays on screen', async () => {
+    await page.viewport(375, 667);
+    try {
+      const stage = document.getElementById('stage')!;
+      stage.innerHTML = `<div id="row" style="position: fixed; left: 8px; top: 100px; width: 359px;
+        height: 40px; display: flex; align-items: center"><span style="flex: 1">Pfam</span></div>`;
+      const row = document.getElementById('row')!;
+      const el = await mount(
+        { placement: 'side', besideRow: true, detail: 'A second paragraph.' },
+        row,
+      );
+      trigger(el).click();
+      await settle(el);
+      const box = bubble(el)!.getBoundingClientRect();
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.left).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(box.right).toBeLessThanOrEqual(367 + 0.5);
+      expect(box.top).toBeGreaterThanOrEqual(row.getBoundingClientRect().bottom - 0.5);
+      expect(box.bottom).toBeLessThanOrEqual(667);
+    } finally {
+      await page.viewport(1280, 720);
+    }
+  });
 });

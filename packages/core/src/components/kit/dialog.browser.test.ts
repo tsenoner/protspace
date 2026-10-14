@@ -365,3 +365,44 @@ describe('ps-dialog size sheet', () => {
     expect(document.activeElement).toBe(opener);
   });
 });
+
+describe('ps-dialog on a phone', () => {
+  afterEach(async () => {
+    await page.viewport(414, 896);
+  });
+
+  async function openSized(size: 'md' | 'full'): Promise<HTMLDialogElement> {
+    document.body.innerHTML = `<ps-dialog heading="Figure editor" size="${size}"><p>Body</p></ps-dialog>`;
+    const dialog = document.querySelector('ps-dialog') as PsDialog;
+    dialog.open = true;
+    await settle(dialog);
+    return nativeDialog(dialog);
+  }
+
+  it('at 375×667 a full dialog fills the viewport', async () => {
+    await page.viewport(375, 667);
+    const native = await openSized('full');
+    const box = native.getBoundingClientRect();
+    expect(box.left).toBeCloseTo(0, 0);
+    expect(box.top).toBeCloseTo(0, 0);
+    expect(box.width).toBeCloseTo(375, 0);
+    expect(box.height).toBeCloseTo(667, 0);
+    expect(getComputedStyle(native).borderTopLeftRadius).toBe('0px');
+  });
+
+  it('md is 359 px wide at 375', async () => {
+    await page.viewport(375, 667);
+    const box = (await openSized('md')).getBoundingClientRect();
+    expect(box.width).toBeCloseTo(359, 0);
+    expect(box.left).toBeCloseTo(8, 0);
+  });
+
+  it('at 740×360 a full dialog fills the short landscape screen and md keeps 480 px', async () => {
+    await page.viewport(740, 360);
+    const full = (await openSized('full')).getBoundingClientRect();
+    expect(full.width).toBeCloseTo(740, 0);
+    expect(full.height).toBeCloseTo(360, 0);
+    const md = (await openSized('md')).getBoundingClientRect();
+    expect(md.width).toBeCloseTo(480, 0);
+  });
+});
