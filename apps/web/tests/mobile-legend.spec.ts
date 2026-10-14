@@ -20,6 +20,7 @@ import {
   panelFold,
   panelTab,
   touchDrag,
+  touchTargetsBelow,
   type Box,
   type Point,
 } from './helpers/mobile';
@@ -166,7 +167,7 @@ test.describe('the legend on a phone', () => {
     expect(reset.height).toBeGreaterThanOrEqual(40);
   });
 
-  test('G8: the Figure editor fits the screen with its close control, upright and sideways', async ({
+  test('G8: the Figure editor fits the screen, stacked upright and side by side sideways, with 40 px targets', async ({
     page,
   }) => {
     await openExplorePhone(page);
@@ -199,6 +200,14 @@ test.describe('the legend on a phone', () => {
       const bounds = await expectWithinViewport(page, close);
       expect(bounds.width).toBeGreaterThanOrEqual(40);
       expect(bounds.height).toBeGreaterThanOrEqual(40);
+      // Task 5.12: upright the preview stacks over the settings, sideways it sits beside them.
+      // The editor's content is slotted into the dialog, so it is found from the modal's host.
+      const modal = page.locator('protspace-publish-modal');
+      const preview = await box(modal.locator('.publish-preview'));
+      const settings = await box(modal.locator('.publish-sidebar'));
+      if (size) expect(preview.x + preview.width).toBeLessThanOrEqual(settings.x + 1);
+      else expect(preview.y + preview.height).toBeLessThanOrEqual(settings.y + 1);
+      expect(await touchTargetsBelow(page, modal)).toEqual([]);
     }
   });
 });
@@ -217,6 +226,13 @@ test.describe('popovers from a full-width legend row', () => {
     const picker = legend(page).getByRole('dialog', { name: /^Colour and shape/ });
     await expect(picker).toBeVisible();
     await expectWithinViewport(page, picker);
+    // The shapes and the swatch are finger-sized (Task 5.12). They are slotted into the popover,
+    // so they are measured from its host.
+    const pickerHost = legend(page)
+      .locator('ps-popover')
+      .filter({ has: page.locator('.shape-picker-item') });
+    await expect(pickerHost.locator('.shape-picker-item').first()).toBeVisible();
+    expect(await touchTargetsBelow(page, pickerHost)).toEqual([]);
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();
 

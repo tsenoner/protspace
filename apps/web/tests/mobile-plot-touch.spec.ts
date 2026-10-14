@@ -12,6 +12,8 @@ import {
   emptyPlotSpot,
   expectWithinViewport,
   line,
+  moreButton,
+  moreSheet,
   openExplorePhone,
   overlaps,
   panelFold,
@@ -212,12 +214,8 @@ test.describe('the plot on a touch screen', () => {
     await expect(workbench(page)).toHaveAttribute('data-sheet', 'folded');
   });
 
-  test('P7: the tool strip buttons are 40 px touch targets', async ({ page }) => {
-    await openExplorePhone(page);
-    const tools = page.getByRole('toolbar', { name: 'Plot tools', exact: true });
-    await expect(tools).toBeVisible();
-    expect(await touchTargetsBelow(page, tools)).toEqual([]);
-  });
+  // The tool strip's 40 px targets are pinned by plot-tools.browser.test.ts (the app adds no
+  // plot-tools CSS), so no e2e repeats it.
 });
 
 test.describe('the plot on a 360 px phone', () => {
@@ -263,6 +261,9 @@ test.describe('the plot on a phone on its side', () => {
 
     await expect(workbench(page)).toHaveAttribute('data-sheet', 'folded');
     await expect(plotTooltip(page)).toHaveClass(/visible/);
+    // On a 360 px tall plot the pinned card is capped to the room above the selection bar.
+    await expect(selectionBar(page)).toBeVisible();
+    expect(overlaps(await box(plotTooltip(page)), await box(selectionBar(page)))).toBe(false);
     const legend = await box(page.locator('#myLegend'));
     const folded = await box(structureSheet(page));
     // In the right column, under the legend.
@@ -283,6 +284,10 @@ test.describe('the plot on a phone on its side', () => {
       .toBeGreaterThanOrEqual(viewport.width / 2 - 1);
     const sheet = await expectWithinViewport(page, structureSheet(page));
     expect(sheet.height).toBeGreaterThanOrEqual(200);
+    // Mol* mounted into the folded 0 px body; expanded, its box fills the half.
+    const mount = page.locator('#myStructureViewer .viewer-content');
+    await expect.poll(async () => (await box(mount)).height).toBeGreaterThan(200);
+    expect(await touchTargetsBelow(page, structureSheet(page))).toEqual([]);
 
     // The close button sits beside the resource links, not over them.
     const close = structureSheet(page).getByRole('button', {
@@ -296,6 +301,21 @@ test.describe('the plot on a phone on its side', () => {
     }
     await close.tap();
     await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+  });
+
+  test('at scroll 0 the expanded structure leaves the bar usable', async ({ page }) => {
+    await openExplorePhone(page);
+    await tap(page, await proteinNear(page, 0.3, 0.3));
+    await sheetToggle(page).tap();
+    await expect(workbench(page)).toHaveAttribute('data-sheet', 'expanded');
+    // The folded sheet sits below the fold, so the tap on its grip scrolled: back to the top.
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    const sheet = await box(structureSheet(page));
+    expect(overlaps(await box(moreButton(page)), sheet)).toBe(false);
+    expect(overlaps(await box(viewBar(page)), sheet)).toBe(false);
+    await moreButton(page).tap();
+    await expect(moreSheet(page)).toBeVisible();
   });
 
   test('P10: the projection details card fits the short screen and scrolls', async ({ page }) => {
