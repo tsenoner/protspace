@@ -1,11 +1,23 @@
-import { memo, useRef, type MouseEvent } from 'react';
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import { flushSync } from 'react-dom';
 import { ChevronDown, Database, Github, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router';
-import type { ProtspaceImportMenu } from '@protspace/core';
+import type { ProtspaceImportMenu, ProtspaceProteinSearch } from '@protspace/core';
 import { countNoun } from '@protspace/utils';
 import { buildMailto, GITHUB_REPO_URL } from '@/lib/support';
+import { hasStructureSheet } from '../explore/layout-mode';
 import { HelpMenu } from './HelpMenu';
+import { SearchToggle } from './SearchToggle';
 import { useAppBarSides } from './use-app-bar-sides';
+import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 const FEEDBACK_HREF = buildMailto({ subject: 'ProtSpace feedback' });
@@ -54,14 +66,59 @@ const DataActions = memo(function DataActions() {
 
 /**
  * The 48 px app bar (design decision 1): the wordmark and the dataset on screen, search in the
- * centre, and the actions. The site's navigation stays on the other pages.
+ * centre, and the actions. The site's navigation stays on the other pages. On a phone (decision
+ * 17) it keeps the wordmark, the dataset and a search button that shows search over the bar; the
+ * actions move into the view bar's More sheet, and their menus stay mounted here, unseen.
  */
 export function AppBar() {
   const { datasetName, proteinCount } = useWorkbenchStatus();
+  const compact = hasStructureSheet(useLayoutMode());
+  const [searchWanted, setSearchWanted] = useState(false);
+  const searchOpen = compact && searchWanted;
   const barRef = useRef<HTMLElement>(null);
+  const toggleRef = useRef<HTMLElement>(null);
   useAppBarSides(barRef);
+
+  // Wider, search sits in the bar again; the next phone layout starts with it closed.
+  useEffect(() => {
+    if (!compact) setSearchWanted(false);
+  }, [compact]);
+
+  const openSearch = () => {
+    // Commit first: the field is display: none until the bar shows it.
+    flushSync(() => setSearchWanted(true));
+    (document.getElementById('myProteinSearch') as ProtspaceProteinSearch | null)?.focusInput();
+  };
+  const closeSearch = (returnFocus: boolean) => {
+    setSearchWanted(false);
+    if (returnFocus) toggleRef.current?.focus();
+  };
+  // An Escape nothing else took: the suggestion list and the report are layers, which take theirs
+  // first. Default-prevented here, so the selection's Escape fallback does not run as well.
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!searchOpen || event.key !== 'Escape') return;
+    if (event.nativeEvent.defaultPrevented || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    closeSearch(true);
+  };
+  // Focus leaving the bar (a tap on the plot, Tab past the field) closes search; a move inside the
+  // bar (into the search's shadow root, onto Close search) does not.
+  const onBlur = (event: FocusEvent<HTMLElement>) => {
+    if (!searchOpen) return;
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    closeSearch(false);
+  };
+
   return (
-    <header ref={barRef} className="wb-app-bar" data-workbench="app-bar">
+    <header
+      ref={barRef}
+      className="wb-app-bar"
+      data-workbench="app-bar"
+      data-search-open={searchOpen ? '' : undefined}
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
+    >
       <div className="wb-app-bar-start" data-workbench="app-bar-start">
         <Link to="/" data-workbench="home" aria-label="ProtSpace home">
           <img src="/wordmark.svg" alt="" />
@@ -101,6 +158,13 @@ export function AppBar() {
           id="myProteinSearch"
           data-driver-id="search"
         ></protspace-protein-search>
+        {/* Phones only (workbench.css): search shows over the bar until this closes it. */}
+        <ps-icon-button
+          className="wb-search-close"
+          icon="x"
+          label="Close search"
+          onClick={() => closeSearch(true)}
+        ></ps-icon-button>
       </div>
       <div data-workbench="app-bar-actions">
         <DataActions />
@@ -121,6 +185,7 @@ export function AppBar() {
         </a>
         <ps-tooltip text="GitHub" namesTarget></ps-tooltip>
       </div>
+      <SearchToggle ref={toggleRef} open={searchOpen} onOpen={openSearch} />
     </header>
   );
 }

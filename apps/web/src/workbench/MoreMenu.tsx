@@ -77,7 +77,9 @@ export function MoreMenu({ stage }: { stage: ViewBarStage }) {
         </span>
         {/* One name for the whole button, as FilterControl does: names pieced together around a
             screen-reader-only span gain a stray space. */}
-        <span aria-hidden="true">More</span>
+        <span className="wb-more-label" aria-hidden="true">
+          More
+        </span>
         <span className="sr-only">
           {active > 0 ? `More view options, ${active} active` : 'More view options'}
         </span>

@@ -65,7 +65,7 @@ export class ProtspaceExportMenu extends LitElement {
   }
 
   render() {
-    return html`<ps-button class="trigger" variant="secondary" @click=${this.toggle}>
+    return html`<ps-button class="trigger" part="trigger" variant="secondary" @click=${this.toggle}>
         <span slot="start" class="trigger-icon">${icon('download', 16)}</span>
         <span part="trigger-label">Export</span>
         <span slot="end" class="trigger-icon">${icon('chevron-down', 14)}</span>

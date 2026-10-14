@@ -185,4 +185,8 @@ describe('protspace-export-menu', () => {
       'File contains custom settings',
     );
   });
+
+  it('the trigger is exposed as the part trigger', () => {
+    expect(trigger().getAttribute('part')).toBe('trigger');
+  });
 });

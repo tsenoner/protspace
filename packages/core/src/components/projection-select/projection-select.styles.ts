@@ -21,6 +21,16 @@ export const projectionSelectStyles = [
       color: var(--ps-text);
       font-weight: var(--ps-weight-medium);
     }
+    /* On a phone the view bar narrows the picker: the value ends in an ellipsis. Every box from
+       the host down to the value may shrink. */
+    .trigger,
+    .trigger::part(button) {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .value {
+      min-width: 0;
+    }
     .chevron {
       display: inline-flex;
       color: var(--ps-text-faint);

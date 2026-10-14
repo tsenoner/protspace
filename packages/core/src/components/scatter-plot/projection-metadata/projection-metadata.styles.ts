@@ -34,6 +34,13 @@ export const projectionMetadataStyles = [
         color var(--ps-duration-fast) var(--ps-ease);
     }
 
+    @media (pointer: coarse) {
+      .trigger {
+        width: var(--ps-touch-target);
+        height: var(--ps-touch-target);
+      }
+    }
+
     .trigger:hover,
     .trigger[aria-expanded='true'] {
       background: var(--ps-surface-hover);

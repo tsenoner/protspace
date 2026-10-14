@@ -275,6 +275,30 @@ describe('protspace-import-menu', () => {
     expect(root().activeElement).toBe(ownFile());
   });
 
+  it('with its trigger hidden through the trigger part, openFrom still shows the panel under the anchor', async () => {
+    // The app's phone bar hides the Import button but keeps the element rendered: a popover
+    // inside a display: none ancestor would never show.
+    const style = document.createElement('style');
+    style.textContent = 'protspace-import-menu::part(trigger) { display: none; }';
+    document.head.append(style);
+    try {
+      expect(trigger().getClientRects().length).toBe(0);
+      datasetButton().focus();
+      menu.openFrom(datasetButton());
+      await settle();
+
+      expect(isOpen()).toBe(true);
+      expect(panel().checkVisibility()).toBe(true);
+      const anchor = datasetButton().getBoundingClientRect();
+      const box = panel().getBoundingClientRect();
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.top).toBeGreaterThanOrEqual(anchor.bottom);
+      expect(Math.abs(box.left - anchor.left)).toBeLessThan(2);
+    } finally {
+      style.remove();
+    }
+  });
+
   it("an example's name and size render apart, the size on one line", async () => {
     menu.exampleDatasets = [
       { id: 'venom', label: 'Venom toxins (demo) · 7.8K · 1.0 MB', description: 'Toxins.' },

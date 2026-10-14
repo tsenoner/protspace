@@ -311,17 +311,6 @@
   height: 100%;
 }
 
-/* The phone's view bar still wraps at its last stage until Task 5.4 gives it its own rules. */
-.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage='3'] {
-  flex-wrap: wrap;
-  height: auto;
-  min-height: var(--wb-view-bar-height);
-}
-
-.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
-  flex-wrap: wrap;
-}
-
 /* ── Panel tabs below 951 px: Legend and Filter, where the desktop rail switches them ── */
 
 .wb-panel-tabs {
@@ -1249,4 +1238,118 @@
 
 .workbench[data-dragging] .wb-drop-area {
   display: flex;
+}
+
+/* ── Phone bars (≤ 640 px, Task 5.4, decision 17) ────────────────────────────
+   The app bar keeps the wordmark, the dataset and a search button; search shows over the bar
+   while it is open (data-search-open). The actions leave the bar: the More sheet reaches them.
+   Their element stays rendered, only out of the grid and empty: a popover inside a display: none
+   ancestor never shows, and the Import and Export menus open from the dataset name and More. The
+   view bar is fixed at stage 3: Projection, its details, Color by and an icon-only More. */
+.workbench[data-layout='phone'] {
+  --wb-view-bar-height: 48px;
+}
+
+.workbench[data-layout='phone'] header[data-workbench='app-bar'] {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--ps-space-2);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+}
+
+.workbench[data-layout='phone'] [data-workbench='app-bar-actions'] {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.workbench[data-layout='phone'] [data-workbench='app-bar-actions'] > :not(.wb-data-actions),
+.workbench[data-layout='phone'] #myImportMenu::part(trigger),
+.workbench[data-layout='phone'] #myExportMenu::part(trigger),
+.workbench[data-layout='phone'] .wb-app-bar-start > .wb-separator {
+  display: none;
+}
+
+.workbench[data-layout='phone'] [data-workbench='home'] img {
+  height: 18px;
+}
+
+/* The name ends in an ellipsis before anything leaves the bar, and keeps a word of itself. */
+.workbench[data-layout='phone'] .wb-dataset-name {
+  min-width: 48px;
+  max-width: 45vw;
+}
+
+.workbench[data-layout='phone'] [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench[data-layout='phone'] header[data-search-open] [data-workbench='app-bar-center'] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  background: var(--ps-surface);
+}
+
+.workbench[data-layout='phone'] header[data-search-open] #myProteinSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-search-toggle,
+.wb-search-close {
+  display: none;
+}
+
+.workbench[data-layout='phone'] :is(.wb-search-toggle, .wb-search-close) {
+  display: inline-flex;
+}
+
+.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage] {
+  flex-wrap: nowrap;
+  height: var(--wb-view-bar-height);
+  min-height: 0;
+  padding: 0 var(--ps-space-2);
+}
+
+.workbench[data-layout='phone']
+  [data-workbench='view-bar']
+  :is(#myContoursMenu, .wb-view-sep, #myFilterButton) {
+  display: none;
+}
+
+/* Projection and Color by shrink, ending in an ellipsis, so the bar never overflows. */
+.workbench[data-layout='phone'] [data-workbench='view-bar'] .wb-view-group,
+.workbench[data-layout='phone'] :is(#myProjectionSelect, #myAnnotationSelect) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.workbench[data-layout='phone'] [data-workbench='view-bar'] .wb-more {
+  margin-left: auto;
+}
+
+/* Icon-only: the button keeps its name, "More view options". */
+.workbench[data-layout='phone'] .wb-more-label {
+  display: none;
+}
+
+/* Finger-sized app-bar targets wherever the pointer is coarse (design decision 17). */
+@media (pointer: coarse) {
+  [data-workbench='home'],
+  .wb-dataset {
+    min-height: var(--ps-touch-target);
+  }
+
+  .wb-dataset {
+    align-items: center;
+  }
+
+  .wb-icon-link {
+    width: var(--ps-touch-target);
+    height: var(--ps-touch-target);
+  }
 }

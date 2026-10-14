@@ -410,6 +410,7 @@ stays), "P12345 is already selected", and for a pasted list "12 of 15 found" wit
 | Method                       | Description                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------- |
 | `reportNotInView(proteinId)` | Say that a protein it added is selected but hidden in this view (filter, isolation) |
+| `focusInput()`               | Focus the text field without scrolling, as ⌘K does                                  |
 
 The app zooms to a single added protein with the scatterplot's `zoomToProteins([id])` and calls
 `reportNotInView` when that returns false; a pasted list never zooms.
@@ -482,6 +483,10 @@ Methods: `openFrom(anchor: HTMLElement)` opens the panel under `anchor` and sets
 `toggleFrom(anchor)` closes the panel when it is open from that anchor and opens it there
 otherwise.
 
+CSS part: `trigger`, the Import button. A host that opens the panel only from its own control hides
+it with `::part(trigger) { display: none }` and keeps the element rendered (a `display: none`
+element takes its panel with it), as the app's phone layout does.
+
 | Event                  | Detail           | Description                   |
 | ---------------------- | ---------------- | ----------------------------- |
 | `load-example-dataset` | `{ id: string }` | An example dataset was chosen |
@@ -501,7 +506,8 @@ toggling it keeps the menu open) and the note "Quick exports leave out contours.
 | ----------------- | --------- | ------------------------------------------------------------------------------- |
 | `hasFileSettings` | `boolean` | The loaded file carries settings a Parquet export can keep; `has-file-settings` |
 
-Methods: `reset()` checks **Include legend settings** again, as for a new dataset.
+Methods: `reset()` checks **Include legend settings** again, as for a new dataset. CSS part:
+`trigger`, the Export button.
 
 | Event                 | Detail              | Description                 |
 | --------------------- | ------------------- | --------------------------- |

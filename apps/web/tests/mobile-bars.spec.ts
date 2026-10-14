@@ -8,6 +8,7 @@ import {
   filterApplyButton,
   filterPanel,
   getContoursMode,
+  getSelectedProteinIds,
   getViewState,
   importTrigger,
   projectionTrigger,
@@ -27,6 +28,7 @@ import {
   moreSheetContent,
   openExplorePhone,
   panelTab,
+  proteinNear,
   searchToggle,
   tap,
   touchTargetsBelow,
@@ -89,7 +91,6 @@ for (const { label, viewport } of PHONES) {
     test(`${label}: the bars fit with whole labels and 40 px targets at ${viewport.width} px`, async ({
       page,
     }) => {
-      test.fixme(true, 'task 5.4');
       await openExplorePhone(page);
 
       const app = await box(appBar(page));
@@ -361,4 +362,78 @@ test.describe('the product tour on a phone', () => {
       expect(legendSteps[0]).toContain('double-tap');
     });
   }
+});
+
+test.describe('search on a phone', () => {
+  test('the search button opens search over the app bar; a pasted ID selects its protein; Close search returns focus to the button', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(searchInput(page)).toBeHidden();
+
+    await searchToggle(page).tap();
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    await expect(searchToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(searchInput(page)).toBeFocused();
+    await expectWithinViewport(page, searchInput(page));
+    const overlay = await box(appBar(page).locator('[data-workbench="app-bar-center"]'));
+    const bar = await box(appBar(page));
+    expect(Math.abs(overlay.y - bar.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(overlay.width - bar.width)).toBeLessThanOrEqual(1);
+
+    // A paste with a line break is a pasted list: the search selects every ID it finds.
+    const { id } = await proteinNear(page, 0.5, 0.5);
+    await searchInput(page).evaluate((input, text) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', text);
+      input.dispatchEvent(
+        new ClipboardEvent('paste', {
+          clipboardData: data,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+    }, `${id}\n`);
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
+
+    await appBar(page).getByRole('button', { name: 'Close search', exact: true }).tap();
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+    await expect(searchInput(page)).toBeHidden();
+    await expect(searchToggle(page)).toBeFocused();
+    await expect(searchToggle(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Escape closes the search overlay when nothing else handled it', async ({ page }) => {
+    await openExplorePhone(page);
+    const { id } = await proteinNear(page, 0.5, 0.5);
+    // Select one protein through the search first: the Escape that closes search must not clear it.
+    await searchToggle(page).tap();
+    await searchInput(page).fill(id);
+    await searchInput(page).press('Enter');
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([id]);
+
+    // The suggestion list is a layer: an Escape while it shows closes it and leaves search open.
+    const suggestions = page.locator('protspace-protein-search').getByRole('listbox');
+    if (await suggestions.isVisible()) {
+      await page.keyboard.press('Escape');
+      await expect(suggestions).toBeHidden();
+      await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    }
+    await page.keyboard.press('Escape');
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+    await expect(searchToggle(page)).toBeFocused();
+    expect(await getSelectedProteinIds(page)).toEqual([id]);
+  });
+
+  test('at 320 px the dataset name keeps more than 40 px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await openExplorePhone(page);
+    const name = appBar(page).locator('.wb-dataset-name');
+    await expect(name).toBeVisible();
+    expect((await box(name)).width).toBeGreaterThan(40);
+    await expect(searchToggle(page)).toBeVisible();
+    await expectWithinViewport(page, searchToggle(page));
+    await expectNoHorizontalOverflow(page);
+  });
 });

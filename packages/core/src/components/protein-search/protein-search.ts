@@ -594,6 +594,16 @@ export class ProtspaceProteinSearch extends LitElement {
   /**
    * Public API: Clear all selections
    */
+  /**
+   * Public API: focuses the text input without scrolling, as ⌘K does. The app's phone bar calls
+   * it after it shows the field over the bar.
+   */
+  public focusInput(): void {
+    this.shadowRoot
+      ?.querySelector<HTMLInputElement>('#protein-search-input')
+      ?.focus({ preventScroll: true });
+  }
+
   public clearSelections() {
     if (this.selectedProteinIds.length > 0) {
       this.selectedProteinIds = [];

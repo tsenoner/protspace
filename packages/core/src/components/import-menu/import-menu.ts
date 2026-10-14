@@ -90,6 +90,7 @@ export class ProtspaceImportMenu extends LitElement {
     const placement: Placement = anchor === this.trigger ? 'bottom-end' : 'bottom-start';
     return html`<button
         class="trigger"
+        part="trigger"
         type="button"
         aria-label="Import"
         aria-haspopup="dialog"

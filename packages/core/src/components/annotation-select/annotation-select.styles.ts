@@ -52,6 +52,20 @@ export const annotationSelectStyles = [
       box-shadow: inset 0 0 0 1px var(--ps-border-strong);
     }
 
+    /* A finger-sized target (design decision 17); the bar's 48 px row on a phone holds it. */
+    @media (pointer: coarse) {
+      .dropdown-trigger {
+        height: var(--ps-touch-target);
+      }
+    }
+
+    /* The view bar narrows Color by on a phone: the value ends in an ellipsis instead of the bar
+       overflowing. The container's own minimum would otherwise stay at the text's width. */
+    :host,
+    .annotation-select-container {
+      min-width: 0;
+    }
+
     .dropdown-trigger .key {
       color: var(--ps-text-muted);
       white-space: nowrap;

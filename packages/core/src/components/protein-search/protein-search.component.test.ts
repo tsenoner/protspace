@@ -777,3 +777,18 @@ describe('protspace-protein-search reports what happened', () => {
     expect(fromText).toEqual([{ proteinId: 'NEW1', source: 'typed' }]);
   });
 });
+
+describe('protspace-protein-search focusInput', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('focusInput focuses the text input', async () => {
+    const element = await setupSearch();
+    expect(element.shadowRoot!.activeElement).toBeNull();
+
+    (element as ProteinSearchElement & { focusInput(): void }).focusInput();
+
+    expect(element.shadowRoot!.activeElement).toBe(inputOf(element));
+  });
+});

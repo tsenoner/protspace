@@ -1,4 +1,6 @@
 import { type RefObject, useEffect, useState } from 'react';
+import type { LayoutMode } from '../explore/layout-defaults';
+import { hasStructureSheet } from '../explore/layout-mode';
 import { getWorkbenchStatus, subscribeWorkbenchStatus } from '../explore/workbench-status';
 import { resolveStage, type ViewBarStage } from './view-bar-overflow';
 
@@ -30,14 +32,24 @@ function contentWidth(bar: HTMLElement): number {
  * the bar and its items; their callbacks only take note, and the measuring runs once in the next
  * animation frame, where showing a candidate stage (data-stage) and reading its width is safe. A
  * stage's width is measured once and cached; a change in an item's own width (a new dataset's
- * names, another contour mode, a filter count) or the web font arriving clears the cache.
+ * names, another contour mode, a filter count) or the web font arriving clears the cache. On a
+ * phone (`mode` a sheet mode) the bar is fixed (design decision 17): stage 3, nothing measured,
+ * and workbench.css decides what shows; leaving the phone layouts measures again from stage 0.
  */
-export function useViewBarStage(barRef: RefObject<HTMLElement | null>): ViewBarStage {
+export function useViewBarStage(
+  barRef: RefObject<HTMLElement | null>,
+  mode: LayoutMode,
+): ViewBarStage {
   const [stage, setStage] = useState<ViewBarStage>(0);
+  const fixed = hasStructureSheet(mode);
 
   useEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
+    if (fixed) {
+      bar.dataset.stage = '3';
+      return;
+    }
     const cache = new Map<ViewBarStage, number>();
     const itemWidths = new WeakMap<Element, number>();
     let current: ViewBarStage = 0;
@@ -66,10 +78,10 @@ export function useViewBarStage(barRef: RefObject<HTMLElement | null>): ViewBarS
       for (const item of Array.from(bar.querySelectorAll(ITEM_SELECTOR))) {
         itemWidths.set(item, item.getBoundingClientRect().width);
       }
-      if (next !== current) {
-        current = next;
-        setStage(next);
-      }
+      // Always handed to React (an equal value renders nothing): coming back from a phone layout
+      // the state may still hold the stage from before it, while `current` starts at 0.
+      current = next;
+      setStage(next);
     };
     const schedule = () => {
       if (!frame && !disposed) frame = requestAnimationFrame(resolve);
@@ -118,7 +130,7 @@ export function useViewBarStage(barRef: RefObject<HTMLElement | null>): ViewBarS
       observer.disconnect();
       unsubscribe();
     };
-  }, [barRef]);
+  }, [barRef, fixed]);
 
-  return stage;
+  return fixed ? 3 : stage;
 }

@@ -4,6 +4,7 @@ import {
   closeFilterPanel,
   expectUrlParam,
   filterButton,
+  filterPanel,
   getColorByOptions,
   getContoursMode,
   getViewState,
@@ -167,7 +168,8 @@ async function stageWhenNarrowedTo(page: Page, width: number): Promise<number> {
 /** The widest window, to the pixel, at which narrowing reaches `stage` or a later one. */
 async function widestAtStage(page: Page, stage: number): Promise<number> {
   let below = 1280; // narrowing to this width stays under `stage`
-  let reached = 320; // narrowing to this width reaches it
+  // Below 641 px the phone bar is fixed at stage 3 (decision 17): the search stays above it.
+  let reached = 641; // narrowing to this width reaches it
   expect(await stageWhenNarrowedTo(page, below)).toBeLessThan(stage);
   expect(await stageWhenNarrowedTo(page, reached)).toBeGreaterThanOrEqual(stage);
   while (below - reached > 1) {
@@ -176,6 +178,17 @@ async function widestAtStage(page: Page, stage: number): Promise<number> {
     else below = middle;
   }
   return reached;
+}
+
+/**
+ * Widens the bar's right padding to 178 px, so stages 2 and 3 fall between 641 and 950 px (the
+ * demo's stage widths are about 711, 523, 516 and 433 px): below 641 px the phone layout fixes the
+ * stage, so the stage walk needs a bar that runs out of room sooner.
+ */
+async function squeezeViewBar(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: "[data-workbench='view-bar'] { padding-right: 178px !important; }",
+  });
 }
 
 const moreButton = (page: Page) =>
@@ -223,6 +236,7 @@ test.describe('view bar stages', () => {
     page,
   }) => {
     await openExplore(page);
+    await squeezeViewBar(page);
     // "Always" is the widest contour value, so moving Contours into More frees the most room.
     await setContours(page, 'on');
     const contours = viewBar(page).getByRole('button', { name: /^Contours/ });
@@ -257,20 +271,24 @@ test.describe('view bar stages', () => {
     ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(moreMenu(page)).toBeHidden();
-    // Filter in More opens the same panel, with focus on its heading. Close hands focus to the
-    // rail's Filter item on desktop; below 951 px, where there is no rail, to More, since the
-    // Filter button is hidden at this stage.
+    // Filter in More opens the same panel, with focus on its heading. On desktop Close hands focus
+    // to the rail's Filter item; below 951 px the panel row's tabs switch back (Task 5.3).
     await openFilter(page);
     await expect(page.locator('#wb-filter-title')).toBeFocused();
-    await closeFilterPanel(page);
-    const returnTarget =
-      page.viewportSize()!.width >= 951
-        ? page.getByRole('navigation', { name: 'Panels' }).getByRole('button', {
-            name: 'Filter',
-            exact: true,
-          })
-        : moreButton(page);
-    await expect(returnTarget).toBeFocused();
+    if (page.viewportSize()!.width >= 951) {
+      await closeFilterPanel(page);
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Panels' })
+          .getByRole('button', { name: 'Filter', exact: true }),
+      ).toBeFocused();
+    } else {
+      await page
+        .getByRole('tab', { name: 'Legend', exact: true })
+        .filter({ visible: true })
+        .click();
+      await expect(filterPanel(page)).toBeHidden();
+    }
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await settle(page);
@@ -282,6 +300,7 @@ test.describe('view bar stages', () => {
 
   test('a window jittering ±4 px around a threshold keeps its stage', async ({ page }) => {
     await openExplore(page);
+    await squeezeViewBar(page);
     const threshold = await widestAtStage(page, 1);
     // A threshold indeed: narrowing to four pixels wider keeps every label.
     expect(await stageWhenNarrowedTo(page, threshold + 4)).toBe(0);
@@ -304,6 +323,7 @@ test.describe('view bar stages', () => {
     page,
   }) => {
     await openExplore(page);
+    await squeezeViewBar(page);
     expect(await stageWhenNarrowedTo(page, await widestAtStage(page, 2))).toBeGreaterThanOrEqual(2);
     await expect(moreButton(page)).toHaveAccessibleName('More view options');
     await expect(page.locator('.wb-more-dot')).toBeHidden();
@@ -318,6 +338,7 @@ test.describe('view bar stages', () => {
 
   test('More opens with Enter and Escape returns focus to it', async ({ page }) => {
     await openExplore(page);
+    await squeezeViewBar(page);
     expect(await stageWhenNarrowedTo(page, await widestAtStage(page, 2))).toBeGreaterThanOrEqual(2);
 
     await moreButton(page).focus();
@@ -331,5 +352,27 @@ test.describe('view bar stages', () => {
     await page.keyboard.press('Escape');
     await expect(moreMenu(page)).toBeHidden();
     await expect(moreButton(page)).toBeFocused();
+  });
+
+  test('below 641 px the phone view bar shows Projection, Color by and More', async ({ page }) => {
+    await openExplore(page);
+    await page.setViewportSize({ width: 600, height: 720 });
+    await settle(page);
+    await expect(page.locator('.workbench')).toHaveAttribute('data-layout', 'phone');
+    expect(await readStage(page)).toBe(3);
+    await expect(projectionTrigger(page)).toBeVisible();
+    await expect(viewBar(page).getByRole('button', { name: /^Color by/ })).toBeVisible();
+    await expect(moreButton(page)).toBeVisible();
+    await expect(viewBar(page).getByRole('button', { name: /^Contours/ })).toBeHidden();
+    await expect(filterButton(page)).toBeHidden();
+    const bar = (await viewBar(page).boundingBox())!;
+    expect(bar.height).toBe(48);
+    expect(await viewBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+
+    // Narrower still, the bar is not measured: the stage stays 3.
+    await page.setViewportSize({ width: 360, height: 720 });
+    await settle(page);
+    expect(await readStage(page)).toBe(3);
+    expect(await viewBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 });

@@ -3,10 +3,12 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import {
   clickLegendItem,
+  datasetSwitcher,
   dismissTourIfPresent,
   getCurrentDatasetName,
   getFirstLegendItemValue,
   getProteinCount,
+  importMenu,
   importTrigger,
   importUserFile,
   isLegendItemHidden,
@@ -14,6 +16,7 @@ import {
   openImportMenu,
   pickExample,
   waitForExploreDataLoad,
+  waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
@@ -348,10 +351,19 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     await page.setViewportSize({ width: 568, height: 527 });
     await waitForExploreDataLoad(page);
     await dismissTourIfPresent(page);
+    await waitForExploreInteractionReady(page);
 
-    // Import still opens a panel at this width (a closed disclosure), not an immediate action.
-    await expect(importTrigger(page)).toBeVisible();
-    await expect(importTrigger(page)).toHaveAttribute('aria-expanded', 'false');
+    // 568 px is the phone layout: the Import button gives way and the dataset name opens the same
+    // panel (a closed disclosure until pressed), not an immediate action.
+    await expect(importTrigger(page)).toBeHidden();
+    await expect(datasetSwitcher(page)).toBeVisible();
+    await expect(datasetSwitcher(page)).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(datasetSwitcher(page)).not.toHaveAttribute('aria-expanded', 'true');
+    await datasetSwitcher(page).click();
+    await expect(
+      importMenu(page).getByRole('dialog', { name: 'Import', exact: true }),
+    ).toBeVisible();
+    await expect(datasetSwitcher(page)).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
