@@ -118,7 +118,7 @@ Rules for these:
    colour (`--protspace-viewer-height: 100%`)
 2. **Define in `:host` only**
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
-4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`
+4. **Group with comments**: `/* Layout */`, `/* Sizing */`
 
 The scatter plot no longer has colour properties: its background, border, brush and lasso, the
 overlay chips, EAT connectors and spiderfy marks, the protein tooltip and the projection card
