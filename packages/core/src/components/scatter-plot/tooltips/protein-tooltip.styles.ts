@@ -53,12 +53,10 @@ export const proteinTooltipStyles = css`
 
   .tooltip {
     box-sizing: border-box;
-    background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-    border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
+    background: var(--ps-surface-raised);
+    border: 1px solid var(--ps-border);
     border-radius: 0.5rem;
-    box-shadow:
-      var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08)),
-      0 10px 40px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--ps-shadow-md);
     font-size: 0.875rem;
     min-width: 200px;
     max-width: var(--protspace-tooltip-effective-width, 350px);
@@ -71,9 +69,9 @@ export const proteinTooltipStyles = css`
     padding: 0.625rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #334155;
-    border-bottom: 1px solid #e2e8f0;
-    background: #f8fafc;
+    color: var(--ps-text);
+    border-bottom: 1px solid var(--ps-border);
+    background: var(--ps-surface-muted);
   }
 
   .tooltip-content {
@@ -82,7 +80,7 @@ export const proteinTooltipStyles = css`
 
   .tooltip-protein-id {
     font-size: 1rem;
-    color: #0f172a;
+    color: var(--ps-text);
   }
 
   .tooltip-protein-id-main {
@@ -92,18 +90,18 @@ export const proteinTooltipStyles = css`
 
   .tooltip-uniprot-separator {
     font-size: 1rem;
-    color: #94a3b8;
+    color: var(--ps-text-faint);
   }
 
   .tooltip-uniprot-id {
     font-size: 1rem;
     font-weight: 400;
-    color: #475569;
+    color: var(--ps-text-muted);
   }
 
   .tooltip-gene-name {
     font-weight: normal;
-    color: #64748b;
+    color: var(--ps-text-muted);
     font-size: 0.75rem;
     margin-bottom: 0.25rem;
     display: flex;
@@ -112,7 +110,7 @@ export const proteinTooltipStyles = css`
 
   .tooltip-protein-name {
     font-weight: normal;
-    color: #64748b;
+    color: var(--ps-text-muted);
     font-size: 0.8125rem;
     line-height: 1.4;
     margin-bottom: 0.125rem;
@@ -124,13 +122,13 @@ export const proteinTooltipStyles = css`
   }
 
   .tooltip-content .label {
-    color: #334155;
+    color: var(--ps-text);
     font-weight: 500;
     flex-shrink: 0;
   }
 
   .tooltip-annotations {
-    border-top: 1px solid #f1f5f9;
+    border-top: 1px solid var(--ps-border);
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     display: flex;
@@ -141,7 +139,7 @@ export const proteinTooltipStyles = css`
   .tooltip-annotation-header {
     font-size: 0.625rem;
     font-weight: 600;
-    color: #94a3b8;
+    color: var(--ps-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     display: flex;
@@ -151,7 +149,7 @@ export const proteinTooltipStyles = css`
 
   .tooltip-annotation {
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--ps-text-muted);
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -182,20 +180,20 @@ export const proteinTooltipStyles = css`
   .tooltip-annotation-score {
     flex-shrink: 0;
     white-space: nowrap;
-    color: #94a3b8;
+    color: var(--ps-text-muted);
     font-variant-numeric: tabular-nums;
   }
 
   .tooltip-annotation-raw-label {
     flex-shrink: 0;
-    color: #64748b;
+    color: var(--ps-text-muted);
     font-weight: normal;
   }
 
   .tooltip-annotation-raw-value {
     flex-shrink: 0;
     white-space: nowrap;
-    color: #64748b;
+    color: var(--ps-text-muted);
     font-weight: normal;
     font-variant-numeric: tabular-nums;
   }
@@ -203,7 +201,7 @@ export const proteinTooltipStyles = css`
   .tooltip-annotation-evidence {
     flex-shrink: 0;
     white-space: nowrap;
-    color: #94a3b8;
+    color: var(--ps-text-muted);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
@@ -214,7 +212,7 @@ export const proteinTooltipStyles = css`
     margin: 0.125rem 0 0.25rem;
     padding: 0.375rem;
     border-radius: 0.375rem;
-    background: #f8fafc;
+    background: var(--ps-surface-muted);
   }
 
   .eat-provenance-heading,
@@ -223,25 +221,25 @@ export const proteinTooltipStyles = css`
     justify-content: space-between;
     gap: 0.5rem;
     font-size: var(--text-caption);
-    color: #475569;
+    color: var(--ps-text-muted);
   }
 
   .eat-provenance-source {
     display: block;
-    color: #64748b;
+    color: var(--ps-text-muted);
   }
 
   .eat-confidence-track {
     height: 4px;
     overflow: hidden;
     border-radius: 999px;
-    background: #e2e8f0;
+    background: var(--ps-border-strong);
   }
 
   .eat-confidence-track > span {
     display: block;
     height: 100%;
-    background: #7c3aed;
+    background: var(--ps-eat);
   }
 
   /* The compact card a tap pins on a touch screen (the phone mockup's): exactly the width the plot
@@ -280,8 +278,8 @@ export const proteinTooltipStyles = css`
     align-items: center;
     gap: var(--ps-space-2);
     padding-top: var(--ps-space-2);
-    border-top: 1px solid #f1f5f9;
-    color: #334155;
+    border-top: 1px solid var(--ps-border);
+    color: var(--ps-text);
     font-size: 0.8125rem;
   }
 

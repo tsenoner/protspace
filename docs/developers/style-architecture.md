@@ -119,14 +119,21 @@ Rules for these:
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`
 
+The scatter plot no longer has colour properties: its background, border, brush and lasso, the
+overlay chips, EAT connectors and spiderfy marks, the protein tooltip and the projection card
+read `--ps-*` tokens (`--ps-plot-bg`, `--ps-accent`, `--ps-surface-raised`, `--ps-plot-connector`,
+`--ps-eat`, `--ps-eat-endpoint` and the role colours), so setting those on `:root` restyles it in
+both themes. A host-declared colour property would block the theme, so none is offered. Its
+remaining `--protspace-*` properties are sizes, opacities and timings.
+
 ### Component Prefixes
 
-| Component            | Prefix                 |
-| -------------------- | ---------------------- |
-| Legend               | `--ps-*` tokens only   |
-| Scatter-plot         | `--protspace-*`        |
-| Structure-viewer     | `--protspace-viewer-*` |
-| Kit and new elements | `--ps-*` tokens only   |
+| Component            | Prefix                       |
+| -------------------- | ---------------------------- |
+| Legend               | `--ps-*` tokens only         |
+| Scatter-plot         | `--protspace-*` (sizes only) |
+| Structure-viewer     | `--protspace-viewer-*`       |
+| Kit and new elements | `--ps-*` tokens only         |
 
 ### Theming the legend
 

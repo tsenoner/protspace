@@ -80,12 +80,10 @@ export const projectionMetadataStyles = [
          lost their last characters. Stable also means the layout does not shift by ~15px at
          the moment a section appears and tips the card into scrolling. */
       scrollbar-gutter: stable;
-      background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-      border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
+      background: var(--ps-surface-raised);
+      border: 1px solid var(--ps-border);
       border-radius: 0.5rem;
-      box-shadow:
-        var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08)),
-        0 10px 40px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--ps-shadow-md);
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
@@ -128,9 +126,9 @@ export const projectionMetadataStyles = [
       padding: 0.625rem 0.75rem;
       font-size: 0.8125rem;
       font-weight: 600;
-      color: var(--text-primary);
-      border-bottom: 1px solid #e2e8f0;
-      background: #f8fafc;
+      color: var(--ps-text);
+      border-bottom: 1px solid var(--ps-border);
+      background: var(--ps-surface-muted);
       border-radius: 0.5rem 0.5rem 0 0;
     }
 
@@ -164,7 +162,7 @@ export const projectionMetadataStyles = [
       gap: 0.25rem;
       min-width: 0;
       font-weight: 500;
-      color: #475569;
+      color: var(--ps-text-muted);
     }
 
     .item-label {
@@ -173,7 +171,7 @@ export const projectionMetadataStyles = [
 
     dd {
       margin: 0;
-      color: #64748b;
+      color: var(--ps-text-muted);
       text-align: right;
       /* Never break a number across lines. */
       white-space: nowrap;
@@ -186,8 +184,8 @@ export const projectionMetadataStyles = [
     .scope-heading,
     .section-scope,
     .card-scope {
-      color: var(--text-muted);
-      font-size: var(--text-caption);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
       line-height: 1.35;
     }
 
@@ -225,7 +223,7 @@ export const projectionMetadataStyles = [
       padding: 0.625rem 0.75rem;
       font-size: 0.75rem;
       line-height: 1.5;
-      color: #475569;
+      color: var(--ps-text-muted);
     }
 
     .stat-heading,
@@ -240,7 +238,7 @@ export const projectionMetadataStyles = [
       gap: 0.25rem;
       margin-top: 0.35rem;
       font-weight: 500;
-      color: var(--text-primary);
+      color: var(--ps-text);
       overflow-wrap: anywhere;
     }
 
@@ -254,16 +252,16 @@ export const projectionMetadataStyles = [
       display: inline-block;
       padding: 0.05rem 0.3rem;
       border-radius: 0.25rem;
-      background: #eef2f7;
-      color: var(--text-primary);
+      background: var(--ps-surface-hover);
+      color: var(--ps-text);
       font-weight: 600;
       overflow-wrap: anywhere;
     }
 
     .stat-group-label,
     .stat-caveat {
-      color: var(--text-muted);
-      font-size: var(--text-caption);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
     }
 
     .stat-group-label {
@@ -283,7 +281,7 @@ export const projectionMetadataStyles = [
      thing sizing this track, but the heading is one word now, so a 4.5rem floor would start
      binding and take the width straight back off the metric-name column. */
     .stat-metric-embedding {
-      color: var(--text-muted);
+      color: var(--ps-text-muted);
     }
 
     /* Same reason as the dt rule above: as an inline element the ⓘ was pushed onto its own line
@@ -308,15 +306,15 @@ export const projectionMetadataStyles = [
     /* The category count, inside the name cell rather than a fourth column: it must be able to
        wrap under a long annotation name instead of squeezing the numbers. */
     .recovers-meta {
-      color: var(--panel-text-muted, #94a3b8);
+      color: var(--ps-text-muted);
     }
 
     /* Coverage, on its own line under the row it qualifies, spanning the full grid. */
     .recovers-coverage {
       grid-column: 1 / -1;
       padding-left: 0.6rem;
-      color: var(--panel-text-muted, #94a3b8);
-      font-size: var(--text-caption, 0.6875rem);
+      color: var(--ps-text-muted);
+      font-size: var(--ps-text-xs);
     }
 
     .recovers-more {
@@ -326,9 +324,9 @@ export const projectionMetadataStyles = [
       padding: 0;
       border: none;
       background: none;
-      color: var(--protspace-highlight-color, #00a3e0);
+      color: var(--ps-accent-text);
       font: inherit;
-      font-size: var(--text-caption, 0.6875rem);
+      font-size: var(--ps-text-xs);
       cursor: pointer;
     }
 
@@ -370,16 +368,16 @@ export const projectionMetadataStyles = [
 
     .stat-direction {
       margin-left: 0.15rem;
-      color: var(--text-muted);
+      color: var(--ps-text-muted);
     }
 
     .section-heading {
       padding: 0 0.75rem;
-      font-size: var(--text-caption);
+      font-size: var(--ps-text-xs);
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: var(--text-secondary);
+      color: var(--ps-text-muted);
       margin-top: 0.625rem;
       margin-bottom: 0.25rem;
     }
@@ -393,8 +391,8 @@ export const projectionMetadataStyles = [
     }
 
     .stat-columns span {
-      font-size: var(--text-caption);
-      color: var(--text-secondary);
+      font-size: var(--ps-text-xs);
+      color: var(--ps-text-muted);
     }
 
     .stat-columns span:not(:first-child) {

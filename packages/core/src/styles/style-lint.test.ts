@@ -33,8 +33,17 @@ const LEGACY = new Set<string>([
 
 const COLOUR =
   /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b/i;
-/** Set at run time by kit code (position.ts) and the query pickers (picker-placement.ts), not tokens. */
-const RUNTIME_VARS = new Set(['--available-height', '--available-width', '--picker-room']);
+/**
+ * Set at run time, not tokens: by kit code (position.ts), the query pickers (picker-placement.ts)
+ * and the plot's tooltip placement (tooltips/tooltip-position.ts).
+ */
+const RUNTIME_VARS = new Set([
+  '--available-height',
+  '--available-width',
+  '--picker-room',
+  '--protspace-tooltip-max-height',
+  '--protspace-tooltip-effective-width',
+]);
 const DEFINED = new Set([...theme.cssText.matchAll(/(--ps-[\w-]+)\s*:/g)].map((m) => m[1]));
 const CORE_SRC = fileURLToPath(new URL('..', import.meta.url));
 // Joined, not `new URL(…, import.meta.url)`: knip reads that form as an import of the web app.
@@ -50,6 +59,75 @@ function cssOf(path: string): string {
     .map((sheet) => sheet.cssText)
     .join('\n');
 }
+
+/** Each sheet a module exports by name (tokens, overlayMixins, srOnlyMixin…), mapped to that module. */
+const OWNER = new Map<unknown, string>();
+for (const [path, exports] of Object.entries(MODULES)) {
+  for (const value of Object.values(exports)) if (!Array.isArray(value)) OWNER.set(value, path);
+}
+
+/**
+ * The CSS a module writes itself. A stylesheet that composes another module's named sheet
+ * (scatter-plot.styles.ts composes tokens and overlayMixins) does not answer for it: that sheet is
+ * checked as its own module.
+ */
+function ownCssOf(path: string): string {
+  return Object.values(MODULES[path] ?? {})
+    .flatMap(flatten)
+    .filter((sheet) => (OWNER.get(sheet) ?? path) === path)
+    .map((sheet) => sheet.cssText)
+    .join('\n');
+}
+
+const STRIP_COMMENTS = /\/\*[\s\S]*?\*\//g;
+/** Every custom property tokens.ts declares; phase 8 deletes the module. */
+const LEGACY_VARS = new Map(
+  [
+    ...cssOf('./tokens.ts')
+      .replace(STRIP_COMMENTS, '')
+      .matchAll(/(--[\w-]+)\s*:\s*([^;{}]+)/g),
+  ].map(([, name, value]) => [name, value.trim()] as const),
+);
+/** The tokens.ts properties that hold a colour: always light, so reading one breaks dark mode. */
+const COLOUR_ALIASES = new Set(
+  [...LEGACY_VARS].filter(([, value]) => COLOUR.test(value)).map(([name]) => name),
+);
+
+/**
+ * The colour half of cssViolations, for modules still in LEGACY: a declaration that hard-codes a
+ * colour, reads a tokens.ts colour alias, or reads a variable nothing defines (theme.ts,
+ * RUNTIME_VARS, tokens.ts or the module itself). Literal font sizes and tokens.ts's non-colour
+ * aliases (z-index, spacing, fonts) wait for phase 8.
+ */
+function colourViolations(cssText: string): string[] {
+  const declarations = [
+    ...cssText.replace(STRIP_COMMENTS, '').matchAll(/([\w-]+)\s*:\s*([^;{}]+)/g),
+  ].map(([, property, raw]) => [property, raw.trim()] as const);
+  const own = new Set(
+    declarations.map(([property]) => property).filter((property) => property.startsWith('--')),
+  );
+  const known = (name: string) =>
+    !COLOUR_ALIASES.has(name) &&
+    (DEFINED.has(name) || RUNTIME_VARS.has(name) || LEGACY_VARS.has(name) || own.has(name));
+  return declarations
+    .filter(
+      ([, value]) =>
+        COLOUR.test(value) ||
+        [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, name]) => !known(name)),
+    )
+    .map(([property, value]) => `${property}: ${value}`);
+}
+
+/**
+ * LEGACY modules that still hold a colour. A task that takes a module's last colour out deletes
+ * its line: "still holds a colour" fails for a clean entry, so this list only shrinks.
+ */
+const STILL_COLOURED = new Set<string>([
+  '../components/structure-viewer/structure-viewer.styles.ts',
+  './mixins.ts',
+  './overlay-mixins.ts',
+  './tokens.ts',
+]);
 
 /**
  * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a
@@ -111,6 +189,13 @@ describe('style lint', () => {
       'border-color: lab(50% 0 0)',
       'gap: var(--spacing-sm)',
     ]);
+    // The colour-only check: tokens.ts colour aliases and undefined variables fail; its other
+    // aliases, literal font sizes and the module's own properties pass.
+    expect(
+      colourViolations(
+        '.a { color: var(--surface); background: #fff; border-color: var(--nowhere); gap: var(--spacing-sm); font-size: 12px; --gap: 2px; margin: var(--gap); max-height: var(--available-height); }',
+      ),
+    ).toEqual(['color: var(--surface)', 'background: #fff', 'border-color: var(--nowhere)']);
   });
 
   it.each(paths.filter((path) => !LEGACY.has(path)))(
@@ -134,6 +219,21 @@ describe('style lint', () => {
       .join('\n');
     const unused = [...DEFINED].filter((token) => !new RegExp(`${token}(?![\\w-])`).test(sources));
     expect(unused).toEqual([]);
+  });
+
+  it.each(paths.filter((path) => LEGACY.has(path) && !STILL_COLOURED.has(path)))(
+    '%s hard-codes no colour',
+    (path) => {
+      expect(colourViolations(ownCssOf(path))).toEqual([]);
+    },
+  );
+
+  it.each([...STILL_COLOURED])('%s still holds a colour', (path) => {
+    expect(MODULES[path], `${path} no longer exists; delete it from STILL_COLOURED`).toBeDefined();
+    expect(
+      colourViolations(ownCssOf(path)).length,
+      `${path} is colour-free; delete it from STILL_COLOURED`,
+    ).toBeGreaterThan(0);
   });
 
   it.each([...LEGACY])('%s still needs its legacy exemption', (path) => {

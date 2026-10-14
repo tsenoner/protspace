@@ -4,10 +4,12 @@ import { overlayMixins } from '../../styles/overlay-mixins';
 
 const scatterplotStylesCore = css`
   :host {
+    /* Sizes, opacities and timings only: every colour comes from a --ps-* token (theme.ts), so an
+       embedder restyles the plot in both themes by setting those on :root. */
+
     /* Layout */
     --protspace-width: 100%;
     --protspace-height: 600px;
-    --protspace-border-color: var(--border);
     --protspace-border-radius: 6px;
 
     /* Points */
@@ -19,9 +21,6 @@ const scatterplotStylesCore = css`
     --protspace-point-opacity-faded: 0.2;
 
     /* Selection */
-    --protspace-selection-color: #ff8a3d; /* warmer but softer */
-    --protspace-highlight-color: var(--primary);
-    --protspace-default-stroke: #3a3a3a;
     --protspace-stroke-width-base: 1px;
     --protspace-stroke-width-highlighted: 2px;
     --protspace-stroke-width-selected: 3px;
@@ -30,14 +29,7 @@ const scatterplotStylesCore = css`
     --protspace-transition-duration: 0.2s;
     --protspace-transition-easing: ease-in-out;
 
-    /* Tooltip */
-    --protspace-tooltip-bg: rgba(255, 255, 255, 0.95);
-    --protspace-tooltip-border: var(--border);
-    --protspace-tooltip-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-
     /* Brush */
-    --protspace-brush-stroke: #0072b5;
-    --protspace-brush-fill: rgba(0, 114, 181, 0.15);
     --protspace-brush-stroke-width: 1px;
 
     display: block;
@@ -45,7 +37,7 @@ const scatterplotStylesCore = css`
     height: var(--protspace-height);
     position: relative;
     background: var(--ps-plot-bg);
-    border: 1px solid var(--protspace-border-color);
+    border: 1px solid var(--ps-border);
     border-radius: var(--protspace-border-radius);
     overflow: hidden;
     margin: 0;
@@ -86,10 +78,11 @@ const scatterplotStylesCore = css`
     opacity: 0;
   }
 
-  /* D3 brush (drag-to-select rectangle) */
+  /* D3 brush (drag-to-select rectangle). The fill is the accent at 15 %, not --ps-accent-tint:
+     the light tint is opaque and would hide the points under the brush. */
   .brush-container rect.selection {
-    fill: var(--protspace-brush-fill);
-    stroke: var(--protspace-brush-stroke);
+    fill: color-mix(in srgb, var(--ps-accent) 15%, transparent);
+    stroke: var(--ps-accent);
     stroke-width: var(--protspace-brush-stroke-width);
     /* Keep the outline thin even when the brush group is scaled by zoom transforms */
     vector-effect: non-scaling-stroke;
@@ -107,8 +100,8 @@ const scatterplotStylesCore = css`
 
   /* Lasso (freeform selection path) */
   .lasso-path {
-    fill: var(--protspace-brush-fill);
-    stroke: var(--protspace-brush-stroke);
+    fill: color-mix(in srgb, var(--ps-accent) 15%, transparent);
+    stroke: var(--ps-accent);
     stroke-width: var(--protspace-brush-stroke-width);
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -136,10 +129,10 @@ const scatterplotStylesCore = css`
     height: 2rem;
     padding: 0 0.625rem;
     box-sizing: border-box;
-    background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-    border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
-    box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
-    color: #475569;
+    background: var(--ps-surface-raised);
+    border: 1px solid var(--ps-border);
+    box-shadow: var(--ps-shadow-md);
+    color: var(--ps-text-muted);
     font-size: var(--text-caption);
     font-weight: var(--font-medium);
     letter-spacing: 0.01em;
@@ -155,7 +148,7 @@ const scatterplotStylesCore = css`
   }
 
   .dup-spiderfy-line {
-    stroke: rgba(15, 23, 42, 0.35);
+    stroke: color-mix(in srgb, var(--ps-text) 35%, transparent);
     stroke-width: 1px;
     pointer-events: none;
   }
@@ -165,8 +158,9 @@ const scatterplotStylesCore = css`
     pointer-events: all;
   }
 
+  /* The rim separates a node from the points behind it, so it is the plot's own background. */
   .dup-spiderfy-node-circle {
-    stroke: rgba(255, 255, 255, 0.95);
+    stroke: var(--ps-plot-bg);
     stroke-width: 1.5px;
     pointer-events: all;
     cursor: pointer;
@@ -178,14 +172,14 @@ const scatterplotStylesCore = css`
   }
 
   .eat-provenance-connector {
-    stroke: #475569;
+    stroke: var(--ps-plot-connector);
     stroke-linecap: round;
     opacity: 0.82;
   }
 
   .eat-provenance-endpoint {
     fill: none;
-    stroke: #0f766e;
+    stroke: var(--ps-eat-endpoint);
     stroke-width: 2.5px;
     vector-effect: non-scaling-stroke;
   }
@@ -203,10 +197,10 @@ const scatterplotStylesCore = css`
     padding: 0.25rem 0.375rem 0.25rem 0.625rem;
     box-sizing: border-box;
     transform: translateX(-50%);
-    background: var(--protspace-tooltip-bg, rgba(255, 255, 255, 0.95));
-    border: 1px solid var(--protspace-tooltip-border, #d9e2ec);
-    box-shadow: var(--protspace-tooltip-shadow, 0 6px 16px rgba(0, 0, 0, 0.08));
-    color: #334155;
+    background: var(--ps-surface-raised);
+    border: 1px solid var(--ps-border);
+    box-shadow: var(--ps-shadow-md);
+    color: var(--ps-text);
     font-size: var(--text-caption);
     font-weight: var(--font-medium);
     border-radius: 0.375rem;
@@ -228,7 +222,7 @@ const scatterplotStylesCore = css`
     border: 0;
     border-radius: 0.25rem;
     background: transparent;
-    color: #475569;
+    color: var(--ps-text-muted);
     font: inherit;
     font-size: 1rem;
     line-height: 1;
@@ -237,8 +231,8 @@ const scatterplotStylesCore = css`
 
   .connector-status button:hover,
   .connector-status button:focus-visible {
-    background: #e2e8f0;
-    color: #0f172a;
+    background: var(--ps-surface-hover);
+    color: var(--ps-text);
     outline: none;
   }
 `;

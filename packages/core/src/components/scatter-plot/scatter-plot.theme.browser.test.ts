@@ -1,8 +1,11 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import { adoptStyles } from 'lit';
+import type { TooltipView, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { ProtspaceScatterplot } from './scatter-plot';
 import './scatter-plot';
+import { scatterplotStyles } from './scatter-plot.styles';
+import './tooltips/protein-tooltip';
 
 /** The private members these cases watch. */
 interface PlotPrivates {
@@ -202,5 +205,152 @@ describe('scatterplot theme', () => {
     // Review Focus 2: a dark load adds no render. If the greys were first read while the plot was
     // detached (the light fallback), connect() would flip them to dark and restyle once.
     expect(restyle).not.toHaveBeenCalled();
+  });
+});
+
+/** `rgb()`/`rgba()` or Chrome's `color(srgb … / a)` (a computed color-mix) as [r, g, b, alpha]. */
+function overlayChannels(value: string): [number, number, number, number] {
+  const srgb = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/.exec(value);
+  if (srgb) {
+    const [r, g, b] = srgb.slice(1, 4).map((channel) => Math.round(Number(channel) * 255));
+    return [r, g, b, Number(srgb[4] ?? 1)];
+  }
+  const rgb = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(value);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Number(rgb[4] ?? 1)];
+  throw new Error(`Unparsed colour: ${value}`);
+}
+
+/**
+ * A host carrying the plot's own stylesheet (scatterplotStyles, as the plot's shadow root adopts
+ * it) with the marks the plot draws over its points, so each overlay's colour is read without a
+ * dataset or WebGL.
+ */
+function overlayProbe(): ShadowRoot {
+  const host = document.createElement('div');
+  host.className = 'overlay-probe';
+  const root = host.attachShadow({ mode: 'open' });
+  adoptStyles(root, scatterplotStyles);
+  root.innerHTML = `
+    <svg width="200" height="200">
+      <g class="brush-container"><rect class="selection" width="20" height="20"></rect></g>
+      <path class="lasso-path" d="M0 0 L20 20 L0 20 Z"></path>
+      <line class="eat-provenance-connector" x1="0" y1="0" x2="20" y2="20"></line>
+      <circle class="eat-provenance-endpoint" cx="10" cy="10" r="4"></circle>
+      <circle class="dup-spiderfy-node-circle" cx="30" cy="30" r="4"></circle>
+    </svg>
+    <div class="plot-indicator">1,000 points</div>
+    <div class="connector-status"><span>2 connectors off screen</span><button type="button">×</button></div>`;
+  document.body.append(host);
+  return root;
+}
+
+const TOOLTIP_VIEW: TooltipView = {
+  proteinId: 'P12345',
+  geneName: ['KIN1'],
+  proteinName: ['Serine kinase'],
+  uniprotKbId: ['KIN1_HUMAN'],
+  blocks: [
+    {
+      key: 'ec',
+      label: 'EC number',
+      displayValues: ['2.7.11.1'],
+      numericValue: null,
+      numericType: 'float',
+      scores: [],
+      evidence: [],
+      predicted: { value: '2.7.11.1', confidence: 0.8, source: 'Q99999' },
+    },
+  ],
+};
+
+/** A hover tooltip with an EAT-transferred annotation, as the plot shows it. */
+async function mountTooltip(): Promise<ShadowRoot> {
+  const tooltip = document.createElement('protspace-protein-tooltip');
+  tooltip.view = TOOLTIP_VIEW;
+  tooltip.className = 'visible';
+  document.body.append(tooltip);
+  await tooltip.updateComplete;
+  return tooltip.shadowRoot!;
+}
+
+const styleOf = (root: ShadowRoot, selector: string) =>
+  getComputedStyle(root.querySelector(selector)!);
+
+describe('plot overlays, chips and tooltip follow the theme', () => {
+  beforeAll(() => adoptTheme());
+  afterEach(() => {
+    document
+      .querySelectorAll('.overlay-probe, protspace-protein-tooltip')
+      .forEach((el) => el.remove());
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  it('the brush selection and lasso stroke with the dark accent', () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = overlayProbe();
+    for (const selector of ['.brush-container rect.selection', '.lasso-path']) {
+      // sky-400, the dark --ps-accent.
+      expect(styleOf(root, selector).stroke).toBe('rgb(56, 189, 248)');
+      const [r, g, b, alpha] = overlayChannels(styleOf(root, selector).fill);
+      expect([r, g, b]).toEqual([56, 189, 248]);
+      // Translucent, so the points under a brush stay visible.
+      expect(alpha).toBeCloseTo(0.15, 2);
+    }
+  });
+
+  it('the EAT connector reads #94a3b8 and the endpoint #2dd4bf', () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = overlayProbe();
+    expect(styleOf(root, '.eat-provenance-connector').stroke).toBe('rgb(148, 163, 184)');
+    expect(styleOf(root, '.eat-provenance-endpoint').stroke).toBe('rgb(45, 212, 191)');
+  });
+
+  it('in light the connector stays #475569 and the endpoint #0f766e', () => {
+    const root = overlayProbe();
+    expect(styleOf(root, '.eat-provenance-connector').stroke).toBe('rgb(71, 85, 105)');
+    expect(styleOf(root, '.eat-provenance-endpoint').stroke).toBe('rgb(15, 118, 110)');
+  });
+
+  it('the spiderfy node rim is the dark plot background', () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = overlayProbe();
+    // #0b1120, the dark --ps-plot-bg.
+    expect(styleOf(root, '.dup-spiderfy-node-circle').stroke).toBe('rgb(11, 17, 32)');
+  });
+
+  it('the plot indicator and connector chip sit on the dark raised surface with light text', () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = overlayProbe();
+    const indicator = styleOf(root, '.plot-indicator');
+    const chip = styleOf(root, '.connector-status');
+    // #162036, the dark --ps-surface-raised; #1e293b, the dark --ps-border.
+    expect(indicator.backgroundColor).toBe('rgb(22, 32, 54)');
+    expect(indicator.borderTopColor).toBe('rgb(30, 41, 59)');
+    expect(indicator.color).toBe('rgb(148, 163, 184)');
+    expect(chip.backgroundColor).toBe('rgb(22, 32, 54)');
+    expect(chip.color).toBe('rgb(241, 245, 249)');
+    expect(styleOf(root, '.connector-status button').color).toBe('rgb(148, 163, 184)');
+  });
+
+  it('the tooltip card is dark with readable text and the EAT bar violet-400', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = await mountTooltip();
+    expect(styleOf(root, '.tooltip').backgroundColor).toBe('rgb(22, 32, 54)');
+    expect(styleOf(root, '.tooltip').borderTopColor).toBe('rgb(30, 41, 59)');
+    // #131d33, the dark --ps-surface-muted, under the dark --ps-text.
+    expect(styleOf(root, '.tooltip-header').backgroundColor).toBe('rgb(19, 29, 51)');
+    expect(styleOf(root, '.tooltip-protein-id').color).toBe('rgb(241, 245, 249)');
+    expect(styleOf(root, '.tooltip-annotation-header').color).toBe('rgb(148, 163, 184)');
+    expect(styleOf(root, '.tooltip-annotation').color).toBe('rgb(148, 163, 184)');
+    expect(styleOf(root, '.eat-confidence-track > span').backgroundColor).toBe(
+      'rgb(167, 139, 250)',
+    );
+  });
+
+  it('in light the tooltip stays white with the violet-600 EAT bar', async () => {
+    const root = await mountTooltip();
+    expect(styleOf(root, '.tooltip').backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(styleOf(root, '.tooltip-protein-id').color).toBe('rgb(15, 23, 42)');
+    expect(styleOf(root, '.eat-confidence-track > span').backgroundColor).toBe('rgb(124, 58, 237)');
   });
 });

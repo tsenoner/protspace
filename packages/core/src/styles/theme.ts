@@ -43,6 +43,9 @@ const lightRoles = css`
   --ps-plot-bg: #ffffff; /* the plot's background, as exports draw it */
   --ps-plot-other: #888888; /* Other points: NEUTRAL_VALUE_COLOR, what exports draw */
   --ps-plot-na: #dddddd; /* N/A points in the default N/A colour: NA_DEFAULT_COLOR */
+  --ps-plot-connector: #475569; /* slate-600: EAT connector lines on the plot */
+  --ps-eat: #7c3aed; /* violet-600: the EAT reliability bar in the tooltip */
+  --ps-eat-endpoint: #0f766e; /* teal-700: the ring on an EAT connector's source */
 `;
 
 const darkRoles = css`
@@ -74,6 +77,9 @@ const darkRoles = css`
   --ps-plot-bg: #0b1120; /* a step darker than the panels */
   --ps-plot-other: #64748b; /* slate-500, 4:1 on the plot */
   --ps-plot-na: #2a3547; /* de-emphasised, as #dddddd is on white */
+  --ps-plot-connector: #94a3b8; /* slate-400 */
+  --ps-eat: #a78bfa; /* violet-400 */
+  --ps-eat-endpoint: #2dd4bf; /* teal-400 */
 `;
 
 const sizes = css`
