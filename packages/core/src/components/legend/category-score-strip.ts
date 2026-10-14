@@ -1,5 +1,6 @@
 import { LitElement, html, svg, nothing } from 'lit';
 import { property } from 'lit/decorators.js';
+import { classMap } from 'lit/directives/class-map.js';
 import { formatStatValue } from '@protspace/utils';
 import { customElement } from '../../utils/safe-custom-element';
 import { categoryScoreStripStyles } from './category-score-strip.styles';
@@ -111,12 +112,10 @@ class ProtspaceScoreStrip extends LitElement {
           ${this.points.map(
             (point) =>
               svg`<circle
-            class="${[
-              point.category === this.highlighted ? 'is-highlighted' : '',
-              point.other ? 'other' : '',
-            ]
-              .join(' ')
-              .trim()}"
+            class=${classMap({
+              'is-highlighted': point.category === this.highlighted,
+              other: !!point.other,
+            })}
             data-category="${point.category}"
             cx="${position(point.value)}%"
             cy="${AXIS_Y}"
