@@ -164,7 +164,8 @@ test.describe('the legend on a phone', () => {
       page,
       settings.getByRole('button', { name: 'Reset', exact: true }),
     );
-    expect(reset.height).toBeGreaterThanOrEqual(40);
+    // Half a pixel of slack, as touchTargetsBelow allows: the box reads 39.99997 on some runs.
+    expect(reset.height).toBeGreaterThanOrEqual(39.5);
   });
 
   test('G8: the Figure editor fits the screen, stacked upright and side by side sideways, with 40 px targets', async ({
