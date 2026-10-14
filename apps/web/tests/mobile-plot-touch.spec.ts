@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { getSelectedProteinIds, plotArea, selectionBar, viewBar } from './helpers/explore';
+import {
+  getSelectedProteinIds,
+  plotArea,
+  selectionBar,
+  selectionBarAction,
+  viewBar,
+} from './helpers/explore';
+import { legend } from './helpers/legend';
 import {
   box,
   emptyPlotSpot,
@@ -7,6 +14,7 @@ import {
   line,
   openExplorePhone,
   overlaps,
+  panelTab,
   plotTooltip,
   proteinNear,
   proteinNearRightEdge,
@@ -17,6 +25,7 @@ import {
   touchTargetsBelow,
   type Point,
 } from './helpers/mobile';
+import { seedLayout, watchPlotResizes } from './helpers/workbench';
 
 /**
  * The plot under a finger (ported from feat/mobile-responsive, design decision 17): pinch, tap to
@@ -96,9 +105,6 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P2: a tap near the right edge shows the tooltip inside the plot', async ({ page }) => {
-    // Green once the tap's structure opens folded over the plot (5.8); the interim phone layout
-    // shrinks the plot under the pinned card.
-    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     await tap(page, await proteinNearRightEdge(page));
 
@@ -118,9 +124,6 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P3: a tap on empty space or a pan closes the tooltip', async ({ page }) => {
-    // Green once the tap's structure opens folded over the plot (5.8); the interim phone layout
-    // shrinks the plot under the pinned card.
-    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     const target = await proteinNearRightEdge(page);
     await tap(page, target);
@@ -136,7 +139,6 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P4: a first tap opens the sheet folded beside the tooltip', async ({ page }) => {
-    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     await tap(page, await proteinNearRightEdge(page));
 
@@ -155,7 +157,6 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P5: an expanded sheet covers no tooltip and leaves the plot in view', async ({ page }) => {
-    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     const viewportHeight = page.viewportSize()!.height;
     await tap(page, await proteinNearRightEdge(page));
@@ -288,5 +289,80 @@ test.describe('the plot on a phone on its side', () => {
     await openExplorePhone(page);
     // The card opens from the bar, which the page scrolls past: open it at the top.
     await expectProjectionDetailsFit(page);
+  });
+});
+
+/** Two frames: a ResizeObserver has reported whatever the last change did. */
+const settle = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+
+test.describe('structure sheet', () => {
+  test('folding and expanding the sheet never resizes the plot', async ({ page }) => {
+    await openExplorePhone(page);
+    const root = page.locator('.workbench');
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    const resizes = await watchPlotResizes(page);
+
+    await sheetToggle(page).tap();
+    await expect(root).toHaveAttribute('data-sheet', 'expanded');
+    await expect(sheetToggle(page)).toHaveAccessibleName('Hide the structure');
+    await sheetToggle(page).tap();
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    await settle(page);
+    expect(await resizes()).toBe(0);
+  });
+
+  test('the last legend row can be scrolled above the folded sheet', async ({ page }) => {
+    await openExplorePhone(page);
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(page.locator('.workbench')).toHaveAttribute('data-sheet', 'folded');
+
+    const last = legend(page).locator('.legend-item').last();
+    await last.scrollIntoViewIfNeeded();
+    const row = await box(last);
+    const sheet = await box(structureSheet(page));
+    expect(row.y + row.height).toBeLessThanOrEqual(sheet.y + 1);
+  });
+
+  test('with the panel folded, a structure opening resizes the plot once and the tabs stay visible', async ({
+    page,
+    context,
+  }) => {
+    await seedLayout(page, { panelFolded: true });
+    await openExplorePhone(page);
+    const root = page.locator('.workbench');
+    await expect(root).toHaveAttribute('data-panel-folded');
+    const resizes = await watchPlotResizes(page);
+
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    await expect.poll(resizes).toBe(1);
+    await settle(page);
+    expect(await resizes()).toBe(1);
+
+    const sheet = await box(structureSheet(page));
+    for (const name of ['Legend', 'Filter'] as const) {
+      const tab = await box(panelTab(page, name));
+      expect(overlaps(tab, sheet)).toBe(false);
+      expect(tab.y + tab.height).toBeLessThanOrEqual(sheet.y + 1);
+    }
+
+    // A toast stands above the folded panel and the sheet (--wb-panel-height carries the 56 px).
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await selectionBarAction(page, 'Copy IDs').tap();
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: /^Copied/ });
+    await expect(toast).toBeVisible();
+    await expect
+      .poll(async () => {
+        const shown = await box(toast);
+        return shown.y + shown.height;
+      })
+      .toBeLessThanOrEqual(sheet.y - 12 + 1);
   });
 });

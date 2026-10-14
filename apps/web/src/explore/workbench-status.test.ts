@@ -5,6 +5,7 @@ import {
   datasetPhaseFor,
   getWorkbenchStatus,
   resetWorkbenchStatusForTests,
+  setStructureSheet,
   setWorkbenchStatus,
   subscribeWorkbenchStatus,
 } from './workbench-status';
@@ -22,6 +23,7 @@ describe('workbench status', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
   });
 
@@ -39,6 +41,7 @@ describe('workbench status', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
     expect(listener).toHaveBeenCalledTimes(2);
   });
@@ -83,6 +86,19 @@ describe('workbench status', () => {
     setWorkbenchStatus({ datasetPhase: 'empty' });
     expect(getWorkbenchStatus().datasetPhase).toBe('empty');
   });
+
+  it('structureSheet starts folded; setStructureSheet notifies once per change', () => {
+    expect(getWorkbenchStatus().structureSheet).toBe('folded');
+    const listener = vi.fn();
+    subscribeWorkbenchStatus(listener);
+    setStructureSheet('expanded');
+    expect(getWorkbenchStatus().structureSheet).toBe('expanded');
+    expect(listener).toHaveBeenCalledOnce();
+    setStructureSheet('expanded');
+    expect(listener).toHaveBeenCalledOnce();
+    setStructureSheet('folded');
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('createDatasetNamePublisher', () => {
@@ -100,6 +116,7 @@ describe('createDatasetNamePublisher', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
   });
 
@@ -118,6 +135,7 @@ describe('createDatasetNamePublisher', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
 
     data = ids(3);
@@ -129,6 +147,7 @@ describe('createDatasetNamePublisher', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
   });
 
@@ -151,6 +170,7 @@ describe('createDatasetNamePublisher', () => {
       densityLayer: 'off',
       structureProteinId: null,
       datasetPhase: 'starting',
+      structureSheet: 'folded',
     });
   });
 });

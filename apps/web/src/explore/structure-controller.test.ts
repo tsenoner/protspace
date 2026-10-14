@@ -6,7 +6,11 @@ import {
   isStructureVisible,
   type StructureController,
 } from './structure-controller';
-import { getWorkbenchStatus, resetWorkbenchStatusForTests } from './workbench-status';
+import {
+  getWorkbenchStatus,
+  resetWorkbenchStatusForTests,
+  setStructureSheet,
+} from './workbench-status';
 
 /** The viewer's surface the controller uses, over a real EventTarget. */
 function fakeViewer() {
@@ -64,6 +68,7 @@ function fakePlot() {
   const events = new EventTarget();
   return {
     tooltipActions: [] as readonly { id: string; label: string }[],
+    tapTooltips: true,
     addEventListener: events.addEventListener.bind(events),
     removeEventListener: events.removeEventListener.bind(events),
     dispatchEvent: events.dispatchEvent.bind(events),
@@ -345,5 +350,138 @@ describe('createStructureController selection', () => {
     controller.select(['B']);
     updateLayout({ sidebarOpen: true });
     expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('B');
+  });
+});
+
+const OFFER = [{ id: 'view-structure', label: 'View structure' }];
+
+function viewStructure(plot: ReturnType<typeof fakePlot>, proteinId: string) {
+  plot.dispatchEvent(
+    new CustomEvent('tooltip-action', { detail: { id: 'view-structure', proteinId } }),
+  );
+}
+
+describe('createStructureController on phones and tablets', () => {
+  it('phone, folded: the plot offers View structure and taps pin', () => {
+    const { plot, controller } = setup({ mode: 'phone' });
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
+    controller.request('P1');
+    expect(getWorkbenchStatus().structureSheet).toBe('folded');
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it('phone, expanded: no actions and tapTooltips false', () => {
+    const { plot, controller } = setup({ mode: 'phone' });
+    controller.request('P1');
+    setStructureSheet('expanded');
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(false);
+    setStructureSheet('folded');
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it('View structure on a phone requests the protein and expands the sheet, and never opens the sidebar', () => {
+    const { viewer, plot } = setup({ mode: 'phone' });
+    updateLayout({ sidebarOpen: false });
+    viewStructure(plot, 'P2');
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P2');
+    expect(getWorkbenchStatus()).toMatchObject({
+      structureProteinId: 'P2',
+      structureSheet: 'expanded',
+    });
+    expect(getLayout().sidebarOpen).toBe(false);
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(false);
+  });
+
+  it('close resets the sheet to folded', () => {
+    const { viewer, plot, controller } = setup({ mode: 'phone' });
+    controller.request('P1');
+    setStructureSheet('expanded');
+    viewer.close();
+    expect(getWorkbenchStatus()).toMatchObject({
+      structureProteinId: null,
+      structureSheet: 'folded',
+    });
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it('a new protein after none opens folded', () => {
+    const { controller } = setup({ mode: 'phone' });
+    // A state left from before (the sheet cannot show with no protein) still starts over.
+    setStructureSheet('expanded');
+    controller.request('P1');
+    expect(getWorkbenchStatus().structureSheet).toBe('folded');
+    controller.clear();
+    expect(getWorkbenchStatus().structureSheet).toBe('folded');
+  });
+
+  it('a second protein keeps the sheet as it is', () => {
+    const { controller } = setup({ mode: 'phone' });
+    controller.request('P1');
+    controller.request('P2');
+    expect(getWorkbenchStatus().structureSheet).toBe('folded');
+    setStructureSheet('expanded');
+    // A tap above the expanded sheet selects a protein, which shows in it.
+    controller.select(['P3']);
+    expect(getWorkbenchStatus()).toMatchObject({
+      structureProteinId: 'P3',
+      structureSheet: 'expanded',
+    });
+  });
+
+  it('landscape follows the same sheet rule', () => {
+    const { plot, controller } = setup({ mode: 'landscape' });
+    expect(plot.tooltipActions).toEqual(OFFER);
+    controller.request('P1');
+    setStructureSheet('expanded');
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(false);
+  });
+
+  it('tablet offers nothing and taps pin', () => {
+    const { viewer, plot, controller } = setup({ mode: 'tablet' });
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(true);
+    controller.request('P1');
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    setStructureSheet('expanded');
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it("a mode change applies the new mode's rule", () => {
+    const { plot, controller, layoutMode } = setup({ mode: 'phone' });
+    controller.request('P1');
+    setStructureSheet('expanded');
+    layoutMode.set('tablet');
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(true);
+    layoutMode.set('landscape');
+    expect(plot.tooltipActions).toEqual([]);
+    expect(plot.tapTooltips).toBe(false);
+    layoutMode.set('desktop');
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it('desktop keeps taps pinning', () => {
+    const { plot } = setup({ mode: 'desktop' });
+    expect(plot.tapTooltips).toBe(true);
+    updateLayout({ sidebarOpen: false });
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
+  });
+
+  it('dispose stops following the sheet', () => {
+    const { plot, controller } = setup({ mode: 'phone' });
+    controller.request('P1');
+    controller.dispose();
+    setStructureSheet('expanded');
+    expect(plot.tooltipActions).toEqual(OFFER);
+    expect(plot.tapTooltips).toBe(true);
   });
 });

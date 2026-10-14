@@ -1,6 +1,7 @@
 import { createRef, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { RAIL_WIDTH, SIDEBAR_WIDTH } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
+import { hasStructureSheet } from '../explore/layout-mode';
 import { AppBar } from './AppBar';
 import {
   clampSidebarToWindow,
@@ -44,7 +45,8 @@ const getSidebarCap = () => clampSidebarToWindow(SIDEBAR_WIDTH.max, window.inner
 export function Workbench() {
   const layout = useLayout();
   const mode = useLayoutMode();
-  const { structureProteinId, appliedFilterConditions, datasetPhase } = useWorkbenchStatus();
+  const { structureProteinId, appliedFilterConditions, datasetPhase, structureSheet } =
+    useWorkbenchStatus();
   // The divider's drag or key preview; null while the stored fraction shows.
   const [legendFractionPreview, setLegendFractionPreview] = useState<number | null>(null);
   const legendFraction = legendFractionPreview ?? layout.legendFraction;
@@ -53,6 +55,8 @@ export function Workbench() {
   const placement = desktop ? layout.structurePlacement : 'docked';
   // The empty footer under the legend, the docked viewer, or the floating card over the plot.
   const structure = structureProteinId === null ? 'none' : placement;
+  // Phones show the structure as a sheet at the bottom edge, folded or expanded (decision 17).
+  const sheet = hasStructureSheet(mode);
   const sidebarCap = useSyncExternalStore(subscribeWindowWidth, getSidebarCap);
   const asideRef = useRef<HTMLElement>(null);
   const structureRef = useRef<HTMLElement>(null);
@@ -88,6 +92,7 @@ export function Workbench() {
       data-panel={layout.panel}
       // The phone's bottom panel shows only its header (only phones fold it).
       data-panel-folded={mode === 'phone' && layout.panelFolded ? '' : undefined}
+      data-sheet={sheet && structure !== 'none' ? structureSheet : undefined}
       data-sidebar-resizing={sidebarWidthPreview !== null ? '' : undefined}
       ref={rootRef}
       data-dragging={dragging ? '' : undefined}
@@ -142,6 +147,8 @@ export function Workbench() {
           // With no protein the section is the docked footer: no card, no grip.
           placement={structure === 'floating' ? 'floating' : 'docked'}
           canFloat={desktop}
+          sheet={sheet}
+          sheetExpanded={structureSheet === 'expanded'}
           legendFraction={legendFraction}
           onLegendFractionPreview={setLegendFractionPreview}
         />

@@ -6,9 +6,14 @@ import type {
   TooltipActionDetail,
 } from '@protspace/core';
 import type { LayoutMode, LayoutState } from './layout-defaults';
-import type { LayoutModeSource } from './layout-mode';
+import { hasStructureSheet, type LayoutModeSource } from './layout-mode';
 import { getLayout, subscribeLayout, updateLayout } from './layout-state';
-import { setWorkbenchStatus } from './workbench-status';
+import {
+  getWorkbenchStatus,
+  setStructureSheet,
+  setWorkbenchStatus,
+  subscribeWorkbenchStatus,
+} from './workbench-status';
 
 /** "View structure" in a pinned protein tooltip. */
 const VIEW_STRUCTURE: TooltipAction = { id: 'view-structure', label: 'View structure' };
@@ -39,10 +44,10 @@ export interface StructureController {
 
 interface StructureControllerOptions {
   viewer: ProtspaceStructureViewer;
-  /** The plot whose pinned tooltip offers "View structure". */
+  /** The plot whose pinned tooltip offers "View structure", and whose taps pin a tooltip. */
   plotElement: Pick<
     ProtspaceScatterplot,
-    'tooltipActions' | 'addEventListener' | 'removeEventListener'
+    'tooltipActions' | 'tapTooltips' | 'addEventListener' | 'removeEventListener'
   >;
   /** The workbench's layout mode (layout-mode.ts in the app; a fake in tests). */
   layoutMode: LayoutModeSource;
@@ -71,7 +76,8 @@ function singleAddition(previous: readonly string[], next: readonly string[]): s
  * structure is hidden (docked in a collapsed sidebar) only waits behind the rail's dot: no
  * AlphaFold request and no Mol* start in a hidden box. It loads once a layout or breakpoint change
  * makes the structure visible. The viewer no longer shows or hides itself: the shell places it
- * from `structureProteinId` in the workbench status.
+ * from `structureProteinId` in the workbench status. On phones the structure is a sheet: it opens
+ * folded and "View structure" expands it (decision 17).
  */
 export function createStructureController({
   viewer,
@@ -90,8 +96,16 @@ export function createStructureController({
   let choices: readonly string[] = [];
 
   const visible = () => isStructureVisible(getLayout(), layoutMode.get());
-  const publish = (proteinId: string | null) =>
-    setWorkbenchStatus({ structureProteinId: proteinId });
+  // A structure that appears from none opens folded on phones (decision 17), so the plot and the
+  // tooltip stay in view; closing starts over, so the next one opens folded too.
+  const publish = (proteinId: string | null) => {
+    const appears = proteinId !== null && getWorkbenchStatus().structureProteinId === null;
+    setWorkbenchStatus(
+      proteinId === null || appears
+        ? { structureProteinId: proteinId, structureSheet: 'folded' }
+        : { structureProteinId: proteinId },
+    );
+  };
   const load = (proteinId: string) => {
     waiting = null;
     viewer.loadProtein(proteinId);
@@ -130,17 +144,25 @@ export function createStructureController({
     publish((event as CustomEvent<StructureProteinChangeDetail>).detail.proteinId);
   };
 
-  // "View structure" is offered only where a click cannot show the structure: docked in a
-  // collapsed sidebar, on desktop (design decision 2). A visible or floating one loads on click.
+  // What a pinned tooltip offers and whether a tap pins one (design decisions 2 and 17). Desktop:
+  // "View structure" only where a click cannot show the structure, docked in a collapsed sidebar.
+  // Tablet: nothing, its structure is always in view; a tap still pins, to read a protein. Phone
+  // and landscape: "View structure" expands the folded sheet; while the sheet is up a tap pins
+  // nothing, so no tooltip opens under it (expanding also ends a pin: tapTooltips turns false).
   const offerViewStructure = () => {
+    const mode = layoutMode.get();
     const layout = getLayout();
+    const { structureSheet, structureProteinId } = getWorkbenchStatus();
+    const sheet = hasStructureSheet(mode);
+    const sheetUp = sheet && structureSheet === 'expanded' && structureProteinId !== null;
     const offer =
-      layoutMode.get() === 'desktop' &&
-      layout.structurePlacement === 'docked' &&
-      !layout.sidebarOpen;
+      mode === 'desktop'
+        ? layout.structurePlacement === 'docked' && !layout.sidebarOpen
+        : sheet && !sheetUp;
     if (offer !== plotElement.tooltipActions.length > 0) {
       plotElement.tooltipActions = offer ? [VIEW_STRUCTURE] : [];
     }
+    if (plotElement.tapTooltips === sheetUp) plotElement.tapTooltips = !sheetUp;
   };
   const onLayoutChange = () => {
     offerViewStructure();
@@ -152,10 +174,11 @@ export function createStructureController({
     // The focused button goes with its tooltip; focus what it opened instead of leaving <body>.
     const focused =
       typeof document !== 'undefined' && document.activeElement === event.currentTarget;
-    // Wait for the tooltip's protein, then open the sidebar, which loads it.
     request(proteinId);
-    updateLayout({ sidebarOpen: true });
-    // A frame on, the opening sidebar has rendered and the section is no longer inert.
+    // A phone expands its sheet; elsewhere the sidebar opens, which loads a waiting protein.
+    if (hasStructureSheet(layoutMode.get())) setStructureSheet('expanded');
+    else updateLayout({ sidebarOpen: true });
+    // A frame on, the sheet or the sidebar has rendered and the section is no longer inert.
     if (focused) {
       requestAnimationFrame(() =>
         viewer.closest<HTMLElement>('[data-workbench="structure"]')?.focus(),
@@ -165,6 +188,8 @@ export function createStructureController({
 
   const unsubscribe = subscribeLayout(onLayoutChange);
   const unsubscribeMode = layoutMode.subscribe(onLayoutChange);
+  // The sheet's state, which the shell writes, and the shown protein change the offer.
+  const unsubscribeStatus = subscribeWorkbenchStatus(offerViewStructure);
   viewer.addEventListener('structure-close', forget);
   viewer.addEventListener('structure-protein-change', onProteinChange);
   plotElement.addEventListener('tooltip-action', onTooltipAction);
@@ -183,6 +208,7 @@ export function createStructureController({
     dispose() {
       unsubscribe();
       unsubscribeMode();
+      unsubscribeStatus();
       viewer.removeEventListener('structure-close', forget);
       viewer.removeEventListener('structure-protein-change', onProteinChange);
       plotElement.removeEventListener('tooltip-action', onTooltipAction);

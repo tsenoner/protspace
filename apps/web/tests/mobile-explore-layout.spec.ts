@@ -58,7 +58,6 @@ test.describe('explore layout on a phone', () => {
   });
 
   test('L2: the structure opens as a sheet along the bottom edge', async ({ page }) => {
-    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     const viewport = page.viewportSize()!;
     await tap(page, await proteinNear(page, 0.5, 0.5));

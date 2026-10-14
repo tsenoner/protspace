@@ -745,6 +745,82 @@
   padding-inline: var(--ps-space-3) var(--ps-space-1);
 }
 
+/* ── Structure sheet on phones (Task 5.8, design decision 17) ───────────────
+   The structure rises from the bottom edge, folded to its grip and header (56 px) so the plot and
+   a pinned tooltip stay in view; expanded it takes half the screen at most. It folds by transform,
+   never by height or display: the viewer keeps its box, so Mol* never draws into an empty canvas
+   and a fold costs no resize, and the plot's box never changes (decision 4). The transform sits on
+   .wb-structure, no ancestor of the legend or the bars. Landscape places it in Task 5.9. */
+.workbench:is([data-layout='phone'], [data-layout='landscape']) {
+  --wb-sheet-folded: 56px;
+}
+
+.wb-sheet-grip {
+  display: none;
+}
+
+.workbench:is([data-layout='phone'], [data-layout='landscape']) .wb-sheet-grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  height: 12px;
+  cursor: pointer;
+}
+
+.wb-sheet-grip::before {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: var(--ps-radius-full);
+  background: var(--ps-border-strong);
+}
+
+/* Folded, only the grip and the header are on screen: the rest leaves the Tab order and the
+   accessibility tree, with no change to the viewer's box. */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='folded']
+  #myStructureViewer::part(body),
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='folded']
+  #myStructureViewer::part(links) {
+  visibility: hidden;
+}
+
+/* Over the plot and the panel, under the kit's top layer and the toasts. No border: the folded
+   56 px are exactly the grip and the header. */
+.workbench[data-layout='phone'] .wb-structure {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 6;
+  height: min(50svh, 416px);
+  padding-bottom: env(safe-area-inset-bottom);
+  border: 0;
+  border-radius: var(--ps-radius-lg) var(--ps-radius-lg) 0 0;
+  box-shadow: var(--ps-shadow-lg);
+  transform: translateY(calc(100% - var(--wb-sheet-folded)));
+  transition: transform var(--ps-duration) var(--ps-ease);
+}
+
+.workbench[data-layout='phone'][data-structure='none'] .wb-structure {
+  display: none;
+}
+
+.workbench[data-layout='phone'][data-sheet='expanded'] .wb-structure {
+  transform: none;
+}
+
+/* The folded sheet covers the panel's last 56 px, so the panel keeps them free: the tabs and the
+   last rows stay reachable. Unfolded that is padding inside the same height (the phone sidebar is
+   border-box, no plot resize); folded the panel grows by the sheet's height, one plot resize. */
+.workbench[data-layout='phone']:not([data-structure='none']) #wb-sidebar {
+  padding-bottom: var(--wb-sheet-folded);
+}
+
+/* Folded with a structure: the header and the sheet's 56 px. Through the variable, so the toasts
+   (Task 5.6) stay above the folded sheet; 5.6's #wb-sidebar { height: var(--wb-panel-height) }
+   applies it. */
+.workbench[data-layout='phone'][data-panel-folded]:not([data-structure='none']) {
+  --wb-panel-height: calc(45px + var(--wb-sheet-folded));
+}
+
 /* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
 
 /* The sidebar slides out past the rail; nothing may scroll it into view. */
@@ -1433,10 +1509,9 @@
    One screen that never scrolls: the plot fills what the bars and the bottom panel leave. The
    panel holds the Legend and Filter tabs, the same height for both (a tab switch never resizes
    the plot), and folds to its 44 px header (one plot resize, not animated). --wb-panel-height is
-   its height and --wb-structure-row the structure's row under it, which the toasts stand on. */
+   its height, which the toasts stand on. */
 .workbench[data-layout='phone'] {
   --wb-panel-height: clamp(144px, 32svh, 288px);
-  --wb-structure-row: 0px;
   height: 100dvh;
   overflow: hidden;
 }
@@ -1446,14 +1521,9 @@
   --wb-panel-height: 45px;
 }
 
-/* Until the structure sheet (Task 5.8): a 240 px row under the panel while a protein shows. */
-.workbench[data-layout='phone']:not([data-structure='none']) {
-  --wb-structure-row: 240px;
-}
-
 .workbench[data-layout='phone'] .wb-body {
   display: grid;
-  grid-template: 'plot' minmax(0, 1fr) 'side' auto 'struct' auto / minmax(0, 1fr);
+  grid-template: 'plot' minmax(0, 1fr) 'side' auto / minmax(0, 1fr);
 }
 
 .workbench[data-layout='phone'] [data-workbench='plot'] {
@@ -1508,28 +1578,16 @@
   margin-left: auto;
 }
 
-.workbench[data-layout='phone'] .wb-structure {
-  grid-area: struct;
-  position: static;
-  height: var(--wb-structure-row);
-  border-left: 0;
-  border-top: 1px solid var(--ps-border);
-}
-
-.workbench[data-layout='phone'][data-structure='none'] .wb-structure {
-  display: none;
-}
-
-/* Toasts stand 12 px above the panel (and the structure's row), and above the selection bar's
-   38 px and gap while it shows. Sonner's toaster is position: fixed to the window. */
+/* Toasts stand 12 px above the panel (and the folded structure sheet, which --wb-panel-height
+   carries), and above the selection bar's 38 px and gap while it shows. Sonner's toaster is position: fixed to the window. */
 .workbench[data-layout='phone'] .wb-body [data-sonner-toaster][data-y-position='bottom'] {
-  bottom: calc(var(--wb-panel-height) + var(--wb-structure-row) + 12px);
+  bottom: calc(var(--wb-panel-height) + 12px);
 }
 
 .workbench[data-layout='phone']
   .wb-body:has(#mySelectionBar:not([hidden]))
   [data-sonner-toaster][data-y-position='bottom'] {
-  bottom: calc(var(--wb-panel-height) + var(--wb-structure-row) + 62px);
+  bottom: calc(var(--wb-panel-height) + 62px);
 }
 
 /* Under a coarse pointer the selection bar's buttons are 40 px, so the bar is about 50 px tall:

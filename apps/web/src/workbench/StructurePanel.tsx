@@ -1,7 +1,8 @@
-import { useRef, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
+import { useRef, type KeyboardEvent, type MouseEvent, type PointerEvent, type Ref } from 'react';
 import { Box } from 'lucide-react';
 import { LEGEND_FRACTION, type StructurePlacement } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
+import { setStructureSheet } from '../explore/workbench-status';
 import { clampLegendFraction, DIVIDER_HEIGHT, fractionStep } from './layout-geometry';
 
 /** The sidebar column, the workbench body the section and the aside are placed in. */
@@ -96,6 +97,26 @@ function LegendDivider({ fraction, onPreview }: LegendDividerProps) {
   );
 }
 
+/** The viewer's controls and the resource links: a click there is theirs, never a sheet toggle. */
+const SHEET_CONTROLS = 'button, a, input, [role="button"], [role^="menuitem"], ps-menu';
+
+/**
+ * Whether a click on the section toggles the sheet: one on the grip or on the viewer's header row
+ * (its `header` part), not on one of the header's controls.
+ */
+function togglesSheet(event: MouseEvent<HTMLElement>): boolean {
+  let onHandle = false;
+  for (const node of event.nativeEvent.composedPath()) {
+    if (node === event.currentTarget) break;
+    if (!(node instanceof Element)) continue;
+    if (node.matches(SHEET_CONTROLS)) return false;
+    if (node.classList.contains('wb-sheet-grip') || node.getAttribute('part') === 'header') {
+      onHandle = true;
+    }
+  }
+  return onHandle;
+}
+
 interface StructurePanelProps {
   ref?: Ref<HTMLElement>;
   /** Out of the tab order while the sidebar is collapsed or collapsing (and the card docked). */
@@ -104,6 +125,10 @@ interface StructurePanelProps {
   placement: StructurePlacement;
   /** Whether it may float here: desktop widths only (below 951 px it always docks). */
   canFloat: boolean;
+  /** Phones (portrait and landscape): the section is the structure sheet (design decision 17). */
+  sheet: boolean;
+  /** The sheet is expanded (the workbench status's structureSheet). */
+  sheetExpanded: boolean;
   legendFraction: number;
   onLegendFractionPreview(fraction: number | null): void;
 }
@@ -114,17 +139,22 @@ interface StructurePanelProps {
  * divider, the 44 px empty footer and the viewer, which the structure controller drives. Where it
  * sits, docked under the legend or floating over the plot, and which part shows, is CSS from the
  * workbench root's data-structure; the pop-out button and the floating card's grip are the only
- * children that come and go, and never the viewer.
+ * children that come and go, and never the viewer. On phones the section is the structure sheet:
+ * its chevron, grip and header row fold and expand it (the workbench status), and CSS moves it by
+ * transform.
  */
 export function StructurePanel({
   ref,
   inert,
   placement,
   canFloat,
+  sheet,
+  sheetExpanded,
   legendFraction,
   onLegendFractionPreview,
 }: StructurePanelProps) {
   const floating = placement === 'floating';
+  const toggleSheet = () => setStructureSheet(sheetExpanded ? 'folded' : 'expanded');
   return (
     <section
       ref={ref}
@@ -136,6 +166,14 @@ export function StructurePanel({
       data-workbench="structure"
       aria-label="Structure"
       aria-describedby={floating ? 'wb-float-move-hint' : undefined}
+      // The grip and the header row fold and expand the sheet, as its chevron does.
+      onClick={
+        sheet
+          ? (event) => {
+              if (togglesSheet(event)) toggleSheet();
+            }
+          : undefined
+      }
     >
       <LegendDivider fraction={legendFraction} onPreview={onLegendFractionPreview} />
       <div className="wb-structure-empty" data-workbench="structure-empty">
@@ -143,6 +181,9 @@ export function StructurePanel({
         <span className="wb-structure-empty-title">Structure</span>
         <span className="wb-structure-empty-hint">Click a protein to view it</span>
       </div>
+      {/* The sheet's handle. Always rendered, shown by CSS in sheet modes only, so nothing is
+          inserted beside the viewer when the mode changes. */}
+      <div className="wb-sheet-grip" aria-hidden="true" />
       <protspace-structure-viewer
         id="myStructureViewer"
         height="100%"
@@ -151,6 +192,16 @@ export function StructurePanel({
         auto-sync="true"
         scatterplot-selector="#myPlot"
       >
+        {sheet && (
+          <ps-icon-button
+            slot="header-actions"
+            size="sm"
+            icon={sheetExpanded ? 'chevron-down' : 'chevron-up'}
+            label={sheetExpanded ? 'Hide the structure' : 'Show the structure'}
+            expanded={sheetExpanded ? 'true' : 'false'}
+            onClick={toggleSheet}
+          ></ps-icon-button>
+        )}
         {canFloat && (
           <ps-icon-button
             slot="header-actions"

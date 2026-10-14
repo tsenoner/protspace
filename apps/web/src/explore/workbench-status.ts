@@ -2,9 +2,12 @@ import { DENSITY_DEFAULT, type DensityLayerMode } from '@protspace/utils';
 
 /**
  * Transient facts the explore runtime publishes for the React shell, which never reads them off the
- * runtime's elements. Nothing here is persisted. Later tasks add fields.
+ * runtime's elements; the shell writes only the structure sheet. Nothing here is persisted.
  */
 type DatasetPhase = 'starting' | 'loading' | 'ready' | 'empty';
+
+/** The phone structure sheet: folded to its header, or expanded over the lower half. */
+type StructureSheet = 'folded' | 'expanded';
 
 export interface WorkbenchStatus {
   /** The dataset on screen: an example's label or a file's name; null before a load. */
@@ -22,6 +25,11 @@ export interface WorkbenchStatus {
    * (`loading`, the workbench is inert), a dataset (`ready`), or the empty state (`empty`).
    */
   datasetPhase: DatasetPhase;
+  /**
+   * The structure sheet on phones (design decision 17). The structure controller folds it when a
+   * structure appears and when it closes; the shell expands and folds it (setStructureSheet).
+   */
+  structureSheet: StructureSheet;
 }
 
 const EMPTY: WorkbenchStatus = {
@@ -31,6 +39,7 @@ const EMPTY: WorkbenchStatus = {
   densityLayer: DENSITY_DEFAULT,
   structureProteinId: null,
   datasetPhase: 'starting',
+  structureSheet: 'folded',
 };
 
 let status: WorkbenchStatus = EMPTY;
@@ -55,6 +64,11 @@ export function setWorkbenchStatus(patch: Partial<WorkbenchStatus>): void {
   if (keys.every((key) => Object.is(next[key], status[key]))) return;
   status = next;
   for (const listener of [...listeners]) listener();
+}
+
+/** The shell's one write to the status: the sheet's chevron, grip and header fold and expand it. */
+export function setStructureSheet(state: StructureSheet): void {
+  setWorkbenchStatus({ structureSheet: state });
 }
 
 /**
