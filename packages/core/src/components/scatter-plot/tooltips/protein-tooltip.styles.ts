@@ -243,4 +243,64 @@ export const proteinTooltipStyles = css`
     height: 100%;
     background: #7c3aed;
   }
+
+  /* The compact card a tap pins on a touch screen (the phone mockup's): exactly the width the plot
+     places it at, one header line, the name, the colour-by value and the actions. */
+  .tooltip.compact {
+    width: var(--protspace-tooltip-effective-width, 240px);
+    min-width: 0;
+  }
+
+  .compact .tooltip-header {
+    padding: var(--ps-space-2) var(--ps-space-3) 0;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .compact
+    :is(
+      .tooltip-protein-id,
+      .tooltip-protein-id-main,
+      .tooltip-uniprot-separator,
+      .tooltip-uniprot-id
+    ) {
+    font-size: 0.875rem;
+  }
+
+  .compact .tooltip-content {
+    padding: var(--ps-space-1) var(--ps-space-3) var(--ps-space-2);
+  }
+
+  .compact .tooltip-protein-name {
+    margin-bottom: var(--ps-space-2);
+  }
+
+  .tooltip-primary {
+    display: flex;
+    align-items: center;
+    gap: var(--ps-space-2);
+    padding-top: var(--ps-space-2);
+    border-top: 1px solid #f1f5f9;
+    color: #334155;
+    font-size: 0.8125rem;
+  }
+
+  .tooltip-swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .tooltip-primary-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact .tooltip-actions {
+    padding-top: 0;
+    border-top: 0;
+  }
 `;

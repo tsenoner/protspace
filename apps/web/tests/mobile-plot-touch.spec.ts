@@ -137,6 +137,29 @@ test.describe('the plot on a touch screen', () => {
     expect(clipped).toBe(false);
   });
 
+  test('P2b: a tap pins the compact card, clear of the protein it names', async ({ page }) => {
+    await openExplorePhone(page);
+    const target = await proteinNear(page, 0.5, 0.45);
+    await tap(page, target);
+
+    await expect(plotTooltip(page)).toHaveClass(/visible/);
+    await expect(plotTooltip(page).getByRole('button', { name: 'View structure' })).toBeVisible();
+    // The essentials only: the links wait in the structure sheet.
+    await expect(plotTooltip(page).locator('.resource-links')).toHaveCount(0);
+    const card = plotTooltip(page).locator('.tooltip');
+    await expect
+      .poll(async () => {
+        const shown = await box(card);
+        const ring = { x: target.x - 10, y: target.y - 10, width: 20, height: 20 };
+        return {
+          short: shown.height <= 160,
+          narrow: shown.width <= 240,
+          clear: !overlaps(shown, ring),
+        };
+      })
+      .toEqual({ short: true, narrow: true, clear: true });
+  });
+
   test('P3: a tap on empty space or a pan closes the tooltip', async ({ page }) => {
     await openExplorePhone(page);
     const target = await proteinNearRightEdge(page);

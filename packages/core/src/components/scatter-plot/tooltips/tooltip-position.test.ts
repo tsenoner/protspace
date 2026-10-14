@@ -124,6 +124,16 @@ describe('computeTouchTooltipStyle', () => {
     }
   });
 
+  it('takes a narrower card width it is given, and centres that card on the protein', () => {
+    const { left, width } = box(computeTouchTooltipStyle({ ...phone, x: 200, width: 240 }));
+    expect(width).toBe(240);
+    expect(left + width / 2).toBe(200);
+    // Never wider than the room the plot leaves.
+    expect(box(computeTouchTooltipStyle({ ...phone, viewportWidth: 200, width: 240 })).width).toBe(
+      200 - 2 * pad,
+    );
+  });
+
   it('centres the card on the protein when the plot has room', () => {
     const wide = { ...phone, x: 400, viewportWidth: 800 };
     const { left, width } = box(computeTouchTooltipStyle(wide));

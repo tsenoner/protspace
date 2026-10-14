@@ -139,6 +139,13 @@ class ProtspaceProteinTooltip extends LitElement {
   @property({ attribute: false }) actions: readonly TooltipAction[] = [];
   /** The protein's resource links above the actions; the plot sets it while the tooltip is pinned. */
   @property({ type: Boolean }) links = false;
+  /**
+   * A tap-pinned card on a touch screen: the protein, its colour-by value (the first block) and the
+   * actions, no links. The structure panel the action opens carries the links.
+   */
+  @property({ type: Boolean }) compact = false;
+  /** The protein's colour in the plot, the compact card's swatch. */
+  @property() color = '';
 
   static styles = [proteinTooltipStyles, resourceLinkStyles];
 
@@ -147,22 +154,14 @@ class ProtspaceProteinTooltip extends LitElement {
       return html``;
     }
 
+    if (this.compact) return this._renderCompact(this.view);
     const view = this.view;
     const geneName = getGeneName(view.geneName);
     const proteinName = getProteinName(view.proteinName);
-    const uniprotKbId = getUniprotKbId(view.uniprotKbId);
 
     return html`
       <div class="tooltip">
-        <div class="tooltip-header">
-          <div class="tooltip-protein-id">
-            <span class="tooltip-protein-id-main">${view.proteinId}</span>
-            ${uniprotKbId
-              ? html`<span class="tooltip-uniprot-separator"> · </span>
-                  <span class="tooltip-uniprot-id">${uniprotKbId}</span>`
-              : ''}
-          </div>
-        </div>
+        ${this._renderHeader(view)}
         <div class="tooltip-content">
           ${proteinName
             ? html`<div class="tooltip-protein-name">
@@ -179,16 +178,62 @@ class ProtspaceProteinTooltip extends LitElement {
         ${this.links
           ? html`<div class="tooltip-links">${renderResourceLinks(view.proteinId)}</div>`
           : ''}
-        ${this.actions.length > 0
-          ? html`<div class="tooltip-actions">
-              ${this.actions.map(
-                (action) =>
-                  html`<ps-button size="sm" variant="secondary" @click=${() => this._act(action.id)}
-                    >${action.label}</ps-button
-                  >`,
-              )}
+        ${this._renderActions()}
+      </div>
+    `;
+  }
+
+  private _renderHeader(view: TooltipView): TemplateResult {
+    const uniprotKbId = getUniprotKbId(view.uniprotKbId);
+    return html`<div class="tooltip-header">
+      <div class="tooltip-protein-id">
+        <span class="tooltip-protein-id-main">${view.proteinId}</span>
+        ${uniprotKbId
+          ? html`<span class="tooltip-uniprot-separator"> · </span>
+              <span class="tooltip-uniprot-id">${uniprotKbId}</span>`
+          : ''}
+      </div>
+    </div>`;
+  }
+
+  private _renderActions(): TemplateResult | string {
+    if (this.actions.length === 0) return '';
+    return html`<div class="tooltip-actions">
+      ${this.actions.map(
+        (action) =>
+          html`<ps-button size="sm" variant="secondary" @click=${() => this._act(action.id)}
+            >${action.label}</ps-button
+          >`,
+      )}
+    </div>`;
+  }
+
+  private _renderCompact(view: TooltipView): TemplateResult {
+    const proteinName = getProteinName(view.proteinName);
+    const primary = view.blocks[0];
+    const value = primary?.displayValues
+      .map((shown) => toDisplayValue(toInternalValue(shown)))
+      .join(', ');
+    return html`
+      <div class="tooltip compact">
+        ${this._renderHeader(view)}
+        ${proteinName || value
+          ? html`<div class="tooltip-content">
+              ${proteinName ? html`<div class="tooltip-protein-name">${proteinName}</div>` : ''}
+              ${value
+                ? html`<div class="tooltip-primary" title=${primary?.label ?? ''}>
+                    ${this.color
+                      ? html`<span
+                          class="tooltip-swatch"
+                          style=${`background: ${this.color}`}
+                        ></span>`
+                      : ''}
+                    <span class="tooltip-primary-value">${value}</span>
+                  </div>`
+                : ''}
             </div>`
           : ''}
+        ${this._renderActions()}
       </div>
     `;
   }

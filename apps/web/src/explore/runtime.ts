@@ -47,6 +47,7 @@ import { loadLastImportedFile, readStoredImportSummary } from './opfs-dataset-st
 import { createSelectionController } from './selection-controller';
 import { createStatusController } from './status-controller';
 import { createStructureController } from './structure-controller';
+import { bindPhoneDim } from './phone-dim';
 import { bindTouchTooltipInsets } from './touch-tooltip-insets';
 import { createUndoController, type UndoEntry } from './undo-controller';
 import {
@@ -409,6 +410,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     pickers: viewBarController,
   });
   lifecycle.addCleanup(() => viewController.dispose());
+  lifecycle.addCleanup(
+    bindPhoneDim(plotElement, { get: getLayoutMode, subscribe: subscribeLayoutMode }),
+  );
 
   // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
   // panel; below 951 px whenever Filter is the chosen panel, except in a folded phone panel,

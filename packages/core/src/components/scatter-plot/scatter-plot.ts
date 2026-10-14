@@ -50,6 +50,7 @@ import { PointGridController, type GridStash } from './interaction/point-grid-co
 import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-stack-overlay-controller';
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
+  COMPACT_TOOLTIP_WIDTH,
   computeTooltipStyle,
   computeTouchTooltipStyle,
   effectiveTooltipWidth,
@@ -1888,7 +1889,10 @@ export class ProtspaceScatterplot extends LitElement {
       viewportHeight: config.height,
     };
     return this._pinnedTooltip?.touch
-      ? computeTouchTooltipStyle(input, this.touchTooltipInsets)
+      ? computeTouchTooltipStyle(
+          { ...input, width: COMPACT_TOOLTIP_WIDTH },
+          this.touchTooltipInsets,
+        )
       : computeTooltipStyle(input);
   }
 
@@ -1896,6 +1900,8 @@ export class ProtspaceScatterplot extends LitElement {
     const shown = this._shownTooltip();
     if (!shown) return '';
     const pinned = this._pinnedTooltip !== null;
+    // A tap pins the compact card: the full details would cover a phone's plot and the protein.
+    const touch = this._pinnedTooltip?.touch === true;
     // Shift-focus fades the hover tooltip; a pinned one stays.
     const className = pinned ? 'visible pinned' : this._focusedValues ? '' : 'visible';
     return html`
@@ -1904,10 +1910,18 @@ export class ProtspaceScatterplot extends LitElement {
         style="${this._getTooltipStyle()}"
         .view=${shown.view}
         .actions=${pinned ? this.tooltipActions : NO_TOOLTIP_ACTIONS}
-        .links=${pinned}
+        .links=${pinned && !touch}
+        .compact=${touch}
+        .color=${touch ? this._pinnedColor() : ''}
         @protein-tooltip-action=${this._handleTooltipAction}
       ></protspace-protein-tooltip>
     `;
+  }
+
+  /** The pinned protein's colour in the plot, for the compact card's swatch. */
+  private _pinnedColor(): string {
+    const pinned = this._pinnedTooltip;
+    return pinned ? (this._style.getters().getColors(pinned.point)[0] ?? '') : '';
   }
 
   private _pinTooltip(point: PlotDataPoint, view: TooltipView, touch: boolean): void {

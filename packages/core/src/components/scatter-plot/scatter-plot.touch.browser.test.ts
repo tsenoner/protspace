@@ -185,6 +185,41 @@ describe('scatterplot touch', () => {
     });
   });
 
+  it('a tap pins the compact card beside its protein; a mouse click pins the full one', async () => {
+    const plot = await mountPlot([VIEW_STRUCTURE]);
+    const p2 = at(plot, 'P2');
+    tap(plot, p2);
+    await vi.waitFor(async () => {
+      await plot.updateComplete;
+      const tip = pinned(plot)!;
+      await tip.updateComplete;
+      const root = tip.shadowRoot!;
+      expect(root.querySelector('.tooltip.compact')).not.toBeNull();
+      expect(root.querySelector('.resource-links')).toBeNull();
+      expect(getComputedStyle(root.querySelector('.tooltip-swatch')!).backgroundColor).toBe(
+        'rgb(51, 102, 153)',
+      );
+      const card = root.querySelector('.tooltip')!.getBoundingClientRect();
+      expect(card.width).toBe(240);
+      // The tapped protein (and its 9 px selection ring) stays in view.
+      const covered =
+        p2.x >= card.left - 9 &&
+        p2.x <= card.right + 9 &&
+        p2.y >= card.top - 9 &&
+        p2.y <= card.bottom + 9;
+      expect(covered).toBe(false);
+    });
+
+    plot.remove();
+    const desktop = await mountPlot([VIEW_STRUCTURE]);
+    mouse(desktop, 'click', at(desktop, 'P3'));
+    await desktop.updateComplete;
+    const tip = pinned(desktop)!;
+    await tip.updateComplete;
+    expect(tip.shadowRoot!.querySelector('.tooltip.compact')).toBeNull();
+    expect(tip.shadowRoot!.querySelector('.resource-links')).not.toBeNull();
+  });
+
   it("a tap's compat mouseenter on a spider node shows no hover tooltip", async () => {
     const plot = await mountPlot([], true);
     await vi.waitFor(() => expect(plot.getDuplicateStacks()).toHaveLength(1), { timeout: 3_000 });

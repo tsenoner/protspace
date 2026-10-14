@@ -89,4 +89,55 @@ describe('protspace-protein-tooltip links', () => {
     const header = tooltip.shadowRoot!.querySelector('.tooltip-annotation-header span')!;
     expect(header.textContent).toBe('EC number');
   });
+
+  it('a compact card shows the protein, its colour-by value and the actions, and nothing else', async () => {
+    const tooltip = document.createElement('protspace-protein-tooltip');
+    const block = (key: string, label: string, value: string) => ({
+      key,
+      label,
+      displayValues: [value],
+      numericValue: null,
+      numericType: 'float' as const,
+      scores: [],
+      evidence: ['IC'],
+      predicted: null,
+    });
+    tooltip.view = {
+      proteinId: 'C0JB21',
+      geneName: ['lsct1'],
+      proteinName: ['Dermonecrotic toxin LruSicTox-alphaIV1'],
+      uniprotKbId: ['A41_LOXRU'],
+      blocks: [
+        block('family', 'Protein family', 'arthropod phospholipase D family'),
+        block('species', 'Species', 'Loxosceles rufescens'),
+        block('ec', 'EC number', '4.6.1.-'),
+      ],
+    };
+    tooltip.compact = true;
+    tooltip.color = '#0067a5';
+    tooltip.links = true;
+    tooltip.actions = [{ id: 'structure', label: 'View structure' }];
+    tooltip.className = 'visible pinned';
+    tooltip.style.setProperty('--protspace-tooltip-effective-width', '240px');
+    document.body.append(tooltip);
+    await tooltip.updateComplete;
+
+    const root = tooltip.shadowRoot!;
+    const card = root.querySelector<HTMLElement>('.tooltip')!;
+    expect(card.textContent).toContain('C0JB21');
+    expect(card.textContent).toContain('A41_LOXRU');
+    expect(card.textContent).toContain('Dermonecrotic toxin');
+    expect(card.textContent).toContain('arthropod phospholipase D family');
+    for (const gone of ['lsct1', 'Species', 'Loxosceles', 'EC number', 'IC', 'Protein:']) {
+      expect(card.textContent).not.toContain(gone);
+    }
+    expect(root.querySelector('.resource-links')).toBeNull();
+    const swatch = root.querySelector<HTMLElement>('.tooltip-swatch')!;
+    expect(getComputedStyle(swatch).backgroundColor).toBe('rgb(0, 103, 165)');
+    expect(root.querySelector('ps-button')!.textContent).toContain('View structure');
+    // About the mockup's card: 240 px wide, short enough to sit beside the protein on a phone.
+    const box = card.getBoundingClientRect();
+    expect(box.width).toBe(240);
+    expect(box.height).toBeLessThanOrEqual(150);
+  });
 });
