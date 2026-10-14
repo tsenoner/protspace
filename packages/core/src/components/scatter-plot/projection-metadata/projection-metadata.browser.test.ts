@@ -106,6 +106,27 @@ describe('protspace-projection-metadata on a phone', () => {
     }
   });
 
+  it('reopened after the bar moved it, the card measures again and stays inside', async () => {
+    await page.viewport(390, 420);
+    try {
+      const el = await mountAt('position: fixed; left: 300px; top: 60px');
+      const trigger = el.shadowRoot!.querySelector('.trigger') as HTMLButtonElement;
+      const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+      trigger.click();
+      await el.updateComplete;
+      trigger.click();
+      await el.updateComplete;
+      // A view-bar re-flow moves the host with no property change on the card.
+      el.style.left = '340px';
+      trigger.click();
+      await el.updateComplete;
+      await frame();
+      expect(card.getBoundingClientRect().right).toBeLessThanOrEqual(390 - 8 + 0.5);
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
   it('closed, the card does not reach past a 740 px landscape screen', async () => {
     await page.viewport(740, 360);
     try {
