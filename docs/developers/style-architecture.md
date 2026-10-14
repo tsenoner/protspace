@@ -114,7 +114,8 @@ Older components still expose custom properties of their own:
 
 Rules for these:
 
-1. **Always reference tokens**: `--protspace-border-radius: var(--ps-radius)`
+1. **Sizes only**: colours come from the `--ps-*` tokens, so a component property never holds a
+   colour (`--protspace-viewer-height: 100%`)
 2. **Define in `:host` only**
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`
@@ -126,14 +127,20 @@ read `--ps-*` tokens (`--ps-plot-bg`, `--ps-accent`, `--ps-surface-raised`, `--p
 both themes. A host-declared colour property would block the theme, so none is offered. Its
 remaining `--protspace-*` properties are sizes, opacities and timings.
 
+The structure viewer's colour properties (`--protspace-viewer-bg`, `-border`, `-header-bg`,
+`-text`, `-text-muted`, `-error`, `-loading`) are gone too: its frame, header, footer, loading veil
+and colour-mode control read the tokens, and the Mol\* canvas takes `--ps-surface` as its
+background, set again whenever a theme change gives that token another value. Its
+`--protspace-viewer-width`, `-height` and `-border-radius` stay.
+
 ### Component Prefixes
 
-| Component            | Prefix                       |
-| -------------------- | ---------------------------- |
-| Legend               | `--ps-*` tokens only         |
-| Scatter-plot         | `--protspace-*` (sizes only) |
-| Structure-viewer     | `--protspace-viewer-*`       |
-| Kit and new elements | `--ps-*` tokens only         |
+| Component            | Prefix                              |
+| -------------------- | ----------------------------------- |
+| Legend               | `--ps-*` tokens only                |
+| Scatter-plot         | `--protspace-*` (sizes only)        |
+| Structure-viewer     | `--protspace-viewer-*` (sizes only) |
+| Kit and new elements | `--ps-*` tokens only                |
 
 ### Theming the legend
 

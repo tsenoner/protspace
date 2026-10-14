@@ -274,3 +274,51 @@ describe('protspace-structure-viewer under a coarse pointer', () => {
     }
   });
 });
+
+/** `rgb()`/`rgba()` or Chrome's `color(srgb … / a)` (a computed color-mix) as [r, g, b, alpha]. */
+function channels(value: string): [number, number, number, number] {
+  const srgb = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/.exec(value);
+  if (srgb) {
+    const [r, g, b] = srgb.slice(1, 4).map((channel) => Math.round(Number(channel) * 255));
+    return [r, g, b, Number(srgb[4] ?? 1)];
+  }
+  const rgb = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(value);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Number(rgb[4] ?? 1)];
+  throw new Error(`Unparsed colour: ${value}`);
+}
+
+describe('protspace-structure-viewer in dark', () => {
+  afterEach(() => document.documentElement.removeAttribute('data-theme'));
+
+  it('in dark the frame, header and footer read the dark surfaces and text', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const viewer = await mount();
+    const root = viewer.shadowRoot!;
+    const style = (selector: string) => getComputedStyle(root.querySelector(selector)!);
+    // #0f172a --ps-surface (the colour Mol*'s canvas takes) and #1e293b --ps-border.
+    expect(getComputedStyle(viewer).backgroundColor).toBe('rgb(15, 23, 42)');
+    expect(getComputedStyle(viewer).borderTopColor).toBe('rgb(30, 41, 59)');
+    expect(style('.viewer-container').backgroundColor).toBe('rgb(15, 23, 42)');
+    // #131d33 --ps-surface-muted for the header band and the footer.
+    expect(style('.header').backgroundColor).toBe('rgb(19, 29, 51)');
+    expect(style('.color-toolbar').backgroundColor).toBe('rgb(19, 29, 51)');
+    // #94a3b8 --ps-text-muted.
+    expect(style('.color-toolbar').color).toBe('rgb(148, 163, 184)');
+    expect(style('.close-button').color).toBe('rgb(148, 163, 184)');
+    // The segmented control: #334155 --ps-border-strong, unpressed text muted.
+    expect(style('.segmented').borderTopColor).toBe('rgb(51, 65, 85)');
+    expect(style('.segmented-btn[aria-pressed="false"]').color).toBe('rgb(148, 163, 184)');
+  });
+
+  it('the loading veil is a translucent dark surface in dark', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const viewer = await mount();
+    // requestAnimationFrame is stubbed, so nothing loads: show the veil as a load does.
+    (viewer as unknown as { _isLoading: boolean })._isLoading = true;
+    await viewer.updateComplete;
+    const veil = viewer.shadowRoot!.querySelector('.loading-overlay')!;
+    const [r, g, b, alpha] = channels(getComputedStyle(veil).backgroundColor);
+    expect([r, g, b]).toEqual([15, 23, 42]);
+    expect(alpha).toBeCloseTo(0.9, 2);
+  });
+});

@@ -6,12 +6,14 @@ import type { StructureData } from '@protspace/utils';
 import { structureViewerStyles } from './structure-viewer.styles';
 import {
   createMolstarViewer,
+  molstarColor,
   prefetchMolstar,
   type MolstarViewer,
   type StructureColorMode,
 } from './molstar-loader';
 import { renderResourceLinks } from '../common/resource-links';
 import { resourceLinkStyles } from '../common/resource-links.styles';
+import { observeTheme } from '../../utils/theme-observer';
 import '../kit/menu';
 import type { PsMenu } from '../kit/menu';
 import '../kit/tooltip';
@@ -74,6 +76,9 @@ export class ProtspaceStructureViewer extends LitElement {
   @query('ps-menu.protein-menu') private _pickMenu?: PsMenu;
   private _loadController: AbortController | null = null;
   private _scatterplotElement: Element | null = null;
+  private _stopThemeObserver: (() => void) | null = null;
+  /** The background last given to each Mol* viewer, so a theme change that keeps it repaints nothing. */
+  private _appliedBackground = new WeakMap<MolstarViewer, number>();
 
   // Refs
   @query('.viewer-content') private _viewerContainer!: HTMLElement;
@@ -107,6 +112,7 @@ export class ProtspaceStructureViewer extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this._stopThemeObserver ??= observeTheme(() => this._applyViewerBackground());
 
     if (this.autoSync) {
       this._setupAutoSync();
@@ -115,6 +121,8 @@ export class ProtspaceStructureViewer extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._stopThemeObserver?.();
+    this._stopThemeObserver = null;
     this._cleanup();
 
     if (this._scatterplotElement && this._proteinClickHandler) {
@@ -263,6 +271,7 @@ export class ProtspaceStructureViewer extends LitElement {
         return;
       }
       this._viewer = viewer;
+      this._applyViewerBackground();
 
       // Load structure into viewer based on source
       await this._displayStructure(structureData);
@@ -299,6 +308,23 @@ export class ProtspaceStructureViewer extends LitElement {
       this._isLoading = false;
       this._dispatchStructureErrorEvent(this._error, originalError);
     }
+  }
+
+  /**
+   * Gives the Mol* canvas the panel's surface colour (design decision 16), so the docked and the
+   * floating card match their frame in both themes: once per viewer, then again only when a theme
+   * change resolves --ps-surface to a different colour. Without the token sheet (jsdom, an
+   * embedder that never adopted it) Mol* keeps its own background.
+   */
+  private _applyViewerBackground(): void {
+    const viewer = this._viewer;
+    if (!viewer) return;
+    const surface = getComputedStyle(this).getPropertyValue('--ps-surface').trim();
+    if (!surface) return;
+    const color = molstarColor(surface);
+    if (color === null || this._appliedBackground.get(viewer) === color) return;
+    this._appliedBackground.set(viewer, color);
+    viewer.setBackground(color);
   }
 
   private async _displayStructure(structureData: StructureData): Promise<void> {

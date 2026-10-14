@@ -6,7 +6,7 @@ import { css } from 'lit';
  *     <button type="button" class="segmented-btn" aria-pressed="true">…</button>
  *   </div>
  * The selected segment is driven by aria-pressed alone, so what is drawn always matches what
- * assistive technology announces. Colors go through --segmented-* hooks that fall back to tokens.
+ * assistive technology announces. Colours read the --ps-* tokens.
  */
 export const segmentedControlMixin = css`
   .segmented {
@@ -14,9 +14,9 @@ export const segmentedControlMixin = css`
     align-items: stretch;
     flex: none;
     /* No overflow: hidden — it would clip the focus ring; corners are rounded per child */
-    border: var(--border-width) solid var(--segmented-border, var(--border));
+    border: var(--border-width) solid var(--ps-border-strong);
     border-radius: var(--radius);
-    background: var(--segmented-bg, var(--surface));
+    background: var(--ps-surface);
   }
 
   .segmented > .segmented-btn {
@@ -30,7 +30,7 @@ export const segmentedControlMixin = css`
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: var(--segmented-text, var(--text-secondary));
+    color: var(--ps-text-muted);
     font: inherit;
     font-size: var(--text-sm);
     font-weight: var(--font-medium);
@@ -44,7 +44,7 @@ export const segmentedControlMixin = css`
   }
 
   .segmented > .segmented-btn + .segmented-btn {
-    border-left: var(--border-width) solid var(--segmented-border, var(--border));
+    border-left: var(--border-width) solid var(--ps-border-strong);
   }
 
   .segmented > .segmented-btn:first-child {
@@ -58,8 +58,8 @@ export const segmentedControlMixin = css`
   }
 
   .segmented > .segmented-btn:hover:not(:disabled):not([aria-pressed='true']) {
-    background: var(--segmented-hover-bg, var(--hover-bg-alt));
-    color: var(--segmented-hover-text, var(--text-primary));
+    background: var(--ps-surface-hover);
+    color: var(--ps-text);
   }
 
   /* The accent pair keeps the selected label at 4.5:1 (design decision 6) */
@@ -78,15 +78,15 @@ export const segmentedControlMixin = css`
     z-index: 1;
     outline: none;
     box-shadow:
-      0 0 0 1px var(--primary),
-      0 0 0 3px var(--focus-ring-bg);
+      0 0 0 1px var(--ps-focus),
+      0 0 0 3px var(--ps-accent-tint);
   }
 
   .segmented > .segmented-btn[aria-pressed='true']:focus-visible {
     box-shadow:
-      inset 0 0 0 1px var(--text-light),
-      0 0 0 1px var(--primary),
-      0 0 0 3px var(--focus-ring-bg);
+      inset 0 0 0 1px var(--ps-text-on-accent),
+      0 0 0 1px var(--ps-focus),
+      0 0 0 3px var(--ps-accent-tint);
   }
 
   /* Keep pointer events on a disabled segment so an explanatory title still shows */

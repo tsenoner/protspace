@@ -5,26 +5,22 @@ import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
+    /* Sizes only: every colour comes from a --ps-* token (theme.ts), so an embedder restyles the
+       viewer in both themes by setting those on :root. The frame is the panel's surface, the
+       colour the Mol* canvas also takes, so frame and canvas meet without a seam. */
     --protspace-viewer-width: 100%;
     --protspace-viewer-height: 100%;
-    --protspace-viewer-bg: var(--surface);
-    --protspace-viewer-border: var(--border);
     --protspace-viewer-border-radius: 6px;
-    --protspace-viewer-header-bg: var(--disabled-bg);
-    --protspace-viewer-text: var(--text-primary);
-    --protspace-viewer-text-muted: var(--text-secondary);
-    --protspace-viewer-error: #c53030;
-    --protspace-viewer-loading: var(--primary);
 
     display: flex;
     flex-direction: column;
     width: 100%;
 
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--ps-shadow-md);
     box-sizing: border-box;
     position: relative;
-    background: var(--protspace-viewer-bg);
-    border: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface);
+    border: 1px solid var(--ps-border);
     flex-shrink: 1;
     flex-grow: 1;
     min-height: 150px;
@@ -37,7 +33,7 @@ const structureViewerStylesCore = css`
     align-items: center;
     gap: 0.5rem;
     padding: 0.4rem 0.4rem 0.4rem 1.2rem;
-    background: var(--protspace-viewer-header-bg);
+    background: var(--ps-surface-muted);
     border-radius: 6px 6px 0 0;
   }
 
@@ -107,8 +103,8 @@ const structureViewerStylesCore = css`
 
   /* The links row continues the header's band and ends it with the header's line. */
   .resource-links {
-    background: var(--protspace-viewer-header-bg);
-    border-bottom: 1px solid var(--protspace-viewer-border);
+    background: var(--ps-surface-muted);
+    border-bottom: 1px solid var(--ps-border);
   }
 
   .close-button {
@@ -116,7 +112,7 @@ const structureViewerStylesCore = css`
     border: none;
     display: inline-grid;
     place-items: center;
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-text-muted);
     cursor: pointer;
     padding: 6px;
     border-radius: 0.25rem;
@@ -124,8 +120,8 @@ const structureViewerStylesCore = css`
   }
 
   .close-button:hover {
-    color: var(--protspace-viewer-text);
-    background: rgba(0, 0, 0, 0.04);
+    color: var(--ps-text);
+    background: var(--ps-surface-hover);
   }
 
   /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). */
@@ -147,7 +143,7 @@ const structureViewerStylesCore = css`
     /* Take only the height the header and footer leave, so the footer never overflows */
     flex: 1 1 0;
     min-height: 0;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     border-radius: 0 0 6px 6px;
   }
 
@@ -155,11 +151,11 @@ const structureViewerStylesCore = css`
   .loading-overlay {
     /* Extend with column layout for text */
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.9);
+    background: color-mix(in srgb, var(--ps-surface) 90%, transparent);
   }
 
   .loading-text {
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-text-muted);
     font-size: 0.875rem;
     margin-top: 1rem;
   }
@@ -171,7 +167,7 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     z-index: var(--z-overlay);
     padding: 2rem;
     border-radius: 0 0 6px 6px;
@@ -179,7 +175,7 @@ const structureViewerStylesCore = css`
   }
 
   .error-title {
-    color: var(--protspace-viewer-error);
+    color: var(--ps-danger);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
@@ -191,20 +187,20 @@ const structureViewerStylesCore = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: var(--protspace-viewer-bg);
+    background: var(--ps-surface);
     z-index: var(--z-canvas);
     padding: 2rem;
     text-align: center;
   }
 
   .empty-title {
-    color: var(--protspace-viewer-text);
+    color: var(--ps-text);
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
 
   .empty-message {
-    color: var(--protspace-viewer-text-muted);
+    color: var(--ps-text-muted);
     font-size: 0.875rem;
   }
 
@@ -220,9 +216,9 @@ const structureViewerStylesCore = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--disabled-bg);
-    border-top: 1px solid var(--protspace-viewer-border);
-    color: var(--protspace-viewer-text-muted);
+    background: var(--ps-surface-muted);
+    border-top: 1px solid var(--ps-border);
+    color: var(--ps-text-muted);
     font-size: 0.75rem;
   }
 
@@ -244,19 +240,6 @@ const structureViewerStylesCore = css`
   .segmented > .segmented-btn:has(+ ps-tooltip:last-child) {
     border-top-right-radius: calc(var(--radius) - var(--border-width));
     border-bottom-right-radius: calc(var(--radius) - var(--border-width));
-  }
-
-  /* Bridge the viewer's theming hooks into the shared segmented control */
-  .color-mode-group {
-    --segmented-border: var(--protspace-viewer-border);
-    --segmented-bg: var(--protspace-viewer-bg);
-    --segmented-text: var(--protspace-viewer-text-muted);
-    --segmented-hover-bg: color-mix(
-      in srgb,
-      var(--protspace-viewer-text) 8%,
-      var(--protspace-viewer-bg)
-    );
-    --segmented-hover-text: var(--protspace-viewer-text);
   }
 
   .tips {

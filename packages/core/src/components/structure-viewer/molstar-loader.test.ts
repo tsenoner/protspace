@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TedDomain } from '@protspace/utils';
-import { createMolstarViewer } from './molstar-loader';
+import { createMolstarViewer, molstarColor } from './molstar-loader';
 import { getTedDomainColor } from './ted-domain-coloring';
 
 const domains: TedDomain[] = [
@@ -303,5 +303,36 @@ describe('Mol* color theme adapter', () => {
     finishTedUpdate();
     await Promise.all([tedChange, plddtChange]);
     expect(appliedThemes).toEqual(['protspace-ted-domain', 'plddt-confidence']);
+  });
+
+  it('setBackground passes the colour to canvas3d.setProps', async () => {
+    const { rawViewer } = installRawViewer(vi.fn(applyThemeUpdate));
+    const setProps = vi.fn();
+    Object.assign(rawViewer.plugin, { canvas3d: { setProps } });
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
+
+    viewer.setBackground(0x0f172a);
+
+    expect(setProps).toHaveBeenCalledOnce();
+    expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0x0f172a } });
+  });
+
+  it('setBackground without canvas3d does nothing', async () => {
+    // A failed WebGL start leaves Mol* without a canvas, as does the e2e stub before this task.
+    installRawViewer(vi.fn(applyThemeUpdate));
+    const viewer = await createMolstarViewer(document.createElement('div'), domains);
+    expect(() => viewer.setBackground(0xffffff)).not.toThrow();
+  });
+});
+
+describe('molstarColor', () => {
+  it("reads #0f172a as 0x0f172a, #fff as 0xffffff and rgb(15 23 42) as 0x0f172a, and rejects 'transparent'", () => {
+    expect(molstarColor('#0f172a')).toBe(0x0f172a);
+    expect(molstarColor(' #FFF ')).toBe(0xffffff);
+    expect(molstarColor('rgb(15 23 42)')).toBe(0x0f172a);
+    expect(molstarColor('rgb(15, 23, 42)')).toBe(0x0f172a);
+    expect(molstarColor('transparent')).toBeNull();
+    expect(molstarColor('rgb(15 23 42 / 0.5)')).toBeNull();
+    expect(molstarColor('')).toBeNull();
   });
 });

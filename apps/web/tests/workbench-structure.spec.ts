@@ -22,6 +22,7 @@ import {
   stubStructureRequests,
   watchPlotResizes,
 } from './helpers/workbench';
+import { chooseTheme } from './helpers/theme';
 
 const workbench = (page: Page) => page.locator('.workbench');
 const footer = (page: Page) => structurePanel(page).locator('[data-workbench="structure-empty"]');
@@ -633,4 +634,21 @@ test('the pinned View structure tooltip offers the links', async ({ page }) => {
   const links = tooltip.getByRole('link');
   await expect(links).toHaveText([/AlphaFold/, /UniProt/, /InterPro/, /TED/]);
   await links.last().click({ trial: true });
+});
+
+test("Mol*'s background follows the theme", async ({ page }) => {
+  await openExplore(page);
+  await clickProteinNearPlotCentre(page);
+  await expect(page.locator('#myStructureViewer')).toBeVisible();
+  const background = () =>
+    page.evaluate(
+      () => (window as unknown as { __molstarBackground?: number }).__molstarBackground ?? null,
+    );
+
+  // The light --ps-surface, applied when the viewer was created.
+  await expect.poll(background).toBe(0xffffff);
+  await chooseTheme(page, 'Dark');
+  await expect.poll(background).toBe(0x0f172a);
+  await chooseTheme(page, 'Light');
+  await expect.poll(background).toBe(0xffffff);
 });

@@ -122,12 +122,7 @@ function colourViolations(cssText: string): string[] {
  * LEGACY modules that still hold a colour. A task that takes a module's last colour out deletes
  * its line: "still holds a colour" fails for a clean entry, so this list only shrinks.
  */
-const STILL_COLOURED = new Set<string>([
-  '../components/structure-viewer/structure-viewer.styles.ts',
-  './mixins.ts',
-  './overlay-mixins.ts',
-  './tokens.ts',
-]);
+const STILL_COLOURED = new Set<string>(['./tokens.ts']);
 
 /**
  * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a

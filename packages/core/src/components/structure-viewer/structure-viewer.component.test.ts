@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { StructureService, type StructureData } from '@protspace/utils';
 import { RESOURCE_LINKS } from '../common/resource-links';
 import './structure-viewer';
 
@@ -124,5 +125,115 @@ describe('protspace-structure-viewer protein-click', () => {
 
     expect(viewer.proteinId).toBe(PROTEIN_ID);
     expect(viewer.style.display).toBe('flex');
+  });
+});
+
+const STRUCTURE: StructureData = {
+  proteinId: PROTEIN_ID,
+  source: 'alphafold',
+  url: 'blob:structure',
+  format: 'mmcif',
+  isBinary: false,
+  tedDomains: [],
+  metadata: { confidence: 'high', method: 'predicted', version: 'v6' },
+};
+
+describe('protspace-structure-viewer Mol* background', () => {
+  // What --ps-surface resolves to on the viewer: jsdom resolves no token, so the test chooses it.
+  let surface = '#ffffff';
+  const setProps = vi.fn();
+  const realGetComputedStyle = window.getComputedStyle.bind(window);
+  const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    surface = '#ffffff';
+    setProps.mockClear();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      queueMicrotask(() => callback(0));
+      return 1;
+    });
+    vi.stubGlobal('getComputedStyle', (element: Element, pseudo?: string | null) => {
+      const style = realGetComputedStyle(element, pseudo);
+      const read = style.getPropertyValue.bind(style);
+      style.getPropertyValue = (name: string) => (name === '--ps-surface' ? surface : read(name));
+      return style;
+    });
+    // Mol*'s script and stylesheet count as loaded; window.molstar is a viewer with a canvas.
+    for (const [tag, id] of [
+      ['script', 'molstar-script'],
+      ['link', 'molstar-style'],
+    ] as const) {
+      const element = document.createElement(tag);
+      element.id = id;
+      document.head.append(element);
+    }
+    window.molstar = {
+      Viewer: {
+        create: vi.fn(async () => ({
+          loadStructureFromUrl: vi.fn(async () => undefined),
+          dispose: vi.fn(),
+          plugin: {
+            representation: { structure: { themes: { colorThemeRegistry: { add: vi.fn() } } } },
+            canvas3d: { setProps },
+          },
+        })),
+      },
+    } as unknown as typeof window.molstar;
+    vi.spyOn(StructureService, 'loadStructure').mockResolvedValue({ ...STRUCTURE });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    document.head.innerHTML = '';
+    document.documentElement.removeAttribute('data-theme');
+    delete (window as unknown as { molstar?: unknown }).molstar;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** A viewer that has loaded a structure, its first background applied. */
+  async function mountLoaded() {
+    const viewer = document.createElement('protspace-structure-viewer');
+    viewer.autoSync = false;
+    viewer.proteinId = PROTEIN_ID;
+    document.body.appendChild(viewer);
+    await vi.waitFor(() => expect(setProps).toHaveBeenCalledOnce());
+    return viewer;
+  }
+
+  it('the background is applied once the viewer is created', async () => {
+    await mountLoaded();
+    expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0xffffff } });
+  });
+
+  it('a theme notification with a new surface applies it once', async () => {
+    await mountLoaded();
+    surface = '#0f172a';
+    document.documentElement.dataset.theme = 'dark';
+    await vi.waitFor(() => expect(setProps).toHaveBeenCalledTimes(2));
+    expect(setProps).toHaveBeenLastCalledWith({ renderer: { backgroundColor: 0x0f172a } });
+    await tick();
+    expect(setProps).toHaveBeenCalledTimes(2);
+  });
+
+  it('a notification with the same surface applies nothing', async () => {
+    await mountLoaded();
+    // An attribute change that leaves --ps-surface as it was (System on a light OS, say).
+    document.documentElement.dataset.theme = 'system';
+    await tick();
+    expect(setProps).toHaveBeenCalledOnce();
+  });
+
+  it('disconnect stops listening', async () => {
+    const viewer = await mountLoaded();
+    viewer.remove();
+    const apply = vi.spyOn(
+      viewer as unknown as { _applyViewerBackground(): void },
+      '_applyViewerBackground',
+    );
+    surface = '#0f172a';
+    document.documentElement.dataset.theme = 'dark';
+    await tick();
+    expect(apply).not.toHaveBeenCalled();
   });
 });

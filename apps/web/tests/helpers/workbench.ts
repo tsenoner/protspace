@@ -46,9 +46,15 @@ export async function dragDivider(page: Page, dy: number): Promise<void> {
   await page.mouse.up();
 }
 
-/** Mol*'s global, with a viewer that loads nothing and draws nothing. */
+/**
+ * Mol*'s global, with a viewer that loads nothing and draws nothing. Its canvas records the last
+ * background the viewer set in `window.__molstarBackground` (a 0xRRGGBB number).
+ */
 const MOLSTAR_STUB = `window.molstar = { Viewer: { create: async () => ({
-  plugin: { representation: { structure: { themes: { colorThemeRegistry: { add() {} } } } } },
+  plugin: {
+    representation: { structure: { themes: { colorThemeRegistry: { add() {} } } } },
+    canvas3d: { setProps(p) { window.__molstarBackground = p.renderer.backgroundColor; } },
+  },
   loadStructureFromUrl: async () => {},
   dispose() {},
 }) } };`;
