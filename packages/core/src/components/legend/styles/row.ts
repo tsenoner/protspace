@@ -61,6 +61,10 @@ export const rowStyles = css`
     text-align: left;
     cursor: pointer;
     transition: none;
+    /* A double tap isolates the row: it must not zoom the page, and a long press on the name shows
+       it in full, not the system's callout. */
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
   }
 
   .legend-swatch {
@@ -261,6 +265,12 @@ export const rowStyles = css`
     .legend-hidden-mark {
       display: none;
     }
+
+    .legend-action,
+    .drag-handle {
+      width: var(--ps-touch-target);
+      height: var(--ps-touch-target);
+    }
   }
 
   /* Sortable: the gap where the row will land, the row as picked, and the row under the pointer. */
@@ -277,12 +287,18 @@ export const rowStyles = css`
   }
 
   .legend-item-drag,
-  .legend-item-fallback {
+  .sortable-fallback {
     background: var(--ps-surface-raised);
     border-radius: var(--ps-radius);
     box-shadow: var(--ps-shadow-lg);
     opacity: 0.95;
     cursor: grabbing;
+  }
+
+  /* Sortable hit-tests the list under the finger; the floating copy must not answer for its row,
+     though the coarse rule above turns its actions' pointer events back on. */
+  .sortable-fallback * {
+    pointer-events: none;
   }
 
   /* "Other" while a row is dragged over it: dropping merges the row into it. */

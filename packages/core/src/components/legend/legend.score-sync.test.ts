@@ -91,7 +91,7 @@ describe('legend score strip synchronisation', () => {
     const legend = await setup(makeData());
     const row = legend.shadowRoot!.querySelector('[data-value="Viperidae"]')!;
 
-    row.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    row.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
     await legend.updateComplete;
 
     const strip = legend.shadowRoot!.querySelector('protspace-score-strip') as StripElement;
@@ -102,13 +102,13 @@ describe('legend score strip synchronisation', () => {
     const legend = await setup(makeData());
     const row = legend.shadowRoot!.querySelector('[data-value="Viperidae"]')!;
 
-    row.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    row.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
     await legend.updateComplete;
     // Confirm the mark actually appeared, so this test cannot pass merely because
     // hovering never marked anything in the first place.
     expect(legend.shadowRoot!.querySelectorAll('.legend-item-score-hover')).toHaveLength(1);
 
-    row.dispatchEvent(new Event('mouseleave', { bubbles: false }));
+    row.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
     await legend.updateComplete;
 
     expect(legend.shadowRoot!.querySelectorAll('.legend-item-score-hover')).toHaveLength(0);
@@ -172,7 +172,7 @@ describe('legend score strip synchronisation', () => {
     expect(legend.shadowRoot!.querySelector('protspace-score-strip')).toBeNull();
     const row = legend.shadowRoot!.querySelector('[data-value="Viperidae"]')!;
 
-    row.dispatchEvent(new Event('mouseenter', { bubbles: false }));
+    row.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
     await legend.updateComplete;
 
     expect(legend.shadowRoot!.querySelectorAll('.legend-item-score-hover')).toHaveLength(0);

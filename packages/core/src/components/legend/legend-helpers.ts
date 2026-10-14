@@ -312,3 +312,39 @@ export function isolationBase(
     ? firstClick.itemsBefore
     : items;
 }
+
+/** Two taps on the same row this close together isolate it, as a double-click does. */
+export const DOUBLE_TAP_MS = 300;
+
+/** A click this soon after a pointerdown on a row came from that press. */
+const CLICK_AFTER_PRESS_MS = 1000;
+
+/**
+ * True for the second of two touch or pen taps on the same row within DOUBLE_TAP_MS. Not every
+ * engine sends a dblclick for a double tap (iOS Safari does not), so the legend counts the taps
+ * itself; mouse double-clicks keep `isSecondClickOfDouble` and the dblclick.
+ */
+export function isDoubleTap(
+  previous: { valueKey: string; time: number } | null,
+  current: { valueKey: string; time: number; pointerType: string },
+): boolean {
+  if (current.pointerType !== 'touch' && current.pointerType !== 'pen') return false;
+  if (!previous || previous.valueKey !== current.valueKey) return false;
+  const gap = current.time - previous.time;
+  return gap >= 0 && gap <= DOUBLE_TAP_MS;
+}
+
+/**
+ * The pointer behind a click: its own `pointerType` (a click is a PointerEvent in current
+ * engines), else the row press just before it, else a mouse (a script's or a screen reader's click).
+ */
+export function clickPointerType(
+  click: { pointerType?: string; timeStamp: number },
+  lastDown: { pointerType: string; time: number } | null,
+): string {
+  if (click.pointerType) return click.pointerType;
+  if (lastDown && click.timeStamp - lastDown.time <= CLICK_AFTER_PRESS_MS) {
+    return lastDown.pointerType;
+  }
+  return 'mouse';
+}

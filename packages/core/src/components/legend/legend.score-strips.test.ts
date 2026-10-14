@@ -244,14 +244,29 @@ describe('legend score strips', () => {
     expect(gutters()).toBe('— / —');
 
     const rowA = legend.shadowRoot!.querySelector('[data-value="A"]')!;
-    rowA.dispatchEvent(new Event('mouseenter'));
+    rowA.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
     await legend.updateComplete;
     // Category A on UMAP 2: silhouette 0.5, Davies-Bouldin 1.2 (see makeData).
     expect(gutters()).toBe('0.50 / 1.20');
 
-    rowA.dispatchEvent(new Event('mouseleave'));
+    rowA.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
     await legend.updateComplete;
     expect(gutters()).toBe('— / —');
+  });
+
+  it('a touch pointerenter on a row fills no strip gutter', async () => {
+    // A finger never sends the pointerleave that would clear a hover, so touch must not start one.
+    const { legend } = await setup();
+    const gutters = () =>
+      (Array.from(legend.shadowRoot!.querySelectorAll('protspace-score-strip')) as StripElement[])
+        .map((strip) => strip.shadowRoot!.querySelector('.strip-value')!.textContent!.trim())
+        .join(' / ');
+
+    const rowA = legend.shadowRoot!.querySelector('[data-value="A"]')!;
+    rowA.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'touch' }));
+    await legend.updateComplete;
+    expect(gutters()).toBe('— / —');
+    expect(rowA.classList.contains('legend-item-score-hover')).toBe(false);
   });
 
   it('caveats the strips for an auto-clustering, and only for one', async () => {

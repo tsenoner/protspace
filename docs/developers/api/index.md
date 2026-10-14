@@ -261,6 +261,13 @@ Settings and the "Other" categories open as popovers (`protspace-legend-settings
 apply as they are edited: a typed number commits 300 ms after the last keystroke, or at once on
 Enter or when the field loses focus. The parts `dialog-overlay` and `dialog-content` are gone.
 
+On a touch screen a tap shows or hides a row, and a second tap on the same row within 300 ms
+isolates it, whether or not the browser sends a `dblclick` (one that follows touch taps is
+ignored). A finger held 250 ms on a row's drag handle lifts the row to reorder it; a swipe that
+starts on the handle scrolls the list. A finger held 500 ms on a name that ends in an ellipsis
+shows it in full until it lifts, without toggling the row. A row marks its score-strip dot on mouse
+or pen hover only.
+
 ### Methods
 
 | Member                               | Returns               | Description                                                                          |

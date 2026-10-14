@@ -18,6 +18,9 @@ import {
   isolateItem,
   isSecondClickOfDouble,
   isolationBase,
+  isDoubleTap,
+  clickPointerType,
+  DOUBLE_TAP_MS,
   type FirstClick,
 } from './legend-helpers';
 
@@ -447,6 +450,57 @@ describe('legend-helpers', () => {
     it('is the current legend for another item or without a first click', () => {
       expect(isolationBase(first, 'b', after)).toBe(after);
       expect(isolationBase(null, 'a', after)).toBe(after);
+    });
+  });
+  describe('isDoubleTap', () => {
+    const first = { valueKey: 'a', time: 1000 };
+    const tap = (valueKey: string, after: number, pointerType = 'touch') => ({
+      valueKey,
+      time: 1000 + after,
+      pointerType,
+    });
+
+    it('is the second touch or pen tap on the same row within DOUBLE_TAP_MS', () => {
+      expect(DOUBLE_TAP_MS).toBe(300);
+      expect(isDoubleTap(first, tap('a', 250))).toBe(true);
+      expect(isDoubleTap(first, tap('a', 300))).toBe(true);
+      expect(isDoubleTap(first, tap('a', 250, 'pen'))).toBe(true);
+    });
+
+    it('is not a slow tap, a tap on another row, a mouse click or a first tap', () => {
+      expect(isDoubleTap(first, tap('a', 350))).toBe(false);
+      expect(isDoubleTap(first, tap('b', 100))).toBe(false);
+      expect(isDoubleTap(first, tap('a', 100, 'mouse'))).toBe(false);
+      expect(isDoubleTap(null, tap('a', 100))).toBe(false);
+    });
+  });
+
+  describe('clickPointerType', () => {
+    it("is the click's own pointer type", () => {
+      expect(clickPointerType({ pointerType: 'touch', timeStamp: 5000 }, null)).toBe('touch');
+      expect(
+        clickPointerType(
+          { pointerType: 'mouse', timeStamp: 5000 },
+          { pointerType: 'touch', time: 4900 },
+        ),
+      ).toBe('mouse');
+    });
+
+    it('falls back to the press just before a click that has none, as older Safari sends', () => {
+      expect(
+        clickPointerType(
+          { pointerType: '', timeStamp: 5000 },
+          { pointerType: 'touch', time: 4800 },
+        ),
+      ).toBe('touch');
+      expect(clickPointerType({ timeStamp: 5000 }, { pointerType: 'pen', time: 4800 })).toBe('pen');
+    });
+
+    it("is a mouse for a script's or a screen reader's click", () => {
+      expect(clickPointerType({ timeStamp: 5000 }, null)).toBe('mouse');
+      expect(clickPointerType({ timeStamp: 5000 }, { pointerType: 'touch', time: 3500 })).toBe(
+        'mouse',
+      );
     });
   });
 });

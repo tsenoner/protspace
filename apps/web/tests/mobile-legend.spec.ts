@@ -55,7 +55,6 @@ const listScrollTop = (page: Page): Promise<number> =>
 
 test.describe('the legend on a phone', () => {
   test('G1: each row control and header button is a 40 px touch target', async ({ page }) => {
-    test.fixme(true, 'task 5.11');
     await openExplorePhone(page);
     const first = rows(page).first();
     const targets: Record<string, Box> = {
@@ -78,7 +77,6 @@ test.describe('the legend on a phone', () => {
   test('G2: a swipe that starts on a drag handle scrolls the rows without reordering them', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.11');
     await openExplorePhone(page);
     const before = await legendRowValues(page);
 
@@ -89,7 +87,6 @@ test.describe('the legend on a phone', () => {
   });
 
   test('G3: a long press on a drag handle lifts the row to reorder it', async ({ page }) => {
-    test.fixme(true, 'task 5.11');
     await openExplorePhone(page);
     const [first, second] = await legendRowValues(page);
 
@@ -119,7 +116,6 @@ test.describe('the legend on a phone', () => {
   test('G5: a double tap isolates a category, even where the browser sends no dblclick', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.11');
     await openExplorePhone(page);
     // iOS Safari sends no dblclick for a double tap; stand in for it by swallowing Chromium's.
     await page.evaluate(() =>

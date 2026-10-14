@@ -86,6 +86,8 @@ export interface LegendRowHandlers {
   onViewOther(e: Event): void;
   /** The pointer reached the main button: a truncated name may show in full. */
   onNamePointerEnter(e: PointerEvent): void;
+  /** A press on the main button: tells a tap from a click, and starts a long press on the name. */
+  onPointerDown(e: PointerEvent): void;
 }
 
 /** A row's own controls keep their presses: the row and the container never see them. */
@@ -118,8 +120,11 @@ export function renderLegendRow(
       data-value=${item.value}
       data-display-value=${displayValue}
       data-driver-id=${isOther ? 'other-row' : nothing}
-      @mouseenter=${() => handlers.onHover(item.value)}
-      @mouseleave=${() => handlers.onHover(null)}
+      @pointerenter=${(e: PointerEvent) => {
+        // A finger has no hover: a tap's highlight would stay until the next tap elsewhere.
+        if (e.pointerType === 'mouse' || e.pointerType === 'pen') handlers.onHover(item.value);
+      }}
+      @pointerleave=${() => handlers.onHover(null)}
       @focusin=${() => handlers.onFocus()}
     >
       <button
@@ -134,6 +139,7 @@ export function renderLegendRow(
         @dblclick=${handlers.onDoubleClick}
         @keydown=${handlers.onKeyDown}
         @pointerenter=${handlers.onNamePointerEnter}
+        @pointerdown=${handlers.onPointerDown}
       >
         <span class="legend-swatch" part="symbol"
           >${isOther

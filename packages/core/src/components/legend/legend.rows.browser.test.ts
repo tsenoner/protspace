@@ -264,6 +264,71 @@ describe('legend rows in a browser', () => {
     probe.remove();
   });
 
+  /** Synthetic touch on a row's main button, at its name; `dx` moves the finger. */
+  function touchOn(main: HTMLElement) {
+    const box = main.getBoundingClientRect();
+    const at = { x: box.left + 20, y: box.top + box.height / 2 };
+    return (type: string, dx = 0) =>
+      main.dispatchEvent(
+        new PointerEvent(type, {
+          pointerType: 'touch',
+          pointerId: 7,
+          isPrimary: true,
+          bubbles: true,
+          composed: true,
+          clientX: at.x + dx,
+          clientY: at.y,
+          detail: type === 'click' ? 1 : 0,
+        }),
+      );
+  }
+
+  it('a 500 ms touch hold on a truncated name shows it, and the click that ends it does not toggle', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const shown = () => tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open');
+    const main = part(legend, LONG, '.legend-item-main');
+    const touch = touchOn(main);
+
+    touch('pointerdown');
+    await pause(NAME_TOOLTIP_DELAY_MS - 200);
+    expect(shown()).toBe(false);
+    await expect.poll(shown, { timeout: 1000 }).toBe(true);
+    expect(tooltip.text).toBe(LONG);
+
+    touch('pointerup');
+    touch('click');
+    await settle(legend);
+    expect(shown()).toBe(false);
+    expect(main.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('moving 12 px first cancels it, and the tap toggles', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const shown = () => tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open');
+    const main = part(legend, LONG, '.legend-item-main');
+    const touch = touchOn(main);
+
+    touch('pointerdown');
+    touch('pointermove', 12);
+    await pause(NAME_TOOLTIP_DELAY_MS + 200);
+    expect(shown()).toBe(false);
+    touch('pointerup');
+    touch('click');
+    await settle(legend);
+    expect(main.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a touch pointerenter on a truncated name shows nothing', async () => {
+    const legend = await mount();
+    const tooltip = legend.shadowRoot!.querySelector<PsTooltip>('ps-tooltip.name-tooltip')!;
+    const main = part(legend, LONG, '.legend-item-main');
+    touchOn(main)('pointerenter');
+    await pause(NAME_TOOLTIP_DELAY_MS + 200);
+    expect(tooltip.shadowRoot!.querySelector('.tip')!.matches(':popover-open')).toBe(false);
+  });
+
   it('under a coarse pointer rows are 40 px and the actions always show', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
@@ -273,6 +338,17 @@ describe('legend rows in a browser', () => {
       const legend = await mount();
       expect(row(legend, 'Short').getBoundingClientRect().height).toBeCloseTo(40, 0);
       expect(opacity(part(legend, 'Short', '.legend-item-actions'))).toBe('1');
+      for (const selector of ['.legend-eye', '.drag-handle', '.legend-more']) {
+        const box = part(legend, 'Short', selector).getBoundingClientRect();
+        expect(box.width, selector).toBeCloseTo(40, 0);
+        expect(box.height, selector).toBeCloseTo(40, 0);
+      }
+      // Sortable's floating copy in a touch drag never catches its hit test.
+      const copy = row(legend, 'Short').cloneNode(true) as HTMLElement;
+      copy.classList.add('sortable-fallback');
+      row(legend, 'Short').after(copy);
+      expect(getComputedStyle(copy.querySelector('.drag-handle')!).pointerEvents).toBe('none');
+      copy.remove();
     } finally {
       await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }

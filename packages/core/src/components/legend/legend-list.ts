@@ -242,9 +242,41 @@ export class LegendKeyboardController implements ReactiveController {
 /** A row name that ends in an ellipsis shows in full this long after the pointer reaches it. */
 export const NAME_TOOLTIP_DELAY_MS = 500;
 
+/** A finger that moves this far before its long press ends is scrolling: no name shows. */
+const LONG_PRESS_SLOP_PX = 10;
+
+/** The click a lifted long press makes arrives within this; a later click is the next tap. */
+const LONG_PRESS_CLICK_MS = 600;
+
+/** A finger or pen held on a row's name. */
+interface NamePress {
+  button: HTMLElement;
+  pointerId: number;
+  x: number;
+  y: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  shown: boolean;
+}
+
+const preventDefault = (event: Event) => event.preventDefault();
+
+/** Swallows the click a lifted long press makes, so showing a name never toggles its row. */
+function swallowNextClick(button: HTMLElement): void {
+  const swallow = (event: Event) => {
+    event.stopImmediatePropagation();
+    event.preventDefault();
+  };
+  button.addEventListener('click', swallow, { capture: true, once: true });
+  setTimeout(
+    () => button.removeEventListener('click', swallow, { capture: true }),
+    LONG_PRESS_CLICK_MS,
+  );
+}
+
 /**
- * One shared tooltip for row names that end in an ellipsis: after NAME_TOOLTIP_DELAY_MS on a row's
- * main button it shows the full name; a name that fits shows nothing. Keyboard and screen-reader
+ * One shared tooltip for row names that end in an ellipsis: after NAME_TOOLTIP_DELAY_MS of mouse
+ * or pen hover on a row's main button, or of a finger held on it, it shows the full name; a name
+ * that fits shows nothing. Keyboard and screen-reader
  * users already get the full name from the button's accessible name, so the tooltip names nothing
  * (`names-target`). The element is driven directly, never through the legend's template, so a
  * hover never re-renders the legend.
@@ -253,6 +285,7 @@ export class TruncatedNameTooltip implements ReactiveController {
   private host: ReactiveControllerHost & HTMLElement;
   private _timer: ReturnType<typeof setTimeout> | null = null;
   private _trigger: HTMLElement | null = null;
+  private _press: NamePress | null = null;
 
   constructor(host: ReactiveControllerHost & HTMLElement) {
     this.host = host;
@@ -261,9 +294,46 @@ export class TruncatedNameTooltip implements ReactiveController {
 
   /** A row's main button `pointerenter` handler: hovers the button's `.legend-text`. */
   onNamePointerEnter = (e: PointerEvent): void => {
+    // A finger has no hover; on touch a long press shows the name (onNamePointerDown).
+    if (e.pointerType === 'touch') return;
     const button = e.currentTarget as HTMLElement;
     const text = button.querySelector<HTMLElement>('.legend-text');
     if (text) this.hover(button, text);
+  };
+
+  /**
+   * A row's main button `pointerdown` handler. A finger or pen held NAME_TOOLTIP_DELAY_MS on a name
+   * that ends in an ellipsis shows it in full until it lifts, and the click that lift makes does not
+   * toggle the row. Moving LONG_PRESS_SLOP_PX first (a scroll), or a cancel, shows nothing.
+   */
+  onNamePointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === 'mouse') return;
+    this._endPress();
+    const button = e.currentTarget as HTMLElement;
+    const textEl = button.querySelector<HTMLElement>('.legend-text');
+    if (!textEl || textEl.scrollWidth <= textEl.clientWidth) return;
+    // A pen that hovered first: its hover timer gives way to the press.
+    this.leave();
+    const text = textEl.textContent?.trim() ?? '';
+    const press: NamePress = {
+      button,
+      pointerId: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      timer: null,
+      shown: false,
+    };
+    press.timer = setTimeout(() => {
+      press.timer = null;
+      press.shown = true;
+      this._trigger = button;
+      void this._show(button, text);
+    }, NAME_TOOLTIP_DELAY_MS);
+    this._press = press;
+    button.addEventListener('pointermove', this._onPressMove);
+    button.addEventListener('pointerup', this._onPressEnd);
+    button.addEventListener('pointercancel', this._onPressEnd);
+    button.addEventListener('contextmenu', preventDefault);
   };
 
   hover(trigger: HTMLElement, textEl: HTMLElement): void {
@@ -291,6 +361,7 @@ export class TruncatedNameTooltip implements ReactiveController {
   }
 
   hostDisconnected(): void {
+    this._endPress();
     this.leave();
   }
 
@@ -299,6 +370,32 @@ export class TruncatedNameTooltip implements ReactiveController {
   }
 
   private _onLeave = (): void => this.leave();
+
+  private _onPressMove = (e: PointerEvent): void => {
+    const press = this._press;
+    if (!press || e.pointerId !== press.pointerId) return;
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP_PX) this._endPress();
+  };
+
+  private _onPressEnd = (e: PointerEvent): void => {
+    const press = this._press;
+    if (!press || e.pointerId !== press.pointerId) return;
+    if (press.shown && e.type === 'pointerup') swallowNextClick(press.button);
+    this._endPress();
+  };
+
+  /** Ends a long press on a name: its timer, its listeners and the name it showed. */
+  private _endPress(): void {
+    const press = this._press;
+    if (!press) return;
+    this._press = null;
+    if (press.timer !== null) clearTimeout(press.timer);
+    press.button.removeEventListener('pointermove', this._onPressMove);
+    press.button.removeEventListener('pointerup', this._onPressEnd);
+    press.button.removeEventListener('pointercancel', this._onPressEnd);
+    press.button.removeEventListener('contextmenu', preventDefault);
+    if (press.shown) this.leave();
+  }
 
   private async _show(trigger: HTMLElement, text: string): Promise<void> {
     const tooltip = this._tooltip();

@@ -91,6 +91,8 @@ import {
   isolateItem,
   isSecondClickOfDouble,
   isolationBase,
+  isDoubleTap,
+  clickPointerType,
   type FirstClick,
   computeOtherConcreteValues,
 } from './legend-helpers';
@@ -257,6 +259,12 @@ export class ProtspaceLegend extends LitElement {
 
   // Kept until its dblclick arrives, which isolates from `isolationBase`.
   private _firstClick: FirstClick | null = null;
+  // Touch: the last tap on a row (a second one soon after isolates), the pointer behind the last
+  // row click (a dblclick after touch taps is ignored) and the last row press (older Safari sends
+  // clicks with no pointer type).
+  private _lastTap: { valueKey: string; time: number } | null = null;
+  private _lastClickPointer = 'mouse';
+  private _lastRowPointerDown: { pointerType: string; time: number } | null = null;
 
   @query('.legend-items')
   private _legendItemsEl?: HTMLDivElement;
@@ -1426,10 +1434,24 @@ export class ProtspaceLegend extends LitElement {
   // Item Interactions
   // ─────────────────────────────────────────────────────────────────
 
-  /** Toggles, except on the second click of a double-click (`isSecondClickOfDouble`). */
+  /**
+   * Toggles, except on the second click of a mouse double-click (`isSecondClickOfDouble`). The
+   * second of two quick taps on one row isolates it (`isDoubleTap`), as a double-click does.
+   */
   private _handleItemMouseClick(value: string, event: MouseEvent): void {
     const valueKey = valueToKey(value);
-    if (isSecondClickOfDouble(this._firstClick, valueKey, event)) return;
+    const pointerType = clickPointerType(event, this._lastRowPointerDown);
+    this._lastClickPointer = pointerType;
+    if (isSecondClickOfDouble(this._firstClick, valueKey, { detail: event.detail, pointerType })) {
+      return;
+    }
+    if (isDoubleTap(this._lastTap, { valueKey, time: event.timeStamp, pointerType })) {
+      this._lastTap = null;
+      this._isolateFromFirstClick(value);
+      return;
+    }
+    const touch = pointerType === 'touch' || pointerType === 'pen';
+    this._lastTap = touch ? { valueKey, time: event.timeStamp } : null;
 
     const itemsBefore = this._legendItems;
     this._handleItemClick(value);
@@ -1438,6 +1460,12 @@ export class ProtspaceLegend extends LitElement {
   }
 
   private _handleItemMouseDoubleClick(value: string): void {
+    // Touch and pen double taps isolated on their second tap already.
+    if (this._lastClickPointer === 'touch' || this._lastClickPointer === 'pen') return;
+    this._isolateFromFirstClick(value);
+  }
+
+  private _isolateFromFirstClick(value: string): void {
     const first = this._firstClick;
     this._firstClick = null;
     this._handleItemDoubleClick(value, isolationBase(first, valueToKey(value), this._legendItems));
@@ -2142,6 +2170,10 @@ export class ProtspaceLegend extends LitElement {
       onMenu: (e: MouseEvent) => this._rowMenu.toggle(item.value, e.currentTarget as HTMLElement),
       onViewOther: (e: Event) => this._otherPopover.toggle(e),
       onNamePointerEnter: this._nameTooltip.onNamePointerEnter,
+      onPointerDown: (e: PointerEvent) => {
+        this._lastRowPointerDown = { pointerType: e.pointerType, time: e.timeStamp };
+        this._nameTooltip.onNamePointerDown(e);
+      },
     };
     return renderLegendRow(item, view, handlers);
   }
