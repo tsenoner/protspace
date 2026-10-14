@@ -21,10 +21,11 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     // Keep the product tour off the canvas for the whole measured window; see
-    // the helper for what it costs when it runs. The layout and the light theme are pinned, as
-    // newPerfContext pins them: the sidebar's width sets the plot's size (design decision 4).
+    // the helper for what it costs when it runs. The layout, the stored light theme and the light
+    // colour scheme are pinned, as newPerfContext pins them: the sidebar's width sets the plot's
+    // size (design decision 4).
     colorScheme: 'light',
-    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT }),
+    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT, theme: 'light' }),
     trace: 'retain-on-failure',
     screenshot: 'off',
     video: 'off',

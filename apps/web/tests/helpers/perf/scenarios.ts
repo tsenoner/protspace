@@ -64,6 +64,7 @@ const SEGMENTS = {
   resize: { repeatable: true },
   'panel-toggle': { repeatable: true },
   'panel-expand': { repeatable: true },
+  'theme-switch': { repeatable: true },
   'search-select': { repeatable: true },
   import: { frameBound: LOAD_FRAME_BOUND },
   'import-no-settings': { frameBound: LOAD_FRAME_BOUND },
@@ -146,8 +147,9 @@ async function blockExternalRequests(page: Page, baseUrl: string): Promise<void>
 }
 
 /**
- * A context with the viewport and pixel ratio the segments assume, past the tour, with the layout
- * and the colour scheme pinned: the sidebar's width sets the plot's size, which feeds the point
+ * A context with the viewport and pixel ratio the segments assume, past the tour, with the layout,
+ * the stored theme (light) and the colour scheme pinned: the sidebar's width sets the plot's size,
+ * which feeds the point
  * scale and the Auto contour strength, so an unpinned layout would make runs incomparable.
  */
 export function newPerfContext(browser: Browser, baseUrl: string): Promise<BrowserContext> {
@@ -155,7 +157,7 @@ export function newPerfContext(browser: Browser, baseUrl: string): Promise<Brows
     viewport: VIEWPORT,
     deviceScaleFactor: 1,
     colorScheme: 'light',
-    storageState: exploreStorageState(baseUrl, { layout: DEFAULT_LAYOUT }),
+    storageState: exploreStorageState(baseUrl, { layout: DEFAULT_LAYOUT, theme: 'light' }),
   });
 }
 
@@ -259,7 +261,7 @@ export async function importBundle(page: Page, file: string): Promise<void> {
 
 type SegmentDef = Omit<SegmentSpec, 'timing'> & { name: SegmentName };
 
-/** Segments 2–12 in run order; `load` is measured by `measureLoad`. */
+/** Segments 2–13 in run order; `load` is measured by `measureLoad`. */
 export function buildSegments(page: Page, state: ExploreState, importFile: string): SegmentDef[] {
   const segments: SegmentDef[] = [
     {
@@ -354,6 +356,21 @@ export function buildSegments(page: Page, state: ExploreState, importFile: strin
       // and one grid rebuild (decision 4). panel-toggle's reset checks the round trip's pixels.
       setup: () => collapseSidebar(page),
       act: () => expandSidebar(page),
+    },
+    {
+      name: 'theme-switch',
+      // Dark gives the plot's neutral greys new values: one colour-only restyle and one render,
+      // nothing re-sorted, re-processed or rebuilt (design decision 16). The attribute is what
+      // every consumer watches, so the segment sets it rather than going through the menu.
+      act: () =>
+        page.evaluate(() => {
+          document.documentElement.dataset.theme = 'dark';
+        }),
+      reset: () =>
+        page.evaluate(() => {
+          document.documentElement.dataset.theme = 'light';
+        }),
+      pixels: true,
     },
     {
       name: 'search-select',

@@ -40,6 +40,9 @@ const lightRoles = css`
   --ps-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
   --ps-shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.12);
   --ps-shadow-lg: 0 12px 32px -12px rgb(15 23 42 / 0.24), 0 2px 6px rgb(15 23 42 / 0.06);
+  --ps-plot-bg: #ffffff; /* the plot's background, as exports draw it */
+  --ps-plot-other: #888888; /* Other points: NEUTRAL_VALUE_COLOR, what exports draw */
+  --ps-plot-na: #dddddd; /* N/A points in the default N/A colour: NA_DEFAULT_COLOR */
 `;
 
 const darkRoles = css`
@@ -68,6 +71,9 @@ const darkRoles = css`
   --ps-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
   --ps-shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.6);
   --ps-shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.75), 0 0 0 1px #24324a;
+  --ps-plot-bg: #0b1120; /* a step darker than the panels */
+  --ps-plot-other: #64748b; /* slate-500, 4:1 on the plot */
+  --ps-plot-na: #2a3547; /* de-emphasised, as #dddddd is on white */
 `;
 
 const sizes = css`

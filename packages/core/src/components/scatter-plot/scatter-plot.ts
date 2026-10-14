@@ -36,8 +36,8 @@ import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
 import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
-import { LIGHT_NEUTRALS, type PlotNeutrals } from './styling/plot-neutrals';
-import { BackgroundColorCache } from './styling/background-color-cache';
+import type { PlotNeutrals } from './styling/plot-neutrals';
+import { PlotTheme } from './styling/plot-theme';
 import type {
   BrushSelectionDetail,
   ProteinClickDetail,
@@ -449,10 +449,11 @@ export class ProtspaceScatterplot extends LitElement {
     );
   }
 
-  /** Resolved plot background; see the class for what invalidates it. */
-  private _background = new BackgroundColorCache(this);
-  /** The greys the live view draws Other and default-coloured N/A points with. */
-  private readonly _neutrals = (): PlotNeutrals => LIGHT_NEUTRALS;
+  /** The plot's themed values: the knockout background and the neutral greys (see the class). */
+  private readonly _theme = new PlotTheme(this, () => this._handleThemeChange());
+
+  /** The greys the live view draws Other and default-coloured N/A points with: the theme's. */
+  private readonly _neutrals = (): PlotNeutrals => this._theme.neutrals();
 
   constructor() {
     super();
@@ -518,7 +519,7 @@ export class ProtspaceScatterplot extends LitElement {
         // resolves it once, for every point it stages.
         createStylePass: () => exported().createStylePass(style.model()),
       },
-      getKnockoutColor: () => this._background.get(),
+      getKnockoutColor: () => this._theme.background(),
       getNeutralColor: () => this._neutrals().other,
       onContextLost: this._handleWebglContextLost,
       onDegraded: (detail) =>
@@ -539,7 +540,7 @@ export class ProtspaceScatterplot extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.resizeObserver.observe(this);
-    this._background.connect();
+    this._theme.connect();
 
     this.addEventListener('legend-zorder-change', this._handleZOrderChange);
     this.addEventListener('legend-colormapping-change', this._handleColorMappingChange);
@@ -566,7 +567,7 @@ export class ProtspaceScatterplot extends LitElement {
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
-    this._background.disconnect();
+    this._theme.disconnect();
     this._pointGrid.cancel();
     this._renderLoop.cancel();
     if (this._hoverRaf !== null) {
@@ -659,6 +660,18 @@ export class ProtspaceScatterplot extends LitElement {
       this._renderLoop.request();
     }
   };
+
+  /**
+   * The theme gave the neutral greys new values (`PlotTheme` compares them): restyle colour only,
+   * as a colour-only legend change does. One render; nothing re-sorted or re-staged.
+   */
+  private _handleThemeChange() {
+    this._style.invalidateGetters();
+    if (this._plotData.length > 0) {
+      this._webglRenderer?.invalidateCategoryStyles();
+      this._renderLoop.request();
+    }
+  }
 
   willUpdate(changedProperties: Map<string, unknown>) {
     // Before `updated()` rebuilds the style getters, so this render already uses the re-derived

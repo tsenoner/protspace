@@ -7,7 +7,6 @@ const scatterplotStylesCore = css`
     /* Layout */
     --protspace-width: 100%;
     --protspace-height: 600px;
-    --protspace-bg-color: var(--surface);
     --protspace-border-color: var(--border);
     --protspace-border-radius: 6px;
 
@@ -45,7 +44,7 @@ const scatterplotStylesCore = css`
     width: var(--protspace-width);
     height: var(--protspace-height);
     position: relative;
-    background: var(--protspace-bg-color);
+    background: var(--ps-plot-bg);
     border: 1px solid var(--protspace-border-color);
     border-radius: var(--protspace-border-radius);
     overflow: hidden;

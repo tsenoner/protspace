@@ -84,10 +84,18 @@ Defined in `tokens.ts`:
 
 Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, declared only in
 `packages/core/src/styles/theme.ts` (light values on `:root`, dark values under
-`[data-theme='dark']`). New styles read these tokens and declare none:
+`[data-theme='dark']`, and under `[data-theme='system']` while the OS prefers dark, so a
+`system` page follows the OS live). New styles read these tokens and declare none:
 `packages/core/src/styles/style-lint.test.ts` fails a stylesheet that hard-codes a colour or a
 font size, declares a `--ps-*` token, or reads a variable `theme.ts` does not define. Modules
 written before the tokens are listed in its `LEGACY` set, which only shrinks.
+
+The scatter plot reads three tokens for what it draws: `--ps-plot-bg` (its background),
+`--ps-plot-other` (Other points) and `--ps-plot-na` (N/A points whose colour is the default
+`#DDDDDD`; a picked N/A colour is kept). Their light values are the data's own colours. When a
+theme change gives either grey a new value, the plot restyles its points once, colour only;
+anything else (re-setting `data-theme`, an OS flip under an explicit theme) redraws nothing.
+Exports always draw the light values on white.
 
 ### Component properties
 
@@ -100,13 +108,13 @@ Older components still expose custom properties of their own:
 **Examples:**
 
 ```css
---protspace-bg-color            /* component background */
+--protspace-height              /* element sizing */
 --protspace-viewer-height       /* element sizing */
 ```
 
 Rules for these:
 
-1. **Always reference tokens**: `--protspace-bg-color: var(--ps-surface)`
+1. **Always reference tokens**: `--protspace-border-radius: var(--ps-radius)`
 2. **Define in `:host` only**
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Group with comments**: `/* Layout */`, `/* Colors */`, `/* Sizing */`

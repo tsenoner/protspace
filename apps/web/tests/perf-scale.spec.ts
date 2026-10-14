@@ -148,7 +148,7 @@ async function openPage(browser: Browser): Promise<{ page: Page; cdp: CDPSession
     viewport: VIEWPORT,
     deviceScaleFactor: DPR,
     colorScheme: 'light',
-    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT }),
+    storageState: exploreStorageState(BASE_URL, { layout: DEFAULT_LAYOUT, theme: 'light' }),
   });
   const page = await context.newPage();
   page.on('console', (m) => {
