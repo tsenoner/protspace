@@ -1,7 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { adoptStyles } from 'lit';
+import { userEvent } from 'vitest/browser';
 import type { TooltipView, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
+import { colourChannels } from '../../test-support/css-colour';
 import type { ProtspaceScatterplot } from './scatter-plot';
 import './scatter-plot';
 import { scatterplotStyles } from './scatter-plot.styles';
@@ -208,18 +210,6 @@ describe('scatterplot theme', () => {
   });
 });
 
-/** `rgb()`/`rgba()` or Chrome's `color(srgb … / a)` (a computed color-mix) as [r, g, b, alpha]. */
-function overlayChannels(value: string): [number, number, number, number] {
-  const srgb = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/.exec(value);
-  if (srgb) {
-    const [r, g, b] = srgb.slice(1, 4).map((channel) => Math.round(Number(channel) * 255));
-    return [r, g, b, Number(srgb[4] ?? 1)];
-  }
-  const rgb = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(value);
-  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Number(rgb[4] ?? 1)];
-  throw new Error(`Unparsed colour: ${value}`);
-}
-
 /**
  * A host carrying the plot's own stylesheet (scatterplotStyles, as the plot's shadow root adopts
  * it) with the marks the plot draws over its points, so each overlay's colour is read without a
@@ -291,7 +281,7 @@ describe('plot overlays, chips and tooltip follow the theme', () => {
     for (const selector of ['.brush-container rect.selection', '.lasso-path']) {
       // sky-400, the dark --ps-accent.
       expect(styleOf(root, selector).stroke).toBe('rgb(56, 189, 248)');
-      const [r, g, b, alpha] = overlayChannels(styleOf(root, selector).fill);
+      const [r, g, b, alpha] = colourChannels(styleOf(root, selector).fill);
       expect([r, g, b]).toEqual([56, 189, 248]);
       // Translucent, so the points under a brush stay visible.
       expect(alpha).toBeCloseTo(0.15, 2);
@@ -330,6 +320,19 @@ describe('plot overlays, chips and tooltip follow the theme', () => {
     expect(chip.backgroundColor).toBe('rgb(22, 32, 54)');
     expect(chip.color).toBe('rgb(241, 245, 249)');
     expect(styleOf(root, '.connector-status button').color).toBe('rgb(148, 163, 184)');
+  });
+
+  it('the connector chip button shows the focus ring in dark', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const root = overlayProbe();
+    // The probe's only focusable control.
+    await userEvent.tab();
+    expect(root.activeElement).toBe(root.querySelector('.connector-status button'));
+    const button = styleOf(root, '.connector-status button');
+    // sky-400, the dark --ps-focus, 2 px out from the button.
+    expect(button.outlineStyle).toBe('solid');
+    expect(button.outlineColor).toBe('rgb(56, 189, 248)');
+    expect(button.outlineOffset).toBe('2px');
   });
 
   it('the tooltip card is dark with readable text and the EAT bar violet-400', async () => {

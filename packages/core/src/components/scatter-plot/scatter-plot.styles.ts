@@ -233,7 +233,12 @@ const scatterplotStylesCore = css`
   .connector-status button:focus-visible {
     background: var(--ps-surface-hover);
     color: var(--ps-text);
-    outline: none;
+  }
+
+  /* The hover fill alone barely differs from the chip (1.1:1 in dark): focus takes the library ring */
+  .connector-status button:focus-visible {
+    outline: var(--ps-focus-width) solid var(--ps-focus);
+    outline-offset: var(--ps-focus-offset);
   }
 `;
 

@@ -72,21 +72,12 @@ export const segmentedControlMixin = css`
     background: var(--ps-accent-hover);
   }
 
-  /* The library-wide focus ring, lifted above neighbours; the inner ring keeps it visible on the
-     primary-filled selected segment */
+  /* The library-wide focus ring, lifted above neighbours; its offset leaves a gap that keeps it
+     visible on the accent-filled selected segment, whose fill is the ring's colour in dark */
   .segmented > .segmented-btn:focus-visible {
     z-index: 1;
-    outline: none;
-    box-shadow:
-      0 0 0 1px var(--ps-focus),
-      0 0 0 3px var(--ps-accent-tint);
-  }
-
-  .segmented > .segmented-btn[aria-pressed='true']:focus-visible {
-    box-shadow:
-      inset 0 0 0 1px var(--ps-text-on-accent),
-      0 0 0 1px var(--ps-focus),
-      0 0 0 3px var(--ps-accent-tint);
+    outline: var(--ps-focus-width) solid var(--ps-focus);
+    outline-offset: var(--ps-focus-offset);
   }
 
   /* Keep pointer events on a disabled segment so an explanatory title still shows */

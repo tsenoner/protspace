@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
+import { colourChannels } from '../../test-support/css-colour';
 import { cdp, userEvent } from 'vitest/browser';
 import { MAX_STRUCTURE_CHOICES, type ProtspaceStructureViewer } from './structure-viewer';
 import './structure-viewer';
@@ -275,18 +276,6 @@ describe('protspace-structure-viewer under a coarse pointer', () => {
   });
 });
 
-/** `rgb()`/`rgba()` or Chrome's `color(srgb … / a)` (a computed color-mix) as [r, g, b, alpha]. */
-function channels(value: string): [number, number, number, number] {
-  const srgb = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/.exec(value);
-  if (srgb) {
-    const [r, g, b] = srgb.slice(1, 4).map((channel) => Math.round(Number(channel) * 255));
-    return [r, g, b, Number(srgb[4] ?? 1)];
-  }
-  const rgb = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(value);
-  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), Number(rgb[4] ?? 1)];
-  throw new Error(`Unparsed colour: ${value}`);
-}
-
 describe('protspace-structure-viewer in dark', () => {
   afterEach(() => document.documentElement.removeAttribute('data-theme'));
 
@@ -317,8 +306,29 @@ describe('protspace-structure-viewer in dark', () => {
     (viewer as unknown as { _isLoading: boolean })._isLoading = true;
     await viewer.updateComplete;
     const veil = viewer.shadowRoot!.querySelector('.loading-overlay')!;
-    const [r, g, b, alpha] = channels(getComputedStyle(veil).backgroundColor);
+    const [r, g, b, alpha] = colourChannels(getComputedStyle(veil).backgroundColor);
     expect([r, g, b]).toEqual([15, 23, 42]);
     expect(alpha).toBeCloseTo(0.9, 2);
+  });
+
+  it('the focused selected colour segment shows the library ring, offset from its fill', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const viewer = await mount();
+    // requestAnimationFrame is stubbed, so nothing loads: a stand-in viewer enables the segments.
+    (viewer as unknown as { _viewer: unknown })._viewer = {
+      setBackground: () => true,
+      dispose() {},
+    };
+    viewer.requestUpdate();
+    await viewer.updateComplete;
+    const root = viewer.shadowRoot!;
+    const pressed = root.querySelector<HTMLElement>('.segmented-btn[aria-pressed="true"]')!;
+    for (let step = 0; step < 20 && root.activeElement !== pressed; step++) await userEvent.tab();
+    expect(root.activeElement).toBe(pressed);
+    const style = getComputedStyle(pressed);
+    // sky-400, the dark --ps-focus: the same colour as the fill, so the 2 px offset gap shows it.
+    expect(style.outlineStyle).toBe('solid');
+    expect(style.outlineColor).toBe('rgb(56, 189, 248)');
+    expect(style.outlineOffset).toBe('2px');
   });
 });
