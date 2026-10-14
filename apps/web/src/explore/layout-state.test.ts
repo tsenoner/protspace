@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LAYOUT, LAYOUT_STORAGE_KEY, type LayoutState } from './layout-defaults';
+import {
+  DEFAULT_LAYOUT,
+  LAYOUT_QUERIES,
+  LAYOUT_STORAGE_KEY,
+  type LayoutState,
+} from './layout-defaults';
 import {
   focusFilterTitle,
   getLayout,
@@ -193,30 +198,36 @@ describe('focusFilterTitle', () => {
   afterEach(() => resetLayoutModeForTests());
 
   it.each([
-    [1280, true],
-    [800, false],
-    [390, false],
-  ])('at %i px wide, scrolls the heading into view only off desktop', (width, preventScroll) => {
-    const title = { focus: vi.fn() };
-    vi.stubGlobal('document', {
-      getElementById: (id: string) => (id === 'wb-filter-title' ? title : null),
-      activeElement: title,
-    });
-    vi.stubGlobal('window', {
-      matchMedia: (query: string) => ({
-        matches:
-          query === '(min-width: 951px)'
-            ? width >= 951
-            : query === '(max-width: 640px)'
-              ? width <= 640
-              : false,
-        addEventListener() {},
-        removeEventListener() {},
-      }),
-    });
+    [1280, 900, true],
+    [800, 1000, true],
+    [390, 844, true],
+    [740, 360, false],
+  ])(
+    'at %i×%i px, lets focus scroll only on a phone on its side',
+    (width, height, preventScroll) => {
+      const title = { focus: vi.fn() };
+      vi.stubGlobal('document', {
+        getElementById: (id: string) => (id === 'wb-filter-title' ? title : null),
+        activeElement: title,
+      });
+      vi.stubGlobal('window', {
+        matchMedia: (query: string) => ({
+          matches:
+            query === LAYOUT_QUERIES.landscape
+              ? width > height && height <= 500 && width < 951
+              : query === LAYOUT_QUERIES.desktop
+                ? width >= 951
+                : query === LAYOUT_QUERIES.phone
+                  ? width <= 640
+                  : false,
+          addEventListener() {},
+          removeEventListener() {},
+        }),
+      });
 
-    focusFilterTitle();
+      focusFilterTitle();
 
-    expect(title.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll });
-  });
+      expect(title.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll });
+    },
+  );
 });

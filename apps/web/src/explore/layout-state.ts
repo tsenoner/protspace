@@ -118,8 +118,8 @@ export function openPanel(panel: SidebarPanel): void {
 
 const focusTitle = (): boolean => {
   const title = document.getElementById('wb-filter-title');
-  // Off desktop the panel sits under the plot: let focus bring it into view if it must.
-  title?.focus({ preventScroll: getLayoutMode() === 'desktop' });
+  // Only a phone on its side scrolls the page; focus must never scroll the fixed screens.
+  title?.focus({ preventScroll: getLayoutMode() !== 'landscape' });
   return title !== null && document.activeElement === title;
 };
 
