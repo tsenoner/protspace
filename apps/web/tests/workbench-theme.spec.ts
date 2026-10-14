@@ -1,6 +1,13 @@
+import fs from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
-import { appBar, appBarTextFits, openExplore, waitForExploreDataLoad } from './helpers/explore';
+import {
+  appBar,
+  appBarTextFits,
+  exportAction,
+  openExplore,
+  waitForExploreDataLoad,
+} from './helpers/explore';
 import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
 
 /**
@@ -240,5 +247,78 @@ test.describe('the theme switch on an 800 px tablet', () => {
     expect(exported.right).toBeLessThanOrEqual(theme.left);
     expect(theme.right).toBeLessThanOrEqual(help.left);
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
+  });
+});
+
+test.describe('exports stay light in Dark', () => {
+  /** Exports a quick PNG and returns the downloaded file, base64-encoded. */
+  async function quickPng(page: Page): Promise<string> {
+    const download = page.waitForEvent('download');
+    await exportAction(page, 'Quick PNG');
+    const file = await download;
+    return fs.readFileSync(await file.path()).toString('base64');
+  }
+
+  test('a quick PNG exported in Dark equals the one exported in Light', async ({ page }) => {
+    await openExplore(page);
+    // Explicit, so the test holds whatever DEFAULT_THEME is (Task 6.13 makes it System).
+    await chooseTheme(page, 'Light');
+    expect(await htmlTheme(page)).toBe('light');
+    const light = await quickPng(page);
+    await chooseTheme(page, 'Dark');
+    expect(await htmlTheme(page)).toBe('dark');
+    const dark = await quickPng(page);
+
+    // Decode both in the page and compare every pixel: the export never reads the theme.
+    const result = await page.evaluate(
+      async ([a, b]) => {
+        const decode = async (base64: string) => {
+          const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+          const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(bitmap, 0, 0);
+          return ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+        };
+        const [x, y] = await Promise.all([decode(a), decode(b)]);
+        let differing = 0;
+        if (x.data.length === y.data.length) {
+          for (let i = 0; i < x.data.length; i++) if (x.data[i] !== y.data[i]) differing++;
+        }
+        return {
+          light: [x.width, x.height],
+          dark: [y.width, y.height],
+          differing,
+          topLeft: Array.from(y.data.slice(0, 4)),
+        };
+      },
+      [light, dark] as const,
+    );
+
+    expect(result.dark).toEqual(result.light);
+    expect(result.differing).toBe(0);
+    expect(result.topLeft).toEqual([255, 255, 255, 255]);
+  });
+
+  test('the figure editor previews a transparent figure on light paper in Dark', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await chooseTheme(page, 'Dark');
+    await exportAction(page, 'Figure editor…');
+    const modal = page.locator('protspace-publish-modal');
+    const preview = modal.locator('.publish-preview-canvas');
+    await expect(preview).toBeVisible();
+    await modal
+      .locator('select.publish-select')
+      .filter({ has: page.locator('option[value="transparent"]') })
+      .selectOption('transparent');
+
+    const backdrop = await preview.evaluate((el) => getComputedStyle(el).backgroundImage);
+    expect(backdrop).toContain('rgb(255, 255, 255)');
+    expect(backdrop).toContain('rgb(226, 232, 240)');
+    expect(backdrop).not.toContain('rgb(15, 23, 42)');
+    // The rest of the editor is dark: only the paper is fixed.
+    expect(await htmlTheme(page)).toBe('dark');
   });
 });

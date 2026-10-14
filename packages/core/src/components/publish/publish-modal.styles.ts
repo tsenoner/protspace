@@ -45,8 +45,11 @@ export const publishModalStyles = [
       max-width: 100%;
       max-height: 100%;
       box-shadow: var(--ps-shadow-lg);
-      /* Behind a transparent figure only; a white one paints its own background. */
-      background: var(--ps-surface);
+      /* Fixed light paper in both themes (exports are light): a white figure paints over it; a
+         transparent one shows the checkerboard, never the dark surface its legend text would
+         vanish on. */
+      background: repeating-conic-gradient(var(--ps-paper-check) 0 25%, var(--ps-paper) 0 50%) 50% /
+        16px 16px;
       image-rendering: auto;
     }
 

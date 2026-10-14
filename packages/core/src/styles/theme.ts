@@ -111,11 +111,19 @@ const sizes = css`
   --ps-ease: cubic-bezier(0.2, 0, 0, 1);
 `;
 
+// Fixed light roles, declared once on :root and never redefined for dark: exports are light in
+// both themes, so the figure editor previews them on light paper whatever the theme.
+const fixedRoles = css`
+  --ps-paper: #ffffff;
+  --ps-paper-check: #e2e8f0; /* slate-200: the checkerboard behind a transparent figure */
+`;
+
 export const theme = css`
   @layer ps-theme {
     :root {
       color-scheme: light;
       ${lightRoles}
+      ${fixedRoles}
       ${sizes}
     }
     :root[data-theme='dark'] {

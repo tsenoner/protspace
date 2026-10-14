@@ -377,3 +377,40 @@ describe('protspace-publish-modal on a phone', () => {
     expect(preview.width).toBeGreaterThan(200);
   });
 });
+
+describe('protspace-publish-modal preview paper', () => {
+  afterEach(() => document.documentElement.removeAttribute('data-theme'));
+
+  const preview = (modal: HTMLElement) =>
+    modal.shadowRoot!.querySelector<HTMLCanvasElement>('.publish-preview-canvas')!;
+
+  it("the preview's backdrop is the light paper in dark", async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const { modal } = await mount();
+    const style = getComputedStyle(preview(modal));
+    // Exports are light in both themes, so the figure is previewed on light paper:
+    // white with a slate-200 checkerboard, never the dark surface.
+    expect(style.backgroundImage).toContain('rgb(255, 255, 255)');
+    expect(style.backgroundImage).toContain('rgb(226, 232, 240)');
+    expect(style.backgroundImage).not.toContain('rgb(15, 23, 42)');
+    expect(style.backgroundColor).not.toBe('rgb(15, 23, 42)');
+  });
+
+  it('a white figure still previews white', async () => {
+    document.documentElement.dataset.theme = 'dark';
+    const { modal, internals } = await mount();
+    // A plot whose capture is fully transparent: only the figure's own background shows.
+    modal.plotElement = Object.assign(document.createElement('div'), {
+      captureAtResolution: (width: number, height: number) =>
+        Object.assign(document.createElement('canvas'), { width, height }),
+    });
+    internals._updateState({ background: 'white' });
+    await modal.updateComplete;
+    const canvas = preview(modal);
+    await vi.waitFor(() => {
+      expect(canvas.width).toBeGreaterThan(300);
+      const pixel = Array.from(canvas.getContext('2d')!.getImageData(1, 1, 1, 1).data);
+      expect(pixel).toEqual([255, 255, 255, 255]);
+    });
+  });
+});
