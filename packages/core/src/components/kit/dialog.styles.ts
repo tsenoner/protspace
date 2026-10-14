@@ -46,6 +46,17 @@ export const dialogStyles = [
     :host([size='sheet']) .frame {
       max-height: calc(min(85dvh, 100dvh - 48px) - 1px - env(safe-area-inset-bottom, 0px));
     }
+    /* The grip the structure sheet shows, so the two sheets read as one kind (decorative). */
+    :host([size='sheet']) .frame::before {
+      content: '';
+      flex: none;
+      align-self: center;
+      width: 36px;
+      height: 4px;
+      margin: 4px 0;
+      border-radius: var(--ps-radius-full);
+      background: var(--ps-border-strong);
+    }
     :host([size='sheet']) .body {
       padding: 0;
     }

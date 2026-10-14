@@ -322,6 +322,9 @@ describe('ps-dialog size sheet', () => {
     const style = getComputedStyle(native);
     expect(style.borderBottomLeftRadius).toBe('0px');
     expect(style.borderTopLeftRadius).not.toBe('0px');
+    // A grip at the top, as on the structure sheet.
+    const grip = getComputedStyle(dialog.shadowRoot!.querySelector('.frame')!, '::before');
+    expect([grip.width, grip.height]).toEqual(['36px', '4px']);
   });
 
   it('a sheet taller than a short viewport (375×360) scrolls its body while the header stays', async () => {
@@ -337,7 +340,8 @@ describe('ps-dialog size sheet', () => {
 
     body.scrollTop = body.scrollHeight;
     const header = dialog.shadowRoot!.querySelector('header')!.getBoundingClientRect();
-    expect(header.top - box.top).toBeLessThanOrEqual(1);
+    // Under the 12 px grip, where it was before the scroll.
+    expect(header.top - box.top).toBeLessThanOrEqual(12 + 1);
     expect(native.scrollTop).toBe(0);
     const last = dialog.querySelector('.row:last-of-type')!.getBoundingClientRect();
     expect(last.bottom).toBeLessThanOrEqual(box.bottom + 1);
