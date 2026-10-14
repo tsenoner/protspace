@@ -6,6 +6,7 @@
  * string that keeps the tooltip on-screen: anchored lower-right of the cursor,
  * flipped to the left when it would overflow the right edge, and clamped to the
  * viewport on all four sides. No DOM access — unit-testable in isolation.
+ * computeTouchTooltipStyle places a tooltip a tap pinned, wholly inside the plot.
  */
 
 /** Min gap (px) kept between the tooltip and any viewport edge. */
@@ -73,4 +74,31 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
   return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${tooltipWidth}px;${
     transform ? ` transform: ${transform};` : ''
   }`;
+}
+
+/** Gap (px) between a tap-pinned tooltip and its protein, so the finger does not cover the card. */
+const TOUCH_TOOLTIP_CLEARANCE = 16;
+
+/**
+ * Placement for a tooltip a tap pinned. A finger has no cursor to sit beside, and on a phone the
+ * plot is barely wider than the card, so the card is centred on the protein and kept wholly inside
+ * the plot (TOOLTIP_EDGE_PADDING from every edge): above the protein when it fits, else below it,
+ * else against the plot edge farther from it. It takes the hover tooltip's width.
+ */
+export function computeTouchTooltipStyle(input: TooltipStyleInput): string {
+  const { x, y, height, viewportWidth, viewportHeight } = input;
+  const width = effectiveTooltipWidth(viewportWidth);
+  const pad = TOOLTIP_EDGE_PADDING;
+
+  const left = Math.max(pad, Math.min(x - width / 2, viewportWidth - width - pad));
+
+  const above = y - TOUCH_TOOLTIP_CLEARANCE - height;
+  const below = y + TOUCH_TOOLTIP_CLEARANCE;
+  let top: number;
+  if (above >= pad) top = above;
+  else if (below + height <= viewportHeight - pad) top = below;
+  else top = y > viewportHeight / 2 ? pad : viewportHeight - height - pad;
+  top = Math.max(pad, top);
+
+  return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px;`;
 }

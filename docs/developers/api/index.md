@@ -79,14 +79,14 @@ interactions.
 | `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied |
 | `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration         |
 | `tooltipActions`                    | `readonly TooltipAction[]`            | `[]`          | Buttons a pinned tooltip offers (see below)    |
+| `tapTooltips`                       | `boolean`                             | `true`        | A touch tap on a protein pins its tooltip      |
 | `hideStatus`                        | `boolean`                             | `false`       | Leave out the plot's own count; `hide-status`  |
 
 ### HTML attributes
 
 Four properties have explicit kebab-case attributes: `selection-tool`, `filters-active`,
 `eat-overlay-enabled` and `hide-status`. The rest are reachable from markup under their implicit all-lowercase names
-(for example `selectedannotation`, `projectionplane`); no scatterplot property is
-`attribute: false`. Set the object and array properties from JavaScript.
+(for example `selectedannotation`, `projectionplane`); `tooltipActions` and `tapTooltips` have no attribute. Set the object and array properties from JavaScript.
 
 ### Configuration
 
@@ -161,7 +161,16 @@ holds any, a plain click on a protein pins its tooltip at the protein with one b
 The pin ends on Escape, a press outside the plot, the next click, a zoom or pan, a data or
 projection change, or when `tooltipActions` becomes empty. Hovers over other proteins leave it. A button dispatches
 `tooltip-action` (bubbles, composed) with the action's `id` and the pinned `proteinId`
-(`TooltipActionDetail`). Empty, the default, keeps tooltips hover-only. A pinned tooltip also lists the protein's AlphaFold, UniProt, InterPro and TED links above its buttons.
+(`TooltipActionDetail`). Empty, the default, keeps mouse tooltips hover-only. A pinned tooltip also lists the protein's AlphaFold, UniProt, InterPro and TED links above its buttons.
+
+Touch uses the same pin. A tap is a click whose pointer is a finger: it picks the protein within
+20 px (a mouse click needs the point under the cursor) and, while `tapTooltips` is true (the
+default), pins that protein's tooltip even when `tooltipActions` is empty, since touch has no hover
+to show it. The pin offers whatever `tooltipActions` holds, outlives `tooltipActions` becoming empty,
+and sits wholly inside the plot, centred over the protein and above it when it fits. Set
+`tapTooltips` to false to keep taps from pinning; turning it false ends a pin. The mouse events a
+browser sends after a tap never start a hover tooltip, a pan or pinch by touch ends one, and the
+plot's SVG has `touch-action: none`, so pans and pinches move the plot, never the page.
 
 Escape follows the kit's one layer stack (`ESCAPE_ORDER`, `onEscapeFallback` and `pushLayer`,
 exported from `@protspace/core`). An expanded duplicate stack and a pinned tooltip are layers: the

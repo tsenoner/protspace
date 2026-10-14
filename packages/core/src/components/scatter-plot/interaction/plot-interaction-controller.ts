@@ -29,11 +29,18 @@ export interface PlotInteractionHost {
   onSelect(ids: string[], clearVisual: () => void): void;
   onHover(event: MouseEvent, point: PlotDataPoint | null): void;
   onHoverEnd(): void;
-  onClick(event: MouseEvent): void;
+  /** `touch`: the click came from a finger's tap, which has no hover before it. */
+  onClick(event: MouseEvent, touch: boolean): void;
   /** A brush or lasso gesture started: the host ends a pinned tooltip so none floats over it. */
   onSelectStart(): void;
   renderWebGL(trigger: RenderWebGLTrigger): void;
   updateSelectionOverlays(opts?: { duplicateImmediate?: boolean }): void;
+}
+
+/** Whether a d3 zoom gesture came from a finger: d3-zoom hears touch events, not pointer events. */
+function isTouchSource(event: unknown): boolean {
+  const type = (event as { type?: unknown } | null)?.type;
+  return typeof type === 'string' && type.startsWith('touch');
 }
 
 /**
@@ -56,6 +63,9 @@ export class PlotInteractionController {
   private _isLassoing = false;
   // Selection mode turned on before the host had scales: its tool is not set up yet.
   private _selectionAwaitsScales = false;
+  // From a touch press until the mouse moves again. A tap is followed by compat mouse events, which
+  // must not start a hover: touch has no mouseleave to end one.
+  private _touchInput = false;
 
   private _zoomRafId: number | null = null;
   private _lassoRafId: number | null = null;
@@ -75,6 +85,10 @@ export class PlotInteractionController {
   }
   get selectionAwaitsScales() {
     return this._selectionAwaitsScales;
+  }
+  /** Whether the latest press on the plot was a finger's (until a mouse moves over it again). */
+  get touchInput(): boolean {
+    return this._touchInput;
   }
 
   /**
@@ -115,6 +129,10 @@ export class PlotInteractionController {
     this._zoom = d3
       .zoom<SVGSVGElement, unknown>()
       .scaleExtent(this.host.getMergedConfig().zoomExtent)
+      // A finger's pan or pinch ends any hover tooltip; a pin ends with the transform change.
+      .on('start', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        if (isTouchSource(event.sourceEvent)) this.host.onHoverEnd();
+      })
       .on('zoom', (event) => this.applyZoom(event.transform));
     this._svgSelection.call(this._zoom);
     this._setupDblClickHandlers();
@@ -247,9 +265,25 @@ export class PlotInteractionController {
 
     // Use event delegation on the SVG overlay for canvas interactions
     this._svgSelection
-      .on('mousemove.canvas', (event) => this.host.onHover(event, null))
-      .on('click.canvas', (event) => this.host.onClick(event))
+      .on('pointerdown.input', (event: PointerEvent) => {
+        this._touchInput = event.pointerType === 'touch';
+      })
+      .on('pointermove.input', (event: PointerEvent) => {
+        if (event.pointerType === 'mouse') this._touchInput = false;
+      })
+      .on('mousemove.canvas', (event: MouseEvent) => {
+        if (!this._touchInput) this.host.onHover(event, null);
+      })
+      .on('click.canvas', (event: MouseEvent) =>
+        this.host.onClick(event, this._isTouchClick(event)),
+      )
       .on('mouseout.canvas', () => this.host.onHoverEnd());
+  }
+
+  /** A click names its pointer in Chromium and Firefox (a PointerEvent); else the last press does. */
+  private _isTouchClick(event: MouseEvent): boolean {
+    const type = (event as Partial<PointerEvent>).pointerType;
+    return type ? type === 'touch' : this._touchInput;
   }
 
   updateSelectionMode(): void {

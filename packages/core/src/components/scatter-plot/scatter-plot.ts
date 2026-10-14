@@ -51,6 +51,7 @@ import { DuplicateStackOverlayController } from './duplicate-stacks/duplicate-st
 import { estimateTooltipHeight } from './tooltips/tooltip-height-estimate';
 import {
   computeTooltipStyle,
+  computeTouchTooltipStyle,
   effectiveTooltipWidth,
   TOOLTIP_FALLBACK_HEIGHT,
 } from './tooltips/tooltip-position';
@@ -80,6 +81,9 @@ export type {
 } from './provenance/connector-overlay-controller';
 
 const HIT_RADIUS_MIN_PX = 4;
+// A fingertip is far less precise than a cursor: a tap picks the nearest protein within 20 px,
+// half the 40 px touch target.
+const TOUCH_HIT_RADIUS_PX = 20;
 
 // D3 wheel zoom accumulates scale multiplicatively, so a symmetric round trip
 // can finish a few ULPs above identity even though the view is visually reset.
@@ -117,6 +121,7 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_isZoomedIn',
   '_mergedConfig',
   'tooltipActions',
+  'tapTooltips',
   '_pinnedTooltip',
 ]);
 
@@ -176,10 +181,17 @@ export class ProtspaceScatterplot extends LitElement {
   /**
    * Buttons a plain click on a protein offers in its tooltip, which then stays (pinned) until
    * Escape, a press outside the plot, the next click, a zoom or pan, a data or projection
-   * change, or until this becomes empty. Hovers over other proteins leave it. A button dispatches
-   * `tooltip-action` with its id and the protein. Empty (the default) keeps tooltips hover-only.
+   * change, or until this becomes empty (a touch pin outlives that, see `tapTooltips`). Hovers over
+   * other proteins leave it. A button dispatches `tooltip-action` with its id and the protein.
+   * Empty (the default) keeps mouse tooltips hover-only.
    */
   @property({ attribute: false }) tooltipActions: readonly TooltipAction[] = [];
+  /**
+   * Whether a touch tap on a protein pins its tooltip, offering `tooltipActions` (none is fine:
+   * touch has no hover to show a tooltip otherwise). False: a tap pins nothing, and turning it
+   * false ends a pin. Mouse clicks follow `tooltipActions` alone.
+   */
+  @property({ attribute: false }) tapTooltips = true;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -189,8 +201,13 @@ export class ProtspaceScatterplot extends LitElement {
     view: TooltipView;
   } | null = null;
   @state() private _tooltipHeight: number | null = null;
-  // The tooltip a plain click pinned while tooltipActions offered buttons, at its protein.
-  @state() private _pinnedTooltip: { point: PlotDataPoint; view: TooltipView } | null = null;
+  // The tooltip a click pinned at its protein: a mouse click while tooltipActions offered buttons,
+  // or a tap (`touch`, placed for a finger) while tapTooltips holds.
+  @state() private _pinnedTooltip: {
+    point: PlotDataPoint;
+    view: TooltipView;
+    touch: boolean;
+  } | null = null;
   // Releases the pin's layer (kit/layers.ts), through which Escape and outside presses end it.
   private _releasePinnedTooltip: (() => void) | null = null;
   // The Escape fallback that hides the EAT connectors (ESCAPE_ORDER.connectors), while connected.
@@ -320,7 +337,10 @@ export class ProtspaceScatterplot extends LitElement {
     isEnabled: () => !!this._mergedConfig.enableDuplicateStackUI,
     isSelectionMode: () => this.selectionMode,
     getColor: (p) => this._style.getters().getColors(p)[0] ?? '#888888',
-    onPointActivate: (e, p) => this._handleClick(e, p),
+    // The spiderfy node stops its pointerdown from reaching the svg, so the controller's
+    // touchInput can be stale here; the node's own pointerup says what pressed it.
+    onPointActivate: (e, p) =>
+      this._handleClick(e, p, (e as Partial<PointerEvent>).pointerType === 'touch'),
     onHover: (e, p) => this._handleMouseOver(e, p),
     onHoverEnd: () => this._clearHoverState(),
     onExpandedChange: (expanded) => this._syncSpiderLayer(expanded),
@@ -1243,7 +1263,7 @@ export class ProtspaceScatterplot extends LitElement {
       onSelect: (ids, clearVisual) => this._commitSelection(ids, clearVisual),
       onHover: (event) => this._handleCanvasMouseMove(event),
       onHoverEnd: () => this._handleCanvasMouseOut(),
-      onClick: (event) => this._handleCanvasClick(event),
+      onClick: (event, touch) => this._handleCanvasClick(event, touch),
       // A brush or lasso start ends a pin, as a click does (phase 4 ruling).
       onSelectStart: () => this._unpinTooltip(),
       renderWebGL: (trigger) => this._renderWebGL(trigger),
@@ -1523,7 +1543,7 @@ export class ProtspaceScatterplot extends LitElement {
     }
   }
 
-  private _handleClick(event: MouseEvent, point: PlotDataPoint) {
+  private _handleClick(event: MouseEvent, point: PlotDataPoint, touch = false) {
     const view = this.data
       ? buildTooltipView(
           this.data,
@@ -1550,14 +1570,10 @@ export class ProtspaceScatterplot extends LitElement {
         composed: true,
       }),
     );
-    if (
-      view &&
-      this.tooltipActions.length > 0 &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.shiftKey
-    ) {
-      this._pinTooltip(point, view);
+    // A tap pins while tapTooltips holds, with or without actions; a mouse click needs an action.
+    const pins = touch ? this.tapTooltips : this.tooltipActions.length > 0;
+    if (view && pins && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      this._pinTooltip(point, view, touch);
     }
   }
 
@@ -1592,14 +1608,18 @@ export class ProtspaceScatterplot extends LitElement {
    * point index `findNearest`, the isInteractive guard, and the within-radius
    * distance check. Callers branch only on the result.
    */
-  pickInteractivePointAt(mouseX: number, mouseY: number): PlotDataPoint | null {
+  pickInteractivePointAt(
+    mouseX: number,
+    mouseY: number,
+    minRadiusPx = HIT_RADIUS_MIN_PX,
+  ): PlotDataPoint | null {
     if (!this._scales) return null;
 
     const k = this._transform.k;
     const dataX = (mouseX - this._transform.x) / k;
     const dataY = (mouseY - this._transform.y) / k;
 
-    const hitRadius = Math.max(this._drawnPointRadiusCss(), HIT_RADIUS_MIN_PX);
+    const hitRadius = Math.max(this._drawnPointRadiusCss(), minRadiusPx);
     const nearestSlot = this._pointGrid.index().findNearest(dataX, dataY, hitRadius / k);
     if (nearestSlot < 0) return null;
 
@@ -1634,9 +1654,9 @@ export class ProtspaceScatterplot extends LitElement {
   }
 
   /**
-   * Handle click events for canvas rendering
+   * Handle click events for canvas rendering. A tap (`touch`) picks within TOUCH_HIT_RADIUS_PX.
    */
-  private _handleCanvasClick(event: MouseEvent): void {
+  private _handleCanvasClick(event: MouseEvent, touch = false): void {
     if (!this._scales) return;
     // Any click on the plot ends a pin; a plain click on a protein pins anew below.
     this._unpinTooltip();
@@ -1652,7 +1672,11 @@ export class ProtspaceScatterplot extends LitElement {
     const hadExpanded = this._dupOverlay.collapseExpanded();
 
     const [mouseX, mouseY] = d3.pointer(event);
-    const nearestPoint = this.pickInteractivePointAt(mouseX, mouseY);
+    const nearestPoint = this.pickInteractivePointAt(
+      mouseX,
+      mouseY,
+      touch ? TOUCH_HIT_RADIUS_PX : HIT_RADIUS_MIN_PX,
+    );
     if (!nearestPoint) {
       this.clearProvenanceConnectors();
       return;
@@ -1665,7 +1689,7 @@ export class ProtspaceScatterplot extends LitElement {
     // This prevents accidental selection when the user is simply trying to close the spiderfy UI.
     if (hadExpanded) return;
 
-    this._handleClick(event, nearestPoint);
+    this._handleClick(event, nearestPoint, touch);
   }
 
   /**
@@ -1844,7 +1868,8 @@ export class ProtspaceScatterplot extends LitElement {
     const shown = this._shownTooltip();
     if (!shown) return '';
     const config = this._mergedConfig;
-    return computeTooltipStyle({
+    const place = this._pinnedTooltip?.touch ? computeTouchTooltipStyle : computeTooltipStyle;
+    return place({
       x: shown.x,
       y: shown.y,
       height: this._tooltipHeight ?? this._estimateTooltipHeight(),
@@ -1871,8 +1896,8 @@ export class ProtspaceScatterplot extends LitElement {
     `;
   }
 
-  private _pinTooltip(point: PlotDataPoint, view: TooltipView): void {
-    this._pinnedTooltip = { point, view };
+  private _pinTooltip(point: PlotDataPoint, view: TooltipView, touch: boolean): void {
+    this._pinnedTooltip = { point, view, touch };
     // Presses on the plot end the pin through the click and zoom handlers; the layer handles
     // Escape and presses anywhere else.
     this._releasePinnedTooltip ??= pushLayer({
@@ -1902,11 +1927,19 @@ export class ProtspaceScatterplot extends LitElement {
     this._releaseSpiderLayer = null;
   }
 
-  /** A pin ends with its data, with its points' positions, or with the last action. */
+  /**
+   * A pin ends with its data, with its points' positions, when taps stop pinning, or (a mouse
+   * pin) with the last action. A touch pin needs no action: it is how a finger reads a protein.
+   */
   private _reconcilePinnedTooltip(changedProperties: Map<string, unknown>): void {
-    if (!this._pinnedTooltip) return;
-    const actionsGone = changedProperties.has('tooltipActions') && this.tooltipActions.length === 0;
-    if (actionsGone || this._geometryInputsChanged(changedProperties)) this._unpinTooltip();
+    const pinned = this._pinnedTooltip;
+    if (!pinned) return;
+    const actionsGone =
+      !pinned.touch && changedProperties.has('tooltipActions') && this.tooltipActions.length === 0;
+    const tapsOff = changedProperties.has('tapTooltips') && !this.tapTooltips;
+    if (actionsGone || tapsOff || this._geometryInputsChanged(changedProperties)) {
+      this._unpinTooltip();
+    }
   }
 
   private _handleTooltipAction = (event: Event) => {

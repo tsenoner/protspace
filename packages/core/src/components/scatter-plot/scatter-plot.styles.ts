@@ -71,6 +71,8 @@ const scatterplotStylesCore = css`
   svg {
     z-index: var(--z-svg);
     pointer-events: all;
+    /* d3-zoom pans and pinches the plot; the browser must not also scroll or zoom the page. */
+    touch-action: none;
   }
 
   canvas {

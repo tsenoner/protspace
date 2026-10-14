@@ -64,7 +64,6 @@ async function scrollPastTheBar(page: Page): Promise<void> {
 
 test.describe('the plot on a touch screen', () => {
   test('P1: a pinch zooms the plot, not the page', async ({ page }) => {
-    test.fixme(true, 'task 5.7');
     await openExplorePhone(page);
     // Without it, the browser would scroll or zoom the page on a pan or pinch d3-zoom also takes.
     const touchAction = await page
@@ -97,7 +96,9 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P2: a tap near the right edge shows the tooltip inside the plot', async ({ page }) => {
-    test.fixme(true, 'task 5.7');
+    // Green once the tap's structure opens folded over the plot (5.8); the interim phone layout
+    // shrinks the plot under the pinned card.
+    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     await tap(page, await proteinNearRightEdge(page));
 
@@ -117,7 +118,9 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P3: a tap on empty space or a pan closes the tooltip', async ({ page }) => {
-    test.fixme(true, 'task 5.7');
+    // Green once the tap's structure opens folded over the plot (5.8); the interim phone layout
+    // shrinks the plot under the pinned card.
+    test.fixme(true, 'task 5.8');
     await openExplorePhone(page);
     const target = await proteinNearRightEdge(page);
     await tap(page, target);
