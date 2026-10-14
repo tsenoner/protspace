@@ -119,6 +119,24 @@ test.describe('explore layout on a tablet', () => {
     expect(await resizes()).toBe(0);
   });
 
+  test('on a tablet, the panel tabs control tab panels, and arrow keys, Home and End switch them', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(page.getByRole('tabpanel', { name: 'Legend' })).toBeVisible();
+
+    await panelTab(page, 'Legend').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(panelTab(page, 'Filter')).toBeFocused();
+    await expect(page.getByRole('tabpanel', { name: 'Filter' })).toBeVisible();
+    await page.keyboard.press('Home');
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'legend');
+    await expect(panelTab(page, 'Legend')).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+  });
+
   test('on a tablet with no protein, the right half shows the empty footer and a first tap does not resize the plot', async ({
     page,
   }) => {

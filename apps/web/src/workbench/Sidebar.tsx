@@ -11,6 +11,8 @@ interface SidebarProps {
   inert?: boolean;
   /** The panel shown (the legend or Filter): both copies of the tabs mark it. */
   panel: SidebarPanel;
+  /** Below 951 px the panel tabs switch the legend and Filter, so both are tab panels. */
+  tabbed: boolean;
 }
 
 /**
@@ -20,11 +22,13 @@ interface SidebarProps {
  * interactive again or the panel changes, and the legend and the query builder are never re-created or moved. The ref
  * is the slide's target (use-sidebar-transition).
  */
-export const Sidebar = memo(function Sidebar({ ref, inert, panel }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ ref, inert, panel, tabbed }: SidebarProps) {
   return (
     <aside ref={ref} inert={inert} id="wb-sidebar" data-workbench="sidebar" aria-label="Sidebar">
       <protspace-legend
         id="myLegend"
+        role={tabbed ? 'tabpanel' : undefined}
+        aria-label={tabbed ? 'Legend' : undefined}
         data-driver-id="legend"
         auto-sync="true"
         auto-hide="true"
@@ -32,7 +36,7 @@ export const Sidebar = memo(function Sidebar({ ref, inert, panel }: SidebarProps
       >
         <PanelTabs panel={panel} slot="header-start" />
       </protspace-legend>
-      <FilterPanel panel={panel} />
+      <FilterPanel panel={panel} tabbed={tabbed} />
     </aside>
   );
 });

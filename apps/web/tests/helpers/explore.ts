@@ -307,9 +307,14 @@ export const datasetSwitcher = (page: Page): Locator =>
 export const filterButton = (page: Page): Locator =>
   viewBar(page).getByRole('button', { name: /^Filter/ });
 
-/** The sidebar's Filter panel (a region named by its heading, "Filter"). */
+/**
+ * The sidebar's Filter panel, named by its heading "Filter": a region on desktop, a tab panel
+ * below 951 px, where the panel tabs switch it with the legend.
+ */
 export const filterPanel = (page: Page): Locator =>
-  page.getByRole('region', { name: 'Filter', exact: true });
+  page
+    .getByRole('region', { name: 'Filter', exact: true })
+    .or(page.getByRole('tabpanel', { name: 'Filter', exact: true }));
 
 export const queryBuilder = (page: Page): Locator => page.locator('protspace-query-builder');
 

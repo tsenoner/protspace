@@ -10,7 +10,7 @@ import { PanelTabs } from './PanelTabs';
  * header starts with the Legend/Filter tabs, which switch panels; on desktop Close returns to the
  * legend and hands focus to the rail's Filter item (CSS hides Close below 951 px).
  */
-export function FilterPanel({ panel }: { panel: SidebarPanel }) {
+export function FilterPanel({ panel, tabbed }: { panel: SidebarPanel; tabbed: boolean }) {
   const close = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function FilterPanel({ panel }: { panel: SidebarPanel }) {
     <section
       id="wb-filter-panel"
       data-workbench="filter-panel"
-      role="region"
+      role={tabbed ? 'tabpanel' : 'region'}
       aria-labelledby="wb-filter-title"
     >
       <header className="wb-panel-header">

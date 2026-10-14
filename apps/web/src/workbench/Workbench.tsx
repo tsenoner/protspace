@@ -127,7 +127,7 @@ export function Workbench() {
             railToggleRef.current?.focus();
           }}
         />
-        <Sidebar ref={asideRef} inert={sidebarHidden} panel={layout.panel} />
+        <Sidebar ref={asideRef} inert={sidebarHidden} panel={layout.panel} tabbed={!desktop} />
         <StructurePanel
           ref={structureRef}
           inert={sidebarHidden && structure !== 'floating'}
