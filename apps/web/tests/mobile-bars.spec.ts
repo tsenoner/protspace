@@ -536,6 +536,22 @@ test.describe('the More sheet', () => {
     await expect(moreButton(page)).toBeFocused();
   });
 
+  test('Feedback closes the sheet as it opens the mail client', async ({ page }) => {
+    const rows = await openMoreSheet(page);
+    // Keep the mailto: navigation from leaving the page; the app's own click handler still runs.
+    await page.evaluate(() =>
+      window.addEventListener(
+        'click',
+        (e) => {
+          if ((e.target as Element).closest('a[href^="mailto:"]')) e.preventDefault();
+        },
+        { capture: true },
+      ),
+    );
+    await rows.getByRole('link', { name: /^Feedback/ }).tap();
+    await expect(moreSheet(page)).toBeHidden();
+  });
+
   test('the More dot shows with a filter applied', async ({ page }) => {
     await expect(moreButton(page)).toHaveAccessibleName('More view options');
     await expect(viewBar(page).locator('.wb-more-dot')).toBeHidden();

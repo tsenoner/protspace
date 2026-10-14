@@ -186,7 +186,12 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
               <span className="wb-sheet-label">Take the tour</span>
             </button>
           </div>
-          <a className="wb-sheet-row" href={FEEDBACK_HREF}>
+          {/* The link navigates itself; the sheet still closes, as after any other row. */}
+          <a
+            className="wb-sheet-row"
+            href={FEEDBACK_HREF}
+            onClick={() => dialog.current?.dismiss()}
+          >
             <MessageSquare className="wb-sheet-icon" {...ICON} />
             <span className="wb-sheet-label">Feedback</span>
             <ChevronRight className="wb-sheet-chevron" {...ICON} />
