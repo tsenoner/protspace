@@ -97,12 +97,19 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 6. Dark mode (plan: `plans/phase-6-dark-mode.md`)
 
-- [ ] 6.1 Theme switch (System, Light, Dark), its storage key, the first-paint script, `/explore`-only
-      scope; default flips to System
-- [ ] 6.2 Plot background, neutral point greys, selection ring and contour lines from tokens;
-      re-render on theme change; exports forced light
-- [ ] 6.3 Mol\* background follows the theme
-- [ ] 6.4 Remaining surfaces in dark; palette contrast check; accessibility checks in both themes
+- [ ] 6.1 Theme store, first-paint boot and `/explore`-only scope
+- [ ] 6.2 The theme switch in the app bar and the More sheet
+- [ ] 6.3 Plot neutrals as an input; exports always stage light
+- [ ] 6.4 The plot's background and neutral greys follow the theme
+- [ ] 6.5 Exports and the figure editor preview stay light in dark
+- [ ] 6.6 Plot overlays, tooltip and projection card on tokens
+- [ ] 6.7 Legend swatches follow the plot's neutral greys
+- [ ] 6.8 The structure viewer and Mol\* follow the theme
+- [ ] 6.9 Wordmark, notifications, tour and legacy colours
+- [ ] 6.10 Contrast gates for the role tokens and the default palettes
+- [ ] 6.11 Accessibility of the desktop workbench in both colour schemes
+- [ ] 6.12 Accessibility of the phone layout in both colour schemes
+- [ ] 6.13 The default follows the system
 
 ## 7. Docs, docs media and tour (plan: `plans/phase-7-docs.md`)
 
