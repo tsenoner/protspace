@@ -77,8 +77,8 @@ export class ProtspaceStructureViewer extends LitElement {
   private _loadController: AbortController | null = null;
   private _scatterplotElement: Element | null = null;
   private _stopThemeObserver: (() => void) | null = null;
-  /** The background last given to each Mol* viewer, so a theme change that keeps it repaints nothing. */
-  private _appliedBackground = new WeakMap<MolstarViewer, number>();
+  /** The background last given to the current Mol* viewer, so a theme change that keeps it repaints nothing. */
+  private _appliedBackground: number | null = null;
 
   // Refs
   @query('.viewer-content') private _viewerContainer!: HTMLElement;
@@ -264,6 +264,8 @@ export class ProtspaceStructureViewer extends LitElement {
       // finishes mounting after its load was replaced never shares the replacement's container
       const mount = document.createElement('div');
       mount.className = 'molstar-mount';
+      // Hidden until its background is set, or Mol*'s own near-white shows for a frame in dark
+      mount.style.visibility = 'hidden';
       this._viewerContainer.appendChild(mount);
       const viewer = await createMolstarViewer(mount, structureData.tedDomains);
       if (signal.aborted) {
@@ -271,7 +273,9 @@ export class ProtspaceStructureViewer extends LitElement {
         return;
       }
       this._viewer = viewer;
+      this._appliedBackground = null;
       this._applyViewerBackground();
+      mount.style.visibility = '';
 
       // Load structure into viewer based on source
       await this._displayStructure(structureData);
@@ -322,9 +326,8 @@ export class ProtspaceStructureViewer extends LitElement {
     const surface = getComputedStyle(this).getPropertyValue('--ps-surface').trim();
     if (!surface) return;
     const color = molstarColor(surface);
-    if (color === null || this._appliedBackground.get(viewer) === color) return;
-    this._appliedBackground.set(viewer, color);
-    viewer.setBackground(color);
+    if (color === null || this._appliedBackground === color) return;
+    if (viewer.setBackground(color)) this._appliedBackground = color;
   }
 
   private async _displayStructure(structureData: StructureData): Promise<void> {

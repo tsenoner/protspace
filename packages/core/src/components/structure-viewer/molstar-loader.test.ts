@@ -311,17 +311,17 @@ describe('Mol* color theme adapter', () => {
     Object.assign(rawViewer.plugin, { canvas3d: { setProps } });
     const viewer = await createMolstarViewer(document.createElement('div'), domains);
 
-    viewer.setBackground(0x0f172a);
+    expect(viewer.setBackground(0x0f172a)).toBe(true);
 
     expect(setProps).toHaveBeenCalledOnce();
     expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0x0f172a } });
   });
 
-  it('setBackground without canvas3d does nothing', async () => {
+  it('setBackground without canvas3d does nothing and says so', async () => {
     // A failed WebGL start leaves Mol* without a canvas, as does the e2e stub before this task.
     installRawViewer(vi.fn(applyThemeUpdate));
     const viewer = await createMolstarViewer(document.createElement('div'), domains);
-    expect(() => viewer.setBackground(0xffffff)).not.toThrow();
+    expect(viewer.setBackground(0xffffff)).toBe(false);
   });
 });
 

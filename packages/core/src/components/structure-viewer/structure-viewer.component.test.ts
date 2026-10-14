@@ -147,7 +147,7 @@ describe('protspace-structure-viewer Mol* background', () => {
 
   beforeEach(() => {
     surface = '#ffffff';
-    setProps.mockClear();
+    setProps.mockReset();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       queueMicrotask(() => callback(0));
       return 1;
@@ -204,6 +204,19 @@ describe('protspace-structure-viewer Mol* background', () => {
   it('the background is applied once the viewer is created', async () => {
     await mountLoaded();
     expect(setProps).toHaveBeenCalledWith({ renderer: { backgroundColor: 0xffffff } });
+  });
+
+  it('the canvas stays hidden until its background is set', async () => {
+    const mountOf = () =>
+      document
+        .querySelector('protspace-structure-viewer')!
+        .shadowRoot!.querySelector<HTMLElement>('.molstar-mount')!;
+    const seen: string[] = [];
+    setProps.mockImplementation(() => seen.push(mountOf().style.visibility));
+    await mountLoaded();
+    // Mol* paints its own near-white background first; the mount hides that frame.
+    expect(seen).toEqual(['hidden']);
+    expect(mountOf().style.visibility).toBe('');
   });
 
   it('a theme notification with a new surface applies it once', async () => {

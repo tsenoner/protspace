@@ -26,7 +26,8 @@ export interface MolstarViewer {
   ) => Promise<void>;
   setColorTheme: (mode: StructureColorMode) => Promise<void>;
   /** Paints the canvas behind the structure (a `0xRRGGBB` number); a no-op without a canvas. */
-  setBackground: (color: number) => void;
+  /** False when Mol* has no canvas to paint, so nothing was applied. */
+  setBackground: (color: number) => boolean;
   dispose: () => void;
 }
 
@@ -449,7 +450,9 @@ export async function createMolstarViewer(
       return colorThemeQueue;
     },
     setBackground: (color) => {
-      plugin.canvas3d?.setProps({ renderer: { backgroundColor: color } });
+      if (!plugin.canvas3d) return false;
+      plugin.canvas3d.setProps({ renderer: { backgroundColor: color } });
+      return true;
     },
     dispose: () => viewer.dispose(),
   };
