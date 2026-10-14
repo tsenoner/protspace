@@ -34,15 +34,14 @@ async function animationsSettled(page: Page): Promise<void> {
  * defaults to the four WCAG A/AA sets; `tags: null` runs every axe rule (best practices too), as
  * the annotation picker's test always ran.
  */
-export async function expectNoAxeViolations(
-  page: Page,
-  options: {
-    include?: string;
-    exclude?: string[];
-    disableRules?: string[];
-    tags?: readonly string[] | null;
-  } = {},
-): Promise<void> {
+export interface AxeOptions {
+  include?: string;
+  exclude?: string[];
+  disableRules?: string[];
+  tags?: readonly string[] | null;
+}
+
+export async function expectNoAxeViolations(page: Page, options: AxeOptions = {}): Promise<void> {
   await animationsSettled(page);
   let builder = new AxeBuilder({ page });
   const tags = options.tags === undefined ? WCAG_TAGS : options.tags;

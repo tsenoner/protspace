@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectColorScheme, expectNoAxeViolations } from './helpers/a11y';
+import { expectColorScheme, expectNoAxeViolations, type AxeOptions } from './helpers/a11y';
 import {
   annotationSelect,
   appBar,
@@ -21,8 +21,6 @@ import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/wor
  * System and Playwright emulates the OS scheme, so one spec covers light and dark without
  * touching the switch; the rest of the suite runs light only.
  */
-
-type AxeOptions = NonNullable<Parameters<typeof expectNoAxeViolations>[1]>;
 
 interface State {
   name: string;
@@ -65,7 +63,26 @@ const STATES: State[] = [
     open: async (page) => {
       // 'order' has 18 values, so the default 10 rows leave eight under Other.
       await selectAnnotation(page, 'order');
-      await openLegendOther(page);
+      const other = await openLegendOther(page);
+      // axe leaves this popover's text "incomplete" (it cannot resolve the background), so it
+      // checks no contrast here: pin the text to the token pairs theme.test.ts gates instead.
+      const colours = await other.evaluate((host) => {
+        const probe = document.createElement('span');
+        document.body.append(probe);
+        const token = (name: string) => {
+          probe.style.color = `var(${name})`;
+          return getComputedStyle(probe).color;
+        };
+        const text = (selector: string) =>
+          getComputedStyle(host.shadowRoot!.querySelector(selector)!).color;
+        const result = {
+          name: text('.other-item-name') === token('--ps-text'),
+          count: text('.other-item-count') === token('--ps-text-muted'),
+        };
+        probe.remove();
+        return result;
+      });
+      expect(colours).toEqual({ name: true, count: true });
     },
   },
   {

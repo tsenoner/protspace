@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectColorScheme, expectNoAxeViolations } from './helpers/a11y';
+import { expectColorScheme, expectNoAxeViolations, type AxeOptions } from './helpers/a11y';
 import { filterPanel } from './helpers/explore';
 import {
   bottomPanel,
@@ -19,8 +19,6 @@ import {
  * workbench-a11y.spec.ts does on desktop. The theme stays on System and Playwright emulates the
  * OS scheme.
  */
-
-type AxeOptions = NonNullable<Parameters<typeof expectNoAxeViolations>[1]>;
 
 interface State {
   name: string;
