@@ -17,6 +17,17 @@ import {
   viewBar,
 } from './helpers/explore';
 
+// Whether every laid-out child of the view bar ends inside it. Measured as the stage hook does, not
+// with scrollWidth: the closed projection details card is hidden but absolute, and would count.
+const viewBarFits = (page: Page) =>
+  viewBar(page).evaluate((bar) => {
+    const right = bar.getBoundingClientRect().right;
+    return Array.from(bar.children).every(
+      (child) =>
+        child.getClientRects().length === 0 || child.getBoundingClientRect().right <= right + 0.5,
+    );
+  });
+
 test.describe('the view bar', () => {
   test('Projection, Color by and Contours sit in the view bar', async ({ page }) => {
     await openExplore(page);
@@ -367,12 +378,12 @@ test.describe('view bar stages', () => {
     await expect(filterButton(page)).toBeHidden();
     const bar = (await viewBar(page).boundingBox())!;
     expect(bar.height).toBe(48);
-    expect(await viewBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await viewBarFits(page)).toBe(true);
 
     // Narrower still, the bar is not measured: the stage stays 3.
     await page.setViewportSize({ width: 360, height: 720 });
     await settle(page);
     expect(await readStage(page)).toBe(3);
-    expect(await viewBar(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await viewBarFits(page)).toBe(true);
   });
 });

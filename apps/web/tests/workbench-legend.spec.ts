@@ -260,6 +260,12 @@ test('the tablet legend scrolls its list inside its row', async ({ page }) => {
   const list = legend(page).locator('.legend-items');
   await expect.poll(() => list.locator('.legend-item').count()).toBeGreaterThan(30);
   const box = (await legend(page).boundingBox())!;
-  expect(box.height).toBeLessThanOrEqual(800);
+  // The legend fills the 2fr row under the plot (about 283 px at 800×800) and ends on screen.
+  expect(box.y + box.height).toBeLessThanOrEqual(801);
+  expect(box.height).toBeLessThan(400);
+  const pageScrolls = await page.evaluate(
+    () => document.documentElement.scrollHeight > innerHeight,
+  );
+  expect(pageScrolls).toBe(false);
   expect(await list.evaluate((l) => l.scrollHeight > l.clientHeight)).toBe(true);
 });
