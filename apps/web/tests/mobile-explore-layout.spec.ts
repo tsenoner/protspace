@@ -114,6 +114,15 @@ test.describe('the app bar on an 800 px tablet', () => {
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
     expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
+
+  test('Import is as tall as the other finger-sized app-bar actions', async ({ page }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    const height = async (name: string) =>
+      (await appBar(page).getByRole('button', { name, exact: true }).boundingBox())!.height;
+    expect(await height('Import')).toBeGreaterThanOrEqual(40);
+    expect(await height('Import')).toBe(await height('Help'));
+  });
 });
 
 test.describe('explore layout on a tablet', () => {

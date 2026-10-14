@@ -1701,6 +1701,11 @@
     width: var(--ps-touch-target);
     height: var(--ps-touch-target);
   }
+
+  /* As tall as the icon buttons beside it; the trigger is control-md (32 px) on its own. */
+  protspace-import-menu::part(trigger) {
+    height: var(--ps-touch-target);
+  }
 }
 
 /* ── The More sheet (Task 5.5, decision 17; light DOM in a ps-dialog size="sheet") ──
