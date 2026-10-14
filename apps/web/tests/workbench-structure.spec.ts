@@ -389,11 +389,11 @@ test('below 951 px there is no Pop out and a stored floating card shows docked',
   await expect(page.getByRole('button', { name: 'Pop out structure' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Dock structure' })).toHaveCount(0);
   expect((await readLayout(page))?.structurePlacement).toBe('floating');
-  // Stacked: the structure follows the legend.
+  // Tablet: the structure sits beside the legend, in the right half of the row under the plot.
   const legend = (await page.locator('#myLegend').boundingBox())!;
-  expect((await structurePanel(page).boundingBox())!.y).toBeGreaterThanOrEqual(
-    legend.y + legend.height - 1,
-  );
+  const structure = (await structurePanel(page).boundingBox())!;
+  expect(structure.x).toBeGreaterThanOrEqual(legend.x + legend.width - 1);
+  expect(Math.abs(structure.y - legend.y)).toBeLessThanOrEqual(1);
 });
 
 test('while collapsed and docked, View structure in the pinned tooltip opens the sidebar', async ({

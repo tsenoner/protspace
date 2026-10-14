@@ -260,22 +260,11 @@ const structureViewerStylesCore = css`
 
   /* ----------------------------- Responsive ------------------------------------ */
 
+  /* Below desktop the viewer has half a panel row: keep only the colour legend. The host's size
+     is the shell's to set (the workbench fills its structure section). */
   @media (max-width: 950px) {
-    /* --breakpoint-lg */
-    :host {
-      width: calc(50% - 6px);
-    }
-
-    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
     .interaction-tip {
       display: none;
-    }
-  }
-
-  @media (max-width: 550px) {
-    /* --breakpoint-xs */
-    :host {
-      width: 100%;
     }
   }
 `;

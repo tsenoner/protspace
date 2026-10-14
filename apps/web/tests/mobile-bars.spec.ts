@@ -286,7 +286,6 @@ test.describe('the bars on a portrait tablet', () => {
   test.use({ viewport: { width: 800, height: 1280 } });
 
   test('C10: a portrait tablet (800×1280) keeps the desktop bars', async ({ page }) => {
-    test.fixme(true, 'task 5.3');
     await openExplorePhone(page);
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
     await expect(searchInput(page)).toBeVisible();

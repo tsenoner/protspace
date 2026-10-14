@@ -103,9 +103,10 @@ test.describe('workbench shell', () => {
     const plot = await page.locator('#myPlot').boundingBox();
     const legend = await page.locator('#myLegend').boundingBox();
     expect(plot!.y + plot!.height).toBeLessThanOrEqual(legend!.y + 1);
+    // A fixed screen below 951 px too: the plot over the panel row, and the page does not scroll.
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight),
-    ).toBe(true);
+    ).toBe(false);
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await expect(root).toHaveAttribute('data-layout', 'desktop');

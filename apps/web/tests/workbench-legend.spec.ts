@@ -250,9 +250,7 @@ test('the legend fills the sidebar column flush, with no card border', async ({ 
   expect(Math.abs(box.y + box.height - bar.y)).toBeLessThanOrEqual(1);
 });
 
-test('the narrow legend scrolls its list instead of growing past the viewport', async ({
-  page,
-}) => {
+test('the tablet legend scrolls its list inside its row', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 800 });
   await openExplore(page);
   await selectAnnotation(page, 'protein_families');

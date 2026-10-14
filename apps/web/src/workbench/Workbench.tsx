@@ -61,11 +61,16 @@ export function Workbench() {
   const [sidebarWidthPreview, setSidebarWidthPreview] = useState<number | null>(null);
   // The committed width this window can give the sidebar, so the plot keeps 480 px (render only).
   const sidebarWidth = clampSidebarWidth(layout.sidebarWidth, sidebarCap);
-  const phase = useSidebarTransition(layout.sidebarOpen, {
-    aside: asideRef,
-    // A floating card stays over the plot: it does not slide with the sidebar.
-    structure: structure === 'floating' ? NO_SLIDE_TARGET : structureRef,
-  });
+  const phase = useSidebarTransition(
+    layout.sidebarOpen,
+    {
+      aside: asideRef,
+      // A floating card stays over the plot: it does not slide with the sidebar.
+      structure: structure === 'floating' ? NO_SLIDE_TARGET : structureRef,
+    },
+    // Below 951 px the sidebar is the panel under the plot: it never slides.
+    desktop,
+  );
   // The plot area the floating card stays inside.
   const plotAreaRef = useRef<HTMLElement>(null);
   useFloatingCard(structureRef, plotAreaRef);
@@ -122,7 +127,7 @@ export function Workbench() {
             railToggleRef.current?.focus();
           }}
         />
-        <Sidebar ref={asideRef} inert={sidebarHidden} />
+        <Sidebar ref={asideRef} inert={sidebarHidden} panel={layout.panel} />
         <StructurePanel
           ref={structureRef}
           inert={sidebarHidden && structure !== 'floating'}

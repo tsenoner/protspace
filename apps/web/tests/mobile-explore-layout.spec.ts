@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { appBar, viewBar } from './helpers/explore';
+import { appBar, filterPanel, viewBar } from './helpers/explore';
 import {
   bottomPanel,
   box,
@@ -7,11 +7,13 @@ import {
   expectNoPageScroll,
   expectWithinViewport,
   openExplorePhone,
+  panelTab,
   proteinNear,
   sheetToggle,
   structureSheet,
   tap,
 } from './helpers/mobile';
+import { watchPlotResizes } from './helpers/workbench';
 
 /**
  * The explore page's layout on phones, tablets and a phone on its side (ported from
@@ -19,6 +21,15 @@ import {
  */
 
 const workbench = (page: Page) => page.locator('.workbench');
+
+/** Two frames on: a resize has reached its ResizeObserver by then. */
+const settle = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 
 test.describe('explore layout on a phone', () => {
   test('L1: the plot comes first and the legend panel sits below it, on one screen', async ({
@@ -69,7 +80,6 @@ test.describe('explore layout on a tablet', () => {
   test('L3: on a tablet, the legend and the structure share the row under the plot', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.3');
     await openExplorePhone(page);
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
     await tap(page, await proteinNear(page, 0.5, 0.5));
@@ -86,6 +96,48 @@ test.describe('explore layout on a tablet', () => {
     expect(Math.abs(structure.height - legend.height)).toBeLessThanOrEqual(1);
     expect(structure.x).toBeGreaterThanOrEqual(legend.x + legend.width - 1);
     expect(Math.abs(structure.width - legend.width)).toBeLessThanOrEqual(1);
+  });
+
+  test('on a tablet, the Filter tab swaps the panel without resizing the plot', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    const resizes = await watchPlotResizes(page);
+
+    await panelTab(page, 'Filter').tap();
+
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(filterPanel(page)).toBeVisible();
+    // The Filter panel's own copy of the tabs now holds focus.
+    await expect(panelTab(page, 'Filter')).toBeFocused();
+    await expect(panelTab(page, 'Filter')).toHaveAttribute('aria-selected', 'true');
+
+    await panelTab(page, 'Legend').tap();
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'legend');
+    await expect(panelTab(page, 'Legend')).toBeFocused();
+    await settle(page);
+    expect(await resizes()).toBe(0);
+  });
+
+  test('on a tablet with no protein, the right half shows the empty footer and a first tap does not resize the plot', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-structure', 'none');
+    const footer = page.locator('[data-workbench="structure-empty"]');
+    await expect(footer).toBeVisible();
+    const legend = await box(page.locator('#myLegend'));
+    const empty = await box(footer);
+    // At the top of the right half, beside the legend.
+    expect(empty.x).toBeGreaterThanOrEqual(legend.x + legend.width - 1);
+    expect(Math.abs(empty.y - legend.y)).toBeLessThanOrEqual(1);
+
+    const resizes = await watchPlotResizes(page);
+    await tap(page, await proteinNear(page, 0.5, 0.5));
+    await expect(workbench(page)).toHaveAttribute('data-structure', 'docked');
+    await expect(page.locator('#myStructureViewer')).toBeVisible();
+    await settle(page);
+    expect(await resizes()).toBe(0);
   });
 });
 

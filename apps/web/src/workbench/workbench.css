@@ -235,6 +235,7 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
+  gap: var(--ps-space-2);
   box-sizing: border-box;
   height: 44px;
   padding: 0 var(--ps-space-2) 0 var(--ps-space-3);
@@ -242,6 +243,8 @@
 }
 
 .wb-panel-title {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   color: var(--ps-text);
   font-size: var(--ps-text-md);
@@ -267,44 +270,119 @@
   min-height: 0;
 }
 
-/* ── Below 951 px (every mode but desktop, until Task 5.3): the plot, then the sidebar ── */
+/* ── Below 951 px (design decision 17): a fixed screen, the plot over a panel row ─────
+   The tablet layout; the phone (Task 5.6) and landscape (Task 5.9) layouts specialise it. The
+   plot takes 3/5 of the height; under it the legend (or Filter) and the structure share the row,
+   half each, with or without a protein, so a first tap never resizes the plot. Fr tracks: a
+   mode change moves the plot's box once. */
+.workbench:not([data-layout='desktop']) {
+  height: 100dvh;
+  overflow: hidden;
+}
 
 .workbench:not([data-layout='desktop']) .wb-body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template:
+    'plot plot' minmax(0, 3fr)
+    'side struct' minmax(0, 2fr)
+    / minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .workbench:not([data-layout='desktop']) [data-workbench='plot'] {
+  grid-area: plot;
   position: relative;
   inset: auto;
-  height: 60vh;
-  min-height: 320px;
+  min-height: 0;
 }
 
+/* Static and without a width: no slide, no z-index, nothing on the legend's ancestors. */
 .workbench:not([data-layout='desktop']) [data-workbench='sidebar'] {
+  grid-area: side;
   position: static;
   width: auto;
+  min-height: 0;
   border-top: 1px solid var(--ps-border);
   border-left: 0;
 }
 
+/* The legend or the Filter panel fills its half; a long list scrolls inside it. */
 .workbench:not([data-layout='desktop']) :is(#myLegend, #wb-filter-panel) {
   flex: none;
-  min-height: 320px;
-  /* The legend has no height of its own: cap it so a long list scrolls inside it. */
-  max-height: max(320px, calc(100dvh - 10rem));
+  height: 100%;
 }
 
-/* The view bar never wraps on desktop. Here, once its last stage still does not fit, it wraps
-   rather than overflow the window. */
-.workbench:not([data-layout='desktop']) [data-workbench='view-bar'][data-stage='3'] {
+/* The phone's view bar still wraps at its last stage until Task 5.4 gives it its own rules. */
+.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage='3'] {
   flex-wrap: wrap;
   height: auto;
   min-height: var(--wb-view-bar-height);
 }
 
-.workbench:not([data-layout='desktop']) [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
+.workbench[data-layout='phone'] [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
   flex-wrap: wrap;
+}
+
+/* ── Panel tabs below 951 px: Legend and Filter, where the desktop rail switches them ── */
+
+.wb-panel-tabs {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ps-space-0-5);
+  padding: var(--ps-space-0-5);
+  border: 1px solid var(--ps-border);
+  border-radius: var(--ps-radius-lg);
+  background: var(--ps-surface-muted);
+}
+
+.workbench[data-layout='desktop'] .wb-panel-tabs {
+  display: none;
+}
+
+.wb-panel-tabs [role='tab'] {
+  min-height: var(--ps-control-sm);
+  padding: 0 var(--ps-space-3);
+  border: 0;
+  border-radius: var(--ps-radius);
+  background: transparent;
+  color: var(--ps-text-muted);
+  font: inherit;
+  font-size: var(--ps-text-sm);
+  font-weight: var(--ps-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wb-panel-tabs [role='tab'][aria-selected='true'] {
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  box-shadow: var(--ps-shadow-sm);
+}
+
+.wb-panel-tabs [role='tab']:focus-visible {
+  outline: var(--ps-focus-width) solid var(--ps-focus);
+  outline-offset: var(--ps-focus-offset);
+}
+
+/* Finger-sized tabs, still inside the 44 px header: the group drops its inner padding. */
+@media (pointer: coarse) {
+  .wb-panel-tabs {
+    padding: 0;
+  }
+
+  .wb-panel-tabs [role='tab'] {
+    min-height: var(--ps-touch-target);
+  }
+}
+
+/* The tabs switch panels below 951 px, so the Filter panel's Close is desktop-only. */
+.workbench:not([data-layout='desktop']) .wb-panel-close {
+  display: none;
+}
+
+.workbench:not([data-layout='desktop']) .wb-panel-title {
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-sm);
 }
 
 /* ── Keyboard shortcuts dialog (light DOM slotted into ps-dialog) ─────────── */
@@ -577,12 +655,12 @@
   top: var(--wb-legend-height);
 }
 
+/* The right half of the panel row: the empty footer at its top, or the docked viewer. */
 .workbench:not([data-layout='desktop']) .wb-structure {
+  grid-area: struct;
+  min-height: 0;
   border-top: 1px solid var(--ps-border);
-}
-
-.workbench:not([data-layout='desktop'])[data-structure='docked'] .wb-structure {
-  height: 420px;
+  border-left: 1px solid var(--ps-border);
 }
 
 .wb-divider {
