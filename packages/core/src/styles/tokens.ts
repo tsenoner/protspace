@@ -1,87 +1,16 @@
 import { css } from 'lit';
 
 /**
- * Design System Tokens
- *
- * Single source of truth for all design values.
- * These CSS custom properties enable runtime theming and can be overridden
- * by consumers of the components.
- *
- * @example
- * ```typescript
- * // In a component
- * import { tokens } from './styles/tokens';
- *
- * static styles = [tokens, css`
- *   button {
- *     background: var(--primary);
- *     padding: var(--spacing-md);
- *   }
- * `];
- * ```
- *
- * @example
- * ```css
- * // Override in consumer CSS
- * my-component {
- *   --primary: #ff0000;
- *   --spacing-md: 1rem;
- * }
- * ```
+ * Legacy aliases from before the --ps-* tokens (packages/core/src/styles/theme.ts). Only modules in
+ * style-lint.test.ts's LEGACY set compose this sheet, for its non-colour values: spacing,
+ * breakpoints, radii, type sizes and weights, transitions, z-indexes and component sizing. It
+ * holds no colour: colours are --ps-* tokens, which follow the page's theme, and the style lint
+ * fails a colour here. Task 8.1 deletes this file.
  */
 export const tokens = css`
   :host {
     display: block;
     font-family: var(--font-family);
-
-    /* Color Palette */
-    --primary: #00a3e0;
-    --primary-hover: #008ec4;
-    --primary-light: #eef6fb;
-    --surface: #ffffff;
-    --border: #d9e2ec;
-    --muted: #4a5568;
-    --text-dark: #0b0f19;
-    --text-light: #ffffff;
-    --focus-ring: rgba(0, 163, 224, 0.15);
-    --focus-ring-bg: #e1f1fb;
-    --primary-alpha-10: rgba(0, 163, 224, 0.1);
-    --primary-alpha-20: rgba(0, 163, 224, 0.2);
-    --primary-alpha-30: rgba(0, 163, 224, 0.3);
-    --primary-alpha-50: rgba(0, 163, 224, 0.5);
-
-    /* Destructive Actions */
-    --danger: #e42121;
-    --danger-hover: #dc1f1f;
-    --danger-border: #d06868;
-
-    /* Additional UI Colors */
-    --border-light: #cfe8f5;
-    --hint: #d6d7da;
-    --scrollbar: #cbd5e0;
-    --hover-bg: #f7fafc;
-    --hover-bg-alt: #f0f4f8;
-    --active-bg: #e6f1f8;
-    --disabled-bg: #f6f8fb;
-
-    /* Border Variations */
-    --border-hover: #b8c5d0;
-
-    /* Text Hierarchy */
-    --text-primary: #334155;
-    --text-secondary: #5b6b7a;
-    --text-tertiary: #4a5568;
-    /* De-emphasised captions: scope lines, column headings, unit suffixes. */
-    --text-muted: #94a3b8;
-
-    /* Dark Mode Support (for future) */
-    --surface-dark: #1f2937;
-    --border-dark: #374151;
-
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.05);
-    --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.08);
 
     /* Spacing Scale (4px base unit) */
     --spacing-2xs: 0.125rem; /*  2px */

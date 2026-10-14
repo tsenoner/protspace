@@ -83,8 +83,8 @@ function spotlightHelp(on: boolean) {
   if (on) {
     // Lift the host above the driver.js overlay (z-index ~100000)
     host.style.zIndex = '100001';
-    // Glow on the rounded button so there are no corner artifacts
-    button.style.boxShadow = '0 0 0 3px #00a3e0, 0 0 12px rgba(0, 163, 224, 0.5)';
+    // Glow on the rounded button so there are no corner artifacts; the focus token follows the theme
+    button.style.boxShadow = '0 0 0 3px var(--ps-focus)';
     button.style.transition = 'box-shadow 0.3s ease';
   } else {
     host.style.removeProperty('z-index');
@@ -306,8 +306,10 @@ const steps: DriveStep[] = [
 driverObj.setConfig({
   showProgress: true,
   disableActiveInteraction: true,
-  overlayColor: '#334155',
-  overlayOpacity: 0.5,
+  // driver.js sets the overlay path's `style.fill` to this string, so a token works; the scrim
+  // carries its own alpha (light 0.45, dark 0.65), hence opacity 1.
+  overlayColor: 'var(--ps-scrim)',
+  overlayOpacity: 1,
   stagePadding: 8,
   stageRadius: 8,
 

@@ -89,6 +89,10 @@ Colours, font sizes, spacing, radii, shadows and durations are `--ps-*` tokens, 
 `packages/core/src/styles/style-lint.test.ts` fails a stylesheet that hard-codes a colour or a
 font size, declares a `--ps-*` token, or reads a variable `theme.ts` does not define. Modules
 written before the tokens are listed in its `LEGACY` set, which only shrinks.
+A `LEGACY` module may still read a non-colour alias from `tokens.ts` (spacing, type, z-index), but
+no colour: `tokens.ts` declares none, and the lint fails a legacy module that hard-codes one or
+reads an alias nothing declares. The web app's `workbench.css` and `tour/product-tour.css` are
+held to the colour rule too.
 
 The scatter plot reads three tokens for what it draws: `--ps-plot-bg` (its background),
 `--ps-plot-other` (Other points) and `--ps-plot-na` (N/A points whose colour is the default

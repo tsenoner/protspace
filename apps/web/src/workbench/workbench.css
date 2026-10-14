@@ -20,6 +20,12 @@
   line-height: var(--ps-leading-tight);
 }
 
+/* The page behind the workbench (overscroll, landscape scrolling). The explore page sets
+   data-theme on <html> only while it is mounted; index.css's white body would show otherwise. */
+:root[data-theme] body {
+  background: var(--ps-surface);
+}
+
 /* Desktop: the window is the workbench, and the page never scrolls. */
 .workbench[data-layout='desktop'] {
   height: 100dvh;
@@ -48,6 +54,8 @@
   display: block;
   width: auto;
   height: 22px;
+  /* Dark: invert the dark ink, then turn the hues back (the mockup's treatment). */
+  filter: var(--ps-logo-filter);
 }
 
 .wb-separator {
@@ -1248,8 +1256,10 @@
 
 /* ── Notifications (Task 4.8, decision 15) ───────────────────────────────── */
 
-/* Sonner's light palette, from the tokens. */
-.wb-body [data-sonner-toaster][data-sonner-theme='light'] {
+/* Sonner's palette, from the tokens. WorkbenchToaster keeps Sonner on theme="light"; the tokens
+   carry the page's theme, so this rule matches any Sonner theme, and outranks Sonner's own theme
+   rule (0,3,0 against 0,2,0) whatever order the sheets load in. */
+.wb-body [data-sonner-toaster][data-sonner-theme] {
   --normal-bg: var(--ps-surface-raised);
   --normal-bg-hover: var(--ps-surface-hover);
   --normal-border: var(--ps-border);
@@ -1319,6 +1329,13 @@
   border-color: var(--ps-border);
   background: var(--ps-surface-raised);
   color: var(--ps-text-muted);
+}
+
+/* Sonner's own hover (its light --gray2 and --gray5) sits at 0,5,0; this one at 0,6,0. */
+.wb-body [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  border-color: var(--ps-border-strong);
+  background: var(--ps-surface-hover);
+  color: var(--ps-text);
 }
 
 /* ── The recovery banner (Task 4.8) ──────────────────────────────────────── */

@@ -4,6 +4,9 @@ import { THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
 import {
   appBar,
   appBarTextFits,
+  applyFirstCategoryFilter,
+  clearStatusChip,
+  closeFilterPanel,
   exportAction,
   openExplore,
   waitForExploreDataLoad,
@@ -327,5 +330,83 @@ test.describe('exports stay light in Dark', () => {
     expect(backdrop).not.toContain('rgb(15, 23, 42)');
     // The rest of the editor is dark: only the paper is fixed.
     expect(await htmlTheme(page)).toBe('dark');
+  });
+});
+
+test.describe('dark surfaces', () => {
+  // Dark role values from theme.ts, as computed colours (block-scoped: other describes in this
+  // file may name their own).
+  const DARK_RAISED = 'rgb(22, 32, 54)'; // --ps-surface-raised #162036
+  const DARK_HOVER = 'rgb(30, 41, 59)'; // --ps-surface-hover #1e293b
+  const DARK_TEXT = 'rgb(241, 245, 249)'; // --ps-text #f1f5f9
+  const DARK_SCRIM = 'rgba(2, 6, 23, 0.65)'; // --ps-scrim
+
+  test('the wordmark is inverted in Dark and plain in Light', async ({ page }) => {
+    await openExplore(page);
+    const wordmark = page.locator("[data-workbench='home'] img");
+    await expect(wordmark).toHaveCSS('filter', 'none');
+
+    await chooseTheme(page, 'Dark');
+    await expect(wordmark).toHaveCSS('filter', 'invert(1) hue-rotate(180deg)');
+
+    await chooseTheme(page, 'Light');
+    await expect(wordmark).toHaveCSS('filter', 'none');
+  });
+
+  test('a toast is dark in Dark, and so is its hovered close button', async ({ page }) => {
+    await seedTheme(page, 'dark');
+    await openExplore(page);
+    await applyFirstCategoryFilter(page);
+    await closeFilterPanel(page);
+    await clearStatusChip(page, 'filter');
+
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: 'Filter removed' });
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveCSS('background-color', DARK_RAISED);
+    await expect(toast).toHaveCSS('color', DARK_TEXT);
+
+    // Sonner's own hover paints its light grey (--gray2) at a higher specificity than a plain rule.
+    const close = toast.getByRole('button', { name: 'Dismiss notification' });
+    await close.hover();
+    await expect(close).toHaveCSS('background-color', DARK_HOVER);
+  });
+
+  test("the tour's popover, its arrow and its overlay are dark in Dark", async ({ page }) => {
+    await seedTheme(page, 'dark');
+    await openExplore(page);
+    await appBar(page).getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Take the tour' }).click();
+
+    const popover = page.locator('.driver-popover');
+    const title = popover.locator('.driver-popover-title');
+    await expect(title).toHaveText('Welcome to ProtSpace');
+    await expect(popover).toHaveCSS('background-color', DARK_RAISED);
+    await expect(title).toHaveCSS('color', DARK_TEXT);
+    await expect(page.locator('.driver-overlay path')).toHaveCSS('fill', DARK_SCRIM);
+
+    // The welcome step is centred with no arrow; step 2 points at Import, so its arrow shows. The
+    // arrow is a border triangle: only the side named in its class is painted.
+    await popover.locator('.driver-popover-next-btn').click();
+    await expect(title).toHaveText('Import Your Data');
+    const arrowColour = () =>
+      popover.locator('.driver-popover-arrow').evaluate((arrow) => {
+        const side = /driver-popover-arrow-side-(left|right|top|bottom)\b/.exec(
+          arrow.className,
+        )?.[1];
+        return side ? getComputedStyle(arrow).getPropertyValue(`border-${side}-color`) : 'none';
+      });
+    await expect.poll(arrowColour).toBe(DARK_RAISED);
+  });
+
+  test('the explore body is the page surface, dark in Dark', async ({ page }) => {
+    await openExplore(page);
+    // An unlayered override of the token reaches <body>: it paints --ps-surface, not index.css's
+    // white bg-background (which sits in a cascade layer and would ignore the override).
+    const override = await page.addStyleTag({ content: ':root { --ps-surface: rgb(1, 2, 3); }' });
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(1, 2, 3)');
+    await override.evaluate((tag) => tag.parentNode?.removeChild(tag));
+
+    await chooseTheme(page, 'Dark');
+    await expect(page.locator('body')).toHaveCSS('background-color', DARK_SURFACE);
   });
 });

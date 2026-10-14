@@ -9,9 +9,11 @@ import { css } from 'lit';
  * (style-lint.test.ts checks this).
  *
  * Light values sit on :root. Dark values apply under [data-theme='dark'], and under
- * [data-theme='system'] when the OS prefers dark. Until the theme switch lands nothing sets
- * data-theme, so pages stay light. All of it sits in the `ps-theme` cascade layer, so any
- * unlayered page rule, even `:root { --ps-accent: … }`, overrides a token in both themes.
+ * [data-theme='system'] when the OS prefers dark, so System follows the OS live in CSS alone. The
+ * explore page sets data-theme on <html> while it is mounted (apps/web/src/explore/theme-state.ts;
+ * on a cold load, the boot script in apps/web/index.html before first paint); other pages leave it
+ * unset and stay light. All of it sits in the `ps-theme` cascade layer, so any unlayered page
+ * rule, even `:root { --ps-accent: … }`, overrides a token in both themes.
  */
 
 const lightRoles = css`
@@ -40,6 +42,7 @@ const lightRoles = css`
   --ps-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
   --ps-shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.12);
   --ps-shadow-lg: 0 12px 32px -12px rgb(15 23 42 / 0.24), 0 2px 6px rgb(15 23 42 / 0.06);
+  --ps-logo-filter: none;
   --ps-plot-bg: #ffffff; /* the plot's background, as exports draw it */
   --ps-plot-other: #888888; /* Other points: NEUTRAL_VALUE_COLOR, what exports draw */
   --ps-plot-na: #dddddd; /* N/A points in the default N/A colour: NA_DEFAULT_COLOR */
@@ -75,6 +78,7 @@ const darkRoles = css`
   --ps-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
   --ps-shadow-md: 0 6px 16px -4px rgb(0 0 0 / 0.6);
   --ps-shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.75), 0 0 0 1px #24324a;
+  --ps-logo-filter: invert(1) hue-rotate(180deg); /* the wordmark's dark ink turned light, hues kept */
   --ps-plot-bg: #0b1120; /* a step darker than the panels */
   --ps-plot-other: #64748b; /* slate-500, 4:1 on the plot */
   --ps-plot-na: #2a3547; /* de-emphasised, as #dddddd is on white */

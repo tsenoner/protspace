@@ -119,12 +119,6 @@ function colourViolations(cssText: string): string[] {
 }
 
 /**
- * LEGACY modules that still hold a colour. A task that takes a module's last colour out deletes
- * its line: "still holds a colour" fails for a clean entry, so this list only shrinks.
- */
-const STILL_COLOURED = new Set<string>(['./tokens.ts']);
-
-/**
  * Declarations that hard-code a colour or a font size, declare a token outside theme.ts, or read a
  * variable theme.ts does not define (a legacy one resolves to nothing once tokens.ts goes).
  */
@@ -146,6 +140,23 @@ function cssViolations(cssText: string): string[] {
     )
       found.push(declaration);
     else if (property === 'font' && value !== 'inherit') found.push(declaration);
+  }
+  return found;
+}
+
+/** The web app's explore stylesheets (index.css belongs to the landing page): colours from tokens. */
+const WEB_CSS = ['workbench/workbench.css', 'tour/product-tour.css'];
+
+/** A web stylesheet's raw colours, and its reads of --ps-* tokens theme.ts does not define. */
+function webCssViolations(cssText: string): string[] {
+  const css = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+  const found: string[] = [];
+  for (const [, property, raw] of css.matchAll(/([\w-]+)\s*:\s*([^;{}]+)/g)) {
+    const value = raw.trim();
+    const unknownToken = [...value.matchAll(/var\(\s*(--ps-[\w-]+)/g)].some(
+      ([, name]) => !DEFINED.has(name),
+    );
+    if (COLOUR.test(value) || unknownToken) found.push(`${property}: ${value}`);
   }
   return found;
 }
@@ -216,19 +227,20 @@ describe('style lint', () => {
     expect(unused).toEqual([]);
   });
 
-  it.each(paths.filter((path) => LEGACY.has(path) && !STILL_COLOURED.has(path)))(
-    '%s hard-codes no colour',
-    (path) => {
-      expect(colourViolations(ownCssOf(path))).toEqual([]);
-    },
-  );
-
-  it.each([...STILL_COLOURED])('%s still holds a colour', (path) => {
-    expect(MODULES[path], `${path} no longer exists; delete it from STILL_COLOURED`).toBeDefined();
+  it('flags a raw colour and an undefined token in a web stylesheet', () => {
     expect(
-      colourViolations(ownCssOf(path)).length,
-      `${path} is colour-free; delete it from STILL_COLOURED`,
-    ).toBeGreaterThan(0);
+      webCssViolations(
+        '.a:hover { color: #334155; border: 1px solid var(--ps-nope); background: var(--ps-surface); font-size: 12px; } /* #fff */',
+      ),
+    ).toEqual(['color: #334155', 'border: 1px solid var(--ps-nope)']);
+  });
+
+  it.each(WEB_CSS)('%s reads colours from tokens', (file) => {
+    expect(webCssViolations(readFileSync(join(WEB_SRC, file), 'utf8'))).toEqual([]);
+  });
+
+  it.each([...LEGACY])('%s hard-codes no colour', (path) => {
+    expect(colourViolations(ownCssOf(path))).toEqual([]);
   });
 
   it.each([...LEGACY])('%s still needs its legacy exemption', (path) => {
