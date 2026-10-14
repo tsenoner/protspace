@@ -33,7 +33,7 @@ const lightRoles = css`
   --ps-accent-text: #0369a1; /* sky-700, 5.9:1 on white */
   --ps-accent-tint: #e0f2fe; /* sky-100 */
   --ps-focus: #0284c7; /* sky-600, 4.1:1 on white; non-text needs 3:1 */
-  --ps-danger: #dc2626; /* red-600 */
+  --ps-danger: #b91c1c; /* red-700, 5.9:1 on the hover surface */
   --ps-warning: #b45309; /* amber-700 */
   --ps-success: #15803d; /* green-700 */
   --ps-tooltip-bg: #0f172a;
