@@ -585,6 +585,18 @@
   display: none;
 }
 
+/* Touch icon buttons are 8 px wider each, which the separator alone does not pay for: the actions
+   close their gaps (the 40 px targets keep the glyphs apart) and the bar narrows its own. */
+@media (pointer: coarse) {
+  .workbench[data-layout='tablet'] header[data-workbench='app-bar'] {
+    column-gap: var(--ps-space-2);
+  }
+
+  .workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] {
+    gap: 0;
+  }
+}
+
 /* The plot's tool strip: over the plot's top-left corner, never part of the plot's box. */
 #myPlotTools {
   position: absolute;
@@ -912,7 +924,7 @@
 
 /* As on phones (Task 5.4): the actions leave the bar but stay rendered, because a popover inside
    a display: none ancestor never shows. The dataset name opens Import, the More sheet Export, and
-   the Help menu's ps-menu stays for the same reason. */
+   the Help and Theme menus' ps-menus stay for the same reason. */
 .workbench[data-layout='landscape'] [data-workbench='app-bar-actions'] {
   position: absolute;
   width: 0;
@@ -1577,7 +1589,7 @@
   height: 0;
 }
 
-/* The Help menu's ps-menu stays: a popover host never gets a display: none ancestor. */
+/* The Help and Theme menus' ps-menus stay: a popover host never gets a display: none ancestor. */
 .workbench[data-layout='phone']
   [data-workbench='app-bar-actions']
   > :not(.wb-data-actions, ps-menu),
