@@ -209,7 +209,6 @@ test.describe('the plot on a 360 px phone', () => {
   test.use({ viewport: { width: 360, height: 740 } });
 
   test('P6: the selection bar counts one protein and fits the plot', async ({ page }) => {
-    test.fixme(true, 'task 5.6');
     await openExplorePhone(page);
     await tap(page, await proteinNear(page, 0.5, 0.4));
 

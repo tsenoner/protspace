@@ -57,6 +57,7 @@ describe('layout store', () => {
       structurePlacement: 'floating',
       floatingRect: { x: 40, y: 24, width: 360, height: 300 },
       panel: 'filter',
+      panelFolded: true,
     };
     updateLayout(layout);
     resetLayoutForTests();
@@ -72,6 +73,7 @@ describe('layout store', () => {
         structurePlacement: 'sideways',
         floatingRect: 'bottom-right',
         panel: 'structure',
+        panelFolded: 'yes',
       }),
     ).toEqual(DEFAULT_LAYOUT);
     // A bad field leaves the good ones alone.
@@ -191,6 +193,61 @@ describe('layout store', () => {
     expect(getLayout()).toMatchObject({ sidebarOpen: true, panel: 'filter' });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('panelFolded parses, defaults to false and survives a round trip', () => {
+    expect(getLayout().panelFolded).toBe(false);
+    expect(parseLayout({ panelFolded: true }).panelFolded).toBe(true);
+    expect(parseLayout({ panelFolded: 'yes' }).panelFolded).toBe(false);
+    expect(parseLayout({ panelFolded: 1 }).panelFolded).toBe(false);
+
+    updateLayout({ panelFolded: true });
+    resetLayoutForTests();
+    expect(getLayout().panelFolded).toBe(true);
+  });
+
+  it('an old stored layout without panelFolded loads unfolded', () => {
+    store.set(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({
+        sidebarOpen: false,
+        sidebarWidth: 320,
+        legendFraction: 0.4,
+        structurePlacement: 'docked',
+        floatingRect: null,
+        panel: 'filter',
+      }),
+    );
+    expect(getLayout()).toEqual({
+      ...DEFAULT_LAYOUT,
+      sidebarOpen: false,
+      sidebarWidth: 320,
+      legendFraction: 0.4,
+      panel: 'filter',
+      panelFolded: false,
+    });
+  });
+
+  it('openPanel unfolds', () => {
+    updateLayout({ panelFolded: true, panel: 'legend' });
+    storage.setItem.mockClear();
+    const listener = vi.fn();
+    subscribeLayout(listener);
+
+    openPanel('filter');
+
+    expect(getLayout()).toMatchObject({ sidebarOpen: true, panel: 'filter', panelFolded: false });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('panelFolded and sidebarOpen are independent', () => {
+    updateLayout({ panelFolded: true });
+    expect(getLayout()).toMatchObject({ panelFolded: true, sidebarOpen: true });
+    updateLayout({ sidebarOpen: false });
+    expect(getLayout()).toMatchObject({ panelFolded: true, sidebarOpen: false });
+    updateLayout({ panelFolded: false });
+    expect(getLayout()).toMatchObject({ panelFolded: false, sidebarOpen: false });
   });
 });
 

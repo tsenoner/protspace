@@ -407,11 +407,15 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   });
   lifecycle.addCleanup(() => viewController.dispose());
 
-  // The Filter panel counts only while it is on screen: open on the sidebar's Filter panel, or,
-  // off desktop where the panel under the plot always shows, whenever Filter is the chosen panel.
+  // The Filter panel counts only while it is on screen: open on the desktop sidebar's Filter
+  // panel; below 951 px whenever Filter is the chosen panel, except in a folded phone panel,
+  // which shows only its header.
   const isFilterPanelShown = () => {
-    const { panel, sidebarOpen } = getLayout();
-    return panel === 'filter' && (sidebarOpen || getLayoutMode() !== 'desktop');
+    const { panel, sidebarOpen, panelFolded } = getLayout();
+    if (panel !== 'filter') return false;
+    const mode = getLayoutMode();
+    if (mode === 'desktop') return sidebarOpen;
+    return mode !== 'phone' || !panelFolded;
   };
   // "Filter removed" with Undo (decisions 13 and 15): the toast is a shortcut to the history step
   // it names, and goes as soon as a newer step would make its Undo take back something else.

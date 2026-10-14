@@ -1428,3 +1428,114 @@
   padding-left: 44px;
   font-weight: 400;
 }
+
+/* ── Phone body (≤ 640 px, Task 5.6, decision 17) ────────────────────────────
+   One screen that never scrolls: the plot fills what the bars and the bottom panel leave. The
+   panel holds the Legend and Filter tabs, the same height for both (a tab switch never resizes
+   the plot), and folds to its 44 px header (one plot resize, not animated). --wb-panel-height is
+   its height and --wb-structure-row the structure's row under it, which the toasts stand on. */
+.workbench[data-layout='phone'] {
+  --wb-panel-height: clamp(144px, 32svh, 288px);
+  --wb-structure-row: 0px;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* The header and the panel's top border. */
+.workbench[data-layout='phone'][data-panel-folded] {
+  --wb-panel-height: 45px;
+}
+
+/* Until the structure sheet (Task 5.8): a 240 px row under the panel while a protein shows. */
+.workbench[data-layout='phone']:not([data-structure='none']) {
+  --wb-structure-row: 240px;
+}
+
+.workbench[data-layout='phone'] .wb-body {
+  display: grid;
+  grid-template: 'plot' minmax(0, 1fr) 'side' auto 'struct' auto / minmax(0, 1fr);
+}
+
+.workbench[data-layout='phone'] [data-workbench='plot'] {
+  grid-area: plot;
+  position: relative;
+  inset: auto;
+}
+
+.workbench[data-layout='phone'] #wb-sidebar {
+  grid-area: side;
+  position: static;
+  width: auto;
+  height: var(--wb-panel-height);
+  box-sizing: border-box;
+  border-left: 0;
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='phone'] :is(#myLegend, #wb-filter-panel) {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+/* Folded: the header only. The list and the builder leave the tab order; the rest is clipped. */
+.workbench[data-layout='phone'][data-panel-folded] #wb-sidebar {
+  overflow: hidden;
+}
+
+.workbench[data-layout='phone'][data-panel-folded] #myLegend::part(items),
+.workbench[data-layout='phone'][data-panel-folded] .wb-filter-body {
+  display: none;
+}
+
+/* The tabs lead the header; the annotation's name follows them, small and muted. */
+.workbench[data-layout='phone'] #myLegend::part(title) {
+  color: var(--ps-text-muted);
+  font-size: var(--ps-text-xs);
+  font-weight: 400;
+}
+
+.wb-panel-fold {
+  display: none;
+}
+
+.workbench[data-layout='phone'] .wb-panel-fold {
+  display: inline-flex;
+}
+
+.workbench[data-layout='phone'] .wb-panel-header > .wb-panel-fold {
+  margin-left: auto;
+}
+
+.workbench[data-layout='phone'] .wb-structure {
+  grid-area: struct;
+  position: static;
+  height: var(--wb-structure-row);
+  border-left: 0;
+  border-top: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='phone'][data-structure='none'] .wb-structure {
+  display: none;
+}
+
+/* Toasts stand 12 px above the panel (and the structure's row), and above the selection bar's
+   38 px and gap while it shows. Sonner's toaster is position: fixed to the window. */
+.workbench[data-layout='phone'] .wb-body [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--wb-panel-height) + var(--wb-structure-row) + 12px);
+}
+
+.workbench[data-layout='phone']
+  .wb-body:has(#mySelectionBar:not([hidden]))
+  [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--wb-panel-height) + var(--wb-structure-row) + 62px);
+}
+
+/* Under a coarse pointer the selection bar's buttons are 40 px, so the bar is about 50 px tall:
+   the status corner rises above that, not the mouse bar's 38 px. */
+@media (pointer: coarse) {
+  [data-workbench='plot']:has(> protspace-selection-bar:not([hidden])) > protspace-plot-status {
+    bottom: calc(var(--ps-space-3) + 50px + var(--ps-space-2));
+  }
+}

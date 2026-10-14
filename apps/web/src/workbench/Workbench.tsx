@@ -86,6 +86,8 @@ export function Workbench() {
       data-structure={structure}
       data-sidebar={phase}
       data-panel={layout.panel}
+      // The phone's bottom panel shows only its header (only phones fold it).
+      data-panel-folded={mode === 'phone' && layout.panelFolded ? '' : undefined}
       data-sidebar-resizing={sidebarWidthPreview !== null ? '' : undefined}
       ref={rootRef}
       data-dragging={dragging ? '' : undefined}
@@ -127,7 +129,13 @@ export function Workbench() {
             railToggleRef.current?.focus();
           }}
         />
-        <Sidebar ref={asideRef} inert={sidebarHidden} panel={layout.panel} tabbed={!desktop} />
+        <Sidebar
+          ref={asideRef}
+          inert={sidebarHidden}
+          panel={layout.panel}
+          panelFolded={layout.panelFolded}
+          tabbed={!desktop}
+        />
         <StructurePanel
           ref={structureRef}
           inert={sidebarHidden && structure !== 'floating'}

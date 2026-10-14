@@ -67,6 +67,11 @@ export interface LayoutState {
   floatingRect: FloatingRect | null;
   /** The sidebar's panel; the filter itself is never stored. */
   panel: SidebarPanel;
+  /**
+   * The phone's bottom panel shows only its header (design decision 17). Phones only, and
+   * independent of sidebarOpen: collapsing the desktop sidebar never folds the phone panel.
+   */
+  panelFolded: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -76,6 +81,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   structurePlacement: 'docked',
   floatingRect: null,
   panel: 'legend',
+  panelFolded: false,
 };
 
 /** The icon rail at the sidebar's right edge, shown at desktop widths. */

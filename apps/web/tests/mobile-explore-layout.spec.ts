@@ -1,19 +1,30 @@
 import { expect, test, type Page } from '@playwright/test';
-import { appBar, filterPanel, viewBar } from './helpers/explore';
 import {
+  appBar,
+  dismissTourIfPresent,
+  filterPanel,
+  getSelectedProteinIds,
+  selectionBarAction,
+  statusChip,
+  viewBar,
+  waitForExploreDataLoad,
+} from './helpers/explore';
+import {
+  applyFilterKeepingTen,
   bottomPanel,
   box,
   expectNoHorizontalOverflow,
   expectNoPageScroll,
   expectWithinViewport,
   openExplorePhone,
+  panelFold,
   panelTab,
   proteinNear,
   sheetToggle,
   structureSheet,
   tap,
 } from './helpers/mobile';
-import { watchPlotResizes } from './helpers/workbench';
+import { readLayout, watchPlotResizes } from './helpers/workbench';
 
 /**
  * The explore page's layout on phones, tablets and a phone on its side (ported from
@@ -35,7 +46,6 @@ test.describe('explore layout on a phone', () => {
   test('L1: the plot comes first and the legend panel sits below it, on one screen', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.6');
     await openExplorePhone(page);
     const viewport = page.viewportSize()!;
 
@@ -184,5 +194,95 @@ test.describe('explore layout on a phone on its side', () => {
     expect(plot.y + plot.height).toBeLessThanOrEqual(361);
     expect(Math.abs(row.height - 360)).toBeLessThanOrEqual(1);
     expect(legend.x).toBeGreaterThanOrEqual(plot.x + plot.width - 1);
+  });
+});
+
+test.describe('the bottom panel on a phone', () => {
+  test('the fold survives a reload', async ({ page }) => {
+    await openExplorePhone(page);
+    await panelFold(page).tap();
+    await expect(panelFold(page)).toHaveAccessibleName('Unfold panel');
+    await expect(panelFold(page)).toBeFocused();
+    await expect.poll(async () => (await readLayout(page))?.panelFolded).toBe(true);
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+    await expect(panelFold(page)).toHaveAccessibleName('Unfold panel');
+    await expect(panelFold(page)).toHaveAttribute('aria-expanded', 'false');
+    expect(Math.abs((await box(bottomPanel(page))).height - 45)).toBeLessThanOrEqual(1);
+    await expect(panelTab(page, 'Legend')).toBeVisible();
+  });
+
+  test('the Filter tab keeps the panel height (no plot resize)', async ({ page }) => {
+    await openExplorePhone(page);
+    const before = await box(bottomPanel(page));
+    const resizes = await watchPlotResizes(page);
+
+    await panelTab(page, 'Filter').tap();
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(filterPanel(page)).toBeVisible();
+    await settle(page);
+
+    const after = await box(bottomPanel(page));
+    expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+    expect(await resizes()).toBe(0);
+  });
+
+  test('at 360×640 the plot keeps at least 30% of the screen', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await openExplorePhone(page);
+    for (const tab of ['Legend', 'Filter'] as const) {
+      await panelTab(page, tab).tap();
+      await expect(workbench(page)).toHaveAttribute('data-panel', tab.toLowerCase());
+      const plot = await box(page.locator('#myPlot'));
+      expect(plot.height, tab).toBeGreaterThanOrEqual(0.3 * 640);
+      const panel = await box(bottomPanel(page));
+      expect(plot.y + plot.height, tab).toBeLessThanOrEqual(panel.y + 1);
+    }
+    await expectNoPageScroll(page);
+  });
+
+  test('a toast sits above the bottom panel', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openExplorePhone(page);
+    const protein = await proteinNear(page, 0.5, 0.5);
+    await tap(page, protein);
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual([protein.id]);
+
+    await selectionBarAction(page, 'Copy IDs').tap();
+    const toast = page.locator('[data-sonner-toast]').filter({ hasText: /^Copied/ });
+    await expect(toast).toBeVisible();
+    const panel = await box(bottomPanel(page));
+    // Sonner slides the toast in; poll until it has settled above the panel.
+    await expect
+      .poll(async () => {
+        const shown = await box(toast);
+        return panel.y - (shown.y + shown.height);
+      })
+      // 12 px over the panel, plus the selection bar's 50 px while one protein is selected.
+      .toBeGreaterThanOrEqual(12 - 1);
+    const shown = await box(toast);
+    // Not floating far above it either (a leftover structure row would lift it by 240 px); the
+    // 16 px slack covers Sonner's own spacing inside the toaster.
+    expect(panel.y - (shown.y + shown.height)).toBeLessThanOrEqual(12 + 50 + 16);
+    expect(shown.y).toBeGreaterThanOrEqual(0);
+  });
+
+  test("a status chip's filter opens the Filter tab unfolded", async ({ page }) => {
+    await openExplorePhone(page);
+    await applyFilterKeepingTen(page);
+    await panelFold(page).tap();
+    await expect(workbench(page)).toHaveAttribute('data-panel-folded', '');
+
+    await statusChip(page, 'filter').locator('.status-chip-open').tap();
+
+    await expect(workbench(page)).not.toHaveAttribute('data-panel-folded');
+    await expect(workbench(page)).toHaveAttribute('data-panel', 'filter');
+    await expect(filterPanel(page)).toBeVisible();
+    await expect(page.locator('#wb-filter-title')).toBeFocused();
+    expect((await readLayout(page))?.panelFolded).toBe(false);
   });
 });

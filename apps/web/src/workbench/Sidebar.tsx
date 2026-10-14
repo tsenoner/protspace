@@ -3,6 +3,7 @@ import { SIDEBAR_WIDTH, type SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
 import { clampSidebarWidth, sidebarStep } from './layout-geometry';
 import { FilterPanel } from './FilterPanel';
+import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
 
 interface SidebarProps {
@@ -11,6 +12,8 @@ interface SidebarProps {
   inert?: boolean;
   /** The panel shown (the legend or Filter): both copies of the tabs mark it. */
   panel: SidebarPanel;
+  /** The phone's bottom panel shows only its header. */
+  panelFolded: boolean;
   /** Below 951 px the panel tabs switch the legend and Filter, so both are tab panels. */
   tabbed: boolean;
 }
@@ -19,10 +22,16 @@ interface SidebarProps {
  * The flush right sidebar (design decisions 2 and 14): the legend or the Filter panel, above the
  * structure section that StructurePanel renders as the aside's sibling, so placing the structure
  * never moves either element. Memoised: it re-renders only when the sidebar becomes inert or
- * interactive again or the panel changes, and the legend and the query builder are never re-created or moved. The ref
- * is the slide's target (use-sidebar-transition).
+ * interactive again, the panel changes or the phone panel folds, and the legend and the query
+ * builder are never re-created or moved. The ref is the slide's target (use-sidebar-transition).
  */
-export const Sidebar = memo(function Sidebar({ ref, inert, panel, tabbed }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({
+  ref,
+  inert,
+  panel,
+  panelFolded,
+  tabbed,
+}: SidebarProps) {
   return (
     <aside ref={ref} inert={inert} id="wb-sidebar" data-workbench="sidebar" aria-label="Sidebar">
       <protspace-legend
@@ -35,8 +44,9 @@ export const Sidebar = memo(function Sidebar({ ref, inert, panel, tabbed }: Side
         scatterplot-selector="#myPlot"
       >
         <PanelTabs panel={panel} slot="header-start" />
+        <PanelFold slot="header-end" folded={panelFolded} />
       </protspace-legend>
-      <FilterPanel panel={panel} tabbed={tabbed} />
+      <FilterPanel panel={panel} panelFolded={panelFolded} tabbed={tabbed} />
     </aside>
   );
 });

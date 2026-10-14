@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SidebarPanel } from '../explore/layout-defaults';
 import { updateLayout } from '../explore/layout-state';
+import { PanelFold } from './PanelFold';
 import { PanelTabs } from './PanelTabs';
 
 /**
@@ -10,7 +11,15 @@ import { PanelTabs } from './PanelTabs';
  * header starts with the Legend/Filter tabs, which switch panels; on desktop Close returns to the
  * legend and hands focus to the rail's Filter item (CSS hides Close below 951 px).
  */
-export function FilterPanel({ panel, tabbed }: { panel: SidebarPanel; tabbed: boolean }) {
+export function FilterPanel({
+  panel,
+  panelFolded,
+  tabbed,
+}: {
+  panel: SidebarPanel;
+  panelFolded: boolean;
+  tabbed: boolean;
+}) {
   const close = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -42,6 +51,7 @@ export function FilterPanel({ panel, tabbed }: { panel: SidebarPanel; tabbed: bo
           icon="x"
           label="Close filter"
         ></ps-icon-button>
+        <PanelFold folded={panelFolded} />
       </header>
       <div className="wb-filter-body">
         <protspace-query-builder id="myQueryBuilder" embedded></protspace-query-builder>

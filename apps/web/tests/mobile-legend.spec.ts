@@ -126,7 +126,6 @@ test.describe('the legend on a phone', () => {
   });
 
   test('G6: the fold chevron folds the rows away and gives the plot the room', async ({ page }) => {
-    test.fixme(true, 'task 5.6');
     await openExplorePhone(page);
     const plotHeight = async () => (await box(page.locator('#myPlot'))).height;
     const before = await plotHeight();

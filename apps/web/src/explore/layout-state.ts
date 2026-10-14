@@ -66,6 +66,8 @@ export function parseLayout(raw: unknown): LayoutState {
       : DEFAULT_LAYOUT.structurePlacement,
     floatingRect: parseRect(value.floatingRect),
     panel: isPanel(value.panel) ? value.panel : DEFAULT_LAYOUT.panel,
+    panelFolded:
+      typeof value.panelFolded === 'boolean' ? value.panelFolded : DEFAULT_LAYOUT.panelFolded,
   };
 }
 
@@ -81,7 +83,8 @@ function sameLayout(a: LayoutState, b: LayoutState): boolean {
     a.legendFraction === b.legendFraction &&
     a.structurePlacement === b.structurePlacement &&
     sameRect(a.floatingRect, b.floatingRect) &&
-    a.panel === b.panel
+    a.panel === b.panel &&
+    a.panelFolded === b.panelFolded
   );
 }
 
@@ -111,9 +114,12 @@ export function updateLayout(patch: Partial<LayoutState>): void {
   for (const listener of [...listeners]) listener();
 }
 
-/** Opens the sidebar on `panel`: the rail's items, the view bar's Filter and the status chips. */
+/**
+ * Opens the sidebar on `panel`: the rail's items, the view bar's Filter, the More sheet's Filter
+ * and the status chips. On a phone it also unfolds the bottom panel, so what opened is on screen.
+ */
 export function openPanel(panel: SidebarPanel): void {
-  updateLayout({ sidebarOpen: true, panel });
+  updateLayout({ sidebarOpen: true, panel, panelFolded: false });
 }
 
 const focusTitle = (): boolean => {

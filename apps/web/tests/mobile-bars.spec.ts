@@ -217,7 +217,6 @@ test.describe('the bars on a phone', () => {
   });
 
   test('C6: the Filter tab shows the builder with its actions on screen', async ({ page }) => {
-    test.fixme(true, 'task 5.6');
     await openExplorePhone(page);
     await panelTab(page, 'Filter').tap();
 
