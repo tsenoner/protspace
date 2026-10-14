@@ -580,6 +580,11 @@
   max-width: 160px;
 }
 
+/* The Theme button's room on a tablet: the actions drop their separator, so search keeps it. */
+.workbench[data-layout='tablet'] [data-workbench='app-bar-actions'] > .wb-separator {
+  display: none;
+}
+
 /* The plot's tool strip: over the plot's top-left corner, never part of the plot's box. */
 #myPlotTools {
   position: absolute;

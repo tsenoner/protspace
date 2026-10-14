@@ -13,6 +13,13 @@ export const THEME_STORAGE_KEY = 'protspace:theme';
 /** In the order the switch offers them. */
 export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 
+/** What the switch calls each choice: the app bar's menu items and the More sheet's segments. */
+export const THEME_LABELS: Record<ThemeChoice, string> = {
+  system: 'System',
+  light: 'Light',
+  dark: 'Dark',
+};
+
 /**
  * The choice with nothing (or nothing valid) stored. Light while the phase's surfaces turn dark;
  * Task 6.13 flips it to 'system', together with the boot script's literal in index.html.

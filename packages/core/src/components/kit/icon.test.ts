@@ -20,6 +20,12 @@ describe('icon', () => {
     expect(iconMarkup('x')).toContain('width="16"');
   });
 
+  it.each(['sun', 'moon', 'sun-moon'] as const)("has the theme switch's icon %s", (name) => {
+    const markup = iconMarkup(name, 16);
+    expect(markup).toMatch(/^<svg [^>]*aria-hidden="true"/);
+    expect(markup).toMatch(/<(path|circle) /);
+  });
+
   it('parses each icon template once, however many places render it', () => {
     const createElement = vi.spyOn(document, 'createElement');
     const templates = () => createElement.mock.calls.filter(([tag]) => tag === 'template').length;

@@ -34,10 +34,12 @@ import {
   proteinNear,
   searchToggle,
   tap,
+  themeSegment,
   touchTargetsBelow,
 } from './helpers/mobile';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 import { stubStructureRequests } from './helpers/workbench';
+import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
 
 /**
  * The app bar, the view bar and the More sheet on phones, a phone on its side and a portrait
@@ -110,12 +112,13 @@ for (const { label, viewport } of PHONES) {
       await expect(importTrigger(page)).toBeHidden();
       await expect(exportTrigger(page)).toBeHidden();
       await expect(appBar(page).getByRole('button', { name: 'Help', exact: true })).toBeHidden();
-      // The Help menu's popover host stays rendered: no display: none above a popover.
+      await expect(themeButton(page)).toBeHidden();
+      // The Theme and Help menus' popover hosts stay rendered: no display: none above a popover.
       expect(
         await appBar(page)
           .locator('[data-workbench="app-bar-actions"] > ps-menu')
-          .evaluate((menu) => getComputedStyle(menu).display),
-      ).toBe('contents');
+          .evaluateAll((menus) => menus.map((menu) => getComputedStyle(menu).display)),
+      ).toEqual(['contents', 'contents']);
       // View bar: fixed at its last stage on a phone.
       await expect(viewBar(page)).toHaveAttribute('data-stage', '3');
       // View bar: Projection, its details, Color by and More.
@@ -155,8 +158,8 @@ test.describe('the bars on a phone', () => {
       await expect(rows.getByRole('button', { name })).toBeVisible();
     }
     await expect(rows.getByRole('link', { name: /^Feedback/ })).toBeVisible();
-    // Theme arrives with the theme switch (Task 6.1); GitHub is not offered on a phone.
-    await expect(rows.getByText(/Theme/)).toHaveCount(0);
+    await expect(rows.getByRole('radiogroup', { name: 'Theme' })).toBeVisible();
+    // GitHub is not offered on a phone.
     await expect(rows.getByRole('link', { name: /GitHub/ })).toHaveCount(0);
 
     // Contours applies in place: the sheet stays open.
@@ -340,6 +343,18 @@ test.describe('the bars on a phone on its side', () => {
     await expect(importPanel).toBeVisible();
     await expectWithinViewport(page, importPanel);
   });
+
+  test("landscape's More sheet has the Theme row", async ({ page }) => {
+    await openExplorePhone(page);
+    const rows = await openMoreSheet(page);
+    const theme = rows.getByRole('radiogroup', { name: 'Theme' });
+    await theme.scrollIntoViewIfNeeded();
+    await expectWithinViewport(page, theme);
+
+    await themeSegment(page, 'Dark').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('dark');
+    await expect(moreSheet(page)).toBeVisible();
+  });
 });
 
 test.describe('the bars on a portrait tablet', () => {
@@ -356,6 +371,40 @@ test.describe('the bars on a portrait tablet', () => {
     await expect(moreButton(page)).toBeHidden();
     await expect(viewBar(page).getByRole('button', { name: /^Filter/ })).toBeVisible();
     await expect(moreSheet(page)).toHaveCount(0);
+  });
+
+  test('the portrait tablet bar shows the Theme button and keeps the dataset name and search unclipped', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    await expect(themeButton(page)).toBeVisible();
+
+    // Decision 1's order: Export, then Theme, then Help.
+    const exported = await box(exportTrigger(page));
+    const theme = await box(themeButton(page));
+    const help = await box(appBar(page).getByRole('button', { name: 'Help', exact: true }));
+    expect(exported.x + exported.width).toBeLessThanOrEqual(theme.x);
+    expect(theme.x + theme.width).toBeLessThanOrEqual(help.x);
+
+    // As mobile-explore-layout.spec.ts measures at 800×1000: the one more button leaves both whole.
+    const fits = await page.evaluate(() => {
+      const widthOf = (text: string, element: Element) => {
+        const context = document.createElement('canvas').getContext('2d')!;
+        context.font = getComputedStyle(element).font;
+        return context.measureText(text).width;
+      };
+      const name = document.querySelector('.wb-dataset-name')!;
+      const input = document
+        .querySelector('#myProteinSearch')!
+        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
+      return {
+        // The demo dataset's name, the longest an example has on this bar.
+        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
+        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
+      };
+    });
+    expect(fits).toEqual({ name: true, placeholder: true });
   });
 });
 
@@ -614,6 +663,37 @@ test.describe('the More sheet', () => {
 
     const rows = await openMoreSheet(page);
     await expect(rows.getByRole('button', { name: /^Filter/ })).toContainText('1 condition');
+  });
+
+  test("the More sheet's Theme row switches the theme and the sheet stays open", async ({
+    page,
+  }) => {
+    const rows = await openMoreSheet(page);
+    // Between Export and Help & shortcuts, as mockup frame 4 has it.
+    const exported = await box(rows.getByRole('button', { name: /^Export/ }));
+    const theme = await box(rows.getByRole('radiogroup', { name: 'Theme' }));
+    const help = await box(rows.getByRole('button', { name: 'Help & shortcuts', exact: true }));
+    expect(exported.y).toBeLessThan(theme.y);
+    expect(theme.y).toBeLessThan(help.y);
+
+    await themeSegment(page, 'Dark').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('dark');
+    await expect(themeSegment(page, 'Dark')).toHaveAttribute('aria-checked', 'true');
+    await expect(moreSheet(page)).toBeVisible();
+    await expect
+      .poll(() => workbench(page).evaluate((element) => getComputedStyle(element).backgroundColor))
+      .toBe(DARK_SURFACE);
+  });
+
+  test('the theme never lights the More dot', async ({ page }) => {
+    await openMoreSheet(page);
+    await themeSegment(page, 'Dark').tap();
+    await expect.poll(() => htmlTheme(page)).toBe('dark');
+    await moreSheet(page).getByRole('button', { name: 'Close', exact: true }).tap();
+    await expect(moreSheet(page)).toBeHidden();
+
+    await expect(moreButton(page)).toHaveAccessibleName('More view options');
+    await expect(viewBar(page).locator('.wb-more-dot')).toBeHidden();
   });
 
   test('Escape closes the sheet, then a second Escape clears the selection', async ({ page }) => {

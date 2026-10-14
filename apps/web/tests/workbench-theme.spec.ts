@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
 import { appBar, openExplore, waitForExploreDataLoad } from './helpers/explore';
-import { DARK_SURFACE, htmlTheme, seedTheme } from './helpers/theme';
+import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
 
 /**
  * The explore page's theme (design decision 16): the stored choice, the first paint of a cold
@@ -140,5 +141,120 @@ test.describe('theme choice on a dark OS', () => {
     await waitForExploreDataLoad(page);
     await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
     expect(await htmlTheme(page)).toBe('system');
+  });
+});
+
+test.describe('the theme switch', () => {
+  /** The Theme button's `icon` property: the icon the button shows. */
+  const shownIcon = (page: Page) =>
+    appBar(page)
+      .locator('ps-icon-button[data-driver-id="theme"]')
+      .evaluate((button) => (button as HTMLElement & { icon: string }).icon);
+
+  test('Dark from the app bar themes the page, survives a reload and is stored as JSON', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await chooseTheme(page, 'Dark');
+
+    expect(await htmlTheme(page)).toBe('dark');
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    expect(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY)).toBe(
+      '"dark"',
+    );
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    expect(await htmlTheme(page)).toBe('dark');
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+  });
+
+  test('the menu marks the current choice and opens on it', async ({ page }) => {
+    await openExplore(page);
+    await chooseTheme(page, 'Dark');
+
+    await themeButton(page).click();
+    const item = (name: string) => page.getByRole('menuitemradio', { name, exact: true });
+    await expect(item('Dark')).toHaveAttribute('aria-checked', 'true');
+    await expect(item('Dark')).toBeFocused();
+    await expect(item('System')).toHaveAttribute('aria-checked', 'false');
+    await expect(item('Light')).toHaveAttribute('aria-checked', 'false');
+    await expect(themeButton(page)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test("the button's icon shows the choice", async ({ page }) => {
+    await openExplore(page);
+    await chooseTheme(page, 'Light');
+    expect(await shownIcon(page)).toBe('sun');
+    await chooseTheme(page, 'Dark');
+    expect(await shownIcon(page)).toBe('moon');
+    await chooseTheme(page, 'System');
+    expect(await shownIcon(page)).toBe('sun-moon');
+  });
+
+  test('System follows the OS live', async ({ page }) => {
+    await openExplore(page);
+    await chooseTheme(page, 'System');
+    expect(await htmlTheme(page)).toBe('system');
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
+
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(DARK_SURFACE);
+    expect(await htmlTheme(page)).toBe('system');
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
+  });
+
+  test('Escape closes the theme menu and returns focus to the button', async ({ page }) => {
+    await openExplore(page);
+    await themeButton(page).focus();
+    await page.keyboard.press('Enter');
+
+    const menu = page.getByRole('menu', { name: 'Theme', exact: true });
+    await expect(menu).toBeVisible();
+    // Whatever the default, the menu opens on the checked choice.
+    await expect(page.getByRole('menuitemradio', { checked: true })).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(themeButton(page)).toBeFocused();
+  });
+});
+
+test.describe('the theme switch on an 800 px tablet', () => {
+  test.use({ viewport: { width: 800, height: 1000 } });
+
+  test('the Theme button sits between Export and Help, and the dataset name and search still fit', async ({
+    page,
+  }) => {
+    await openExplore(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    const sides = async (locator: Locator) => {
+      const b = (await locator.boundingBox())!;
+      return { left: b.x, right: b.x + b.width };
+    };
+    const exported = await sides(appBar(page).getByRole('button', { name: 'Export', exact: true }));
+    const theme = await sides(themeButton(page));
+    const help = await sides(appBar(page).getByRole('button', { name: 'Help', exact: true }));
+    expect(exported.right).toBeLessThanOrEqual(theme.left);
+    expect(theme.right).toBeLessThanOrEqual(help.left);
+    const fits = await page.evaluate(() => {
+      const widthOf = (text: string, element: Element) => {
+        const context = document.createElement('canvas').getContext('2d')!;
+        context.font = getComputedStyle(element).font;
+        return context.measureText(text).width;
+      };
+      const name = document.querySelector('.wb-dataset-name')!;
+      const input = document
+        .querySelector('#myProteinSearch')!
+        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
+      return {
+        // The demo dataset's name, the longest an example has on this bar.
+        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
+        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
+      };
+    });
+    expect(fits).toEqual({ name: true, placeholder: true });
   });
 });

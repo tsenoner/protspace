@@ -18,14 +18,18 @@ import {
   Filter,
   Layers,
   MessageSquare,
+  Sun,
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { FEEDBACK_HREF } from '@/lib/support';
 import { focusFilterTitle, openPanel } from '../explore/layout-state';
+import { THEME_CHOICES, THEME_LABELS, type ThemeChoice } from '../explore/theme-defaults';
+import { setTheme } from '../explore/theme-state';
 import { openDocumentation, startTour } from './help-actions';
 import { ShortcutsDialog } from './ShortcutsDialog';
+import { useTheme } from './use-theme';
 import { useWorkbenchStatus } from './use-workbench-status';
 
 /** The contour modes as the segmented control offers them, named as the Contours menu names them. */
@@ -33,6 +37,9 @@ const CONTOUR_OPTIONS = DENSITY_LAYER_MODES.map((mode) => ({
   value: mode,
   label: DENSITY_MODE_LABELS[mode].label,
 }));
+
+/** The theme choices as the segmented control offers them, named as the app bar's menu names them. */
+const THEME_OPTIONS = THEME_CHOICES.map((value) => ({ value, label: THEME_LABELS[value] }));
 
 /** A row's Lucide icon: 16 px at the kit's stroke, decorative. */
 const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -47,7 +54,7 @@ interface MoreSheetProps {
 /**
  * The More sheet (design decision 17): on a phone, everything the two bars leave out, in a bottom
  * sheet (ps-dialog size="sheet": top layer, scrim, focus kept inside; Escape and a backdrop press
- * close it and focus returns to More). Contours applies in place and keeps the sheet open. Every
+ * close it and focus returns to More). Contours and Theme apply in place and keep the sheet open. Every
  * other row closes the sheet first and then acts, so what it opens (a menu, a dialog, the Filter
  * panel) is never a second layer under a closing one. The Export and Import menus open from More
  * and the dataset name, since their own buttons are hidden on a phone; Help & shortcuts unfolds
@@ -56,7 +63,10 @@ interface MoreSheetProps {
 export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
   const dialog = useRef<PsDialog>(null);
   const contours = useRef<HTMLElement>(null);
+  const themeControl = useRef<HTMLElement>(null);
   const { densityLayer, appliedFilterConditions } = useWorkbenchStatus();
+  // Not part of the More dot, which marks only what changes the view (Contours, a filter).
+  const theme = useTheme();
   const [helpOpen, setHelpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
@@ -83,6 +93,17 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
     const onChange = (event: Event) => {
       const mode = (event as CustomEvent<{ value: DensityLayerMode }>).detail.value;
       (document.getElementById('myContoursMenu') as ProtspaceContoursMenu | null)?.pick(mode);
+    };
+    element.addEventListener('change', onChange);
+    return () => element.removeEventListener('change', onChange);
+  }, []);
+
+  // A theme applies at once, like Contours: the sheet stays open.
+  useEffect(() => {
+    const element = themeControl.current;
+    if (!element) return;
+    const onChange = (event: Event) => {
+      setTheme((event as CustomEvent<{ value: ThemeChoice }>).detail.value);
     };
     element.addEventListener('change', onChange);
     return () => element.removeEventListener('change', onChange);
@@ -147,7 +168,19 @@ export function MoreSheet({ open, onClose, moreButton }: MoreSheetProps) {
             <span className="wb-sheet-label">Export</span>
             <ChevronRight className="wb-sheet-chevron" {...ICON} />
           </button>
-          {/* Task 6.1 adds the Theme row here (System, Light, Dark), as mockup frame 4 shows. */}
+          <div className="wb-sheet-row wb-sheet-row-static">
+            <Sun className="wb-sheet-icon" {...ICON} />
+            {/* The radio group carries the name; the word is for the eye. */}
+            <span className="wb-sheet-label" aria-hidden="true">
+              Theme
+            </span>
+            <ps-segmented
+              ref={themeControl}
+              label="Theme"
+              options={THEME_OPTIONS}
+              value={theme}
+            ></ps-segmented>
+          </div>
           <button
             type="button"
             className="wb-sheet-row"

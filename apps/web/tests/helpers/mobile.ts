@@ -97,6 +97,10 @@ export const moreSheet = (page: Page): Locator =>
 export const moreSheetContent = (page: Page): Locator =>
   page.locator('ps-dialog').filter({ has: moreSheet(page) });
 
+/** A segment of the More sheet's Theme row, by its text. */
+export const themeSegment = (page: Page, label: 'System' | 'Light' | 'Dark'): Locator =>
+  moreSheetContent(page).getByRole('radio', { name: label, exact: true });
+
 /**
  * The shown Legend or Filter tab of the panel under the plot. Each panel's header holds a copy of
  * the tabs; only the shown panel's copy is visible.
