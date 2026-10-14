@@ -13,7 +13,6 @@ import {
   structureSheet,
   tap,
 } from './helpers/mobile';
-import { seedTheme } from './helpers/theme';
 
 /**
  * Design decision 20 on phones: axe on the phone layout's own states in both themes, as
@@ -80,8 +79,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test.use({ colorScheme });
 
     test.beforeEach(async ({ page }) => {
-      // Task 6.13 deletes this line: System becomes the default.
-      await seedTheme(page, 'system');
       await openExplorePhone(page);
     });
 

@@ -48,6 +48,11 @@ describe('theme store', () => {
     expect(storage.getItem).toHaveBeenCalledWith(THEME_STORAGE_KEY);
   });
 
+  it('with nothing stored the choice is System', () => {
+    // Design decision 16: the explore page follows the OS until the user picks a theme.
+    expect(getTheme()).toBe('system');
+  });
+
   it('defaults when storage throws', () => {
     storage.getItem.mockImplementationOnce(() => {
       throw new Error('SecurityError: storage is disabled');

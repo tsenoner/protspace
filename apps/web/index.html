@@ -85,7 +85,7 @@
     <script data-theme-boot>
       (function () {
         if (!/^\/explore\/?$/.test(location.pathname)) return;
-        var theme = 'light';
+        var theme = 'system';
         try {
           var stored = JSON.parse(localStorage.getItem('protspace:theme'));
           if (stored === 'system' || stored === 'light' || stored === 'dark') theme = stored;

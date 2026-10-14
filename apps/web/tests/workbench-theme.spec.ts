@@ -125,15 +125,6 @@ test.describe('theme choice', () => {
     ).not.toBe('dark');
     await expect.poll(() => backgroundOf(page.locator('body'))).toBe(WHITE);
   });
-
-  test('with nothing stored the page is Light', async ({ page }) => {
-    await openExplore(page);
-    expect(await htmlTheme(page)).toBe('light');
-    expect(await backgroundOf(workbench(page))).toBe(WHITE);
-    // An explicit Light ignores the OS.
-    await page.emulateMedia({ colorScheme: 'dark' });
-    expect(await backgroundOf(workbench(page))).toBe(WHITE);
-  });
 });
 
 test.describe('theme choice on a dark OS', () => {
@@ -408,5 +399,42 @@ test.describe('dark surfaces', () => {
 
     await chooseTheme(page, 'Dark');
     await expect(page.locator('body')).toHaveCSS('background-color', DARK_SURFACE);
+  });
+});
+
+for (const colorScheme of ['dark', 'light'] as const) {
+  test.describe(`nothing stored on a ${colorScheme} OS`, () => {
+    test.use({ colorScheme });
+
+    test('with nothing stored the page follows the OS', async ({ page }) => {
+      const surface = colorScheme === 'dark' ? DARK_SURFACE : WHITE;
+      const { first, beforeChunk, release } = await loadWithExploreChunkHeld(page);
+
+      expect(await htmlTheme(page)).toBe('system');
+      if (colorScheme === 'dark') {
+        expect(first).toBe(DARK_SURFACE);
+      } else {
+        // A light OS paints no boot colour: the body is transparent until index.css whitens it.
+        expect(first).not.toBe(DARK_SURFACE);
+      }
+      expect(beforeChunk).toBe(surface);
+
+      release();
+      await waitForExploreDataLoad(page);
+      expect(await htmlTheme(page)).toBe('system');
+      await expect.poll(() => backgroundOf(workbench(page))).toBe(surface);
+    });
+  });
+}
+
+// The deleted Light test also checked that an explicit Light ignores a dark OS; keep that check.
+test.describe('Light stored on a dark OS', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('an explicit Light ignores the OS', async ({ page }) => {
+    await seedTheme(page, 'light');
+    await openExplore(page);
+    expect(await htmlTheme(page)).toBe('light');
+    await expect.poll(() => backgroundOf(workbench(page))).toBe(WHITE);
   });
 });

@@ -20,8 +20,5 @@ export const THEME_LABELS: Record<ThemeChoice, string> = {
   dark: 'Dark',
 };
 
-/**
- * The choice with nothing (or nothing valid) stored. Light while the phase's surfaces turn dark;
- * Task 6.13 flips it to 'system', together with the boot script's literal in index.html.
- */
-export const DEFAULT_THEME: ThemeChoice = 'light';
+/** The choice with nothing (or nothing valid) stored: follow the OS (design decision 16). */
+export const DEFAULT_THEME: ThemeChoice = 'system';

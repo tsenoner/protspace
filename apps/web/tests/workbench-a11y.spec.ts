@@ -13,7 +13,7 @@ import {
   selectAnnotation,
 } from './helpers/explore';
 import { openLegendOther, openLegendSettings } from './helpers/legend';
-import { seedTheme, themeButton } from './helpers/theme';
+import { themeButton } from './helpers/theme';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
 /**
@@ -136,8 +136,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test.use({ colorScheme });
 
     test.beforeEach(async ({ page }) => {
-      // Task 6.13 deletes this line: System becomes the default.
-      await seedTheme(page, 'system');
       await stubStructureRequests(page);
       await openExplore(page);
     });
