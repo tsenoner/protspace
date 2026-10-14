@@ -147,7 +147,25 @@ function cssViolations(cssText: string): string[] {
 /** The web app's explore stylesheets (index.css belongs to the landing page): colours from tokens. */
 const WEB_CSS = ['workbench/workbench.css', 'tour/product-tour.css'];
 
-/** A web stylesheet's raw colours, and its reads of --ps-* tokens theme.ts does not define. */
+/**
+ * index.css's shadcn colours (light-only HSL triples) and the Tailwind aliases that wrap them: an
+ * explore sheet reading one stays light in Dark.
+ */
+const LANDING_COLOURS = new Set(
+  [
+    ...readFileSync(join(WEB_SRC, 'index.css'), 'utf8').matchAll(
+      /(--[\w-]+)\s*:\s*(?:[\d.]+ [\d.]+% [\d.]+%|hsl\(var\(--[\w-]+\)\))\s*;/g,
+    ),
+  ].map(([, name]) => name),
+);
+/** Named colours beyond COLOUR's white/black; false positives are cheap in the two web sheets. */
+const NAMED =
+  /(?<![\w-])(?:gr[ae]y|silver|red|green|blue|yellow|orange|navy|maroon|teal|purple|whitesmoke|gainsboro|lightgr[ae]y|darkgr[ae]y)(?![\w-])/i;
+
+/**
+ * A web stylesheet's raw or named colours, its reads of --ps-* tokens theme.ts does not define,
+ * and its reads of the landing page's light-only colours.
+ */
 function webCssViolations(cssText: string): string[] {
   const css = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
   const found: string[] = [];
@@ -156,7 +174,11 @@ function webCssViolations(cssText: string): string[] {
     const unknownToken = [...value.matchAll(/var\(\s*(--ps-[\w-]+)/g)].some(
       ([, name]) => !DEFINED.has(name),
     );
-    if (COLOUR.test(value) || unknownToken) found.push(`${property}: ${value}`);
+    const landingColour = [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, name]) =>
+      LANDING_COLOURS.has(name),
+    );
+    if (COLOUR.test(value) || NAMED.test(value) || unknownToken || landingColour)
+      found.push(`${property}: ${value}`);
   }
   return found;
 }
@@ -233,6 +255,19 @@ describe('style lint', () => {
         '.a:hover { color: #334155; border: 1px solid var(--ps-nope); background: var(--ps-surface); font-size: 12px; } /* #fff */',
       ),
     ).toEqual(['color: #334155', 'border: 1px solid var(--ps-nope)']);
+  });
+
+  it('flags a named or landing-page colour in a web stylesheet', () => {
+    expect(LANDING_COLOURS.size).toBeGreaterThan(10);
+    expect(
+      webCssViolations(
+        '.a { border-color: var(--border); color: var(--color-muted-foreground); outline: 1px solid gray; padding: var(--ps-space-2); grid-area: content; }',
+      ),
+    ).toEqual([
+      'border-color: var(--border)',
+      'color: var(--color-muted-foreground)',
+      'outline: 1px solid gray',
+    ]);
   });
 
   it.each(WEB_CSS)('%s reads colours from tokens', (file) => {
