@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   appBar,
+  appBarTextFits,
   dismissTourIfPresent,
   filterPanel,
   getSelectedProteinIds,
@@ -111,23 +112,7 @@ test.describe('the app bar on an 800 px tablet', () => {
   test('the dataset name and the search placeholder fit', async ({ page }) => {
     await openExplorePhone(page);
     await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
-    const fits = await page.evaluate(() => {
-      const widthOf = (text: string, element: Element) => {
-        const context = document.createElement('canvas').getContext('2d')!;
-        context.font = getComputedStyle(element).font;
-        return context.measureText(text).width;
-      };
-      const name = document.querySelector('.wb-dataset-name')!;
-      const input = document
-        .querySelector('#myProteinSearch')!
-        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
-      return {
-        // The demo dataset's name, the longest an example has on this bar.
-        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
-        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
-      };
-    });
-    expect(fits).toEqual({ name: true, placeholder: true });
+    expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
 });
 

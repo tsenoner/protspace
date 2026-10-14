@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { THEME_STORAGE_KEY } from '../src/explore/theme-defaults';
-import { appBar, openExplore, waitForExploreDataLoad } from './helpers/explore';
+import { appBar, appBarTextFits, openExplore, waitForExploreDataLoad } from './helpers/explore';
 import { chooseTheme, DARK_SURFACE, htmlTheme, seedTheme, themeButton } from './helpers/theme';
 
 /**
@@ -239,22 +239,6 @@ test.describe('the theme switch on an 800 px tablet', () => {
     const help = await sides(appBar(page).getByRole('button', { name: 'Help', exact: true }));
     expect(exported.right).toBeLessThanOrEqual(theme.left);
     expect(theme.right).toBeLessThanOrEqual(help.left);
-    const fits = await page.evaluate(() => {
-      const widthOf = (text: string, element: Element) => {
-        const context = document.createElement('canvas').getContext('2d')!;
-        context.font = getComputedStyle(element).font;
-        return context.measureText(text).width;
-      };
-      const name = document.querySelector('.wb-dataset-name')!;
-      const input = document
-        .querySelector('#myProteinSearch')!
-        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
-      return {
-        // The demo dataset's name, the longest an example has on this bar.
-        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
-        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
-      };
-    });
-    expect(fits).toEqual({ name: true, placeholder: true });
+    expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
 });

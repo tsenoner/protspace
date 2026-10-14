@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   annotationSelect,
   appBar,
+  appBarTextFits,
   colorByTrigger,
   datasetSwitcher,
   dismissTourIfPresent,
@@ -388,23 +389,7 @@ test.describe('the bars on a portrait tablet', () => {
     expect(theme.x + theme.width).toBeLessThanOrEqual(help.x);
 
     // As mobile-explore-layout.spec.ts measures at 800×1000: the one more button leaves both whole.
-    const fits = await page.evaluate(() => {
-      const widthOf = (text: string, element: Element) => {
-        const context = document.createElement('canvas').getContext('2d')!;
-        context.font = getComputedStyle(element).font;
-        return context.measureText(text).width;
-      };
-      const name = document.querySelector('.wb-dataset-name')!;
-      const input = document
-        .querySelector('#myProteinSearch')!
-        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
-      return {
-        // The demo dataset's name, the longest an example has on this bar.
-        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
-        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
-      };
-    });
-    expect(fits).toEqual({ name: true, placeholder: true });
+    expect(await appBarTextFits(page)).toEqual({ name: true, placeholder: true });
   });
 });
 

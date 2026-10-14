@@ -303,6 +303,29 @@ const importPanel = (page: Page): Locator =>
 export const datasetSwitcher = (page: Page): Locator =>
   appBar(page).getByRole('button', { name: /, switch dataset$/ });
 
+/**
+ * Whether the app bar shows the demo dataset's name ("Venom toxins (demo)", the longest an
+ * example has) and the search placeholder whole, each measured in its own computed font.
+ */
+export async function appBarTextFits(page: Page): Promise<{ name: boolean; placeholder: boolean }> {
+  const name = await appBar(page)
+    .locator('.wb-dataset-name')
+    .evaluate((element) => {
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = getComputedStyle(element).font;
+      const width = context.measureText('Venom toxins (demo)').width;
+      return width <= parseFloat(getComputedStyle(element).maxWidth);
+    });
+  const placeholder = await page
+    .locator('#myProteinSearch input')
+    .evaluate((input: HTMLInputElement) => {
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = getComputedStyle(input).font;
+      return context.measureText(input.placeholder).width <= input.clientWidth;
+    });
+  return { name, placeholder };
+}
+
 /** The view bar's Filter button; its name reads "Filter" or "Filter, N conditions applied". */
 export const filterButton = (page: Page): Locator =>
   viewBar(page).getByRole('button', { name: /^Filter/ });

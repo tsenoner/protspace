@@ -149,8 +149,8 @@ async function blockExternalRequests(page: Page, baseUrl: string): Promise<void>
 /**
  * A context with the viewport and pixel ratio the segments assume, past the tour, with the layout,
  * the stored theme (light) and the colour scheme pinned: the sidebar's width sets the plot's size,
- * which feeds the point
- * scale and the Auto contour strength, so an unpinned layout would make runs incomparable.
+ * which feeds the point scale and the Auto contour strength, so an unpinned layout would make runs
+ * incomparable.
  */
 export function newPerfContext(browser: Browser, baseUrl: string): Promise<BrowserContext> {
   return browser.newContext({
