@@ -324,7 +324,6 @@ export class PointStyleState {
     return ids;
   }
 
-  /** The style getters for the current data and visual state, which an export stages. */
   /** The style getters for the current data and visual state, in the theme's neutral greys. */
   getters(): StyleGetters {
     if (!this._styleGetters) {

@@ -135,6 +135,41 @@ describe('scatterplot theme', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("an expanded spider's nodes take the theme's Other grey on a switch", async () => {
+    root.dataset.theme = 'dark';
+    // P2 and P3 (family B, drawn as Other) share a position, so they form a duplicate stack.
+    const data = makeData();
+    data.projections[0].data = new Float32Array([0, 0, 10, 10, 10, 10, 0, 10]);
+    const plot = document.createElement('protspace-scatterplot');
+    plot.style.cssText = 'display: block; width: 480px; height: 360px';
+    plot.selectedAnnotation = 'fam';
+    plot.otherAnnotationValues = ['B'];
+    plot.config = { baseOpacity: 1, enableDuplicateStackUI: true };
+    plot.data = data;
+    document.body.append(plot);
+    await plot.updateComplete;
+    await vi.waitFor(() => expect(plot.getDuplicateStacks()).toHaveLength(1), { timeout: 3_000 });
+    const at = plot.getProteinClientPosition('P2')!;
+    plot
+      .shadowRoot!.querySelector('svg')!
+      .dispatchEvent(
+        new MouseEvent('click', { clientX: at.x, clientY: at.y, bubbles: true, composed: true }),
+      );
+    expect(plot.hasExpandedDuplicateStack()).toBe(true);
+    const fills = () =>
+      Array.from(
+        plot.shadowRoot!.querySelectorAll('.dup-spiderfy-node-circle'),
+        (node) => getComputedStyle(node).fill,
+      );
+    await vi.waitFor(() => expect(fills()).toEqual(['rgb(100, 116, 139)', 'rgb(100, 116, 139)']));
+
+    root.dataset.theme = 'light';
+    await vi.waitFor(() => expect(fills()).toEqual(['rgb(136, 136, 136)', 'rgb(136, 136, 136)']));
+
+    root.dataset.theme = 'dark';
+    await vi.waitFor(() => expect(fills()).toEqual(['rgb(100, 116, 139)', 'rgb(100, 116, 139)']));
+  });
+
   it('captureAtResolution in dark gives #888888 Other points on #ffffff', async () => {
     root.dataset.theme = 'dark';
     const plot = await mountPlot();

@@ -671,6 +671,8 @@ export class ProtspaceScatterplot extends LitElement {
       this._webglRenderer?.invalidateCategoryStyles();
       this._renderLoop.request();
     }
+    // An open spider's nodes are SVG, filled from the getters when it is drawn.
+    if (this._dupOverlay.hasExpanded()) this._dupOverlay.updateSelectionOverlays();
   }
 
   willUpdate(changedProperties: Map<string, unknown>) {
