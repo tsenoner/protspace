@@ -6,7 +6,8 @@ import { dialogStyles } from './dialog.styles';
 import { deepActiveElement } from './focus';
 import { pushLayer } from './layers';
 
-export type DialogSize = 'sm' | 'md' | 'lg' | 'full';
+/** `sheet`: a bottom sheet, full width on the window's bottom edge (the app's More sheet on phones). */
+export type DialogSize = 'sm' | 'md' | 'lg' | 'full' | 'sheet';
 
 const FOCUSABLE = 'button, a[href], input, select, textarea, summary, [tabindex]';
 

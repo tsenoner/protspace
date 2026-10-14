@@ -32,6 +32,23 @@ export const dialogStyles = [
       width: calc(100vw - 32px);
       height: calc(100dvh - 32px);
     }
+    /* A bottom sheet: full width on the bottom edge, its top corners rounded. The body scrolls
+       under a header that stays; its rows run edge to edge. */
+    :host([size='sheet']) dialog {
+      width: 100%;
+      max-width: none;
+      max-height: min(85dvh, calc(100dvh - 48px));
+      margin: auto 0 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      border-width: 1px 0 0;
+      border-radius: var(--ps-radius-lg) var(--ps-radius-lg) 0 0;
+    }
+    :host([size='sheet']) .frame {
+      max-height: calc(min(85dvh, 100dvh - 48px) - 1px - env(safe-area-inset-bottom, 0px));
+    }
+    :host([size='sheet']) .body {
+      padding: 0;
+    }
     dialog::backdrop {
       background: var(--ps-scrim);
     }

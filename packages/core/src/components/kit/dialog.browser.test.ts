@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import type { PsDialog } from './dialog';
 import './dialog';
@@ -286,5 +286,78 @@ describe('ps-dialog', () => {
     await settle(dialog);
     expect(dialog.open).toBe(false);
     expect(document.activeElement).toBe(anchor);
+  });
+});
+
+describe('ps-dialog size sheet', () => {
+  async function openSheet(rows: number) {
+    const buttons = Array.from(
+      { length: rows },
+      (_, index) =>
+        `<button class="row" style="display: block; width: 100%; height: 48px">Row ${index + 1}</button>`,
+    ).join('');
+    document.body.innerHTML = `
+      <button id="opener">More</button>
+      <ps-dialog heading="More" size="sheet">${buttons}</ps-dialog>`;
+    const opener = document.getElementById('opener')!;
+    const dialog = document.querySelector('ps-dialog') as PsDialog;
+    opener.focus();
+    dialog.open = true;
+    await settle(dialog);
+    return { opener, dialog };
+  }
+
+  it('size sheet sits on the bottom edge at full width', async () => {
+    await page.viewport(375, 667);
+    const { dialog } = await openSheet(3);
+    const native = nativeDialog(dialog);
+    const box = native.getBoundingClientRect();
+
+    expect(native.matches(':modal')).toBe(true);
+    expect(box.left).toBe(0);
+    expect(Math.abs(box.width - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.bottom - window.innerHeight)).toBeLessThanOrEqual(1);
+    // Three rows: a short sheet, not a centred box.
+    expect(box.top).toBeGreaterThan(window.innerHeight / 2);
+    const style = getComputedStyle(native);
+    expect(style.borderBottomLeftRadius).toBe('0px');
+    expect(style.borderTopLeftRadius).not.toBe('0px');
+  });
+
+  it('a sheet taller than a short viewport (375×360) scrolls its body while the header stays', async () => {
+    await page.viewport(375, 360);
+    const { dialog } = await openSheet(12);
+    const native = nativeDialog(dialog);
+    const box = native.getBoundingClientRect();
+
+    expect(box.height).toBeLessThanOrEqual(Math.min(0.85 * 360, 360 - 48) + 1);
+    expect(Math.abs(box.bottom - 360)).toBeLessThanOrEqual(1);
+    const body = dialog.shadowRoot!.querySelector('.body') as HTMLElement;
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
+
+    body.scrollTop = body.scrollHeight;
+    const header = dialog.shadowRoot!.querySelector('header')!.getBoundingClientRect();
+    expect(header.top - box.top).toBeLessThanOrEqual(1);
+    expect(native.scrollTop).toBe(0);
+    const last = dialog.querySelector('.row:last-of-type')!.getBoundingClientRect();
+    expect(last.bottom).toBeLessThanOrEqual(box.bottom + 1);
+    expect(last.top).toBeGreaterThanOrEqual(header.bottom - 1);
+  });
+
+  it('Escape and a backdrop press close a sheet and return focus', async () => {
+    await page.viewport(375, 667);
+    const { opener, dialog } = await openSheet(3);
+    await userEvent.keyboard('{Escape}');
+    await settle(dialog);
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
+
+    opener.focus();
+    dialog.open = true;
+    await settle(dialog);
+    press(nativeDialog(dialog));
+    await settle(dialog);
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
   });
 });

@@ -53,10 +53,31 @@ export class ProtspaceExportMenu extends LitElement {
   @state() private includeLegendSettings = true;
   @query('.trigger') private trigger!: HTMLElement;
   @query('ps-menu') private menu!: PsMenu;
+  /** The control the menu opened from through openFrom; null while it belongs to its trigger. */
+  private anchorEl: HTMLElement | null = null;
 
   /** Checks "Include legend settings" again, as for a new dataset. */
   reset(): void {
     this.includeLegendSettings = true;
+  }
+
+  /**
+   * Opens the menu under `anchor`, focus on its first item, as its own trigger does. When it
+   * closes, focus returns to `anchor` and the menu belongs to its trigger again. The app's More
+   * sheet opens it this way on phones, where the Export button is hidden.
+   */
+  openFrom(anchor: HTMLElement): void {
+    if (this.open && this.anchorEl === anchor) return;
+    this.anchorEl = anchor;
+    this.menu.anchor = anchor;
+    this.open = true;
+  }
+
+  /** Gives the menu back to its own trigger after an openFrom. */
+  private restoreAnchor(): void {
+    if (!this.anchorEl) return;
+    this.anchorEl = null;
+    this.menu.anchor = this.trigger;
   }
 
   protected firstUpdated(): void {
@@ -102,6 +123,7 @@ export class ProtspaceExportMenu extends LitElement {
   }
 
   private toggle = () => {
+    this.restoreAnchor();
     this.open = !this.open;
   };
 
@@ -109,6 +131,7 @@ export class ProtspaceExportMenu extends LitElement {
   private onClose = (event: Event) => {
     event.stopPropagation();
     this.open = false;
+    this.restoreAnchor();
   };
 
   private onSelect = (event: Event) => {

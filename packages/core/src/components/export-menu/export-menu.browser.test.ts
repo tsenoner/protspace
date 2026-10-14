@@ -189,4 +189,64 @@ describe('protspace-export-menu', () => {
   it('the trigger is exposed as the part trigger', () => {
     expect(trigger().getAttribute('part')).toBe('trigger');
   });
+
+  /** A More button at the left of the window, and the menu's own trigger hidden by its part. */
+  function moreAnchor(): HTMLButtonElement {
+    const style = document.createElement('style');
+    style.textContent = 'protspace-export-menu::part(trigger) { display: none; }';
+    document.body.append(style);
+    const more = document.createElement('button');
+    more.id = 'more';
+    more.textContent = 'More';
+    more.style.cssText = 'position: fixed; left: 300px; top: 200px; width: 80px; height: 40px';
+    document.body.append(more);
+    return more;
+  }
+
+  it('openFrom positions the menu under the given anchor and focuses its first item', async () => {
+    const more = moreAnchor();
+    more.focus();
+    menu.openFrom(more);
+    await settle();
+
+    expect(isOpen()).toBe(true);
+    expect(psMenu().anchor).toBe(more);
+    const anchor = more.getBoundingClientRect();
+    const panel = popover().shadowRoot!.querySelector('.panel')!.getBoundingClientRect();
+    expect(panel.width).toBeGreaterThan(0);
+    expect(panel.top).toBeGreaterThanOrEqual(anchor.bottom);
+    expect(panel.top - anchor.bottom).toBeLessThan(16);
+    // bottom-end: the menu's right edge lines up with the anchor's.
+    expect(Math.abs(panel.right - anchor.right)).toBeLessThan(2);
+    expect(root().activeElement).toBe(item('figure'));
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('closing returns focus to that anchor and the trigger is the anchor again', async () => {
+    const more = moreAnchor();
+    more.focus();
+    menu.openFrom(more);
+    await settle();
+
+    await userEvent.keyboard('{Escape}');
+    await settle();
+    expect(isOpen()).toBe(false);
+    expect(document.activeElement).toBe(more);
+    expect(psMenu().anchor).toBe(trigger());
+    // The attributes the menu set on More are gone again; the trigger is the menu button.
+    expect(more.hasAttribute('aria-expanded')).toBe(false);
+    expect(more.hasAttribute('aria-haspopup')).toBe(false);
+    expect(triggerButton().getAttribute('aria-haspopup')).toBe('menu');
+  });
+
+  it('openFrom while open from the same anchor keeps it open', async () => {
+    const more = moreAnchor();
+    more.focus();
+    menu.openFrom(more);
+    await settle();
+    menu.openFrom(more);
+    await settle();
+    expect(isOpen()).toBe(true);
+    expect(root().activeElement).toBe(item('figure'));
+  });
 });

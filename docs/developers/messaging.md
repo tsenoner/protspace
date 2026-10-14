@@ -47,6 +47,11 @@ hiding) calls `preventDefault()`, and then the fallbacks run in the window's bub
 (`selection`) and the selection tool (`tool`, both registered by the app's selection controller).
 The first that acts takes the press, so one press takes one step.
 
+A `ps-dialog` with `size="sheet"` is a bottom sheet: full width on the window's bottom edge, its
+body scrolling under its header. It closes as every dialog does, on Escape, its close button and a
+press on the backdrop, and returns focus to the control that opened it (the app's More sheet on
+phones).
+
 ### Component-owned inline states
 
 Keep empty, loading, and error states inline when the message is part of the component itself.
