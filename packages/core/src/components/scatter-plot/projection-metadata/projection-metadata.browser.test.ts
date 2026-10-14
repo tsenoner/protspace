@@ -106,6 +106,20 @@ describe('protspace-projection-metadata on a phone', () => {
     }
   });
 
+  it('closed, the card does not reach past a 740 px landscape screen', async () => {
+    await page.viewport(740, 360);
+    try {
+      // The details button sits at about x = 507 on a phone on its side; the closed card is laid
+      // out (only hidden), so past the right edge it would widen the page.
+      const el = await mountAt('position: fixed; left: 507px; top: 8px');
+      const card = el.shadowRoot!.querySelector('.content') as HTMLElement;
+      expect(getComputedStyle(card).visibility).toBe('hidden');
+      expect(card.getBoundingClientRect().right).toBeLessThanOrEqual(740 - 8 + 0.5);
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
   it('under touch a hover reveals nothing and a second tap closes the card', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
