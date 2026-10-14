@@ -77,6 +77,7 @@ export function AppBar() {
   const searchOpen = compact && searchWanted;
   const barRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLElement>(null);
+  const centerRef = useRef<HTMLDivElement>(null);
   useAppBarSides(barRef);
 
   // Wider, search sits in the bar again; the next phone layout starts with it closed.
@@ -101,12 +102,13 @@ export function AppBar() {
     event.preventDefault();
     closeSearch(true);
   };
-  // Focus leaving the bar (a tap on the plot, Tab past the field) closes search; a move inside the
-  // bar (into the search's shadow root, onto Close search) does not.
+  // Search stays open while focus is inside the overlay (the search's shadow root, Close search) or
+  // the window is blurred (switching apps leaves focus on the field). Focus anywhere else closes it,
+  // including the bar's own controls, which sit under the overlay.
   const onBlur = (event: FocusEvent<HTMLElement>) => {
-    if (!searchOpen) return;
+    if (!searchOpen || !document.hasFocus()) return;
     const next = event.relatedTarget as Node | null;
-    if (next && event.currentTarget.contains(next)) return;
+    if (next && centerRef.current?.contains(next)) return;
     closeSearch(false);
   };
 
@@ -153,7 +155,7 @@ export function AppBar() {
         {/* The full label over the name, which truncates at 200 px; anchored to the button. */}
         {datasetName !== null && <ps-tooltip text={datasetName}></ps-tooltip>}
       </div>
-      <div data-workbench="app-bar-center">
+      <div ref={centerRef} data-workbench="app-bar-center">
         <protspace-protein-search
           id="myProteinSearch"
           data-driver-id="search"

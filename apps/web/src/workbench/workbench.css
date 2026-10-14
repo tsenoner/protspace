@@ -1263,7 +1263,10 @@
   height: 0;
 }
 
-.workbench[data-layout='phone'] [data-workbench='app-bar-actions'] > :not(.wb-data-actions),
+/* The Help menu's ps-menu stays: a popover host never gets a display: none ancestor. */
+.workbench[data-layout='phone']
+  [data-workbench='app-bar-actions']
+  > :not(.wb-data-actions, ps-menu),
 .workbench[data-layout='phone'] #myImportMenu::part(trigger),
 .workbench[data-layout='phone'] #myExportMenu::part(trigger),
 .workbench[data-layout='phone'] .wb-app-bar-start > .wb-separator {

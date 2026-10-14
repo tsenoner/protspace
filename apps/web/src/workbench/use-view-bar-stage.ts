@@ -46,10 +46,7 @@ export function useViewBarStage(
   useEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
-    if (fixed) {
-      bar.dataset.stage = '3';
-      return;
-    }
+    if (fixed) return;
     const cache = new Map<ViewBarStage, number>();
     const itemWidths = new WeakMap<Element, number>();
     let current: ViewBarStage = 0;

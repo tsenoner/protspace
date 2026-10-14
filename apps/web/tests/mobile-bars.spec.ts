@@ -106,6 +106,14 @@ for (const { label, viewport } of PHONES) {
       await expect(importTrigger(page)).toBeHidden();
       await expect(exportTrigger(page)).toBeHidden();
       await expect(appBar(page).getByRole('button', { name: 'Help', exact: true })).toBeHidden();
+      // The Help menu's popover host stays rendered: no display: none above a popover.
+      expect(
+        await appBar(page)
+          .locator('[data-workbench="app-bar-actions"] > ps-menu')
+          .evaluate((menu) => getComputedStyle(menu).display),
+      ).toBe('contents');
+      // View bar: fixed at its last stage on a phone.
+      await expect(viewBar(page)).toHaveAttribute('data-stage', '3');
       // View bar: Projection, its details, Color by and More.
       await expect(projectionTrigger(page)).toBeVisible();
       await expect(
@@ -424,6 +432,42 @@ test.describe('search on a phone', () => {
     await expect(appBar(page)).not.toHaveAttribute('data-search-open');
     await expect(searchToggle(page)).toBeFocused();
     expect(await getSelectedProteinIds(page)).toEqual([id]);
+  });
+
+  test('focus leaving the search overlay by keyboard closes it and shows the target', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await searchToggle(page).tap();
+    await expect(searchInput(page)).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+    await expect(datasetSwitcher(page)).toBeFocused();
+    await expect(datasetSwitcher(page)).toBeInViewport();
+
+    await searchToggle(page).tap();
+    await expect(searchInput(page)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(
+      appBar(page).getByRole('button', { name: 'Close search', exact: true }),
+    ).toBeFocused();
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    await page.keyboard.press('Tab');
+    await expect(appBar(page)).not.toHaveAttribute('data-search-open');
+  });
+
+  test('search stays open when the window loses focus', async ({ page }) => {
+    await openExplorePhone(page);
+    await searchToggle(page).tap();
+    await expect(searchInput(page)).toBeFocused();
+    // Switching apps: the field loses focus with no next target while the document has none.
+    await searchInput(page).evaluate((input) => {
+      const hasFocus = document.hasFocus;
+      document.hasFocus = () => false;
+      (input as HTMLElement).blur();
+      document.hasFocus = hasFocus;
+    });
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
   });
 
   test('at 320 px the dataset name keeps more than 40 px', async ({ page }) => {
