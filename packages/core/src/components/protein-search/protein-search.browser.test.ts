@@ -106,3 +106,44 @@ describe('protspace-protein-search under a coarse pointer', () => {
     }
   });
 });
+
+describe('protspace-protein-search narrow field', () => {
+  it('a field under 200 px drops the shortcut hint and fits a short placeholder', async () => {
+    const element = document.createElement('protspace-protein-search') as HTMLElement & {
+      placeholder: string;
+      updateComplete: Promise<unknown>;
+    };
+    element.style.cssText = 'display: block; width: 170px';
+    element.placeholder = 'Search or paste IDs';
+    document.body.append(element);
+    await element.updateComplete;
+    const root = element.shadowRoot!;
+    const input = root.querySelector<HTMLInputElement>('#protein-search-input')!;
+
+    expect(input.placeholder).toBe('Search or paste IDs');
+    expect(getComputedStyle(root.querySelector('.search-keyboard-shortcut-hint')!).display).toBe(
+      'none',
+    );
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = getComputedStyle(input).font;
+    expect(context.measureText(input.placeholder).width).toBeLessThanOrEqual(input.clientWidth);
+
+    // Removing the attribute (a host leaving its narrow layout) brings the default back.
+    element.setAttribute('placeholder', 'x');
+    element.removeAttribute('placeholder');
+    await element.updateComplete;
+    expect(input.placeholder).toBe('Search proteins or paste IDs');
+
+    // A wide field keeps the hint and the full placeholder by default.
+    element.remove();
+    const wide = document.createElement('protspace-protein-search');
+    wide.style.cssText = 'display: block; width: 300px';
+    document.body.append(wide);
+    await wide.updateComplete;
+    const hint = wide.shadowRoot!.querySelector('.search-keyboard-shortcut-hint')!;
+    expect(getComputedStyle(hint).display).not.toBe('none');
+    expect(wide.shadowRoot!.querySelector('input')!.placeholder).toBe(
+      'Search proteins or paste IDs',
+    );
+  });
+});

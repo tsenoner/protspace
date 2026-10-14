@@ -397,7 +397,7 @@ class ProtspaceQueryConditionRow extends LitElement {
                 .value=${this.condition.logicalOp ?? ''}
                 @change=${this._handleLogicalOpChange}
               >
-                <option value="">​</option>
+                <option value="">—</option>
                 <option value="NOT">NOT</option>
               </select>
             `

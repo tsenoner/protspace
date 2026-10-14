@@ -84,6 +84,53 @@ test.describe('explore layout on a phone', () => {
   });
 });
 
+test.describe('the Filter panel on a phone', () => {
+  test('the Filter tab names the panel once, and the first condition shows its operator', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await panelTab(page, 'Filter').tap();
+    await expect(filterPanel(page)).toBeVisible();
+
+    // The heading stays for screen readers but takes no room beside the tabs.
+    const title = await box(page.locator('#wb-filter-title'));
+    expect(title.width).toBeLessThanOrEqual(1);
+    const operator = page.locator('#myQueryBuilder').getByRole('combobox', {
+      name: 'Operator for condition 1',
+    });
+    await expect(operator).toBeVisible();
+    expect(
+      await operator.evaluate((select: HTMLSelectElement) => select.selectedOptions[0].text),
+    ).toMatch(/[^\s\u200b]/);
+  });
+});
+
+test.describe('the app bar on an 800 px tablet', () => {
+  test.use({ viewport: { width: 800, height: 1000 } });
+
+  test('the dataset name and the search placeholder fit', async ({ page }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'tablet');
+    const fits = await page.evaluate(() => {
+      const widthOf = (text: string, element: Element) => {
+        const context = document.createElement('canvas').getContext('2d')!;
+        context.font = getComputedStyle(element).font;
+        return context.measureText(text).width;
+      };
+      const name = document.querySelector('.wb-dataset-name')!;
+      const input = document
+        .querySelector('#myProteinSearch')!
+        .shadowRoot!.querySelector<HTMLInputElement>('input')!;
+      return {
+        // The demo dataset's name, the longest an example has on this bar.
+        name: widthOf('Venom toxins (demo)', name) <= parseFloat(getComputedStyle(name).maxWidth),
+        placeholder: widthOf(input.placeholder, input) <= input.clientWidth,
+      };
+    });
+    expect(fits).toEqual({ name: true, placeholder: true });
+  });
+});
+
 test.describe('explore layout on a tablet', () => {
   test.use({ viewport: { width: 768, height: 1024 } });
 

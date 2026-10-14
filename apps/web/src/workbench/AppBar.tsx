@@ -20,6 +20,9 @@ import { useAppBarSides } from './use-app-bar-sides';
 import { useLayoutMode } from './use-layout-mode';
 import { useWorkbenchStatus } from './use-workbench-status';
 
+/** A tablet's bar leaves search about 160 px, too little for "Search proteins or paste IDs". */
+const TABLET_SEARCH_PLACEHOLDER = 'Search or paste IDs';
+
 /** An example's label reads "name · proteins · size"; the bar shows the name and its own count. */
 function shownName(datasetName: string): string {
   return datasetName.split(' · ')[0];
@@ -70,7 +73,8 @@ const DataActions = memo(function DataActions() {
  */
 export function AppBar() {
   const { datasetName, proteinCount } = useWorkbenchStatus();
-  const compact = hasStructureSheet(useLayoutMode());
+  const layoutMode = useLayoutMode();
+  const compact = hasStructureSheet(layoutMode);
   const [searchWanted, setSearchWanted] = useState(false);
   const searchOpen = compact && searchWanted;
   const barRef = useRef<HTMLElement>(null);
@@ -157,6 +161,7 @@ export function AppBar() {
         <protspace-protein-search
           id="myProteinSearch"
           data-driver-id="search"
+          placeholder={layoutMode === 'tablet' ? TABLET_SEARCH_PLACEHOLDER : undefined}
         ></protspace-protein-search>
         {/* Phones only (workbench.css): search shows over the bar until this closes it. */}
         <ps-icon-button

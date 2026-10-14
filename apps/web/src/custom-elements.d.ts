@@ -93,7 +93,11 @@ declare module 'react' {
         HTMLElement
       >;
       'protspace-protein-search': React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & { id?: string; 'data-driver-id'?: string },
+        React.HTMLAttributes<HTMLElement> & {
+          id?: string;
+          'data-driver-id'?: string;
+          placeholder?: string;
+        },
         HTMLElement
       >;
       'protspace-query-builder': React.DetailedHTMLProps<

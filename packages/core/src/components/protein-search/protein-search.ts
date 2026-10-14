@@ -45,6 +45,8 @@ export class ProtspaceProteinSearch extends LitElement {
 
   @property({ type: Array }) availableProteinIds: string[] = [];
   @property({ type: Array }) selectedProteinIds: string[] = [];
+  /** A shorter placeholder for a narrow field; empty (or removed) is the default one. */
+  @property() placeholder: string | null = '';
 
   @state() private searchQuery: string = '';
   @state() private searchSuggestions: SearchSuggestion[] = [];
@@ -101,7 +103,7 @@ export class ProtspaceProteinSearch extends LitElement {
             class="search-input"
             type="text"
             .value=${this.searchQuery}
-            placeholder="Search proteins or paste IDs"
+            placeholder=${this.placeholder || 'Search proteins or paste IDs'}
             aria-label="Search proteins"
             aria-keyshortcuts="Control+K Meta+K"
             role="combobox"

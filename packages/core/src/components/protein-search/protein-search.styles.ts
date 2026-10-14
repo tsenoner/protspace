@@ -21,7 +21,9 @@ export const searchStyles = [
       position: relative;
     }
 
+    /* The container a narrow field's shortcut hint gives way in (below). */
     .search-chips {
+      container-type: inline-size;
       display: flex;
       align-items: center;
       gap: var(--ps-space-1-5);
@@ -77,6 +79,13 @@ export const searchStyles = [
       font-size: var(--ps-text-xs);
       line-height: 1.5;
       pointer-events: none;
+    }
+
+    /* Under 200 px (a tablet's bar) the placeholder needs the room more than the hint does. */
+    @container (max-width: 199.98px) {
+      .search-keyboard-shortcut-hint {
+        display: none;
+      }
     }
 
     .search-keyboard-shortcut-hint kbd {

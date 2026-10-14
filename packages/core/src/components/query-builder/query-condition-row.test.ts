@@ -535,3 +535,21 @@ describe('query-condition-row names', () => {
     expect(root.querySelector('.value-chip-add')!.getAttribute('aria-label')).toBe('Add value');
   });
 });
+
+describe('query-condition-row first operator', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('shows a visible "no operator" choice before NOT, not an empty box', async () => {
+    const el = await mount();
+    (el as ConditionRowEl & { isFirst: boolean }).isFirst = true;
+    await el.updateComplete;
+    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.logical-op-select')!;
+
+    expect(select.value).toBe('');
+    // A zero-width space is as empty as nothing on screen.
+    expect(select.selectedOptions[0].textContent).toMatch(/[^\s\u200b]/);
+    expect([...select.options].map((option) => option.value)).toEqual(['', 'NOT']);
+  });
+});
