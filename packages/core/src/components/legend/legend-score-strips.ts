@@ -4,7 +4,10 @@ import './category-score-strip';
 import type { ScoreStripPoint } from './category-score-strip';
 import type { LegendItem } from './types';
 
-/** A scored category grouped under Other has no row colour; its dot is grey. */
+/**
+ * A scored category grouped under Other has no row colour; its dot is grey. The point is flagged
+ * `other`, and on screen the strip fills it with the themed --ps-plot-other.
+ */
 const OTHER_POINT_COLOR = '#888';
 
 /** Silhouette's fixed axis. One array, so the strip's `.domain` binding does not change per render. */
@@ -58,12 +61,15 @@ function stripPoints(
   for (const score of scores) {
     const value = pick(score);
     if (value === null) continue;
-    points.push({
+    const rowColor = colorByValue.get(score.category);
+    const point: ScoreStripPoint = {
       category: score.category,
       value,
-      color: colorByValue.get(score.category) ?? OTHER_POINT_COLOR,
+      color: rowColor ?? OTHER_POINT_COLOR,
       embedding: pickEmbedding?.(score) ?? null,
-    });
+    };
+    if (rowColor === undefined) point.other = true;
+    points.push(point);
   }
   return points;
 }

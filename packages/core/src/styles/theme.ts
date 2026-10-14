@@ -46,6 +46,7 @@ const lightRoles = css`
   --ps-plot-connector: #475569; /* slate-600: EAT connector lines on the plot */
   --ps-eat: #7c3aed; /* violet-600: the EAT reliability bar in the tooltip */
   --ps-eat-endpoint: #0f766e; /* teal-700: the ring on an EAT connector's source */
+  --ps-swatch-stroke: #394150; /* a legend swatch's outline: LEGEND_STYLES.colors.defaultStroke */
 `;
 
 const darkRoles = css`
@@ -80,6 +81,7 @@ const darkRoles = css`
   --ps-plot-connector: #94a3b8; /* slate-400 */
   --ps-eat: #a78bfa; /* violet-400 */
   --ps-eat-endpoint: #2dd4bf; /* teal-400 */
+  --ps-swatch-stroke: #94a3b8; /* slate-400: keeps a dark swatch's edge on the dark panel */
 `;
 
 const sizes = css`

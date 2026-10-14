@@ -15,6 +15,11 @@ export interface ScoreStripPoint {
    * is read against, shown in the tooltip.
    */
   embedding?: number | null;
+  /**
+   * The category has no legend row (it sits in Other). Its `color` stays the data grey; on screen
+   * the dot takes the themed --ps-plot-other.
+   */
+  other?: true;
 }
 
 const STRIP_HEIGHT = 44;
@@ -106,7 +111,12 @@ class ProtspaceScoreStrip extends LitElement {
           ${this.points.map(
             (point) =>
               svg`<circle
-            class="${point.category === this.highlighted ? 'is-highlighted' : ''}"
+            class="${[
+              point.category === this.highlighted ? 'is-highlighted' : '',
+              point.other ? 'other' : '',
+            ]
+              .join(' ')
+              .trim()}"
             data-category="${point.category}"
             cx="${position(point.value)}%"
             cy="${AXIS_Y}"

@@ -204,7 +204,7 @@ If an imported bundle or saved browser state references an unsupported numeric g
 
 | Category  | Color     | Shape  |
 | --------- | --------- | ------ |
-| **Other** | `#999999` | Circle |
+| **Other** | `#888888` | Circle |
 | **N/A**   | `#DDDDDD` | Circle |
 
 ### Shapes

@@ -1,27 +1,31 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { countNoun, formatCount } from '@protspace/utils';
 import { icon } from '../kit/icon';
+import { NEUTRAL_VALUE_COLOR } from '../scatter-plot/config';
 import {
+  isNAValue,
   LEGEND_DEFAULTS,
   LEGEND_STYLES,
   LEGEND_VALUES,
+  NA_DEFAULT_COLOR,
   SHAPE_PATH_GENERATORS,
   toDisplayValue,
 } from './config';
 import type { LegendItem } from './types';
 
-/** Other's dot. A literal until phase 6 adds the neutral point tokens. */
-const OTHER_SYMBOL_COLOR = '#888';
-
 /**
  * A legend symbol drawn with the same paths as the WebGL shader's shapes. The SVG is the size plus
- * 3 px on each side, room for the selected outline. A selected row's outline comes from CSS
- * (`.legend-item.selected .legend-symbol path`), which beats these attributes.
+ * 3 px on each side, room for the selected outline. Its fill and stroke attributes hold the data
+ * colours, light, as exports draw them. On screen the row styles outline it with
+ * --ps-swatch-stroke, and a `tone` fills Other and a default-coloured N/A with the plot's themed
+ * greys (--ps-plot-other, --ps-plot-na). A selected row's outline
+ * (`.legend-item.selected .legend-symbol path`) beats both.
  */
 export function renderLegendSymbol(
   shape: string | null,
   color: string,
   size: number = LEGEND_DEFAULTS.symbolSize,
+  tone?: 'other' | 'na',
 ): TemplateResult {
   const padding = 3;
   const canvasSize = size + padding * 2;
@@ -44,6 +48,7 @@ export function renderLegendSymbol(
     >
       <g transform="translate(${centerOffset}, ${centerOffset})">
         <path
+          class=${tone ? `swatch-${tone}` : nothing}
           d="${path}"
           fill="${isOutlineOnly ? 'none' : validColor}"
           stroke="${isOutlineOnly ? validColor : LEGEND_STYLES.colors.defaultStroke}"
@@ -111,6 +116,10 @@ export function renderLegendRow(
     ? `Other · ${countNoun(view.otherCount ?? 0, 'category', 'categories')}`
     : displayValue;
   const tabindex = view.tabbable ? '0' : '-1';
+  // A default-coloured N/A follows the themed N/A grey, as the plot's points do (Task 6.3's rule);
+  // a colour the user picked, or one a bundle stored, stays as given.
+  const naTone =
+    isNAValue(item.value) && item.color.toLowerCase() === NA_DEFAULT_COLOR.toLowerCase();
 
   return html`
     <div
@@ -143,8 +152,13 @@ export function renderLegendRow(
       >
         <span class="legend-swatch" part="symbol"
           >${isOther
-            ? renderLegendSymbol('circle', OTHER_SYMBOL_COLOR, view.symbolSize)
-            : renderLegendSymbol(item.shape, item.color, view.symbolSize)}</span
+            ? renderLegendSymbol('circle', NEUTRAL_VALUE_COLOR, view.symbolSize, 'other')
+            : renderLegendSymbol(
+                item.shape,
+                item.color,
+                view.symbolSize,
+                naTone ? 'na' : undefined,
+              )}</span
         >
         <span class="legend-text" part="text">${label}</span>
       </button>

@@ -13,6 +13,7 @@
 
 import { COLOR_SCHEMES } from '@protspace/utils';
 import { LEGEND_VALUES } from './config';
+import { NEUTRAL_VALUE_COLOR } from '../scatter-plot/config';
 
 const KELLYS_COLORS = COLOR_SCHEMES.kellys;
 
@@ -21,8 +22,11 @@ export const SPECIAL_SLOTS = {
   OTHER: -1,
 } as const;
 
-/** Fixed color for the synthetic "Other" category. */
-const OTHER_COLOR = '#999999';
+/**
+ * Fixed color for the synthetic "Other" category: the plot's Other grey, so a light export's
+ * legend matches its points. On screen the swatch shows the themed --ps-plot-other.
+ */
+const OTHER_COLOR = NEUTRAL_VALUE_COLOR;
 
 interface VisualEncoding {
   color: string;

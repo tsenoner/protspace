@@ -76,6 +76,11 @@ export const categoryScoreStripStyles = [
       stroke-width: 2;
     }
 
+    /* A category in Other: the plot's themed Other grey, not the data grey in the attribute. */
+    circle.other {
+      fill: var(--ps-plot-other);
+    }
+
     .bound {
       font-size: var(--ps-text-xs);
       fill: var(--ps-text-muted);

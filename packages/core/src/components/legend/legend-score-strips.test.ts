@@ -35,12 +35,12 @@ describe('deriveStripPoints', () => {
 
     expect(points.silhouette).toEqual([
       { category: 'A', value: 0.5, color: '#ff0000', embedding: 0.4 },
-      { category: 'Z', value: -0.2, color: '#888', embedding: null },
+      { category: 'Z', value: -0.2, color: '#888', embedding: null, other: true },
     ]);
     // Davies-Bouldin has no embedding-space counterpart.
     expect(points.daviesBouldin).toEqual([
       { category: 'A', value: 1.2, color: '#ff0000', embedding: null },
-      { category: 'Z', value: 2, color: '#888', embedding: null },
+      { category: 'Z', value: 2, color: '#888', embedding: null, other: true },
     ]);
   });
 

@@ -81,6 +81,22 @@ export const rowStyles = css`
     overflow: visible;
   }
 
+  /* The swatch's attributes hold the data colours (light, as exports draw them). On screen the
+     outline and the neutral greys follow the theme: a stylesheet rule beats a presentation
+     attribute, and the selected outline below is more specific than these. An outline-only shape
+     (fill none) keeps its colour stroke. */
+  .legend-symbol path:not([fill='none']) {
+    stroke: var(--ps-swatch-stroke);
+  }
+
+  .legend-symbol path.swatch-other {
+    fill: var(--ps-plot-other);
+  }
+
+  .legend-symbol path.swatch-na {
+    fill: var(--ps-plot-na);
+  }
+
   /* Selected in the plot: the outline takes the accent; the fill stays the category's. */
   .legend-item.selected .legend-symbol path {
     stroke: var(--ps-accent);
