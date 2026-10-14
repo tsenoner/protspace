@@ -24,6 +24,19 @@ export const proteinTooltipStyles = css`
     pointer-events: auto;
   }
 
+  /* A tap-pinned card on a short plot is capped to the room the plot's chrome leaves; it scrolls,
+     and its actions stay in view at the bottom. */
+  :host(.pinned) .tooltip {
+    max-height: var(--protspace-tooltip-max-height, none);
+    overflow-y: auto;
+  }
+
+  :host(.pinned) .tooltip-actions {
+    position: sticky;
+    bottom: 0;
+    background: inherit;
+  }
+
   .tooltip-actions {
     display: flex;
     flex-wrap: wrap;

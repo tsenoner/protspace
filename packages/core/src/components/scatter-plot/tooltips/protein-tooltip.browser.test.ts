@@ -50,6 +50,21 @@ describe('protspace-protein-tooltip links', () => {
     expect(hover.shadowRoot!.querySelector('.resource-links')).toBeNull();
   });
 
+  it('a pinned card capped to the room scrolls and keeps its actions in view', async () => {
+    const pinned = await mount(true);
+    pinned.actions = [{ id: 'structure', label: 'View structure' }];
+    pinned.style.setProperty('--protspace-tooltip-max-height', '120px');
+    await pinned.updateComplete;
+
+    const card = pinned.shadowRoot!.querySelector<HTMLElement>('.tooltip')!;
+    const box = card.getBoundingClientRect();
+    expect(box.height).toBeLessThanOrEqual(120);
+    expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+    const actions = pinned.shadowRoot!.querySelector('.tooltip-actions')!.getBoundingClientRect();
+    expect(actions.bottom).toBeLessThanOrEqual(box.bottom);
+    expect(actions.top).toBeGreaterThanOrEqual(box.top);
+  });
+
   it('the header shows the label, not the key', async () => {
     const tooltip = document.createElement('protspace-protein-tooltip');
     tooltip.view = {

@@ -180,6 +180,17 @@ describe('computeTouchTooltipStyle', () => {
     );
   });
 
+  it('caps a card taller than the room between the insets to that room', () => {
+    // A phone on its side: a 360 px plot whose bottom 98 px the status corner and the selection
+    // bar cover. The room is 360 − 98 − 2 × 15 = 232 px, less than the 400 px card.
+    const style = computeTouchTooltipStyle(
+      { x: 200, y: 180, height: 400, viewportWidth: 500, viewportHeight: 360 },
+      { top: 0, right: 0, bottom: 98, left: 0 },
+    );
+    expect(style).toContain('top: 15px');
+    expect(style).toContain('--protspace-tooltip-max-height: 232px');
+  });
+
   it('never covers the protein in a plot taller than twice the card and its gaps', () => {
     // 400 ≥ 2 × (140 + 16 + 15): above or below always fits.
     for (let y = 0; y <= 400; y += 5) {

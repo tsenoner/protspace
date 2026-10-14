@@ -97,7 +97,7 @@ export const NO_TOUCH_TOOLTIP_INSETS: TouchTooltipInsets = { top: 0, right: 0, b
  * plot is barely wider than the card, so the card is centred on the protein and kept wholly inside
  * the plot, TOOLTIP_EDGE_PADDING clear of each edge's inset: above the protein when it fits, else
  * below it, else against the edge farther from it. It takes the hover tooltip's width, narrowed to
- * what the insets leave.
+ * what the insets leave, and `--protspace-tooltip-max-height` caps it to the room between them.
  */
 export function computeTouchTooltipStyle(
   input: TooltipStyleInput,
@@ -121,6 +121,8 @@ export function computeTouchTooltipStyle(
   else if (below + height <= floor) top = below;
   else top = y > (minTop + floor) / 2 ? minTop : floor - height;
   top = Math.max(minTop, top);
+  // A card taller than the room between the insets scrolls inside it rather than run under them.
+  const room = Math.max(0, floor - minTop);
 
-  return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px;`;
+  return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px; --protspace-tooltip-max-height: ${room}px;`;
 }
