@@ -239,6 +239,23 @@ describe('protspace-structure-viewer protein choices', () => {
 });
 
 describe('protspace-structure-viewer under a coarse pointer', () => {
+  it('the resource links and the colour-mode buttons are 40 px tall', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const viewer = await mount();
+      const targets = viewer.shadowRoot!.querySelectorAll('.header-link, .segmented-btn');
+      expect(targets.length).toBeGreaterThanOrEqual(6);
+      for (const target of targets) {
+        const box = target.getBoundingClientRect();
+        expect(box.height, target.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.width, target.textContent!.trim()).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+
   it('the close button and the protein pick are 40 px targets', async () => {
     const session = cdp();
     await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });

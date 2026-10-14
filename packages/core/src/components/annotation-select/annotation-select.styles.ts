@@ -277,6 +277,15 @@ export const annotationSelectStyles = [
       color: var(--ps-text);
     }
 
+    /* Touch: the eye is a 40 px target. */
+    @media (pointer: coarse) {
+      .tooltip-toggle-slot,
+      .tooltip-toggle-btn {
+        width: var(--ps-touch-target);
+        height: var(--ps-touch-target);
+      }
+    }
+
     .tooltip-toggle-btn.is-active {
       color: var(--ps-accent-text);
     }

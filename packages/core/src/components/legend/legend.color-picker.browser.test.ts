@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import type { LegendPersistedSettings, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
@@ -404,5 +404,23 @@ describe('legend colour and shape picker', () => {
     expect(
       legend.shadowRoot!.querySelector('.shape-picker')!.getAttribute('aria-describedby'),
     ).toBe('shape-note');
+  });
+
+  it('under a coarse pointer the shapes and the swatch are 40 px targets', async () => {
+    const { legend } = await mount();
+    await openPicker(legend, 'A');
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const shapes = [...legend.shadowRoot!.querySelectorAll('.shape-picker-item')];
+      for (const target of [swatch(legend), ...shapes]) {
+        const box = target.getBoundingClientRect();
+        expect(box.width, target.className).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.height, target.className).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

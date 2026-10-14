@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import './protein-search';
 
@@ -76,5 +76,33 @@ describe('protspace-protein-search report', () => {
     expect(element.shadowRoot!.activeElement?.id).toBe('protein-search-input');
     // Back in the field, not reopened: the suggestion list stays closed.
     expect(element.shadowRoot!.querySelector('.search-suggestions')).toBeNull();
+  });
+});
+
+describe('protspace-protein-search under a coarse pointer', () => {
+  it('each suggestion is a 40 px row', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const element = document.createElement('protspace-protein-search') as HTMLElement & {
+        availableProteinIds: string[];
+        updateComplete: Promise<unknown>;
+      };
+      element.style.cssText = 'display: block; width: 320px';
+      element.availableProteinIds = ['P11111', 'P12222', 'P13333'];
+      document.body.append(element);
+      await element.updateComplete;
+      element.shadowRoot!.querySelector<HTMLInputElement>('#protein-search-input')!.focus();
+      await userEvent.keyboard('P1');
+      await element.updateComplete;
+
+      const rows = element.shadowRoot!.querySelectorAll('.search-suggestion');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

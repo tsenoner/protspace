@@ -138,6 +138,21 @@ export const searchStyles = [
       opacity: 1;
     }
 
+    /* Touch: each suggestion is a 40 px row. The ✕ goes to the row's end by margin, since a flex
+       row ignores the float. */
+    @media (pointer: coarse) {
+      .search-suggestion {
+        display: flex;
+        align-items: center;
+        box-sizing: border-box;
+        min-height: var(--ps-touch-target);
+      }
+
+      .search-suggestion.selected::after {
+        margin-left: auto;
+      }
+    }
+
     .no-results {
       padding: var(--ps-space-3);
       color: var(--ps-text-muted);

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsDialog } from '../kit/dialog';
 import { deepActiveElement } from '../kit/focus';
@@ -329,6 +329,42 @@ describe('protspace-publish-modal on a phone', () => {
     expect(Math.abs(preview.height - 0.4 * container.height)).toBeLessThan(1);
     expect(sidebar.width).toBeCloseTo(container.width, 0);
     expect(sidebar.bottom).toBeLessThanOrEqual(container.bottom + 0.5);
+  });
+
+  it('at 375 × 667 the tool row wraps inside the preview', async () => {
+    await page.viewport(375, 667);
+    const { modal } = await mount();
+    const toolbar = rect(modal, '.publish-preview-toolbar');
+    const tools = [...modal.shadowRoot!.querySelectorAll('.publish-tool-btn')];
+    expect(tools.length).toBe(5);
+    for (const tool of tools) {
+      expect(tool.getBoundingClientRect().right).toBeLessThanOrEqual(toolbar.right + 0.5);
+    }
+  });
+
+  it('under a coarse pointer the editor’s buttons and fields are 40 px targets', async () => {
+    await page.viewport(375, 667);
+    const { modal } = await mount();
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const small = [
+        ...modal.shadowRoot!.querySelectorAll<HTMLElement>(
+          'button, .publish-row-input, .publish-select',
+        ),
+      ].flatMap((target) => {
+        const box = target.getBoundingClientRect();
+        if (box.width === 0 || !target.checkVisibility()) return [];
+        const tooSmall =
+          box.height < 40 - 0.5 || (target.localName === 'button' && box.width < 39.5);
+        return tooSmall
+          ? [`${target.className}: ${Math.round(box.width)}x${Math.round(box.height)}`]
+          : [];
+      });
+      expect(small).toEqual([]);
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 
   it('at 740 × 360 the preview and the settings stay side by side, the settings 340 px wide', async () => {

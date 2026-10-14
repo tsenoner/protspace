@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { ProtspaceAnnotationSelect } from './annotation-select';
 import './annotation-select';
@@ -112,5 +112,22 @@ describe('protspace-annotation-select panel', () => {
     await vi.waitFor(() => expect(root.activeElement).toBe(trigger));
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(root.querySelector('protspace-info-popover')).toBeNull();
+  });
+
+  it('under a coarse pointer the hover-tooltip eye is a 40 px target', async () => {
+    const el = await openInClippingBox();
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const toggles = el.shadowRoot!.querySelectorAll('.tooltip-toggle-btn');
+      expect(toggles.length).toBeGreaterThan(0);
+      for (const toggle of toggles) {
+        const box = toggle.getBoundingClientRect();
+        expect(box.width).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.height).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

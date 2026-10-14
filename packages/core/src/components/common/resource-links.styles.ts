@@ -28,6 +28,14 @@ export const resourceLinkStyles = css`
     text-decoration: none;
   }
 
+  /* Touch: each link is a 40 px target; the row's gaps keep them apart. */
+  @media (pointer: coarse) {
+    .header-link {
+      min-width: var(--ps-touch-target);
+      min-height: var(--ps-touch-target);
+    }
+  }
+
   .header-link svg {
     flex: none;
     width: 11px;

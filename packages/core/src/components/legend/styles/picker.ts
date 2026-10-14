@@ -101,6 +101,18 @@ export const pickerStyles = css`
     }
   }
 
+  /* Touch: 40 px shape radios (six wrap to two lines) and a 40 px tall colour swatch. */
+  @media (pointer: coarse) {
+    .color-picker-swatch {
+      height: var(--ps-touch-target);
+    }
+
+    .shape-picker-item {
+      width: var(--ps-touch-target);
+      height: var(--ps-touch-target);
+    }
+  }
+
   .symbol-picker-note {
     margin: 0;
     font-size: var(--ps-text-xs);

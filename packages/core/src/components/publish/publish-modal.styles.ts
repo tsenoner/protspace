@@ -562,6 +562,21 @@ export const publishModalStyles = [
       font-size: var(--ps-text-sm);
     }
 
+    /* Touch: the tools, presets and format toggles, the number fields and the selects are 40 px
+       targets. */
+    @media (pointer: coarse) {
+      .publish-toggle-btn,
+      .publish-row-input,
+      .publish-select {
+        min-height: var(--ps-touch-target);
+      }
+
+      .publish-aspect-lock {
+        min-width: var(--ps-touch-target);
+        min-height: var(--ps-touch-target);
+      }
+    }
+
     /* Tablets and narrow windows: the settings under the preview. */
     @media (max-width: 800px) {
       .publish-container {
@@ -582,6 +597,10 @@ export const publishModalStyles = [
       }
       .publish-preview {
         flex: 0 0 40%;
+      }
+      /* Five tools are wider than a phone: they wrap rather than run off the edge. */
+      .publish-preview-toolbar {
+        flex-wrap: wrap;
       }
       .publish-sidebar {
         flex: 1 1 auto;

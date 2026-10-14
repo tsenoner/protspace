@@ -135,6 +135,10 @@ const structureViewerStylesCore = css`
       min-width: var(--ps-touch-target);
       min-height: var(--ps-touch-target);
     }
+
+    .segmented > .segmented-btn {
+      min-height: var(--ps-touch-target);
+    }
   }
 
   .viewer-container {
