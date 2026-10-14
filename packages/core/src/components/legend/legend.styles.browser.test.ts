@@ -157,3 +157,38 @@ describe('legend styles', () => {
     expect(percent.height).toBe(field.height);
   });
 });
+
+describe('the legend header under a coarse pointer', () => {
+  it('the ⓘ hit area takes no presses from the tabs before it or the buttons after it', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      const { legend } = await mountLegendWithScatterplot(
+        categoricalData(TWELVE, 'protein_families'),
+        'protein_families',
+      );
+      // The workbench's tabs in the start slot, in a header too narrow for the title.
+      const tabs = document.createElement('div');
+      tabs.slot = 'header-start';
+      tabs.innerHTML = '<button role="tab">Legend</button><button role="tab">Filter</button>';
+      legend.append(tabs);
+      legend.style.cssText = 'display: block; width: 220px';
+      await settle(legend);
+      await frame();
+
+      const root = legend.shadowRoot!;
+      expect(root.querySelector('protspace-info-popover')).not.toBeNull();
+      const filter = tabs.lastElementChild!.getBoundingClientRect();
+      const sort = root.querySelector('.sort-button')!;
+      const sortBox = sort.getBoundingClientRect();
+      const midY = sortBox.top + sortBox.height / 2;
+
+      expect(document.elementFromPoint(filter.right - 2, filter.top + filter.height / 2)).toBe(
+        tabs.lastElementChild,
+      );
+      expect(root.elementFromPoint(sortBox.left + 2, midY)).toBe(sort);
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  });
+});

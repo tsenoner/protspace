@@ -60,4 +60,14 @@ export const headerStyles = css`
   ::slotted(*) {
     flex: none;
   }
+
+  /* Touch: the ⓘ's 40 px hit area is positioned, so it paints over its neighbours and takes their
+     presses. Lifted above it, the tabs before it and the buttons after it keep their own. */
+  @media (pointer: coarse) {
+    ::slotted(*),
+    .legend-header ps-icon-button {
+      position: relative;
+      z-index: 1;
+    }
+  }
 `;
