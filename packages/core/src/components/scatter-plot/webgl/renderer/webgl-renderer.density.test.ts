@@ -7,6 +7,8 @@ import type { RendererDegradedDetail } from '../../scatter-plot.events';
 import { makeRenderer, plotData, styleGetters } from './test-support/renderer-fixture';
 import { internalsOf } from './test-support/renderer-internals';
 import type { MockGLOptions } from './test-support/mock-webgl2';
+import { createMockCanvas } from './test-support/mock-webgl2';
+import { WebGLRenderer } from './webgl-renderer';
 
 type Config = {
   width: number;
@@ -401,6 +403,43 @@ describe('density layer, contour', () => {
       'activeTexture(33985)',
     ]);
     on.renderer.destroy();
+  });
+
+  it("the contour palette uses getNeutralColor's key", () => {
+    // Sixteen reds and the dark Other grey over 50 points: past the 16-slot cap, so the palette
+    // pools the least populous colours into the neutral grey's tail slot.
+    const reds = Array.from(
+      { length: 16 },
+      (_, i) => `#${(i + 1).toString(16).padStart(2, '0')}0000`,
+    );
+    const { pd, style } = categories([...reds, '#64748b']);
+    const paletteWith = (getNeutralColor?: () => string) => {
+      const { canvas } = createMockCanvas();
+      const renderer = new WebGLRenderer(canvas, {
+        getScales: () => ({
+          x: d3.scaleLinear().domain([0, 1]).range([0, 800]),
+          y: d3.scaleLinear().domain([0, 1]).range([0, 600]),
+        }),
+        getTransform: () => d3.zoomIdentity,
+        getConfig: () => contour as never,
+        style,
+        getNeutralColor,
+      });
+      renderer.render(pd);
+      const palette = internalsOf(renderer).contourPalette!;
+      renderer.destroy();
+      return palette;
+    };
+    const slotRgb = (p: { keys: Float32Array }, s: number) =>
+      [0, 1, 2].map((c) => Math.round(p.keys[s * 3 + c] * 255));
+
+    const themed = paletteWith(() => '#64748b');
+    expect(themed.tailSlot).toBe(0);
+    expect(slotRgb(themed, 0)).toEqual([0x64, 0x74, 0x8b]);
+    // Without the option the light grey keys the tail slot, as before.
+    const light = paletteWith();
+    expect(light.tailSlot).toBe(0);
+    expect(slotRgb(light, 0)).toEqual([0x88, 0x88, 0x88]);
   });
 });
 

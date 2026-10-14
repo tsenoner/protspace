@@ -1,11 +1,12 @@
-import { NEUTRAL_VALUE_COLOR } from '../config';
 import type { PlotDataPoint, VisualizationData } from '@protspace/utils';
 import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
   getProteinAnnotationValues,
   isMultilabelAnnotationDataCached,
+  isNAValue,
   isNumericAnnotation,
+  NA_DEFAULT_COLOR,
   normalizeShapeName,
   toInternalValue,
 } from '@protspace/utils';
@@ -14,6 +15,7 @@ import { composePaintDepth, SELECTED_OPACITY_THRESHOLD } from '../paint-depth';
 import { computeVisibilityModel } from './visibility-model';
 import type { VisibilityModel } from './visibility-model';
 import { CategoryStyles, createCategoryStylePass } from './style-pass';
+import { LIGHT_NEUTRALS, type PlotNeutrals } from './plot-neutrals';
 
 export interface StyleConfig {
   selectedProteinIds: string[];
@@ -53,6 +55,8 @@ export function createStyleGetters(
   data: VisualizationData | null,
   styleConfig: StyleConfig,
   model?: VisibilityModel,
+  // The greys of Other and default-coloured N/A points: the theme's on screen, light in exports.
+  neutrals: PlotNeutrals = LIGHT_NEUTRALS,
 ) {
   // Single authority for per-point opacity semantics. The component passes a
   // shared, memoized model; direct callers (tests included) omit it and one is
@@ -166,19 +170,34 @@ export function createStyleGetters(
     return 'circle';
   };
 
+  // An N/A value drawn in the default N/A grey takes the theme's grey; a user-picked or
+  // bundle-stored N/A colour is the data's and stays. Light needs no substitution, so a light
+  // view keeps the data's own colour strings.
+  const naDefault = NA_DEFAULT_COLOR.toLowerCase();
+  const naSubstitute = neutrals.na.trim().toLowerCase() === naDefault ? null : neutrals.na;
+  const colorOfKey = (key: string): string => {
+    const color = valueToColor.get(key);
+    if (color === undefined) return neutrals.other;
+    if (naSubstitute !== null && isNAValue(key) && color.toLowerCase() === naDefault) {
+      return naSubstitute;
+    }
+    return color;
+  };
+
   const colorsOfValues = (annotationValueArray: readonly string[]): string[] => {
     // Defensive guard
-    if (annotationValueArray.length === 0) return [NEUTRAL_VALUE_COLOR];
+    if (annotationValueArray.length === 0) return [neutrals.other];
 
     if (annotationValueArray.every((v) => otherValuesSet.has(v))) {
-      return [NEUTRAL_VALUE_COLOR];
+      return [neutrals.other];
     }
 
     const colors = annotationValueArray
       .map((v) => {
-        if (hiddenKeysSet.has(toInternalValue(v))) return undefined;
-        if (otherValuesSet.has(v)) return NEUTRAL_VALUE_COLOR;
-        return valueToColor.get(toInternalValue(v)) ?? NEUTRAL_VALUE_COLOR;
+        const key = toInternalValue(v);
+        if (hiddenKeysSet.has(key)) return undefined;
+        if (otherValuesSet.has(v)) return neutrals.other;
+        return colorOfKey(key);
       })
       .filter((v) => v !== undefined);
 
@@ -194,7 +213,7 @@ export function createStyleGetters(
   };
 
   const getColors = (point: PlotDataPoint): string[] => {
-    if (!data || !styleConfig.selectedAnnotation) return [NEUTRAL_VALUE_COLOR];
+    if (!data || !styleConfig.selectedAnnotation) return [neutrals.other];
     return colorsOfValues(
       getProteinAnnotationValues(data, point.originalIndex, styleConfig.selectedAnnotation),
     );

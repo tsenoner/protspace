@@ -1,7 +1,10 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { PlotData, VisualizationData } from '@protspace/utils';
-import { DEFAULT_CONFIG } from '../config';
+import { DEFAULT_CONFIG, NEUTRAL_VALUE_COLOR } from '../config';
+import { LIGHT_NEUTRALS, type PlotNeutrals } from './plot-neutrals';
 import { PointStyleState } from './point-style-state';
+
+const DARK: PlotNeutrals = { other: '#64748b', na: '#2a3547' };
 
 /** Six proteins, the first three in family A and the rest in B, under `fam` and `other`. */
 function makeData(): VisualizationData {
@@ -36,6 +39,7 @@ function makeState() {
     colorMapping: null as Record<string, string> | null,
     shapeMapping: null as Record<string, string> | null,
     canDrawMarks: true,
+    neutrals: LIGHT_NEUTRALS as PlotNeutrals,
   };
   const state = new PointStyleState({
     data: () => inputs.data,
@@ -51,6 +55,7 @@ function makeState() {
     colorMapping: () => inputs.colorMapping,
     shapeMapping: () => inputs.shapeMapping,
     canDrawMarks: () => inputs.canDrawMarks,
+    neutrals: () => inputs.neutrals,
     onIdsRepeat: vi.fn(),
   });
   return { inputs, state };
@@ -184,5 +189,35 @@ describe('releaseDataset()', () => {
     const model = state.model();
     state.releaseDataset();
     expect(state.model()).toBe(model);
+  });
+});
+
+describe('exportGetters()', () => {
+  const p3 = { id: 'p3', x: 0, y: 0, originalIndex: 3 };
+
+  it('is getters() while the neutrals are light', () => {
+    const { state } = makeState();
+    expect(state.exportGetters()).toBe(state.getters());
+  });
+
+  it('with dark neutrals, colours Other #888888 while getters() colours it with the dark grey', () => {
+    const { inputs, state } = makeState();
+    inputs.otherAnnotationValues = ['B'];
+    inputs.neutrals = DARK;
+    expect(state.getters().getColors(p3)).toEqual(['#64748b']);
+    expect(state.exportGetters().getColors(p3)).toEqual([NEUTRAL_VALUE_COLOR]);
+    // Built once while the live getters stand.
+    expect(state.exportGetters()).toBe(state.exportGetters());
+  });
+
+  it('invalidateGetters drops the light export getters too', () => {
+    const { inputs, state } = makeState();
+    inputs.neutrals = DARK;
+    const first = state.exportGetters();
+    state.invalidateGetters();
+    const second = state.exportGetters();
+    expect(second).not.toBe(first);
+    state.refreshGetters();
+    expect(state.exportGetters()).not.toBe(second);
   });
 });

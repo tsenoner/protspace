@@ -68,6 +68,7 @@ import {
   densityFieldsKey,
   buildSlotPalette,
   buildRecordSlotPalette,
+  neutralKeyOf,
   type DensityFrame,
   type DensityResources,
   type SlotPalette,
@@ -99,6 +100,7 @@ import {
 import { ContextLossController } from './context-loss-controller';
 import { ExportRenderer } from './export-renderer';
 import { perfCounters } from '../../../../utils/perf-counters';
+import { NEUTRAL_VALUE_COLOR } from '../../config';
 import {
   POINT_VERTEX_SHADER,
   POINT_FRAGMENT_SHADER,
@@ -163,6 +165,8 @@ interface WebGLRendererOptions {
   exportStyle?: WebGLStyleGetters;
   /** White unless given. */
   getKnockoutColor?: () => readonly [number, number, number];
+  /** The grey Other points are staged with, which keys the contours' tail slot. `NEUTRAL_VALUE_COLOR` unless given. */
+  getNeutralColor?: () => string;
   onContextLost?: () => void;
   onDegraded?: (detail: RendererDegradedDetail) => void;
 }
@@ -319,6 +323,7 @@ export class WebGLRenderer {
   private readonly style: WebGLStyleGetters;
   private readonly exportStyle: WebGLStyleGetters;
   private readonly getKnockoutColor: () => readonly [number, number, number];
+  private readonly getNeutralColor: () => string;
   private readonly onContextLost?: () => void;
   private readonly onDegraded?: (detail: RendererDegradedDetail) => void;
 
@@ -332,6 +337,7 @@ export class WebGLRenderer {
     this.style = options.style;
     this.exportStyle = options.exportStyle ?? options.style;
     this.getKnockoutColor = options.getKnockoutColor ?? (() => [1, 1, 1]);
+    this.getNeutralColor = options.getNeutralColor ?? (() => NEUTRAL_VALUE_COLOR);
     this.onContextLost = options.onContextLost;
     this.onDegraded = options.onDegraded;
     this.lossController = new ContextLossController(this.canvas, () => {
@@ -829,13 +835,18 @@ export class WebGLRenderer {
     const count = this.currentPointCount;
     const { colors } = this.stageArrays;
     const { staged, ids } = this.recordTable;
-    this.contourPalette ??= staged
-      ? buildRecordSlotPalette(
-          staged,
-          this.gamma,
-          marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
-        )
-      : buildSlotPalette(colors, count, this.gamma, marked);
+    if (!this.contourPalette) {
+      // Other's grey pools the colours past the cap, so it never gets a contour of its own.
+      const neutralKey = neutralKeyOf(this.getNeutralColor());
+      this.contourPalette = staged
+        ? buildRecordSlotPalette(
+            staged,
+            this.gamma,
+            marked ? markedFirstDrawn(staged, ids, colors, marked, count) : undefined,
+            neutralKey,
+          )
+        : buildSlotPalette(colors, count, this.gamma, marked, neutralKey);
+    }
     if (this.contourPalette.count === 0) return null;
 
     const res = this.ensureDensityResources();

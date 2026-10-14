@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { StyleConfig } from './style-getters';
 import { createStyleGetters } from './style-getters';
-import type { VisualizationData, PlotDataPoint } from '@protspace/utils';
+import type { VisualizationData, PlotData, PlotDataPoint } from '@protspace/utils';
+import type { PlotNeutrals } from './plot-neutrals';
+import { createPassScratch } from '../webgl/renderer/pass-staging';
 
 /**
  * Tests for style-getters.ts focusing on N/A value handling.
@@ -52,6 +54,146 @@ describe('style-getters', () => {
       const getters = createStyleGetters(data, { ...baseConfig, eatOverlayEnabled: false });
 
       expect(getters.isPredicted({ id: 'predicted', x: 0, y: 0, originalIndex: 1 })).toBe(false);
+    });
+  });
+
+  describe('neutral greys', () => {
+    const DARK: PlotNeutrals = { other: '#64748b', na: '#2a3547' };
+
+    const config = (overrides: Partial<StyleConfig> = {}): StyleConfig => ({
+      selectedProteinIds: [],
+      highlightedProteinIds: [],
+      selectedAnnotation: 'fam',
+      hiddenAnnotationValues: [],
+      otherAnnotationValues: [],
+      zOrderMapping: null,
+      colorMapping: null,
+      shapeMapping: null,
+      sizes: { base: 10 },
+      opacities: { base: 1, selected: 1, faded: 0.3 },
+      ...overrides,
+    });
+
+    const point = (i: number): PlotDataPoint => ({ id: `p${i}`, x: 0, y: 0, originalIndex: i });
+
+    /** Values A, B and C, one protein each, and a fourth protein holding both B and C. */
+    const families = (): VisualizationData => ({
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [{ name: 'test', data: new Float32Array(8), dimension: 2 }],
+      annotations: {
+        fam: {
+          values: ['A', 'B', 'C'],
+          colors: ['#ff0000', '#00ff00', '#0000ff'],
+          shapes: ['circle', 'circle', 'circle'],
+        },
+      },
+      annotation_data: { fam: [[0], [1], [2], [1, 2]] },
+    });
+
+    /** Protein 0 is N/A coloured `naColor`; protein 1 is the regular value A coloured #DDDDDD. */
+    const withNA = (naColor: string): VisualizationData => ({
+      protein_ids: ['p0', 'p1'],
+      projections: [{ name: 'test', data: new Float32Array(4), dimension: 2 }],
+      annotations: {
+        fam: {
+          values: [null, 'A'],
+          colors: [naColor, '#DDDDDD'],
+          shapes: ['circle', 'circle'],
+        },
+      },
+      annotation_data: { fam: [[0], [1]] },
+    });
+
+    it('Other values take neutrals.other', () => {
+      const getters = createStyleGetters(
+        families(),
+        config({ otherAnnotationValues: ['B'] }),
+        undefined,
+        DARK,
+      );
+      expect(getters.getColors(point(1))).toEqual(['#64748b']);
+      expect(getters.getColors(point(0))).toEqual(['#ff0000']);
+      // A value the mapping gives no colour falls back to the same grey.
+      const unmapped = createStyleGetters(
+        families(),
+        config({ colorMapping: { A: '#ff0000' } }),
+        undefined,
+        DARK,
+      );
+      expect(unmapped.getColors(point(2))).toEqual(['#64748b']);
+    });
+
+    it('an all-Other point takes neutrals.other', () => {
+      const getters = createStyleGetters(
+        families(),
+        config({ otherAnnotationValues: ['B', 'C'] }),
+        undefined,
+        DARK,
+      );
+      expect(getters.getColors(point(3))).toEqual(['#64748b']);
+      // No selected annotation: every point is neutral.
+      const none = createStyleGetters(
+        families(),
+        config({ selectedAnnotation: '' }),
+        undefined,
+        DARK,
+      );
+      expect(none.getColors(point(0))).toEqual(['#64748b']);
+    });
+
+    it('a default-coloured N/A takes neutrals.na (any letter case)', () => {
+      for (const color of ['#DDDDDD', '#dddddd']) {
+        const getters = createStyleGetters(withNA(color), config(), undefined, DARK);
+        expect(getters.getColors(point(0)), color).toEqual(['#2a3547']);
+      }
+      // Through the legend's mapping too.
+      const mapped = createStyleGetters(
+        withNA('#ff00ff'),
+        config({ colorMapping: { __NA__: '#DdDdDd', A: '#ff0000' } }),
+        undefined,
+        DARK,
+      );
+      expect(mapped.getColors(point(0))).toEqual(['#2a3547']);
+    });
+
+    it('a user-picked N/A colour is kept', () => {
+      const getters = createStyleGetters(withNA('#ff00ff'), config(), undefined, DARK);
+      expect(getters.getColors(point(0))).toEqual(['#ff00ff']);
+    });
+
+    it('a regular category coloured #DDDDDD keeps its colour', () => {
+      const getters = createStyleGetters(withNA('#DDDDDD'), config(), undefined, DARK);
+      expect(getters.getColors(point(1))).toEqual(['#DDDDDD']);
+    });
+
+    it("the style pass's colours follow the neutrals too", () => {
+      const getters = createStyleGetters(
+        families(),
+        config({ otherAnnotationValues: ['B'] }),
+        undefined,
+        DARK,
+      );
+      const pd: PlotData = {
+        length: 4,
+        xs: new Float32Array(4),
+        ys: new Float32Array(4),
+        zs: null,
+        originalIndices: null,
+        proteinIds: ['p0', 'p1', 'p2', 'p3'],
+      };
+      const pass = getters.createStylePass();
+      const scratch = createPassScratch(4);
+      pass.resolve(pd, 4, scratch);
+      const colorsOfSlot = (slot: number) => pass.records.colors[scratch.record[slot]];
+      expect(colorsOfSlot(1)).toEqual(['#64748b']);
+      expect(colorsOfSlot(0)).toEqual(['#ff0000']);
+    });
+
+    it('without a neutrals argument every existing expectation holds', () => {
+      const other = createStyleGetters(families(), config({ otherAnnotationValues: ['B'] }));
+      expect(other.getColors(point(1))).toEqual(['#888888']);
+      const na = createStyleGetters(withNA('#DDDDDD'), config());
+      expect(na.getColors(point(0))).toEqual(['#DDDDDD']);
     });
   });
 

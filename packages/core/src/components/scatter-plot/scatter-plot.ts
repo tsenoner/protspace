@@ -36,7 +36,7 @@ import './tooltips/protein-tooltip';
 import { DEFAULT_CONFIG } from './config';
 import { PointStyleState } from './styling/point-style-state';
 import { WebGLRenderer, computeSizeScaleFactor, pointRadiusCss } from './webgl';
-import { resolveColor } from './webgl/color-utils';
+import { LIGHT_NEUTRALS, type PlotNeutrals } from './styling/plot-neutrals';
 import { BackgroundColorCache } from './styling/background-color-cache';
 import type {
   BrushSelectionDetail,
@@ -82,6 +82,9 @@ export type {
   ProvenanceConnectorRequest,
   ProvenanceConnectorStatus,
 } from './provenance/connector-overlay-controller';
+
+/** An export's knockout colour: white, whatever the theme or the figure's background (exports are light). */
+const EXPORT_KNOCKOUT = [1, 1, 1] as const;
 
 const HIT_RADIUS_MIN_PX = 4;
 // A fingertip is far less precise than a cursor: a tap picks the nearest protein within 20 px,
@@ -297,6 +300,7 @@ export class ProtspaceScatterplot extends LitElement {
     zOrderMapping: () => this._zOrderMapping,
     colorMapping: () => this._colorMapping,
     shapeMapping: () => this._shapeMapping,
+    neutrals: () => this._neutrals(),
     canDrawMarks: () => this._webglRenderer?.canDrawMarks ?? true,
     // If an id repeats, render the point count again.
     onIdsRepeat: () => this.requestUpdate(),
@@ -447,6 +451,8 @@ export class ProtspaceScatterplot extends LitElement {
 
   /** Resolved plot background; see the class for what invalidates it. */
   private _background = new BackgroundColorCache(this);
+  /** The greys the live view draws Other and default-coloured N/A points with. */
+  private readonly _neutrals = (): PlotNeutrals => LIGHT_NEUTRALS;
 
   constructor() {
     super();
@@ -481,35 +487,39 @@ export class ProtspaceScatterplot extends LitElement {
   private _createWebglRenderer() {
     if (!this._canvas) return;
     const style = this._style;
-    const styles = {
-      getColors: (p: PlotDataPoint) => style.getters().getColors(p),
-      getPointSize: (p: PlotDataPoint) => style.getters().getPointSize(p),
-      getShape: (p: PlotDataPoint) => style.getters().getPointShape(p),
-      isPredicted: (p: PlotDataPoint) => style.getters().isPredicted(p),
-      isMultilabel: () => style.getters().isMultilabel(),
-    };
+    type Getters = ReturnType<PointStyleState['getters']>;
+    // The per-point getters over the live getters (the theme's greys) or the export's light ones.
+    const pointStyles = (getters: () => Getters) => ({
+      getColors: (p: PlotDataPoint) => getters().getColors(p),
+      getPointSize: (p: PlotDataPoint) => getters().getPointSize(p),
+      getShape: (p: PlotDataPoint) => getters().getPointShape(p),
+      isPredicted: (p: PlotDataPoint) => getters().isPredicted(p),
+      isMultilabel: () => getters().isMultilabel(),
+    });
+    const exported = () => style.exportGetters();
     this._webglRenderer = new WebGLRenderer(this._canvas, {
       getScales: () => this._scales,
       getTransform: () => this._transform,
       getConfig: () => this._mergedConfig,
       // The live view stages nothing marked while it draws the marks on the GPU.
       style: {
-        ...styles,
+        ...pointStyles(() => style.getters()),
         getOpacity: (p: PlotDataPoint) => style.stageModel().opacityOf(p),
         getDepth: (p: PlotDataPoint) => style.stageGetters().getDepth(p),
         createStylePass: () => style.stageGetters().createStylePass(style.stageModel()),
         getPointMarks: (pd: PlotData) => style.pointMarks(pd),
       },
-      // An export stages the selection with every other style.
+      // An export stages the selection with every other style, in the light greys.
       exportStyle: {
-        ...styles,
+        ...pointStyles(exported),
         getOpacity: (p: PlotDataPoint) => this._getOpacity(p),
-        getDepth: (p: PlotDataPoint) => style.getters().getDepth(p),
+        getDepth: (p: PlotDataPoint) => exported().getDepth(p),
         // The getters above resolve the visibility model per point; a pass
         // resolves it once, for every point it stages.
-        createStylePass: () => style.getters().createStylePass(style.model()),
+        createStylePass: () => exported().createStylePass(style.model()),
       },
       getKnockoutColor: () => this._background.get(),
+      getNeutralColor: () => this._neutrals().other,
       onContextLost: this._handleWebglContextLost,
       onDegraded: (detail) =>
         this.dispatchEvent(
@@ -2498,11 +2508,7 @@ export class ProtspaceScatterplot extends LitElement {
       dataDomain,
       pointSizeReference,
       resetView,
-      resolveColor(
-        backgroundColor === 'transparent'
-          ? getComputedStyle(this).backgroundColor
-          : backgroundColor,
-      ),
+      EXPORT_KNOCKOUT,
     );
 
     // Composite with badges canvas if present. For the unzoomed (resetView)
