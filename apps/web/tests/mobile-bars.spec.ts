@@ -267,7 +267,6 @@ test.describe('the bars on a phone on its side', () => {
   test.use({ viewport: { width: 740, height: 360 } });
 
   test('C8: the landscape bar keeps touch-sized targets', async ({ page }) => {
-    test.fixme(true, 'task 5.9');
     await openExplorePhone(page);
     await expect(moreButton(page)).toBeVisible();
     expect(await touchTargetsBelow(page, appBar(page))).toEqual([]);
@@ -275,7 +274,6 @@ test.describe('the bars on a phone on its side', () => {
   });
 
   test('C9: the More sheet fits the short screen and scrolls inside', async ({ page }) => {
-    test.fixme(true, 'task 5.9');
     await openExplorePhone(page);
     const rows = await openMoreSheet(page);
     const heading = moreSheet(page).getByRole('heading', { name: 'More', exact: true });
@@ -287,6 +285,60 @@ test.describe('the bars on a phone on its side', () => {
     await last.scrollIntoViewIfNeeded();
     await expectWithinViewport(page, last);
     await expectWithinViewport(page, heading);
+  });
+
+  test('the landscape bar is one 44 px row with search before Projection in Tab order', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+
+    const app = await box(appBar(page));
+    const view = await box(viewBar(page));
+    for (const bar of [app, view]) {
+      expect(Math.abs(bar.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(bar.height - 44)).toBeLessThanOrEqual(1);
+    }
+    // Side by side: the app bar ends where the view bar starts, and the row fits the screen.
+    expect(app.x + app.width).toBeLessThanOrEqual(view.x + 1);
+    expect(view.x + view.width).toBeLessThanOrEqual(740 + 1);
+    await expectNoHorizontalOverflow(page);
+
+    // DOM order is visual order: the search button, then the view bar's first control.
+    await expect(searchToggle(page)).toBeVisible();
+    await searchToggle(page).focus();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('myProjectionSelect');
+
+    // The search overlay covers the whole row; Close search ends it and returns focus.
+    await searchToggle(page).tap();
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
+    await expect(searchInput(page)).toBeFocused();
+    const overlay = await box(appBar(page).locator('[data-workbench="app-bar-center"]'));
+    expect(Math.abs(overlay.width - 740)).toBeLessThanOrEqual(1);
+    await appBar(page).getByRole('button', { name: 'Close search', exact: true }).tap();
+    await expect(searchToggle(page)).toBeFocused();
+  });
+
+  test('C9b: in landscape, Export in the More sheet and the dataset name open their menus on screen', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    await expect(workbench(page)).toHaveAttribute('data-layout', 'landscape');
+
+    // A popover inside a display: none ancestor never renders: these would open as 0×0 boxes.
+    const rows = await openMoreSheet(page);
+    await rows.getByRole('button', { name: /^Export/ }).tap();
+    await expect(moreSheet(page)).toBeHidden();
+    await expect(exportMenuList(page)).toBeVisible();
+    await expectWithinViewport(page, exportMenuList(page));
+    await page.keyboard.press('Escape');
+    await expect(exportMenuList(page)).toBeHidden();
+
+    await datasetSwitcher(page).tap();
+    const importPanel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
+    await expect(importPanel).toBeVisible();
+    await expectWithinViewport(page, importPanel);
   });
 });
 

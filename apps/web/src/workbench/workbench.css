@@ -832,9 +832,9 @@
   transform: none;
 }
 
-/* Expanded, the sheet covers the whole panel: its tabs and fold leave the Tab order (no box
-   change, so no plot resize). */
-.workbench[data-layout='phone'][data-sheet='expanded'] #wb-sidebar {
+/* Expanded, the sheet covers the whole panel (on its side, the whole legend column): its tabs
+   and fold leave the Tab order (no box change, so no plot resize). */
+.workbench:is([data-layout='phone'], [data-layout='landscape'])[data-sheet='expanded'] #wb-sidebar {
   visibility: hidden;
 }
 
@@ -858,6 +858,174 @@
    applies it. */
 .workbench[data-layout='phone'][data-panel-folded]:not([data-structure='none']) {
   --wb-panel-height: calc(45px + var(--wb-sheet-folded));
+}
+
+/* ── Phone on its side (Task 5.9, design decision 17, mockup frame 7) ───────
+   A landscape phone (≤ 500 px tall, ≤ 950 px wide) has one 44 px bar: the app bar and the view
+   bar side by side, in DOM and Tab order. Below it the body is exactly one screen tall, so the page
+   scrolls once, past the bar, to the plot beside the legend column. */
+.workbench[data-layout='landscape'] {
+  --wb-app-bar-height: 44px;
+  --wb-view-bar-height: 44px;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: var(--wb-app-bar-height) 100dvh;
+  height: auto;
+  min-height: 100dvh;
+  /* The page scrolls down, never sideways: a closed card laid out past the right edge (the
+     projection details) would otherwise widen a phone's layout viewport. */
+  overflow: clip visible;
+}
+
+/* The app bar holds the wordmark, the dataset and the search button; Import, Export, Help and
+   the count are in the More sheet or the dataset's label. */
+.workbench[data-layout='landscape'] header[data-workbench='app-bar'] {
+  grid-column: 1;
+  grid-row: 1;
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-1);
+  min-width: 0;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+}
+
+/* As on phones (Task 5.4): the actions leave the bar but stay rendered, because a popover inside
+   a display: none ancestor never shows. The dataset name opens Import, the More sheet Export, and
+   the Help menu's ps-menu stays for the same reason. */
+.workbench[data-layout='landscape'] [data-workbench='app-bar-actions'] {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.workbench[data-layout='landscape']
+  [data-workbench='app-bar-actions']
+  > :not(.wb-data-actions, ps-menu),
+.workbench[data-layout='landscape'] #myImportMenu::part(trigger),
+.workbench[data-layout='landscape'] #myExportMenu::part(trigger),
+.workbench[data-layout='landscape'] .wb-dataset-count {
+  display: none;
+}
+
+/* The search button opens search over the whole row; Close search ends it (Task 5.4's controls). */
+.workbench[data-layout='landscape'] :is(.wb-search-toggle, .wb-search-close) {
+  display: inline-flex;
+}
+
+.workbench[data-layout='landscape'] header[data-search-open] #myProteinSearch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workbench[data-layout='landscape'] .wb-dataset-name {
+  max-width: 16vw;
+}
+
+/* Search opens over the whole row, wordmark to More; the root is its containing block. Its
+   z-index lifts it over the view bar's positioned More button. */
+.workbench[data-layout='landscape']
+  header:not([data-search-open])
+  [data-workbench='app-bar-center'] {
+  display: none;
+}
+
+.workbench[data-layout='landscape'] header[data-search-open] [data-workbench='app-bar-center'] {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  height: var(--wb-app-bar-height);
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-3);
+  border-bottom: 1px solid var(--ps-border);
+  background: var(--ps-surface);
+}
+
+/* The view bar holds Projection, its details, Color by and More (stage 3: Contours and Filter are
+   in More); it never wraps, and the pickers give up width first. */
+.workbench[data-layout='landscape'] [data-workbench='view-bar'] {
+  grid-column: 2;
+  grid-row: 1;
+  flex-wrap: nowrap;
+  height: var(--wb-view-bar-height);
+  min-width: 0;
+  padding: 0 var(--ps-space-1) 0 var(--ps-space-2);
+}
+
+/* The pickers shrink with an ellipsis, as on phones (the Phone bars section). */
+.workbench[data-layout='landscape'] .wb-view-group {
+  flex-wrap: nowrap;
+}
+
+.workbench[data-layout='landscape'] .wb-view-sep {
+  display: none;
+}
+
+.workbench[data-layout='landscape'] .wb-more {
+  margin-left: auto;
+}
+
+/* One screen: the plot on the left over both rows, the legend column on the right with the
+   folded structure as its last row. */
+.workbench[data-layout='landscape'] .wb-body {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-areas:
+    'plot side'
+    'plot struct';
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 32%);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.workbench[data-layout='landscape'] [data-workbench='plot'] {
+  grid-area: plot;
+}
+
+/* The legend header fits the column: the tabs, the info, sort and settings buttons in 240 px. */
+.workbench[data-layout='landscape'] .wb-panel-tabs [role='tab'] {
+  padding: 0 var(--ps-space-2);
+}
+
+.workbench[data-layout='landscape'] #wb-sidebar {
+  grid-area: side;
+  min-height: 0;
+  border-top: 0;
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='landscape'] .wb-structure {
+  grid-area: struct;
+  border-top: 1px solid var(--ps-border);
+  border-left: 1px solid var(--ps-border);
+}
+
+.workbench[data-layout='landscape'][data-structure='none'] .wb-structure {
+  display: none;
+}
+
+/* Folded: the grip and the header (5.8 hides the rest), plus the 1 px top border (border-box). */
+.workbench[data-layout='landscape'][data-sheet='folded'] .wb-structure {
+  height: calc(var(--wb-sheet-folded) + 1px);
+}
+
+/* Expanded: the right half, full height, over the plot's right part. It leaves the grid, so the
+   legend takes the row back; the plot's box does not change. Mol* resizes here, which is fine. */
+.workbench[data-layout='landscape'][data-sheet='expanded'] .wb-structure {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 50vw;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 0;
+  box-shadow: var(--ps-shadow-lg);
 }
 
 /* ── Rail, collapse and the sidebar edge (Task 2.12) ──────────────────────── */
@@ -1440,8 +1608,11 @@
 }
 
 /* Projection and Color by shrink, ending in an ellipsis, so the bar never overflows. */
-.workbench[data-layout='phone'] [data-workbench='view-bar'] .wb-view-group,
-.workbench[data-layout='phone'] :is(#myProjectionSelect, #myAnnotationSelect) {
+.workbench:is([data-layout='phone'], [data-layout='landscape'])
+  [data-workbench='view-bar']
+  .wb-view-group,
+.workbench:is([data-layout='phone'], [data-layout='landscape'])
+  :is(#myProjectionSelect, #myAnnotationSelect) {
   flex: 0 1 auto;
   min-width: 0;
 }

@@ -259,7 +259,6 @@ test.describe('the plot on a phone on its side', () => {
   test('P9: the structure folds under the legend and expands over the right half', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.9');
     await openExplorePhone(page);
     await scrollPastTheBar(page);
     await tap(page, await proteinNear(page, 0.3, 0.5));
@@ -272,9 +271,14 @@ test.describe('the plot on a phone on its side', () => {
     expect(folded.x).toBeGreaterThanOrEqual(legend.x - 1);
     expect(folded.y).toBeGreaterThanOrEqual(legend.y + legend.height - 1);
     expect(overlaps(await box(plotTooltip(page)), folded)).toBe(false);
+    // Folded, the viewer's body stays out of sight (Task 5.8's rule holds in landscape too).
+    const body = page.locator('#myStructureViewer [part~="body"]');
+    await expect(body).toBeHidden();
 
     await sheetToggle(page).tap();
     await expect(workbench(page)).toHaveAttribute('data-sheet', 'expanded');
+    // Expanded, Mol*'s body shows: the folded rule no longer hides it.
+    await expect(body).toBeVisible();
     const viewport = page.viewportSize()!;
     await expect
       .poll(async () => (await box(structureSheet(page))).width)
@@ -297,7 +301,7 @@ test.describe('the plot on a phone on its side', () => {
   });
 
   test('P10: the projection details card fits the short screen and scrolls', async ({ page }) => {
-    test.fixme(true, 'task 5.9');
+    test.fixme(true, 'task 5.10');
     await openExplorePhone(page);
     // The card opens from the bar, which the page scrolls past: open it at the top.
     await expectProjectionDetailsFit(page);

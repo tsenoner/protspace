@@ -175,7 +175,6 @@ test.describe('explore layout on a phone on its side', () => {
   test('L4: turned sideways, the page scrolls past the bar to a full-screen plot', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.9');
     await openExplorePhone(page);
     await expect
       .poll(async () => (await box(page.locator('#myPlot'))).height)
@@ -289,4 +288,50 @@ test.describe('the bottom panel on a phone', () => {
     await expect(page.locator('#wb-filter-title')).toBeFocused();
     expect((await readLayout(page))?.panelFolded).toBe(false);
   });
+});
+
+/** The runtime's elements: rendered once, never re-created or moved (Review Focus 1). */
+const RUNTIME_IDS = [
+  'myPlot',
+  'myLegend',
+  'myStructureViewer',
+  'myImportMenu',
+  'myExportMenu',
+  'myProteinSearch',
+  'myQueryBuilder',
+];
+
+test('rotating from 412×839 to 839×412 and back keeps the same runtime elements and resizes the plot once per rotation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 412, height: 839 });
+  await openExplorePhone(page);
+  await expect(workbench(page)).toHaveAttribute('data-layout', 'phone');
+  await page.evaluate((ids) => {
+    (window as unknown as { __runtimeElements: (Element | null)[] }).__runtimeElements = ids.map(
+      (id) => document.getElementById(id),
+    );
+  }, RUNTIME_IDS);
+
+  const turns = [
+    { size: { width: 839, height: 412 }, mode: 'landscape' },
+    { size: { width: 412, height: 839 }, mode: 'phone' },
+  ];
+  for (const { size, mode } of turns) {
+    const resizes = await watchPlotResizes(page);
+    await page.setViewportSize(size);
+    await expect(workbench(page)).toHaveAttribute('data-layout', mode);
+    await expect.poll(resizes).toBe(1);
+    await settle(page);
+    expect(await resizes()).toBe(1);
+  }
+
+  const same = await page.evaluate((ids) => {
+    const before = (window as unknown as { __runtimeElements: (Element | null)[] })
+      .__runtimeElements;
+    return ids.map(
+      (id, index) => before[index] !== null && document.getElementById(id) === before[index],
+    );
+  }, RUNTIME_IDS);
+  expect(same).toEqual(RUNTIME_IDS.map(() => true));
 });
