@@ -1,4 +1,3 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import {
   annotationSelect,
@@ -9,6 +8,7 @@ import {
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
 } from './helpers/explore';
+import { expectNoAxeViolations } from './helpers/a11y';
 import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
 async function openAnnotationDropdown(page: Page): Promise<void> {
@@ -112,13 +112,13 @@ test.describe('Multi-annotation hover tooltip', () => {
     await openAnnotationDropdown(page);
     await expect(annotationSelect(page).locator('.dropdown-item').first()).toBeVisible();
 
-    const results = await new AxeBuilder({ page })
-      .include('protspace-annotation-select')
+    await expectNoAxeViolations(page, {
+      include: 'protspace-annotation-select',
       // Each listbox row keeps its eye toggle and ⓘ beside the option, inside a role="none"
       // wrapper (Task 4.16, ruling R5 Q5); this rule counts those buttons as listbox children.
       // Every other rule runs.
-      .disableRules(['aria-required-children'])
-      .analyze();
-    expect(results.violations).toEqual([]);
+      disableRules: ['aria-required-children'],
+      tags: null,
+    });
   });
 });

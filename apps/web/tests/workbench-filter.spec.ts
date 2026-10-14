@@ -1,4 +1,3 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import {
   applyFirstCategoryFilter,
@@ -14,6 +13,7 @@ import {
   queryBuilder,
   statusChip,
 } from './helpers/explore';
+import { expectNoAxeViolations } from './helpers/a11y';
 import { rail, structurePanel, watchPlotResizes } from './helpers/workbench';
 
 /** The plot's filter channel: whether it is on, and how many proteins it keeps. */
@@ -185,10 +185,6 @@ test.describe('the Filter panel', () => {
   test('the open panel has no axe violations', async ({ page }) => {
     await openExplore(page);
     await applyFirstCategoryFilter(page);
-    const results = await new AxeBuilder({ page })
-      .include('#wb-filter-panel')
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-    expect(results.violations).toEqual([]);
+    await expectNoAxeViolations(page, { include: '#wb-filter-panel' });
   });
 });
