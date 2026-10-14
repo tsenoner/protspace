@@ -493,6 +493,61 @@ describe('<protspace-publish-modal> Dot size slider', () => {
   });
 });
 
+describe('<protspace-publish-modal> control names', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('names every input and select (the rows’ <label>s are not tied to them)', async () => {
+    const modal = makeModal();
+    await modal.updateComplete;
+    const internals = modal as unknown as { _state: Record<string, unknown> };
+    internals._state = {
+      ...internals._state,
+      overlays: [
+        {
+          type: 'circle',
+          cx: 0.5,
+          cy: 0.5,
+          rx: 0.1,
+          ry: 0.1,
+          rotation: 0,
+          color: '#000000',
+          strokeWidth: 2,
+        },
+        { type: 'arrow', x1: 0.1, y1: 0.1, x2: 0.2, y2: 0.2, color: '#000000', width: 2 },
+        {
+          type: 'label',
+          x: 0.3,
+          y: 0.3,
+          text: 'Label',
+          fontSize: 14,
+          rotation: 0,
+          color: '#000000',
+        },
+      ],
+      insets: [
+        {
+          sourceRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 },
+          targetRect: { x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+          border: 2,
+          connector: 'lines',
+        },
+      ],
+    };
+    (modal as unknown as { requestUpdate: () => void }).requestUpdate();
+    await modal.updateComplete;
+
+    const controls = Array.from(
+      modal.shadowRoot!.querySelectorAll<HTMLElement>('input, select'),
+    ).filter((el) => el.closest('label') === null);
+    expect(controls.length).toBeGreaterThan(10);
+    expect(
+      controls.filter((el) => !el.getAttribute('aria-label')).map((el) => el.outerHTML),
+    ).toEqual([]);
+  });
+});
+
 describe('<protspace-publish-modal> inset renders', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

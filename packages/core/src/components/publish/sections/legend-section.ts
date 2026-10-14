@@ -12,6 +12,8 @@ interface LegendHandlers {
 
 /** A range slider with its number box (and unit); both report through `onChange`. */
 export function renderSliderInput(opts: {
+  /** Names the slider and its number box; the row's `<label>` is not tied to them. */
+  label: string;
   min: number;
   max: number;
   step?: number;
@@ -19,7 +21,7 @@ export function renderSliderInput(opts: {
   unit?: string;
   onChange: (v: number) => void;
 }): TemplateResult {
-  const { min, max, step, value, unit, onChange } = opts;
+  const { label, min, max, step, value, unit, onChange } = opts;
   const stepAttr = step ?? 1;
   const parse = step && step < 1 ? parseFloat : parseInt;
   return html`
@@ -27,6 +29,7 @@ export function renderSliderInput(opts: {
       <input
         type="range"
         class="publish-slider"
+        aria-label=${label}
         min=${min}
         max=${max}
         step=${stepAttr}
@@ -36,6 +39,7 @@ export function renderSliderInput(opts: {
       <input
         type="number"
         class="publish-row-input"
+        aria-label=${label}
         min=${min}
         max=${max}
         step=${stepAttr}
@@ -74,6 +78,7 @@ function renderFontInput(model: LegendModel, handlers: LegendHandlers) {
       <input
         type="range"
         class="publish-slider"
+        aria-label="Legend font size"
         min=${min}
         max=${max}
         step=${step}
@@ -84,6 +89,7 @@ function renderFontInput(model: LegendModel, handlers: LegendHandlers) {
         type="number"
         class="publish-row-input"
         data-publish-input="legend-font"
+        aria-label="Legend font size"
         min=${min}
         max=${max}
         step=${step}
@@ -93,6 +99,7 @@ function renderFontInput(model: LegendModel, handlers: LegendHandlers) {
       <select
         class="publish-select publish-unit-select"
         data-publish-input="legend-font-unit"
+        aria-label="Legend font unit"
         .value=${unit}
         @change=${(e: Event) => {
           handlers.updateLegend({
@@ -132,6 +139,7 @@ export function renderLegendSection(model: LegendModel, handlers: LegendHandlers
               <label>Position</label>
               <select
                 class="publish-select"
+                aria-label="Legend position"
                 .value=${leg.position}
                 @change=${(e: Event) => {
                   handlers.updateLegend({
@@ -150,6 +158,7 @@ export function renderLegendSection(model: LegendModel, handlers: LegendHandlers
             <div class="publish-row">
               <label>Size %</label>
               ${renderSliderInput({
+                label: 'Legend size',
                 min: 10,
                 max: 100,
                 value: leg.widthPercent,
@@ -166,6 +175,7 @@ export function renderLegendSection(model: LegendModel, handlers: LegendHandlers
             <div class="publish-row">
               <label>Columns</label>
               ${renderSliderInput({
+                label: 'Legend columns',
                 min: 1,
                 max: 6,
                 value: leg.columns,

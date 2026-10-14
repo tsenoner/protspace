@@ -146,6 +146,7 @@ export function renderDimensions(
             type="range"
             class="publish-slider"
             data-publish-input="width-slider"
+            aria-label="Width"
             min="200"
             max="8000"
             step="1"
@@ -160,6 +161,7 @@ export function renderDimensions(
             type="number"
             class="publish-row-input publish-dim-value"
             data-publish-input="width"
+            aria-label="Width"
             ?disabled=${dimsReadOnly || widthLocked}
             .value=${String(widthDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
@@ -173,6 +175,7 @@ export function renderDimensions(
         <select
           class="publish-select publish-unit-select"
           data-publish-input="unit"
+          aria-label="Unit"
           .value=${s.unit}
           @change=${(e: Event) => {
             handlers.unit((e.target as HTMLSelectElement).value as Unit);
@@ -190,6 +193,7 @@ export function renderDimensions(
             type="range"
             class="publish-slider"
             data-publish-input="height-slider"
+            aria-label="Height"
             min="200"
             max=${heightMaxPx !== null ? String(Math.max(200, heightMaxPx)) : '8000'}
             step="1"
@@ -204,6 +208,7 @@ export function renderDimensions(
             type="number"
             class="publish-row-input publish-dim-value"
             data-publish-input="height"
+            aria-label="Height"
             ?disabled=${dimsReadOnly}
             .value=${String(heightDisplay)}
             step=${s.unit === 'px' ? '1' : '0.1'}
@@ -219,6 +224,7 @@ export function renderDimensions(
             type="number"
             class="publish-row-input"
             data-publish-input="dpi"
+            aria-label="Resolution"
             min="1"
             max="2400"
             .value=${String(s.dpi)}

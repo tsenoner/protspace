@@ -80,6 +80,7 @@ export function renderOptions(model: OptionsModel, handlers: OptionsHandlers): T
         <label>Background</label>
         <select
           class="publish-select"
+          aria-label="Background"
           .value=${model.background}
           @change=${(e: Event) => {
             handlers.update({

@@ -11,10 +11,11 @@ const HOVER_DELAY_MS = 500;
  * layer: Escape hides it and, when it was shown, takes that press (preventDefault), so the same
  * press does not also reach the page's Escape fallbacks (decision 11: one step per press).
  *
- * The host is the `role="tooltip"` node and carries the text as its `aria-label`, so the text is
- * readable while the panel is hidden. The target references the host through
- * `ariaDescribedByElements`: an id cannot cross a shadow boundary, while an element reference may
- * point out of a shadow root, so a kit button's inner `<button>` can reference a tooltip beside it.
+ * The host is the `role="tooltip"` node (while it has text) and carries the text as its
+ * `aria-label`, so the text is readable while the panel is hidden. The target references the host
+ * through `ariaDescribedByElements`: an id cannot cross a shadow boundary, while an element
+ * reference may point out of a shadow root, so a kit button's inner `<button>` can reference a
+ * tooltip beside it.
  */
 @customElement('ps-tooltip')
 export class PsTooltip extends LitElement {
@@ -34,7 +35,6 @@ export class PsTooltip extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.setAttribute('role', 'tooltip');
     // Removed in the same task it was added: bind nothing, or the listeners would leak.
     queueMicrotask(() => {
       if (this.isConnected) this.bind();
@@ -49,8 +49,15 @@ export class PsTooltip extends LitElement {
 
   protected updated(changed: PropertyValues<this>): void {
     if (changed.has('text')) {
-      if (this.text) this.setAttribute('aria-label', this.text);
-      else this.removeAttribute('aria-label');
+      // A textless tooltip (the legend's shared name tooltip between rows) is no tooltip at all:
+      // a role="tooltip" without a name fails axe's aria-tooltip-name.
+      if (this.text) {
+        this.setAttribute('role', 'tooltip');
+        this.setAttribute('aria-label', this.text);
+      } else {
+        this.removeAttribute('role');
+        this.removeAttribute('aria-label');
+      }
     }
     if (changed.has('namesTarget') && this.target) this.describe(this.target, !this.namesTarget);
     if (changed.has('anchor') && this.isConnected) this.bind();

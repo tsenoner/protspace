@@ -290,6 +290,21 @@ describe('ps-tooltip', () => {
     expect(await buttonDescriptions()).toMatchObject({ Export: '', Reset: '' });
   });
 
+  it('is a named tooltip only while it has text (axe aria-tooltip-name)', async () => {
+    document.body.innerHTML = '<button>Name</button><ps-tooltip></ps-tooltip>';
+    const tooltip = document.querySelector('ps-tooltip')!;
+    await tooltip.updateComplete;
+    expect(tooltip.hasAttribute('role')).toBe(false);
+    tooltip.text = 'Full name';
+    await tooltip.updateComplete;
+    expect(tooltip.getAttribute('role')).toBe('tooltip');
+    expect(tooltip.getAttribute('aria-label')).toBe('Full name');
+    tooltip.text = '';
+    await tooltip.updateComplete;
+    expect(tooltip.hasAttribute('role')).toBe(false);
+    expect(tooltip.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('leaves no listeners on an external anchor when removed in the task it was added', async () => {
     const anchor = document.createElement('button');
     document.body.append(anchor);

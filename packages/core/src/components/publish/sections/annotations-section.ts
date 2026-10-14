@@ -45,6 +45,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
         <div class="publish-row publish-row-tight">
           <label>Stroke</label>
           ${renderSliderInput({
+            label: 'Circle stroke',
             min: 0.5,
             max: 10,
             step: 0.5,
@@ -59,6 +60,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
         <div class="publish-row publish-row-tight">
           <label>Stroke</label>
           ${renderSliderInput({
+            label: 'Arrow stroke',
             min: 0.5,
             max: 10,
             step: 0.5,
@@ -75,6 +77,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
           <input
             type="text"
             class="publish-row-input publish-label-input"
+            aria-label="Label text"
             .value=${a.text}
             @change=${(e: Event) => {
               handlers.updateOverlay(i, {
@@ -86,6 +89,7 @@ function renderOverlayProps(a: Overlay, i: number, handlers: AnnotationsHandlers
         <div class="publish-row publish-row-tight">
           <label>Size</label>
           ${renderSliderInput({
+            label: 'Label size',
             min: 8,
             max: 72,
             value: a.fontSize,
@@ -150,6 +154,7 @@ function renderInsets(model: AnnotationsModel, handlers: AnnotationsHandlers) {
                 text="Dot size in the zoomed view, relative to the main plot. 1× matches."
               ></ps-tooltip>
               ${renderSliderInput({
+                label: 'Inset dot size',
                 min: 0.5,
                 max: 20,
                 step: 0.1,
@@ -161,6 +166,7 @@ function renderInsets(model: AnnotationsModel, handlers: AnnotationsHandlers) {
             <div class="publish-row publish-row-tight">
               <label>Border</label>
               ${renderSliderInput({
+                label: 'Inset border',
                 min: 0.5,
                 max: 10,
                 step: 0.5,
