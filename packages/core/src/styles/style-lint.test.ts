@@ -33,8 +33,8 @@ const LEGACY = new Set<string>([
 
 const COLOUR =
   /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(|\b(?:white|black)\b/i;
-/** Set at run time by kit code (position.ts), not tokens. */
-const RUNTIME_VARS = new Set(['--available-height', '--available-width']);
+/** Set at run time by kit code (position.ts) and the query pickers (picker-placement.ts), not tokens. */
+const RUNTIME_VARS = new Set(['--available-height', '--available-width', '--picker-room']);
 const DEFINED = new Set([...theme.cssText.matchAll(/(--ps-[\w-]+)\s*:/g)].map((m) => m[1]));
 const CORE_SRC = fileURLToPath(new URL('..', import.meta.url));
 // Joined, not `new URL(…, import.meta.url)`: knip reads that form as an import of the web app.
