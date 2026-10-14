@@ -104,7 +104,7 @@ describe('PlotTheme background', () => {
       fire = () => {};
       media = {
         matches: false,
-        addEventListener: (_: string, fn: () => void) => (fire = fn),
+        addEventListener: vi.fn((_: string, fn: () => void) => (fire = fn)),
         removeEventListener: vi.fn(),
       };
       vi.stubGlobal('matchMedia', () => media);
@@ -112,6 +112,10 @@ describe('PlotTheme background', () => {
     });
 
     afterEach(() => vi.unstubAllGlobals());
+
+    it('listens to the scheme once per connect (the theme watcher covers the background)', () => {
+      expect(media.addEventListener).toHaveBeenCalledTimes(1);
+    });
 
     it('drops the value when the change event fires', () => {
       theme.background();

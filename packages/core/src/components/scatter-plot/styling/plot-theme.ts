@@ -78,8 +78,8 @@ export class PlotTheme {
       if (head) this._observer.observe(head, { childList: true, subtree: true });
     }
     if (typeof matchMedia === 'function') {
+      // Read synchronously by background(); the theme watcher below hears the change event.
       this._scheme = matchMedia('(prefers-color-scheme: dark)');
-      this._scheme.addEventListener?.('change', this._invalidateBackground);
     }
     this._stopTheme = observeTheme(this._onTheme, this._host.ownerDocument);
     // A theme change while the plot was detached went unheard.
@@ -90,7 +90,6 @@ export class PlotTheme {
   disconnect(): void {
     this._observer?.disconnect();
     this._observer = null;
-    this._scheme?.removeEventListener?.('change', this._invalidateBackground);
     this._scheme = null;
     this._stopTheme?.();
     this._stopTheme = null;
