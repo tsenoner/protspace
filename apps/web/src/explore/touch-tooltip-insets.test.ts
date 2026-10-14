@@ -9,13 +9,14 @@ const element = (box: DOMRect) => ({ getBoundingClientRect: () => box }) as unkn
 
 describe('measureTouchTooltipInsets', () => {
   it("keeps the tool strip's width on the left and the lifted status corner at the bottom", () => {
-    // A phone plot at (0, 100); the tool strip at 12 px, 44 px wide; a 20 px status line.
+    // A phone plot at (0, 100); the tool strip at 12 px, 44 px wide; a 20 px status line, lifted
+    // 12 + 50 + 8 px above the plot's bottom while a tap's selection shows.
     const insets = measureTouchTooltipInsets(
       element(rect(0, 100, 412, 510)),
       element(rect(12, 112, 44, 180)),
       element(rect(12, 570, 200, 20)),
+      70,
     );
-    // The status corner rises 12 + 50 + 8 px above the plot's bottom while a tap's selection shows.
     expect(insets).toEqual({ top: 0, right: 0, bottom: 70 + 20, left: 56 });
   });
 
@@ -24,6 +25,7 @@ describe('measureTouchTooltipInsets', () => {
       element(rect(300, 100, 412, 510)),
       element(rect(0, 0, 0, 0)),
       element(rect(312, 570, 200, 20)),
+      70,
     );
     expect(insets.left).toBe(0);
   });
@@ -38,6 +40,13 @@ describe('bindTouchTooltipInsets', () => {
   });
 
   it('sets the insets on the plot, again when the chrome resizes, and stops on dispose', () => {
+    // The lift comes from workbench.css's --wb-status-lift, the one place it is set.
+    let lift = '70px';
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (name: string) => (name === '--wb-status-lift' ? lift : ''),
+    }));
+    const pointer = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal('matchMedia', () => pointer);
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -73,7 +82,14 @@ describe('bindTouchTooltipInsets', () => {
     observers[0].callback();
     expect(plot.touchTooltipInsets).toBe(before);
 
+    // The pointer turns fine: the mouse-sized bar lifts the status corner 12 + 38 + 8 px.
+    lift = '58px';
+    const [, onPointerChange] = pointer.addEventListener.mock.calls[0];
+    onPointerChange();
+    expect(plot.touchTooltipInsets.bottom).toBe(98);
+
     dispose();
     expect(observers[0].disconnect).toHaveBeenCalledOnce();
+    expect(pointer.removeEventListener).toHaveBeenCalledWith('change', onPointerChange);
   });
 });

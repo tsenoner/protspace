@@ -181,10 +181,35 @@
   background: var(--ps-surface);
 }
 
-/* While the selection bar shows, the status corner rises above it (38 px tall), so a wide chip
-   row never covers the bar's buttons on a narrow plot. */
+/* The selection bar's height: 38 px, 50 px with its finger-sized buttons under a coarse pointer.
+   The status corner and the phone's toasts stand above it. */
+.workbench {
+  --wb-selection-bar-height: 38px;
+}
+
+@media (pointer: coarse) {
+  .workbench {
+    --wb-selection-bar-height: 50px;
+  }
+}
+
+/* How far above the plot's bottom the status corner stands while the selection bar shows.
+   Registered as a length so its computed value is in px: touch-tooltip-insets.ts reads it to keep
+   a tap-pinned card clear of the lifted corner. */
+@property --wb-status-lift {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+[data-workbench='plot'] {
+  --wb-status-lift: calc(var(--ps-space-3) + var(--wb-selection-bar-height) + var(--ps-space-2));
+}
+
+/* While the selection bar shows, the status corner rises above it, so a wide chip row never
+   covers the bar's buttons on a narrow plot. */
 [data-workbench='plot']:has(> protspace-selection-bar:not([hidden])) > protspace-plot-status {
-  bottom: calc(var(--ps-space-3) + 38px + var(--ps-space-2));
+  bottom: var(--wb-status-lift);
 }
 
 #myPlot {
@@ -805,6 +830,20 @@
 
 .workbench[data-layout='phone'][data-sheet='expanded'] .wb-structure {
   transform: none;
+}
+
+/* Expanded, the sheet covers the whole panel: its tabs and fold leave the Tab order (no box
+   change, so no plot resize). */
+.workbench[data-layout='phone'][data-sheet='expanded'] #wb-sidebar {
+  visibility: hidden;
+}
+
+/* The sheet rules above outrank the reduced-motion rule further down (its comment says why the
+   transition goes): keyed as specifically, the sheet moves at once. */
+@media (prefers-reduced-motion: reduce) {
+  .workbench:is([data-layout='phone'], [data-layout='landscape']) .wb-structure {
+    transition-property: none;
+  }
 }
 
 /* The folded sheet covers the panel's last 56 px, so the panel keeps them free: the tabs and the
@@ -1579,7 +1618,8 @@
 }
 
 /* Toasts stand 12 px above the panel (and the folded structure sheet, which --wb-panel-height
-   carries), and above the selection bar's 38 px and gap while it shows. Sonner's toaster is position: fixed to the window. */
+   carries), and 12 px above the selection bar (12 px margin, the bar, 12 px gap) while it shows.
+   Sonner's toaster is position: fixed to the window. */
 .workbench[data-layout='phone'] .wb-body [data-sonner-toaster][data-y-position='bottom'] {
   bottom: calc(var(--wb-panel-height) + 12px);
 }
@@ -1587,13 +1627,5 @@
 .workbench[data-layout='phone']
   .wb-body:has(#mySelectionBar:not([hidden]))
   [data-sonner-toaster][data-y-position='bottom'] {
-  bottom: calc(var(--wb-panel-height) + 62px);
-}
-
-/* Under a coarse pointer the selection bar's buttons are 40 px, so the bar is about 50 px tall:
-   the status corner rises above that, not the mouse bar's 38 px. */
-@media (pointer: coarse) {
-  [data-workbench='plot']:has(> protspace-selection-bar:not([hidden])) > protspace-plot-status {
-    bottom: calc(var(--ps-space-3) + 50px + var(--ps-space-2));
-  }
+  bottom: calc(var(--wb-panel-height) + 24px + var(--wb-selection-bar-height));
 }

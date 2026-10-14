@@ -14,6 +14,7 @@ import {
   line,
   openExplorePhone,
   overlaps,
+  panelFold,
   panelTab,
   plotTooltip,
   proteinNear,
@@ -346,6 +347,36 @@ test.describe('structure sheet', () => {
     await structureSheet(page).getByRole('button', { name: 'Close structure', exact: true }).tap();
     await expect(root).toHaveAttribute('data-structure', 'none');
     await expect(root).not.toHaveAttribute('data-sheet');
+  });
+
+  test('the expanded sheet takes the panel it covers out of the Tab order', async ({ page }) => {
+    await openExplorePhone(page);
+    const root = page.locator('.workbench');
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    const resizes = await watchPlotResizes(page);
+
+    await sheetToggle(page).tap();
+    await expect(root).toHaveAttribute('data-sheet', 'expanded');
+    await expect(panelTab(page, 'Legend')).toBeHidden();
+    await expect(panelFold(page)).toBeHidden();
+
+    await sheetToggle(page).tap();
+    await expect(root).toHaveAttribute('data-sheet', 'folded');
+    await expect(panelTab(page, 'Legend')).toBeVisible();
+    await expect(panelFold(page)).toBeVisible();
+    await settle(page);
+    expect(await resizes()).toBe(0);
+  });
+
+  test('under reduced motion the sheet moves without a transition', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openExplorePhone(page);
+    await tap(page, await proteinNear(page, 0.5, 0.4));
+    await expect(page.locator('.workbench')).toHaveAttribute('data-sheet', 'folded');
+    expect(await structureSheet(page).evaluate((e) => getComputedStyle(e).transitionProperty)).toBe(
+      'none',
+    );
   });
 
   test('the last legend row can be scrolled above the folded sheet', async ({ page }) => {

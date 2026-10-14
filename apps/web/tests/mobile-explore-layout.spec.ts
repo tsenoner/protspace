@@ -4,6 +4,7 @@ import {
   dismissTourIfPresent,
   filterPanel,
   getSelectedProteinIds,
+  selectionBar,
   selectionBarAction,
   statusChip,
   viewBar,
@@ -199,9 +200,13 @@ test.describe('explore layout on a phone on its side', () => {
 test.describe('the bottom panel on a phone', () => {
   test('the fold survives a reload', async ({ page }) => {
     await openExplorePhone(page);
+    const resizes = await watchPlotResizes(page);
     await panelFold(page).tap();
     await expect(panelFold(page)).toHaveAccessibleName('Unfold panel');
     await expect(panelFold(page)).toBeFocused();
+    // Folding is one plot resize (design decision 4), not a transition's many.
+    await settle(page);
+    expect(await resizes()).toBe(1);
     await expect.poll(async () => (await readLayout(page))?.panelFolded).toBe(true);
 
     await page.reload();
@@ -254,19 +259,19 @@ test.describe('the bottom panel on a phone', () => {
     await selectionBarAction(page, 'Copy IDs').tap();
     const toast = page.locator('[data-sonner-toast]').filter({ hasText: /^Copied/ });
     await expect(toast).toBeVisible();
-    const panel = await box(bottomPanel(page));
-    // Sonner slides the toast in; poll until it has settled above the panel.
+    const bar = await box(selectionBar(page));
+    // Sonner slides the toast in; poll until it has settled above the selection bar, which
+    // stands over the panel while one protein is selected.
     await expect
       .poll(async () => {
         const shown = await box(toast);
-        return panel.y - (shown.y + shown.height);
+        return bar.y - (shown.y + shown.height);
       })
-      // 12 px over the panel, plus the selection bar's 50 px while one protein is selected.
       .toBeGreaterThanOrEqual(12 - 1);
     const shown = await box(toast);
     // Not floating far above it either (a leftover structure row would lift it by 240 px); the
     // 16 px slack covers Sonner's own spacing inside the toaster.
-    expect(panel.y - (shown.y + shown.height)).toBeLessThanOrEqual(12 + 50 + 16);
+    expect(bar.y - (shown.y + shown.height)).toBeLessThanOrEqual(12 + 16);
     expect(shown.y).toBeGreaterThanOrEqual(0);
   });
 
