@@ -59,34 +59,35 @@ interactions.
 
 ### Properties
 
-| Property                            | Type                                  | Default       | Description                                    |
-| ----------------------------------- | ------------------------------------- | ------------- | ---------------------------------------------- |
-| `data`                              | `VisualizationData \| null`           | `null`        | The loaded dataset                             |
-| `selectedProjectionIndex`           | `number`                              | `0`           | Index of the active projection                 |
-| `projectionPlane`                   | `'xy' \| 'xz' \| 'yz'`                | `'xy'`        | Plane shown for 3D projections                 |
-| `selectedAnnotation`                | `string`                              | `'family'`    | Annotation used for coloring                   |
-| `tooltipAnnotations`                | `string[]`                            | `[]`          | Extra annotations shown in the tooltip         |
-| `highlightedProteinIds`             | `string[]`                            | `[]`          | Proteins to highlight                          |
-| `selectedProteinIds`                | `string[]`                            | `[]`          | Currently selected protein IDs                 |
-| `selectionMode`                     | `boolean`                             | `false`       | Enable brush/lasso selection                   |
-| `selectionTool`                     | `'rectangle' \| 'lasso'`              | `'rectangle'` | Active selection tool                          |
-| `hiddenAnnotationValues`            | `string[]`                            | `[]`          | Annotation values hidden from the plot         |
-| `otherAnnotationValues`             | `string[]`                            | `[]`          | Values folded into the "Other" group           |
-| `numericAnnotationSettings`         | `NumericAnnotationDisplaySettingsMap` | `{}`          | Per-annotation binning/gradient settings       |
-| `annotationSortModes`               | `Record<string, LegendSortMode>`      | `{}`          | Per-annotation legend sort mode                |
-| `numericManualOrderIdsByAnnotation` | `Record<string, string[]>`            | `{}`          | Manual bin ordering per numeric annotation     |
-| `filteredProteinIds`                | `string[]`                            | `[]`          | Result of an active filter query               |
-| `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied |
-| `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration         |
-| `tooltipActions`                    | `readonly TooltipAction[]`            | `[]`          | Buttons a pinned tooltip offers (see below)    |
-| `tapTooltips`                       | `boolean`                             | `true`        | A touch tap on a protein pins its tooltip      |
-| `hideStatus`                        | `boolean`                             | `false`       | Leave out the plot's own count; `hide-status`  |
+| Property                            | Type                                  | Default       | Description                                     |
+| ----------------------------------- | ------------------------------------- | ------------- | ----------------------------------------------- |
+| `data`                              | `VisualizationData \| null`           | `null`        | The loaded dataset                              |
+| `selectedProjectionIndex`           | `number`                              | `0`           | Index of the active projection                  |
+| `projectionPlane`                   | `'xy' \| 'xz' \| 'yz'`                | `'xy'`        | Plane shown for 3D projections                  |
+| `selectedAnnotation`                | `string`                              | `'family'`    | Annotation used for coloring                    |
+| `tooltipAnnotations`                | `string[]`                            | `[]`          | Extra annotations shown in the tooltip          |
+| `highlightedProteinIds`             | `string[]`                            | `[]`          | Proteins to highlight                           |
+| `selectedProteinIds`                | `string[]`                            | `[]`          | Currently selected protein IDs                  |
+| `selectionMode`                     | `boolean`                             | `false`       | Enable brush/lasso selection                    |
+| `selectionTool`                     | `'rectangle' \| 'lasso'`              | `'rectangle'` | Active selection tool                           |
+| `hiddenAnnotationValues`            | `string[]`                            | `[]`          | Annotation values hidden from the plot          |
+| `otherAnnotationValues`             | `string[]`                            | `[]`          | Values folded into the "Other" group            |
+| `numericAnnotationSettings`         | `NumericAnnotationDisplaySettingsMap` | `{}`          | Per-annotation binning/gradient settings        |
+| `annotationSortModes`               | `Record<string, LegendSortMode>`      | `{}`          | Per-annotation legend sort mode                 |
+| `numericManualOrderIdsByAnnotation` | `Record<string, string[]>`            | `{}`          | Manual bin ordering per numeric annotation      |
+| `filteredProteinIds`                | `string[]`                            | `[]`          | Result of an active filter query                |
+| `filtersActive`                     | `boolean`                             | `false`       | Whether `filteredProteinIds` should be applied  |
+| `config`                            | `Partial<ScatterplotConfig>`          | `{}`          | Sizing, opacity and zoom configuration          |
+| `tooltipActions`                    | `readonly TooltipAction[]`            | `[]`          | Buttons a pinned tooltip offers (see below)     |
+| `tapTooltips`                       | `boolean`                             | `true`        | A touch tap on a protein pins its tooltip       |
+| `touchTooltipInsets`                | `TouchTooltipInsets`                  | all `0`       | Edge strips a tap-pinned tooltip keeps clear of |
+| `hideStatus`                        | `boolean`                             | `false`       | Leave out the plot's own count; `hide-status`   |
 
 ### HTML attributes
 
 Four properties have explicit kebab-case attributes: `selection-tool`, `filters-active`,
 `eat-overlay-enabled` and `hide-status`. The rest are reachable from markup under their implicit all-lowercase names
-(for example `selectedannotation`, `projectionplane`); `tooltipActions` and `tapTooltips` have no attribute. Set the object and array properties from JavaScript.
+(for example `selectedannotation`, `projectionplane`); `tooltipActions`, `tapTooltips` and `touchTooltipInsets` have no attribute. Set the object and array properties from JavaScript.
 
 ### Configuration
 
@@ -167,7 +168,11 @@ Touch uses the same pin. A tap is a click whose pointer is a finger: it picks th
 20 px (a mouse click needs the point under the cursor) and, while `tapTooltips` is true (the
 default), pins that protein's tooltip even when `tooltipActions` is empty, since touch has no hover
 to show it. The pin offers whatever `tooltipActions` holds, outlives `tooltipActions` becoming empty,
-and sits wholly inside the plot, centred over the protein and above it when it fits. Set
+and sits wholly inside the plot, centred over the protein and above it when it fits.
+`touchTooltipInsets` (`{ top, right, bottom, left }` in px, exported type `TouchTooltipInsets`)
+names the strips along the plot's edges that the host's own controls cover, such as a tool strip
+or a `<protspace-selection-bar>`; the pin stays clear of them. They are all 0 by default, so a host
+that lays controls over the plot sets them. Set
 `tapTooltips` to false to keep taps from pinning; turning it false ends a pin. The mouse events a
 browser sends after a tap never start a hover tooltip, a pan or pinch by touch ends one, and the
 plot's SVG has `touch-action: none`, so pans and pinches move the plot, never the page.

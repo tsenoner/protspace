@@ -80,34 +80,47 @@ export function computeTooltipStyle(input: TooltipStyleInput): string {
 const TOUCH_TOOLTIP_CLEARANCE = 16;
 
 /**
- * Space (px) a tap-pinned tooltip leaves free at the plot's bottom: the selection bar a tap's
- * selection shows there, 50 px tall under a coarse pointer and 12 px up, sits over the plot and
- * would cover the card's actions.
+ * Strips (px) along each plot edge that a host's own chrome covers (a tool strip, a status line,
+ * a selection bar). A tap-pinned tooltip stays TOOLTIP_EDGE_PADDING clear of them.
  */
-export const TOUCH_TOOLTIP_BOTTOM_RESERVE = 62;
+export interface TouchTooltipInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_TOUCH_TOOLTIP_INSETS: TouchTooltipInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
 /**
  * Placement for a tooltip a tap pinned. A finger has no cursor to sit beside, and on a phone the
  * plot is barely wider than the card, so the card is centred on the protein and kept wholly inside
- * the plot (TOOLTIP_EDGE_PADDING from every edge, TOUCH_TOOLTIP_BOTTOM_RESERVE from the bottom):
- * above the protein when it fits, else below it, else against the plot edge farther from it. It takes the hover tooltip's width.
+ * the plot, TOOLTIP_EDGE_PADDING clear of each edge's inset: above the protein when it fits, else
+ * below it, else against the edge farther from it. It takes the hover tooltip's width, narrowed to
+ * what the insets leave.
  */
-export function computeTouchTooltipStyle(input: TooltipStyleInput): string {
+export function computeTouchTooltipStyle(
+  input: TooltipStyleInput,
+  insets: TouchTooltipInsets = NO_TOUCH_TOOLTIP_INSETS,
+): string {
   const { x, y, height, viewportWidth, viewportHeight } = input;
-  const width = effectiveTooltipWidth(viewportWidth);
   const pad = TOOLTIP_EDGE_PADDING;
+  const minLeft = insets.left + pad;
+  const maxRight = viewportWidth - insets.right - pad;
+  const minTop = insets.top + pad;
+  const floor = viewportHeight - insets.bottom - pad;
 
-  const left = Math.max(pad, Math.min(x - width / 2, viewportWidth - width - pad));
+  const width = Math.max(0, Math.min(effectiveTooltipWidth(viewportWidth), maxRight - minLeft));
+  const left = Math.max(minLeft, Math.min(x - width / 2, maxRight - width));
 
-  const floor = viewportHeight - TOUCH_TOOLTIP_BOTTOM_RESERVE;
   const above = y - TOUCH_TOOLTIP_CLEARANCE - height;
   const below = y + TOUCH_TOOLTIP_CLEARANCE;
   let top: number;
-  // Above a protein inside the bar's strip, the card still ends on the strip.
-  if (above >= pad) top = Math.min(above, floor - height);
+  // Above a protein inside the bottom inset, the card still ends on the inset.
+  if (above >= minTop) top = Math.min(above, floor - height);
   else if (below + height <= floor) top = below;
-  else top = y > viewportHeight / 2 ? pad : floor - height;
-  top = Math.max(pad, top);
+  else top = y > (minTop + floor) / 2 ? minTop : floor - height;
+  top = Math.max(minTop, top);
 
   return `left: ${left}px; top: ${top}px; --protspace-tooltip-effective-width: ${width}px;`;
 }

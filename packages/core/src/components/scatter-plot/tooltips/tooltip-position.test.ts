@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   computeTooltipStyle,
   computeTouchTooltipStyle,
-  TOUCH_TOOLTIP_BOTTOM_RESERVE,
   TOOLTIP_EDGE_PADDING,
   TOOLTIP_MAX_WIDTH,
   TOOLTIP_ANCHOR_OFFSET_X,
@@ -95,6 +94,7 @@ describe('computeTouchTooltipStyle', () => {
     viewportWidth: 374,
     viewportHeight: 400,
   };
+  const pad = TOOLTIP_EDGE_PADDING;
   const box = (style: string) => {
     const num = (name: string) => Number(new RegExp(`${name}: (-?[\\d.]+)px`).exec(style)![1]);
     return {
@@ -116,10 +116,10 @@ describe('computeTouchTooltipStyle', () => {
     for (const x of [2, 187, 372]) {
       for (const y of [2, 20, 200, 390, 398]) {
         const { left, top, width } = box(computeTouchTooltipStyle({ ...phone, x, y }));
-        expect(left).toBeGreaterThanOrEqual(TOOLTIP_EDGE_PADDING);
-        expect(left + width).toBeLessThanOrEqual(374 - TOOLTIP_EDGE_PADDING);
-        expect(top).toBeGreaterThanOrEqual(TOOLTIP_EDGE_PADDING);
-        expect(top + phone.height).toBeLessThanOrEqual(400 - TOUCH_TOOLTIP_BOTTOM_RESERVE);
+        expect(left).toBeGreaterThanOrEqual(pad);
+        expect(left + width).toBeLessThanOrEqual(374 - pad);
+        expect(top).toBeGreaterThanOrEqual(pad);
+        expect(top + phone.height).toBeLessThanOrEqual(400 - pad);
       }
     }
   });
@@ -140,20 +140,43 @@ describe('computeTouchTooltipStyle', () => {
 
   it('puts the card against the plot edge farther from the protein when neither side fits', () => {
     const short = { ...phone, viewportHeight: 250 };
-    expect(box(computeTouchTooltipStyle({ ...short, y: 160 })).top).toBe(TOOLTIP_EDGE_PADDING);
-    expect(box(computeTouchTooltipStyle({ ...short, y: 60 })).top).toBe(
-      250 - 140 - TOUCH_TOOLTIP_BOTTOM_RESERVE,
-    );
+    expect(box(computeTouchTooltipStyle({ ...short, y: 160 })).top).toBe(pad);
+    expect(box(computeTouchTooltipStyle({ ...short, y: 110 })).top).toBe(250 - 140 - pad);
   });
 
-  it('keeps the card clear of the selection bar a tap shows at the plot bottom', () => {
-    // A tap selects its protein, so the bar (50 px under a coarse pointer, 12 px up) shows too.
-    expect(TOUCH_TOOLTIP_BOTTOM_RESERVE).toBe(62);
+  it("keeps the card clear of the host's chrome by the insets it is given", () => {
+    // A phone: the tool strip covers the plot's left 56 px; the status corner and the selection
+    // bar its bottom 90 px.
+    const insets = { top: 0, right: 0, bottom: 90, left: 56 };
+    for (const x of [2, 20, 187, 372]) {
+      for (const y of [2, 20, 150, 300, 398]) {
+        const { left, top, width } = box(computeTouchTooltipStyle({ ...phone, x, y }, insets));
+        expect(left).toBeGreaterThanOrEqual(56 + pad);
+        expect(left + width).toBeLessThanOrEqual(374 - pad);
+        expect(top).toBeGreaterThanOrEqual(pad);
+        expect(top + phone.height).toBeLessThanOrEqual(400 - 90 - pad);
+      }
+    }
+    // The card narrows to the room the strip leaves.
+    expect(box(computeTouchTooltipStyle(phone, insets)).width).toBe(374 - 56 - 2 * pad);
+    // A top and a right inset hold the same way.
+    const { left, top, width } = box(
+      computeTouchTooltipStyle(
+        { ...phone, x: 372, y: 2 },
+        { top: 40, right: 30, bottom: 0, left: 0 },
+      ),
+    );
+    expect(top).toBeGreaterThanOrEqual(40 + pad);
+    expect(left + width).toBeLessThanOrEqual(374 - 30 - pad);
+  });
+
+  it('rests the card on the bottom inset when below would end inside it', () => {
     const tall = { ...phone, height: 200 };
-    expect(box(computeTouchTooltipStyle({ ...tall, y: 100 })).top).toBe(100 + 16);
-    // Below would end in the bar's strip (166 + 200 > 338): the card rests on the strip instead.
-    expect(box(computeTouchTooltipStyle({ ...tall, y: 150 })).top).toBe(
-      400 - 200 - TOUCH_TOOLTIP_BOTTOM_RESERVE,
+    const insets = { top: 0, right: 0, bottom: 62, left: 0 };
+    expect(box(computeTouchTooltipStyle({ ...tall, y: 100 }, insets)).top).toBe(100 + 16);
+    // Below would end inside the inset (166 + 200 > 400 - 62 - 15): the card rests on it instead.
+    expect(box(computeTouchTooltipStyle({ ...tall, y: 150 }, insets)).top).toBe(
+      400 - 62 - pad - 200,
     );
   });
 

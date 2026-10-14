@@ -53,7 +53,9 @@ import {
   computeTooltipStyle,
   computeTouchTooltipStyle,
   effectiveTooltipWidth,
+  NO_TOUCH_TOOLTIP_INSETS,
   TOOLTIP_FALLBACK_HEIGHT,
+  type TouchTooltipInsets,
 } from './tooltips/tooltip-position';
 import { NumericRecomputeRunner } from './styling/numeric-recompute-runner';
 import {
@@ -122,6 +124,7 @@ const NO_ADDITIONAL_RENDER_KEYS: ReadonlySet<string> = new Set([
   '_mergedConfig',
   'tooltipActions',
   'tapTooltips',
+  'touchTooltipInsets',
   '_pinnedTooltip',
 ]);
 
@@ -192,6 +195,11 @@ export class ProtspaceScatterplot extends LitElement {
    * false ends a pin. Mouse clicks follow `tooltipActions` alone.
    */
   @property({ attribute: false }) tapTooltips = true;
+  /**
+   * Strips (px) along each plot edge that the host's own chrome covers, such as a tool strip or a
+   * selection bar over the plot. A tap-pinned tooltip stays clear of them. All 0 by default.
+   */
+  @property({ attribute: false }) touchTooltipInsets: TouchTooltipInsets = NO_TOUCH_TOOLTIP_INSETS;
 
   // State
   @state() private _plotData: PlotData = EMPTY_PLOT_DATA;
@@ -341,7 +349,11 @@ export class ProtspaceScatterplot extends LitElement {
     // touchInput can be stale here; the node's own pointerup says what pressed it.
     onPointActivate: (e, p) =>
       this._handleClick(e, p, (e as Partial<PointerEvent>).pointerType === 'touch'),
-    onHover: (e, p) => this._handleMouseOver(e, p),
+    // A tap's compat mouseenter on a spider node: touch sends no mouseleave to end that hover.
+    onHover: (e, p) => {
+      if (this._interaction?.touchInput) return;
+      this._handleMouseOver(e, p);
+    },
     onHoverEnd: () => this._clearHoverState(),
     onExpandedChange: (expanded) => this._syncSpiderLayer(expanded),
   });
@@ -1868,14 +1880,16 @@ export class ProtspaceScatterplot extends LitElement {
     const shown = this._shownTooltip();
     if (!shown) return '';
     const config = this._mergedConfig;
-    const place = this._pinnedTooltip?.touch ? computeTouchTooltipStyle : computeTooltipStyle;
-    return place({
+    const input = {
       x: shown.x,
       y: shown.y,
       height: this._tooltipHeight ?? this._estimateTooltipHeight(),
       viewportWidth: config.width,
       viewportHeight: config.height,
-    });
+    };
+    return this._pinnedTooltip?.touch
+      ? computeTouchTooltipStyle(input, this.touchTooltipInsets)
+      : computeTooltipStyle(input);
   }
 
   private _renderTooltip() {

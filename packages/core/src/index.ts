@@ -52,6 +52,7 @@ export type {
   TooltipAction,
   TooltipActionDetail,
 } from './components/scatter-plot/scatter-plot.events';
+export type { TouchTooltipInsets } from './components/scatter-plot/tooltips/tooltip-position';
 export type {
   StructureErrorContext,
   StructureErrorEvent,

@@ -12,11 +12,12 @@ afterEach(() => {
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-/** Three proteins far apart, with empty plot around each. */
-function makeData(): VisualizationData {
+/** Three proteins far apart, with empty plot around each (stacked: P1 and P2 share a position). */
+function makeData(stacked = false): VisualizationData {
+  const coords = stacked ? [0, 0, 0, 0, 10, 10] : [0, 0, 5, 5, 10, 10];
   return {
     protein_ids: ['P1', 'P2', 'P3'],
-    projections: [{ name: 'umap', dimension: 2, data: new Float32Array([0, 0, 5, 5, 10, 10]) }],
+    projections: [{ name: 'umap', dimension: 2, data: new Float32Array(coords) }],
     annotations: {
       fam: { kind: 'categorical', values: ['A'], colors: ['#336699'], shapes: ['circle'] },
     },
@@ -28,12 +29,13 @@ const at = (plot: ProtspaceScatterplot, id: string) => plot.getProteinClientPosi
 const svgOf = (plot: ProtspaceScatterplot) => plot.shadowRoot!.querySelector('svg')!;
 const right = (point: { x: number; y: number }, dx: number) => ({ x: point.x + dx, y: point.y });
 
-async function mountPlot(actions: readonly TooltipAction[] = []) {
+async function mountPlot(actions: readonly TooltipAction[] = [], stacked = false) {
   const plot = document.createElement('protspace-scatterplot');
   plot.style.cssText = 'display: block; width: 480px; height: 360px';
   plot.selectedAnnotation = 'fam';
   plot.tooltipActions = actions;
-  plot.data = makeData();
+  if (stacked) plot.config = { enableDuplicateStackUI: true };
+  plot.data = makeData(stacked);
   document.body.append(plot);
   await plot.updateComplete;
   // Hit tests read the point grid, rebuilt on a frame after the data and the size.
@@ -163,6 +165,40 @@ describe('scatterplot touch', () => {
       expect(card.top).toBeGreaterThanOrEqual(area.top);
       expect(card.bottom).toBeLessThanOrEqual(area.bottom);
     });
+  });
+
+  it('a pinned touch tooltip keeps clear of touchTooltipInsets', async () => {
+    const plot = await mountPlot([VIEW_STRUCTURE]);
+    plot.touchTooltipInsets = { top: 0, right: 0, bottom: 120, left: 100 };
+    // P1 sits in the plot's bottom-left corner, under both insets.
+    tap(plot, at(plot, 'P1'));
+    await vi.waitFor(async () => {
+      await plot.updateComplete;
+      const tip = pinned(plot)!;
+      expect(tip).not.toBeNull();
+      const area = plot.getBoundingClientRect();
+      const card = tip.getBoundingClientRect();
+      expect(card.width).toBeGreaterThan(0);
+      expect(card.left).toBeGreaterThanOrEqual(area.left + 100);
+      expect(card.right).toBeLessThanOrEqual(area.right);
+      expect(card.bottom).toBeLessThanOrEqual(area.bottom - 120);
+    });
+  });
+
+  it("a tap's compat mouseenter on a spider node shows no hover tooltip", async () => {
+    const plot = await mountPlot([], true);
+    await vi.waitFor(() => expect(plot.getDuplicateStacks()).toHaveLength(1), { timeout: 3_000 });
+    tap(plot, at(plot, 'P1'));
+    await plot.updateComplete;
+    expect(plot.hasExpandedDuplicateStack()).toBe(true);
+    const node = await vi.waitFor(() => {
+      const found = plot.shadowRoot!.querySelector('.dup-spiderfy-node-circle');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    node.dispatchEvent(new MouseEvent('mouseenter'));
+    await plot.updateComplete;
+    expect(tooltip(plot)).toBeNull();
   });
 
   it('a compat mousemove after a touch press shows no hover tooltip', async () => {
