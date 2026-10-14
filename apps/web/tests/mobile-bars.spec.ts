@@ -240,7 +240,6 @@ test.describe('the bars on a phone', () => {
   });
 
   test('C7: a selected filter value has a finger-sized remove button', async ({ page }) => {
-    test.fixme(true, 'task 5.12');
     await openExplorePhone(page);
     const { annotation } = await getViewState(page);
     await panelTab(page, 'Filter').tap();

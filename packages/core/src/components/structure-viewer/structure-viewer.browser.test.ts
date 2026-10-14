@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { adoptTheme } from '../kit/adopt-theme';
 import { deepActiveElement } from '../kit/focus';
-import { userEvent } from 'vitest/browser';
+import { cdp, userEvent } from 'vitest/browser';
 import { MAX_STRUCTURE_CHOICES, type ProtspaceStructureViewer } from './structure-viewer';
 import './structure-viewer';
 
@@ -235,5 +235,25 @@ describe('protspace-structure-viewer protein choices', () => {
     expect(viewer.shadowRoot!.querySelector('ps-menu')!.getAttribute('search-placeholder')).toBe(
       `Search the first ${MAX_STRUCTURE_CHOICES}`,
     );
+  });
+});
+
+describe('protspace-structure-viewer under a coarse pointer', () => {
+  it('the close button and the protein pick are 40 px targets', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const viewer = await mount();
+      viewer.proteinChoices = ['P11111', 'P12345', 'P22222'];
+      await viewer.updateComplete;
+      for (const selector of ['.close-button', 'button.protein-pick']) {
+        const box = viewer.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+        expect(box.width, selector).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.height, selector).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

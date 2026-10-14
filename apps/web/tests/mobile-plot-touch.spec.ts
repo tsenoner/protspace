@@ -213,7 +213,6 @@ test.describe('the plot on a touch screen', () => {
   });
 
   test('P7: the tool strip buttons are 40 px touch targets', async ({ page }) => {
-    test.fixme(true, 'task 5.12');
     await openExplorePhone(page);
     const tools = page.getByRole('toolbar', { name: 'Plot tools', exact: true });
     await expect(tools).toBeVisible();

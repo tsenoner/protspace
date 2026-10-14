@@ -192,7 +192,7 @@ describe('scatterplot touch', () => {
     await plot.updateComplete;
     expect(plot.hasExpandedDuplicateStack()).toBe(true);
     const node = await vi.waitFor(() => {
-      const found = plot.shadowRoot!.querySelector('.dup-spiderfy-node-circle');
+      const found = plot.shadowRoot!.querySelector('.dup-spiderfy-node');
       expect(found).not.toBeNull();
       return found!;
     });

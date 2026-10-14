@@ -7,6 +7,7 @@ import './query-builder';
 import { createCondition, createGroup } from './query-types';
 import type { FilterQuery } from './query-types';
 import type { ProtspaceData } from './types';
+import { cdp } from 'vitest/browser';
 
 beforeAll(() => adoptTheme());
 afterEach(() => document.body.replaceChildren());
@@ -114,5 +115,27 @@ describe('protspace-query-builder in a narrow panel', () => {
     await row.updateComplete;
 
     expect(topLayer()).toBeUndefined();
+  });
+
+  it('under a coarse pointer a value chip’s remove is a 40 px target and the chip stays 22 px tall', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const builder = await mount([
+        createCondition({ annotation: 'organism', values: ['Human', 'Mouse'] }),
+      ]);
+      const row = rows(builder)[0].shadowRoot!;
+      const chip = row.querySelector('.value-chip')!.getBoundingClientRect();
+      const remove = row.querySelector<HTMLElement>('.value-chip-remove')!;
+      const box = remove.getBoundingClientRect();
+      expect(chip.height).toBeCloseTo(22, 0);
+      expect(box.width).toBeGreaterThanOrEqual(40 - 0.5);
+      expect(box.height).toBeGreaterThanOrEqual(40 - 0.5);
+      // A press near the target's corner, outside the chip, still reaches the button.
+      expect(row.elementFromPoint(box.left + 2, box.top + 2)).toBe(remove);
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

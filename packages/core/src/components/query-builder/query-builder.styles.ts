@@ -304,6 +304,17 @@ export const queryBuilderStyles = [
       opacity: 1;
     }
 
+    /* Touch: a 40 px target around the ×. The negative margins take back what it adds, so the
+       chip stays 22 px tall and about as wide; the target overhangs it on every side. */
+    @media (pointer: coarse) {
+      .value-chip-remove {
+        min-width: var(--ps-touch-target);
+        min-height: var(--ps-touch-target);
+        margin-block: calc((var(--ps-touch-target) - 22px) / -2);
+        margin-inline: -12px calc(-12px - var(--ps-space-1));
+      }
+    }
+
     .value-chip-add {
       display: inline-flex;
       align-items: center;

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsIconButton } from '../kit/button';
 import { deepActiveElement } from '../kit/focus';
@@ -141,5 +141,24 @@ describe('protspace-plot-tools', () => {
     await el.updateComplete;
     el.focusTool();
     expect(deepActiveElement()).toBe(inner(tool(el, 'Lasso select')));
+  });
+
+  it('under a coarse pointer the tool buttons are 40 px', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      // Fail loudly if this Chromium does not flip the media feature.
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const el = await mount();
+      const buttons = [...el.shadowRoot!.querySelectorAll<PsIconButton>('ps-icon-button')];
+      expect(buttons).toHaveLength(4);
+      for (const button of buttons) {
+        const box = inner(button).getBoundingClientRect();
+        expect(box.width, button.label).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.height, button.label).toBeGreaterThanOrEqual(40 - 0.5);
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
   });
 });

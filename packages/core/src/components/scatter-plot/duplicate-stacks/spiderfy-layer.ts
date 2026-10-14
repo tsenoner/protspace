@@ -3,6 +3,8 @@ import type { PlotDataPoint } from '@protspace/utils';
 import type { ViewportDuplicateStack } from './duplicate-stack-types';
 
 const SPIDERFY_NODE_RADIUS = 5;
+/** Largest tap disc around a node: 40 px across, the comfortable touch target. */
+const SPIDERFY_TOUCH_HIT_RADIUS = 20;
 export const SPIDERFY_CLICK_DIST2_MAX = 16; // (4px)² movement budget for a tap
 export const SPIDERFY_CLICK_MS_MAX = 700;
 
@@ -13,6 +15,13 @@ interface SpiderNode {
   y: number;
   /** ring radius (shared by all nodes of the stack). */
   r: number;
+}
+
+/** The tap disc around each node: as wide as the gap to its neighbours allows, up to a fingertip. */
+function touchHitRadius(nodes: SpiderNode[]): number {
+  const n = nodes.length;
+  const halfGap = n > 1 ? nodes[0].r * Math.sin(Math.PI / n) : SPIDERFY_TOUCH_HIT_RADIUS;
+  return Math.max(SPIDERFY_NODE_RADIUS, Math.min(SPIDERFY_TOUCH_HIT_RADIUS, halfGap));
 }
 
 /** Ring geometry: radius = min(70, max(22, 12 + n*2)); node i at angle i/n*2π − π/2. */
@@ -93,15 +102,28 @@ export class SpiderfyLayer {
       .attr('class', 'dup-spiderfy-node')
       .attr('transform', (d) => `translate(${d.x},${d.y})`);
 
-    // Create circles with explicit pointer-events and handle selection via pointer press/release.
-    // We avoid relying on the native 'click' event because it can be suppressed by d3.zoom gesture handling.
+    // A fingertip is far wider than the dot: under a coarse pointer an invisible disc behind each
+    // dot takes the tap. Mouse rendering is unchanged.
+    if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) {
+      gNodes
+        .append('circle')
+        .attr('class', 'dup-spiderfy-node-hit')
+        .attr('r', touchHitRadius(nodes))
+        .attr('fill', 'transparent')
+        .style('pointer-events', 'all');
+    }
+
     gNodes
       .append('circle')
       .attr('class', 'dup-spiderfy-node-circle')
       .attr('r', SPIDERFY_NODE_RADIUS)
       .attr('fill', (d) => this.deps.getColor(d.point))
       .style('pointer-events', 'all')
-      .style('cursor', 'pointer')
+      .style('cursor', 'pointer');
+
+    // The node selects on press and release, from its dot or its tap disc alike. Native 'click' is
+    // avoided because d3.zoom's gesture handling can suppress it.
+    gNodes
       .on('pointerdown', (event: PointerEvent) => {
         event.stopPropagation();
         if (typeof event.pointerId === 'number') {
@@ -111,8 +133,8 @@ export class SpiderfyLayer {
             t: Date.now(),
           });
         }
-        // Keep pointer events routed to this element even if the pointer moves slightly.
-        const el = event.currentTarget as HTMLElement | null;
+        // Keep pointer events routed to this node even if the pointer moves slightly.
+        const el = event.currentTarget as Element | null;
         if (
           el &&
           typeof el.setPointerCapture === 'function' &&

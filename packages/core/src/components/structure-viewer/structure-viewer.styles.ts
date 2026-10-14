@@ -128,6 +128,15 @@ const structureViewerStylesCore = css`
     background: rgba(0, 0, 0, 0.04);
   }
 
+  /* Touch: the close and protein-pick buttons are 40 px targets (the app's header is 44 px). */
+  @media (pointer: coarse) {
+    .close-button,
+    .protein-pick {
+      min-width: var(--ps-touch-target);
+      min-height: var(--ps-touch-target);
+    }
+  }
+
   .viewer-container {
     position: relative;
     width: 100%;
