@@ -563,6 +563,10 @@ appends it to open it and removes it on `close`. Escape first deselects a select
 then closes the dialog; a press on the backdrop never closes it. Close, the dialog's ✕ and Escape keep
 the editor's state. New figure and Reset offer Undo in the footer until the next edit.
 
+On a phone held upright (640 px wide or less) the dialog fills the screen, the preview takes its
+top 40% and the settings scroll below it; on a phone turned sideways (500 px tall or less) the
+preview and a settings column up to 340 px wide stay side by side.
+
 | Property            | Type                                                     | Description                                                          |
 | ------------------- | -------------------------------------------------------- | -------------------------------------------------------------------- |
 | `plotElement`       | `HTMLElement \| null`                                    | The plot it renders from                                             |

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import type { PsDialog } from '../kit/dialog';
 import { deepActiveElement } from '../kit/focus';
@@ -306,5 +306,38 @@ describe('protspace-publish-modal export and keys', () => {
     await modal.updateComplete;
     expect(internals._state.overlays).toHaveLength(0);
     expect(internals._selectedItem).toBeNull();
+  });
+});
+
+describe('protspace-publish-modal on a phone', () => {
+  afterEach(async () => {
+    await page.viewport(414, 896);
+  });
+
+  const rect = (modal: HTMLElement, selector: string) =>
+    modal.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+  it('at 375 × 667 the preview sits over the settings and takes 40% of the height', async () => {
+    await page.viewport(375, 667);
+    const { modal, native } = await mount();
+    // The full dialog is the screen on a phone (ps-dialog's compact rule).
+    expect(native.getBoundingClientRect().width).toBeCloseTo(375, 0);
+    const container = rect(modal, '.publish-container');
+    const preview = rect(modal, '.publish-preview');
+    const sidebar = rect(modal, '.publish-sidebar');
+    expect(preview.bottom).toBeLessThanOrEqual(sidebar.top + 0.5);
+    expect(Math.abs(preview.height - 0.4 * container.height)).toBeLessThan(1);
+    expect(sidebar.width).toBeCloseTo(container.width, 0);
+    expect(sidebar.bottom).toBeLessThanOrEqual(container.bottom + 0.5);
+  });
+
+  it('at 740 × 360 the preview and the settings stay side by side, the settings 340 px wide', async () => {
+    await page.viewport(740, 360);
+    const { modal } = await mount();
+    const preview = rect(modal, '.publish-preview');
+    const sidebar = rect(modal, '.publish-sidebar');
+    expect(preview.right).toBeLessThanOrEqual(sidebar.left + 0.5);
+    expect(sidebar.width).toBeCloseTo(340, 0);
+    expect(preview.width).toBeGreaterThan(200);
   });
 });

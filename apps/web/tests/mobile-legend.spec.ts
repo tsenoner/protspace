@@ -169,7 +169,6 @@ test.describe('the legend on a phone', () => {
   test('G8: the Figure editor fits the screen with its close control, upright and sideways', async ({
     page,
   }) => {
-    test.fixme(true, 'task 5.12');
     await openExplorePhone(page);
     // On a phone, Export lives in the More sheet; the sheet closes before the menu opens.
     await moreButton(page).tap();

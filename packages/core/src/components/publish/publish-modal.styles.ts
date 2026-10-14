@@ -1,9 +1,11 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+import { LANDSCAPE_PHONE_MEDIA, PHONE_MEDIA } from '../../utils/breakpoints';
 import { focusRing, kitHost, reducedMotion } from '../kit/kit-shared.styles';
 
 /**
  * The figure editor inside its full-screen ps-dialog: the preview (canvas, then the tool strip)
- * beside a 340 px settings column, and the footer the dialog slots in.
+ * beside a 340 px settings column, the settings under the preview on a phone held upright, and
+ * the footer the dialog slots in.
  */
 export const publishModalStyles = [
   kitHost,
@@ -560,6 +562,7 @@ export const publishModalStyles = [
       font-size: var(--ps-text-sm);
     }
 
+    /* Tablets and narrow windows: the settings under the preview. */
     @media (max-width: 800px) {
       .publish-container {
         flex-direction: column;
@@ -568,6 +571,41 @@ export const publishModalStyles = [
         flex: 0 0 auto;
         max-width: none;
         max-height: 45vh;
+      }
+    }
+
+    /* Phones: the preview takes the top 40% and the settings the rest, scrolling inside. */
+    @media ${unsafeCSS(PHONE_MEDIA)} {
+      .publish-container {
+        flex-direction: column;
+        gap: var(--ps-space-3);
+      }
+      .publish-preview {
+        flex: 0 0 40%;
+      }
+      .publish-sidebar {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+        max-height: none;
+        overflow: auto;
+      }
+    }
+
+    /* A phone on its side is too short to stack: preview and settings stay side by side. Last, so
+       it wins over both rules above (a 640 × 360 phone matches all three). */
+    @media ${unsafeCSS(LANDSCAPE_PHONE_MEDIA)} {
+      .publish-container {
+        flex-direction: row;
+      }
+      .publish-preview {
+        flex: 1 1 auto;
+      }
+      .publish-sidebar {
+        flex: 0 0 min(50vw, 340px);
+        min-width: 0;
+        max-width: none;
+        max-height: none;
       }
     }
   `,
