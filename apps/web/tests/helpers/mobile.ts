@@ -50,17 +50,20 @@ export async function expectWithinViewport(page: Page, locator: Locator, slack =
 export async function touchDrag(page: Page, point: Point, dy: number, restMs = 0): Promise<void> {
   const cdp = await page.context().newCDPSession(page);
   const at = (y: number) => [{ x: point.x, y, id: 0, radiusX: 1, radiusY: 1, force: 1 }];
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(point.y) });
-  if (restMs) await page.waitForTimeout(restMs);
-  for (let step = 1; step <= 10; step++) {
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: at(point.y + (dy * step) / 10),
-    });
-    await page.waitForTimeout(16);
+  try {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(point.y) });
+    if (restMs) await page.waitForTimeout(restMs);
+    for (let step = 1; step <= 10; step++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: at(point.y + (dy * step) / 10),
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally {
+    await cdp.detach().catch(() => {});
   }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -123,12 +126,15 @@ export async function touchGesture(page: Page, tracks: Point[][]): Promise<void>
   const cdp = await page.context().newCDPSession(page);
   const at = (step: number) =>
     tracks.map((track, id) => ({ x: track[step].x, y: track[step].y, id }));
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
-  for (let step = 1; step < tracks[0].length; step++) {
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(step) });
+  try {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+    for (let step = 1; step < tracks[0].length; step++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(step) });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally {
+    await cdp.detach().catch(() => {});
   }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
 }
 
 /** A one-finger tap: touch events, the compat mouse events and a click, as a phone sends them. */

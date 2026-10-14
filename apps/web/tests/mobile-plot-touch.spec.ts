@@ -108,6 +108,12 @@ test.describe('the plot on a touch screen', () => {
     expect(card.y).toBeGreaterThanOrEqual(plot.y);
     expect(card.x + card.width).toBeLessThanOrEqual(plot.x + plot.width);
     expect(card.y + card.height).toBeLessThanOrEqual(plot.y + plot.height);
+    // Nothing inside the card is cut off.
+    const clipped = await plotTooltip(page).evaluate((element) => {
+      const inner = element.shadowRoot!.querySelector('.tooltip')!;
+      return inner.scrollWidth > inner.clientWidth;
+    });
+    expect(clipped).toBe(false);
   });
 
   test('P3: a tap on empty space or a pan closes the tooltip', async ({ page }) => {

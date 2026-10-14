@@ -301,11 +301,9 @@ test.describe('the bars on a portrait tablet', () => {
     await expect(importTrigger(page)).toBeVisible();
     await expect(exportTrigger(page)).toBeVisible();
     await expect(searchToggle(page)).toBeHidden();
-    // More shows from the view bar's second stage; where it shows, it opens its menu.
-    if (await moreButton(page).isVisible()) {
-      await moreButton(page).tap();
-      await expect(page.getByRole('menu', { name: 'More view options' })).toBeVisible();
-    }
+    // At 800 px the view bar has room for every control: Filter shows and More does not.
+    await expect(moreButton(page)).toBeHidden();
+    await expect(viewBar(page).getByRole('button', { name: /^Filter/ })).toBeVisible();
     await expect(moreSheet(page)).toHaveCount(0);
   });
 });
@@ -423,11 +421,11 @@ test.describe('search on a phone', () => {
 
     // The suggestion list is a layer: an Escape while it shows closes it and leaves search open.
     const suggestions = page.locator('protspace-protein-search').getByRole('listbox');
-    if (await suggestions.isVisible()) {
-      await page.keyboard.press('Escape');
-      await expect(suggestions).toBeHidden();
-      await expect(appBar(page)).toHaveAttribute('data-search-open', '');
-    }
+    await searchInput(page).fill(id.slice(0, 4));
+    await expect(suggestions).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(suggestions).toBeHidden();
+    await expect(appBar(page)).toHaveAttribute('data-search-open', '');
     await page.keyboard.press('Escape');
     await expect(appBar(page)).not.toHaveAttribute('data-search-open');
     await expect(searchToggle(page)).toBeFocused();
