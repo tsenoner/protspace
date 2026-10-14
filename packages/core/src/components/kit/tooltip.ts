@@ -111,7 +111,10 @@ export class PsTooltip extends LitElement {
     else target.ariaDescribedByElements = next.length ? next : null;
   }
 
-  private onEnter = () => {
+  // A finger has no hover: a tap would show a label that only the next tap elsewhere hides. Mouse
+  // and pen hover as before; keyboard focus still shows it (onFocus).
+  private onEnter = (event: Event) => {
+    if ((event as PointerEvent).pointerType === 'touch') return;
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.show(), HOVER_DELAY_MS);
   };

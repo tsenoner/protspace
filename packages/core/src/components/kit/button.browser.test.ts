@@ -304,6 +304,21 @@ describe('ps-tooltip', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(anchor.ariaDescribedByElements ?? []).toEqual([]);
   });
+
+  it('a touch pointerenter does not show the tooltip; a mouse pointerenter does after 500 ms', async () => {
+    const el = await mount<PsIconButton>(
+      '<ps-icon-button icon="x" label="Close"></ps-icon-button>',
+    );
+    vi.useFakeTimers();
+    // A tap: a label shown now would stay until the next tap elsewhere.
+    inner(el).dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'touch' }));
+    vi.advanceTimersByTime(1000);
+    expect(tip(el).matches(':popover-open')).toBe(false);
+
+    inner(el).dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    vi.advanceTimersByTime(500);
+    expect(tip(el).matches(':popover-open')).toBe(true);
+  });
 });
 
 describe('ps-icon-button tooltip placement', () => {

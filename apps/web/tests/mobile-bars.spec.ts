@@ -4,6 +4,7 @@ import {
   appBar,
   colorByTrigger,
   datasetSwitcher,
+  dismissTourIfPresent,
   exportMenu,
   filterApplyButton,
   filterPanel,
@@ -35,6 +36,7 @@ import {
   tap,
   touchTargetsBelow,
 } from './helpers/mobile';
+import { clearOpfs, seedOpfsState } from './helpers/opfs';
 import { stubStructureRequests } from './helpers/workbench';
 
 /**
@@ -199,7 +201,6 @@ test.describe('the bars on a phone', () => {
   });
 
   test('C5: the Color by picker and its info bubble stay within the viewport', async ({ page }) => {
-    test.fixme(true, 'task 5.10');
     await openExplorePhone(page);
     await colorByTrigger(page).tap();
 
@@ -634,5 +635,45 @@ test.describe('the More sheet', () => {
 
     await page.keyboard.press('Escape');
     await expect.poll(() => getSelectedProteinIds(page)).toEqual([]);
+  });
+});
+
+test.describe('dialogs on a 360 px phone', () => {
+  test.use({ viewport: { width: 360, height: 740 } });
+
+  test('the confirm dialog and the Import panel fit a 360 px screen', async ({ page }) => {
+    await openExplorePhone(page);
+
+    // The dataset name opens the Import panel.
+    await datasetSwitcher(page).tap();
+    const importPanel = importMenu(page).getByRole('dialog', { name: 'Import', exact: true });
+    await expect(importPanel).toBeVisible();
+    await expectWithinViewport(page, importPanel);
+    await page.keyboard.press('Escape');
+    await expect(importPanel).toBeHidden();
+
+    // Clearing a stored dataset asks first in a small ps-dialog; a failed load offers it.
+    await clearOpfs(page);
+    await seedOpfsState(page, {
+      fileName: 'broken.parquetbundle',
+      status: 'pending',
+      failedAttempts: 1,
+    });
+    await page.reload();
+    await dismissTourIfPresent(page);
+    const banner = page.locator('#protspace-recovery-banner');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await banner.getByRole('button', { name: 'Clear stored data' }).tap();
+
+    const confirm = page.getByRole('dialog', { name: 'Clear stored data?' });
+    await expect(confirm).toBeVisible();
+    await expectWithinViewport(page, confirm);
+    // The buttons are the dialog's slotted content, found through the ps-dialog host.
+    const host = page.locator('ps-dialog', { has: confirm });
+    for (const name of ['Cancel', 'Clear data']) {
+      await expectWithinViewport(page, host.getByRole('button', { name, exact: true }));
+    }
+    await host.getByRole('button', { name: 'Cancel', exact: true }).tap();
+    await expect(confirm).toBeHidden();
   });
 });

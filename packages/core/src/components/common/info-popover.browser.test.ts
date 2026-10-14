@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from '../kit/adopt-theme';
 import { ESCAPE_ORDER, onEscapeFallback } from '../kit/layers';
 import '../kit/popover';
@@ -295,6 +295,27 @@ describe('protspace-info-popover on ps-popover', () => {
       expect(box.bottom).toBeLessThanOrEqual(667);
     } finally {
       await page.viewport(1280, 720);
+    }
+  });
+
+  it('under a coarse pointer the ⓘ takes presses 10 px outside its 18 px box', async () => {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      const el = await mount();
+      const box = trigger(el).getBoundingClientRect();
+      expect(box.width).toBeCloseTo(18, 0);
+      const midY = box.top + box.height / 2;
+      for (const [x, y] of [
+        [box.left - 10, midY],
+        [box.right + 10, midY],
+        [box.left + box.width / 2, box.top - 10],
+      ]) {
+        expect(el.shadowRoot!.elementFromPoint(x, y)).toBe(trigger(el));
+      }
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import { adoptTheme } from './adopt-theme';
 import type { PsCheckbox } from './checkbox';
 import './checkbox';
@@ -245,5 +245,58 @@ describe('ps-segmented', () => {
       (r) => r.getAttribute('tabindex') === '0',
     );
     expect(tabbable.length).toBe(1);
+  });
+});
+
+describe('choice controls under a coarse pointer', () => {
+  /** Runs `body` with touch emulation on, which switches `(pointer: coarse)`. */
+  async function coarse(body: () => Promise<void>): Promise<void> {
+    const session = cdp();
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    try {
+      // Fail loudly if this Chromium does not flip the media feature.
+      expect(matchMedia('(pointer: coarse)').matches).toBe(true);
+      await body();
+    } finally {
+      await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    }
+  }
+
+  it('segmented options are 34 px tall inside a 40 px group and at least 34 px wide', async () => {
+    await coarse(async () => {
+      const el = await mount<PsSegmented>('<ps-segmented label="Contours"></ps-segmented>');
+      el.options = [
+        { value: 'off', label: 'Off' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'on', label: 'Always' },
+      ];
+      el.value = 'off';
+      await el.updateComplete;
+      const group = el.shadowRoot!.querySelector('[role="radiogroup"]')!;
+      expect(group.getBoundingClientRect().height).toBeCloseTo(40, 0);
+      for (const radio of el.shadowRoot!.querySelectorAll('[role="radio"]')) {
+        const box = radio.getBoundingClientRect();
+        expect(box.height).toBeCloseTo(34, 0);
+        expect(box.width).toBeGreaterThanOrEqual(34 - 0.5);
+      }
+    });
+  });
+
+  it('a checkbox and a switch take a 40 px hit row', async () => {
+    await coarse(async () => {
+      for (const markup of [
+        '<ps-checkbox label="Select all"></ps-checkbox>',
+        '<ps-switch label="Contours"></ps-switch>',
+      ]) {
+        const el = await mount<PsCheckbox | PsSwitch>(markup);
+        const label = el.shadowRoot!.querySelector('label')!;
+        const box = label.getBoundingClientRect();
+        expect(box.height).toBeGreaterThanOrEqual(40 - 0.5);
+        expect(box.width).toBeGreaterThanOrEqual(40 - 0.5);
+        // A press near the row's corner lands inside the label, which toggles the control.
+        const hit = el.shadowRoot!.elementFromPoint(box.left + 2, box.bottom - 2);
+        expect(hit !== null && label.contains(hit)).toBe(true);
+      }
+    });
   });
 });

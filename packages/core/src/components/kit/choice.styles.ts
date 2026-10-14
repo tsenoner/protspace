@@ -52,6 +52,13 @@ export const checkboxStyles = [
       cursor: not-allowed;
       opacity: 0.5;
     }
+    /* Touch: the label is a 40 px hit row; the box keeps its size. */
+    @media (pointer: coarse) {
+      label {
+        min-width: var(--ps-touch-target);
+        min-height: var(--ps-touch-target);
+      }
+    }
   `,
 ];
 
@@ -106,6 +113,13 @@ export const switchStyles = [
     :host([disabled]) label {
       opacity: 0.5;
     }
+    /* Touch: the label is a 40 px hit row; the track keeps its size. */
+    @media (pointer: coarse) {
+      label {
+        min-width: var(--ps-touch-target);
+        min-height: var(--ps-touch-target);
+      }
+    }
     /* Forced colours drop backgrounds, so the track gets a border and the thumb a system colour. */
     @media (forced-colors: active) {
       button {
@@ -151,6 +165,13 @@ export const segmentedStyles = [
       box-shadow:
         inset 0 0 0 1px var(--ps-accent),
         var(--ps-shadow-sm);
+    }
+    /* Touch: a 40 px group (the track's 2 px padding and 1 px border around 34 px options). */
+    @media (pointer: coarse) {
+      button {
+        height: calc(var(--ps-touch-target) - 6px);
+        min-width: calc(var(--ps-touch-target) - 6px);
+      }
     }
     @media (forced-colors: active) {
       button[aria-checked='true'] {

@@ -1,6 +1,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { exportMenu } from './helpers/explore';
-import { legend, legendRowValues, legendSettingsDialog, legendSortButton } from './helpers/legend';
+import { exportMenu, selectAnnotation } from './helpers/explore';
+import {
+  getFirstLegendItemValue,
+  legend,
+  legendOtherDialog,
+  legendRowAction,
+  legendRowValues,
+  legendSettingsDialog,
+  legendSortButton,
+  openLegendOther,
+} from './helpers/legend';
 import {
   box,
   expectWithinViewport,
@@ -146,7 +155,6 @@ test.describe('the legend on a phone', () => {
   });
 
   test('G7: the settings popover fits the screen with its controls in reach', async ({ page }) => {
-    test.fixme(true, 'task 5.10');
     await openExplorePhone(page);
     await legend(page).getByRole('button', { name: 'Legend settings', exact: true }).tap();
 
@@ -197,5 +205,27 @@ test.describe('the legend on a phone', () => {
       expect(bounds.width).toBeGreaterThanOrEqual(40);
       expect(bounds.height).toBeGreaterThanOrEqual(40);
     }
+  });
+});
+
+test.describe('popovers from a full-width legend row', () => {
+  test('the colour picker and the Other popover opened from a full-width row stay inside the viewport', async ({
+    page,
+  }) => {
+    await openExplorePhone(page);
+    // 'order' has 18 values, so the default 10 rows leave eight under Other.
+    await selectAnnotation(page, 'order');
+
+    // The picker opens beside its row (left-start); on a phone the row spans the screen.
+    const value = await getFirstLegendItemValue(page);
+    await legendRowAction(page, value, 'Colour and shape');
+    const picker = legend(page).getByRole('dialog', { name: /^Colour and shape/ });
+    await expect(picker).toBeVisible();
+    await expectWithinViewport(page, picker);
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
+
+    await openLegendOther(page);
+    await expectWithinViewport(page, legendOtherDialog(page));
   });
 });

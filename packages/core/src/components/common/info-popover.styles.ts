@@ -14,6 +14,7 @@ export const infoPopoverStyles = [
 
     .info-button {
       display: inline-flex;
+      position: relative;
       align-items: center;
       justify-content: center;
       width: 18px;
@@ -31,6 +32,15 @@ export const infoPopoverStyles = [
     .info-button.open {
       color: var(--ps-text);
       background: var(--ps-surface-hover);
+    }
+
+    /* Touch: a 40 px hit area around the 18 px icon, without growing the row it sits in. */
+    @media (pointer: coarse) {
+      .info-button::before {
+        content: '';
+        position: absolute;
+        inset: -11px;
+      }
     }
 
     .popover {

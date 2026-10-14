@@ -247,7 +247,6 @@ test.describe('the plot on a short phone screen', () => {
   test.use({ viewport: { width: 390, height: 600 } });
 
   test('P8: the projection details card fits the short plot and scrolls', async ({ page }) => {
-    test.fixme(true, 'task 5.10');
     await openExplorePhone(page);
     await expectProjectionDetailsFit(page);
   });
@@ -301,7 +300,6 @@ test.describe('the plot on a phone on its side', () => {
   });
 
   test('P10: the projection details card fits the short screen and scrolls', async ({ page }) => {
-    test.fixme(true, 'task 5.10');
     await openExplorePhone(page);
     // The card opens from the bar, which the page scrolls past: open it at the top.
     await expectProjectionDetailsFit(page);

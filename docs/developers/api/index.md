@@ -325,6 +325,8 @@ room, and stays 8 px inside the screen. Every kit popover, menu and tooltip publ
 has as `--available-height` and `--available-width` on its panel. Kit dialogs fit a phone, upright
 (640 px wide or less) or on its side (500 px tall or less): `size="full"` fills the screen edge to
 edge, and `md` and `lg` leave 8 px on each side.
+Under a coarse pointer the kit's segmented options, checkboxes, switches and ⓘ buttons take 40 px
+presses, and a kit tooltip ignores a touch: a tap shows no label, while keyboard focus still does.
 
 ### Projection Select
 
