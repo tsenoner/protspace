@@ -375,6 +375,15 @@ export default defineConfig({
       testMatch: /(^|[\\/])workbench-[^\\/]*\.spec\.ts$/,
     },
     {
+      // Phones and tablets with touch (design decision 17): every mobile-*.spec.ts on an emulated
+      // Pixel 7 (412 × 839, touch, Chromium). Tablet and landscape tests resize the page inside
+      // it, so (pointer: coarse) holds at every size. Anchored to the file name: the pattern is
+      // matched against the absolute path.
+      name: 'mobile',
+      use: { ...devices['Pixel 7'] },
+      testMatch: /(^|[\\/])mobile-[^\\/]*\.spec\.ts$/,
+    },
+    {
       // Development-only page at /dev/kit; the dev server the suite starts serves it.
       name: 'kit-gallery',
       use: devices['Desktop Chrome'],
