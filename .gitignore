@@ -62,12 +62,18 @@ docs/superpowers/
 **/playwright-report
 .playwright-mcp
 
+# Agent tool dirs are anchored to the repo root on purpose. Claude Code and Codex
+# create worktrees *inside* these dirs (`.claude/worktrees/<name>`,
+# `~/.codex/worktrees/<name>`), and knip matches gitignore patterns against
+# absolute paths: a bare `.claude` becomes `**/.claude/**`, matches every file of
+# such a worktree, and `pnpm precommit` then fails with false "unused" files.
+
 # Claude (config + CLI-generated OpenSpec skills/commands; run `openspec init` locally)
 CLAUDE.md
-.claude
+/.claude
 
 # Codex (CLI-generated OpenSpec skills; run `openspec init` locally)
-.codex
+/.codex
 
 # Former local-only fixture of load-large-bundle.spec.ts, which now reads the
 # perf-datasets copy in perf/datasets/; ignored so a leftover copy is never committed.
