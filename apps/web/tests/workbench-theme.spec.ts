@@ -309,10 +309,17 @@ test.describe('exports stay light in Dark', () => {
     const modal = page.locator('protspace-publish-modal');
     const preview = modal.locator('.publish-preview-canvas');
     await expect(preview).toBeVisible();
+    const cornerAlpha = () =>
+      preview.evaluate(
+        (canvas: HTMLCanvasElement) => canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data[3],
+      );
+    // A white figure covers the paper; a transparent one lets it show through.
+    await expect.poll(cornerAlpha).toBe(255);
     await modal
       .locator('select.publish-select')
       .filter({ has: page.locator('option[value="transparent"]') })
       .selectOption('transparent');
+    await expect.poll(cornerAlpha).toBe(0);
 
     const backdrop = await preview.evaluate((el) => getComputedStyle(el).backgroundImage);
     expect(backdrop).toContain('rgb(255, 255, 255)');

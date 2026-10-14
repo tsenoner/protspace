@@ -638,6 +638,7 @@ test('the pinned View structure tooltip offers the links', async ({ page }) => {
 
 test("Mol*'s background follows the theme", async ({ page }) => {
   await openExplore(page);
+  await chooseTheme(page, 'Light');
   await clickProteinNearPlotCentre(page);
   await expect(page.locator('#myStructureViewer')).toBeVisible();
   const background = () =>
