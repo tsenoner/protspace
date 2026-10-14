@@ -147,6 +147,8 @@ import type {
  * @fires legend-error - When an error occurs during data processing, persistence, or syncing
  *
  * @csspart container - The main legend container
+ * @csspart row-handle - A row's reorder handle
+ * @csspart row-menu - A row's "More actions" button
  *
  * @slot - Default slot for custom content
  */

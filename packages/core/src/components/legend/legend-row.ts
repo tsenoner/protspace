@@ -184,6 +184,7 @@ export function renderLegendRow(
         <button
           type="button"
           class="drag-handle${view.draggable ? '' : ' drag-handle-disabled'}"
+          part="row-handle"
           ?disabled=${!view.draggable}
           aria-hidden=${view.draggable ? nothing : 'true'}
           aria-label=${view.draggable
@@ -205,6 +206,7 @@ export function renderLegendRow(
           ? html`<button
               type="button"
               class="legend-action legend-more"
+              part="row-menu"
               aria-haspopup="menu"
               aria-label=${`More actions for ${displayValue}`}
               tabindex=${tabindex}

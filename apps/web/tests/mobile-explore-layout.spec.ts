@@ -196,6 +196,35 @@ test.describe('explore layout on a phone on its side', () => {
   });
 });
 
+test.describe('the legend column on a phone on its side', () => {
+  for (const viewport of [
+    { width: 740, height: 360 },
+    { width: 844, height: 390 },
+  ]) {
+    test(`at ${viewport.width}×${viewport.height} the rows keep readable names and the header fits`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openExplorePhone(page);
+      const legend = page.locator('#myLegend');
+      const row = legend.locator('.legend-item').first();
+      // Mockup frame 7: a row shows its name, count and eye; the handle and "⋯" stay upright.
+      await expect(row.locator('.legend-eye')).toBeVisible();
+      await expect(row.locator('.drag-handle')).toBeHidden();
+      await expect(row.locator('.legend-more')).toBeHidden();
+      expect(
+        await row.locator('.legend-text').evaluate((text) => text.clientWidth),
+      ).toBeGreaterThanOrEqual(110);
+      const header = legend.locator('.legend-header');
+      expect(
+        await header.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        'the legend header does not overflow',
+      ).toBe(true);
+      await expect(legend.locator('.sort-button')).toBeVisible();
+    });
+  }
+});
+
 test.describe('the bottom panel on a phone', () => {
   test('the fold survives a reload', async ({ page }) => {
     await openExplorePhone(page);

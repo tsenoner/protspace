@@ -773,9 +773,10 @@
 /* ── Structure sheet on phones (Task 5.8, design decision 17) ───────────────
    The structure rises from the bottom edge, folded to its grip and header (56 px) so the plot and
    a pinned tooltip stay in view; expanded it takes half the screen at most. It folds by transform,
-   never by height or display: the viewer keeps its box, so Mol* never draws into an empty canvas
-   and a fold costs no resize, and the plot's box never changes (decision 4). The transform sits on
-   .wb-structure, no ancestor of the legend or the bars. Landscape places it in Task 5.9. */
+   never by height or display: on phones the viewer keeps its box, so Mol* never draws into an
+   empty canvas and a fold costs no resize, and the plot's box never changes (decision 4). The
+   transform sits on .wb-structure, no ancestor of the legend or the bars. On its side (Task 5.9)
+   the folded body is 0 px tall and Mol* resizes on expand. */
 .workbench:is([data-layout='phone'], [data-layout='landscape']) {
   --wb-sheet-folded: 56px;
 }
@@ -992,6 +993,15 @@
   padding: 0 var(--ps-space-2);
 }
 
+/* Mockup frame 7: the column is for reading the names. The header drops the title (Color by in
+   the bar names the annotation), and a row keeps only its eye: with the handle and "⋯" at 40 px
+   each a 240 px row left 3 to 9 characters of name. Reorder and colour and shape stay upright. */
+.workbench[data-layout='landscape'] #myLegend::part(title),
+.workbench[data-layout='landscape'] #myLegend::part(row-handle),
+.workbench[data-layout='landscape'] #myLegend::part(row-menu) {
+  display: none;
+}
+
 .workbench[data-layout='landscape'] #wb-sidebar {
   grid-area: side;
   min-height: 0;
@@ -1014,10 +1024,13 @@
   height: calc(var(--wb-sheet-folded) + 1px);
 }
 
-/* Expanded: the right half, full height, over the plot's right part. It leaves the grid, so the
-   legend takes the row back; the plot's box does not change. Mol* resizes here, which is fine. */
+/* Expanded: the right half of the one-screen body under the bar, over the plot's right part. It
+   leaves the grid (grid-area auto, so .wb-body is its containing block, not its grid area), so the
+   legend takes the row back; the plot's box does not change. Mol* resizes here, which is fine.
+   Absolute, not fixed: at scroll 0 a fixed sheet would cover the bar's More and Color by. */
 .workbench[data-layout='landscape'][data-sheet='expanded'] .wb-structure {
-  position: fixed;
+  grid-area: auto;
+  position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
