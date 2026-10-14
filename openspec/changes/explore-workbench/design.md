@@ -255,12 +255,13 @@ change in the same PR.
 ### 10. Layout state
 
 A small store, `apps/web/src/explore/layout-state.ts`, holds the sidebar's open state, width, divider
-position, active panel, the structure's docked/floating mode and floating rectangle, and the theme
-choice. The React shell subscribes with `useSyncExternalStore`; the runtime reads and writes it
-through the same module. It persists to one localStorage key, `protspace:layout:v1`, wrapped in
-try/catch so private windows still work. Layout is never written to the URL, so a shared link never
-imposes the sharer's layout. The theme choice gets its own key, `protspace:theme`, which an inline
-script in `apps/web/index.html` reads before first paint (decision 16).
+position, active panel, the structure's docked/floating mode and floating rectangle. The React
+shell subscribes with `useSyncExternalStore`; the runtime reads and writes it through the same
+module. It persists to one localStorage key, `protspace:layout:v1`, wrapped in try/catch so private
+windows still work. Layout is never written to the URL, so a shared link never imposes the sharer's
+layout. The theme choice has its own store, `apps/web/src/explore/theme-state.ts`, and its own key,
+`protspace:theme`, which an inline script in `apps/web/index.html` reads before first paint
+(decision 16).
 
 ### 11. One layer stack for Escape and closing
 
@@ -366,6 +367,13 @@ condition in the draft moves the slider only when the draft is applied.
   Category palettes do not change; the default palettes get a contrast check against the dark
   background.
 - The Mol\* viewer's background follows the theme.
+- `data-theme="system"` stays on `<html>` as chosen; the token sheet's media query follows the OS
+  live, so nothing resolves it to light or dark in the attribute. The attribute is set only while
+  `/explore` is mounted.
+- "Selection ring" means the brush and lasso outline and the EAT endpoint ring; no GPU ring is
+  drawn around selected points.
+- Contour lines keep their lighten toward white in both themes; they get no token.
+- The Mol\* canvas takes `--ps-surface`, so the structure card matches its panel.
 - Exports always use the light values (white background, light greys), whatever the theme, and the
   figure editor previews them that way.
 - The landing page, privacy page and docs keep their current look.

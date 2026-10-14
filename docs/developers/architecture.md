@@ -144,6 +144,19 @@ which every layout rule in `workbench.css` keys on, and the runtime's controller
 structure loads, when the Filter panel counts) read the same value. Touch affordances key on
 `(pointer: coarse)`, not on the mode.
 
+## Theme
+
+The explore page's theme (design decision 16) is System, Light or Dark, kept under
+`protspace:theme` by its own store, `apps/web/src/explore/theme-state.ts` (its key, choices and
+default in the leaf `theme-defaults.ts`), beside the layout store. The choice goes as is onto
+`data-theme` on `<html>`, and only while `/explore` is mounted: `Explore.tsx` applies it in a
+layout effect and removes it on unmount, so the landing and privacy pages keep their look.
+`data-theme="system"` stays `system`; the token sheet's media query follows the OS. On a cold load
+of `/explore`, a classic script in `index.html`, after the GitHub Pages redirect, sets the
+attribute from storage before first paint, and an unlayered `<style>` paints the dark surface
+until the lazy chunk adopts the tokens; `theme-boot.test.ts` pins the script's key, choices and
+default and the style's colour to `theme-defaults.ts` and `theme.ts`.
+
 ## Filter panel
 
 The app's filter controller (`apps/web/src/explore/filter-controller.ts`) keeps two queries: the

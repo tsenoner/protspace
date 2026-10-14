@@ -2,14 +2,20 @@
 // element, and the bars paint from --ps-* tokens (design decision 5). The full core arrives later,
 // with the runtime.
 import '@protspace/core/kit';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useSearchParams } from 'react-router';
+import { applyTheme } from '../explore/theme-state';
 import { useExploreUrlStateSync } from '../explore/use-url-state-sync';
 import { Workbench } from '../workbench/Workbench';
 
 const Explore = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { attachController } = useExploreUrlStateSync(searchParams, setSearchParams);
+
+  // The theme choice on <html> while this page is mounted (design decision 16): a layout effect,
+  // so an arrival from the landing page is themed before the workbench paints; removed on leaving,
+  // so the landing and privacy pages keep their look. A cold load already has it from index.html.
+  useLayoutEffect(() => applyTheme(), []);
 
   useEffect(() => {
     let mounted = true;
