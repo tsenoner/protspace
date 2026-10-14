@@ -5,7 +5,8 @@ import type {
   TooltipAction,
   TooltipActionDetail,
 } from '@protspace/core';
-import type { LayoutState } from './layout-defaults';
+import type { LayoutMode, LayoutState } from './layout-defaults';
+import type { LayoutModeSource } from './layout-mode';
 import { getLayout, subscribeLayout, updateLayout } from './layout-state';
 import { setWorkbenchStatus } from './workbench-status';
 
@@ -13,12 +14,12 @@ import { setWorkbenchStatus } from './workbench-status';
 const VIEW_STRUCTURE: TooltipAction = { id: 'view-structure', label: 'View structure' };
 
 /**
- * Whether the structure can be seen with this layout. Below 951 px the stacked sidebar never
+ * Whether the structure can be seen with this layout. Off desktop the panel under the plot never
  * collapses, so it always can; on desktop a floating card always can, and a docked one only while
  * the sidebar is open.
  */
-export function isStructureVisible(layout: LayoutState, desktop: boolean): boolean {
-  if (!desktop) return true;
+export function isStructureVisible(layout: LayoutState, mode: LayoutMode): boolean {
+  if (mode !== 'desktop') return true;
   return layout.structurePlacement === 'floating' || layout.sidebarOpen;
 }
 
@@ -43,8 +44,8 @@ interface StructureControllerOptions {
     ProtspaceScatterplot,
     'tooltipActions' | 'addEventListener' | 'removeEventListener'
   >;
-  /** `matchMedia('(min-width: 951px)')` in the app; a fake in tests. */
-  desktopQuery: Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>;
+  /** The workbench's layout mode (layout-mode.ts in the app; a fake in tests). */
+  layoutMode: LayoutModeSource;
 }
 
 /**
@@ -75,7 +76,7 @@ function singleAddition(previous: readonly string[], next: readonly string[]): s
 export function createStructureController({
   viewer,
   plotElement,
-  desktopQuery,
+  layoutMode,
 }: StructureControllerOptions): StructureController {
   // Properties, not attributes: Lit reads auto-show="false" as true.
   viewer.autoShow = false;
@@ -88,7 +89,7 @@ export function createStructureController({
   // The selection the header offers, as select() last received it.
   let choices: readonly string[] = [];
 
-  const visible = () => isStructureVisible(getLayout(), desktopQuery.matches);
+  const visible = () => isStructureVisible(getLayout(), layoutMode.get());
   const publish = (proteinId: string | null) =>
     setWorkbenchStatus({ structureProteinId: proteinId });
   const load = (proteinId: string) => {
@@ -134,7 +135,9 @@ export function createStructureController({
   const offerViewStructure = () => {
     const layout = getLayout();
     const offer =
-      desktopQuery.matches && layout.structurePlacement === 'docked' && !layout.sidebarOpen;
+      layoutMode.get() === 'desktop' &&
+      layout.structurePlacement === 'docked' &&
+      !layout.sidebarOpen;
     if (offer !== plotElement.tooltipActions.length > 0) {
       plotElement.tooltipActions = offer ? [VIEW_STRUCTURE] : [];
     }
@@ -161,7 +164,7 @@ export function createStructureController({
   };
 
   const unsubscribe = subscribeLayout(onLayoutChange);
-  desktopQuery.addEventListener('change', onLayoutChange);
+  const unsubscribeMode = layoutMode.subscribe(onLayoutChange);
   viewer.addEventListener('structure-close', forget);
   viewer.addEventListener('structure-protein-change', onProteinChange);
   plotElement.addEventListener('tooltip-action', onTooltipAction);
@@ -179,7 +182,7 @@ export function createStructureController({
     },
     dispose() {
       unsubscribe();
-      desktopQuery.removeEventListener('change', onLayoutChange);
+      unsubscribeMode();
       viewer.removeEventListener('structure-close', forget);
       viewer.removeEventListener('structure-protein-change', onProteinChange);
       plotElement.removeEventListener('tooltip-action', onTooltipAction);

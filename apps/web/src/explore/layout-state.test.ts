@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LAYOUT, LAYOUT_STORAGE_KEY, type LayoutState } from './layout-defaults';
 import {
+  focusFilterTitle,
   getLayout,
   openPanel,
   parseLayout,
@@ -8,6 +9,7 @@ import {
   subscribeLayout,
   updateLayout,
 } from './layout-state';
+import { resetLayoutModeForTests } from './layout-mode';
 
 const store = new Map<string, string>();
 const storage = {
@@ -184,5 +186,37 @@ describe('layout store', () => {
     expect(getLayout()).toMatchObject({ sidebarOpen: true, panel: 'filter' });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('focusFilterTitle', () => {
+  afterEach(() => resetLayoutModeForTests());
+
+  it.each([
+    [1280, true],
+    [800, false],
+    [390, false],
+  ])('at %i px wide, scrolls the heading into view only off desktop', (width, preventScroll) => {
+    const title = { focus: vi.fn() };
+    vi.stubGlobal('document', {
+      getElementById: (id: string) => (id === 'wb-filter-title' ? title : null),
+      activeElement: title,
+    });
+    vi.stubGlobal('window', {
+      matchMedia: (query: string) => ({
+        matches:
+          query === '(min-width: 951px)'
+            ? width >= 951
+            : query === '(max-width: 640px)'
+              ? width <= 640
+              : false,
+        addEventListener() {},
+        removeEventListener() {},
+      }),
+    });
+
+    focusFilterTitle();
+
+    expect(title.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll });
   });
 });

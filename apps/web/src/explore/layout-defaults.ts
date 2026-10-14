@@ -22,8 +22,28 @@ export const FLOATING_CARD = {
   inset: 14,
 } as const;
 
-/** The narrowest window that gets the desktop workbench; below it, a stacked fallback. */
+/** The narrowest window that gets the desktop workbench (design decision 17). */
 export const DESKTOP_MIN_WIDTH = 951;
+
+/** The widest window that gets the phone layout; from here to 950 px, the tablet layout. */
+export const PHONE_MAX_WIDTH = 640;
+
+/** A landscape window at most this tall (and at most 950 px wide) is a phone on its side. */
+export const LANDSCAPE_PHONE_MAX_HEIGHT = 500;
+
+/** The workbench's four layouts; layout-mode.ts resolves which one the window gets. */
+export type LayoutMode = 'desktop' | 'tablet' | 'phone' | 'landscape';
+
+/**
+ * The media queries the layout mode is resolved from, in the order they win: a phone on its side
+ * first (capped below desktop width, so a short desktop window stays desktop), then desktop, then
+ * phone; anything else is a tablet. Core's breakpoints.ts keeps the same numbers (Task 5.6).
+ */
+export const LAYOUT_QUERIES = {
+  landscape: `(orientation: landscape) and (max-height: ${LANDSCAPE_PHONE_MAX_HEIGHT}px) and (max-width: ${DESKTOP_MIN_WIDTH - 1}px)`,
+  desktop: `(min-width: ${DESKTOP_MIN_WIDTH}px)`,
+  phone: `(max-width: ${PHONE_MAX_WIDTH}px)`,
+} as const;
 
 export type StructurePlacement = 'docked' | 'floating';
 

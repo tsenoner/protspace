@@ -1,7 +1,6 @@
 import { getStorageItem, setStorageItem } from '@protspace/utils';
 import {
   DEFAULT_LAYOUT,
-  DESKTOP_MIN_WIDTH,
   FLOATING_CARD,
   LAYOUT_STORAGE_KEY,
   LEGEND_FRACTION,
@@ -11,6 +10,7 @@ import {
   type SidebarPanel,
   type StructurePlacement,
 } from './layout-defaults';
+import { getLayoutMode } from './layout-mode';
 
 /**
  * The persisted workbench layout (design decision 10): the React shell subscribes with
@@ -118,8 +118,8 @@ export function openPanel(panel: SidebarPanel): void {
 
 const focusTitle = (): boolean => {
   const title = document.getElementById('wb-filter-title');
-  // Below 951 px the panel sits under the plot and the page scrolls: let focus bring it into view.
-  title?.focus({ preventScroll: window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`).matches });
+  // Off desktop the panel sits under the plot: let focus bring it into view if it must.
+  title?.focus({ preventScroll: getLayoutMode() === 'desktop' });
   return title !== null && document.activeElement === title;
 };
 

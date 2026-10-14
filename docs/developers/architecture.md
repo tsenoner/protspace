@@ -133,6 +133,17 @@ Communication between controllers and host component happens through callback in
 - Reusability (controllers can be used by other components)
 - Maintainability (concerns are clearly separated)
 
+## Workbench layout modes
+
+The explore workbench has four layouts (design decision 17): `desktop` from 951 px wide, `tablet`
+from 641 to 950 px, `phone` up to 640 px, and `landscape` for a phone on its side (landscape, at
+most 500 px tall and 950 px wide), which wins over the others. `apps/web/src/explore/layout-mode.ts`
+resolves the mode from three `matchMedia` queries (`LAYOUT_QUERIES` in `layout-defaults.ts`) and
+is its one source: the shell's `useLayoutMode()` writes it to `data-layout` on the workbench,
+which every layout rule in `workbench.css` keys on, and the runtime's controllers (when the
+structure loads, when the Filter panel counts) read the same value. Touch affordances key on
+`(pointer: coarse)`, not on the mode.
+
 ## Filter panel
 
 The app's filter controller (`apps/web/src/explore/filter-controller.ts`) keeps two queries: the

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LAYOUT } from './layout-defaults';
+import { DEFAULT_LAYOUT, type LayoutMode } from './layout-defaults';
 import { getLayout, resetLayoutForTests, updateLayout } from './layout-state';
 import {
   createStructureController,
@@ -39,19 +39,24 @@ function fakeViewer() {
   return viewer;
 }
 
-/** `(min-width: 951px)`, answered by the test. */
-function fakeDesktopQuery(matches: boolean) {
-  const events = new EventTarget();
-  const query = {
-    matches,
-    addEventListener: events.addEventListener.bind(events),
-    removeEventListener: events.removeEventListener.bind(events),
-    set(next: boolean) {
-      query.matches = next;
-      events.dispatchEvent(new Event('change'));
+/** The layout-mode source, answered by the test: set() notifies only on a change of mode. */
+function fakeLayoutMode(initial: LayoutMode) {
+  let mode = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => mode,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    set(next: LayoutMode) {
+      if (next === mode) return;
+      mode = next;
+      for (const listener of [...listeners]) listener();
     },
   };
-  return query;
 }
 
 /** The plot's surface the controller uses: its tooltip actions and the tooltip-action event. */
@@ -67,17 +72,17 @@ function fakePlot() {
 
 const controllers: StructureController[] = [];
 
-function setup({ desktop = true } = {}) {
+function setup({ mode = 'desktop' as LayoutMode } = {}) {
   const viewer = fakeViewer();
   const plot = fakePlot();
-  const desktopQuery = fakeDesktopQuery(desktop);
+  const layoutMode = fakeLayoutMode(mode);
   const controller = createStructureController({
     viewer: viewer as never,
     plotElement: plot as never,
-    desktopQuery: desktopQuery as never,
+    layoutMode,
   });
   controllers.push(controller);
-  return { viewer, plot, desktopQuery, controller };
+  return { viewer, plot, layoutMode, controller };
 }
 
 beforeEach(() => {
@@ -90,12 +95,16 @@ afterEach(() => {
 });
 
 describe('isStructureVisible', () => {
-  it('isStructureVisible: always below 951 px; on desktop docked follows the sidebar and floating is visible', () => {
+  it('isStructureVisible: always off desktop; on desktop docked follows the sidebar and floating is visible', () => {
     const collapsed = { ...DEFAULT_LAYOUT, sidebarOpen: false };
-    expect(isStructureVisible(collapsed, false)).toBe(true);
-    expect(isStructureVisible(DEFAULT_LAYOUT, true)).toBe(true);
-    expect(isStructureVisible(collapsed, true)).toBe(false);
-    expect(isStructureVisible({ ...collapsed, structurePlacement: 'floating' }, true)).toBe(true);
+    for (const mode of ['tablet', 'phone', 'landscape'] as const) {
+      expect(isStructureVisible(collapsed, mode)).toBe(true);
+    }
+    expect(isStructureVisible(DEFAULT_LAYOUT, 'desktop')).toBe(true);
+    expect(isStructureVisible(collapsed, 'desktop')).toBe(false);
+    expect(isStructureVisible({ ...collapsed, structurePlacement: 'floating' }, 'desktop')).toBe(
+      true,
+    );
   });
 });
 
@@ -124,7 +133,7 @@ describe('createStructureController', () => {
   });
 
   it('becoming visible, by layout or by crossing 951 px, loads the waiting protein once', () => {
-    const { viewer, desktopQuery, controller } = setup();
+    const { viewer, layoutMode, controller } = setup();
     updateLayout({ sidebarOpen: false });
     controller.request('P1');
     updateLayout({ sidebarOpen: true });
@@ -134,12 +143,30 @@ describe('createStructureController', () => {
 
     updateLayout({ sidebarOpen: false });
     controller.request('P2');
-    desktopQuery.set(false);
+    layoutMode.set('tablet');
     expect(viewer.loadProtein).toHaveBeenCalledTimes(2);
     expect(viewer.loadProtein).toHaveBeenLastCalledWith('P2');
-    desktopQuery.set(true);
-    desktopQuery.set(false);
+    layoutMode.set('desktop');
+    layoutMode.set('tablet');
     expect(viewer.loadProtein).toHaveBeenCalledTimes(2);
+  });
+
+  it('a waiting protein loads when the mode leaves desktop, for a phone as for a tablet', () => {
+    const { viewer, layoutMode, controller } = setup();
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    expect(viewer.loadProtein).not.toHaveBeenCalled();
+    layoutMode.set('phone');
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
+    layoutMode.set('landscape');
+    expect(viewer.loadProtein).toHaveBeenCalledOnce();
+  });
+
+  it('starts off desktop with nothing waiting: a request while collapsed loads at once', () => {
+    const { viewer, controller } = setup({ mode: 'phone' });
+    updateLayout({ sidebarOpen: false });
+    controller.request('P1');
+    expect(viewer.loadProtein).toHaveBeenCalledExactlyOnceWith('P1');
   });
 
   it('structure-close forgets the protein', () => {
@@ -176,19 +203,19 @@ describe('createStructureController', () => {
   });
 
   it('dispose stops following the layout, the breakpoint and the viewer', () => {
-    const { viewer, desktopQuery, controller } = setup();
+    const { viewer, layoutMode, controller } = setup();
     updateLayout({ sidebarOpen: false });
     controller.request('P1');
     controller.dispose();
     updateLayout({ sidebarOpen: true });
-    desktopQuery.set(false);
+    layoutMode.set('tablet');
     expect(viewer.loadProtein).not.toHaveBeenCalled();
     viewer.close();
     expect(getWorkbenchStatus().structureProteinId).toBe('P1');
   });
 
   it('offers View structure only while docked and collapsed on desktop', () => {
-    const { plot, desktopQuery } = setup();
+    const { plot, layoutMode } = setup();
     const viewStructure = [{ id: 'view-structure', label: 'View structure' }];
     expect(plot.tooltipActions).toEqual([]);
     updateLayout({ sidebarOpen: false });
@@ -197,9 +224,9 @@ describe('createStructureController', () => {
     expect(plot.tooltipActions).toEqual([]);
     updateLayout({ structurePlacement: 'docked' });
     expect(plot.tooltipActions).toEqual(viewStructure);
-    desktopQuery.set(false);
+    layoutMode.set('tablet');
     expect(plot.tooltipActions).toEqual([]);
-    desktopQuery.set(true);
+    layoutMode.set('desktop');
     expect(plot.tooltipActions).toEqual(viewStructure);
     updateLayout({ sidebarOpen: true });
     expect(plot.tooltipActions).toEqual([]);

@@ -267,28 +267,28 @@
   min-height: 0;
 }
 
-/* ── Narrow fallback below 951 px: the plot, then the sidebar; the page scrolls ── */
+/* ── Below 951 px (every mode but desktop, until Task 5.3): the plot, then the sidebar ── */
 
-.workbench[data-layout='narrow'] .wb-body {
+.workbench:not([data-layout='desktop']) .wb-body {
   display: flex;
   flex-direction: column;
 }
 
-.workbench[data-layout='narrow'] [data-workbench='plot'] {
+.workbench:not([data-layout='desktop']) [data-workbench='plot'] {
   position: relative;
   inset: auto;
   height: 60vh;
   min-height: 320px;
 }
 
-.workbench[data-layout='narrow'] [data-workbench='sidebar'] {
+.workbench:not([data-layout='desktop']) [data-workbench='sidebar'] {
   position: static;
   width: auto;
   border-top: 1px solid var(--ps-border);
   border-left: 0;
 }
 
-.workbench[data-layout='narrow'] :is(#myLegend, #wb-filter-panel) {
+.workbench:not([data-layout='desktop']) :is(#myLegend, #wb-filter-panel) {
   flex: none;
   min-height: 320px;
   /* The legend has no height of its own: cap it so a long list scrolls inside it. */
@@ -297,13 +297,13 @@
 
 /* The view bar never wraps on desktop. Here, once its last stage still does not fit, it wraps
    rather than overflow the window. */
-.workbench[data-layout='narrow'] [data-workbench='view-bar'][data-stage='3'] {
+.workbench:not([data-layout='desktop']) [data-workbench='view-bar'][data-stage='3'] {
   flex-wrap: wrap;
   height: auto;
   min-height: var(--wb-view-bar-height);
 }
 
-.workbench[data-layout='narrow'] [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
+.workbench:not([data-layout='desktop']) [data-workbench='view-bar'][data-stage='3'] .wb-view-group {
   flex-wrap: wrap;
 }
 
@@ -466,12 +466,12 @@
   }
 }
 
-/* Narrow fallback (below 951 px): search gives way entirely before anything leaves the window. */
-.workbench[data-layout='narrow'] header[data-workbench='app-bar'] {
+/* Below 951 px: search gives way entirely before anything leaves the window. */
+.workbench:not([data-layout='desktop']) header[data-workbench='app-bar'] {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.workbench[data-layout='narrow'] .wb-dataset-name {
+.workbench:not([data-layout='desktop']) .wb-dataset-name {
   max-width: 120px;
 }
 
@@ -577,11 +577,11 @@
   top: var(--wb-legend-height);
 }
 
-.workbench[data-layout='narrow'] .wb-structure {
+.workbench:not([data-layout='desktop']) .wb-structure {
   border-top: 1px solid var(--ps-border);
 }
 
-.workbench[data-layout='narrow'][data-structure='docked'] .wb-structure {
+.workbench:not([data-layout='desktop'])[data-structure='docked'] .wb-structure {
   height: 420px;
 }
 

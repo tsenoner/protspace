@@ -18,8 +18,8 @@ import type { ExploreControls } from './explore-controls';
 import { createFilterController } from './filter-controller';
 import { bindImportMenu } from './import-controller';
 import { createInteractionController } from './interaction-controller';
-import { DESKTOP_MIN_WIDTH } from './layout-defaults';
 import { focusFilterTitle, getLayout, openPanel, subscribeLayout } from './layout-state';
+import { getLayoutMode, subscribeLayoutMode } from './layout-mode';
 import { createLifecycle } from './lifecycle';
 import {
   countFastaSequences,
@@ -106,7 +106,7 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   const structureController = createStructureController({
     viewer: structureViewer,
     plotElement,
-    desktopQuery: window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`),
+    layoutMode: { get: getLayoutMode, subscribe: subscribeLayoutMode },
   });
   lifecycle.addCleanup(() => structureController.dispose());
 
@@ -408,11 +408,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
   lifecycle.addCleanup(() => viewController.dispose());
 
   // The Filter panel counts only while it is on screen: open on the sidebar's Filter panel, or,
-  // below 951 px where the sidebar always shows, whenever Filter is the chosen panel.
-  const filterDesktopQuery = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`);
+  // off desktop where the panel under the plot always shows, whenever Filter is the chosen panel.
   const isFilterPanelShown = () => {
     const { panel, sidebarOpen } = getLayout();
-    return panel === 'filter' && (sidebarOpen || !filterDesktopQuery.matches);
+    return panel === 'filter' && (sidebarOpen || getLayoutMode() !== 'desktop');
   };
   // "Filter removed" with Undo (decisions 13 and 15): the toast is a shortcut to the history step
   // it names, and goes as soon as a newer step would make its Undo take back something else.
@@ -451,10 +450,10 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     isPanelShown: isFilterPanelShown,
     subscribePanel(listener) {
       const unsubscribe = subscribeLayout(listener);
-      filterDesktopQuery.addEventListener('change', listener);
+      const unsubscribeMode = subscribeLayoutMode(listener);
       return () => {
         unsubscribe();
-        filterDesktopQuery.removeEventListener('change', listener);
+        unsubscribeMode();
       };
     },
     // Apply, Reset and the chip's ✕ are undo steps; the EAT slider is not (it reports nothing).

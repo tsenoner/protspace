@@ -11,7 +11,7 @@ import {
 
 /**
  * The workbench shell (Task 2.2): the app bar, the view bar, the plot beside a flush sidebar, the
- * narrow fallback and first paint. Regions are found through the region helpers.
+ * layouts below 951 px and first paint. Regions are found through the region helpers.
  */
 
 const RUNTIME_ELEMENTS = ['myPlot', 'myLegend', 'myStructureViewer'];
@@ -98,7 +98,7 @@ test.describe('workbench shell', () => {
       }, RUNTIME_ELEMENTS);
 
     await page.setViewportSize({ width: 900, height: 720 });
-    await expect(root).toHaveAttribute('data-layout', 'narrow');
+    await expect(root).toHaveAttribute('data-layout', 'tablet');
     expect(await sameElements()).toBe(true);
     const plot = await page.locator('#myPlot').boundingBox();
     const legend = await page.locator('#myLegend').boundingBox();
