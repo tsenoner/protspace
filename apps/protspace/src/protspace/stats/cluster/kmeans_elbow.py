@@ -52,6 +52,51 @@ def chord_deviation(y: np.ndarray) -> np.ndarray:
     return np.abs((y2 - y1) * x - (x2 - x1) * yn + (x2 * y1 - y2 * x1)) / denom
 
 
+def pca_reduce(
+    X: np.ndarray,
+    *,
+    ids: list | None = None,
+    rng_seed: int = 42,
+    n_components: int = 50,
+    max_fit_sample: int = 50_000,
+    chunk_size: int = 65_536,
+) -> np.ndarray:
+    """Project ``X`` onto its top ``n_components`` principal components.
+
+    Embedding-space clustering sweeps KMeans on these instead of the raw pLM
+    dimensions: the sweep is O(n*K*d) per iteration, and the leading components
+    carry the cluster structure. An input of ``n_components`` or fewer dimensions
+    is returned as is.
+
+    The PCA is fitted on at most ``max_fit_sample`` rows, drawn in canonical id
+    order when ``ids`` is given (the ``_sampling.py`` contract ``kmeans_elbow``
+    honours), then applied to every row in chunks, so a 570k-row embedding is
+    never centred or upcast as one full copy.
+    """
+    from sklearn.decomposition import PCA
+
+    X = np.asarray(X)
+    n, d = X.shape
+    if d <= n_components:
+        return X
+
+    if ids is not None and len(ids) == n:
+        order = np.argsort(np.asarray(ids), kind="stable")
+        fit_rng = np.random.default_rng(id_seed(rng_seed, list(ids)))
+    else:
+        order = np.arange(n)
+        fit_rng = np.random.default_rng(rng_seed)
+    sub = sorted_subsample(n, max_fit_sample, fit_rng)
+    fit_rows = order if sub is None else order[sub]
+
+    pca = PCA(n_components=min(n_components, len(fit_rows)), random_state=rng_seed).fit(
+        X[fit_rows]
+    )
+    return np.vstack(
+        [pca.transform(X[i : i + chunk_size]) for i in range(0, n, chunk_size)]
+    )
+
+
 def kmeans_elbow(
     X: np.ndarray,
     *,

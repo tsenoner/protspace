@@ -16,7 +16,7 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import PANEL_STAGES, app, setup_logging
-from protspace.cli.common_options import ClusterSelection, Opt_Verbose
+from protspace.cli.common_options import ClusterSelection, ClusterSpace, Opt_Verbose
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +345,16 @@ def stats(
             rich_help_panel="Clustering & scoring",
         ),
     ] = ClusterSelection.elbow,
+    cluster_space: Annotated[
+        ClusterSpace,
+        typer.Option(
+            "--cluster-space",
+            help="Where to cluster: 'both' (default), 'projection' (one clustering "
+            "per projection), or 'embedding' (one per embedding, shared by its "
+            "projections, so cluster ids compare across them).",
+            rich_help_panel="Clustering & scoring",
+        ),
+    ] = ClusterSpace.both,
     stats_annotation: Annotated[
         str,
         typer.Option(
@@ -405,7 +415,10 @@ def stats(
     )
     # Per-protein output (the cluster membership column, and the self-validity rows
     # gated on it) is only computed when there's an annotations file to land it in.
-    params = {"cluster_selection": cluster_selection.value}
+    params = {
+        "cluster_selection": cluster_selection.value,
+        "cluster_space": cluster_space.value,
+    }
     if annotations is None:
         params["cluster_annotations"] = False
 

@@ -3,17 +3,21 @@
 For each reduction (projection) it selects the *source* embedding, id-joins the
 embedding rows to the projection coordinates, reads the high-dim distance metric
 from the reducer params, and runs every registered statistic — isolating
-per-statistic failures so a partial/empty report never raises.
+per-statistic failures so a partial/empty report never raises. A once-per-embedding
+pass follows, and each cluster column it produced is then scored on every
+projection of its embedding.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 import numpy as np
 
 from protspace.stats import get_statistics
 from protspace.stats.base import StatContext, StatsReport
+from protspace.stats.metrics.annotation_validity import AnnotationValidityStatistic
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,28 @@ def _run_stats(
                 kind,
                 ctx.space_name,
                 exc,
+            )
+
+
+def _score_embedding_clusters(report: StatsReport, contexts: list) -> None:
+    """Score each embedding-space cluster column on its embedding's projections.
+
+    The embedding pass labels every protein of an embedding once; this files that
+    labelling's separation in each projection whose source is that embedding, as
+    for a curated annotation, so the legend strips and the panel's Separation block
+    work on whichever of those projections is shown. Appended after both passes so
+    the rows they emit keep their order.
+    """
+    columns = [c for c in report.annotation_columns if "embedding" in c.extra]
+    for ctx in contexts:
+        for col in columns:
+            if col.extra["embedding"] != ctx.embedding_name:
+                continue
+            _run_stats(
+                report,
+                replace(ctx, annotations={col.name: col.values}),
+                [AnnotationValidityStatistic(label_kind=col.extra["label_kind"])],
+                kind="projection",
             )
 
 
@@ -142,7 +168,8 @@ def compute_statistics(
         rng_seed: deterministic seed.
         params: tunables — ``k``, ``k_max``, ``sample_threshold``, ``hard_ceiling``,
             ``max_fit_sample``, ``n_triplets_per_point``; ``cluster_selection``
-            (``elbow`` | ``silhouette`` | ``both``); ``cluster_annotations``
+            (``elbow`` | ``silhouette`` | ``both``); ``cluster_space``
+            (``projection`` | ``embedding`` | ``both``); ``cluster_annotations``
             (per-protein membership column).
         annotations: annotation name -> {protein id -> category label}. When
             supplied, threaded into every projection's ``StatContext`` and also
@@ -157,6 +184,7 @@ def compute_statistics(
     default_metric = default_metric or "euclidean"  # single owned fallback
     report = StatsReport()
     emb_by_name = {es.name: es for es in embedding_sets}
+    contexts: list[StatContext] = []  # per projection, for _score_embedding_clusters
 
     for red in reductions:
         try:
@@ -213,14 +241,20 @@ def compute_statistics(
             if not getattr(s, "requires_embedding", False) or ctx.embedding is not None
         ]
         _run_stats(report, ctx, runnable, kind="projection")
+        # Kept without the aligned embedding (possibly a GB-scale copy): scoring a
+        # cluster column needs only the projection's own coords and ids.
+        contexts.append(
+            replace(ctx, embedding=None, embedding_coords=None, embedding_ids=None)
+        )
 
     # Once-per-embedding pass: annotation-validity on the source embedding itself
-    # (the true-separability "ceiling"), computed once per embedding rather than
-    # repeated for every projection that shares it. Only statistics that opt in
-    # via ``embedding_space`` run here — skip the whole pass when none do so we
-    # don't build the (large) embedding context for nothing.
+    # (the true-separability "ceiling") and embedding-space auto-clustering, each
+    # computed once per embedding rather than repeated for every projection that
+    # shares it. Only statistics that opt in via ``embedding_space`` run here —
+    # skip the whole pass when none do. Each decides from ``ctx`` whether it has
+    # anything to do (no annotations, ``cluster_space="projection"``).
     emb_stats = [s for s in stats if getattr(s, "embedding_space", False)]
-    if annotations and emb_stats:
+    if emb_stats:
         for es in embedding_sets:
             if getattr(es, "precomputed", False):
                 continue
@@ -243,4 +277,5 @@ def compute_statistics(
                 continue
             _run_stats(report, ectx, emb_stats, kind="embedding")
 
+    _score_embedding_clusters(report, contexts)
     return report
