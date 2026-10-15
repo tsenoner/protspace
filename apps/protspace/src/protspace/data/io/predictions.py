@@ -12,16 +12,48 @@ transferred from and show a "transferred from <neighbour>" tooltip. It is
 deliberately not a colour feature (a per-protein id has ~one distinct value per
 row); the frontend reserves the ``__pred_`` namespace and keeps these columns
 out of the colour-by dropdown (see the EAT visualization design).
+
+``protspace transfer --report`` writes what the bundle leaves out: every
+neighbour each prediction was computed from, with its raw distance, as a TSV
+built by :func:`report_rows` and :func:`write_report`.
+
+With ``--max-distance`` a fourth column, ``COL__neighbor``, records whether a
+query's nearest reference lay within the cutoff (``near``) or not
+(``distant``). It is an ordinary categorical annotation, outside the reserved
+``__pred_`` namespace, so the web app colours and filters by it like any other.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import csv
+import io
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import pyarrow as pa
 
 from protlabel import Prediction
-from protspace.data.annotations.encoding import encode_field
+from protspace.data.annotations.encoding import encode_field, to_display_value
+from protspace.data.io.atomic import atomic_write_bytes
+
+#: The columns of a transfer report, in order: one row per query and neighbour.
+REPORT_COLUMNS = (
+    "column",
+    "query_id",
+    "label",
+    "source_id",
+    "distance",
+    "reliability",
+    "rank",
+    "reference_id",
+    "reference_label",
+    "reference_distance",
+)
+#: Appended to the report columns when the transfer ran with a distance cutoff.
+CUTOFF_REPORT_COLUMNS = ("neighbor", "max_distance")
+
+#: Suffix of the near/distant column ``--max-distance`` writes beside ``COL``.
+NEIGHBOR_SUFFIX = "__neighbor"
 
 
 def add_overlay_columns(
@@ -77,3 +109,84 @@ def add_overlay_columns(
     )
     out = out.append_column(f"{column}__pred_source", pa.array(sources, pa.string()))
     return out
+
+
+def set_neighbor_column(
+    annotations: pa.Table,
+    column: str,
+    classes: Mapping[str, str] | None,
+    *,
+    identifiers: list[str],
+) -> pa.Table:
+    """Write ``COL__neighbor`` from ``classes`` (query id -> near/distant).
+
+    Any existing ``COL__neighbor`` is dropped first, so a re-transfer replaces
+    it; with ``classes=None`` (a run without a cutoff) nothing replaces it, and
+    a class computed against earlier predictions does not outlive them. Proteins
+    absent from ``classes`` (references, unembedded proteins) are null.
+    """
+    name = f"{column}{NEIGHBOR_SUFFIX}"
+    out = (
+        annotations.drop_columns([name])
+        if name in annotations.column_names
+        else annotations
+    )
+    if classes is None:
+        return out
+    values = [classes.get(identifier) for identifier in identifiers]
+    return out.append_column(name, pa.array(values, pa.string()))
+
+
+def report_rows(
+    column: str,
+    predictions: Sequence[Prediction],
+    *,
+    format_version: int = 2,
+) -> list[dict]:
+    """One report row per query and neighbour, for predictions made with neighbours.
+
+    Labels are the stored cells, so they are shown the way the app shows them
+    (score suffix dropped, a v2 cell percent-decoded); ids are written as they are.
+    ``distance`` is the distance to ``source_id``, which with ``k > 1`` need not be
+    the rank-1 neighbour.
+    """
+    decode = format_version >= 2
+    rows = []
+    for pred in predictions:
+        label = to_display_value(pred.label, decode=decode)
+        for rank, neighbor in enumerate(pred.neighbors, start=1):
+            rows.append(
+                {
+                    "column": column,
+                    "query_id": pred.query_id,
+                    "label": label,
+                    "source_id": pred.source_id,
+                    "distance": pred.distance,
+                    "reliability": pred.reliability,
+                    "rank": rank,
+                    "reference_id": neighbor.reference_id,
+                    "reference_label": to_display_value(neighbor.label, decode=decode),
+                    "reference_distance": neighbor.distance,
+                }
+            )
+    return rows
+
+
+def write_report(path: Path, rows: Sequence[dict]) -> None:
+    """Write report rows as a tab-separated table, atomically.
+
+    Floats are written with six significant digits, which keeps the distances
+    readable without hiding a difference the reliability index would show.
+    """
+    columns = REPORT_COLUMNS
+    if rows and CUTOFF_REPORT_COLUMNS[0] in rows[0]:
+        columns += CUTOFF_REPORT_COLUMNS
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow(
+            f"{value:.6g}" if isinstance(value, float) else value
+            for value in (row[name] for name in columns)
+        )
+    atomic_write_bytes(path, buffer.getvalue().encode())

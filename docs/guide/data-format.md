@@ -688,6 +688,35 @@ coordinates gets a projection row, so a protein a projection does not cover has 
 projected protein that had no annotations row comes back with one whose every annotation is
 missing, and the identifier column comes back first whatever position it held before.
 
+## Read a Bundle in Python
+
+The `protspace` package reads every format version. `read_bundle_table` gives one row per protein
+as a pandas DataFrame, with the same columns and values as
+[`protspace export`](/guide/python-cli#protspace-export):
+
+```python
+from protspace.data.io.bundle import read_bundle_contents, read_bundle_table
+
+# protein_id, the projections asked for as <name>_x / <name>_y, then every annotation
+table = read_bundle_table("data.parquetbundle", projections=["UMAP 2"])
+table.to_csv("data.tsv", sep="\t", index=False)
+
+# The proteins in each automatic cluster of one projection (`--stats`)
+members = table.groupby("cluster_elbow_UMAP 2")["protein_id"].apply(list)
+
+# The stored tables themselves, in their v2 shape (see Tables above)
+contents = read_bundle_contents("data.parquetbundle")
+annotations = contents.annotations.to_pandas()  # raw cells, e.g. "label|0.9"
+projections = contents.projections.to_pandas()  # projection_name, identifier, x, y, z
+statistics = contents.statistics  # a pyarrow table, or None without --stats
+```
+
+`read_bundle_table` decodes the cells for reading: score and evidence suffixes are dropped,
+encoded characters are decoded and multi-valued cells are joined with `;`. `read_bundle_contents`
+hands back the cells as stored, in the [cell grammar](#encoding-format-v2), along with the
+`settings` and `statistics` parts. Projection names are those the web app shows, such as
+`ProtT5 — UMAP 2`.
+
 ## Creating Files
 
 Use the [Google Colab notebook](/guide/data-preparation) or [Python CLI](/guide/python-cli) to generate `.parquetbundle` files.

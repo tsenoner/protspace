@@ -37,6 +37,7 @@ pip install protspace
 | `protspace transfer` | Fill missing annotations from nearest neighbours (EAT)       |
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
 | `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
+| `protspace export`   | Write a bundle as a TSV table, one row per protein           |
 | `protspace serve`    | Run a local viewer                                           |
 
 Run `protspace <command> -h` for the built-in help of any command.
@@ -46,14 +47,15 @@ Run `protspace <command> -h` for the built-in help of any command.
 Most users only need `prepare`. The other commands are its stages, for running, rerunning or
 inspecting one of them on its own.
 
-| You have                                    | You want                                         | Run                                     |
-| ------------------------------------------- | ------------------------------------------------ | --------------------------------------- |
-| A FASTA, an `.h5` or a UniProt query        | A bundle, with annotations and statistics        | `prepare` (`-a` annotations, `--stats`) |
-| Embeddings (`.h5`)                          | Projections only                                 | `project`                               |
-| An `.h5` or a FASTA                         | An annotations table: fetched, your own, or both | `annotate`                              |
-| Embeddings and projections                  | Quality statistics and cluster columns           | `stats`                                 |
-| Projections and an annotations table or CSV | A bundle                                         | `bundle`                                |
-| A bundle                                    | Its gaps filled from nearest neighbours          | `transfer`                              |
+| You have                                    | You want                                         | Run                                       |
+| ------------------------------------------- | ------------------------------------------------ | ----------------------------------------- |
+| A FASTA, an `.h5` or a UniProt query        | A bundle, with annotations and statistics        | `prepare` (`-a` annotations, `--stats`)   |
+| Embeddings (`.h5`)                          | Projections only                                 | `project`                                 |
+| An `.h5` or a FASTA                         | An annotations table: fetched, your own, or both | `annotate`                                |
+| Embeddings and projections                  | Quality statistics and cluster columns           | `stats`                                   |
+| Projections and an annotations table or CSV | A bundle                                         | `bundle`                                  |
+| A bundle                                    | Its gaps filled from nearest neighbours          | `transfer` (`--report` for the distances) |
+| A bundle                                    | One table of every protein, for pandas or Excel  | `export`                                  |
 
 `project` only computes projections: it takes no `-a` and no `--stats`. For annotations and
 statistics in the same bundle, use `prepare`, or the [step-by-step route](#step-by-step).
@@ -770,7 +772,9 @@ projection, and copies that label along with a reliability index in [0, 1].
 
 The curated source column (`COL`) is left untouched; three new columns are written:
 `COL__pred_value` (string), `COL__pred_confidence` (float) and `COL__pred_source` (string, the
-reference protein the label came from, for provenance).
+reference protein the label came from, for provenance). With `--max-distance`, a fourth,
+`COL__neighbor`, says whether the query sits [near or distant](#near-or-distant) from the
+references.
 
 **The filters are optional.** With no `--query-*` and no `--reference-*` filter, transfer runs
 within the bundle: every protein missing a value in a `--transfer` column is a query, and every
@@ -815,6 +819,9 @@ protspace transfer \
 | `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`).  | any protein missing a value  |
 | `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).              | any protein that has a value |
 | `--reference-where`     | Restrict references the same way (`col~substr`).                        | any protein that has a value |
+| `--max-distance`        | Mark each query near or distant: a distance, or `auto`. See below.      | -                            |
+| `--skip-distant`        | Leave distant queries unpredicted (needs `--max-distance`).             | label every query            |
+| `--report`              | Also write a TSV of each query's neighbours, see below.                 | -                            |
 
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
@@ -824,6 +831,68 @@ The output is always a format v3 bundle. A v1 or v2 input is read the way
 over the proteins the web app showed: a row with no ID, or an earlier row whose ID a later row
 repeats, is neither a query nor a reference. A legacy input that `convert` refuses is refused
 here too, with the same reason, and nothing is written.
+
+### Neighbour report
+
+The bundle keeps one label, one reliability index and one source per query. `--report
+predictions.tsv` also writes the neighbours they came from, as a tab-separated table with one row
+per query and neighbour (with `--k 1`, one row per query). The bundle is the same with or without
+it.
+
+| Column               | Holds                                                                          |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `column`             | The `--transfer` column the row belongs to.                                    |
+| `query_id`           | The query protein.                                                             |
+| `label`              | The transferred label (`COL__pred_value`).                                     |
+| `source_id`          | The reference it came from (`COL__pred_source`).                               |
+| `distance`           | The raw embedding distance from the query to `source_id`, in `--metric` units. |
+| `reliability`        | The reliability index (`COL__pred_confidence`).                                |
+| `rank`               | 1 for the nearest reference, up to `--k`.                                      |
+| `reference_id`       | The reference at that rank; equidistant references are ordered by ID.          |
+| `reference_label`    | Its value in the transferred column.                                           |
+| `reference_distance` | Its distance from the query.                                                   |
+
+Labels are written as the web app shows them, without score suffixes. With `--k > 1` the
+prediction's source is the nearest reference carrying the winning label, so it need not be the
+rank-1 row. To list the unknowns closest to a reference, sort the report by `distance`:
+
+```python
+import pandas as pd
+
+report = pd.read_csv("predictions.tsv", sep="\t")
+report[report["rank"] == 1].sort_values("distance")
+```
+
+### Near or distant
+
+Transfer labels every query, however far its nearest reference is. `--max-distance` adds the
+split a reference database is usually first asked for: which queries sit near a reference at all.
+A query is `near` when the embedding distance to its nearest reference (of any label) is at most the
+cutoff, and `distant` otherwise. The class is written to a fourth column, `COL__neighbor`, which is
+empty for every protein that was not a query. It is an ordinary annotation: colour, filter and
+export by it in the web app like any other.
+
+```bash
+protspace transfer -b space.parquetbundle -e emb.h5:esm2_650m -t toxin_family \
+  --max-distance auto --report predictions.tsv -o space_eat.parquetbundle
+```
+
+- **`--max-distance auto`** picks the cutoff for each column from the references themselves: the
+  95th percentile of every reference's distance to its nearest other reference. A query farther
+  from every reference than that sits outside the reference set's own spacing. The column needs at
+  least two references. `-v` logs the value chosen, and the report's `max_distance` column records
+  it.
+- **`--max-distance D`** uses a fixed distance, in `--metric` units. Distances are model-specific
+  (ESM2 cosine distances are small even between unrelated proteins), so a number from one model or
+  paper does not carry over to another.
+- **`--skip-distant`** leaves the distant queries unpredicted: they get `COL__neighbor = distant`
+  and no `__pred_*` values. Without it they keep the nearest label, as without a cutoff. When the
+  cutoff leaves every query of a column distant, transfer warns: try `auto` or a larger `D`.
+
+With `--report`, every row also carries `neighbor` (the query's class) and `max_distance` (the
+cutoff used). With `--skip-distant`, a `distant` row still shows the `label` and `source_id` the
+query would have been given; the bundle holds no prediction for it. Transferring a column again replaces its `COL__neighbor`, and a run without
+`--max-distance` removes it, so the class never describes predictions that are gone.
 
 ### Reliability index
 
@@ -905,6 +974,34 @@ Without a Python install, load the bundle at [protspace.app/explore](https://pro
 and export it again: the web app always exports v3. That export leaves out any protein no
 projection places (an annotations row without coordinates), which `convert` keeps. See
 [Legacy formats](/guide/data-format#legacy-formats-v1-and-v2).
+
+## `protspace export`
+
+Write a bundle as one tab-separated table, one row per protein, for a spreadsheet, R or pandas.
+
+```bash
+protspace export data.parquetbundle data.tsv
+protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
+```
+
+| Flag               | Description                                                           |
+| ------------------ | --------------------------------------------------------------------- |
+| `-p, --projection` | Also write this projection's coordinates (repeatable). Default: none. |
+| `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
+
+The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`,
+then every annotation in the order the bundle stores them. That includes the `cluster_*` membership columns [`stats`](#protspace-stats) writes
+and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
+the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
+values of a multi-valued cell are joined with `;`. Missing values, and the coordinates of a protein
+a projection does not place, are empty. Projection names are the ones the
+[web app lists](#projection-naming); a name the bundle does not hold is an error that lists the
+ones it does.
+
+To export only some proteins, filter the table in pandas, or use the web app's
+[Table export](/explore/exporting#table-export), which writes the proteins currently visible. The
+same table is available in Python, see
+[Read a bundle in Python](/guide/data-format#read-a-bundle-in-python).
 
 ## `protspace serve`
 

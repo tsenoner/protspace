@@ -40,6 +40,9 @@ export interface AnnotationMeta {
 /** Prefix marking ML-predicted annotation columns (backend convention). */
 export const PREDICTED_PREFIX = 'predicted_';
 
+/** Suffix of the near/distant column `protspace transfer --max-distance` writes beside a base. */
+const EAT_NEIGHBOR_SUFFIX = '__neighbor';
+
 /**
  * Canonical taxonomy rank order, general → specific (the root of the tree of life down to species).
  * Taxonomy ranks are described by depth rather than alphabetically; shared by the dropdown grouping
@@ -374,7 +377,8 @@ export function prettifyAnnotationName(column: string): string {
 /**
  * Resolve metadata for any annotation column. Returns the registry entry when known, otherwise a
  * synthesized entry: a prettified label, `Other` source, empty description (so no docs popover is
- * shown), and a predicted flag derived from the `predicted_` prefix convention.
+ * shown), and a predicted flag derived from the `predicted_` prefix convention. EAT companions are
+ * labelled after their base annotation: the confidence view, and the `<base>__neighbor` column.
  */
 export function getAnnotationMeta(
   column: string,
@@ -396,6 +400,16 @@ export function getAnnotationMeta(
       isPredicted: false,
       description:
         'Embedding Annotation Transfer reliability index from 0 to 1. This is a ranking signal, not a calibrated probability.',
+    };
+  }
+  if (column.endsWith(EAT_NEIGHBOR_SUFFIX) && column.length > EAT_NEIGHBOR_SUFFIX.length) {
+    const base = getAnnotationMeta(column.slice(0, -EAT_NEIGHBOR_SUFFIX.length));
+    return {
+      label: `${base.label} — EAT neighbourhood`,
+      source: base.source,
+      isPredicted: false,
+      description:
+        'Whether the nearest reference protein lay within the distance cutoff of the Embedding Annotation Transfer: near or distant. Proteins that were not transfer queries have no value.',
     };
   }
   return {

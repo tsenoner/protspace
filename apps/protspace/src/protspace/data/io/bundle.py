@@ -38,15 +38,18 @@ import json
 import logging
 import shutil
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import (
     migrate_legacy_annotation_table,
     read_format_version,
+    to_display_value,
 )
 from protspace.data.io.atomic import atomic_write_bytes, staged_write
 from protspace.data.io.bundle_v3 import (
@@ -308,6 +311,52 @@ def read_bundle_contents(
         statistics=read_part(statistics) if statistics else None,
         container_version=CONTAINER_VERSION if payloads is not None else None,
     )
+
+
+def read_bundle_table(
+    path_or_bytes: Path | str | bytes, projections: Sequence[str] = ()
+) -> pd.DataFrame:
+    """A bundle as one table, one row per protein, as the app displays it.
+
+    ``protein_id`` comes first, then ``<projection>_x`` / ``_y`` for each name
+    in ``projections``, then every annotation column in bundle order.  Text cells are display values (score and
+    evidence suffixes dropped, a v2 cell percent-decoded, hits joined with
+    ``;``); numeric columns keep their numbers.  A protein a projection does not
+    place gets missing coordinates.  The rows are those the web app shows for a
+    legacy bundle too (see :func:`read_tables` ``keyed``).
+
+    Raises ``ValueError`` for a projection name the bundle does not hold.
+    """
+    annotations, metadata, coordinates = read_tables(path_or_bytes, keyed=True)
+    available = [str(name) for name in metadata.column("projection_name").to_pylist()]
+    unknown = [name for name in projections if name not in available]
+    if unknown:
+        raise ValueError(
+            f"no projection named {', '.join(map(repr, unknown))}; "
+            f"the bundle holds {', '.join(map(repr, available)) or 'none'}"
+        )
+
+    decode = read_format_version(annotations) >= 2
+    id_col = "protein_id" if "protein_id" in annotations.column_names else "identifier"
+    frame = annotations.to_pandas()
+    ids = frame.pop(id_col).astype(str)
+    for field in annotations.schema:
+        if field.name != id_col and pa.types.is_string(field.type):
+            # Map each distinct cell once: a large bundle repeats few labels.
+            values = frame[field.name]
+            shown = {
+                v: to_display_value(v, decode=decode) for v in values.dropna().unique()
+            }
+            frame[field.name] = values.map(shown)
+
+    table = pd.DataFrame({"protein_id": ids})
+    if projections:
+        long = coordinates.to_pandas()
+        for name in projections:
+            placed = long[long["projection_name"] == name].set_index("identifier")
+            for axis in ("x", "y"):
+                table[f"{name}_{axis}"] = ids.map(placed[axis]).to_numpy()
+    return pd.concat([table, frame], axis=1)
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:

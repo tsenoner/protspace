@@ -8,7 +8,7 @@ import pytest
 
 from protlabel import Prediction
 from protspace.data.annotations.encoding import migrate_legacy_annotation_table
-from protspace.data.io.predictions import add_overlay_columns
+from protspace.data.io.predictions import add_overlay_columns, set_neighbor_column
 
 
 def _table():
@@ -136,3 +136,26 @@ def test_reapplying_overlay_replaces_not_duplicates(starting_table):
     pq.write_table(out, buf)
     reread = pq.read_table(io.BytesIO(buf.getvalue()))
     assert reread.column("protein_category__pred_value").to_pylist()[0] == "new"
+
+
+def test_neighbor_column_aligned_by_identifier_and_replaced():
+    ids = ["Q0", "Q1", "R0"]
+    out = set_neighbor_column(
+        _table(), "protein_category", {"Q0": "near", "Q1": "distant"}, identifiers=ids
+    )
+    assert out.column("protein_category__neighbor").to_pylist() == [
+        "near",
+        "distant",
+        None,
+    ]
+    again = set_neighbor_column(
+        out, "protein_category", {"Q1": "near"}, identifiers=ids
+    )
+    assert again.column_names.count("protein_category__neighbor") == 1
+    assert again.column("protein_category__neighbor").to_pylist() == [
+        None,
+        "near",
+        None,
+    ]
+    dropped = set_neighbor_column(out, "protein_category", None, identifiers=ids)
+    assert dropped.column_names == _table().column_names

@@ -53,8 +53,9 @@ Single entry point: `protspace = protspace.cli.app:app`
 | `protspace stats` | Compute projection quality statistics (annotation-based cluster-validity + faithfulness) |
 | `protspace serve` | Launch Dash web frontend |
 | `protspace style` | Add annotation colors/styles |
-| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT) |
+| `protspace transfer` | Fill missing annotations from nearest reference embeddings (EAT); `--report` writes each query's neighbours (label, source, raw distance, reliability, ranked references) as TSV; `--max-distance D\|auto` writes `COL__neighbor` (near/distant by the nearest reference; `auto` = 95th percentile of reference-to-nearest-other-reference distances), `--skip-distant` leaves distant queries unpredicted |
 | `protspace convert` | Rewrite a v1/v2 .parquetbundle as v3 (`INPUT OUTPUT` or `INPUT --in-place`); a v3 input is left untouched |
+| `protspace export` | Write a bundle as a TSV table (`INPUT OUTPUT [-p PROJECTION]...`): `protein_id`, the coordinates of each `-p` projection, every annotation as the app shows it (`bundle.read_bundle_table`) |
 
 ### protspace prepare Usage
 
@@ -135,7 +136,8 @@ src/protspace/
 │   ├── serve.py                # Dash web frontend
 │   ├── transfer.py             # Embedding Annotation Transfer (EAT) command
 │   ├── style.py                # Annotation styling
-│   └── convert.py              # v1/v2 → v3 bundle conversion
+│   ├── convert.py              # v1/v2 → v3 bundle conversion
+│   └── export.py               # Bundle → TSV table
 ├── data/
 │   ├── biocentral_connection.py # Biocentral server address + wait_for_server(): one wait for embedding and annotation, and a failure that says why
 │   ├── loaders/
@@ -154,7 +156,7 @@ src/protspace/
 │   │   ├── retrievers/         # UniProt, InterPro, taxonomy fetchers
 │   │   └── transformers/       # Post-processing (field normalization, etc.)
 │   ├── io/
-│   │   ├── bundle.py           # .parquetbundle read/write
+│   │   ├── bundle.py           # .parquetbundle read/write; read_bundle_table (one display-decoded row per protein)
 │   │   ├── fasta.py            # FASTA detection + parsing (is_fasta_file, parse_fasta)
 │   │   ├── formatters.py       # ProteinAnnotations → DataFrame/Arrow
 │   │   ├── predictions.py      # Per-cell prediction overlay columns
@@ -203,7 +205,7 @@ Annotation Transfer engine — a separate distribution in `packages/protlabel/`,
 part of `protspace`. It imports nothing from `protspace` (enforced by
 `test_protlabel_boundary.py`); `protspace` depends on it as a workspace member and the two
 release in lock-step. Modules: `backends.py` (brute-force kNN), `reliability.py`
-(distance→confidence), `transfer.py` (`eat()`), `lookup.py` (`.npz` sidecar). The only
+(distance→confidence), `transfer.py` (`eat()`, which with `keep_neighbors=True` also returns each prediction's ranked `Neighbor`s), `lookup.py` (`.npz` sidecar). The only
 protspace-side glue is `cli/transfer.py` and `data/io/predictions.py`. Build the whole
 workspace with `uv build --all-packages`.
 
@@ -329,8 +331,9 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_formatters.py` | ProteinAnnotations → DataFrame formatting |
 | `test_bundle_settings.py` | Parquetbundle settings read/write |
 | `test_annotation_encoding.py` | Percent-encoding round-trip, reserved-char-only encoding, schema-metadata stamping through parquet, `upgrade_cell_grammar` taking the version from the caller |
-| `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end |
-| `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
+| `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end; `--report` (one row per query at `k=1`, ranked neighbours at `k>1`, the raw distance, decoded labels, the bundle unchanged by it, an unwritable path a usage error before the bundle is written); `--max-distance` (near/distant by the nearest reference of any label, references null, `--skip-distant` and its warning when every query is distant, `auto` equal to the percentile with self excluded by index, fewer than two references and bad flag values as usage errors, a re-run without a cutoff dropping the column) |
+| `test_export_cli.py` | `protspace export` / `read_bundle_table`: display-decoded cells in bundle order (scores, encoding, multi-hit), EAT and cluster columns, coordinates of the projections asked for (`_x`/`_y` only, none for an unplaced protein), `protein_id` whatever the bundle's id column, unknown projection and unreadable bundle as usage errors; the `docs/guide/data-format.md` "Read a Bundle in Python" snippet run as written |
+| `test_predictions_overlay.py` | Building the per-cell prediction overlay columns and the `COL__neighbor` column (aligned by id, replaced on a re-run, dropped without a cutoff) |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
 | `test_build_showcase.py` | `scripts/generate_examples/build_showcase.py`, the showcase bundle build: bundle reading and rebuilding (legacy and v3), projection selection, column order from the web catalog's `defaultView`, styles filtering, mature chains and the three-finger-toxins hold-out and EAT gates, provenance stamping read back by `write_manifest.py`, step markers and reruns, fetch release checks, `stage-release` never giving a published name new bytes; one offline end-to-end EAT build (three-finger toxins), run in CI |
@@ -352,7 +355,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_cli_no_frontend.py` | CLI imports without the optional `frontend` extra (plotly, dash) |
 | `test_cli_no_similarity.py` | `-s/--similarity` without the optional `similarity` extra: up-front CLI guard (before any load/embed), loader `ImportError` backstop, `EMBEDDER_MODELS` pinned to the embedder registry |
 | `test_docs_extras_sync.py` | `README.md` (PyPI) and `docs/guide/python-cli.md` (protspace.app) hold the same extras section; the guide's embedder shortcut list matches `EMBEDDER_MODELS` |
-| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing; the Preparation panel run for real (cells 1-3 with the installed ipywidgets, a mocked `google.colab`, pip stubbed, network refused): built without fetching, an attribute-less Embeddings-notebook H5 named from its file name and generated, a picked embedder used, the upload cell handing its file to the panel (a same-name re-upload loading the new file, as colabtools renames it), no `:<model>` CLI hint in the H5 tab, Auto-detect without the released resolver naming files as the resolver does, an empty selected tab refused instead of the example, a missing path reported, Generate disabled while it runs, CSV only refused without a CSV, a gzipped CSV read, a failed example fetch reported, a cosine UMAP recorded, both `FileUpload` value shapes and the real widget, slider defaults equal to `ReducerParams`; the Embeddings notebook stamps `model_name`. CI has ipywidgets 8; Colab ships 7, so also run `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py` when changing the panel |
+| `test_notebooks.py` | Colab notebooks: cell magics only on line 1, every code cell compiles after IPython transformation, cell ids present for `nbformat >= 4.5`, no notebook imports a private `protspace` name (cell 1 installs the *released* package, so a private name added this release breaks setup until the next one), each Generate action names its bundle distinctly, the Transfer notebook's step 5 reads back and offers the `--report` TSV step 3 writes, `except ImportError` fallback sets equal the package constants they stand in for — read structurally off the guarded import, so a fallback that is missing, emptied or written in an unrecognised shape fails instead of matching nothing; the Preparation panel run for real (cells 1-3 with the installed ipywidgets, a mocked `google.colab`, pip stubbed, network refused): built without fetching, an attribute-less Embeddings-notebook H5 named from its file name and generated, a picked embedder used, the upload cell handing its file to the panel (a same-name re-upload loading the new file, as colabtools renames it), no `:<model>` CLI hint in the H5 tab, Auto-detect without the released resolver naming files as the resolver does, an empty selected tab refused instead of the example, a missing path reported, Generate disabled while it runs, CSV only refused without a CSV, a gzipped CSV read, a failed example fetch reported, a cosine UMAP recorded, both `FileUpload` value shapes and the real widget, slider defaults equal to `ReducerParams`; the Embeddings notebook stamps `model_name`. CI has ipywidgets 8; Colab ships 7, so also run `uv run --with ipywidgets==7.7.1 pytest tests/test_notebooks.py` when changing the panel |
 | `test_scores_ted.py` | `--no-scores` strips TED domains |
 
 **Markers:** `@pytest.mark.slow` (database downloads), `@pytest.mark.integration` (external APIs)

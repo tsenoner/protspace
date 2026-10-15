@@ -98,6 +98,7 @@ def _register_commands() -> None:
         transfer,
         style,
         convert,
+        export,
         serve,
     )
 

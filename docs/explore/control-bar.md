@@ -238,6 +238,7 @@ Click **Export** to save your visualization:
 | **PNG**         | Raster image with legend                                  |
 | **PDF**         | PDF document with legend                                  |
 | **Protein IDs** | Text file with newline-separated identifiers              |
+| **Table**       | TSV table of the visible proteins and their annotations   |
 | **Parquet**     | `.parquetbundle` file with all data and optional settings |
 
 See [Exporting Results](/explore/exporting) for image customization options (dimensions, legend size, font).

@@ -139,6 +139,20 @@ describe('label and source helpers', () => {
     expect(meta.description).toContain('not a calibrated probability');
   });
 
+  it('labels a transfer neighbourhood column after its base annotation', () => {
+    const meta = getAnnotationMeta('ec__neighbor');
+    expect(meta.label).toBe('EC number — EAT neighbourhood');
+    expect(meta.source).toBe('UniProt');
+    expect(meta.isPredicted).toBe(false);
+    expect(meta.description).toContain('distance cutoff');
+
+    const custom = getAnnotationMeta('toxin_family__neighbor');
+    expect(custom.label).toBe('Toxin family — EAT neighbourhood');
+    expect(custom.source).toBe('Other');
+    // The bare suffix is an ordinary column, not a companion of nothing.
+    expect(getAnnotationMeta('__neighbor').label).toBe('Neighbor');
+  });
+
   it('distinguishes runtime EAT confidence from a user column with the same suffix', () => {
     const userMeta = getAnnotationMeta('ec__eat_confidence', { runtime: undefined });
     expect(userMeta.label).toBe('Ec eat confidence');
