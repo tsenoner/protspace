@@ -213,35 +213,51 @@ class ArrowReader:
                 "Failed to load visualization state from settings", exc_info=True
             )
 
-    def save_data(self, output_path: Path = None):
-        """Save the current data back to parquet files."""
+    def save_data(self, output_path: Path | None = None):
+        """Save the current data back to parquet files.
+
+        Defaults to the directory the data was read from. A reader built from
+        a .parquetbundle needs an explicit ``output_path``: the bundle is a
+        file, not a directory the tables could be written into.
+        """
+        if self.data_path is None:
+            raise ValueError(
+                "save_data writes the parquet tables a reader loaded; this "
+                "reader was built from a dict and holds none."
+            )
         if output_path is None:
+            if self.data_path.is_file():
+                raise ValueError(
+                    f"'{self.data_path}' is a bundle file, not a directory; "
+                    "pass save_data an output directory."
+                )
             output_path = self.data_path
         else:
             output_path = Path(output_path)
 
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Save protein annotations
-        protein_annotations_path = output_path / "protein_annotations.parquet"
-        protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
+        # The names _read_directory reads back (and a bundle's parts extract to)
+        from protspace.data.io.bundle import CORE_FILENAMES
+
+        annotations, metadata, projections = (
+            pa.Table.from_pandas(df)
+            for df in (
+                self._protein_annotations_df,
+                self._projections_metadata_df,
+                self._projections_data_df,
+            )
+        )
         if self.should_decode():
             # The cells are written back as they were read, so they keep the
             # grammar stamp that says so; unstamped they would read as v1.
             from protspace.data.annotations.encoding import stamp_format_version
 
-            protein_annotations_table = stamp_format_version(protein_annotations_table)
-        pq.write_table(protein_annotations_table, str(protein_annotations_path))
-
-        # Save projections metadata
-        projections_metadata_path = output_path / "projections_metadata.parquet"
-        projections_metadata_table = pa.Table.from_pandas(self._projections_metadata_df)
-        pq.write_table(projections_metadata_table, str(projections_metadata_path))
-
-        # Save projections data
-        projections_data_path = output_path / "projections_data.parquet"
-        projections_data_table = pa.Table.from_pandas(self._projections_data_df)
-        pq.write_table(projections_data_table, str(projections_data_path))
+            annotations = stamp_format_version(annotations)
+        for name, table in zip(
+            CORE_FILENAMES, (annotations, metadata, projections), strict=True
+        ):
+            pq.write_table(table, str(output_path / name))
 
         # Save visualization state as a separate JSON file
         viz_state_path = output_path / "visualization_state.json"

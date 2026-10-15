@@ -263,7 +263,7 @@ def test_arrow_reader_save_data_keeps_the_grammar_stamp(tmp_path):
     out = tmp_path / "out"
     ArrowReader(source).save_data(out)
 
-    saved = pq.read_metadata(out / "protein_annotations.parquet").metadata
+    saved = pq.read_metadata(out / "selected_annotations.parquet").metadata
     assert saved[FORMAT_VERSION_KEY] == b"2"
 
 
