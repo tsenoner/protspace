@@ -935,6 +935,14 @@ def _read_manifest(part1: bytes) -> tuple[dict[str, Any], dict[bytes, bytes]]:
     return json.loads(raw_manifest), metadata
 
 
+def manifest_projections(part1: bytes) -> list[dict[str, Any]]:
+    """The ``{name, dimension}`` entries of a v3 part 1's manifest, in order.
+
+    Reads the footer only, so it costs nothing next to a decode.
+    """
+    return list(_read_manifest(part1)[0]["projections"])
+
+
 def _axes(projection: dict[str, Any]) -> tuple[str, ...]:
     return ("x", "y", "z")[: int(projection["dimension"])]
 

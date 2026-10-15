@@ -16,8 +16,14 @@ what the entry's ``removal`` notes say (the full inventory is in the OpenSpec
 change that scheduled it), then delete the entry. Everything due in 5.0.0 is
 tracked in #544 (milestone v5.0.0).
 
-The web app restates the v1/v2 removal version in TypeScript, which cannot import
-this module; ``tests/test_deprecations.py`` pins those copies to the registry.
+The web app restates the v1/v2 and 3-D reading removal versions in TypeScript,
+which cannot import this module; ``tests/test_deprecations.py`` pins those copies
+to the registry.
+
+What is *kept* on purpose is not an entry. ``protspace convert`` survives 5.0.0 as
+the upgrade path, with a reader of its own for v1/v2 bundles and 3-D projections,
+so nobody is stranded with old files; the gate does not, and must not, ask for it
+to be removed. The entries below name only what the *general* readers drop.
 
 Standard library only: the release gate loads this file by path, without
 protspace or its dependencies installed, and ``cli/common_options.py`` imports it
@@ -55,6 +61,7 @@ class Deprecation:
 THREE_D_PROJECTIONS = "3d-projections"
 SERVE_COMMAND = "serve-command"
 LEGACY_BUNDLE_READ = "legacy-bundle-read"
+THREE_D_PROJECTION_READ = "3d-projection-read"
 
 #: The web viewer users are pointed to instead of ``protspace serve``.
 EXPLORE_URL = "https://protspace.app/explore"
@@ -119,13 +126,44 @@ _REGISTRY = (
             "protspace.app)."
         ),
         removal=(
-            "apps/protspace/src/protspace/data/io/bundle.py: drop the 3-5 part "
-            "read path and its warning (see the parquetbundle-v3 OpenSpec change)",
+            "apps/protspace/src/protspace/data/io/bundle.py: the general readers "
+            "drop the 3-5 part read path and its warning (see the parquetbundle-v3 "
+            "OpenSpec change); protspace convert keeps a legacy reader of its own",
             "apps/protspace/tests/test_convert.py: drop the legacy-read tests",
             "apps/web/src/explore/notifications.ts: drop the legacy-format "
             "notice (the web side is not gated; parquetbundle-v3 task 6.3)",
             "packages/core/src/components/data-loader/utils/bundle.ts: drop the "
             "v1/v2 decode path",
+        ),
+    ),
+    Deprecation(
+        key=THREE_D_PROJECTION_READ,
+        feature="reading 3-D projections from bundles (shown today as their X/Y view)",
+        remove_in="5.0.0",
+        message=(
+            "{name} holds 3-D projections ({projections}). Reading 3-D projections "
+            "is deprecated and will be removed in protspace {remove_in}; use 2-D "
+            "projections instead (`protspace convert --flatten-3d` turns a "
+            "bundle's 3-D projections into 2-D ones that keep their X/Y view)."
+        ),
+        removal=(
+            "apps/protspace/src/protspace/data/io/bundle_v3.py: drop the z axis "
+            "from the encoder and decoder",
+            "apps/protspace/src/protspace/data/io/bundle.py: drop the 3-D read "
+            "warning (convert keeps three_d_projection_names)",
+            "apps/protspace/src/protspace/utils/arrow_reader.py: drop the z coordinate",
+            "apps/protspace/src/protspace/cli/stats.py: drop the 3-D branch and "
+            "its warning",
+            "apps/protspace/src/protspace/cli/convert.py: make --flatten-3d "
+            "automatic (convert keeps reading z to flatten it)",
+            "packages/core/src/components/data-loader/utils/bundle-v3.ts: drop "
+            "dimension 3 and the __z interleave",
+            "packages/core/src/components/data-loader/utils/conversion.ts: drop "
+            "the z column and dimension 3",
+            "packages/utils/src/visualization/data-processor.ts: drop "
+            "projectionPlane and the 3-D paths (scatter-plot.ts with it)",
+            "apps/web/src/explore/notifications.ts: drop the 3-D projection notice",
+            "docs/explore/control-bar.md: drop the 3D projections tip",
         ),
     ),
 )

@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from protspace.data.annotations.encoding import (
@@ -54,12 +55,18 @@ from protspace.data.io.bundle_v3 import (
     CONTAINER_VERSION_KEY,
     decode_v3,
     encode_v3,
+    manifest_projections,
     read_container_version,
     read_part,
     replace_annotations_v3,
     write_part,
 )
-from protspace.deprecations import DEPRECATIONS, LEGACY_BUNDLE_READ, warn
+from protspace.deprecations import (
+    DEPRECATIONS,
+    LEGACY_BUNDLE_READ,
+    THREE_D_PROJECTION_READ,
+    warn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +164,57 @@ def _parse_bundle(
     data = source if isinstance(source, bytes) else Path(source).read_bytes()
     parsed = _split(data)
     if warn_legacy and parsed[3] is None:
-        name = "This parquetbundle" if isinstance(source, bytes) else str(source)
-        warn(LEGACY_BUNDLE_READ, logger, name=name)
+        warn(LEGACY_BUNDLE_READ, logger, name=_source_name(source))
     return parsed
+
+
+def _source_name(source: Path | str | bytes) -> str:
+    return "This parquetbundle" if isinstance(source, bytes) else str(source)
+
+
+def three_d_projection_names(projections: pa.Table) -> list[str]:
+    """The projections of a v2-shaped projections table that are 3-D, in order.
+
+    The data decides, as in the v3 encoder and the browser's legacy reader: a
+    projection is 3-D when any of its rows has a finite ``z``.
+    """
+    if "z" not in projections.column_names or projections.num_rows == 0:
+        return []
+    z = projections.column("z")
+    if pa.types.is_null(z.type):
+        return []
+    finite = pc.is_finite(pc.cast(z, pa.float64()))
+    names = projections.column("projection_name").filter(pc.fill_null(finite, False))
+    return list(dict.fromkeys(names.to_pylist()))
+
+
+def _core_three_d_names(core: list[bytes], payloads: bytes | None) -> list[str]:
+    """:func:`three_d_projection_names` straight from the parts: the manifest for
+    v3 (a footer read), the ``projection_name``/``z`` columns of part 3 for v1/v2."""
+    if payloads is not None:
+        return [
+            p["name"] for p in manifest_projections(core[0]) if int(p["dimension"]) == 3
+        ]
+    if not core[2]:
+        return []
+    schema = pq.read_schema(io.BytesIO(core[2]))
+    if "z" not in schema.names or "projection_name" not in schema.names:
+        return []
+    return three_d_projection_names(read_part(core[2], ["projection_name", "z"]))
+
+
+def _warn_3d(
+    source: Path | str | bytes, core: list[bytes], payloads: bytes | None
+) -> None:
+    """Log the 3-D reading deprecation warning once for this read, if it applies."""
+    names = _core_three_d_names(core, payloads)
+    if names:
+        warn(
+            THREE_D_PROJECTION_READ,
+            logger,
+            name=_source_name(source),
+            projections=", ".join(names),
+        )
 
 
 def _core_tables(
@@ -256,6 +311,7 @@ def read_tables(
     the stamp are untouched.  A v3 container's ids are unique already.
     """
     core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes)
+    _warn_3d(path_or_bytes, core, payloads)
     annotations, metadata, projections = _core_tables(core, payloads)
     if keyed and payloads is None:
         annotations = _keyed_as_the_legacy_reader_keyed_it(annotations)
@@ -281,7 +337,10 @@ class BundleContents:
 
 
 def read_bundle_contents(
-    path_or_bytes: Path | str | bytes, *, warn_legacy: bool = True
+    path_or_bytes: Path | str | bytes,
+    *,
+    warn_legacy: bool = True,
+    warn_3d: bool = True,
 ) -> BundleContents:
     """Read every part of a bundle with one split and one decode.
 
@@ -290,11 +349,14 @@ def read_bundle_contents(
     :func:`read_settings_from_bundle` and :func:`read_statistics_from_bundle`
     would each split the file again. A legacy container is read as it is stored,
     never migrated. ``warn_legacy=False`` drops the deprecation warning, for a
-    caller that reads legacy files on purpose (a pinned input).
+    caller that reads legacy files on purpose (a pinned input); ``warn_3d=False``
+    does the same for the 3-D projection warning.
     """
     core, settings, statistics, payloads = _parse_bundle(
         path_or_bytes, warn_legacy=warn_legacy
     )
+    if warn_3d:
+        _warn_3d(path_or_bytes, core, payloads)
     annotations, metadata, projections = _core_tables(core, payloads)
     return BundleContents(
         annotations=annotations,
@@ -324,6 +386,7 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
         target_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
 
     core, settings, statistics, payloads = _parse_bundle(bundle_path)
+    _warn_3d(bundle_path, core, payloads)
     if payloads is not None:
         parts = list(decode_v3([*core, payloads]))
     else:
@@ -411,6 +474,7 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
         (core_parts_bytes, settings_dict_or_None)
     """
     core, settings_bytes, _statistics, payloads = _parse_bundle(bundle_path)
+    _warn_3d(bundle_path, core, payloads)
     if payloads is not None:
         core = [write_part(t) for t in decode_v3([*core, payloads])]
     settings = read_settings_from_bytes(settings_bytes) if settings_bytes else None
