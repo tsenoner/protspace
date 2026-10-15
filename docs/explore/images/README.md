@@ -29,6 +29,16 @@ pnpm examples:fetch
 
 Structure captures load the real Mol\* and AlphaFold models, so they need network.
 
+Number fields (the figure editor's) follow the capturing Mac's Region setting, whatever locale the
+browser is given, so capture under a Region that writes a decimal point (1,234.56).
+
+## Adding an image
+
+1. Add an entry to `scripts/docs-screenshots/scenes/<area>.ts`, naming the pages that show it.
+2. Show the file on those pages, as a light/dark pair if the entry has both themes.
+3. Run `pnpm docs:screenshots -g "<name>"` (or the GIF commands above).
+4. Commit the image with the page.
+
 ## Where each image comes from
 
 `scripts/docs-screenshots/`:

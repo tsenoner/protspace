@@ -340,14 +340,8 @@ rather than editing the page. `pnpm precommit` and CI fail when either is stale.
 entries grouped by docs page in `scripts/docs-screenshots/scenes/`
 (`docs/explore/images/README.md` describes the pipeline). The captures start their own app server
 on port 8096 (`DOCS_CAPTURE_PORT` changes it) and a headed Chromium; the examples other than the
-startup demo need `pnpm examples:fetch` first.
-
-```bash
-pnpm docs:images                                          # every screenshot and GIF
-pnpm docs:screenshots -g "filter-panel"                   # the PNGs whose file name matches (light and -dark)
-pnpm docs:animations -g "zoom.gif" && pnpm docs:gifs zoom # one GIF: record it, then convert it under its budget
-pnpm docs:images:check                                    # the pre-commit lint: manifest, files, pages, anchors
-```
+startup demo need `pnpm examples:fetch` first. `pnpm docs:images` makes them all and
+`pnpm docs:images:check` is the pre-commit lint; the README has the commands for one image.
 
 **Documentation standards:**
 
