@@ -94,7 +94,7 @@ Your dataset still loads and works normally for the current session. You only ne
 
 Yes. The sliders button in the legend's header opens **Legend settings**: pick a palette from its swatches
 (colorblind-safe ones included), set how many categories show before the rest are grouped into
-`Other`, and change the point size. Changes apply at once. To recolour one category, choose
+`Other`, and change the size of the points. Changes apply at once. To recolour one category, choose
 **Colour and shape** from its row's ⋯ menu. Your choices are kept per dataset and annotation in
 this browser. See [Settings](/explore/legend#settings).
 

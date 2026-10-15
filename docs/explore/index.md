@@ -127,20 +127,20 @@ The tour runs once by itself, the first time you open Explore. It points at each
 
 ProtSpace picks a layout from the window's size, and the same page works with touch:
 
-| Window                                    | Layout                                                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 951 px wide and more                      | The desktop workbench described above                                                           |
-| 641 to 950 px wide (tablets)              | The plot on top; the legend and the structure side by side below it                             |
-| 640 px wide or less (phones)              | One fixed screen: the bars, the plot, and a panel under it                                      |
-| A phone on its side (500 px tall or less) | The page scrolls once past the bars to a plot-and-legend view; the structure opens on the right |
+| Window                                                       | Layout                                                                                          |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 951 px wide and more                                         | The desktop workbench described above                                                           |
+| 641 to 950 px wide (tablets)                                 | The plot on top; the legend and the structure side by side below it                             |
+| 640 px wide or less (phones)                                 | One fixed screen: the bars, the plot, and a panel under it                                      |
+| A phone on its side (500 px tall or less, under 951 px wide) | The page scrolls once past the bars to a plot-and-legend view; the structure opens on the right |
 
-<p>
-<img src="./images/phone-layout.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="240" class="light-only" loading="lazy" />
-<img src="./images/phone-layout-dark.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="240" class="dark-only" loading="lazy" />
-<img src="./images/phone-more-sheet.png" alt="The More sheet on a phone" width="240" class="light-only" loading="lazy" />
-<img src="./images/phone-more-sheet-dark.png" alt="The More sheet on a phone" width="240" class="dark-only" loading="lazy" />
-<img src="./images/phone-structure-sheet.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="240" class="light-only" loading="lazy" />
-<img src="./images/phone-structure-sheet-dark.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="240" class="dark-only" loading="lazy" />
+<p style="display:flex;gap:8px;flex-wrap:wrap">
+<img src="./images/phone-layout.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="224" height="456" class="light-only" loading="lazy" />
+<img src="./images/phone-layout-dark.png" alt="ProtSpace on a phone: the bars, the plot and the legend panel" width="224" height="456" class="dark-only" loading="lazy" />
+<img src="./images/phone-more-sheet.png" alt="The More sheet on a phone" width="224" height="456" class="light-only" loading="lazy" />
+<img src="./images/phone-more-sheet-dark.png" alt="The More sheet on a phone" width="224" height="456" class="dark-only" loading="lazy" />
+<img src="./images/phone-structure-sheet.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="light-only" loading="lazy" />
+<img src="./images/phone-structure-sheet-dark.png" alt="A pinned tooltip and the folded structure sheet on a phone" width="224" height="456" class="dark-only" loading="lazy" />
 </p>
 
 On a phone:
@@ -157,7 +157,7 @@ On a phone:
   folded to its header so the plot and the tooltip stay in view; the header's chevron, or **View
   structure** in the tooltip, expands it. While it is expanded, a tap on the plot opens no tooltip.
 
-<img src="./images/tablet-layout.png" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" loading="lazy" />
+<img src="./images/tablet-layout.png" alt="ProtSpace on a tablet: the plot above the legend and the structure" width="320" height="512" loading="lazy" />
 
 On every touch screen:
 

@@ -47,19 +47,20 @@ windows only.
 ![The structure floating in a card over the bottom-right of the plot, with Dock structure in its header](./images/structure-floating.png){.light-only}
 ![The structure floating in a card over the bottom-right of the plot, with Dock structure in its header](./images/structure-floating-dark.png){.dark-only}
 
-### With the sidebar collapsed
+### Docked, with the sidebar collapsed
 
-While the sidebar is collapsed to its rail, a click still chooses the protein, but nothing is
+While the structure is docked and the sidebar is collapsed to its rail, a click still chooses the protein, but nothing is
 downloaded until the structure is visible. A dot on the rail's **Structure** button marks the chosen
 protein, and its tooltip names it; click the button, or **View structure** in the protein's pinned
 tooltip, to open the sidebar and load it.
 
 ### On phones
 
-On a phone, upright or on its side, the structure is a sheet at the bottom of the screen. It opens folded to its header when you tap a protein; **View
-structure** in the protein's tooltip, the header or its chevron (**Show the structure**) unfolds
-it, and the chevron (**Hide the structure**) folds it again. While it is unfolded, a tap on the plot
-does not pin a tooltip under it. On a tablet the structure always has its own place on screen.
+On a phone the structure is a sheet at the bottom of the screen; on a phone on its side it sits
+under the legend on the right and expands over the right half of the screen. It opens folded to its
+header when you tap a protein; **View structure** in the protein's tooltip, the header or its
+chevron (**Show the structure**) unfolds it, and the chevron (**Hide the structure**) folds it
+again. While it is unfolded, a tap on the plot does not pin a tooltip under it. On a tablet the structure always has its own place on screen.
 
 ## Several Selected Proteins
 

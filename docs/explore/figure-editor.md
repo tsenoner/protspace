@@ -244,12 +244,12 @@ The PDF page size is computed exactly from the configured Width/Height in mm at 
 
 ## Footer buttons
 
-| Button         | Action                                                                                                                                                                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **New figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. **Undo** in the footer brings the previous state back until your next edit. |
-| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background. **Undo** in the footer brings the previous state back until your next edit.                                                                                |
-| **Close**      | Closes the editor (so do the dialog's **×** and **Escape**). Your current state is saved to localStorage.                                                                                                                                                        |
-| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                                                                                                          |
+| Button         | Action                                                                                                                                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New figure** | Clears all overlays and insets but keeps layout settings (dimensions, DPI, preset, legend, format). Useful when you've changed the underlying visualization and want a fresh canvas. **Undo** in the footer brings the previous state back for a few seconds, until your next edit. |
+| **Reset**      | Resets everything to defaults, dimensions, DPI, preset, legend, overlays, insets, format, background. **Undo** in the footer brings the previous state back for a few seconds, until your next edit.                                                                                |
+| **Close**      | Closes the editor (so do the dialog's **×** and **Escape**). Your current state is saved to localStorage.                                                                                                                                                                           |
+| **Export**     | Renders the figure at full resolution and downloads it. State is saved to localStorage.                                                                                                                                                                                             |
 
 ## State persistence
 
