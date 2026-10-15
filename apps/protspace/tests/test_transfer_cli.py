@@ -317,14 +317,16 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
     assert "matched no query proteins" in plain(result.output)
 
 
-def test_cli_both_id_columns_present_is_clean_error(tmp_path):
-    import click
+def test_cli_keys_a_bundle_holding_both_id_names_on_protein_id(tmp_path):
+    """Beside `protein_id`, `identifier` is an ordinary annotation (#551): the
+    web exporter and `bundle -a` both write such bundles."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
 
     bundle, h5 = _write_bundle_and_h5(
-        tmp_path, extra_columns={"identifier": ["TRINITY_1", "P00001"]}
+        tmp_path, extra_columns={"identifier": ["alias-1", "alias-2"]}
     )
     out = tmp_path / "out.parquetbundle"
     result = CliRunner().invoke(
@@ -339,15 +341,21 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
             "protein_category",
             "-o",
             str(out),
-            "--query-id-prefix",
-            "TRINITY_",
-            "--reference-id-prefix",
-            "P0",
+            # A filter on the annotation reaches it like on any other column.
+            "--query-where",
+            "identifier~alias-1",
         ],
     )
-    assert result.exit_code == click.UsageError.exit_code, result.output
-    assert isinstance(result.exception, SystemExit)
-    assert "both 'protein_id'" in plain(result.output)
+    assert result.exit_code == 0, result.output
+
+    annotations = read_tables(out)[0]
+    assert annotations.column_names[0] == "protein_id"
+    rows = {r["protein_id"]: r for r in annotations.to_pylist()}
+    assert rows["TRINITY_1"]["identifier"] == "alias-1"
+    assert rows["P00001"]["identifier"] == "alias-2"
+    assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    assert rows["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+    assert not rows["P00001"]["protein_category__pred_value"]  # a reference
 
 
 def test_transfer_help_renders():

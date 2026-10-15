@@ -370,7 +370,6 @@ def transfer(
         upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
-    from protspace.data.io.ids import LEGACY_ID_COLUMN
     from protspace.data.io.predictions import write_report
     from protspace.data.loaders import load_h5, resolve_input_names, split_h5_spec
 
@@ -423,15 +422,10 @@ def transfer(
     # as the v2 browser keyed them (as `convert` does), so a repeated or null id
     # neither feeds the transfer a row the browser never showed nor fails the
     # v3 write at the end.
+    # read_tables keys every bundle on protein_id, so beside it an `identifier`
+    # column is an ordinary annotation, as every other reader takes it.
     annotations, _metadata, _projections = read_tables(bundle, keyed=True)
     input_format_version = read_format_version(annotations)
-
-    # read_tables keys every bundle on protein_id.
-    if LEGACY_ID_COLUMN in annotations.column_names:
-        raise typer.BadParameter(
-            "Bundle annotations contain both 'protein_id' and 'identifier' columns; "
-            "cannot determine the id column unambiguously."
-        )
 
     for col in transfer_columns:
         if col not in annotations.column_names:
