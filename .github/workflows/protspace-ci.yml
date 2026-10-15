@@ -20,15 +20,16 @@ name: protspace CI (Python)
 #
 # The same holds for every other file outside apps/protspace that the tests read
 # (protspace cannot import TypeScript or protspace_prep, so its copies are checked
-# against their source): the web's palette ids, prep's
-# Biocentral outage patterns, the web-side v3 fixtures the decoder is checked
-# against, the served demo bundle, the web catalog whose defaultView each showcase
-# example opens on, and the perf manifest stage_perf.py writes. A change to only one
-# of them would otherwise never run the test that reads it. A checkout holding only
-# apps/protspace, the uv workspace files and the files listed below passes the fast
-# suite with no skips; a new test reading outside it belongs in the list. The web's
-# missing-value tokens are not here: bundle-contract.yml, which runs on every pull
-# request, checks them against the Python ones.
+# against their source): prep's Biocentral outage patterns, the web-side v3 fixtures
+# the decoder is checked against, the served demo bundle, the web catalog whose
+# defaultView each showcase example opens on, and the perf manifest stage_perf.py
+# writes. A change to only one of them would otherwise never run the test that reads
+# it. A checkout holding only apps/protspace, the uv workspace files and the files
+# listed below passes the fast suite with no skips; a new test reading outside it
+# belongs in the list. Constants shared with the web (missing-value tokens, palette
+# ids, ...) are not here: both sides are generated from
+# contracts/shared-constants.json, and bundle-contract.yml, which runs on every pull
+# request, checks the generated modules and the contract.
 
 on:
   push:
@@ -36,8 +37,6 @@ on:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
-      - 'packages/utils/src/visualization/color-scheme.ts'
-      - 'packages/utils/src/visualization/numeric-binning.ts'
       - 'apps/prep/src/protspace_prep/pipeline.py'
       - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
       - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'
@@ -50,8 +49,6 @@ on:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
-      - 'packages/utils/src/visualization/color-scheme.ts'
-      - 'packages/utils/src/visualization/numeric-binning.ts'
       - 'apps/prep/src/protspace_prep/pipeline.py'
       - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
       - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'

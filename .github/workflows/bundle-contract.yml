@@ -27,6 +27,11 @@ name: Bundle format contract (Python ↔ TypeScript)
 #
 # Cost: ~1 minute, about half of it the Python generator that writes the fixture
 # bundles by invoking the real `protspace bundle` CLI.
+#
+# It also checks the generated shared-constants modules against
+# contracts/shared-constants.json, for the same reason: a hand edit to only the
+# Python module would skip ci.yml, and one to only the TypeScript module would skip
+# protspace-ci.yml.
 
 on:
   push:
@@ -84,6 +89,9 @@ jobs:
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check generated shared constants
+        run: pnpm shared-constants:check
 
       - name: Run bundle format contract
         run: pnpm test:contract
