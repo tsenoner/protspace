@@ -204,6 +204,21 @@ def test_restyling_na_replaces_the_stored_colour(tmp_path, key):
     assert settings["categories"][NA_INTERNAL]["color"] == "#FF0000"
 
 
+def test_restyling_what_style_wrote_keeps_one_na_category(tmp_path):
+    bundle = _bundle(tmp_path, ["A", None])
+    first = tmp_path / "first.parquetbundle"
+    add_annotation_styles(
+        str(bundle),
+        {"organism": {"colors": {"": "#111111", "A": "#AAAAAA"}}},
+        str(first),
+    )
+
+    categories = _styled(first, {"colors": {"": "#222222"}})["categories"]
+
+    assert categories[NA_INTERNAL]["color"] == "#222222"
+    assert sorted(cat["zOrder"] for cat in categories.values()) == [0, 1]
+
+
 def test_style_hides_and_pins_na_by_any_spelling(tmp_path):
     bundle = _bundle(tmp_path, ["A", "N/A", "B", "A", "none"])
 

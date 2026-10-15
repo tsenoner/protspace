@@ -92,6 +92,11 @@ class TestSortValuesForZorder:
         result = _sort_values_for_zorder(values, "size-asc", frequencies)
         assert result == ["Charlie", "Alpha", "Bravo", "<NA>"]
 
+    def test_any_missing_spelling_sorts_last(self):
+        # The web reads every one of these as N/A, in any case.
+        result = _sort_values_for_zorder({"X", "N/A", "null", "A"}, "alpha-asc", None)
+        assert result == ["A", "X", "N/A", "null"]
+
     def test_na_always_last(self):
         values = {"X", "", "<NA>", "NaN", "A"}
         result = _sort_values_for_zorder(values, "alpha-asc", None)
@@ -268,6 +273,63 @@ class TestVisualizationStateToSettings:
         result = visualization_state_to_settings(viz, style_overrides=overrides)
         assert result["ann"]["sortMode"] == "alpha-desc"
         assert result["ann"]["maxVisibleValues"] == 5
+
+
+class TestMissingSpellingsAreOneCategory:
+    """The web shows every missing spelling as one N/A category, keyed ``__NA__``."""
+
+    @pytest.mark.parametrize("spelling", ["N/A", "null", "NA", " none "])
+    def test_any_missing_spelling_is_keyed_na(self, spelling):
+        viz = {
+            "annotation_colors": {"ann": {"A": "#FF0000", spelling: "#010203"}},
+            "marker_shapes": {},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert cats["__NA__"]["color"] == "#010203"
+
+    def test_several_spellings_give_one_category_with_contiguous_zorder(self):
+        viz = {
+            "annotation_colors": {"ann": {"A": "#FF0000", "": "#010101"}},
+            "marker_shapes": {"ann": {"N/A": "square", "null": "diamond"}},
+        }
+        cats = visualization_state_to_settings(viz)["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert sorted(cat["zOrder"] for cat in cats.values()) == [0, 1]
+        assert cats["__NA__"]["color"] == "#010101"
+        # The first spelling in sorted order wins, never set-iteration order.
+        assert cats["__NA__"]["shape"] == "square"
+
+    def test_the_stored_na_category_keeps_its_fields(self):
+        existing = {"ann": {"categories": {"__NA__": {"zOrder": 3, "shape": "square"}}}}
+        viz = {"annotation_colors": {"ann": {"": "#222222"}}, "marker_shapes": {}}
+        cats = visualization_state_to_settings(viz, existing_settings=existing)["ann"][
+            "categories"
+        ]
+        assert cats["__NA__"] == {"zOrder": 0, "color": "#222222", "shape": "square"}
+
+    def test_pinning_na_by_two_spellings_pins_it_once(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "B": 2, "": 1, "N/A": 1}},
+            style_overrides={"ann": {"pinnedValues": ["A", "null", ""]}},
+        )
+        cats = result["ann"]["categories"]
+        assert set(cats) == {"A", "__NA__"}
+        assert cats["A"]["zOrder"] == 0
+        assert cats["__NA__"] == {"zOrder": 1, "color": "#DDDDDD", "shape": "circle"}
+
+    def test_rest_fill_never_counts_na_as_a_value(self):
+        result = visualization_state_to_settings(
+            {"annotation_colors": {}, "marker_shapes": {}},
+            value_frequencies={"ann": {"A": 3, "N/A": 9, "B": 2}},
+            style_overrides={
+                "ann": {"pinnedValues": ["__REST__", ""], "maxVisibleValues": 3}
+            },
+        )
+        cats = result["ann"]["categories"]
+        order = sorted(cats, key=lambda key: cats[key]["zOrder"])
+        assert order == ["A", "B", "__NA__"]
 
 
 # ---------------------------------------------------------------------------

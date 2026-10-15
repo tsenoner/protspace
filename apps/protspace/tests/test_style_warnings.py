@@ -288,6 +288,7 @@ def test_resolve_style_key_answers_what_style_would_accept():
     # as N/A, so a style on it never applied.
     assert resolve_style_key("__NA__", {"none", "Human"}) == "none"
     assert resolve_style_key("N/A", {"null", "Human"}) == "null"
+    assert resolve_style_key("NULL", {"none", "Human"}) == "none"
     assert resolve_style_key("__NA__", {"Human"}) is None  # no missing cell
     # With several N/A spellings in the data, always the same one.
     assert resolve_style_key("N/A", {"None", "", "n/a", "Human"}) == ""
