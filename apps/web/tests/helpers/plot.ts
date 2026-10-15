@@ -1,10 +1,12 @@
 /**
  * Plot reads that have no DOM to find by role: where a protein, a category or a duplicate stack
  * sits on screen, and whether the plot has stopped drawing. Each reads the scatterplot's public
- * automation methods (`getProteinClientPosition`, `getDuplicateStacks`, `dataToClient`), so a spec
- * or a docs capture asks for a point by name and never evaluates in the page itself.
+ * automation methods (`getProteinClientPosition`, `pickInteractivePointAt`, `getDuplicateStacks`,
+ * `dataToClient`), so a spec or a docs capture asks for a point by name and never evaluates in the
+ * page itself.
  */
 import type { Page } from '@playwright/test';
+import type { AnnotationData } from '@protspace/utils';
 import type { Point } from './mobile';
 import { settle } from './perf/probes';
 
@@ -13,9 +15,11 @@ interface PlotAutomation extends HTMLElement {
   data?: {
     protein_ids: string[];
     annotations?: Record<string, { values: Array<string | null> }>;
-    annotation_data?: Record<string, unknown>;
+    annotation_data?: Record<string, AnnotationData>;
   } | null;
   selectedAnnotation?: string;
+  /** The interactive point within `minRadiusPx` of a point in the plot's own coordinates. */
+  pickInteractivePointAt(x: number, y: number, minRadiusPx?: number): { id: string } | null;
   getProteinClientPosition(proteinId: string): Point | null;
   getDuplicateStacks(): Array<{ key: string; x: number; y: number; count: number }>;
   dataToClient(x: number, y: number): Point | null;
@@ -65,28 +69,27 @@ export async function clusterScreenPoints(page: Page, value: string, limit = 50)
       const rows = data.annotation_data?.[annotation];
       if (!labels || !rows) return [];
 
-      // The column's storage shapes (packages/utils annotation-data-access.ts).
+      // The column's storage shapes, typed against `AnnotationData` from @protspace/utils (whose
+      // `getProteinAnnotationIndices` cannot run in the page), so a new shape fails the type check.
       const codesAt = (index: number): readonly number[] => {
         if (rows instanceof Int32Array) return rows[index] < 0 ? [] : [rows[index]];
-        if (Array.isArray(rows)) return (rows[index] as number[] | undefined) ?? [];
-        const shaped = rows as {
-          kind?: string;
-          base?: Int32Array;
-          overrides?: Map<number, number[]>;
-          offsets?: Int32Array;
-          codes?: Int32Array;
-        };
-        if (shaped.kind === 'sparse-multi' && shaped.base && shaped.overrides) {
-          const override = shaped.overrides.get(index);
-          if (override) return override;
-          return shaped.base[index] < 0 ? [] : [shaped.base[index]];
+        if (Array.isArray(rows)) return (rows as readonly (readonly number[])[])[index] ?? [];
+        if ('kind' in rows) {
+          switch (rows.kind) {
+            case 'sparse-multi': {
+              const override = rows.overrides.get(index);
+              if (override) return override;
+              return rows.base[index] < 0 ? [] : [rows.base[index]];
+            }
+            case 'csr':
+              return Array.from(rows.codes.subarray(rows.offsets[index], rows.offsets[index + 1]));
+            default: {
+              const unknown: never = rows;
+              throw new Error(`Unknown annotation column shape: ${String(unknown)}`);
+            }
+          }
         }
-        if (shaped.kind === 'csr' && shaped.offsets && shaped.codes) {
-          return Array.from(
-            shaped.codes.subarray(shaped.offsets[index], shaped.offsets[index + 1]),
-          );
-        }
-        return [];
+        throw new Error('Unknown annotation column shape');
       };
 
       const lower = needle.toLowerCase();
@@ -124,6 +127,47 @@ export async function clusterScreenPoints(page: Page, value: string, limit = 50)
       return cluster.filter((_, index) => index % step === 0).slice(0, max);
     },
     { needle: value, max: limit },
+  );
+}
+
+/**
+ * The point nearest `at`, within `radius` px, with no interactive protein within `clearancePx` of
+ * it: hovering there opens no tooltip, and a wheel zoom there still anchors on what is around it.
+ * Throws when the neighbourhood is packed.
+ */
+export async function emptyScreenPointNear(
+  page: Page,
+  at: Point,
+  radius = 120,
+  clearancePx = 8,
+): Promise<Point> {
+  return page.locator('#myPlot').evaluate(
+    (element, { x, y, r, clearance }) => {
+      const plot = element as PlotAutomation;
+      const rect = plot.getBoundingClientRect();
+      for (let d = 0; d <= r; d += 4) {
+        const offsets =
+          d === 0
+            ? [[0, 0]]
+            : [
+                [d, 0],
+                [-d, 0],
+                [0, d],
+                [0, -d],
+                [d, d],
+                [-d, -d],
+                [d, -d],
+                [-d, d],
+              ];
+        for (const [dx, dy] of offsets) {
+          const p = { x: x + dx, y: y + dy };
+          if (p.x < rect.left || p.x > rect.right || p.y < rect.top || p.y > rect.bottom) continue;
+          if (!plot.pickInteractivePointAt(p.x - rect.left, p.y - rect.top, clearance)) return p;
+        }
+      }
+      throw new Error(`No empty point within ${r}px of ${x},${y}`);
+    },
+    { x: at.x, y: at.y, r: radius, clearance: clearancePx },
   );
 }
 

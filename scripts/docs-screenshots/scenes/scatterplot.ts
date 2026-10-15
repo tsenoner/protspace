@@ -1,20 +1,19 @@
-import { plotArea } from '../../../apps/web/tests/helpers/explore';
-import { clusterScreenPoints } from '../../../apps/web/tests/helpers/plot';
+import { clusterScreenPoints, emptyScreenPointNear } from '../../../apps/web/tests/helpers/plot';
 import type { Page } from '@playwright/test';
 import type { CaptureApi, CaptureEntry } from '../capture-plan';
 
-/** Where the zoom GIF zooms: the centre of the demo's three-finger toxins, else the plot's upper right. */
+/**
+ * Where the zoom GIF zooms: empty plot next to the centre of the demo's three-finger toxins, so
+ * the wheel anchors on the cluster and the pointer opens no protein tooltip over it.
+ */
 async function zoomTarget(page: Page): Promise<{ x: number; y: number }> {
   const points = await clusterScreenPoints(page, 'three-finger toxin');
-  if (points.length > 0) {
-    return {
-      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-      y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
-    };
-  }
-  const box = await plotArea(page).boundingBox();
-  if (!box) throw new Error('The plot area is not shown');
-  return { x: box.x + box.width * 0.75, y: box.y + box.height * 0.25 };
+  if (points.length === 0) throw new Error('No three-finger toxin points on the demo plot');
+  const centre = {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+  return emptyScreenPointNear(page, centre);
 }
 
 /** Wheel steps of a smooth zoom, 50 ms apart; negative `delta` zooms in. */
@@ -32,15 +31,19 @@ export const SCATTERPLOT_CAPTURES: CaptureEntry[] = [
     name: 'zoom',
     kind: 'gif',
     viewport: 'desktop',
+    // The pointer starts on the target, before the trim: it never flies in from the corner.
+    setup: async (page, cap) => {
+      await cap.moveTo(await zoomTarget(page));
+    },
     steps: async (page, cap) => {
       const target = await zoomTarget(page);
-      await cap.moveTo(target, { steps: 15 });
       await cap.hold(800);
       await cap.label('Scroll to zoom');
       await wheel(page, cap, -50);
       await cap.hold(1000);
       await cap.label('Drag to pan');
-      const panned = { x: target.x - 160, y: target.y + 90 };
+      // Right and down, towards the plot centre: the cluster sits on the plot's left.
+      const panned = { x: target.x + 160, y: target.y + 90 };
       await cap.drag(target, panned, { steps: 30 });
       await cap.hold(1000);
       await wheel(page, cap, 50);

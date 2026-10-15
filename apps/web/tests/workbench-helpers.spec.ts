@@ -56,6 +56,7 @@ import {
 import {
   clusterScreenPoints,
   duplicateStacks,
+  emptyScreenPointNear,
   plotSettled,
   proteinScreenPosition,
 } from './helpers/plot';
@@ -375,6 +376,20 @@ test.describe('capture helpers', () => {
     }
     expect(named).toContain(true);
     expect(await clusterScreenPoints(page, 'NO_SUCH_CATEGORY_ZZZ')).toEqual([]);
+  });
+
+  test('emptyScreenPointNear finds a point that opens no tooltip', async ({ page }) => {
+    await openExplore(page);
+    const [near] = await clusterScreenPoints(page, await getFirstLegendItemValue(page), 1);
+    const at = await emptyScreenPointNear(page, near);
+    await page.mouse.move(at.x, at.y);
+    // A hover resolves in a frame; give one a chance to open before checking none did.
+    await page.mouse.move(at.x + 1, at.y);
+    await expect(plotTooltip(page)).toBeHidden();
+    // ...and a protein point is not empty: the helper moved away from one.
+    const id = await unoccludedProtein(page);
+    const onProtein = await proteinScreenPosition(page, id);
+    expect(await emptyScreenPointNear(page, onProtein)).not.toEqual(onProtein);
   });
 
   test('duplicateStacks returns the stacks on the plot', async ({ page }) => {
