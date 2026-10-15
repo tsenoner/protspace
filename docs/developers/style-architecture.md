@@ -113,13 +113,13 @@ Older components still expose custom properties of their own:
 
 ```css
 --protspace-height              /* element sizing */
---protspace-viewer-height       /* element sizing */
+--protspace-width               /* element sizing */
 ```
 
 Rules for these:
 
 1. **Sizes only**: colours come from the `--ps-*` tokens, so a component property never holds a
-   colour (`--protspace-viewer-height: 100%`)
+   colour (`--protspace-height: 100%`)
 2. **Define in `:host` only**
 3. **Use only when** a runtime override is needed, or the value is used 3+ times
 4. **Group with comments**: `/* Layout */`, `/* Sizing */`

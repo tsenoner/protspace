@@ -185,7 +185,7 @@ the iframe's own document.
 The `--protspace-*` colour properties (the scatterplot's background, brush, tooltip and overlay
 colours; the structure viewer's `--protspace-viewer-bg`, `-border`, `-header-bg`, `-text`,
 `-text-muted`, `-error`, `-loading`) are removed. A host that set them sets the `--ps-*` token the
-component now reads instead. Size properties such as `--protspace-viewer-height` stay. See
+component now reads instead. Size properties such as the scatterplot's `--protspace-height` stay. See
 [Component properties](./style-architecture.md#component-properties).
 :::
 
