@@ -46,6 +46,11 @@ REEXPORTS = [
         "ARROW_BOOLEAN_LABELS",
         shared.ARROW_BOOLEAN_LABELS,
     ),
+    (
+        "protspace.data.processors.custom_annotations",
+        "RESERVED_COLUMNS",
+        shared.NON_ANNOTATION_COLUMNS,
+    ),
 ]
 
 

@@ -199,7 +199,8 @@ pnpm docs:build   # Verify the documentation build
 ```
 
 **Constants shared with the Python package** (missing-value tokens, the N/A key and colour,
-Kelly's colours, palette ids, point shapes, boolean labels) live in
+Kelly's colours, palette ids, point shapes, boolean labels, the column names never read as an
+annotation) live in
 `contracts/shared-constants.json`. Edit them there and run `pnpm shared-constants`, which
 regenerates `packages/utils/src/generated/shared-constants.ts` and
 `apps/protspace/src/protspace/_generated/shared_constants.py`; commit all three.

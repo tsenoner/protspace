@@ -20,6 +20,7 @@ export {
   isNAValue,
   toInternalValue,
 } from './visualization/missing-values';
+export { NON_ANNOTATION_COLUMNS } from './generated/shared-constants';
 export * from './visualization/scales';
 export * from './visualization/export-utils';
 export { pngWithDpi } from './png/phys-chunk';

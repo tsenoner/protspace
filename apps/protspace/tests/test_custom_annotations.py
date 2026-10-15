@@ -38,9 +38,6 @@ from tests.cli_output import plain
 HEADERS = ["P1", "P2", "P3", "P4"]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GUIDE = REPO_ROOT / "docs" / "guide" / "python-cli.md"
-VIEWER_CONVERSION = (
-    REPO_ROOT / "packages/core/src/components/data-loader/utils/conversion.ts"
-)
 
 
 def _write(path, text: str) -> str:
@@ -189,14 +186,6 @@ class TestIdColumn:
             frame = _load(tmp_path, f"seq,{name}\nP1,a\n")
         assert list(frame.columns) == ["identifier", name]
         assert "reserves" not in caplog.text
-
-    def test_the_reserved_names_are_the_viewers_id_columns(self):
-        # The viewer drops these from the annotation columns by exact name, so a custom
-        # column keeping one would be lost there; the bundle's two are among them.
-        source = VIEWER_CONVERSION.read_text()
-        literal = re.search(r"const ID_COLUMNS = \[(.*?)\] as const;", source, re.S)
-        assert literal, f"ID_COLUMNS not found in {VIEWER_CONVERSION}"
-        assert set(re.findall(r"'([^']+)'", literal.group(1))) == RESERVED_COLUMNS
 
 
 class TestParquetIdColumn:

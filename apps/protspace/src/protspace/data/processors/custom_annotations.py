@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from protspace._generated.shared_constants import NON_ANNOTATION_COLUMNS
 from protspace.data.annotations.encoding import encode_legacy_cell
 
 logger = logging.getLogger(__name__)
@@ -28,23 +29,10 @@ logger = logging.getLogger(__name__)
 CUSTOM_ANNOTATION_SUFFIXES = (".csv", ".tsv", ".txt")
 ID_COLUMN = "identifier"
 
-#: Names a later column of a custom file cannot keep, compared exactly: the pipeline's and the
-#: bundle's id column (``identifier``, ``protein_id``), and every name the web viewer reads as an
-#: id or projection column and so never shows as an annotation (``ID_COLUMNS`` in
-#: packages/core/src/components/data-loader/utils/conversion.ts; pinned by a test).
-RESERVED_COLUMNS = frozenset(
-    {
-        "identifier",
-        "protein_id",
-        "id",
-        "uniprot",
-        "entry",
-        "projection_name",
-        "x",
-        "y",
-        "z",
-    }
-)
+#: Names a later column of a custom file cannot keep, compared exactly: the names the web viewer
+#: never shows as an annotation (shared with it through contracts/shared-constants.json), which
+#: include the pipeline's and the bundle's id column (``identifier``, ``protein_id``).
+RESERVED_COLUMNS = NON_ANNOTATION_COLUMNS
 # The id column of a parquet ProtSpace writes: `identifier` in the pipeline, `protein_id` in a bundle.
 _PARQUET_ID_NAMES = ("protein_id", "identifier")
 _DELIMITERS = {"\t": "tab", ",": "comma", ";": "semicolon"}

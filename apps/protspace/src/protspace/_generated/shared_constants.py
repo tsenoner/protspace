@@ -128,3 +128,22 @@ ARROW_BOOLEAN_LABELS = (
     "false",
     "true",
 )
+
+# Column names the web reader never shows as an annotation, compared
+# exactly: the id columns it may key a table on and the fields of a
+# projection row. The Python loader of a custom annotation file renames a
+# later column with one of these names to `<name>_annotation`, or the web
+# would hide it; the file's first column is its id column whatever its name.
+NON_ANNOTATION_COLUMNS = frozenset(
+    {
+        "projection_name",
+        "x",
+        "y",
+        "z",
+        "identifier",
+        "protein_id",
+        "id",
+        "uniprot",
+        "entry",
+    }
+)
