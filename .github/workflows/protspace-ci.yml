@@ -24,7 +24,9 @@ name: protspace CI (Python)
 # Biocentral outage patterns, the data-format guide's "Read a Bundle in Python"
 # snippet (run as written), the web-side v3 fixtures the decoder is checked
 # against, the served demo bundle, the web catalog whose defaultView each showcase
-# example opens on, and the perf manifest stage_perf.py writes. A change to only one
+# example opens on, the perf manifest stage_perf.py writes, the web's copies of the
+# v1/v2 removal version (pinned to the deprecation registry), and the release
+# workflow whose deprecation gate a test pins. A change to only one
 # of them would otherwise never run the test that reads it. A checkout holding only
 # apps/protspace, the uv workspace files and the files listed below passes the fast
 # suite with no skips; a new test reading outside it belongs in the list.
@@ -45,6 +47,10 @@ on:
       - 'apps/web/public/data.parquetbundle'
       - 'apps/web/src/explore/example-datasets.ts'
       - 'perf/datasets.manifest.json'
+      - 'apps/web/src/explore/notifications.ts'
+      - 'packages/core/src/components/data-loader/utils/bundle.ts'
+      - 'packages/core/src/components/data-loader/data-loader.ts'
+      - '.github/workflows/protspace-release.yml'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
   pull_request:
@@ -61,6 +67,10 @@ on:
       - 'apps/web/public/data.parquetbundle'
       - 'apps/web/src/explore/example-datasets.ts'
       - 'perf/datasets.manifest.json'
+      - 'apps/web/src/explore/notifications.ts'
+      - 'packages/core/src/components/data-loader/utils/bundle.ts'
+      - 'packages/core/src/components/data-loader/data-loader.ts'
+      - '.github/workflows/protspace-release.yml'
       - 'uv.lock'
       - '.github/workflows/protspace-ci.yml'
 

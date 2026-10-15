@@ -16,7 +16,7 @@ pip install protspace
 | ------------ | ------------------------------------- | --------------------------------------------------------------------- |
 | `local`      | `pip install "protspace[local]"`      | on-device embedding (`--backend local`) instead of the Biocentral API |
 | `similarity` | `pip install "protspace[similarity]"` | MMseqs2 sequence-similarity projections (`-s/--similarity`)           |
-| `frontend`   | `pip install "protspace[frontend]"`   | the local Dash viewer (`protspace serve`)                             |
+| `frontend`   | `pip install "protspace[frontend]"`   | the local Dash viewer (`protspace serve`, deprecated)                 |
 
 > **Upgrading an existing install:** `-s/--similarity` used to work out of the box because
 > MMseqs2 shipped in the base install. It now lives in the `similarity` extra, so add
@@ -30,7 +30,7 @@ pip install protspace
 | -------------------- | ------------------------------------------------------------ |
 | `protspace prepare`  | Full pipeline: embed → project → annotate → (stats) → bundle |
 | `protspace embed`    | FASTA → per-model HDF5 embeddings                            |
-| `protspace project`  | Embeddings → 2D projections                                  |
+| `protspace project`  | Embeddings → 2D projections (3D deprecated)                  |
 | `protspace annotate` | Fetch UniProt / InterPro / taxonomy annotations              |
 | `protspace stats`    | Score projection quality (cluster validity + faithfulness)   |
 | `protspace bundle`   | Merge projections + annotations → `.parquetbundle`           |
@@ -38,7 +38,7 @@ pip install protspace
 | `protspace style`    | Set colors, shapes and legend order on a bundle              |
 | `protspace convert`  | Upgrade a v1/v2 bundle to the current v3 format              |
 | `protspace export`   | Write a bundle as a TSV table, one row per protein           |
-| `protspace serve`    | Run a local viewer                                           |
+| `protspace serve`    | Run a local viewer (deprecated, removed in 5.0.0)            |
 
 Run `protspace <command> -h` for the built-in help of any command.
 
@@ -179,24 +179,27 @@ the annotations came only from a CSV file, or no identifier is a UniProt accessi
 
 ## Projection Methods
 
-Methods require a dimension suffix: `2` for 2D, `3` for 3D.
+Methods require a dimension suffix: `2` for 2D (`3` for 3D is deprecated, see below).
 
 ::: warning Dimension Suffix Required
-Specify `pca2` or `pca3`, not `pca` alone.
+Specify `pca2`, not `pca` alone.
 :::
 
-| Method   | 2D          | 3D          | Description                            |
-| -------- | ----------- | ----------- | -------------------------------------- |
-| PCA      | `pca2`      | `pca3`      | Principal Component Analysis           |
-| UMAP     | `umap2`     | `umap3`     | Uniform Manifold Approximation         |
-| t-SNE    | `tsne2`     | `tsne3`     | t-distributed Stochastic Neighbor Emb. |
-| PaCMAP   | `pacmap2`   | `pacmap3`   | Pairwise Controlled Manifold Approx.   |
-| MDS      | `mds2`      | `mds3`      | Multidimensional Scaling               |
-| LocalMAP | `localmap2` | `localmap3` | Local-first alternative to PaCMAP      |
+| Method   | 2D          | 3D (deprecated) | Description                            |
+| -------- | ----------- | --------------- | -------------------------------------- |
+| PCA      | `pca2`      | `pca3`          | Principal Component Analysis           |
+| UMAP     | `umap2`     | `umap3`         | Uniform Manifold Approximation         |
+| t-SNE    | `tsne2`     | `tsne3`         | t-distributed Stochastic Neighbor Emb. |
+| PaCMAP   | `pacmap2`   | `pacmap3`       | Pairwise Controlled Manifold Approx.   |
+| MDS      | `mds2`      | `mds3`          | Multidimensional Scaling               |
+| LocalMAP | `localmap2` | `localmap3`     | Local-first alternative to PaCMAP      |
 
-::: tip
-The web app renders 2D projections, prefer `*2` methods. 3D projections are viewable with
-`protspace serve`.
+::: warning 3D projections are deprecated
+3D projections (any `*3` method) are deprecated and will be removed in protspace 5.0.0. They
+still run, with a warning; use the `*2` variant instead. The web app shows a 3D projection only
+as its X/Y view. Reading them is deprecated too: every command that reads a bundle's projections
+warns when it holds a 3D one, and from 5.0.0 only `protspace convert` reads them, to turn them
+into 2D (see [`--flatten-3d`](#protspace-convert)).
 :::
 
 ### Inline parameter overrides
@@ -958,22 +961,32 @@ refuses is refused here too, with the same reason, and nothing is written.
 ## `protspace convert`
 
 Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:
-they still open, with a warning, until protspace 5.0.0 removes support for them.
+they still open everywhere, with a warning, until protspace 5.0.0. `convert` itself keeps
+reading them after that, so an old file can always be upgraded.
 
 ```bash
 protspace convert old.parquetbundle new.parquetbundle
 protspace convert old.parquetbundle --in-place
+protspace convert data.parquetbundle --in-place --flatten-3d
 ```
 
-| Flag            | Description                                 |
-| --------------- | ------------------------------------------- |
-| `--in-place`    | Overwrite the input with its v3 conversion. |
-| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.      |
+| Flag            | Description                                                                    |
+| --------------- | ------------------------------------------------------------------------------ |
+| `--in-place`    | Overwrite the input with its v3 conversion.                                    |
+| `--flatten-3d`  | Write each 3D projection as 2D, keeping its X/Y view; works on v3 bundles too. |
+| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                         |
+
+**3D projections.** Reading them is deprecated and ends in protspace 5.0.0. `--flatten-3d`
+rewrites each one as a 2D projection holding its X and Y coordinates, the view the web app shows
+today, so the picture does not change. It is renamed `<name> (X/Y)` and marked
+`flattened_from_3d` in its metadata so it is not mistaken for a 2D fit, and the quality figures
+computed on the 3D layout (its faithfulness and its statistics rows) are dropped. Without the
+flag, `convert` keeps 3D projections and warns; from 5.0.0 it flattens them automatically.
 
 Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
 written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
-is reported as current and nothing is written. The internal `organism_id` and `sequence`
+is reported as current and nothing is written, unless `--flatten-3d` finds 3D projections in it. The internal `organism_id` and `sequence`
 columns an older bundle may carry are dropped, as from every bundle ProtSpace writes.
 
 The converted bundle holds the proteins the web app showed for the old file. Older web builds
@@ -1019,9 +1032,14 @@ same table is available in Python, see
 
 ## `protspace serve`
 
-Run a local Dash viewer. Most users should explore bundles in the hosted viewer at
-[protspace.app/explore](https://protspace.app/explore): nothing to install, and drag & drop works.
-Use `serve` for offline viewing; it also renders 3D projections.
+::: warning Deprecated
+`protspace serve` and the `frontend` extra are deprecated and will be removed in protspace 5.0.0.
+Running it prints a warning. Explore bundles at
+[protspace.app/explore](https://protspace.app/explore) instead: nothing to install, drag & drop
+works, and the file is read in your browser, never uploaded.
+:::
+
+Run a local Dash viewer, for offline viewing; it also renders 3D projections.
 
 ```bash
 protspace serve output.parquetbundle --port 8050 --pdb-zip structures.zip

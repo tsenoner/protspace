@@ -105,6 +105,7 @@ def _load_reductions(
         g["z"].append(zs[i])
 
     reductions: list[dict] = []
+    three_d: list[str] = []
     for nm, g in grouped.items():
         # Fall back to the data itself when projection metadata is absent: a 3D
         # projection is identified by present z values, not defaulted to 2D (which
@@ -113,6 +114,7 @@ def _load_reductions(
         dims = dims_by_name.get(nm) or (3 if has_z else 2)
         if dims == 3 and has_z:
             coords = np.array([g["x"], g["y"], g["z"]], dtype=float).T
+            three_d.append(nm)
         else:
             coords = np.array([g["x"], g["y"]], dtype=float).T
         red = {
@@ -124,6 +126,15 @@ def _load_reductions(
         if nm in source_by_name:
             red["source"] = source_by_name[nm]
         reductions.append(red)
+    if three_d:
+        from protspace.deprecations import THREE_D_PROJECTION_READ, warn
+
+        warn(
+            THREE_D_PROJECTION_READ,
+            logger,
+            name=str(projections),
+            projections=", ".join(three_d),
+        )
     return reductions
 
 

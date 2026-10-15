@@ -380,7 +380,9 @@ bundle, one per question. Both are read from that part's footer before any row i
 
 Bundles written before format v3 (three to five parts, see
 [Legacy layout](#legacy-layout-3-to-5-parts)) still load in the web app and in the Python package.
-That support is **deprecated and will be removed in protspace 5.0.0**. Until then:
+That support is **deprecated and will be removed in protspace 5.0.0** from every reader except
+[`protspace convert`](/guide/python-cli#protspace-convert), which keeps reading v1 and v2 so an old
+file can always be upgraded. Until then:
 
 - the Python package logs one warning each time it reads a v1 or v2 bundle, naming
   `protspace convert`;
@@ -425,8 +427,8 @@ same one twice: 21% is what settled the counts-versus-offsets choice described b
 while scores were still float32, and 19% is the same comparison after scores widened to float64.
 
 Nothing above the container boundary changes. `read_tables()` decodes a v3 file back into the
-v2-shaped tables, so `protspace serve`, `protspace style`, `protspace transfer` and every script
-keep their string-cell logic.
+v2-shaped tables, so `protspace style`, `protspace transfer`, the deprecated `protspace serve` and
+every script keep their string-cell logic.
 
 ### Part 1: annotations
 
@@ -457,7 +459,9 @@ One row per protein, aligned position by position with part 1, and one `FLOAT` c
 `<name>__x`, `<name>__y`, and `<name>__z` for a 3D projection. A protein with no coordinates in a
 projection is stored as `NaN` on every axis, never `0.0`: the origin is a real coordinate, and a
 missing point is not drawn. A projection is 3D when any of its rows has a finite `z` value and
-2D otherwise (a `z` of NaN counts as missing). A `dimensions` value in the input metadata that
+2D otherwise (a `z` of NaN counts as missing). Reading 3D projections is deprecated and ends in
+protspace 5.0.0; `protspace convert --flatten-3d` rewrites them as 2D projections of their X/Y
+view. A `dimensions` value in the input metadata that
 disagrees is ignored with a warning, and part 2 is written with the value the data gives, so it
 always agrees with the manifest. Both readers refuse a part 3 whose row count differs from part
 1's, rather than leaving the unread proteins at `(0, 0)` or dropping the extra rows. The web app

@@ -11,6 +11,8 @@ from typing import Annotated
 
 import typer
 
+from protspace.deprecations import DEPRECATIONS, THREE_D_PROJECTIONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,7 +149,9 @@ Opt_Methods = Annotated[
         "--methods",
         help=(
             "DR methods. Comma-sep or repeat: -m pca2,umap2 or -m pca2 -m umap2. "
-            "Inline params: -m 'umap2:n_neighbors=50;min_dist=0.1'."
+            "Inline params: -m 'umap2:n_neighbors=50;min_dist=0.1'. "
+            "3-D methods (pca3, umap3, …) are deprecated; removed in protspace "
+            f"{DEPRECATIONS[THREE_D_PROJECTIONS].remove_in}."
         ),
         rich_help_panel="Projection",
     ),

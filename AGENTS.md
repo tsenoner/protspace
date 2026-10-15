@@ -187,3 +187,28 @@ Commit types still matter, per commit:
 - Use `feat:` only for changes visible to **package users**. Dev-only work — tooling, CI,
   test harnesses, internal refactors — takes `chore:` / `ci:` / `test:` / `refactor:`, so it
   cannot trigger an unwanted minor bump.
+
+## A deprecation names its removal release, and that release is blocked until it lands
+
+Every scheduled removal in the Python package lives in one registry,
+`apps/protspace/src/protspace/deprecations.py` (feature, `remove_in`, warning text, removal
+notes); warnings and `--help` read their version from it. Due in 5.0.0 today: producing and
+reading 3-D projections, `protspace serve` with the `frontend` extra, and reading v1/v2 bundles —
+tracked in #544 (milestone v5.0.0). Two checks hold the date:
+
+- `protspace-release.yml` runs `semantic-release version --print` (read-only) and
+  `apps/protspace/scripts/check_deprecations.py --next-version <it>` before cutting a release,
+  and fails the job, listing what to remove, when that version reaches an entry's `remove_in`.
+  No release due → it passes.
+- `apps/protspace/tests/test_deprecations.py` fails on every PR once the package version
+  reaches a `remove_in`, and pins the web app's TypeScript copies of the v1/v2 and 3-D reading
+  versions to the registry.
+
+What survives is not an entry: `protspace convert` stays the upgrade path past 5.0.0, keeping its
+own reader for v1/v2 bundles and 3-D projections (`--flatten-3d`, automatic in 5.0.0). The gate
+does not ask for that reader to be removed, and must not be made to.
+
+So a `BREAKING CHANGE` that would cut 5.0.0 is refused until the removals land and their
+entries are deleted. Do not bypass the gate; postponing a removal is a deliberate edit of its
+`remove_in`, which moves every warning with it. Deprecate something new by adding an entry, not
+by hard-coding a version string.

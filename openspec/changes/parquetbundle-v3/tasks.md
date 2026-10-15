@@ -202,10 +202,12 @@
 
 - [ ] 6.1 Python: drop the legacy branch of `bundle._parse_bundle` (3 to 5 parts), the deprecation
       warning and `LEGACY_REMOVAL_VERSION`, and the `warn_legacy` plumbing of the readers and writers
-- [ ] 6.2 Python: `protspace convert` stops reading v1/v2 and names the last 4.x release that can;
-      `style` and `transfer` no longer upgrade a legacy input; the v1 cell migration
+- [ ] 6.2 Python: `protspace convert` keeps reading v1/v2 and stays the upgrade path, with a legacy
+      reader of its own once the general readers drop it (maintainer decision 2026-10-15, recorded
+      in the `deprecate-3d-and-serve` change; it is not a deprecation-registry entry); `style` and
+      `transfer` no longer upgrade a legacy input; the v1 cell migration
       (`migrate_legacy_annotation_table`, `encode_legacy_cell`) and the v2 browser's id-column
-      fallback go with it
+      fallback move into convert's reader rather than going
 - [ ] 6.3 Browser: remove the legacy path of `decodeParquetBundle`, `extractRowsFromParquetBundle`
       and the bundle-only parts of the row-based conversion it feeds (plain `.parquet` imports keep
       `convertParquetToVisualizationDataOptimized`), the `formatVersion` below 3 handling and the

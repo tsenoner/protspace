@@ -27,6 +27,7 @@ from protspace.data.processors.custom_annotations import (
     merge_custom_annotations,
     split_annotation_args,
 )
+from protspace.deprecations import THREE_D_PROJECTIONS, warn
 from protspace.utils import get_reducers
 from protspace.utils.constants import MDS_NAME
 
@@ -183,7 +184,25 @@ def parse_methods_arg(raw: list[str]) -> list[MethodSpec]:
             if spec not in seen:
                 seen.add(spec)
                 specs.append(spec)
+    _warn_3d_methods(specs)
     return specs
+
+
+def _warn_3d_methods(specs: list[MethodSpec]) -> None:
+    """One deprecation warning per parse for every 3-D method requested.
+
+    Here rather than in each command: `prepare`, `project` and the Colab notebook
+    all turn method strings into specs through `parse_methods_arg`.
+    """
+    names = list(dict.fromkeys(f"{s.method}{s.dims}" for s in specs if s.dims == 3))
+    if names:
+        method = names[0][:-1]
+        warn(
+            THREE_D_PROJECTIONS,
+            logger,
+            example=f"{method}2 instead of {method}3",
+            methods=", ".join(names),
+        )
 
 
 def disambiguation_suffix(spec: MethodSpec, method_counts: Counter) -> str:

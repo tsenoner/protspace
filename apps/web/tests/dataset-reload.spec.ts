@@ -589,6 +589,7 @@ test.describe('Bundle format notice', () => {
     '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
   );
   const NOTICE = 'This file uses an older bundle format.';
+  const THREE_D_NOTICE = 'This file has 3-D projections.';
 
   test.beforeEach(async ({ page }) => {
     await openExplore(page);
@@ -613,6 +614,25 @@ test.describe('Bundle format notice', () => {
     await importAndWait(page, TOXPROT_5181_V3_FIXTURE);
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
+  });
+
+  test('importing a bundle with a 3-D projection says reading it ends in 5.0.0', async ({
+    page,
+  }) => {
+    // The golden v3 fixture holds pca2 and umap3; it is v3, so only the 3-D notice shows.
+    const V3_WITH_3D_PATH = path.resolve(
+      SPEC_DIR,
+      '../../../packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle',
+    );
+    await expect(page.getByText(THREE_D_NOTICE)).toHaveCount(0); // not for the startup demo
+
+    await importAndWait(page, V3_WITH_3D_PATH);
+
+    await expect(page.getByText(THREE_D_NOTICE)).toBeVisible();
+    await expect(page.getByText(/shown as their X\/Y view/)).toBeVisible();
+    await expect(page.getByText(/ends in ProtSpace 5\.0\.0/)).toBeVisible();
+    await expect(page.getByText(/protspace convert --flatten-3d/)).toBeVisible();
     await expect(page.getByText(NOTICE)).toHaveCount(0);
   });
 });
