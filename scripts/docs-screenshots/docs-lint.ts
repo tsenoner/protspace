@@ -66,10 +66,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
   'eat-connectors.gif',
   'eat-legend-section.png',
   'eat-reliability.gif',
-  'figure-editor-overlays.png',
-  'figure-editor-overview.png',
-  'figure-editor-presets.png',
-  'figure-editor-zoom-inset.png',
 ]);
 
 /**
@@ -77,7 +73,6 @@ export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
  * shrinks; Task 7.16 deletes the set.
  */
 export const STALE_PAGES: ReadonlySet<string> = new Set([
-  'explore/figure-editor.md',
   'explore/importing-data.md',
   'guide/faq.md',
 ]);

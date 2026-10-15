@@ -1,15 +1,24 @@
 # Figure Editor
 
-The Figure Editor is a full-screen tool for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
+The Figure Editor is a window-filling dialog for creating publication-ready figures from your ProtSpace visualization. It provides live preview, journal-specific dimension presets, overlays, zoom insets, and legend customization, all in a single interface.
 
-<img src="./images/figure-editor-overview.png" alt="Figure Editor - full-screen modal showing the live preview canvas on the left, settings sidebar with journal presets, dimensions, legend and overlay controls on the right, and the overlay toolbar at the bottom" width="1536" height="864" loading="eager" fetchpriority="high" />
+<img src="./images/figure-editor-overview.png" class="light-only" alt="The Figure Editor filling the window: the live preview of the figure on the left with the overlay toolbar under it, and the settings sidebar on the right with journal presets, dimensions, legend and overlay controls" width="1248" height="688" loading="eager" fetchpriority="high" />
+<img src="./images/figure-editor-overview-dark.png" class="dark-only" alt="The Figure Editor in the dark theme: dark sidebar and toolbar around the same white figure preview" width="1248" height="688" loading="lazy" />
 
 ## Opening the Figure Editor
 
-1. Click **Export** in the control bar
+1. Click **Export** in the app bar
 2. Choose **Figure editor…**
 
-The editor opens as a full-screen modal with a **preview canvas** on the left and a **settings sidebar** on the right.
+The editor opens as a dialog that fills the window, with a **preview canvas** on the left and a
+**settings sidebar** on the right. **Close**, the dialog's **×** and **Escape** close it; when an
+overlay or inset is selected, the first **Escape** only deselects it.
+
+::: info Figures stay light in dark mode
+The editor's sidebar, toolbar and footer follow the page's theme, but the preview and the exported
+figure are always light: a white (or transparent) background with the light colours. A figure looks
+the same whichever theme you made it in.
+:::
 
 To download immediately without opening the editor, use **Quick PNG** or **Quick PDF**. It always exports your
 current view at 2048 × 1024 px and does not use the editor's settings.
@@ -144,7 +153,7 @@ While focus is inside an editable input (e.g. a label's text field), Delete/Back
 
 ## Overlay tools
 
-![Figure Editor with four overlays placed on the demo map: a black circle around the arthropod phospholipase D cluster with a "PLD" label above it, and a "Kunitz" label with an arrow pointing into the venom Kunitz-type cluster; the sidebar lists them in its Overlays section](./images/figure-editor-overlays.png)
+![The Figure Editor with four overlays on the demo map: a circle with the label "Cluster 1" beside it, and an arrow with the label "Cluster 2"; the sidebar lists them under Overlays (4)](./images/figure-editor-overlays.png)
 
 The toolbar at the bottom of the preview switches between drawing tools.
 
@@ -176,7 +185,7 @@ Click to place a text label. Default text is "Label" and can be renamed in the s
 
 ### Zoom-inset tool
 
-![Figure Editor with a zoom inset placed: a dashed source rectangle marks a small cluster on the left of the plot, the magnified target rectangle sits below it in the lower-left with a solid border and connector lines, sidebar shows Zoom Insets with Dot size and Border controls](./images/figure-editor-zoom-inset.png)
+![The Figure Editor with a zoom inset: a dashed source rectangle around a small cluster, the magnified target rectangle in the lower left with a solid border and connector lines, and Zoom Insets (1) in the sidebar with its Dot size and Border controls](./images/figure-editor-zoom-inset.png)
 
 Creates a magnified view of a region. Two-phase workflow:
 
