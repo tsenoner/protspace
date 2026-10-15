@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { VisualizationData } from '@protspace/utils';
+import {
+  buildStorageKey,
+  generateDatasetHash,
+  setStorageItem,
+  type VisualizationData,
+} from '@protspace/utils';
 import './legend';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import type { ProtspaceLegend } from './legend';
+import {
+  mountLegendWithScatterplot,
+  settle,
+  stubLocalStorage,
+} from './test-support/legend-scatterplot-harness';
+
+// The dataset-hash tests seed and read the persisted settings through `localStorage`.
+stubLocalStorage();
 
 function makeData(): VisualizationData {
   return {
@@ -41,6 +54,7 @@ async function setup() {
 /** One teardown for every describe in this file — Vitest applies a file-level hook to all of them. */
 afterEach(() => {
   document.body.innerHTML = '';
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -577,5 +591,54 @@ describe('legend EAT reliability percent boxes', () => {
 
     expect(legend.reliabilityState.min).toBeCloseTo(0.59, 10);
     expect(boxes[0]!.value).toBe('59');
+  });
+});
+
+/**
+ * The dataset controller keys a load's storage by `generateDatasetHash` of the whole dataset,
+ * EAT predictions included: it sweeps that key set for a fresh load and writes a bundle's
+ * settings there. The legend has to load and save under the same key set.
+ */
+describe('legend dataset hash for an EAT dataset', () => {
+  it('loads the settings stored under the dataset controller hash', async () => {
+    const datasetHash = generateDatasetHash(makeData());
+    setStorageItem(buildStorageKey('legend', datasetHash, 'ec'), { shapeSize: 42 });
+
+    const { legend } = await setup();
+    await settle(legend);
+
+    expect(legend.shapeSize).toBe(42);
+  });
+
+  it('forgets its saved settings when the dataset controller clears the dataset', async () => {
+    const { data, legend, plot } = await setup();
+    await settle(legend);
+    legend.applyShapeSize(42);
+    expect(legend.pickedShapeSize).toBe(42);
+
+    legend.clearForNewDataset(generateDatasetHash(data));
+    plot.dispatchEvent(new CustomEvent('data-change', { detail: { data } }));
+    await settle(legend);
+
+    expect(legend.pickedShapeSize).toBeUndefined();
+    expect(legend.shapeSize).toBe(10);
+  });
+});
+
+describe('legend dataset hash without a scatter plot', () => {
+  it('loads the settings stored under the hash of the dataset it is given', async () => {
+    const data = makeData();
+    setStorageItem(buildStorageKey('legend', generateDatasetHash(data), 'ec'), { shapeSize: 42 });
+
+    const legend = document.createElement('protspace-legend') as ProtspaceLegend;
+    legend.autoSync = false;
+    legend.data = data;
+    legend.proteinIds = data.protein_ids;
+    legend.selectedAnnotation = 'ec';
+    legend.annotationData = { name: 'ec', values: data.annotations.ec.values, kind: 'categorical' };
+    document.body.append(legend);
+    await settle(legend);
+
+    expect(legend.shapeSize).toBe(42);
   });
 });

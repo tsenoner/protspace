@@ -7,16 +7,7 @@ import {
 } from '@protspace/utils';
 
 /** What a dataset's hash is computed from: its protein ids, or the dataset itself. */
-export type DatasetHashData =
-  | string[]
-  | {
-      protein_ids: string[];
-      annotations?: Record<
-        string,
-        { kind?: 'categorical' | 'numeric'; values?: (string | null)[] }
-      >;
-      numeric_annotation_data?: Record<string, Float64Array>;
-    };
+export type DatasetHashData = Parameters<typeof generateDatasetHash>[0];
 
 /**
  * Base class for persistence controllers that manage per-dataset/annotation

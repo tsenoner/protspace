@@ -61,7 +61,8 @@ Located in `@protspace/utils/storage`:
 - Generic localStorage wrapper with type safety
 - Key format: `protspace:{component}:{datasetHash}:{context}`
 - Graceful error handling for quota exceeded scenarios
-- djb2 hash algorithm for deterministic dataset identification
+- `generateDatasetHash` (FNV-1a 64) identifies a dataset by its protein ids, annotations, numeric
+  values and EAT predictions
 
 ### Reactive Controllers Pattern
 
