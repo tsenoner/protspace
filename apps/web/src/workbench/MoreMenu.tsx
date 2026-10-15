@@ -91,6 +91,7 @@ export function MoreMenu({ stage, mode }: { stage: ViewBarStage; mode: LayoutMod
       <ps-button
         ref={trigger}
         className="wb-more"
+        data-driver-id="more"
         variant="ghost"
         data-view-item=""
         // Attributes, not the hasPopup/expanded properties: the Export menu, opened from this

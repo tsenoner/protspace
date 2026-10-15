@@ -133,6 +133,7 @@ export function AppBar() {
           type="button"
           className="wb-dataset"
           data-workbench="dataset"
+          data-driver-id="dataset"
           data-dataset-name={datasetName ?? ''}
           aria-haspopup="dialog"
           aria-label={

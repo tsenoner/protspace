@@ -45,7 +45,7 @@ export function Rail({
     else structureRef?.current?.focus();
   };
   return (
-    <nav className="wb-rail" data-workbench="rail" aria-label="Panels">
+    <nav className="wb-rail" data-workbench="rail" data-driver-id="rail" aria-label="Panels">
       <ps-icon-button
         icon="list"
         label="Legend"

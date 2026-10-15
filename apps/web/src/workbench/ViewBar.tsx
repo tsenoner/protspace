@@ -18,7 +18,14 @@ export const ViewBar = memo(function ViewBar() {
   const mode = useLayoutMode();
   const stage = useViewBarStage(bar, mode);
   return (
-    <div ref={bar} role="group" aria-label="View" data-workbench="view-bar" data-stage={stage}>
+    <div
+      ref={bar}
+      role="group"
+      aria-label="View"
+      data-workbench="view-bar"
+      data-driver-id="view-bar"
+      data-stage={stage}
+    >
       <div className="wb-view-group" data-driver-id="projections" data-view-item="">
         <protspace-projection-select id="myProjectionSelect"></protspace-projection-select>
         <protspace-projection-metadata id="myProjectionMetadata"></protspace-projection-metadata>

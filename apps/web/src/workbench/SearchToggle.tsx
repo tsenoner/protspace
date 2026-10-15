@@ -18,6 +18,7 @@ export function SearchToggle({ ref, open, onOpen }: SearchToggleProps) {
     <ps-icon-button
       ref={ref}
       className="wb-search-toggle"
+      data-driver-id="search-toggle"
       icon="search"
       label="Search proteins"
       expanded={open ? 'true' : 'false'}

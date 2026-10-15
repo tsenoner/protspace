@@ -8,3 +8,6 @@
  * means the tour runs over the measured window with nothing failing.
  */
 export const TOUR_STORAGE_KEY = 'driver.overviewTour';
+
+/** Which tour a visitor was shown: the full tour or the short "What's new" tour (Task 7.7). */
+export type TourKind = 'full' | 'whats-new';
