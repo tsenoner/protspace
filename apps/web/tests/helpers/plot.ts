@@ -195,9 +195,10 @@ export async function duplicateStacks(
  * those dependants. Picks the source with the most dependants within 2..`maxDependants` (the
  * renderer draws at most 20 lines: MAX_PROVENANCE_CONNECTORS in
  * apps/web/src/explore/eat-provenance.ts; past it the extra lines are dropped without notice).
- * Both proteins stand `clearancePx` clear of every other plotted protein, so a click there picks
- * that protein and not a neighbour (4 px: the plot's smallest hit radius). Read at call time, not
- * hard-coded, so a rebuilt bundle cannot silently give an empty GIF. Throws when nothing
+ * Both proteins stand more than `clearancePx` from every other plotted protein, so a click on one
+ * picks it: the plot picks the nearest point, and the default 4 px leaves room for rounding. A
+ * caller that checks what its click picked (by counting connectors) may pass less. Read at call
+ * time, not hard-coded, so a rebuilt bundle cannot silently give an empty GIF. Throws when nothing
  * qualifies.
  */
 export async function provenancePair(

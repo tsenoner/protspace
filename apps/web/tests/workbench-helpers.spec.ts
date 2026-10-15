@@ -622,5 +622,25 @@ test.describe('provenancePair', () => {
     // Both are plotted: proteinScreenPosition throws for a protein that is not.
     await proteinScreenPosition(page, pair.source);
     await proteinScreenPosition(page, pair.target);
+    // The target really borrowed its value from the source.
+    const borrowedFrom = await page.locator('#myPlot').evaluate((element, id) => {
+      const data = (
+        element as unknown as {
+          data: {
+            protein_ids: string[];
+            annotation_predicted: Record<string, Array<{ source: string } | null>>;
+          };
+        }
+      ).data;
+      return data.annotation_predicted.toxin_class[data.protein_ids.indexOf(id)]?.source ?? null;
+    }, pair.target);
+    expect(borrowedFrom).toBe(pair.source);
+    // Nothing stands that far clear, and no source has a single dependant within the cap.
+    await expect(provenancePair(page, 'toxin_class', { clearancePx: 10_000 })).rejects.toThrow(
+      /No provenance pair for "toxin_class"/,
+    );
+    await expect(
+      provenancePair(page, 'toxin_class', { clearancePx: 0, maxDependants: 1 }),
+    ).rejects.toThrow(/No provenance pair/);
   });
 });
