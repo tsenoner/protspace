@@ -226,6 +226,32 @@ class TestRequestedColumnsAreRefreshed:
         assert calls[1] == ("interpro", {"P01308": "MALWMRLLPL"})
         assert result["pfam"].tolist() == [CURRENT_PFAM]
 
+    def test_the_uniprot_pass_for_sequences_refreshes_its_stale_family_too(
+        self, tmp_path, monkeypatch
+    ):
+        """UniProt is refetched whole for the sequences, so the cached legacy
+        ``protein_families`` comes back current rather than being dropped and
+        costing the next run that asks for it a second UniProt pass.
+        """
+        _write_v1_cache(tmp_path)
+        cache = _read_cache(tmp_path).drop(columns=["sequence"])
+        cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 1}
+        cache.to_parquet(tmp_path / CACHE_NAME, index=False)
+        calls: list = []
+        _serve_uniprot(monkeypatch, calls)
+        _serve_interpro(monkeypatch, calls)
+
+        result = _pipeline(tmp_path, ["pfam"])._fetch_annotations(["P01308"])
+
+        assert "protein_families" not in result.columns
+        assert _read_cache(tmp_path)["protein_families"].tolist() == [CURRENT_FAMILY]
+
+        calls.clear()
+        again = _pipeline(tmp_path, ["protein_families"])._fetch_annotations(["P01308"])
+
+        assert calls == []
+        assert again["protein_families"].tolist() == [CURRENT_FAMILY]
+
 
 class TestUnrequestedColumnsAreDropped:
     def test_a_run_served_from_the_cache_fetches_nothing(self, tmp_path, monkeypatch):

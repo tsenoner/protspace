@@ -212,15 +212,40 @@ def fetch_annotations(
     # explicit -a the whole cached frame is emitted, so treat that as
     # consuming all of them.
     refresh_columns = stale_columns if annotations is None else stale_columns & required
-    # A refresh refetches its sources whole (below), so a stale column of a
-    # source it refetches anyway is refreshed with it rather than dropped.
-    refreshed_along_stale = {
-        column
-        for columns in SOURCE_ANNOTATIONS.values()
-        if columns & refresh_columns
-        for column in columns & stale_columns
-    }
-    discard_columns = stale_columns - refresh_columns - refreshed_along_stale
+    sequences_supplied = all(sequences.get(h) for h in headers)
+    migration_sources: set[str] = set()
+    widened: set[str] = set()
+    if refresh_columns:
+        # Fetched as though the cache lacked them, so a source looked up by a
+        # key the cache has no column for (InterPro and Biocentral by
+        # `sequence`, taxonomy by `organism_id`) also fetches that key from
+        # UniProt. Without it the refresh would find nothing and stamp that as
+        # current. The keys are never stale, so this can run before the
+        # discard below.
+        needed = AnnotationConfiguration.determine_sources_to_fetch(
+            cached_annotations - refresh_columns,
+            refresh_columns,
+            sequences_supplied=sequences_supplied,
+        )
+        migration_sources = {source for source, fetch in needed.items() if fetch}
+        # A refresh refetches these sources whole: every column of theirs the
+        # cache holds, not only the ones this run asks for. Otherwise the cache
+        # is written back without the others and the next run that asks for one
+        # pays the source again. Only a source the run queries anyway is
+        # widened: a run without -a asks for no taxonomy or Biocentral column,
+        # so their stale columns are dropped rather than paid for. An explicit
+        # --refetch keeps to the columns the run asks for.
+        widened = {
+            s
+            for s in migration_sources - refetch
+            if s == "uniprot" or required & SOURCE_ANNOTATIONS[s]
+        }
+    # A stale column of a widened source is refreshed with it, not dropped.
+    discard_columns = (
+        stale_columns
+        - refresh_columns
+        - set().union(*(SOURCE_ANNOTATIONS[s] for s in widened))
+    )
     if discard_columns:
         # Unused this run, so drop rather than refetch: they must not ride
         # along into a cache this run stamps as current. A later run that
@@ -278,7 +303,6 @@ def fetch_annotations(
 
         return AnnotationFetch(api_df, uniprot_releases=read_release_stamp(cached_df))
 
-    sequences_supplied = all(sequences.get(h) for h in headers)
     sources = AnnotationConfiguration.determine_sources_to_fetch(
         cached_annotations, required, sequences_supplied=sequences_supplied
     )
@@ -289,19 +313,7 @@ def fetch_annotations(
         logger.info(
             f"--refetch: re-fetching {', '.join(s for s in _ANN_SOURCES if sources[s])}"
         )
-    migration_sources = set()
     if refresh_columns:
-        # Fetched as though the cache lacked them, so a source looked up by a
-        # key the cache has no column for (InterPro and Biocentral by
-        # `sequence`, taxonomy by `organism_id`) also fetches that key from
-        # UniProt. Without it the refresh would find nothing and stamp that as
-        # current.
-        needed = AnnotationConfiguration.determine_sources_to_fetch(
-            cached_annotations - refresh_columns,
-            refresh_columns,
-            sequences_supplied=sequences_supplied,
-        )
-        migration_sources = {source for source, fetch in needed.items() if fetch}
         for source in migration_sources:
             sources[source] = True
         logger.warning(
@@ -321,19 +333,6 @@ def fetch_annotations(
         cols_to_drop = set().union(
             *(cached_by_source[s] for s in _ANN_SOURCES if sources[s])
         )
-        # A refresh refetches its sources whole: every column of theirs the
-        # cache holds, not only the ones this run asks for. Otherwise the cache
-        # is written back without the others, which were still current, and
-        # the next run that asks for one pays the source again. Only a source
-        # the run queries anyway is widened: a run without -a asks for no
-        # taxonomy or Biocentral column, so their stale columns are dropped
-        # rather than paid for. An explicit --refetch keeps to the columns the
-        # run asks for.
-        widened = {
-            s
-            for s in migration_sources - refetch
-            if s == "uniprot" or required & SOURCE_ANNOTATIONS[s]
-        }
         refreshed_along = (
             set().union(*(cached_by_source[s] for s in widened)) - required
         )
@@ -351,12 +350,12 @@ def fetch_annotations(
         if "uniprot" in migration_sources and "uniprot" not in refetch:
             # Keep what the migration is about to discard. If its refresh
             # fails, these cached values beat the empty annotations a failed
-            # fetch produces — except the stale columns themselves, whose
-            # ambiguity is the whole reason for the migration.
+            # fetch produces — except the stale columns, requested or refreshed
+            # along, whose ambiguity is the whole reason for the migration.
             preserved = [
                 c
                 for c in cached_by_source["uniprot"]
-                if c not in refresh_columns and c in cached_df.columns
+                if c not in stale_columns and c in cached_df.columns
             ]
             if preserved:
                 legacy_uniprot = cached_df[["identifier", *preserved]].copy()
