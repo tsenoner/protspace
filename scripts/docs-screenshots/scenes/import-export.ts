@@ -31,6 +31,12 @@ async function exportToastSteps(page: Page, cap: CaptureApi): Promise<void> {
   await expect(
     exportReady(page).getByRole('button', { name: 'Dismiss notification' }),
   ).toBeVisible();
+  // Sonner slides the toast up from below the viewport; measuring mid-slide clips it.
+  await expect(exportReady(page)).toHaveAttribute('data-mounted', 'true');
+  await exportReady(page).evaluate(async (el) => {
+    await new Promise(requestAnimationFrame);
+    await Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished));
+  });
   // The toast closes itself after 4 s; Sonner pauses that while the pointer rests on it.
   await cap.moveTo(exportReady(page), { steps: 1 });
 }
