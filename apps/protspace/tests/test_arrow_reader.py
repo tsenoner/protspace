@@ -86,16 +86,21 @@ def test_annotations_only_directory_still_loads(tmp_path):
 
 def test_directory_save_reloads_with_its_data_and_restyled_colours(bundle, tmp_path):
     """`protspace style` on an unbundled parquet directory: what `save_data`
-    writes reads back as annotations, projections and styles, not empty."""
+    writes reads back as annotations, projections and styles, not empty.
+
+    A colour is stored in settings.parquet, as in a bundle, and so reads back
+    in the settings' rgba spelling."""
     reader = ArrowReader(extract_bundle_to_dir(bundle, tmp_path / "in"))
     reader.update_annotation_color("cath", "b", "#00ff00")
     reader.save_data(tmp_path / "out")
 
     reloaded = ArrowReader(tmp_path / "out")
-    assert reloaded.get_data() == reader.get_data()
+    for key in ("protein_data", "projections", "format_version"):
+        assert reloaded.get_data()[key] == reader.get_data()[key]
     assert reloaded.get_protein_annotations("P2") == {"cath": "b"}
     assert reloaded.get_projection_info("pca2")["info"] == {"n_components": 2}
-    assert reloaded.get_annotation_colors("cath")["b"] == "#00ff00"
+    assert reloaded.get_annotation_colors("cath")["b"] == "rgba(0, 255, 0, 0.8)"
+    assert not (tmp_path / "out" / "visualization_state.json").exists()
 
 
 def test_bundle_saves_to_a_directory_that_reads_back_alike(bundle, tmp_path):

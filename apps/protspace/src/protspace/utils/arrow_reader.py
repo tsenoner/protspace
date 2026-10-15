@@ -40,21 +40,19 @@ class ArrowReader:
                 containing .parquet files, or a pre-built data dict
                 (protein_data, projections, …).
         """
+        self.settings = None
+        # A bundle's statistics table, or a directory's statistics file bytes
+        self.statistics: pa.Table | bytes | None = None
+        self._protein_annotations_df = None
+        self._projections_metadata_df = None
+        self._projections_data_df = None
         if isinstance(source, dict):
             # Direct dict input
             self.data = source
             self.data_path = None
-            self.settings = None
-            self._protein_annotations_df = None
-            self._projections_metadata_df = None
-            self._projections_data_df = None
         else:
             # Parquet file loading
             self.data_path = Path(source)
-            self.settings = None
-            self._protein_annotations_df = None
-            self._projections_metadata_df = None
-            self._projections_data_df = None
             self.data = {
                 "protein_data": {},
                 "projections": [],
@@ -98,6 +96,7 @@ class ArrowReader:
 
         contents = read_bundle_contents(path)
         self.settings = contents.settings
+        self.statistics = contents.statistics
         return contents.annotations, contents.metadata, contents.projections
 
     def _read_directory(self, path: Path) -> tuple[pa.Table | None, ...]:
@@ -106,13 +105,17 @@ class ArrowReader:
         An annotations-only directory is valid, but one holding none of the core
         tables is not ProtSpace data and must not read as an empty dataset.
         """
-        from protspace.data.io.bundle import CORE_FILENAMES
+        from protspace.data.io.bundle import CORE_FILENAMES, STATISTICS_FILENAME
 
         core_paths = [path / name for name in CORE_FILENAMES]
         if not any(p.exists() for p in core_paths):
             raise ValueError(
                 f"Directory '{path}' contains none of {', '.join(CORE_FILENAMES)}."
             )
+        statistics_path = path / STATISTICS_FILENAME
+        if statistics_path.exists():
+            # Carried through to save_data unread: the reader never uses it.
+            self.statistics = statistics_path.read_bytes()
         try:
             return tuple(
                 pq.read_table(str(p)) if p.exists() else None for p in core_paths
@@ -177,21 +180,13 @@ class ArrowReader:
         self._load_visualization_state()
 
     def _load_visualization_state(self):
-        """Load visualization state.
+        """Load settings and visualization state.
 
-        A bundle carries it in its settings part. A directory may hold
-        visualization_state.json, which wins over settings.parquet.
+        A bundle carries them in its settings part, a directory in
+        settings.parquet. A directory's visualization_state.json (written by an
+        older ``protspace style``) wins for the visualization state; the
+        settings are loaded either way, so a rewrite keeps them.
         """
-        if self.data_path.is_dir():
-            viz_state_path = self.data_path / "visualization_state.json"
-            if viz_state_path.exists():
-                try:
-                    with open(viz_state_path) as f:
-                        self.data["visualization_state"] = json.load(f)
-                        return
-                except (json.JSONDecodeError, FileNotFoundError):
-                    pass
-
         try:
             from protspace.data.io.bundle import (
                 SETTINGS_FILENAME,
@@ -213,8 +208,22 @@ class ArrowReader:
                 "Failed to load visualization state from settings", exc_info=True
             )
 
+        from protspace.data.io.bundle import VISUALIZATION_STATE_FILENAME
+
+        if self.data_path.is_dir():
+            viz_state_path = self.data_path / VISUALIZATION_STATE_FILENAME
+            if viz_state_path.exists():
+                try:
+                    with open(viz_state_path) as f:
+                        self.data["visualization_state"] = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    pass
+
     def save_data(self, output_path: Path | None = None):
-        """Save the current data back to parquet files.
+        """Save the data as a ProtSpace directory, via ``write_directory``.
+
+        Colours and shapes set on this reader are stored in its settings, as a
+        bundle stores them.
 
         Defaults to the directory the data was read from. A reader built from
         a .parquetbundle needs an explicit ``output_path``: the bundle is a
@@ -235,10 +244,7 @@ class ArrowReader:
         else:
             output_path = Path(output_path)
 
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        # The names _read_directory reads back (and a bundle's parts extract to)
-        from protspace.data.io.bundle import CORE_FILENAMES
+        from protspace.data.io.bundle import write_directory
 
         annotations, metadata, projections = (
             pa.Table.from_pandas(df)
@@ -254,15 +260,29 @@ class ArrowReader:
             from protspace.data.annotations.encoding import stamp_format_version
 
             annotations = stamp_format_version(annotations)
-        for name, table in zip(
-            CORE_FILENAMES, (annotations, metadata, projections), strict=True
-        ):
-            pq.write_table(table, str(output_path / name))
+        write_directory(
+            [annotations, metadata, projections],
+            output_path,
+            settings=self._current_settings(),
+            statistics=self.statistics,
+        )
 
-        # Save visualization state as a separate JSON file
-        viz_state_path = output_path / "visualization_state.json"
-        with open(viz_state_path, "w") as f:
-            json.dump(self.data.get("visualization_state", {}), f, indent=2)
+    def _current_settings(self) -> dict | None:
+        """The settings read, updated with the colours and shapes set since.
+
+        Unchanged settings are returned as read, never re-converted.
+        """
+        from protspace.data.io.settings_converter import (
+            settings_to_visualization_state,
+            visualization_state_to_settings,
+        )
+
+        state = self.data.get("visualization_state") or {}
+        if not (state.get("annotation_colors") or state.get("marker_shapes")):
+            return self.settings
+        if self.settings and state == settings_to_visualization_state(self.settings):
+            return self.settings
+        return visualization_state_to_settings(state, self.settings)
 
     def get_format_version(self) -> int:
         """Return the bundle format version (1 = legacy/un-encoded, 2 = v2).

@@ -89,12 +89,14 @@ from protspace.data.annotations.retrievers.taxonomy_retriever import (
 from protspace.data.annotations.retrievers.uniprot_retriever import RELEASE_HEADER
 from protspace.data.io.atomic import atomic_write_bytes
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER as DELIMITER
-from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle import (
+    PROJECTIONS_DATA_FILENAME,
+    PROJECTIONS_METADATA_FILENAME,
     read_bundle_contents,
     replace_annotations_in_bundle,
     replace_settings_in_bundle,
 )
+from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION
 from protspace.data.io.settings_converter import (
     KELLYS_COLORS,
@@ -472,8 +474,8 @@ def read_projection_source(source: Path) -> tuple[pa.Table, pa.Table]:
     """Projection metadata and data from a bundle or a projections directory."""
     if source.is_dir():
         return (
-            pq.read_table(source / "projections_metadata.parquet"),
-            pq.read_table(source / "projections_data.parquet"),
+            pq.read_table(source / PROJECTIONS_METADATA_FILENAME),
+            pq.read_table(source / PROJECTIONS_DATA_FILENAME),
         )
     bundle = read_bundle(source)
     return bundle.metadata, bundle.projections
@@ -3375,8 +3377,8 @@ def projections_step(ctx: Context, *, drop_quality: bool) -> Step:
         meta, data = select_projections(metadata, data, spec, drop_quality=drop_quality)
         out = ctx.work / "proj"
         out.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(out / "projections_metadata.parquet", parquet_bytes(meta))
-        atomic_write_bytes(out / "projections_data.parquet", parquet_bytes(data))
+        atomic_write_bytes(out / PROJECTIONS_METADATA_FILENAME, parquet_bytes(meta))
+        atomic_write_bytes(out / PROJECTIONS_DATA_FILENAME, parquet_bytes(data))
 
     summary = "select " + ", ".join(f"{a}→{b}" if a != b else a for a, b in spec)
     return Step(

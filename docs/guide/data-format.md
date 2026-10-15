@@ -69,6 +69,15 @@ positional rather than counted because the browser reads the payloads from a fix
 omitted settings or statistics slot would file the payloads where statistics are expected, and
 the reader would report a bundle with no payloads part.
 
+### Unbundled directory
+
+`protspace prepare --no-bundled` writes the same parts as separate files in a directory:
+`selected_annotations.parquet`, `projections_metadata.parquet` and `projections_data.parquet`
+(in the legacy, v2-shaped encoding), plus `settings.parquet` and `statistics.parquet` when there
+are any. `protspace project` writes only the two projection files. `protspace style` on a
+directory writes its styles to `settings.parquet`, as it does for a bundle, and keeps the other
+files.
+
 This bundled format allows efficient loading in the browser while keeping everything in one convenient file.
 
 The optional settings section is stored as `settings.parquet`, a one-row Parquet table with a `settings_json` column. It stores legend customizations (colors, shapes, ordering, visibility, palette, numeric binning settings) and export options (image dimensions, legend sizing) per annotation. When present, these settings are applied automatically on load so the visualization renders exactly as it was exported.

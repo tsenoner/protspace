@@ -92,9 +92,8 @@ def project(
 
     from collections import Counter
 
-    import pyarrow.parquet as pq
-
     from protspace.cli.prepare import _parse_input_specs
+    from protspace.data.io.bundle import write_directory
     from protspace.data.loaders import EmbeddingSet, compute_similarity, load_h5
     from protspace.data.loaders.embedding_set import format_projection_name
     from protspace.data.processors.base_processor import BaseProcessor
@@ -178,12 +177,10 @@ def project(
             reduction["source"] = emb_set.name
             all_reductions.append(reduction)
 
-    output.mkdir(parents=True, exist_ok=True)
-
     metadata_table = base._create_projections_metadata_table(all_reductions)
     data_table = base._create_projections_data_table(all_reductions, headers)
 
-    pq.write_table(metadata_table, str(output / "projections_metadata.parquet"))
-    pq.write_table(data_table, str(output / "projections_data.parquet"))
+    # Projections only: annotations come later, from `annotate` via `bundle -a`.
+    write_directory([None, metadata_table, data_table], output)
 
     typer.echo(f"Saved {len(all_reductions)} projections to {output}")

@@ -36,6 +36,7 @@ then rewrites a bundle warns once.
 import io
 import json
 import logging
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +48,7 @@ from protspace.data.annotations.encoding import (
     migrate_legacy_annotation_table,
     read_format_version,
 )
-from protspace.data.io.atomic import atomic_write_bytes
+from protspace.data.io.atomic import atomic_write_bytes, staged_write
 from protspace.data.io.bundle_v3 import (
     CONTAINER_VERSION,
     CONTAINER_VERSION_KEY,
@@ -63,14 +64,22 @@ logger = logging.getLogger(__name__)
 
 PARQUET_BUNDLE_DELIMITER = b"---PARQUET_DELIMITER---"
 
+ANNOTATIONS_FILENAME = "selected_annotations.parquet"
+PROJECTIONS_METADATA_FILENAME = "projections_metadata.parquet"
+PROJECTIONS_DATA_FILENAME = "projections_data.parquet"
+
+#: The three core tables of an unbundled directory, in bundle part order.
 CORE_FILENAMES = [
-    "selected_annotations.parquet",
-    "projections_metadata.parquet",
-    "projections_data.parquet",
+    ANNOTATIONS_FILENAME,
+    PROJECTIONS_METADATA_FILENAME,
+    PROJECTIONS_DATA_FILENAME,
 ]
 
 SETTINGS_FILENAME = "settings.parquet"
 STATISTICS_FILENAME = "statistics.parquet"
+#: Styles an older ``protspace style`` wrote to a directory; it wins over
+#: settings.parquet on read, so every directory write removes it.
+VISUALIZATION_STATE_FILENAME = "visualization_state.json"
 
 #: The release that drops reading v1/v2 containers.
 LEGACY_REMOVAL_VERSION = "5.0.0"
@@ -302,12 +311,10 @@ def read_bundle_contents(
 
 
 def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> str:
-    """Extract a .parquetbundle into separate parquet files on disk.
+    """Extract a .parquetbundle into a directory (see :func:`write_directory`).
 
-    Supports legacy bundles with 3 parts (core data only), 4 parts (core +
-    settings) or 5 parts (core + settings + statistics, where the settings part
-    may be zero bytes), and 6-part v3 bundles — whose core is decoded back to the
-    v2 shape so everything downstream reads the files it always did.
+    A v3 core is decoded back to the v2 shape, so everything downstream reads
+    the files it always did; a legacy bundle's parts are written as stored.
 
     Args:
         bundle_path: Path to the .parquetbundle file.
@@ -319,27 +326,80 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     """
     if target_dir is None:
         target_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
-    else:
-        target_dir = Path(target_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
 
     core, settings, statistics, payloads = _parse_bundle(bundle_path)
-
     if payloads is not None:
-        for table, filename in zip(
-            decode_v3([*core, payloads]), CORE_FILENAMES, strict=True
-        ):
-            pq.write_table(table, str(target_dir / filename))
+        parts = list(decode_v3([*core, payloads]))
     else:
-        for part_bytes, filename in zip(core, CORE_FILENAMES, strict=False):
-            if part_bytes:
-                (target_dir / filename).write_bytes(part_bytes)
-    if settings:
-        (target_dir / SETTINGS_FILENAME).write_bytes(settings)
-    if statistics:
-        (target_dir / STATISTICS_FILENAME).write_bytes(statistics)
-
+        parts = [part or None for part in core]  # an empty part writes no file
+    write_directory(
+        parts,
+        target_dir,
+        settings=settings,
+        statistics=statistics,
+    )
     return str(target_dir)
+
+
+def write_directory(
+    core_parts: list[pa.Table | bytes | None],
+    target_dir: Path,
+    *,
+    settings: dict | bytes | None = None,
+    statistics: pa.Table | bytes | None = None,
+) -> None:
+    """Write a bundle's parts as one parquet file each, atomically.
+
+    Files are named per :data:`CORE_FILENAMES`, :data:`SETTINGS_FILENAME` and
+    :data:`STATISTICS_FILENAME`.  A part is a table, or the parquet bytes to
+    write as they are; a ``None`` part writes no file (``protspace project``
+    has no annotations).  When settings are written, a
+    :data:`VISUALIZATION_STATE_FILENAME` in *target_dir* is removed, since it
+    would win over them on read.
+
+    Args:
+        core_parts: The three core parts, in bundle part order.
+        target_dir: Directory to write into; created when missing.
+        settings: A settings dict, or settings parquet bytes.
+        statistics: The statistics table, or its parquet bytes.
+    """
+    if len(core_parts) != len(CORE_FILENAMES):
+        raise ValueError(
+            f"write_directory expects {len(CORE_FILENAMES)} core parts, "
+            f"got {len(core_parts)}"
+        )
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(settings, dict):
+        settings = create_settings_parquet(settings)
+    names = [*CORE_FILENAMES, SETTINGS_FILENAME, STATISTICS_FILENAME]
+    for part, name in zip([*core_parts, settings, statistics], names, strict=True):
+        if part is not None:
+            data = part if isinstance(part, bytes) else write_part(part)
+            atomic_write_bytes(target_dir / name, data)
+    if settings is not None:
+        (target_dir / VISUALIZATION_STATE_FILENAME).unlink(missing_ok=True)
+
+
+def replace_settings_in_directory(
+    input_dir: Path, output_dir: Path, settings: dict
+) -> None:
+    """Write *settings* to a directory, keeping its other parts byte for byte.
+
+    The directory counterpart of :func:`replace_settings_in_bundle`.  In place
+    only the settings are written; into another directory the other parts are
+    copied, and any the input lacks are removed, so the output holds one
+    dataset.
+    """
+    input_dir, output_dir = Path(input_dir), Path(output_dir)
+    if not (output_dir.exists() and output_dir.samefile(input_dir)):
+        for name in [*CORE_FILENAMES, STATISTICS_FILENAME]:
+            if (input_dir / name).exists():
+                with staged_write(output_dir / name) as staged:
+                    shutil.copyfile(input_dir / name, staged)
+            else:
+                (output_dir / name).unlink(missing_ok=True)
+    write_directory([None] * len(CORE_FILENAMES), output_dir, settings=settings)
 
 
 def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
