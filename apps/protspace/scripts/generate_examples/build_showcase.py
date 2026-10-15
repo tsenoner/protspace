@@ -66,7 +66,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import requests
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.data.annotations.configuration import (
     INTERNAL_ANNOTATIONS,
     SOURCE_ANNOTATIONS,
@@ -129,17 +129,6 @@ LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
 PRED_MARKER = "__pred_"
 KINDS = ("paper-refresh", "demo-refresh", "embed-build")
-
-
-def is_missing_label(text: str) -> bool:
-    """Whether the web app shows this display value as N/A (W10).
-
-    The web's missing tokens (protspace's ``BROWSER_MISSING_TOKENS``), compared
-    trimmed and case-insensitively, plus the empty string: a gate here counts
-    N/A exactly as the legend does.
-    """
-    stripped = text.strip()
-    return not stripped or stripped.lower() in BROWSER_MISSING_TOKENS
 
 
 # Kelly's colours in the web app's order, without the two greys at its end.
@@ -208,7 +197,7 @@ def cell_labels(cell: Any) -> list[str]:
         return [str(cell)]
     labels = []
     for hit in cell.split(";"):
-        if is_missing_label(hit):
+        if is_missing_value(hit):
             continue
         label = decode_field(hit.split("|", 1)[0]).strip()
         if label:
@@ -887,7 +876,7 @@ def filter_legend(entry: dict, table: pa.Table, column: str) -> tuple[dict, list
     dropped = [
         key
         for key in categories
-        if not is_missing_label(key) and resolve_style_key(key, values) is None
+        if not is_missing_value(key) and resolve_style_key(key, values) is None
     ]
     for key in dropped:
         del categories[key]
@@ -1342,7 +1331,7 @@ TAXONOMY_ROOTS = frozenset(
 def uninformative_columns(table: pa.Table) -> dict[str, str]:
     """Annotation columns the legend could only show as N/A or as one value.
 
-    Counted with the web's N/A rules (:func:`is_missing_label`); the id and the
+    Counted with the web's N/A rules (``is_missing_value``); the id and the
     ``__pred_`` overlay columns are not annotations. A presence flag
     (:data:`PRESENCE_FLAG_COLUMNS`) with one value and some empty rows counts
     as informative.

@@ -1,24 +1,17 @@
 """Tests for Biocentral prediction retriever."""
 
-import re
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 import requests
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
+from protspace.core.constants import is_missing_value, standardize_missing
 from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
 )
 from tests.prep_source import biocentral_down_patterns
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WEB_MISSING_VALUES = (
-    REPO_ROOT / "packages" / "utils" / "src" / "visualization" / "missing-values.ts"
-)
 
 
 def _make_prediction(model_name, value):
@@ -105,29 +98,13 @@ class TestTransmembraneExtraction:
         assert result == ""
 
 
-def _web_missing_tokens() -> set[str]:
-    """The web app's MISSING_VALUE_TOKENS, read from its source."""
-    source = WEB_MISSING_VALUES.read_text()
-    block = re.search(
-        r"MISSING_VALUE_TOKENS[^=]*=\s*new Set\(\[(.*?)\]\)", source, re.S
-    )
-    assert block, f"MISSING_VALUE_TOKENS not found in {WEB_MISSING_VALUES}"
-    return set(re.findall(r"'([^']*)'", block.group(1)))
-
-
-def test_browser_missing_tokens_match_the_web_app():
-    """``BROWSER_MISSING_TOKENS`` is the web's list: the v3 encoder and the
-    showcase build's gates count N/A exactly as the legend does."""
-    assert _web_missing_tokens() == BROWSER_MISSING_TOKENS
-
-
 class TestNoTransmembraneIsACategory:
     """A protein without a TM segment is a prediction, not a missing value.
 
     Both readers turn a set of literal tokens into N/A: the CLI's
-    `standardize_missing` (exact match) and the web app's `normalizeMissingValue`
-    (trimmed, case-insensitive). `none` was one of them, so every negative
-    prediction displayed as N/A.
+    `standardize_missing`, through `is_missing_value`, and the web app's
+    `normalizeMissingValue`, which the bundle contract suite pins it to.
+    `none` was one of them, so every negative prediction displayed as N/A.
     """
 
     LABEL = BiocentralPredictionRetriever._extract_transmembrane(
@@ -138,10 +115,8 @@ class TestNoTransmembraneIsACategory:
         assert standardize_missing(pd.Series([self.LABEL])).tolist() == [self.LABEL]
 
     def test_the_web_app_keeps_it(self):
-        tokens = _web_missing_tokens()
-
-        assert "none" in tokens  # the list was read, and still has the old label
-        assert self.LABEL.strip() and self.LABEL.strip().lower() not in tokens
+        assert is_missing_value("none")  # the old label still reads as missing
+        assert not is_missing_value(self.LABEL)
 
 
 class TestPerSequenceExtraction:
