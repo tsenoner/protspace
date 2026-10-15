@@ -241,7 +241,11 @@ def compute_statistics(
             if not getattr(s, "requires_embedding", False) or ctx.embedding is not None
         ]
         _run_stats(report, ctx, runnable, kind="projection")
-        contexts.append(ctx)
+        # Kept without the aligned embedding (possibly a GB-scale copy): scoring a
+        # cluster column needs only the projection's own coords and ids.
+        contexts.append(
+            replace(ctx, embedding=None, embedding_coords=None, embedding_ids=None)
+        )
 
     # Once-per-embedding pass: annotation-validity on the source embedding itself
     # (the true-separability "ceiling") and embedding-space auto-clustering, each
