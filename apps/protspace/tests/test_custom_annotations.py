@@ -461,3 +461,72 @@ class TestProject:
         assert "prepare" in plain(result.output)
         assert "--annotations" not in result.output
         assert "--stats" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Embedding options with nothing to embed
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingOptionsOnHdf5:
+    def _prepare(self, tmp_path, monkeypatch, *extra):
+        _forbid_uniprot(monkeypatch)
+        csv = _write(tmp_path / "labels.csv", "identifier,family\nP1,a\n")
+        return _invoke(
+            "prepare",
+            "-i",
+            f"{_h5(tmp_path)}:E",
+            "-a",
+            csv,
+            "--no-log",
+            "-o",
+            tmp_path / "out",
+            *extra,
+        )
+
+    @pytest.mark.parametrize(
+        "extra, flag",
+        [
+            (["-b", "local"], "-b/--backend"),
+            (["--max-length", "100"], "--max-length"),
+            (["--batch-size", "4"], "--batch-size"),
+        ],
+    )
+    def test_a_given_option_warns_and_the_run_completes(
+        self, tmp_path, monkeypatch, extra, flag
+    ):
+        result = self._prepare(tmp_path, monkeypatch, *extra)
+        assert result.exit_code == 0, result.output
+        message = plain(result.output)
+        assert flag in message
+        assert "no effect" in message
+
+    def test_defaults_do_not_warn(self, tmp_path, monkeypatch):
+        result = self._prepare(tmp_path, monkeypatch)
+        assert result.exit_code == 0, result.output
+        assert "no effect" not in result.output
+
+
+def test_hdf5_only_prepare_imports_no_embedding_backend(tmp_path):
+    """Run in a fresh interpreter: this one has imported the backends already."""
+    csv = _write(tmp_path / "labels.csv", "identifier,family\nP1,a\n")
+    script = textwrap.dedent(
+        f"""
+        import sys
+        from typer.testing import CliRunner
+        from protspace.cli.app import app
+
+        result = CliRunner().invoke(app, [
+            "prepare", "-i", {f"{_h5(tmp_path)}:E"!r}, "-a", {csv!r}, "-b", "local",
+            "-m", "pca2", "--no-log", "-o", {str(tmp_path / "out")!r},
+        ])
+        assert result.exit_code == 0, result.output
+        loaded = ("protspace.data.embedding", "biocentral_api", "torch")
+        print(",".join(m for m in loaded if m in sys.modules))
+        """
+    )
+    run = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip().splitlines()[-1:] in ([], [""]), run.stdout

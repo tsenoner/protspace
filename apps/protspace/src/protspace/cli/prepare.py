@@ -46,6 +46,7 @@ from protspace.cli.common_options import (
     build_embed_config,
     parse_refetch,
     require_similarity_extra,
+    warn_unused_embed_options,
 )
 
 logger = logging.getLogger(__name__)
@@ -242,6 +243,7 @@ def _embed_all(
 
 @app.command(rich_help_panel=PANEL_START)
 def prepare(
+    ctx: typer.Context,
     # Input
     input: Opt_Input = None,
     query: Opt_Query = None,
@@ -374,7 +376,13 @@ def prepare(
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
-    embed_config = build_embed_config(backend, batch_size, max_length)
+    # Only a run that embeds needs the config, and building one imports the
+    # embedding backends (biocentral_api, and torch where installed).
+    embed_config = None
+    if has_fasta or query:
+        embed_config = build_embed_config(backend, batch_size, max_length)
+    else:
+        warn_unused_embed_options(ctx)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
@@ -589,7 +597,7 @@ def _write_run_log(
     query: str | None,
     input_specs: list[tuple[Path, str | None]],
     embedders: list[str],
-    embed_config: EmbedConfig | LocalEmbedConfig,
+    embed_config: EmbedConfig | LocalEmbedConfig | None,
     pipeline_config: PipelineConfig,
     similarity: bool,
     scores: bool,
@@ -609,7 +617,7 @@ def _write_run_log(
     ts_end = datetime.now(UTC)
     n_projections = len(pipeline_config.methods) * n_embedding_sets
     rp = asdict(pipeline_config.reducer_params)
-    ec = asdict(embed_config)
+    ec = asdict(embed_config) if embed_config is not None else {}
 
     lines = [
         "# protspace run log",

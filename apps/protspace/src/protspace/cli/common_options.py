@@ -4,11 +4,14 @@ Import these in any CLI command to avoid duplicating option definitions.
 """
 
 import importlib.util
+import logging
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
+
+logger = logging.getLogger(__name__)
 
 
 class Metric(StrEnum):
@@ -240,7 +243,8 @@ Opt_Backend = Annotated[
         "--backend",
         help=(
             "Embedding engine: 'biocentral' (remote API, default) or 'local' "
-            "(on-device GPU/CPU; needs `pip install protspace\\[local]`)."
+            "(on-device GPU/CPU; needs `pip install protspace\\[local]`). Only used "
+            "when sequences are embedded; ignored for .h5 input."
         ),
         rich_help_panel="Embedding",
     ),
@@ -282,6 +286,37 @@ Opt_Fasta = Annotated[
         rich_help_panel="Input",
     ),
 ]
+
+
+# The embedding options, by parameter name, as `warn_unused_embed_options` names them.
+EMBED_OPTION_FLAGS = {
+    "backend": "-b/--backend",
+    "batch_size": "--batch-size",
+    "max_length": "--max-length",
+}
+
+
+def warn_unused_embed_options(ctx: typer.Context) -> None:
+    """Warn about embedding options given to a run that embeds nothing.
+
+    Only options the user gave count (Click's parameter source), so a default never warns.
+    A warning rather than an error: the run is otherwise correct, and `-b local` on an .h5
+    is a common guess at a fix for an unrelated failure.
+    """
+    # Compared by name: Typer vendors its own Click, so `click.core.ParameterSource`
+    # is not the enum the context returns.
+    given = [
+        flag
+        for name, flag in EMBED_OPTION_FLAGS.items()
+        if getattr(ctx.get_parameter_source(name), "name", "DEFAULT") != "DEFAULT"
+    ]
+    if given:
+        logger.warning(
+            "%s %s no effect here: embedding options apply only when sequences are "
+            "embedded (FASTA input or -q), and this run reads existing embeddings.",
+            ", ".join(given),
+            "has" if len(given) == 1 else "have",
+        )
 
 
 def build_embed_config(
