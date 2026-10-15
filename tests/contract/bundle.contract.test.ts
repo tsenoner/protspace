@@ -571,6 +571,9 @@ describe('bundles the web app exports, read by the Python tooling', () => {
 // prediction, `none`, came to be displayed as N/A (#339).
 describe('what counts as a missing annotation value', () => {
   it('names the same missing-value spellings as the producer', () => {
+    // Both sets are generated from contracts/shared-constants.json, whose own check covers
+    // the generated modules. This compares the sets each side actually uses, so a re-export
+    // replaced by a local literal still fails here.
     expect([...MISSING_VALUE_TOKENS].sort()).toEqual(manifest.missingValueTokens);
   });
 

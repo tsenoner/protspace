@@ -20,6 +20,14 @@ import re
 import pandas as pd
 import pyarrow as pa
 
+# Re-exported: the labels an Arrow ``BOOLEAN`` annotation column is stored as in a
+# v3 bundle, lower case as the browser shows one, shared with the web through
+# contracts/shared-constants.json. Not CANONICAL_BOOLEANS below, which are string
+# cells the pipeline writes itself.
+from protspace._generated.shared_constants import (
+    ARROW_BOOLEAN_LABELS as ARROW_BOOLEAN_LABELS,
+)
+
 #: The annotation **cell grammar** version: ``1`` is the legacy raw-text grammar,
 #: ``2`` the percent-encoded one this module writes.  It is stamped under
 #: :data:`FORMAT_VERSION_KEY` on every v2-shaped annotations table (a legacy
@@ -86,12 +94,6 @@ ANNOTATION_CACHE_VERSION_ATTR = "protspace_annotation_cache_version"
 # so every transform that emits one must also accept one unchanged — otherwise a
 # second pass reinterprets its own output as raw source data.
 CANONICAL_BOOLEANS = ("False", "True")
-
-# The labels an Arrow ``BOOLEAN`` annotation column is stored as in a v3 bundle:
-# lower case, as the browser has always displayed one (``String(true)``), so
-# legend colours saved against a v2 bundle keep matching. Not CANONICAL_BOOLEANS,
-# which are string cells the pipeline writes itself.
-ARROW_BOOLEAN_LABELS = ("false", "true")
 
 # Chars that must be percent-encoded inside any free-text token.
 _RESERVED = {";", "|", "%"} | {chr(c) for c in range(0x20)} | {chr(0x7F)}

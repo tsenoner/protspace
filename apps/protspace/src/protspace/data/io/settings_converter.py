@@ -14,37 +14,19 @@ plus UI preferences (maxVisibleValues, sortMode, hiddenValues, etc.).
 
 import re
 
+# Kelly's colours in the web's slot order, the web's N/A key and its N/A swatch,
+# generated from contracts/shared-constants.json.
+from protspace._generated.shared_constants import (
+    KELLYS_COLORS,
+    NA_DEFAULT_COLOR,
+    NA_VALUE,
+)
 from protspace.core.constants import is_missing_value
 
 NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
-NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
-NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
+NA_INTERNAL = NA_VALUE  # frontend internal key for N/A categories
+NA_PINNED_COLOR = NA_DEFAULT_COLOR  # the web's N/A swatch, used for a pinned N/A
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
-
-# Kelly's 21 Colors of Maximum Contrast (same order as the web frontend)
-KELLYS_COLORS = [
-    "#F3C300",
-    "#875692",
-    "#F38400",
-    "#A1CAF1",
-    "#BE0032",
-    "#C2B280",
-    "#008856",
-    "#E68FAC",
-    "#0067A5",
-    "#F99379",
-    "#604E97",
-    "#F6A600",
-    "#B3446C",
-    "#DCD300",
-    "#882D17",
-    "#8DB600",
-    "#654522",
-    "#E25822",
-    "#2B3D26",
-    "#F2F3F4",
-    "#222222",
-]
 
 
 def is_na_label(value: str) -> bool:

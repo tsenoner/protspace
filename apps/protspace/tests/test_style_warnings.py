@@ -6,13 +6,11 @@ Covers three things:
   per-value colors/shapes set via the CLI are silently dropped;
 - the `selectedPaletteId` validation warning (gradient/unknown id → resets to
   kellys in the frontend);
-- a contract keeping the Python palette-id catalog equal to the frontend's,
-  read from its TypeScript source (see the section below).
+- the palette catalog, generated from contracts/shared-constants.json like the
+  web's (see the section below).
 """
 
 import logging
-import re
-from pathlib import Path
 
 import pyarrow as pa
 import pytest
@@ -31,8 +29,6 @@ from protspace.utils.add_annotation_style import (
     resolve_style_key,
     style_keys,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _make_bundle(tmp_path, ids, annotation_columns):
@@ -190,64 +186,16 @@ def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplo
     assert not any("kellys" in m for m in messages)
 
 
-# --- contract: keep the Python palette catalog in sync with the frontend ---
+# --- palette catalog --------------------------------------------------------
 #
-# The source of truth is the web frontend, read here from its source (protspace
-# cannot import TypeScript):
-#   packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
-#   packages/utils/src/visualization/numeric-binning.ts
-#                       (GRADIENT_COLOR_SCHEME_IDS, DEFAULT_NUMERIC_PALETTE_ID)
-# A palette added, renamed or moved between the sets there fails these tests;
-# update add_annotation_style.py and docs/guide/styling.md (Color palettes) to match.
-
-_WEB_VISUALIZATION = REPO_ROOT / "packages" / "utils" / "src" / "visualization"
+# The ids come from contracts/shared-constants.json, which also generates the web's;
+# the generator checks the sets are disjoint and that the numeric default is a
+# gradient. This pins the one id the CLI writes and the web falls back to.
 
 
-def _web_source_match(file_name: str, pattern: str) -> re.Match:
-    path = _WEB_VISUALIZATION / file_name
-    match = re.search(pattern, path.read_text(), re.S)
-    assert match, f"{pattern!r} not found in {path}"
-    return match
-
-
-def _web_palette_ids() -> set[str]:
-    """Every key of the web's COLOR_SCHEMES."""
-    block = _web_source_match(
-        "color-scheme.ts", r"export const COLOR_SCHEMES = \{(.*?)\} as const;"
-    ).group(1)
-    ids = set(re.findall(r"^\s*(\w+):", block, re.M))
-    assert ids, f"no palette ids in COLOR_SCHEMES: {block!r}"
-    return ids
-
-
-def _web_gradient_palette_ids() -> set[str]:
-    block = _web_source_match(
-        "numeric-binning.ts", r"GRADIENT_COLOR_SCHEME_IDS = new Set\(\[(.*?)\]\)"
-    ).group(1)
-    ids = set(re.findall(r"'(\w+)'", block))
-    assert ids, f"no ids in GRADIENT_COLOR_SCHEME_IDS: {block!r}"
-    return ids
-
-
-def test_gradient_palette_ids_match_the_web_app():
-    assert set(_GRADIENT_PALETTE_IDS) == _web_gradient_palette_ids()
-
-
-def test_categorical_palette_ids_match_the_web_app():
-    # The web has no categorical list of its own: it is every scheme that is
-    # not a gradient.
-    web_categorical = _web_palette_ids() - _web_gradient_palette_ids()
-    assert set(_CATEGORICAL_PALETTE_IDS) == web_categorical
-
-
-def test_palette_defaults_belong_to_their_sets():
-    # 'kellys' is what the CLI writes and the frontend resets to; numeric
-    # columns default to the web's DEFAULT_NUMERIC_PALETTE_ID.
+def test_kellys_is_a_categorical_palette():
     assert "kellys" in _CATEGORICAL_PALETTE_IDS
-    default_numeric = _web_source_match(
-        "numeric-binning.ts", r"DEFAULT_NUMERIC_PALETTE_ID = '(\w+)'"
-    ).group(1)
-    assert default_numeric in _GRADIENT_PALETTE_IDS
+    assert "kellys" not in _GRADIENT_PALETTE_IDS
 
 
 # ---------------------------------------------------------------------------

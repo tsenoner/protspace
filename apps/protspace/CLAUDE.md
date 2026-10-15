@@ -122,6 +122,8 @@ Model shortcuts are defined in `MODEL_SHORT_KEYS` (the models the client lists i
 
 ```
 src/protspace/
+├── _generated/
+│   └── shared_constants.py     # Values shared with the web app, generated from contracts/shared-constants.json (`pnpm shared-constants`); never edit, re-exported under their old names
 ├── cli/
 │   ├── app.py                  # Typer app root, shared utilities, setup_logging()
 │   ├── common_options.py       # Shared Typer options
@@ -315,7 +317,8 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence), batches of at most `_BATCH_SIZE`, a failed batch keeps the others and warns clear of `_BIOCENTRAL_DOWN_PATTERNS`, long sequences still sent, no usable server fails the source and the warning says why, a model the client no longer lists fails the source (blank columns would be cached as complete) and every model the retriever names is one the client lists |
 | `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
-| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
+| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type); `kellys` is a categorical palette |
+| `test_shared_constants.py` | Every name the package exports for a constant shared with the web app (`MISSING_VALUE_TOKENS`, `NA_INTERNAL`, `NA_PINNED_COLOR`, `KELLYS_COLORS`, the palette ids, `ALLOWED_SHAPES`, `ARROW_BOOLEAN_LABELS`) holds the value generated from `contracts/shared-constants.json`; the generated module is plain data (no imports) |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | BaseProcessor: reduction (the MDS input actually fed: a similarity matrix converted with `sqrt(max(s) - s)`, a distance matrix passed through), output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
