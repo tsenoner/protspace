@@ -10,9 +10,7 @@ export function openDocumentation(): void {
   window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
 }
 
-/** Starts the product tour from its first step; its code loads on first use. */
+/** Starts the full product tour from its first step; its code loads on first use. */
 export function startTour(): void {
-  void import('../tour/product-tour').then(({ startProductTour }) =>
-    startProductTour({ force: true }),
-  );
+  void import('../tour/product-tour').then((tour) => tour.startTour('full', { force: true }));
 }

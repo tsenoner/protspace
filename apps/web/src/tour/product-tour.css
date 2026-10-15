@@ -188,7 +188,8 @@
 .driver-popover-footer .driver-popover-prev-btn:focus-visible,
 .driver-popover-footer .driver-popover-next-btn:focus-visible,
 .driver-popover-footer .driver-popover-close-btn-text:focus-visible,
-.driver-popover-footer .driver-tour-skip-btn:focus-visible {
+.driver-popover-footer .driver-tour-skip-btn:focus-visible,
+.driver-popover-footer .driver-tour-full-btn:focus-visible {
   outline: var(--ps-focus-width) solid var(--ps-focus);
   outline-offset: var(--ps-focus-offset);
 }
@@ -225,10 +226,12 @@
   box-shadow: var(--ps-shadow-sm);
 }
 
-/* ── Skip button (ghost, first step only) ─────────────────── */
+/* ── Skip and Full tour (ghost, first step only) ──────────── */
 
 .driver-popover-footer .driver-tour-skip-btn,
-.driver-popover-footer .driver-tour-skip-btn:focus {
+.driver-popover-footer .driver-tour-skip-btn:focus,
+.driver-popover-footer .driver-tour-full-btn,
+.driver-popover-footer .driver-tour-full-btn:focus {
   display: inline-flex;
   align-items: center;
   border: none;
@@ -246,7 +249,8 @@
   transition: color 0.2s ease;
 }
 
-.driver-popover-footer .driver-tour-skip-btn:hover {
+.driver-popover-footer .driver-tour-skip-btn:hover,
+.driver-popover-footer .driver-tour-full-btn:hover {
   background: none;
   color: var(--ps-text);
 }

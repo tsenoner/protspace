@@ -141,10 +141,6 @@ const STATES: State[] = [
         'Welcome to ProtSpace',
       );
     },
-    // driver.js 1.4 anchors a step without an element to its own invisible 0×0
-    // #driver-dummy-element and sets aria-expanded/aria-haspopup on it, a plain <div> (axe
-    // aria-allowed-attr). Follow-up: fix upstream or drop the dummy anchor in the tour rewrite (7.4).
-    axe: { exclude: ['#driver-dummy-element'] },
   },
 ];
 

@@ -9,7 +9,7 @@ import {
   getFilterRemovedNotification,
   getRendererDegradedNotification,
 } from './notifications';
-import { startProductTour } from '../tour/product-tour';
+import { chooseTour, type TourKind } from '../tour/storage-key';
 import { createDatasetController } from './dataset-controller';
 import { confirmAction } from './confirm-dialog';
 import { getElements, waitForElements } from './elements';
@@ -75,6 +75,18 @@ function addTrackedEventListener(
 ) {
   target.addEventListener(type, listener, options);
   lifecycle.addCleanup(() => target.removeEventListener(type, listener, options));
+}
+
+/**
+ * The tour this visit gets on its first load. Storage that cannot be read starts none: with no
+ * record to write, the tour would replay on every visit.
+ */
+function firstVisitTour(): TourKind | null {
+  try {
+    return chooseTour((key) => localStorage.getItem(key));
+  } catch {
+    return null;
+  }
 }
 
 export async function initializeExploreRuntime(): Promise<ExploreController> {
@@ -707,7 +719,9 @@ export async function initializeExploreRuntime(): Promise<ExploreController> {
     'data-loaded',
     () => {
       lifecycle.scheduleTimeout(() => {
-        startProductTour();
+        const kind = firstVisitTour();
+        // driver.js and its CSS load only when a tour runs, so they stay out of the explore chunk.
+        if (kind) void import('../tour/product-tour').then((tour) => tour.startTour(kind));
       }, 800);
     },
     { once: true },

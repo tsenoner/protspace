@@ -4,25 +4,26 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export { clickLegendItem, getFirstLegendItemValue, isLegendItemHidden } from './legend';
 import { getFirstLegendItemValue } from './legend';
 
+/** The first step of either tour; driver.js names its popover dialog after the step's title. */
+const TOUR_FIRST_STEP = /^(Welcome to ProtSpace|What's new in ProtSpace)$/;
+
 export async function dismissTourIfPresent(page: Page): Promise<void> {
-  const tourDialog = page.getByRole('dialog', { name: 'Welcome to ProtSpace' });
-  const skipButton = page.getByRole('button', { name: 'Skip' });
-  const closeButton = page.getByRole('button', { name: 'Close' }).first();
+  const tourDialog = page.getByRole('dialog', { name: TOUR_FIRST_STEP });
+  const skipButton = page.locator('.driver-tour-skip-btn');
 
   if (await tourDialog.isVisible()) {
     if (await skipButton.isVisible().catch(() => false)) {
       await skipButton.click();
-    } else if (await closeButton.isVisible().catch(() => false)) {
-      await closeButton.click();
+    } else {
+      await page.locator('.driver-popover-close-btn').click();
     }
-
     await expect(tourDialog).toBeHidden();
     return;
   }
 
-  const legacySkipButton = page.locator('.driver-tour-skip-btn');
-  if ((await legacySkipButton.count()) > 0) {
-    await legacySkipButton.click();
+  // A first step still rendering: its Skip is already there.
+  if ((await skipButton.count()) > 0) {
+    await skipButton.click();
     await page.waitForSelector('.driver-popover', { state: 'detached', timeout: 5_000 });
   }
 }

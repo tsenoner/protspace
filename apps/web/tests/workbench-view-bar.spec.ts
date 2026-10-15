@@ -126,7 +126,7 @@ test.describe('the view bar', () => {
     expect(topmost).toBe(true);
   });
 
-  test("the tour's projections step highlights the view bar group", async ({ page }) => {
+  test("the tour's view bar step highlights the view bar", async ({ page }) => {
     await openExplore(page);
     await appBar(page).getByRole('button', { name: 'Help' }).click();
     await page.getByRole('menuitem', { name: 'Take the tour' }).click();
@@ -134,13 +134,11 @@ test.describe('the view bar', () => {
     const title = page.locator('.driver-popover .driver-popover-title');
     await expect(title).toHaveText('Welcome to ProtSpace');
     await page.locator('.driver-popover-next-btn').click();
-    await expect(title).toHaveText('Import Your Data');
+    await expect(title).toHaveText('Import & Export');
     await page.locator('.driver-popover-next-btn').click();
-    await expect(title).toHaveText('Projections & Annotations');
+    await expect(title).toHaveText('The View Bar');
 
-    await expect(
-      page.locator('[data-workbench="view-bar"] [data-driver-id="projections"]'),
-    ).toHaveClass(/driver-active-element/);
+    await expect(viewBar(page)).toHaveClass(/driver-active-element/);
   });
 });
 

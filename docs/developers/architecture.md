@@ -157,6 +157,21 @@ attribute from storage before first paint, and an unlayered `<style>` paints the
 until the lazy chunk adopts the tokens; `theme-boot.test.ts` pins the script's key, choices and
 default and the style's colour to `theme-defaults.ts` and `theme.ts`.
 
+## Tour
+
+The product tour (`apps/web/src/tour/`) is data first. `tour-steps.ts` lists the steps of the full
+tour and of the shorter What's new tour for a layout mode, a coarse or fine pointer and a Mac or
+other keyboard, with no driver.js import, so every list is unit-tested. `product-tour.ts` builds
+the list for the window when a tour starts, drops a step whose target is not on screen, and drives
+the rest with driver.js. While it runs it holds a layer from `pushLayer`, so Escape closes the tour
+and nothing else, and a change of layout mode ends it. `localStorage` keeps the kind shown under
+`protspace:tour:v2` (`TOUR_STORAGE_KEY` in the leaf `storage-key.ts`); `chooseTour` gives a first
+visit the full tour and a visitor holding the pre-workbench key `driver.overviewTour` What's new
+once. That old key is read and never written or removed, so a rollback does not replay the old
+tour. The runtime and the Help menu import `product-tour.ts` lazily, which keeps driver.js out of
+the explore chunk. Tests, the perf harness and the docs captures seed the key through
+`apps/web/tests/helpers/tour-storage-state.ts`, never as a literal.
+
 ## Filter panel
 
 The app's filter controller (`apps/web/src/explore/filter-controller.ts`) keeps two queries: the

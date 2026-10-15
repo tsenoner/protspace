@@ -1,100 +1,162 @@
 /**
- * ProtSpace Product Tour
+ * The ProtSpace product tour (design decisions 1, 11, 16 and 17; the Migration Plan). The steps are
+ * data (`tour-steps.ts`); this module builds the list for the window when a tour starts, drops a
+ * step whose target is not on screen, and drives the rest with driver.js. The runtime and the Help
+ * menu import it lazily, so driver.js and its CSS stay out of the explore chunk.
  *
- * Self-contained module that defines and drives an overview tour of the
- * Explore page using driver.js.  All step definitions live here so that
- * the rest of the codebase only needs to:
- *   1. add `data-driver-id="…"` attributes to the elements it wants to
- *      highlight, and
- *   2. call `startProductTour()`.
- *
- * For elements inside Shadow DOM (the legend's "Other" row) we use the
- * `() => Element` function form supported by driver.js, which resolves the
- * element lazily at step-activation time.
+ * The Other row lives in the legend's shadow root: its step uses driver.js's `() => Element` form,
+ * resolved when the step activates, and cleans up what `document.querySelectorAll` cannot reach.
  */
 
 import { type Config, driver, type DriveStep, type PopoverDOM, type State } from 'driver.js';
+// The kit entry, not '@protspace/core': Help imports this module from the shell, and a value
+// import of core there would load all of core early (eslint.config.mjs:81-84). kit.mjs and
+// core.mjs share one kit chunk, so there is one layer stack.
+import { pushLayer } from '@protspace/core/kit';
 import { isMacOrIos } from '@protspace/utils';
-import { getLayout, updateLayout } from '../explore/layout-state';
+import { getLayoutMode, subscribeLayoutMode } from '../explore/layout-mode';
+import { openPanel } from '../explore/layout-state';
 import './product-tour.css';
+import { TOUR_STORAGE_KEY, type TourKind } from './storage-key';
+import { tourSteps, type TourStepSpec } from './tour-steps';
 import { waitForElement } from './wait-for-element';
-import { TOUR_STORAGE_KEY } from './storage-key';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Host selector for the legend custom element. */
-const LEGEND = '[data-driver-id="legend"]';
-
-// ---------------------------------------------------------------------------
-// Driver instance (singleton)
-// ---------------------------------------------------------------------------
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+const COARSE_POINTER = '(pointer: coarse)';
+/** The attributes driver.js sets on a highlighted element and removes when it moves on. */
+const ARIA_STATE = ['aria-haspopup', 'aria-expanded', 'aria-controls'] as const;
 
 const driverObj = driver();
 
+/** What a running tour holds: its Escape layer and its layout-mode listener. */
+let running: { release: () => void; unsubscribe: () => void } | null = null;
+/** The control the first step lifted above the overlay, until that step is left. */
+let spotlit: string | null = null;
+/** Each light-DOM target's own aria state, put back when driver.js leaves it. */
+let savedAria: Array<{ element: Element; values: Array<string | null> }> = [];
+/** The running tour's targets inside a shadow root, which driver.js cannot unlight. */
+let shadowTargets: Array<{ host: string; inner: string }> = [];
+/** Bumped by every start: a start superseded while its layout settles never drives. */
+let startCount = 0;
+
 // ---------------------------------------------------------------------------
-// Shadow DOM helpers
+// Shadow DOM
 // ---------------------------------------------------------------------------
 
-/**
- * Resolve an element inside a host's Shadow DOM.
- * Returns `undefined` when the element cannot be found (driver.js treats
- * that as a centred popover with no highlight).
- */
-function shadowEl(hostSelector: string, shadowSelector: string): Element | undefined {
+/** An element inside a host's shadow root, or undefined (a dropped or centred step). */
+function shadowEl(hostSelector: string, innerSelector: string): Element | undefined {
   const host = document.querySelector(hostSelector);
-  return host?.shadowRoot?.querySelector(shadowSelector) ?? undefined;
+  return host?.shadowRoot?.querySelector(innerSelector) ?? undefined;
 }
 
-/**
- * Clean up driver.js classes/attributes that `document.querySelectorAll`
- * cannot reach inside Shadow DOM after a step is deselected.
- */
-function cleanupShadowElement(element: Element | undefined) {
+/** What driver.js cannot remove inside a shadow root after a step is deselected. */
+function cleanupShadowElement(element: Element | undefined): void {
   if (!element) return;
   element.classList.remove('driver-active-element', 'driver-no-interaction');
-  element.removeAttribute('aria-haspopup');
-  element.removeAttribute('aria-expanded');
-  element.removeAttribute('aria-controls');
+  for (const name of ARIA_STATE) element.removeAttribute(name);
 }
 
 // ---------------------------------------------------------------------------
-// Help spotlight (step 1)
+// Spotlight (the first step)
 // ---------------------------------------------------------------------------
 
-/** The app bar's Help button, where the tour and the shortcuts live. */
-const HELP = '[data-driver-id="help"]';
-
 /**
- * Add or remove a visual spotlight on the Help button. Used during the centred welcome step so
- * the user can see where to find the tour later, even though the popover is not attached to it.
- *
- * The glow goes on the `<button>` inside `<ps-icon-button>`'s shadow DOM (not the host), so it
- * follows the button's rounded shape. Lifting the host above the overlay works because the app
- * bar creates no stacking context.
+ * Lifts the control where the tour lives (Help, or More on a phone) above the overlay and outlines
+ * it, while the centred first step shows. A kit button glows on its inner `<button>`, so the ring
+ * follows its rounded shape; a plain element glows itself. Lifting the host works because the bars
+ * create no stacking context.
  */
-function spotlightHelp(on: boolean) {
-  const host = document.querySelector(HELP);
-  if (!(host instanceof HTMLElement)) return;
-  const button = host.shadowRoot?.querySelector('button');
-  if (!(button instanceof HTMLElement)) return;
-
+function setSpotlight(selector: string, on: boolean): void {
+  const host = document.querySelector<HTMLElement>(selector);
+  if (!host) return;
+  const glow = host.shadowRoot?.querySelector<HTMLElement>('button') ?? host;
   if (on) {
-    // Lift the host above the driver.js overlay (z-index ~100000)
+    // Above the driver.js overlay (z-index ~100000); the focus token follows the theme.
     host.style.zIndex = '100001';
-    // Glow on the rounded button so there are no corner artifacts; the focus token follows the theme
-    button.style.boxShadow = '0 0 0 3px var(--ps-focus)';
-    button.style.transition = 'box-shadow 0.3s ease';
+    glow.style.boxShadow = '0 0 0 3px var(--ps-focus)';
+    glow.style.transition = 'box-shadow 0.3s ease';
   } else {
     host.style.removeProperty('z-index');
-    button.style.removeProperty('box-shadow');
-    button.style.removeProperty('transition');
+    glow.style.removeProperty('box-shadow');
+    glow.style.removeProperty('transition');
   }
 }
 
+function clearSpotlight(): void {
+  if (spotlit !== null) setSpotlight(spotlit, false);
+  spotlit = null;
+}
+
 // ---------------------------------------------------------------------------
-// Navigation helpers
+// Aria state
+// ---------------------------------------------------------------------------
+
+function saveAria(steps: readonly TourStepSpec[]): void {
+  savedAria = steps.flatMap((step) => {
+    if (typeof step.target !== 'string') return [];
+    const element = document.querySelector(step.target);
+    return element
+      ? [{ element, values: ARIA_STATE.map((name) => element.getAttribute(name)) }]
+      : [];
+  });
+}
+
+/**
+ * driver.js unlights only the element it recorded when the last highlight finished, so a step left
+ * during its highlight transition (a quick Next) stays lit. Once a highlight finishes, every other
+ * target is unlit, the Other row inside the legend's shadow root too.
+ */
+function unlightOthers(active: Element | undefined): void {
+  document.querySelectorAll('.driver-active-element').forEach((element) => {
+    if (element !== active && element.id !== 'driver-dummy-element') {
+      element.classList.remove('driver-active-element', 'driver-no-interaction');
+    }
+  });
+  for (const { host, inner } of shadowTargets) {
+    const element = shadowEl(host, inner);
+    if (element !== active) cleanupShadowElement(element);
+  }
+}
+
+/** Puts back every saved target's own attributes, except on the element highlighted now. */
+function restoreAria(active?: Element): void {
+  for (const { element, values } of savedAria) {
+    if (element === active) continue;
+    ARIA_STATE.forEach((name, index) => {
+      const value = values[index];
+      if (value === null) element.removeAttribute(name);
+      else element.setAttribute(name, value);
+    });
+  }
+}
+
+/**
+ * driver.js anchors a centred step to its own invisible 0×0 `#driver-dummy-element` and marks it as
+ * a popup button, which a plain `<div>` may not be (axe aria-allowed-attr).
+ */
+function stripDummyAria(): void {
+  const dummy = document.getElementById('driver-dummy-element');
+  for (const name of ARIA_STATE) dummy?.removeAttribute(name);
+}
+
+// ---------------------------------------------------------------------------
+// Ending
+// ---------------------------------------------------------------------------
+
+/** Every way out: Skip, Finish, the close button, the overlay, Escape and a layout change. */
+function endTour(): void {
+  clearSpotlight();
+  running?.release();
+  running?.unsubscribe();
+  running = null;
+  driverObj.destroy();
+  restoreAria();
+  savedAria = [];
+  shadowTargets = [];
+}
+
+// ---------------------------------------------------------------------------
+// Navigation
 // ---------------------------------------------------------------------------
 
 const moveNext = async (driverOpts: { config: Config; state: State }) => {
@@ -128,182 +190,97 @@ const movePrevious = async (driverOpts: { config: Config; state: State }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Popover render hook (shared)
+// Steps
 // ---------------------------------------------------------------------------
 
-const onPopoverRenderBase = (popover: PopoverDOM) => {
+const onPopoverRender = (popover: PopoverDOM): void => {
+  // driver.js marks the dummy anchor right after this hook returns, on the first step.
+  queueMicrotask(stripDummyAria);
   setTimeout(() => {
-    popover.wrapper.addEventListener('click', (e) => e.stopPropagation());
-    // Prevent the close button from being automatically focused
+    popover.wrapper.addEventListener('click', (event) => event.stopPropagation());
+    // Keep the close button from being focused automatically.
     popover.closeButton?.blur();
   }, 5);
 };
 
-// ---------------------------------------------------------------------------
-// Shadow-DOM step helper
-// ---------------------------------------------------------------------------
-
-/** Build a Shadow DOM step targeting a `data-driver-id` attribute. */
-function shadowStep(host: string, driverId: string, popover: DriveStep['popover']): DriveStep {
-  const selector = `[data-driver-id="${driverId}"]`;
-  return {
-    element: () => shadowEl(host, selector) as Element,
-    popover: {
-      ...popover,
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-    onDeselected: () => cleanupShadowElement(shadowEl(host, selector)),
-  };
+function footerButton(text: string, className: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = text;
+  button.className = className;
+  button.addEventListener('click', onClick);
+  return button;
 }
 
-// ---------------------------------------------------------------------------
-// Step definitions
-// ---------------------------------------------------------------------------
+/** A step when it is on screen now: centred, or a target with a box. */
+function isShown(target: TourStepSpec['target']): boolean {
+  if (target === null) return true;
+  const element =
+    typeof target === 'string'
+      ? document.querySelector(target)
+      : shadowEl(target.host, target.inner);
+  if (!element) return false;
+  const { width, height } = element.getBoundingClientRect();
+  return width > 0 && height > 0;
+}
 
-const steps: DriveStep[] = [
-  // ── Step 1 – Welcome (centred, ? icon spotlighted) ──────────
-  {
-    popover: {
-      title: 'Welcome to ProtSpace',
-      description:
-        'This short tour will walk you through the main features. You can skip it anytime\u2009—\u2009look for the highlighted <strong>?</strong> icon to replay it later or see shortcuts.',
-      nextBtnText: 'Start Tour',
-      showButtons: ['close', 'next'],
-      onPopoverRender: (popover) => {
-        onPopoverRenderBase(popover);
+function toDriveStep(spec: TourStepSpec, index: number, count: number, kind: TourKind): DriveStep {
+  const last = index === count - 1;
+  const popover: NonNullable<DriveStep['popover']> = {
+    title: spec.title,
+    description: spec.description,
+    onPrevClick: async (_element, _step, options) => movePrevious(options),
+    onNextClick: last
+      ? () => endTour()
+      : async (_element, _step, options) => {
+          // driver.js skips onDeselected when a step is left during its highlight transition, so
+          // Next clears the first step's spotlight itself; endTour covers every other way out.
+          clearSpotlight();
+          await moveNext(options);
+        },
+  };
 
-        // Add a "Skip" button before "Start Tour"
-        const skipButton = document.createElement('button');
-        skipButton.innerText = 'Skip';
-        skipButton.className = 'driver-tour-skip-btn';
-        skipButton.addEventListener('click', () => {
-          spotlightHelp(false);
-          driverObj.destroy();
-        });
-        popover.nextButton.insertAdjacentElement('beforebegin', skipButton);
+  if (index === 0) {
+    popover.showButtons = ['close', 'next'];
+    popover.nextBtnText = 'Start Tour';
+    popover.onPopoverRender = (dom) => {
+      onPopoverRender(dom);
+      dom.nextButton.insertAdjacentElement(
+        'beforebegin',
+        footerButton('Skip', 'driver-tour-skip-btn', endTour),
+      );
+      if (kind === 'whats-new') {
+        dom.nextButton.insertAdjacentElement(
+          'beforebegin',
+          footerButton('Full tour', 'driver-tour-full-btn', () => {
+            endTour();
+            startTour('full', { force: true });
+          }),
+        );
+      }
+      if (spec.spotlight) {
+        setSpotlight(spec.spotlight, true);
+        spotlit = spec.spotlight;
+      }
+    };
+  }
+  if (last) {
+    popover.showButtons = ['close', 'previous', 'next'];
+    popover.nextBtnText = 'Finish';
+  }
 
-        // Spotlight Help so the user knows where to find the tour again
-        spotlightHelp(true);
-      },
-      // driver.js skips `onDeselected` when the step is left during its 400 ms highlight
-      // transition, so Next and Skip clear the spotlight themselves; `onDestroyStarted` covers
-      // every other way out.
-      onNextClick: async (_el, _step, opts) => {
-        spotlightHelp(false);
-        await moveNext(opts);
-      },
-    },
-  },
+  const step: DriveStep = { popover };
+  const { target } = spec;
+  if (typeof target === 'string') {
+    step.element = target;
+  } else if (target) {
+    step.element = () => shadowEl(target.host, target.inner) as Element;
+    step.onDeselected = () => cleanupShadowElement(shadowEl(target.host, target.inner));
+  }
+  return step;
+}
 
-  // ── Step 2 – Import menu (app bar) ──────────────────────────
-  {
-    element: '[data-driver-id="import"]',
-    popover: {
-      title: 'Import Your Data',
-      description:
-        'Click <strong>Import</strong> or drag-and-drop a file onto the canvas. A <code>.parquetbundle</code> loads entirely in your browser; a <code>.fasta</code> is uploaded to our server to be prepared first. No data yet? Pick one of the <strong>Examples</strong> in the Import menu. <a href="/docs/guide/data-preparation" target="_blank" rel="noopener">Learn how to prepare your data<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>.',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 3 – Projections & Annotations (view bar) ────────────
-  {
-    element: '[data-driver-id="projections"]',
-    popover: {
-      title: 'Projections & Annotations',
-      description:
-        'Switch between <strong>projections</strong> (UMAP, PCA, etc.) and choose which <strong>annotation</strong> to color the points by. <strong>Filter</strong> (in the same bar) opens a query builder for combining annotation conditions with AND/OR logic.',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 4 – Search (app bar) ───────────────────────────────
-  {
-    element: '[data-driver-id="search"]',
-    popover: {
-      title: 'Search Proteins',
-      description: `Press <kbd><span class="mod-key">${isMacOrIos() ? '⌘' : 'Ctrl+'}</span>K</kbd> or click here to search. Type a protein ID to find it instantly, or <strong>paste</strong> multiple IDs to select them all at once.`,
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 5 – Selection Tools (plot tool strip) ─────────────
-  {
-    element: '[data-driver-id="selection"]',
-    popover: {
-      title: 'Selection Tools',
-      description:
-        '<strong>Box select</strong> and <strong>Lasso select</strong> select the points you drag around; <strong>Move and zoom</strong> pans again, and <strong>Fit to view</strong> shows every point. Press <kbd>Esc</kbd> to clear the current selection; press it again to return to Move and zoom.<br><br>With a selection, the bar at the bottom of the plot offers <strong>Show only these</strong>, <strong>Zoom to them</strong>, <strong>Copy IDs</strong> and <strong>Clear</strong>; the ✕ on the <strong>Showing only</strong> chip shows every protein again.',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 6 – Export & Import (app bar) ──────────────────────
-  {
-    element: '[data-driver-id="data-actions"]',
-    popover: {
-      title: 'Export & Import',
-      description:
-        '<strong>Export</strong> opens the <strong>Figure Editor</strong> for publication-ready figures with journal presets, overlays, zoom insets, and legend customization — or use <strong>Quick Export</strong> for a fast PNG, PDF, protein IDs, or <code>.parquetbundle</code> dump. <strong>Import</strong> uploads a new dataset or loads one of the built-in examples.',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 7 – Scatterplot ────────────────────────────────────
-  {
-    element: '[data-driver-id="scatterplot"]',
-    popover: {
-      title: 'Interactive Scatterplot',
-      description: `Each point represents a protein. <strong>Hover</strong> over a point to see its details. <strong>Pan</strong> by dragging, <strong>zoom</strong> with the mouse wheel, and <strong>click</strong> a point to view its 3D structure (when available). Hold <kbd><span class="mod-key">${isMacOrIos() ? '⌘' : 'Ctrl'}</span>+Click</kbd> to toggle a point in or out of the current selection.`,
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 8 – Legend ─────────────────────────────────────────
-  {
-    element: '[data-driver-id="legend"]',
-    popover: {
-      title: 'Legend Panel',
-      description:
-        '<strong>Click</strong> a row to hide or show it, <strong>double-click</strong> to isolate it. Hover a row for its eye, its drag handle (higher rows are drawn on top) and <strong>⋯</strong> (<em>Show only this</em>, <em>Colour and shape</em>). Drag a category onto <strong>Other</strong> to merge it. The sort button in the header shows the order; the sliders button opens the legend settings.',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: async (_el, _step, opts) => moveNext(opts),
-    },
-  },
-
-  // ── Step 9 – Expand hidden categories (Shadow DOM in legend)
-  shadowStep(LEGEND, 'other-row', {
-    title: 'Expand Hidden Categories',
-    description:
-      'When there are many annotation values, the least frequent are grouped into <strong>Other</strong>. Click <strong>View</strong> to list them and add any back to the legend.',
-  }),
-
-  // ── Step 10 – Finish (centred, no element) ──────────────────
-  {
-    popover: {
-      title: "You're All Set!",
-      description:
-        'You now know the essentials. Remember, the <strong>?</strong> icon has shortcuts and a link to replay this tour. For more details, visit the <a href="/docs/" target="_blank" rel="noopener">documentation<svg class="external-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>. Happy exploring!',
-      showButtons: ['close', 'previous', 'next'],
-      nextBtnText: 'Finish',
-      onPrevClick: async (_el, _step, opts) => movePrevious(opts),
-      onNextClick: () => driverObj.destroy(),
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-driverObj.setConfig({
+const BASE_CONFIG: Config = {
   showProgress: true,
   disableActiveInteraction: true,
   // driver.js sets the overlay path's `style.fill` to this string, so a token works; the scrim
@@ -317,46 +294,95 @@ driverObj.setConfig({
   nextBtnText: 'Next',
   prevBtnText: 'Back',
 
-  onPopoverRender: onPopoverRenderBase,
-
-  // Every user close (the close button, Escape, an overlay click) comes through here, even during
-  // a step's highlight transition, when driver.js skips `onDeselected` and `onDestroyed`.
-  onDestroyStarted: () => {
-    spotlightHelp(false);
-    driverObj.destroy();
+  onPopoverRender,
+  onHighlighted: (element) => {
+    stripDummyAria();
+    unlightOthers(element);
+    restoreAria(element);
   },
-
-  steps,
-});
+  // Every user close (the close button, an overlay click) comes through here, even during a
+  // step's highlight transition, when driver.js skips `onDeselected` and `onDestroyed`.
+  onDestroyStarted: () => endTour(),
+};
 
 // ---------------------------------------------------------------------------
-// Public API
+// Starting
 // ---------------------------------------------------------------------------
 
-interface ProductTourOptions {
-  /** When `true` the tour starts regardless of localStorage state. */
-  force?: boolean;
+/** The recorded kind; undefined when storage cannot be read (blocked site data). */
+function readSeen(): string | null | undefined {
+  try {
+    return localStorage.getItem(TOUR_STORAGE_KEY);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeSeen(kind: TourKind): boolean {
+  try {
+    localStorage.setItem(TOUR_STORAGE_KEY, kind);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const nextFrame = (): Promise<void> =>
+  new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+function drive(kind: TourKind): void {
+  const steps = tourSteps(kind, {
+    mode: getLayoutMode(),
+    coarse: matchMedia(COARSE_POINTER).matches,
+    mac: isMacOrIos(),
+  }).filter((step) => isShown(step.target));
+  if (steps.length === 0) return;
+
+  saveAria(steps);
+  shadowTargets = steps.flatMap((step) =>
+    step.target !== null && typeof step.target !== 'string' ? [step.target] : [],
+  );
+  driverObj.setConfig({
+    ...BASE_CONFIG,
+    animate: !matchMedia(REDUCED_MOTION).matches,
+    steps: steps.map((step, index) => toDriveStep(step, index, steps.length, kind)),
+  });
+  running = {
+    // Escape closes the tour and nothing else (decision 11). driver.js closes on keyup, after the
+    // page's keydown handlers would already have cleared a selection.
+    release: pushLayer({
+      close: endTour,
+      get elements() {
+        const popover = document.querySelector('.driver-popover');
+        return popover ? [popover] : [];
+      },
+      dismissOnOutsidePress: false,
+    }),
+    // A step list fits one layout: rotating a phone or resizing across a breakpoint ends the tour.
+    unsubscribe: subscribeLayoutMode(endTour),
+  };
+  driverObj.drive();
 }
 
 /**
- * Start the ProtSpace overview tour.
- *
- * By default the tour only runs once (tracked via `localStorage`).
- * Pass `{ force: true }` to bypass the localStorage guard (e.g. when the
- * user explicitly clicks "Take a Tour").
+ * Starts the `kind` tour at its first step. Unforced (the first-visit start), it runs only when no
+ * tour was recorded and the record can be written, so blocked storage never replays it; forced
+ * (Help → Take the tour, the Full tour button) it always runs. The key is written as the kind when
+ * the tour starts, so closing it early counts as seen.
  */
-export function startProductTour(options: ProductTourOptions = {}) {
-  const hasCompleted = localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
+export function startTour(kind: TourKind, options: { force?: boolean } = {}): void {
+  if (!options.force && readSeen() !== null) return;
+  if (!writeSeen(kind) && !options.force) return;
+  if (running) endTour();
 
-  if (!options.force && hasCompleted) {
-    return;
-  }
-
-  // Mark as completed immediately so it won't auto-start again even if the
-  // user closes the tour early.
-  localStorage.setItem(TOUR_STORAGE_KEY, 'true');
-
-  // The legend steps need the sidebar open; its slide ends long before they come.
-  if (!getLayout().sidebarOpen) updateLayout({ sidebarOpen: true });
-  driverObj.drive();
+  // The legend steps need the legend on screen: the sidebar open on the Legend panel, a phone's
+  // panel unfolded. openPanel writes nothing when they already are.
+  openPanel('legend');
+  const start = ++startCount;
+  // React commits that layout on its next render: measure the targets two frames later.
+  void nextFrame()
+    .then(() => nextFrame())
+    .then(() => {
+      if (start === startCount) drive(kind);
+    });
 }

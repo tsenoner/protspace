@@ -1,6 +1,6 @@
 import type { BrowserContextOptions, Page } from '@playwright/test';
 import { LAYOUT_STORAGE_KEY, type LayoutState } from '../../src/explore/layout-defaults';
-import { TOUR_STORAGE_KEY } from '../../src/tour/storage-key';
+import { TOUR_STORAGE_KEY, type TourKind } from '../../src/tour/storage-key';
 import { THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-defaults';
 
 /**
@@ -8,7 +8,10 @@ import { THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-def
  * tour seeds it from here, through `exploreStorageState` or `seedTourSeen`, so a change of key or
  * value happens in this one place (storage-key.test.ts fails on any other spelling of the key).
  */
-const TOUR_SEEN: { name: string; value: string } = { name: TOUR_STORAGE_KEY, value: 'true' };
+const TOUR_SEEN: { name: string; value: string } = {
+  name: TOUR_STORAGE_KEY,
+  value: 'full' satisfies TourKind,
+};
 
 /**
  * Explore's local storage for a Playwright context: the product tour's "already seen" flag, and a

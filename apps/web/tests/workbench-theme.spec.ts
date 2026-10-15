@@ -375,10 +375,10 @@ test.describe('dark surfaces', () => {
     await expect(title).toHaveCSS('color', DARK_TEXT);
     await expect(page.locator('.driver-overlay path')).toHaveCSS('fill', DARK_SCRIM);
 
-    // The welcome step is centred with no arrow; step 2 points at Import, so its arrow shows. The
-    // arrow is a border triangle: only the side named in its class is painted.
+    // The welcome step is centred with no arrow; step 2 points at Import and Export, so its arrow
+    // shows. The arrow is a border triangle: only the side named in its class is painted.
     await popover.locator('.driver-popover-next-btn').click();
-    await expect(title).toHaveText('Import Your Data');
+    await expect(title).toHaveText('Import & Export');
     const arrowColour = () =>
       popover.locator('.driver-popover-arrow').evaluate((arrow) => {
         const side = /driver-popover-arrow-side-(left|right|top|bottom)\b/.exec(

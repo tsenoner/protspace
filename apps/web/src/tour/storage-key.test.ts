@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOUR_STORAGE_KEY } from './storage-key';
+import { chooseTour, LEGACY_TOUR_STORAGE_KEY, TOUR_STORAGE_KEY } from './storage-key';
 
 /**
  * Tests, helpers and captures keep the product tour from starting through
@@ -37,10 +37,45 @@ describe('the tour storage key', () => {
   });
 
   it('is spelled by no test, helper or capture', () => {
-    const literal = new RegExp(`['"\`]${escapeRegExp(TOUR_STORAGE_KEY)}['"\`]`);
+    const keys = [TOUR_STORAGE_KEY, LEGACY_TOUR_STORAGE_KEY].map(escapeRegExp).join('|');
+    const literal = new RegExp(`['"\`](?:${keys})['"\`]`);
     const spelled = Object.entries(SOURCES)
       .filter(([, text]) => literal.test(text))
       .map(([file]) => file);
     expect(spelled).toEqual([]);
+  });
+});
+
+const reader =
+  (stored: Record<string, string>) =>
+  (key: string): string | null =>
+    stored[key] ?? null;
+
+describe('chooseTour', () => {
+  it('gives a first visit the full tour', () => {
+    expect(chooseTour(reader({}))).toBe('full');
+  });
+
+  it("gives a visitor who saw the old tour What's new", () => {
+    expect(chooseTour(reader({ [LEGACY_TOUR_STORAGE_KEY]: 'true' }))).toBe('whats-new');
+  });
+
+  it.each(['full', 'whats-new', 'anything'])(
+    'starts nothing once the tour key holds %s, with or without the old key',
+    (value) => {
+      expect(chooseTour(reader({ [TOUR_STORAGE_KEY]: value }))).toBeNull();
+      expect(
+        chooseTour(reader({ [TOUR_STORAGE_KEY]: value, [LEGACY_TOUR_STORAGE_KEY]: 'true' })),
+      ).toBeNull();
+    },
+  );
+
+  it('reads only the value true as a returning visitor', () => {
+    expect(chooseTour(reader({ [LEGACY_TOUR_STORAGE_KEY]: 'false' }))).toBe('full');
+  });
+
+  it('keeps the old key apart from the new one', () => {
+    expect(TOUR_STORAGE_KEY).toBe('protspace:tour:v2');
+    expect(LEGACY_TOUR_STORAGE_KEY).not.toBe(TOUR_STORAGE_KEY);
   });
 });
