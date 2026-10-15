@@ -41,7 +41,7 @@ import {
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 import { stubStructureRequests } from './helpers/workbench';
 import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
-import { LEGACY_TOUR_STORAGE_KEY } from '../src/tour/storage-key';
+import { seedLegacyTourSeen } from './helpers/tour-storage-state';
 
 /**
  * The app bar, the view bar and the More sheet on phones, a phone on its side and a portrait
@@ -426,6 +426,31 @@ test.describe('the product tour on a phone', () => {
         const close = await box(popover.locator('.driver-popover-close-btn'));
         expect(close.width).toBeGreaterThanOrEqual(40);
         expect(close.height).toBeGreaterThanOrEqual(40);
+        for (const button of await popover.locator('.driver-popover-footer button:visible').all()) {
+          expect((await box(button)).height).toBeGreaterThanOrEqual(40);
+        }
+
+        if (step === 0) {
+          // The welcome step lifts More, where the tour lives on a phone, above the overlay.
+          const more = page.locator('[data-driver-id="more"]');
+          await expect(more).toHaveCSS('z-index', '100001');
+          const centre = await box(more);
+          // driver.js turns off pointer events on the page, and hit testing skips such elements,
+          // so More takes them back for the probe.
+          expect(
+            await page.evaluate(
+              ({ x, y }) => {
+                const host = document.querySelector<HTMLElement>('[data-driver-id="more"]')!;
+                host.style.setProperty('pointer-events', 'auto', 'important');
+                const top = document.elementFromPoint(x, y);
+                host.style.removeProperty('pointer-events');
+                return top?.closest('[data-driver-id="more"]') !== null;
+              },
+              { x: centre.x + centre.width / 2, y: centre.y + centre.height / 2 },
+            ),
+            'More shows above the overlay',
+          ).toBe(true);
+        }
 
         // A step that points at a control points at one that shows.
         const highlighted = page.locator('.driver-active-element:not(#driver-dummy-element)');
@@ -457,14 +482,7 @@ test.describe('the product tour on a phone', () => {
   }
 
   test("a returning visitor gets What's new on a phone", async ({ page }) => {
-    // The pre-workbench tour seen: what a returning visitor's browser holds.
-    await page.addInitScript((key) => {
-      try {
-        localStorage.setItem(key, 'true');
-      } catch {
-        // about:blank has no storage.
-      }
-    }, LEGACY_TOUR_STORAGE_KEY);
+    await seedLegacyTourSeen(page);
     await stubStructureRequests(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
@@ -480,6 +498,19 @@ test.describe('the product tour on a phone', () => {
       }).toPass();
       const current = ((await title.textContent()) ?? '').trim();
       titles.push(current);
+      if (step === 0) {
+        // The hardest fit: Skip, Full tour and Start Tour in a 300 px popover.
+        for (const cls of [
+          '.driver-popover-close-btn',
+          '.driver-tour-skip-btn',
+          '.driver-tour-full-btn',
+          '.driver-popover-next-btn',
+        ]) {
+          const button = await box(popover.locator(cls));
+          expect(button.width, cls).toBeGreaterThanOrEqual(40);
+          expect(button.height, cls).toBeGreaterThanOrEqual(40);
+        }
+      }
       if (current === 'More Options') {
         await expect(more).toHaveClass(/(^|\s)driver-active-element(\s|$)/);
       }
