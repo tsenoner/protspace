@@ -59,6 +59,7 @@ from protspace.data.io.bundle_v3 import (
     replace_annotations_v3,
     write_part,
 )
+from protspace.deprecations import DEPRECATIONS, LEGACY_BUNDLE_READ, warn
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,9 @@ STATISTICS_FILENAME = "statistics.parquet"
 #: settings.parquet on read, so every directory write removes it.
 VISUALIZATION_STATE_FILENAME = "visualization_state.json"
 
-#: The release that drops reading v1/v2 containers.
-LEGACY_REMOVAL_VERSION = "5.0.0"
+#: The release that drops reading v1/v2 containers (registered in
+#: ``protspace.deprecations``, which the release gate checks).
+LEGACY_REMOVAL_VERSION = DEPRECATIONS[LEGACY_BUNDLE_READ].remove_in
 
 
 def _part_container_version(part: bytes) -> int | None:
@@ -156,13 +158,7 @@ def _parse_bundle(
     parsed = _split(data)
     if warn_legacy and parsed[3] is None:
         name = "This parquetbundle" if isinstance(source, bytes) else str(source)
-        logger.warning(
-            "%s uses the v1/v2 parquetbundle format. Reading v1/v2 bundles is "
-            "deprecated and will be removed in protspace %s; run `protspace convert` "
-            "to rewrite it as v3 (or re-export it from protspace.app).",
-            name,
-            LEGACY_REMOVAL_VERSION,
-        )
+        warn(LEGACY_BUNDLE_READ, logger, name=name)
     return parsed
 
 

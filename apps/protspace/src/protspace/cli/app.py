@@ -21,8 +21,7 @@ Reveal relationships that sequence similarity misses. Most users only need 'prep
 \b
 Quick start:
   1. protspace prepare -i embeddings.h5 -m pca2,umap2 -o out/
-  2. Drag out/data.parquetbundle onto https://protspace.app/explore   (recommended)
-     — or view it locally:  protspace serve out/data.parquetbundle
+  2. Drag out/data.parquetbundle onto https://protspace.app/explore
 """
 
 app = typer.Typer(

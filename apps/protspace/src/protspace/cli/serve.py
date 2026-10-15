@@ -1,17 +1,34 @@
-"""protspace serve — launch Dash web frontend for interactive visualization."""
+"""protspace serve — launch Dash web frontend for interactive visualization.
 
+Deprecated, and removed in the release ``protspace.deprecations`` names for it.
+"""
+
+import logging
 import warnings
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from protspace.cli.app import PANEL_VISUALIZE, app
+from protspace.cli.app import PANEL_VISUALIZE, app, setup_logging
+from protspace.deprecations import DEPRECATIONS, EXPLORE_URL, SERVE_COMMAND, warn
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8050
 
+# The help is built here, not in a docstring, so the version it names is the
+# registered one.
+_HELP = f"""Run the local Dash viewer (use protspace.app/explore instead).
 
-@app.command(rich_help_panel=PANEL_VISUALIZE)
+\b
+Deprecated: removed in protspace {DEPRECATIONS[SERVE_COMMAND].remove_in}.
+Explore bundles in the hosted viewer at {EXPLORE_URL} instead:
+drag & drop, nothing to install, and the file never leaves your browser.
+"""
+
+
+@app.command(rich_help_panel=PANEL_VISUALIZE, deprecated=True, help=_HELP)
 def serve(
     data: Annotated[
         Path,
@@ -33,13 +50,10 @@ def serve(
         ),
     ] = None,
 ) -> None:
-    """Run a local viewer (web app preferred: protspace.app/explore).
+    # Click's own `deprecated=True` line cannot say where to go instead.
+    setup_logging(0)
+    warn(SERVE_COMMAND, logger)
 
-    \b
-    Most users should explore bundles in the hosted 2D viewer at
-    https://protspace.app/explore — drag & drop, nothing to install.
-    Use this command for offline/local viewing; it also renders 3D projections.
-    """
     warnings.filterwarnings("ignore", category=SyntaxWarning)
 
     from protspace.main import main
