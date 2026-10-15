@@ -192,6 +192,14 @@ export async function getControlBarView(page: Page): Promise<ControlBarView> {
   });
 }
 
+/** Picks `annotation` in the control bar's annotation dropdown (a user change, so a push). */
+export async function pickAnnotation(page: Page, annotation: string): Promise<void> {
+  const controlBar = page.locator('protspace-control-bar');
+  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
+  await controlBar.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
+  await expect.poll(async () => (await getControlBarView(page)).annotation).toBe(annotation);
+}
+
 /** A catalog entry's curated view, in the shape `getControlBarView` reads. */
 export function curatedViewOf(entry: {
   defaultView: { projection: string; annotation: string; tooltip?: readonly string[] };

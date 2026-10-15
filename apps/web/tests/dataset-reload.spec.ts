@@ -11,11 +11,16 @@ import {
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickAnnotation,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
 } from './helpers/explore';
-import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
+import {
+  ROLE_EAT_FIXTURE,
+  TOXPROT_5181_FIXTURE,
+  TOXPROT_5181_V3_FIXTURE,
+} from './helpers/fixtures';
 import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -312,6 +317,32 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     expect(await getProteinCount(page)).toBe(customCount);
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
+  });
+
+  test("reload keeps an imported EAT bundle's legend settings for an annotation not shown yet", async ({
+    page,
+  }) => {
+    // The bundle stores 15 visible values for this annotation (the default is 10). Its
+    // settings are saved on import; only the in-session copy applies them before a reload.
+    const bundledAnnotation = 'cluster_silhouette_ProtT5 — UMAP 2';
+    const eatProteinCount = 811;
+    const getMaxVisibleValues = () =>
+      page.evaluate(
+        () =>
+          (document.querySelector('protspace-legend') as Element & { maxVisibleValues: number })
+            .maxVisibleValues,
+      );
+
+    await loadCustomDatasetFromImportMenu(page, ROLE_EAT_FIXTURE);
+    await waitForProteinCount(page, eatProteinCount);
+    await waitForPersistedExploreDataset(page);
+
+    await page.reload();
+    await waitForExploreDataLoad(page, { proteinCount: eatProteinCount });
+    await dismissTourIfPresent(page);
+    await pickAnnotation(page, bundledAnnotation);
+
+    await expect.poll(getMaxVisibleValues).toBe(15);
   });
 
   test('a failed import shows a toast, not a dialog, and leaves the stored import to restore on reload', async ({
