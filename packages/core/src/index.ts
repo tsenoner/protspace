@@ -9,12 +9,18 @@ export type {
   SelectionDisabledNotificationContext,
   SelectionDisabledNotificationDetail,
 } from './components/control-bar/control-bar.events';
+export type { ExampleDatasetSummary } from './components/control-bar/types';
 export type { DataLoadedEventDetail } from './components/data-loader/data-loader';
 export type {
   DataErrorContext,
   DataErrorEventDetail,
 } from './components/data-loader/data-loader.events';
 export type { LegendErrorEventDetail, LegendErrorSource } from './components/legend/legend.events';
+export type {
+  RendererDegradedContext,
+  RendererDegradedDetail,
+  RendererDegradedReason,
+} from './components/scatter-plot/scatter-plot.events';
 export type {
   StructureErrorContext,
   StructureErrorEvent,
@@ -43,6 +49,12 @@ export { pxToMm } from './components/publish/dimension-utils';
 
 // Utilities for data loading
 export { readFileOptimized } from './components/data-loader/utils/file-io';
-export { extractRowsFromParquetBundle } from './components/data-loader/utils/bundle';
-export type { BundleExtractionResult } from './components/data-loader/utils/bundle';
+export {
+  decodeParquetBundle,
+  extractRowsFromParquetBundle,
+} from './components/data-loader/utils/bundle';
+export type {
+  BundleExtractionResult,
+  DecodedParquetBundle,
+} from './components/data-loader/utils/bundle';
 export { convertParquetToVisualizationDataOptimized } from './components/data-loader/utils/conversion';

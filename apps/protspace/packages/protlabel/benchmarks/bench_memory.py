@@ -12,8 +12,6 @@ Loop over a grid inside a resource-limited container (the deployment envelope):
   for m in euclidean cosine; do for n in 100000 300000 570000; do
     python packages/protlabel/benchmarks/bench_memory.py $m $n 1024
   done; done
-
-See docs/superpowers/research/2026-06-29-usearch-vs-bruteforce.md.
 """
 
 from __future__ import annotations

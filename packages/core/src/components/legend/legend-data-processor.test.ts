@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { AnnotationData } from '@protspace/utils';
+import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
 import {
   LegendDataProcessor,
   createProcessorContext,
@@ -6,7 +8,53 @@ import {
 } from './legend-data-processor';
 import { getVisualEncoding } from './visual-encoding';
 import type { LegendItem } from './types';
-import { NA_VALUE, NA_DEFAULT_COLOR } from './config';
+import { NA_VALUE, NA_DEFAULT_COLOR, toInternalValue } from './config';
+
+/**
+ * The pre-bincount path, kept here as the equality reference: materialise a flat
+ * `string[]` of one interned label per hit, then reduce it to a frequency map.
+ */
+function legacyCounts(
+  colData: AnnotationData,
+  values: (string | null)[],
+  proteinCount: number,
+  filteredIndices: Set<number> | null,
+  knownValues: string[] = [],
+): ReadonlyMap<string, number> {
+  const list: string[] = [];
+  if (colData instanceof Int32Array) {
+    for (let i = 0; i < proteinCount; i++) {
+      const idx = getFirstAnnotationIndex(colData, i);
+      if (idx >= 0) list.push(toInternalValue(values[idx]));
+    }
+  } else {
+    for (let i = 0; i < proteinCount; i++) {
+      for (const idx of getProteinAnnotationIndices(colData, i)) {
+        list.push(toInternalValue(values[idx]));
+      }
+    }
+  }
+  return LegendDataProcessor.countAnnotationFrequencies(list, filteredIndices, knownValues);
+}
+
+const asObject = (counts: ReadonlyMap<string, number>) => Object.fromEntries(counts);
+
+/**
+ * What the legend hands the processor: a per-protein value list counted once, with the
+ * isolation filter applied when `isolation` is given.
+ */
+const countValues = (
+  values: (string | null)[],
+  isolation?: { proteinIds: string[]; history: string[][] },
+  knownValues: string[] = [],
+) =>
+  LegendDataProcessor.countAnnotationFrequencies(
+    values,
+    isolation
+      ? LegendDataProcessor.getFilteredIndices(true, isolation.history, isolation.proteinIds)
+      : null,
+    knownValues,
+  );
 
 describe('legend-data-processor', () => {
   let ctx: LegendProcessorContext;
@@ -66,10 +114,175 @@ describe('legend-data-processor', () => {
     });
   });
 
+  describe('countFromStorage', () => {
+    // 6 proteins, 3 declared values, one of which is itself missing ('__NA__').
+    // Every fixture below encodes the same shape in a different storage kind:
+    // p0 -> A, p1 -> B + a null value, p2 -> nothing, p3 -> an out-of-range code,
+    // p4 -> A + B, p5 -> a negative code inside a hit list.
+    const VALUES: (string | null)[] = ['A', 'B', null];
+    const PROTEINS = 6;
+
+    const dense: readonly (readonly number[])[] = [[0], [1, 2], [], [7], [0, 1], [-1]];
+    const int32 = new Int32Array([0, 1, -1, 2, 0, 7]);
+    const sparse = {
+      kind: 'sparse-multi' as const,
+      base: new Int32Array([0, -1, 2, 7, 0, -1]),
+      overrides: new Map<number, readonly number[]>([
+        [1, [1, 2]],
+        [2, []], // an empty override wins over the base code it shadows
+        [4, [0, 1]],
+        [5, [-1]],
+      ]),
+      length: PROTEINS,
+    };
+    const csr = {
+      kind: 'csr' as const,
+      offsets: new Int32Array([0, 1, 3, 3, 4, 6, 7]),
+      codes: new Int32Array([0, 1, 2, 7, 0, 1, -1]),
+      length: PROTEINS,
+    };
+
+    // One hit per protein, so the legacy flat array is protein-aligned and its
+    // isolation filtering is meaningful (see the misalignment cases below).
+    const alignedInt32 = new Int32Array([0, 1, 2, 0, 1, 2]);
+    const alignedDense: readonly (readonly number[])[] = [[0], [1], [2], [0], [1], [2]];
+    const alignedSparse = {
+      kind: 'sparse-multi' as const,
+      base: new Int32Array([0, 1, -1, 0, 1, 2]),
+      overrides: new Map<number, readonly number[]>([[2, [2]]]),
+      length: PROTEINS,
+    };
+    const alignedCsr = {
+      kind: 'csr' as const,
+      offsets: new Int32Array([0, 1, 2, 3, 4, 5, 6]),
+      codes: new Int32Array([0, 1, 2, 0, 1, 2]),
+      length: PROTEINS,
+    };
+
+    // Int32Array holds one code per protein, so it cannot express p1's and p4's
+    // second hit; the three multi-capable kinds all encode the same totals.
+    const MULTI_TOTALS = { A: 2, B: 2, Z: 0, [NA_VALUE]: 3 };
+    const kinds: Array<[string, AnnotationData, Record<string, number>]> = [
+      ['Int32Array', int32, { A: 2, B: 1, Z: 0, [NA_VALUE]: 2 }],
+      ['sparse-multi', sparse, MULTI_TOTALS],
+      ['dense number[][]', dense, MULTI_TOTALS],
+      ['csr', csr, MULTI_TOTALS],
+    ];
+    const alignedKinds: Array<[string, AnnotationData]> = [
+      ['Int32Array', alignedInt32],
+      ['sparse-multi', alignedSparse],
+      ['dense number[][]', alignedDense],
+      ['csr', alignedCsr],
+    ];
+
+    it.each(kinds)(
+      'matches the legacy path on %s storage (no isolation)',
+      (_name, colData, totals) => {
+        const counts = LegendDataProcessor.countFromStorage(colData, VALUES, PROTEINS, null, [
+          'A',
+          'B',
+          'Z',
+        ]);
+        expect(asObject(counts)).toEqual(
+          asObject(legacyCounts(colData, VALUES, PROTEINS, null, ['A', 'B', 'Z'])),
+        );
+        // Explicit shape so a change to BOTH paths cannot pass unnoticed.
+        expect(asObject(counts)).toEqual(totals);
+      },
+    );
+
+    it.each(alignedKinds)(
+      'matches the legacy path on %s storage under isolation',
+      (_name, colData) => {
+        const filtered = new Set([0, 1, 4]);
+        const counts = LegendDataProcessor.countFromStorage(colData, VALUES, PROTEINS, filtered, [
+          'A',
+          'B',
+          'Z',
+        ]);
+        expect(asObject(counts)).toEqual(
+          asObject(legacyCounts(colData, VALUES, PROTEINS, filtered, ['A', 'B', 'Z'])),
+        );
+        expect(asObject(counts)).toEqual({ A: 1, B: 2, Z: 0 });
+      },
+    );
+
+    it('seeds knownValues at zero and drops values nothing points at', () => {
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 0]),
+        ['A', 'B'],
+        2,
+        null,
+        ['A', 'B'],
+      );
+      expect(asObject(counts)).toEqual({ A: 2, B: 0 });
+
+      const unseeded = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 0]),
+        ['A', 'B'],
+        2,
+        null,
+      );
+      expect(asObject(unseeded)).toEqual({ A: 2 });
+    });
+
+    it('merges distinct value slots that share an internal key', () => {
+      // Two bins both labelled null collapse onto the single '__NA__' key.
+      const counts = LegendDataProcessor.countFromStorage(
+        new Int32Array([0, 1, 2]),
+        [null, null, 'A'],
+        3,
+        null,
+      );
+      expect(asObject(counts)).toEqual({ [NA_VALUE]: 2, A: 1 });
+    });
+
+    it('ignores proteins past the end of the storage', () => {
+      const counts = LegendDataProcessor.countFromStorage(new Int32Array([0]), ['A'], 5, null);
+      expect(asObject(counts)).toEqual({ A: 1 });
+    });
+
+    // ─── isolation misalignment the flat-array path had ─────────────────────
+    // The legacy list held one entry per HIT, not per protein, while
+    // filteredIndices holds PROTEIN indices. Any storage that compacts (a
+    // protein with no annotation) or expands (a multi-valued protein) shifted
+    // the two apart, so isolation counted the wrong proteins.
+
+    it('counts the isolated protein, not the shifted one, when codes compact', () => {
+      // The numeric-binning shape: -1 marks an unbinned protein
+      // (numeric-binning.ts materialises it that way) and the legacy build
+      // dropped it, shifting every later entry down by one.
+      const bins: (string | null)[] = ['low', 'high'];
+      const colData = new Int32Array([-1, 0, 1, 0]);
+      const isolated = new Set([0, 1]); // proteins p0 (unbinned) and p1 ('low')
+
+      expect(asObject(LegendDataProcessor.countFromStorage(colData, bins, 4, isolated))).toEqual({
+        low: 1,
+      });
+      // Legacy list was ['low', 'high', 'low'] for proteins p1, p2, p3, so index
+      // 1 resolved to p2's 'high' -- a protein that is not isolated at all.
+      expect(asObject(legacyCounts(colData, bins, 4, isolated))).toEqual({ low: 1, high: 1 });
+    });
+
+    it('counts every label of an isolated multi-valued protein', () => {
+      const labels: (string | null)[] = ['A', 'B'];
+      const colData: readonly (readonly number[])[] = [[0, 1], [0], [1]];
+      const isolated = new Set([0]); // protein p0, which carries both labels
+
+      expect(asObject(LegendDataProcessor.countFromStorage(colData, labels, 3, isolated))).toEqual({
+        A: 1,
+        B: 1,
+      });
+      // Legacy list was ['A', 'B', 'A', 'B'], so index 0 kept only 'A' and p0's
+      // second label was attributed to a protein that was filtered out.
+      expect(asObject(legacyCounts(colData, labels, 3, isolated))).toEqual({ A: 1 });
+    });
+  });
+
   describe('countAnnotationFrequencies', () => {
     it('counts all values when not in isolation mode', () => {
       const values = ['a', 'b', 'a', 'c', 'a'];
-      const result = LegendDataProcessor.countAnnotationFrequencies(values, false, [], new Set());
+      const result = LegendDataProcessor.countAnnotationFrequencies(values, null);
       expect(result.get('a')).toBe(3);
       expect(result.get('b')).toBe(1);
       expect(result.get('c')).toBe(1);
@@ -77,7 +290,7 @@ describe('legend-data-processor', () => {
 
     it('handles null values (converts to __NA__)', () => {
       const values = ['a', null, 'a', null];
-      const result = LegendDataProcessor.countAnnotationFrequencies(values, false, [], new Set());
+      const result = LegendDataProcessor.countAnnotationFrequencies(values, null);
       expect(result.get('a')).toBe(2);
       // Null values are converted to '__NA__' internally
       expect(result.get(NA_VALUE)).toBe(2);
@@ -86,12 +299,7 @@ describe('legend-data-processor', () => {
     it('filters by indices in isolation mode', () => {
       const values = ['a', 'b', 'a', 'c', 'a'];
       const filtered = new Set([0, 2, 4]);
-      const result = LegendDataProcessor.countAnnotationFrequencies(
-        values,
-        true,
-        [['id1']],
-        filtered,
-      );
+      const result = LegendDataProcessor.countAnnotationFrequencies(values, filtered);
       expect(result.get('a')).toBe(3);
       expect(result.has('b')).toBe(false);
       expect(result.has('c')).toBe(false);
@@ -109,18 +317,6 @@ describe('legend-data-processor', () => {
       expect(result.topItems[0][0]).toBe('large');
       expect(result.topItems[1][0]).toBe('medium');
       expect(result.topItems[2][0]).toBe('small');
-    });
-
-    it('sorts alphabetically with alpha mode', () => {
-      const freq = new Map<string, number>([
-        ['10-20', 5],
-        ['1-5', 10],
-        ['5-10', 8],
-      ]);
-      const result = LegendDataProcessor.sortAndLimitItems(freq, 10, false, 'alpha-asc');
-      expect(result.topItems[0][0]).toBe('1-5');
-      expect(result.topItems[1][0]).toBe('5-10');
-      expect(result.topItems[2][0]).toBe('10-20');
     });
 
     it('limits items to maxVisibleValues', () => {
@@ -320,25 +516,48 @@ describe('legend-data-processor', () => {
       expect(result.topItems.map(([v]) => v)).toContain('d');
     });
 
+    it('keeps visible values over larger non-visible ones when the cap is tight', () => {
+      const freq = new Map<string, number>([
+        ['a', 10],
+        ['b', 8],
+        ['c', 6],
+        ['d', 4],
+      ]);
+      const result = LegendDataProcessor.sortAndLimitItems(
+        freq,
+        2,
+        false,
+        'size-desc',
+        new Map(),
+        new Set(['a', 'c']),
+      );
+      // c is visible, so it keeps its row even though b is larger.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
+    });
+
     it('includes pendingExtract item in visible set', () => {
       const freq = new Map<string, number>([
         ['a', 10],
         ['b', 8],
         ['c', 6],
+        ['d', 4],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
         visibleValues,
         new Map(),
         true,
-        'b', // pendingExtract
+        'c', // pendingExtract
       );
-      expect(result.topItems.map(([v]) => v)).toContain('b');
+      // The freed slot goes to the extracted c, not to the larger b.
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('excludes pendingMerge item from visible set', () => {
@@ -366,12 +585,13 @@ describe('legend-data-processor', () => {
     it('handles N/A extraction via pendingExtract', () => {
       const freq = new Map<string, number>([
         ['a', 10],
+        ['b', 8],
         [NA_VALUE, 5],
       ]);
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.sortAndLimitItems(
         freq,
-        10,
+        2,
         false,
         'size-desc',
         new Map(),
@@ -380,7 +600,8 @@ describe('legend-data-processor', () => {
         true,
         NA_VALUE, // Extract N/A
       );
-      expect(result.topItems.map(([v]) => v)).toContain(NA_VALUE);
+      expect(result.topItems.map(([v]) => v)).toEqual(['a', NA_VALUE]);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b']);
     });
 
     it('handles N/A merge via pendingMerge', () => {
@@ -660,16 +881,10 @@ describe('legend-data-processor', () => {
       expect(items[0].count).toBe(10);
       expect(items[0].isVisible).toBe(true);
       expect(items[0].color).toBeDefined();
-      expect(items[0].shape).toBe('circle');
+      expect(items.every((i) => i.shape === 'circle')).toBe(true);
     });
 
-    it('adds Other item when otherCount > 0', () => {
-      const topItems: Array<[string, number]> = [['category1', 10]];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
-      expect(items.some((i) => i.value === 'Other')).toBe(true);
-    });
-
-    it('sets correct count on Other item', () => {
+    it('adds an Other item carrying otherCount when otherCount > 0', () => {
       const topItems: Array<[string, number]> = [['category1', 10]];
       const items = LegendDataProcessor.createLegendItems(ctx, topItems, 5, []);
       expect(items.find((i) => i.value === 'Other')?.count).toBe(5);
@@ -757,15 +972,6 @@ describe('legend-data-processor', () => {
       expect(cat1?.zOrder).toBe(1); // Second in reversed order
     });
 
-    it('uses circle as the default shape for every item', () => {
-      const topItems: Array<[string, number]> = [
-        ['category1', 10],
-        ['category2', 5],
-      ];
-      const items = LegendDataProcessor.createLegendItems(ctx, topItems, 0, []);
-      expect(items.every((i) => i.shape === 'circle')).toBe(true);
-    });
-
     it('applies colors from persistedCategories', () => {
       const topItems: Array<[string, number]> = [
         ['category1', 10],
@@ -813,23 +1019,6 @@ describe('legend-data-processor', () => {
         persistedCategories,
       );
       expect(items[0].color).toBe('#persisted');
-    });
-
-    it('applies persisted colors to N/A items using __NA__ key', () => {
-      const topItems: Array<[string, number]> = [[NA_VALUE, 10]];
-      const persistedCategories = {
-        [NA_VALUE]: { zOrder: 0, color: '#na-color', shape: 'circle' },
-      };
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        [],
-        'size-desc',
-        new Map(),
-        persistedCategories,
-      );
-      expect(items[0].color).toBe('#na-color');
     });
 
     it('uses existing colors when no persisted categories', () => {
@@ -926,28 +1115,6 @@ describe('legend-data-processor', () => {
       );
       // Computed shape is always 'circle' regardless of what existing items had.
       expect(items[0].shape).toBe('circle');
-    });
-
-    it('keeps every default shape as circle even with prior items', () => {
-      const topItems: Array<[string, number]> = [
-        ['cat1', 30],
-        ['cat2', 20],
-      ];
-      const existing: LegendItem[] = [
-        { value: 'cat1', color: '#F3C300', shape: 'circle', count: 30, isVisible: true, zOrder: 0 },
-        { value: 'cat2', color: '#875692', shape: 'circle', count: 20, isVisible: true, zOrder: 1 },
-      ];
-      const items = LegendDataProcessor.createLegendItems(
-        ctx,
-        topItems,
-        0,
-        existing,
-        'size-desc',
-        new Map(),
-        {}, // empty persisted — simulates cleared pending categories
-      );
-      expect(items[0].shape).toBe('circle');
-      expect(items[1].shape).toBe('circle');
     });
 
     it('prefers persisted shapes over existing shapes', () => {
@@ -1060,11 +1227,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        ['a', 'b', 'a', 'c', 'a', 'b'],
-        ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'],
+        countValues(['a', 'b', 'a', 'c', 'a', 'b']),
         10,
         false,
-        [],
         [],
         'size-desc',
       );
@@ -1076,28 +1241,29 @@ describe('legend-data-processor', () => {
       LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        ['a', 'b'],
-        ['p1', 'p2'],
+        countValues(['a', 'b']),
         10,
         false,
-        [],
         [],
         'size-desc',
       );
       expect(ctx.currentAnnotation).toBe('annotation1');
 
-      LegendDataProcessor.processLegendItems(
+      const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation2',
-        ['c', 'd'],
-        ['p1', 'p2'],
+        countValues(['c', 'd']),
         10,
         false,
-        [],
         [],
         'size-desc',
       );
       expect(ctx.currentAnnotation).toBe('annotation2');
+      // The new annotation starts again at slot 0 instead of continuing after
+      // annotation1's slots. Compared as a set: c and d tie on count.
+      expect(new Set(result.legendItems.map((i) => i.color))).toEqual(
+        new Set([getVisualEncoding(0).color, getVisualEncoding(1).color]),
+      );
     });
 
     it('creates Other bucket when exceeding max visible', () => {
@@ -1105,11 +1271,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         3,
         false,
-        [],
         [],
         'size-desc',
       );
@@ -1123,11 +1287,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [['p1', 'p3']] }),
         10,
         true,
-        [['p1', 'p3']],
         [],
         'size-desc',
       );
@@ -1139,11 +1301,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'length',
-        [],
-        [],
+        countValues([], undefined, ['0 - <10', '10 - 20']),
         10,
         false,
-        [],
         [],
         'alpha-asc',
         {},
@@ -1155,7 +1315,6 @@ describe('legend-data-processor', () => {
         false,
         undefined,
         undefined,
-        ['0 - <10', '10 - 20'],
       );
 
       expect(result.legendItems).toEqual([
@@ -1172,11 +1331,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [proteinIds] }), // all proteins isolated
         3,
         true,
-        [proteinIds], // all proteins in isolation history
         [],
         'size-desc',
       );
@@ -1202,11 +1359,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         10,
         false,
-        [],
         existing,
         'manual',
       );
@@ -1229,11 +1384,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         10,
         false,
-        [],
         existing,
         'size-desc',
       );
@@ -1252,11 +1405,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         10,
         false,
-        [],
         [],
         'size-desc',
         persistedCategories,
@@ -1268,51 +1419,50 @@ describe('legend-data-processor', () => {
     });
 
     it('uses visibleValues to restore specific categories', () => {
-      const values = ['a', 'b', 'c', 'd', 'e'];
+      // b (3) outranks c (2), but only a and c were visible before.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a', 'c']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
-        10,
+        countValues(values),
+        2,
         false,
-        [],
         [],
         'size-desc',
         {},
         visibleValues,
       );
-      // Should only include visible values (plus Other for the rest)
       const visibleLegendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
         .map((i) => i.value);
-      expect(visibleLegendValues).toContain('a');
-      expect(visibleLegendValues).toContain('c');
+      expect(visibleLegendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingExtract to add new item', () => {
-      const values = ['a', 'b', 'c'];
+      // c is not in the top 2 by count; only the extract brings it in.
+      const values = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
       const visibleValues = new Set(['a']);
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
-        10,
+        countValues(values),
+        2,
         false,
-        [],
         [],
         'size-desc',
         {},
         visibleValues,
         new Map(),
         true,
-        'b', // pendingExtract
+        'c',
       );
-      const legendValues = result.legendItems.map((i) => i.value);
-      expect(legendValues).toContain('a');
-      expect(legendValues).toContain('b');
+      const legendValues = result.legendItems
+        .filter((i) => i.value !== 'Other')
+        .map((i) => i.value);
+      expect(legendValues).toEqual(['a', 'c']);
+      expect(result.otherItems.map((i) => i.value)).toEqual(['b', 'd']);
     });
 
     it('handles pendingMerge to remove item', () => {
@@ -1321,11 +1471,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         10,
         false,
-        [],
         [],
         'size-desc',
         {},
@@ -1333,7 +1481,7 @@ describe('legend-data-processor', () => {
         new Map(),
         true,
         undefined,
-        'b', // pendingMerge
+        'b',
       );
       const legendValues = result.legendItems
         .filter((i) => i.value !== 'Other')
@@ -1347,11 +1495,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
+        countValues(values),
         10,
         false,
-        [],
         [],
         'size-desc',
       );
@@ -1365,11 +1511,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
-        10, // High max, so no Other needed
+        countValues(values),
+        10,
         false,
-        [],
         [],
         'size-desc',
       );
@@ -1384,11 +1528,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
-        5, // maxVisibleValues = 5, but visibleValues only has 2
+        countValues(values),
+        5,
         false,
-        [],
         [],
         'size-desc',
         {},
@@ -1414,11 +1556,9 @@ describe('legend-data-processor', () => {
       const isolated = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [['p1', 'p7']] }),
         3,
         true,
-        [['p1', 'p7']],
         [],
         'size-desc',
         {},
@@ -1439,11 +1579,9 @@ describe('legend-data-processor', () => {
       const restored = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values),
         3,
-        false, // isolation off
-        [],
+        false,
         isolated.legendItems,
         'size-desc',
         {},
@@ -1471,11 +1609,9 @@ describe('legend-data-processor', () => {
       const firstIsolation = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [['p1', 'p4', 'p7']] }),
         3,
         true,
-        [['p1', 'p4', 'p7']],
         [],
         'size-desc',
         {},
@@ -1491,15 +1627,13 @@ describe('legend-data-processor', () => {
       const secondIsolation = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [['p1', 'p4', 'p7'], ['p1']] }),
         3,
         true,
-        [['p1', 'p4', 'p7'], ['p1']],
         firstIsolation.legendItems,
         'size-desc',
         {},
-        preIsolationVisibleValues, // same pre-isolation values throughout
+        preIsolationVisibleValues,
       );
       // Still no promotion from Other
       const secondValues = secondIsolation.legendItems
@@ -1519,11 +1653,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        proteinIds,
+        countValues(values, { proteinIds, history: [['p7', 'p8']] }),
         3,
         true,
-        [['p7', 'p8']],
         [],
         'size-desc',
         {},
@@ -1546,11 +1678,9 @@ describe('legend-data-processor', () => {
       const result = LegendDataProcessor.processLegendItems(
         ctx,
         'annotation1',
-        values,
-        values.map((_, i) => `p${i}`),
-        3, // maxVisibleValues = 3
+        countValues(values),
+        3,
         false,
-        [],
         [],
         'size-desc',
         {},

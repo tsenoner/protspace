@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  BUNDLE_DELIMITER,
-  isParquetBundle,
-  findBundleDelimiterPositions,
-  type BundleSettings,
-} from '@protspace/utils';
+import { BUNDLE_DELIMITER, isParquetBundle, findBundleDelimiterPositions } from '@protspace/utils';
 import { extractRowsFromParquetBundle } from './bundle';
 
 // Helper to create a mock parquet-like buffer with PAR1 magic bytes
@@ -112,21 +107,31 @@ describe('bundle utilities', () => {
       const bundle = createMockBundle(2);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
 
-    // 5 parts (settings + statistics) is a layout the Python producer writes, so it
-    // must pass this gate. It is not asserted here: with mock parts the call still
-    // rejects during decode, so any assertion would be about the decode error, not
-    // about acceptance. `tests/contract/bundle.contract.test.ts` proves acceptance
-    // against a real producer-written 5-part bundle instead.
+    // 5 parts (settings + statistics) and 6 (format v3, which appends the payloads
+    // part) are layouts the Python producer writes, so they must pass this gate. The
+    // 5-part case is not asserted here: with mock parts the call still rejects during
+    // decode, so any assertion would be about the decode error, not about acceptance.
+    // `tests/contract/bundle.contract.test.ts` proves acceptance against a real
+    // producer-written 5-part bundle instead.
 
-    it('should reject bundle with 5 delimiters (6 parts)', async () => {
-      const bundle = createMockBundle(6);
+    it('should let a 6-part bundle past the gate and fail on its contents instead', async () => {
+      const error: unknown = await extractRowsFromParquetBundle(createMockBundle(6)).catch(
+        (reason: unknown) => reason,
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).not.toMatch(/Expected 2 to 5 delimiters/);
+    });
+
+    it('should reject bundle with 6 delimiters (7 parts)', async () => {
+      const bundle = createMockBundle(7);
 
       await expect(extractRowsFromParquetBundle(bundle)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
 
@@ -134,124 +139,8 @@ describe('bundle utilities', () => {
       const buffer = createMockParquetBuffer('no delimiter');
 
       await expect(extractRowsFromParquetBundle(buffer)).rejects.toThrow(
-        /Expected 2 to 4 delimiters/,
+        /Expected 2 to 5 delimiters/,
       );
     });
-  });
-});
-
-describe('BundleSettings type', () => {
-  it('should have correct structure', () => {
-    const settings: BundleSettings = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          // Legacy field — kept to verify backward-compat parsing.
-          includeShapes: true,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: ['unknown'],
-          categories: {
-            human: { zOrder: 0, color: '#ff0000', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-        },
-      },
-      exportOptions: {
-        organism: {
-          imageWidth: 2048,
-          imageHeight: 1024,
-          lockAspectRatio: true,
-          legendWidthPercent: 25,
-          legendFontSizePx: 24,
-          includeLegendSettings: true,
-          includeExportOptions: true,
-        },
-      },
-    };
-
-    expect(settings.legendSettings.organism.maxVisibleValues).toBe(10);
-    expect(settings.legendSettings.organism.sortMode).toBe('size-desc');
-    expect(settings.legendSettings.organism.categories.human.color).toBe('#ff0000');
-    expect(settings.exportOptions.organism.imageWidth).toBe(2048);
-  });
-
-  it('should accept settings with empty maps', () => {
-    const settings: BundleSettings = {
-      legendSettings: {},
-      exportOptions: {},
-    };
-
-    expect(Object.keys(settings.legendSettings)).toHaveLength(0);
-    expect(Object.keys(settings.exportOptions)).toHaveLength(0);
-  });
-
-  it('should accept settings with extra/unknown fields (forward compatibility)', () => {
-    // This simulates loading settings from a newer version with additional fields
-    const settingsWithExtras = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: [],
-          categories: {},
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-          unknownField: 'some value',
-        },
-      },
-      exportOptions: {},
-    };
-
-    // Type-cast to BundleSettings - extra fields should be ignored
-    const settings = settingsWithExtras as BundleSettings;
-    expect(settings.legendSettings.organism.maxVisibleValues).toBe(10);
-    expect(settings.legendSettings.organism.sortMode).toBe('size-desc');
-  });
-
-  it('should work with multiple annotations', () => {
-    const settings: BundleSettings = {
-      legendSettings: {
-        organism: {
-          maxVisibleValues: 10,
-          shapeSize: 24,
-          sortMode: 'size-desc',
-          hiddenValues: ['unknown'],
-          categories: {
-            human: { zOrder: 0, color: '#ff0000', shape: 'circle' },
-          },
-          enableDuplicateStackUI: false,
-          selectedPaletteId: 'kellys',
-        },
-        family: {
-          maxVisibleValues: 5,
-          shapeSize: 16,
-          sortMode: 'alpha-asc',
-          hiddenValues: [],
-          categories: {
-            kinase: { zOrder: 1, color: '#00ff00', shape: 'square' },
-            phosphatase: { zOrder: 0, color: '#0000ff', shape: 'diamond' },
-          },
-          enableDuplicateStackUI: true,
-          selectedPaletteId: 'kellys',
-        },
-      },
-      exportOptions: {
-        organism: {
-          imageWidth: 2048,
-          imageHeight: 1024,
-          lockAspectRatio: true,
-          legendWidthPercent: 25,
-          legendFontSizePx: 24,
-          includeLegendSettings: true,
-          includeExportOptions: true,
-        },
-      },
-    };
-
-    expect(Object.keys(settings.legendSettings)).toHaveLength(2);
-    expect(settings.legendSettings.family.categories.kinase.color).toBe('#00ff00');
   });
 });

@@ -97,6 +97,7 @@ def _register_commands() -> None:
         bundle,
         transfer,
         style,
+        convert,
         serve,
     )
 

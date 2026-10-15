@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 
 const Footer = () => {
   return (
-    <footer className="border-t border-border/40 bg-card/30 backdrop-blur-xs py-8">
+    <footer className="border-t border-border bg-muted/30 py-8">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {/* Copyright */}
@@ -19,26 +19,26 @@ const Footer = () => {
               href="https://github.com/tsenoner/protspace"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+              className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
             >
               <GitHubIcon />
               <span className="text-sm">GitHub</span>
             </a>
             <a
               href={DOCS_URL}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Documentation
             </a>
             <a
               href={buildMailto({ subject: 'ProtSpace contact' })}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Contact
             </a>
             <Link
               to="/privacy"
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Privacy
             </Link>

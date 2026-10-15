@@ -25,6 +25,18 @@ describe('focus-trap', () => {
     });
   }
 
+  /** Two visible buttons, `#first` and `#last`. */
+  function mountFirstAndLast() {
+    container.innerHTML = `
+      <button id="first">First</button>
+      <button id="last">Last</button>
+    `;
+    const firstBtn = container.querySelector('#first') as HTMLElement;
+    const lastBtn = container.querySelector('#last') as HTMLElement;
+    makeElementsVisible([firstBtn, lastBtn]);
+    return { firstBtn, lastBtn };
+  }
+
   describe('getFocusableElements', () => {
     it('finds buttons', () => {
       container.innerHTML = '<button>Click me</button>';
@@ -151,19 +163,50 @@ describe('focus-trap', () => {
       cleanup();
     });
 
-    it('adds keydown event listener to container', () => {
-      container.innerHTML = '<button>Click</button>';
-      const addEventSpy = vi.spyOn(container, 'addEventListener');
-      createFocusTrap(container);
-      expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
-    });
+    it('stops wrapping focus after cleanup', () => {
+      const { lastBtn } = mountFirstAndLast();
 
-    it('removes keydown event listener on cleanup', () => {
-      container.innerHTML = '<button>Click</button>';
-      const removeEventSpy = vi.spyOn(container, 'removeEventListener');
       const cleanup = createFocusTrap(container);
       cleanup();
-      expect(removeEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+
+      lastBtn.focus();
+      const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      container.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(lastBtn);
+    });
+
+    it('focuses the first focusable element on the next frame', () => {
+      const { firstBtn } = mountFirstAndLast();
+      let frame: FrameRequestCallback | undefined;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frame = cb;
+        return 1;
+      });
+
+      createFocusTrap(container);
+      expect(document.activeElement).not.toBe(firstBtn);
+
+      frame!(0);
+      expect(document.activeElement).toBe(firstBtn);
+    });
+
+    it('does not move focus once cleaned up before the next frame', () => {
+      const { firstBtn } = mountFirstAndLast();
+      let frame: FrameRequestCallback | undefined;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frame = cb;
+        return 1;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {
+        frame = undefined;
+      });
+
+      createFocusTrap(container)();
+      frame?.(0);
+
+      expect(document.activeElement).not.toBe(firstBtn);
     });
 
     it('does nothing on non-Tab keys', () => {
@@ -178,19 +221,11 @@ describe('focus-trap', () => {
     });
 
     it('wraps focus from last to first on Tab', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { firstBtn, lastBtn } = mountFirstAndLast();
 
       createFocusTrap(container);
 
-      // Simulate the last button being focused
       lastBtn.focus();
-      Object.defineProperty(document, 'activeElement', { value: lastBtn, configurable: true });
 
       const focusSpy = vi.spyOn(firstBtn, 'focus');
       const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
@@ -200,19 +235,11 @@ describe('focus-trap', () => {
     });
 
     it('wraps focus from first to last on Shift+Tab', () => {
-      container.innerHTML = `
-        <button id="first">First</button>
-        <button id="last">Last</button>
-      `;
-      const firstBtn = container.querySelector('#first') as HTMLElement;
-      const lastBtn = container.querySelector('#last') as HTMLElement;
-      makeElementsVisible([firstBtn, lastBtn]);
+      const { firstBtn, lastBtn } = mountFirstAndLast();
 
       createFocusTrap(container);
 
-      // Simulate the first button being focused
       firstBtn.focus();
-      Object.defineProperty(document, 'activeElement', { value: firstBtn, configurable: true });
 
       const focusSpy = vi.spyOn(lastBtn, 'focus');
       const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true });
@@ -240,9 +267,7 @@ describe('focus-trap', () => {
 
       createFocusTrap(container);
 
-      // Simulate the only button being focused
       onlyBtn.focus();
-      Object.defineProperty(document, 'activeElement', { value: onlyBtn, configurable: true });
 
       // Tab should wrap to the same element (first === last)
       const focusSpy = vi.spyOn(onlyBtn, 'focus');
@@ -265,9 +290,7 @@ describe('focus-trap', () => {
 
       createFocusTrap(container);
 
-      // Simulate middle button being focused
       middleBtn.focus();
-      Object.defineProperty(document, 'activeElement', { value: middleBtn, configurable: true });
 
       const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault');

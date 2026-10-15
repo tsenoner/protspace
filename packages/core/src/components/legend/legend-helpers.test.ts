@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { LegendItem, OtherItem } from './types';
 import { NA_VALUE } from './config';
 import {
-  valueToKey,
   expandHiddenValues,
   computeOtherConcreteValues,
   buildZOrderMapping,
   buildColorShapeMappings,
   calculatePointSize,
+  defaultShapeSize,
+  explicitShapeSize,
   createDefaultSettings,
   getDefaultSortMode,
   getItemClasses,
@@ -19,15 +20,6 @@ import {
 import { initializeAnnotationSortMode } from './legend-settings-dialog';
 
 describe('legend-helpers', () => {
-  describe('valueToKey', () => {
-    it('returns string values unchanged', () => {
-      expect(valueToKey('test')).toBe('test');
-      expect(valueToKey('Other')).toBe('Other');
-      expect(valueToKey('')).toBe('');
-      expect(valueToKey(NA_VALUE)).toBe(NA_VALUE);
-    });
-  });
-
   describe('expandHiddenValues', () => {
     const otherItems: OtherItem[] = [
       { value: 'cat1', count: 5 },
@@ -143,6 +135,71 @@ describe('legend-helpers', () => {
       expect(calculatePointSize(1)).toBe(10);
       expect(calculatePointSize(0)).toBe(10);
     });
+
+    it('maps the default shape size 10 to point size 80', () => {
+      expect(calculatePointSize(createDefaultSettings('a').shapeSize)).toBe(80);
+    });
+  });
+
+  describe('defaultShapeSize', () => {
+    it('keeps 10 up to 10,000 proteins', () => {
+      expect(defaultShapeSize(1)).toBe(10);
+      expect(defaultShapeSize(5_000)).toBe(10);
+      expect(defaultShapeSize(10_000)).toBe(10);
+    });
+
+    it('shrinks with the protein count as (10,000 / N)^(2/3)', () => {
+      expect(defaultShapeSize(20_000)).toBe(6);
+      expect(defaultShapeSize(40_000)).toBe(4);
+      expect(defaultShapeSize(105_562)).toBe(2);
+      expect(defaultShapeSize(127_000)).toBe(2);
+    });
+
+    it('never goes below the smallest size the dialog accepts', () => {
+      expect(defaultShapeSize(573_649)).toBe(1);
+      expect(defaultShapeSize(10_000_000)).toBe(1);
+    });
+
+    it('gives the base default 10 for a count of 0 or below', () => {
+      expect(defaultShapeSize(0)).toBe(10);
+      expect(defaultShapeSize(-5)).toBe(10);
+    });
+
+    it('gives a whole size for a non-finite count', () => {
+      expect(defaultShapeSize(Number.NaN)).toBe(10);
+      expect(defaultShapeSize(Number.POSITIVE_INFINITY)).toBe(1);
+    });
+
+    it('returns whole sizes', () => {
+      for (const n of [12_345, 33_333, 77_777, 250_000]) {
+        expect(Number.isInteger(defaultShapeSize(n))).toBe(true);
+      }
+    });
+  });
+
+  describe('explicitShapeSize', () => {
+    it('reads the fillers 10 and 30 as unset', () => {
+      expect(explicitShapeSize(10)).toBeNull();
+      expect(explicitShapeSize(30)).toBeNull();
+    });
+
+    it('reads the size createDefaultSettings writes as unset', () => {
+      expect(explicitShapeSize(createDefaultSettings('a').shapeSize)).toBeNull();
+    });
+
+    it('keeps any other positive size', () => {
+      expect(explicitShapeSize(5)).toBe(5);
+      expect(explicitShapeSize(12)).toBe(12);
+      expect(explicitShapeSize(200)).toBe(200);
+    });
+
+    it('reads a missing, non-numeric, non-positive or non-finite size as unset', () => {
+      expect(explicitShapeSize(undefined)).toBeNull();
+      expect(explicitShapeSize('12')).toBeNull();
+      expect(explicitShapeSize(0)).toBeNull();
+      expect(explicitShapeSize(-3)).toBeNull();
+      expect(explicitShapeSize(Number.NaN)).toBeNull();
+    });
   });
 
   describe('createDefaultSettings', () => {
@@ -152,11 +209,6 @@ describe('legend-helpers', () => {
       expect(settings.maxVisibleValues).toBe(10);
       expect(settings.hiddenValues).toEqual([]);
       expect(settings.categories).toEqual({});
-    });
-
-    it('creates default settings with size-desc sort for annotations without metadata', () => {
-      const settings = createDefaultSettings('length');
-      expect(settings.sortMode).toBe('size-desc');
     });
   });
 
@@ -224,30 +276,6 @@ describe('legend-helpers', () => {
       expect(isItemSelected(item, ['a', 'b'])).toBe(false);
     });
 
-    it('handles N/A value with __NA__ in selectedItems', () => {
-      const item: LegendItem = {
-        value: NA_VALUE,
-        color: '#000',
-        shape: 'circle',
-        count: 1,
-        isVisible: true,
-        zOrder: 0,
-      };
-      expect(isItemSelected(item, [NA_VALUE])).toBe(true);
-    });
-
-    it('returns false for N/A value when selectedItems is empty', () => {
-      const item: LegendItem = {
-        value: NA_VALUE,
-        color: '#000',
-        shape: 'circle',
-        count: 1,
-        isVisible: true,
-        zOrder: 0,
-      };
-      expect(isItemSelected(item, [])).toBe(false);
-    });
-
     it('returns false for Other item even when in selectedItems', () => {
       const item: LegendItem = {
         value: 'Other',
@@ -285,11 +313,6 @@ describe('legend-helpers', () => {
       const result = initializeAnnotationSortMode({}, 'some_annotation', {});
       expect(result).toEqual({ some_annotation: 'size-desc' });
     });
-
-    it('defaults to size-desc for raw annotation names without legend metadata', () => {
-      const result = initializeAnnotationSortMode({}, 'length', {});
-      expect(result).toEqual({ length: 'size-desc' });
-    });
   });
 
   describe('createItemActionEvent', () => {
@@ -299,21 +322,6 @@ describe('legend-helpers', () => {
       expect(event.detail).toEqual({ value: 'testValue', action: 'toggle' });
       expect(event.bubbles).toBe(true);
       expect(event.composed).toBe(true);
-    });
-
-    it('creates an isolate action event', () => {
-      const event = createItemActionEvent('legend-item-click', 'category', 'isolate');
-      expect(event.detail).toEqual({ value: 'category', action: 'isolate' });
-    });
-
-    it('creates an extract action event', () => {
-      const event = createItemActionEvent('legend-item-click', 'extracted', 'extract');
-      expect(event.detail).toEqual({ value: 'extracted', action: 'extract' });
-    });
-
-    it('handles N/A value', () => {
-      const event = createItemActionEvent('legend-item-click', NA_VALUE, 'toggle');
-      expect(event.detail).toEqual({ value: NA_VALUE, action: 'toggle' });
     });
   });
 

@@ -84,7 +84,10 @@ describe('formatEmbeddingLabel', () => {
 });
 
 describe('prep limits', () => {
-  it('mirror the backend deploy configuration exactly', () => {
+  // A deliberate tripwire, not a drift check: the live values come from the private
+  // deploy-protspace-backend compose.yaml (defaults in apps/prep config.py), which this
+  // test cannot read. Change them together.
+  it('pin the client-side copies of the backend limits', () => {
     expect(MAX_UPLOAD_BYTES).toBe(8_388_608);
     expect(MIN_SEQUENCES).toBe(20);
     expect(MAX_SEQUENCES).toBe(1500);

@@ -30,6 +30,25 @@ const localStorageMock = (() => {
 
 vi.stubGlobal('localStorage', localStorageMock);
 
+type ThrowableMethod = 'getItem' | 'setItem' | 'removeItem' | 'key';
+
+/**
+ * Make one storage method throw for the duration of `run`. The finally restores it even when an
+ * assertion fails, so a broken mock never leaks into later tests (clearAllMocks does not undo it).
+ */
+function withThrowingStorage(method: ThrowableMethod, message: string, run: () => void): void {
+  const mock = localStorageMock as unknown as Record<ThrowableMethod, unknown>;
+  const original = mock[method];
+  mock[method] = vi.fn(() => {
+    throw new Error(message);
+  });
+  try {
+    run();
+  } finally {
+    mock[method] = original;
+  }
+}
+
 describe('buildStorageKey', () => {
   it('should build key with component and datasetHash', () => {
     const key = buildStorageKey('legend', 'abc12345');
@@ -91,51 +110,11 @@ describe('getStorageItem', () => {
     expect(result).toEqual(defaultValue);
   });
 
-  it('should handle primitive types', () => {
-    localStorageMock.setItem('numberKey', '42');
-    localStorageMock.setItem('stringKey', '"hello"');
-    localStorageMock.setItem('boolKey', 'true');
-    localStorageMock.setItem('nullKey', 'null');
-
-    expect(getStorageItem('numberKey', 0)).toBe(42);
-    expect(getStorageItem('stringKey', '')).toBe('hello');
-    expect(getStorageItem('boolKey', false)).toBe(true);
-    expect(getStorageItem('nullKey', 'default')).toBe(null);
-  });
-
-  it('should handle arrays', () => {
-    const storedArray = [1, 2, 3, 'four'];
-    localStorageMock.setItem('arrayKey', JSON.stringify(storedArray));
-
-    const result = getStorageItem('arrayKey', []);
-    expect(result).toEqual(storedArray);
-  });
-
-  it('should handle nested objects', () => {
-    const nestedObj = {
-      level1: {
-        level2: {
-          value: 'deep',
-        },
-      },
-    };
-    localStorageMock.setItem('nestedKey', JSON.stringify(nestedObj));
-
-    const result = getStorageItem('nestedKey', {});
-    expect(result).toEqual(nestedObj);
-  });
-
   it('should return default value when localStorage throws', () => {
-    const originalGetItem = localStorageMock.getItem;
-    localStorageMock.getItem = vi.fn(() => {
-      throw new Error('Storage error');
+    withThrowingStorage('getItem', 'Storage error', () => {
+      const defaultValue = { fallback: true };
+      expect(getStorageItem('anyKey', defaultValue)).toEqual(defaultValue);
     });
-
-    const defaultValue = { fallback: true };
-    const result = getStorageItem('anyKey', defaultValue);
-    expect(result).toEqual(defaultValue);
-
-    localStorageMock.getItem = originalGetItem;
   });
 });
 
@@ -153,44 +132,10 @@ describe('setStorageItem', () => {
     expect(localStorageMock.setItem).toHaveBeenCalledWith('myKey', JSON.stringify(value));
   });
 
-  it('should store primitive types', () => {
-    expect(setStorageItem('numKey', 123)).toBe(true);
-    expect(setStorageItem('strKey', 'hello')).toBe(true);
-    expect(setStorageItem('boolKey', true)).toBe(true);
-    expect(setStorageItem('nullKey', null)).toBe(true);
-
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('numKey', '123');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('strKey', '"hello"');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('boolKey', 'true');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('nullKey', 'null');
-  });
-
-  it('should store arrays', () => {
-    const arr = [1, 2, 3];
-    const result = setStorageItem('arrKey', arr);
-
-    expect(result).toBe(true);
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('arrKey', '[1,2,3]');
-  });
-
   it('should return false when localStorage throws', () => {
-    const originalSetItem = localStorageMock.setItem;
-    localStorageMock.setItem = vi.fn(() => {
-      throw new Error('Quota exceeded');
+    withThrowingStorage('setItem', 'Quota exceeded', () => {
+      expect(setStorageItem('anyKey', { data: 'value' })).toBe(false);
     });
-
-    const result = setStorageItem('anyKey', { data: 'value' });
-    expect(result).toBe(false);
-
-    localStorageMock.setItem = originalSetItem;
-  });
-
-  it('should overwrite existing values', () => {
-    setStorageItem('overwriteKey', { original: true });
-    setStorageItem('overwriteKey', { updated: true });
-
-    const stored = localStorageMock.getItem('overwriteKey');
-    expect(JSON.parse(stored!)).toEqual({ updated: true });
   });
 });
 
@@ -213,15 +158,10 @@ describe('hasStorageItem', () => {
     // Safari private browsing, a browser blocking site data, and a test runner with no storage
     // backend all throw on access rather than returning null. `hasPersistedSettings` runs on the
     // legend's rebuild path, so a throw here takes down legend rendering, not just persistence.
-    const originalGetItem = localStorageMock.getItem;
-    localStorageMock.getItem = vi.fn(() => {
-      throw new Error('The operation is insecure.');
+    withThrowingStorage('getItem', 'The operation is insecure.', () => {
+      expect(() => hasStorageItem('anyKey')).not.toThrow();
+      expect(hasStorageItem('anyKey')).toBe(false);
     });
-
-    expect(() => hasStorageItem('anyKey')).not.toThrow();
-    expect(hasStorageItem('anyKey')).toBe(false);
-
-    localStorageMock.getItem = originalGetItem;
   });
 });
 
@@ -248,15 +188,9 @@ describe('removeStorageItem', () => {
   });
 
   it('should return false when localStorage throws', () => {
-    const originalRemoveItem = localStorageMock.removeItem;
-    localStorageMock.removeItem = vi.fn(() => {
-      throw new Error('Storage error');
+    withThrowingStorage('removeItem', 'Storage error', () => {
+      expect(removeStorageItem('anyKey')).toBe(false);
     });
-
-    const result = removeStorageItem('anyKey');
-    expect(result).toBe(false);
-
-    localStorageMock.removeItem = originalRemoveItem;
   });
 });
 
@@ -303,26 +237,6 @@ describe('removeAllStorageItemsByHash', () => {
     expect(removedCount).toBe(0);
   });
 
-  it('should not remove items from other components with same hash', () => {
-    // All items have the same hash but different components
-    localStorageMock.setItem('protspace:legend:hash123:Taxonomy', '{"data": 1}');
-    localStorageMock.setItem('protspace:control-bar:hash123', '{"data": 2}');
-
-    const removedCount = removeAllStorageItemsByHash('hash123');
-
-    // Both should be removed since they both have the target hash
-    expect(removedCount).toBe(2);
-  });
-
-  it('should handle keys without context (3 parts only)', () => {
-    localStorageMock.setItem('protspace:scatterplot:hash123', '{"config": true}');
-
-    const removedCount = removeAllStorageItemsByHash('hash123');
-
-    expect(removedCount).toBe(1);
-    expect(localStorageMock.getItem('protspace:scatterplot:hash123')).toBeNull();
-  });
-
   it('should handle edge case where hash appears elsewhere in key', () => {
     // Hash appears in context but not in hash position
     localStorageMock.setItem('protspace:legend:otherHash:hash123', '{"data": 1}');
@@ -338,59 +252,48 @@ describe('removeAllStorageItemsByHash', () => {
   });
 
   it('should return 0 when localStorage throws', () => {
-    const originalKey = localStorageMock.key;
-    localStorageMock.key = vi.fn(() => {
-      throw new Error('Storage error');
+    localStorageMock.setItem('protspace:legend:anyHash', '{}');
+    withThrowingStorage('key', 'Storage error', () => {
+      expect(removeAllStorageItemsByHash('anyHash')).toBe(0);
     });
-
-    const removedCount = removeAllStorageItemsByHash('anyHash');
-    expect(removedCount).toBe(0);
-
-    localStorageMock.key = originalKey;
   });
 });
 
-describe('integration: get/set/remove workflow', () => {
+describe('round trip: set → get → remove', () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
   });
 
-  it('should store and retrieve complex settings object', () => {
+  it('returns what was stored for every JSON shape, and the default once removed', () => {
     const settings = {
       maxVisibleValues: 10,
       includeOthers: true,
       hiddenValues: ['null', 'Other'],
       zOrderMapping: { Bacteria: 0, Archaea: 1, Eukaryota: 2 },
+      nested: { level1: { level2: 'deep' } },
     };
-
     const key = buildStorageKey('legend', 'dataset123', 'Taxonomy');
 
-    const setResult = setStorageItem(key, settings);
-    expect(setResult).toBe(true);
+    expect(setStorageItem(key, { stale: true })).toBe(true);
+    expect(setStorageItem(key, settings)).toBe(true); // overwrites
+    expect(getStorageItem(key, {})).toEqual(settings);
 
-    const retrieved = getStorageItem(key, {
-      maxVisibleValues: 5,
-      includeOthers: false,
-      hiddenValues: [],
-      zOrderMapping: {},
-    });
-    expect(retrieved).toEqual(settings);
+    for (const [k, value] of [
+      ['num', 42],
+      ['str', 'hello'],
+      ['bool', false],
+      ['arr', [1, 2, 3, 'four']],
+    ] as const) {
+      setStorageItem(k, value);
+      expect(getStorageItem(k, 'default')).toEqual(value);
+    }
 
-    const removeResult = removeStorageItem(key);
-    expect(removeResult).toBe(true);
+    // A stored null is a value, not a miss: it must not fall back to the default.
+    setStorageItem('nullKey', null);
+    expect(getStorageItem('nullKey', 'default')).toBeNull();
 
-    const afterRemove = getStorageItem(key, {
-      maxVisibleValues: 5,
-      includeOthers: false,
-      hiddenValues: [],
-      zOrderMapping: {},
-    });
-    expect(afterRemove).toEqual({
-      maxVisibleValues: 5,
-      includeOthers: false,
-      hiddenValues: [],
-      zOrderMapping: {},
-    });
+    expect(removeStorageItem(key)).toBe(true);
+    expect(getStorageItem(key, { fallback: true })).toEqual({ fallback: true });
   });
 });

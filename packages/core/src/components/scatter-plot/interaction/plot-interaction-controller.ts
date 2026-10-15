@@ -20,7 +20,7 @@ export interface PlotInteractionHost {
   // rather than keeping a parallel copy. applyZoom funnels new transforms through
   // onTransform first, so reads here always see the latest value.
   getTransform(): d3.ZoomTransform;
-  // host-owned spatial selection (reuses _quadtreeIndex / _slotsToInteractiveIds)
+  // host-owned spatial selection (reuses _pointGridIndex / _slotsToInteractiveIds)
   queryByPolygon(vertices: ReadonlyArray<[number, number]>): number[];
   queryByPixels(x0: number, y0: number, x1: number, y1: number): number[];
   resolveSlotsToIds(slots: number[]): string[];
@@ -39,7 +39,7 @@ export interface PlotInteractionHost {
  * zoom/lasso RAF loops, lifted out of the scatter-plot god component (F-07). It
  * signals the host via callbacks; the host keeps event dispatch and owns the
  * transform value (written back via onTransform — F-48). Hover throttling and
- * picking stay on the host (host-only quadtree/visibility access).
+ * picking stay on the host (host-only point index/visibility access).
  */
 export class PlotInteractionController {
   private _zoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
@@ -66,6 +66,18 @@ export class PlotInteractionController {
   }
   get isBrushing() {
     return this._isBrushing;
+  }
+
+  /**
+   * Whether initialize() actually wired d3 zoom to a host SVG. A non-null
+   * controller does NOT imply this: the host assigns `_interaction` one
+   * statement before calling initialize(), and initialize() early-returns when
+   * `host.getSvg()` is falsy, leaving both fields null forever (nothing retries
+   * it). Programmatic drivers — the WebGL perf runner's readiness gate — must
+   * gate on this rather than on the controller's existence.
+   */
+  get isZoomReady(): boolean {
+    return this._zoom !== null && this._svgSelection !== null;
   }
 
   initialize(): void {
@@ -136,6 +148,44 @@ export class PlotInteractionController {
     if (this._zoom && this._svgSelection) {
       this._svgSelection.transition().duration(750).call(this._zoom.transform, d3.zoomIdentity);
     }
+  }
+
+  // ── Programmatic zoom ────────────────────────────────────────────
+  //
+  // These three drive d3's zoom *behaviour*, not applyZoom(), and that
+  // distinction is load-bearing. applyZoom() only writes the transform back to
+  // the host and re-renders; it never touches the `__zoom` datum d3 keeps on
+  // the SVG node. Bypassing the behaviour would desync that datum, so the next
+  // wheel gesture would jump back to the stale value — and, for the perf
+  // runner, would measure a render triggered by the wrong path.
+
+  /**
+   * Scale the current transform by `k` about the viewport centre, as a wheel
+   * gesture would. Clamped by the scaleExtent snapshotted in initialize().
+   */
+  zoomBy(k: number): void {
+    if (!this._zoom || !this._svgSelection) return;
+    this._zoom.scaleBy(this._svgSelection, k);
+  }
+
+  /**
+   * Pan by (dx, dy) in *transform* space — d3 applies tx1 = tx0 + k·dx, so the
+   * on-screen displacement scales with the current zoom level. Callers wanting
+   * a raw-pixel pan must divide by the host transform's `k` themselves.
+   */
+  panBy(dx: number, dy: number): void {
+    if (!this._zoom || !this._svgSelection) return;
+    this._zoom.translateBy(this._svgSelection, dx, dy);
+  }
+
+  /**
+   * Jump straight to `t` — the untweened sibling of resetZoom(). d3 emits its
+   * zoom event even when `t` equals the current transform, so a caller waiting
+   * on the resulting render pass is never left hanging on a no-op restore.
+   */
+  setTransform(t: d3.ZoomTransform): void {
+    if (!this._zoom || !this._svgSelection) return;
+    this._zoom.transform(this._svgSelection, t);
   }
 
   /** Disable D3's built-in double-click zoom and attach our own reset handler. */

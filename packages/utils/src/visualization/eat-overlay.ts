@@ -1,10 +1,19 @@
-import type { AnnotationData, PredictedCell, VisualizationData } from '../types.js';
+import type {
+  AnnotationData,
+  CsrAnnotationData,
+  PredictedCell,
+  VisualizationData,
+} from '../types.js';
 import {
   getFirstAnnotationIndex,
-  getProteinAnnotationIndices,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isCsrAnnotationData,
   isSparseMultiValueAnnotationData,
 } from './annotation-data-access.js';
+import { gatherCsr, syntheticHit } from './csr.js';
 import { isNAValue } from './missing-values.js';
+import { clamp01 } from './numeric-binning.js';
 
 export const EAT_COMPANION_SUFFIXES = {
   value: '__pred_value',
@@ -15,13 +24,108 @@ export const EAT_COMPANION_SUFFIXES = {
 export type EatCompanionKind = keyof typeof EAT_COMPANION_SUFFIXES;
 
 export const EAT_CONFIDENCE_SUFFIX = '__eat_confidence';
+
+/**
+ * Which side(s) of the reliability scale the EAT filter constrains (#380).
+ *
+ * Lives here rather than beside the query-condition translation in `core` because
+ * both the legend control and the control bar need the vocabulary, and neither
+ * should have to import from the other.
+ */
+export type EatReliabilityMode = 'atLeast' | 'atMost' | 'between';
+
+export interface EatReliabilityState {
+  mode: EatReliabilityMode;
+  /** Lower bound, used by `atLeast` and `between`. 0 means "no lower bound". */
+  min: number;
+  /** Upper bound, used by `atMost` and `between`. 1 means "no upper bound". */
+  max: number;
+}
+
+/**
+ * Each bound's "constrains nothing" position. Named once because it is the answer to
+ * three separate questions — what an unused bound is blanked to, what an emptied
+ * input box falls back to, and below which value a bound is worth stating as a query
+ * condition at all — and every place that spelled it out by hand was a place the two
+ * ends of the mirror could drift apart on what "no constraint" means.
+ */
+export const NEUTRAL_BOUND = { min: 0, max: 1 } as const;
+
+/**
+ * Which bounds each mode actually filters on. Stated once: `normalizeReliability`
+ * blanks the bound a mode does not use, the legend renders one thumb and one percent
+ * box per bound it does, and the query translation picks its operator from the pair.
+ * A fourth mode is then one entry here rather than four coordinated edits.
+ */
+export const RELIABILITY_BOUNDS: Record<EatReliabilityMode, { min: boolean; max: boolean }> = {
+  atLeast: { min: true, max: false },
+  atMost: { min: false, max: true },
+  between: { min: true, max: true },
+};
+
 /**
  * Default reliability-slider position. `0` means "show everything": the slider
- * derives a `NOT(EAT_confidence < x)` filter only when dragged above 0, so a
+ * derives an `EAT_confidence >= x or N/A` filter only when dragged above 0, so a
  * fresh dataset (or a bundle without a saved position) shows all points and
  * leaves the filter box clean (#6b).
  */
-export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = 0;
+export const DEFAULT_EAT_CONFIDENCE_THRESHOLD = NEUTRAL_BOUND.min;
+
+/**
+ * "Show everything." Constrains nothing, so it emits no query condition at all and a
+ * fresh dataset — or a bundle with no saved position — leaves the filter box clean.
+ */
+export const DEFAULT_EAT_RELIABILITY: EatReliabilityState = {
+  mode: 'atLeast',
+  min: NEUTRAL_BOUND.min,
+  max: NEUTRAL_BOUND.max,
+};
+
+/**
+ * `clamp01` with a defined result for non-finite input. The shared `clamp01` passes
+ * `NaN` through, and a bound can arrive as `NaN` from an emptied number input.
+ *
+ * `fallback` is the bound's own `NEUTRAL_BOUND` position, so an emptied box reads as
+ * "no constraint on this side" rather than as a bound that hides everything.
+ */
+export function clampReliabilityBound(value: number, fallback: number = NEUTRAL_BOUND.min): number {
+  return Number.isFinite(value) ? clamp01(value) : fallback;
+}
+
+/**
+ * Canonical form: clamp each bound the mode uses and blank the one it does not.
+ *
+ * A mode carries a bound it ignores (`atLeast` has no upper bound, `atMost` no
+ * lower), and the query round-trip always returns the canonical spelling. Without
+ * this, a caller that leaves the unused bound at its previous value hands over a
+ * state that is equal in meaning but unequal by `isSameReliability`, so the mirror's
+ * de-dupe guard never fires and every repeat call rewrites the query.
+ *
+ * Lives beside the type rather than beside the query translation because both ends
+ * of the mirror — the legend control and the control bar — have to agree on what a
+ * state means, and a second hand-rolled copy is exactly how they drifted apart.
+ */
+export function normalizeReliability(state: EatReliabilityState): EatReliabilityState {
+  const uses = RELIABILITY_BOUNDS[state.mode];
+  // Each bound falls back to its OWN neutral position. Defaulting both to 0 blanked an
+  // emptied upper box into `<= 0`, which hides every prediction — the opposite of the
+  // "no constraint on this side" the fallback exists to express.
+  const min = uses.min ? clampReliabilityBound(state.min, NEUTRAL_BOUND.min) : NEUTRAL_BOUND.min;
+  const max = uses.max ? clampReliabilityBound(state.max, NEUTRAL_BOUND.max) : NEUTRAL_BOUND.max;
+  // Order the bounds whenever the mode holds both. The two thumbs move independently,
+  // so dragging the lower one past the upper produced `between 0.8 .. 0.5`, which the
+  // numeric matcher reads as `v >= 0.8 && v <= 0.5` — unsatisfiable, collapsing the
+  // plot to the curated points (or, with none, tripping the empty-result guard and
+  // showing everything). Neither is the band on screen.
+  return uses.min && uses.max
+    ? { mode: state.mode, min: Math.min(min, max), max: Math.max(min, max) }
+    : { mode: state.mode, min, max };
+}
+
+/** Structural equality over the reliability model. */
+export function isSameReliability(a: EatReliabilityState, b: EatReliabilityState): boolean {
+  return a.mode === b.mode && a.min === b.min && a.max === b.max;
+}
 
 const EAT_COMPANION_RE = /^(.*)__pred_(value|confidence|source)$/;
 
@@ -99,8 +203,63 @@ function predictedIndices(
     .filter((index) => index >= 0);
 }
 
+/** Which rows a prediction actually replaces, and with which value indices. */
+function predictedReplacements(
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+  rowCount: number,
+): Map<number, readonly number[]> {
+  const replacements = new Map<number, readonly number[]>();
+  for (let i = 0; i < predictedCells.length && i < rowCount; i++) {
+    const cell = predictedCells[i];
+    if (!cell) continue;
+    const indices = predictedIndices(cell, valueToIndex);
+    if (indices.length > 0) replacements.set(i, indices);
+  }
+  return replacements;
+}
+
+/**
+ * CSR rebuild for the overlay.
+ *
+ * Rebuilt as CSR, never densified to `number[][]`: a 573K column would otherwise become one
+ * array per protein. Predicted rows replace the source row's hits wholesale; a prediction
+ * that resolves to nothing leaves the row alone, as the Int32Array and sparse-multi branches
+ * do (CSR has no way to store the `-1` the dense branch falls back to).
+ *
+ * Through {@link gatherCsr}, so a preserved row keeps its hits' scores and evidence and a
+ * predicted value gets none: an EAT transfer carries no curated score or evidence of its own.
+ */
+function cloneCsrWithPredictions(
+  source: CsrAnnotationData,
+  predictedCells: readonly (PredictedCell | null)[],
+  valueToIndex: ReadonlyMap<string, number>,
+): CsrAnnotationData {
+  const replacements = predictedReplacements(predictedCells, valueToIndex, source.length);
+
+  const offsets = new Int32Array(source.length + 1);
+  for (let i = 0; i < source.length; i++) {
+    const replacement = replacements.get(i);
+    offsets[i + 1] =
+      offsets[i] + (replacement ? replacement.length : getProteinAnnotationCount(source, i));
+  }
+
+  const hits = new Int32Array(offsets[source.length]);
+  let dst = 0;
+  for (let i = 0; i < source.length; i++) {
+    const replacement = replacements.get(i);
+    if (replacement) {
+      for (const index of replacement) hits[dst++] = syntheticHit(index);
+    } else {
+      for (let hit = source.offsets[i]; hit < source.offsets[i + 1]; hit++) hits[dst++] = hit;
+    }
+  }
+
+  return gatherCsr(source, { offsets, hits });
+}
+
 function cloneWithPredictions(
-  source: AnnotationData,
+  source: Exclude<AnnotationData, CsrAnnotationData>,
   predictedCells: readonly (PredictedCell | null)[],
   valueToIndex: ReadonlyMap<string, number>,
 ): AnnotationData {
@@ -185,7 +344,9 @@ export function materializeEatOverlay(
     ...data,
     annotation_data: {
       ...data.annotation_data,
-      [annotationKey]: cloneWithPredictions(source, predictedCells, valueToIndex),
+      [annotationKey]: isCsrAnnotationData(source)
+        ? cloneCsrWithPredictions(source, predictedCells, valueToIndex)
+        : cloneWithPredictions(source, predictedCells, valueToIndex),
     },
   };
 }
@@ -199,12 +360,10 @@ export function isCuratedAnnotationMissing(
   const annotation = data.annotations[annotationKey];
   const rows = data.annotation_data[annotationKey];
   if (!annotation || !rows) return true;
-  const indices = getProteinAnnotationIndices(rows, proteinIdx);
-  return (
-    indices.length === 0 ||
-    indices.every((index) => {
-      const value = annotation.values[index];
-      return value == null || isNAValue(value);
-    })
-  );
+  const count = getProteinAnnotationCount(rows, proteinIdx);
+  for (let k = 0; k < count; k++) {
+    const value = annotation.values[getProteinAnnotationIndexAt(rows, proteinIdx, k)];
+    if (value != null && !isNAValue(value)) return false;
+  }
+  return true;
 }

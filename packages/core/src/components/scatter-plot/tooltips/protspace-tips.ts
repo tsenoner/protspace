@@ -108,6 +108,10 @@ class ProtspaceTips extends LitElement {
               <td>See protein details</td>
             </tr>
             <tr>
+              <td><kbd>Shift</kbd> + <kbd>Hover</kbd></td>
+              <td>Focus the point's category</td>
+            </tr>
+            <tr>
               <td><kbd>Click</kbd> point</td>
               <td>View 3D structure</td>
             </tr>

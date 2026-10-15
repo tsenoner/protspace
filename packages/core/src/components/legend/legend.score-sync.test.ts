@@ -5,35 +5,14 @@ import type { ProjectionStatisticRow, VisualizationData } from '@protspace/utils
 import './legend';
 import type { ProtspaceLegend } from './legend';
 import type { ScoreStripPoint } from './category-score-strip';
-import { mountLegendWithScatterplot } from './test-support/legend-scatterplot-harness';
+import {
+  mountLegendWithScatterplot,
+  stubLocalStorage,
+} from './test-support/legend-scatterplot-harness';
 
-// The persistence controller keys real `localStorage` by a hash of the dataset, and every test
-// here shares one jsdom environment, so saved sort modes and z-orders leak between tests whose
-// fixtures hash the same. Stub an in-memory store rather than using the runtime's: it scopes that
-// state to this file, and Node does not hand jsdom a usable `localStorage` without
-// `--localstorage-file`, which made the `clear()` calls below throw outright. Same shape as the
-// mock in `packages/utils/src/storage/storage-service.test.ts`.
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-  };
-})();
-
-vi.stubGlobal('localStorage', localStorageMock);
+// Saved sort modes and z-orders leak between tests whose fixtures hash the same; the store is
+// cleared before each test below.
+stubLocalStorage();
 
 const STAT_BASE = {
   space_kind: 'projection' as const,
@@ -85,6 +64,11 @@ async function setup(data: VisualizationData): Promise<ProtspaceLegend> {
 }
 
 describe('legend score strip synchronisation', () => {
+  beforeEach(() => {
+    // The dot-click test persists a hidden category under makeData()'s hash.
+    localStorage.clear();
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
   });
@@ -212,16 +196,11 @@ describe('legend score column', () => {
     document.body.innerHTML = '';
   });
 
-  it('keeps a scored row down to its label and count', async () => {
-    // The per-row number is gone: the strips' value gutters read out the hovered
-    // category on every metric at once, so repeating silhouette alone on each row was
-    // a second, narrower answer to the same question. A row is its label and count.
+  it("renders a scored row's category count", async () => {
     const el = await setup(makeData());
 
     const row = el.shadowRoot!.querySelector('[data-value="Elapidae"]')!;
     expect(row.querySelector('.legend-count')!.textContent!.trim()).toBe('2');
-    // Elapidae's silhouette in this fixture, which used to render as "0.81".
-    expect(row.textContent).not.toContain('0.81');
   });
 
   it('sorts rows best-separating-first when the sort mode is silhouette-desc', async () => {

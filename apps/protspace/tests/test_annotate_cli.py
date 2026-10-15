@@ -1,65 +1,44 @@
-"""Tests for the standalone ``protspace annotate`` command."""
-
 import pandas as pd
 from typer.testing import CliRunner
 
 from protspace.cli.app import app
+from protspace.data.annotations.retrievers.uniprot_retriever import (
+    ProteinAnnotations,
+    UniProtRetriever,
+)
 
 
-def _run_annotate(tmp_path, monkeypatch, fasta_text: str, source: str) -> dict:
-    """Run ``annotate`` on a FASTA against a stub manager; return its kwargs."""
-    import protspace.data.annotations.manager as manager_module
-
+def test_annotate_fasta_derives_missing_length_from_normalized_sequence(
+    tmp_path, monkeypatch
+):
+    """The FASTA-backed CLI path must supply sequences to the annotation manager."""
     fasta = tmp_path / "input.fasta"
-    fasta.write_text(fasta_text)
-    captured: dict[str, object] = {}
-
-    class FakeManager:
-        def __init__(self, *args, **kwargs):
-            captured.update(kwargs)
-
-        def to_pd(self):
-            return pd.DataFrame({"identifier": captured["headers"]})
-
-    monkeypatch.setattr(manager_module, "ProteinAnnotationManager", FakeManager)
-
+    fasta.write_text(">custom|custom_protein|description\nMPEPTIDE\n")
     output = tmp_path / "annotations.parquet"
+
+    monkeypatch.setattr(
+        UniProtRetriever,
+        "fetch_annotations",
+        lambda self: [
+            ProteinAnnotations(
+                identifier="custom_protein",
+                annotations={"length": ""},
+            )
+        ],
+    )
+
     result = CliRunner().invoke(
-        app, ["annotate", "-i", str(fasta), "-a", source, "-o", str(output)]
+        app,
+        [
+            "annotate",
+            "-i",
+            str(fasta),
+            "-a",
+            "length",
+            "-o",
+            str(output),
+        ],
     )
 
     assert result.exit_code == 0, result.output
-    return captured
-
-
-def test_fasta_sequences_are_passed_to_annotation_manager(tmp_path, monkeypatch):
-    """FASTA-only proteins must reach sequence-backed annotation sources."""
-    captured = _run_annotate(
-        tmp_path,
-        monkeypatch,
-        ">sp|P12345|KNOWN Known protein\nMKV\n>custom-protein description\nAAAG\n",
-        "biocentral",
-    )
-
-    assert captured["headers"] == ["P12345", "custom-protein"]
-    assert captured["sequences"] == {
-        "P12345": "MKV",
-        "custom-protein": "AAAG",
-    }
-
-
-def test_fasta_is_not_parsed_for_uniprot_only_annotations(tmp_path, monkeypatch):
-    """Sequence-free sources must not materialize an unused FASTA sequence map."""
-    import protspace.data.io.fasta as fasta_module
-
-    def fail_if_parsed(*args, **kwargs):
-        raise AssertionError("parse_fasta must not run for UniProt-only annotations")
-
-    monkeypatch.setattr(fasta_module, "parse_fasta", fail_if_parsed)
-
-    captured = _run_annotate(
-        tmp_path, monkeypatch, ">sp|P12345|KNOWN Known protein\nMKV\n", "uniprot"
-    )
-
-    assert captured["headers"] == ["P12345"]
-    assert captured["sequences"] is None
+    assert pd.read_parquet(output).loc[0, "length"] == "8"

@@ -131,8 +131,10 @@ def run_transfer(
 
     if total_transferred == 0:
         logger.warning(
-            "No annotations were transferred. Check the --reference-* rules and "
-            "that query proteins have missing values in the target column(s)."
+            "No annotations were transferred: the target column(s) have either "
+            "no missing values to fill or no values to transfer from. If you "
+            "passed --query-* / --reference-* filters, check they select the "
+            "proteins you meant."
         )
     return out
 
@@ -179,7 +181,7 @@ def transfer(
         list[str] | None,
         typer.Option(
             "--query-id-prefix",
-            help="Only transfer to query IDs with this prefix (repeatable).",
+            help="Restrict queries to IDs with this prefix (default: any protein missing a value).",
             rich_help_panel="Query filters (which proteins receive labels)",
         ),
     ] = None,
@@ -195,7 +197,7 @@ def transfer(
         list[str] | None,
         typer.Option(
             "--reference-id-prefix",
-            help="Only use references whose ID has this prefix (repeatable).",
+            help="Restrict references to IDs with this prefix (default: any protein that has a value).",
             rich_help_panel="Reference filters (which proteins provide labels)",
         ),
     ] = None,
@@ -223,19 +225,21 @@ def transfer(
     ] = "cosine",
     verbose: Opt_Verbose = 0,
 ) -> None:
-    """Fill missing annotations from nearest neighbours (EAT)."""
+    """Fill missing annotations from nearest neighbours (EAT).
+
+    With no query/reference filters, transfer runs *within* the bundle: every
+    protein missing a value in a --transfer column receives one from its
+    nearest neighbour among the proteins that have one. Use the filters only to
+    narrow that down (e.g. to label one species from another).
+    """
     setup_logging(verbose)
-
-    import io
-
-    import pyarrow.parquet as pq
 
     from protspace.analysis.classification import Rule
     from protspace.data.annotations.encoding import (
-        migrate_legacy_annotation_table,
         read_format_version,
+        upgrade_cell_grammar,
     )
-    from protspace.data.io.bundle import read_bundle, replace_annotations_in_bundle
+    from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
     from protspace.data.loaders import load_h5, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
@@ -267,9 +271,13 @@ def transfer(
     emb_set = load_h5([h5_path], name_override=name_override)
     emb_map = {header: emb_set.data[i] for i, header in enumerate(emb_set.headers)}
 
-    # Read the annotations part of the bundle.
-    parts, _settings = read_bundle(bundle)
-    annotations = pq.read_table(io.BytesIO(parts[0]))
+    # Read the annotations part of the bundle.  read_tables hands back the v2
+    # shape for a v3 container too, without the parquet round trip read_bundle
+    # would do on the way out of the decoder.  A legacy bundle's rows are keyed
+    # as the v2 browser keyed them (as `convert` does), so a repeated or null id
+    # neither feeds the transfer a row the browser never showed nor fails the
+    # v3 write at the end.
+    annotations, _metadata, _projections = read_tables(bundle, keyed=True)
     input_format_version = read_format_version(annotations)
 
     # Real bundles name the id column "protein_id"; run_transfer works on "identifier".
@@ -327,8 +335,15 @@ def transfer(
             [id_col if n == "identifier" else n for n in augmented.column_names]
         )
 
-    if input_format_version < 2:
-        augmented = migrate_legacy_annotation_table(augmented)
+    # The renames dropped the stamp, so restore the grammar from the version read
+    # off the bundle: a v1 bundle's cells are migrated, v2 cells are re-stamped.
+    augmented = upgrade_cell_grammar(augmented, input_format_version)
 
-    replace_annotations_in_bundle(bundle, output, augmented)
+    # A legacy input the v3 encoder still refuses (projection sets that disagree
+    # between metadata and data, ...) is a usage error, as in `convert` and
+    # `style`, not a traceback; nothing is written.
+    try:
+        replace_annotations_in_bundle(bundle, output, augmented)
+    except ValueError as exc:
+        raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)

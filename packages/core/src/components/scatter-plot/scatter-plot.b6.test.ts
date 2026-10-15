@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * B6 component characterization for the wired scatter-plot changes
- * (F-60, F-40, F-17, F-18).
+ * (F-40, F-18).
  *
  * These tests pin the externally observable contract of the B6 batch so the
  * refactor stays behavior-preserving. They follow the proven B7 pattern: the
@@ -10,7 +10,7 @@
  * `connectedCallback` / WebGL init never runs (no WebGL context exists in
  * jsdom). The reactive `updated()` dispatcher is exercised by calling it
  * directly with an explicit `changedProperties` Map — this drives the real
- * `_processData` / filter-clear / data-change-emit logic without the Lit render
+ * `_processData` / data-change-emit / re-default logic without the Lit render
  * lifecycle. `_processData()` populates `_plotData` via
  * `DataProcessor.processVisualizationData` and needs no GPU.
  *
@@ -20,24 +20,23 @@
  *   annotations:{key:{values,colors,shapes}}, annotation_data:{key:[...]},
  *   numeric_annotation_data:{...} } — NOT a makeViz factory.
  *
- * RED/GREEN status on the UNMODIFIED tree:
- *  - F-60 (ref fast-path)                  : GREEN  (existing behavior)
- *  - F-40 includeFilteredProteinIds:false  : GREEN  (existing fast path)
- *  - F-40 filtered correctness             : GREEN  (existing slice)
- *  - F-40 filtered memoization (toBe)      : RED    (not-yet-wired memo)
- *  - F-40 recompute on ref change          : GREEN  (rebuilds anyway today)
- *  - F-17 generation bump                  : RED    (_quadtreeGeneration absent)
- *  - F-17 cacheKey folds generation        : RED    (rebuild ignores virt key)
- *  - F-18 filter clear before reprocess    : GREEN  (existing order)
- *  - F-18 data-change emit gating          : GREEN  (existing gate)
- *  - F-18 INV-10 re-default                : GREEN  (existing default)
+ * What the tests pin:
+ *  - F-40: `_getCurrentDisplayData` slices to the filtered ids, returns the
+ *    memoized slice while its inputs are unchanged, rebuilds when the
+ *    filteredProteinIds reference changes, and skips the memo entirely for
+ *    `includeFilteredProteinIds: false`.
+ *  - F-18: `updated()` emits data-change only for a geometry (INV-11) input,
+ *    and re-defaults selectedAnnotation (INV-10) when the new data lacks it.
+ *
+ * Covered elsewhere, so not repeated here:
+ *  - F-60 (materialize ref fast-path)  : scatter-plot.materialize-cache.test.ts
+ *  - F-18 filter clear before reprocess: scatter-plot.filter-render.test.ts
+ *                                        ("dataset-swap clears stale query filter")
+ *  - F-17 (virtualization cache): #456 deleted the cull it served. The point
+ *    index is covered by the hover, click, brush and lasso tests that use it.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import type {
-  VisualizationData,
-  NumericAnnotationDisplaySettingsMap,
-  PlotData,
-} from '@protspace/utils';
+import type { VisualizationData, NumericAnnotationDisplaySettingsMap } from '@protspace/utils';
 
 vi.hoisted(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -65,12 +64,8 @@ type Internals = HTMLElement & {
   selectedProteinIds: string[];
   numericAnnotationSettings: NumericAnnotationDisplaySettingsMap;
   // internals under test
-  _plotData: PlotData;
-  _quadtreeGeneration: number;
-  _virtualizationCacheKey: string | null;
   updated(changed: Map<string, unknown>): void;
   _processData(): void;
-  _buildQuadtree(): void;
   _getMaterializedData(): VisualizationData | null;
   _getCurrentDisplayData(options?: {
     includeFilteredProteinIds?: boolean;
@@ -85,9 +80,8 @@ type Internals = HTMLElement & {
  * reference-identity assertions below are meaningful. Mirrors makeFamilyData in
  * scatter-plot.materialize-cache.test.ts.
  */
-function makeFamilyData(opts?: { n?: number; idPrefix?: string }): VisualizationData {
+function makeFamilyData(opts?: { n?: number }): VisualizationData {
   const n = opts?.n ?? 6;
-  const idPrefix = opts?.idPrefix ?? 'p';
   const families = Array.from({ length: n }, (_, i) => (i < Math.ceil(n / 2) ? 'A' : 'B'));
   const colorFor = (v: string) => (v === 'A' ? RED : GREEN);
   const coords = new Float32Array(n * 2);
@@ -96,7 +90,7 @@ function makeFamilyData(opts?: { n?: number; idPrefix?: string }): Visualization
     coords[i * 2 + 1] = i;
   }
   return {
-    protein_ids: families.map((_, i) => `${idPrefix}${i}`),
+    protein_ids: families.map((_, i) => `p${i}`),
     projections: [{ name: 'umap', data: coords, dimension: 2 }],
     annotations: {
       fam: {
@@ -115,7 +109,7 @@ function makeFamilyData(opts?: { n?: number; idPrefix?: string }): Visualization
       other: families.map((v) => [families.indexOf(v)]),
     },
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -142,7 +136,7 @@ function makeSingleAnnotationData(n = 4): VisualizationData {
       only: values.map((v) => [v === 'x' ? 0 : 1]),
     },
     numeric_annotation_data: {
-      score: values.map((_, i) => i),
+      score: Float64Array.from(values, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -163,40 +157,6 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// F-60 — single numeric-column read in _getMaterializedData (ref fast-path)
-// ---------------------------------------------------------------------------
-describe('B6 F-60 _getMaterializedData single numeric read', () => {
-  it('returns a stable reference on repeated calls with unchanged inputs (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
-    el.selectedAnnotation = 'fam';
-
-    // Prime: first call populates the cache + fast-path key fields.
-    const first = el._getMaterializedData();
-    expect(first).toBeTruthy();
-
-    // Repeated calls with unchanged inputs hit the ref/primitive fast-path and
-    // return the SAME cached object reference (the merge of the two numeric
-    // reads into one local must keep this fast-path intact).
-    const a = el._getMaterializedData();
-    const b = el._getMaterializedData();
-    expect(a).toBe(first);
-    expect(b).toBe(first);
-  });
-
-  it('fast-path miss: changing selectedAnnotation re-materializes (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
-    el.selectedAnnotation = 'fam';
-    const first = el._getMaterializedData();
-
-    el.selectedAnnotation = 'other';
-    const next = el._getMaterializedData();
-    expect(next).not.toBe(first);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // F-40 — memoize the filtered display-data rebuild
 // ---------------------------------------------------------------------------
 describe('B6 F-40 filtered display-data memoization', () => {
@@ -209,21 +169,21 @@ describe('B6 F-40 filtered display-data memoization', () => {
     return el;
   }
 
-  it('filtered slice preserves correctness (GREEN)', () => {
+  it('slices the display data to the filtered ids', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     expect(a).not.toBeNull();
     expect(a!.protein_ids).toEqual(['p1', 'p3']);
   });
 
-  it('returns the SAME filtered object on repeated calls with unchanged inputs (RED pre-wire — memoization)', () => {
+  it('returns the SAME filtered object on repeated calls with unchanged inputs', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     const b = el._getCurrentDisplayData();
     expect(b).toBe(a);
   });
 
-  it('recomputes when filteredProteinIds ref changes (GREEN)', () => {
+  it('recomputes when filteredProteinIds ref changes', () => {
     const el = primed();
     const a = el._getCurrentDisplayData();
     el.filteredProteinIds = ['p2'];
@@ -233,7 +193,7 @@ describe('B6 F-40 filtered display-data memoization', () => {
     expect(b!.protein_ids).toEqual(['p2']);
   });
 
-  it('includeFilteredProteinIds:false bypasses the cache and returns the materialized object (GREEN)', () => {
+  it('includeFilteredProteinIds:false bypasses the cache and returns the materialized object', () => {
     const el = primed();
     const mat = el._getMaterializedData();
     const out = el._getCurrentDisplayData({ includeFilteredProteinIds: false });
@@ -242,71 +202,16 @@ describe('B6 F-40 filtered display-data memoization', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-17 — virtualization cache invalidation on quadtree rebuild (sanctioned bug fix)
-//
-// The >=1M-point regime is not unit-reproducible cheaply, so we test the
-// MECHANISM directly: a quadtree rebuild must advance a generation counter that
-// is folded into the virtualization cacheKey, forcing the next visible-points
-// read to miss even when the transform is unchanged.
-// ---------------------------------------------------------------------------
-describe('B6 F-17 virtualization cache invalidated on quadtree rebuild', () => {
-  function withPlotData(): Internals {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 8 });
-    el.selectedAnnotation = 'fam';
-    // Build _plotData + _scales so _buildQuadtree takes the real rebuild path
-    // (not the empty early-return).
-    el._processData();
-    return el;
-  }
-
-  it('bumps the quadtree generation when the quadtree is rebuilt (RED pre-wire — field absent)', () => {
-    const el = withPlotData();
-    const before = el._quadtreeGeneration;
-    el._buildQuadtree();
-    const after = el._quadtreeGeneration;
-    expect(after).toBe(before + 1);
-  });
-
-  it('virtualization cacheKey is invalidated by a quadtree rebuild (RED pre-wire — rebuild ignores virt key)', () => {
-    const el = withPlotData();
-    // Prime with a sentinel key; a rebuild must invalidate it (key cleared OR
-    // generation advanced so the next computed key differs from the sentinel).
-    el._virtualizationCacheKey = 'STALE';
-    el._buildQuadtree();
-    expect(el._virtualizationCacheKey).not.toBe('STALE');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// F-18 — updated() effect ordering & INV-11 gate
+// F-18 — updated() INV-11 gate & INV-10 re-default
 //
 // updated() is driven directly with an explicit changedProperties Map (the
 // element is never appended). This exercises the real dispatcher: the
-// filter-clear-before-reprocess order, the data-change emit gate, and the
-// INV-10 selectedAnnotation re-default.
+// data-change emit gate and the INV-10 selectedAnnotation re-default. The
+// filter-clear-before-reprocess order is pinned in
+// scatter-plot.filter-render.test.ts.
 // ---------------------------------------------------------------------------
-describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
-  it('clears stale filters before reprocessing on a data swap (GREEN)', () => {
-    const el = makeScatter();
-    el.data = makeFamilyData({ n: 6 });
-    el.selectedAnnotation = 'fam';
-    el.filteredProteinIds = ['p1'];
-    el.filtersActive = true;
-    el._processData();
-
-    // Swap to a new dataset whose ids do not overlap p*.
-    el.data = makeFamilyData({ n: 5, idPrefix: 'q' });
-    el.updated(changed(['data']));
-
-    // The data-swap filter reset (INV) must fire BEFORE _processData, so the
-    // new plot is built from the full 5-point set, not blanked by a stale set.
-    expect(el.filtersActive).toBe(false);
-    expect(el.filteredProteinIds).toEqual([]);
-    expect(el._plotData.length).toBe(5);
-  });
-
-  it('emits data-change exactly when an INV-11 geometry input changes (GREEN)', () => {
+describe('B6 F-18 updated() INV-11 gate & INV-10 re-default', () => {
+  it('emits data-change exactly when an INV-11 geometry input changes', () => {
     const el = makeScatter();
     el.data = makeFamilyData({ n: 6 });
     el.selectedAnnotation = 'fam';
@@ -327,7 +232,7 @@ describe('B6 F-18 updated() effect ordering & INV-11 gate', () => {
     expect(seen).toEqual(['data-change']);
   });
 
-  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10, GREEN)', () => {
+  it('re-defaults selectedAnnotation to annotationKeys[0] when data lacks it (INV-10)', () => {
     const el = makeScatter();
     el.data = makeFamilyData({ n: 6 });
     el.selectedAnnotation = 'fam';

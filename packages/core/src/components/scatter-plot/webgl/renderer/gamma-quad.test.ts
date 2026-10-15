@@ -10,6 +10,7 @@ describe('QUAD_VERTICES', () => {
 describe('drawGammaQuad', () => {
   it('binds the source texture + uniforms and draws 6 verts from the quad buffer', () => {
     const calls: string[] = [];
+    const attribLookups: string[] = [];
     const program = {} as WebGLProgram;
     const quadBuffer = { name: 'quad' } as unknown as WebGLBuffer;
     const sourceTexture = { name: 'src' } as unknown as WebGLTexture;
@@ -27,7 +28,10 @@ describe('drawGammaQuad', () => {
       uniform1i: (loc: { n: string }, v: number) => calls.push(`u1i:${loc.n}:${v}`),
       uniform1f: (loc: { n: string }, v: number) => calls.push(`u1f:${loc.n}:${v}`),
       bindBuffer: (_t: number, b: { name: string }) => calls.push(`bindBuffer:${b.name}`),
-      getAttribLocation: (_p: WebGLProgram, n: string) => (n === 'a_position' ? 7 : -1),
+      getAttribLocation: (_p: WebGLProgram, n: string) => {
+        attribLookups.push(n);
+        return n === 'a_position' ? 7 : -1;
+      },
       enableVertexAttribArray: (l: number) => calls.push(`enable:${l}`),
       vertexAttribPointer: (l: number, s: number, t: number, _n: boolean, st: number, o: number) =>
         calls.push(`ptr:${l}:${s}:${t}:${st}:${o}`),
@@ -38,6 +42,7 @@ describe('drawGammaQuad', () => {
     drawGammaQuad(gl, program, sourceTexture, 2.2, quadBuffer, {
       linearTexture: { n: 'u_linearTexture' } as unknown as WebGLUniformLocation,
       gamma: { n: 'u_gamma' } as unknown as WebGLUniformLocation,
+      position: 5,
     });
 
     expect(calls).toEqual([
@@ -47,11 +52,12 @@ describe('drawGammaQuad', () => {
       'u1i:u_linearTexture:0',
       'u1f:u_gamma:2.2',
       'bindBuffer:quad',
-      'enable:7',
-      'ptr:7:2:5126:0:0',
+      'enable:5',
+      'ptr:5:2:5126:0:0',
       'draw:4:0:6',
-      'disable:7',
+      'disable:5',
       'bindTexture:null',
     ]);
+    expect(attribLookups).toEqual([]);
   });
 });

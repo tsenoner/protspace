@@ -14,13 +14,14 @@ beforeAll(() => {
 import './scatter-plot';
 
 // F-06 moved the chunked-compute state into DuplicateStackOverlayController.
-// These are TS-private at compile time but reachable at runtime; the probes
-// assert the SAME contracts (job-id supersede guard, viewKey cache hit).
+// ensureForViewport, stacks and cacheKey are TS-private at compile time but
+// reachable at runtime; the probes assert the SAME contracts (a cancelled job
+// commits nothing, viewKey cache hit) without reading the job id itself.
 type DupOverlay = {
   ensureForViewport(k: string, a: number, b: number, c: number, d: number): boolean;
+  cancelCompute(): void;
   stacks: unknown[];
   cacheKey: string | null;
-  computeJobId: number;
 };
 
 type Internals = HTMLElement & {
@@ -28,7 +29,7 @@ type Internals = HTMLElement & {
   selectedAnnotation: string;
   config: { enableDuplicateStackUI: boolean };
   _processData(): void;
-  _buildQuadtree(): void;
+  _buildPointGridIndex(): void;
   _dupOverlay: DupOverlay;
 };
 
@@ -62,11 +63,11 @@ function prime(): Internals {
   sp.data = dupData();
   sp.selectedAnnotation = 'fam';
   sp._processData(); // builds _plotData
-  // The quadtree builds lazily on render (RAF-scheduled). Build it directly here so
+  // The point index builds lazily on render (RAF-scheduled). Build it directly here so
   // _ensureDuplicateStacksForViewport's queryByPixels has a populated index to scan.
-  // Called directly (not via _scheduleQuadtreeRebuild) so it doesn't enqueue into the
+  // Called directly (not via _schedulePointGridIndexRebuild) so it doesn't enqueue into the
   // stubbed RAF queue installed by the test's beforeEach.
-  sp._buildQuadtree();
+  sp._buildPointGridIndex();
   return sp;
 }
 
@@ -86,12 +87,20 @@ describe('duplicate-stack chunked compute (F-24 characterization lock)', () => {
     q.forEach((cb) => cb(0));
   };
 
-  it('a superseded job (job id bumped before drain) does not commit its results', () => {
+  it('a job cancelled before its RAF drains commits nothing, and the next job still runs', () => {
     const sp = prime();
     sp._dupOverlay.ensureForViewport('view-1', -1000, -1000, 1000, 1000); // starts job, queues RAF
-    sp._dupOverlay.computeJobId++; // simulate a second viewport/cancel superseding it
+    sp._dupOverlay.cancelCompute(); // the only way production supersedes an in-flight job
     drain();
-    expect(sp._dupOverlay.cacheKey).not.toBe('view-1'); // first job bailed → cache key not set
+    expect(sp._dupOverlay.cacheKey).not.toBe('view-1'); // cancelled job bailed → cache key not set
+    expect(sp._dupOverlay.stacks).toHaveLength(0);
+
+    // cancelCompute also clears the in-flight flag; without that, every later
+    // ensureForViewport would return early and the badges would freeze.
+    sp._dupOverlay.ensureForViewport('view-2', -1000, -1000, 1000, 1000);
+    drain();
+    expect(sp._dupOverlay.cacheKey).toBe('view-2');
+    expect(sp._dupOverlay.stacks).toHaveLength(2); // (0,0) and (5,5) pairs
   });
 
   it('a repeat call with the same viewKey short-circuits (cache hit) without recompute', () => {

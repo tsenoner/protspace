@@ -167,8 +167,8 @@ def test_style_template_roundtrips_for_encoded_name_parquet(tmp_path):
     add_annotation_styles_parquet(
         str(src), {"cath": {"colors": {display_name: "#ff0000"}}}, str(out)
     )
-    viz = json.loads((out / "visualization_state.json").read_text())
-    assert viz["annotation_colors"]["cath"][display_name] == "#ff0000"
+    colors = ArrowReader(out).get_annotation_colors("cath")
+    assert colors[display_name] == "rgba(255, 0, 0, 0.8)"
 
     # the raw percent-encoded wire cell is no longer a valid style key
     with pytest.raises(ValueError):
@@ -212,3 +212,41 @@ def test_style_bundle_roundtrips_for_encoded_name(tmp_path):
     # keyed by the decoded display name; #123456 is normalized to its rgba form
     assert display_name in colors
     assert "18, 52, 86" in colors[display_name]
+
+
+def test_unique_annotation_values_skip_empty_strings(tmp_path):
+    """A v3 container spells a missing categorical cell as ``""``, so the Dash
+    reader sees a value where a null used to be.  Nothing downstream filters it
+    out, so an unskipped ``""`` becomes an extra (blank) entry in the annotation
+    value list -- 427 of them on the shipped ``venom_eat_stats``'s
+    ``ec__pred_value``, which gains a fifth "value" it never had."""
+    ann = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["P1", "P2", "P3"],
+                "ec__pred_value": ["1.1.1.1", None, "2.2.2.2"],
+            }
+        )
+    )
+    meta = pa.table(
+        {"projection_name": ["pca2"], "dimensions": [2], "info_json": ["{}"]}
+    )
+    data = pa.table(
+        {
+            "projection_name": ["pca2"] * 3,
+            "identifier": ["P1", "P2", "P3"],
+            "x": [0.0, 1.0, 2.0],
+            "y": [0.0, 1.0, 2.0],
+            "z": [None, None, None],
+        }
+    )
+    path = tmp_path / "d.parquetbundle"
+    write_bundle([ann, meta, data], path)
+
+    reader = ArrowReader(Path(extract_bundle_to_dir(path)))
+    # The null really did come back as "" -- the reason this test exists.
+    assert reader.get_protein_annotations("P2")["ec__pred_value"] == ""
+    assert sorted(reader.get_unique_annotation_values("ec__pred_value")) == [
+        "1.1.1.1",
+        "2.2.2.2",
+    ]

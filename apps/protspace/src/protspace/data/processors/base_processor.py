@@ -7,14 +7,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pyarrow.parquet as pq
 
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import (
-    SETTINGS_FILENAME,
-    STATISTICS_FILENAME,
-    create_settings_parquet,
     write_bundle,
+    write_directory,
 )
 from protspace.utils.constants import MDS_NAME, DimensionReductionConfig
 
@@ -131,12 +129,11 @@ class BaseProcessor:
             settings: Optional bundle settings (e.g. auto-generated cluster styles)
                 → 4th bundle part.
         """
-        # Custom filename mapping for better naming
-        filename_mapping = {
-            "protein_annotations": "selected_annotations.parquet",
-            "projections_metadata": "projections_metadata.parquet",
-            "projections_data": "projections_data.parquet",
-        }
+        core_tables = [
+            data["protein_annotations"],
+            data["projections_metadata"],
+            data["projections_data"],
+        ]
 
         if bundled:
             # Determine the bundle file path
@@ -153,34 +150,17 @@ class BaseProcessor:
                 bundle_path = output_path / "data.parquetbundle"
 
             write_bundle(
-                list(data.values()),
+                core_tables,
                 bundle_path,
                 settings=settings,
                 statistics=statistics,
             )
         else:
-            # Save as separate parquet files
-            # output_path must be a directory
+            # Save as separate parquet files; output_path must be a directory
             base_path = output_path.with_suffix("")  # Remove any extension
-            base_path.mkdir(parents=True, exist_ok=True)
-
-            for table_name, table in data.items():
-                filename = filename_mapping.get(table_name, f"{table_name}.parquet")
-                table_path = base_path / filename
-
-                # Overwrite existing files
-                pq.write_table(table, str(table_path))
-
-            if statistics is not None:
-                pq.write_table(statistics, str(base_path / STATISTICS_FILENAME))
-
-            # Mirror the bundled path: persist auto-generated settings (e.g. cluster
-            # legend styles) so unbundled output is not silently stripped of styling.
-            if settings is not None:
-                (base_path / SETTINGS_FILENAME).write_bytes(
-                    create_settings_parquet(settings)
-                )
-
+            write_directory(
+                core_tables, base_path, settings=settings, statistics=statistics
+            )
             logger.info(f"Saved separate parquet files to: {base_path}")
 
     def _create_protein_annotations_table(self, metadata: pd.DataFrame) -> pa.Table:
@@ -191,8 +171,7 @@ class BaseProcessor:
             df = df.rename(columns={self.identifier_col: "protein_id"})
 
         # Remove internal columns that are only needed for processing/caching
-        internal_columns = ["organism_id", "sequence"]
-        cols_to_drop = [c for c in internal_columns if c in df.columns]
+        cols_to_drop = [c for c in INTERNAL_ANNOTATIONS if c in df.columns]
         if cols_to_drop:
             df = df.drop(columns=cols_to_drop)
 

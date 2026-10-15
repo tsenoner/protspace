@@ -1,4 +1,5 @@
 import {
+  annotationMatchesQuery,
   annotationSource,
   compareTaxonomyRank,
   type Annotation,
@@ -85,4 +86,34 @@ export function groupAnnotations(
   }
 
   return groups;
+}
+
+/**
+ * Group annotations and keep only those matching a search query, dropping any
+ * section left empty.
+ *
+ * Both pickers filter through here, so "the dropdown and the query builder
+ * agree" is structural rather than a convention each has to keep honouring.
+ */
+export function filterGroupedAnnotations(
+  annotations: string[],
+  query: string,
+  definitions?: Readonly<Record<string, Pick<Annotation, 'runtime'>>>,
+): GroupedAnnotation[] {
+  const grouped = groupAnnotations(annotations, definitions);
+  if (!query.trim()) return grouped;
+
+  return grouped
+    .map((group) => ({
+      ...group,
+      annotations: group.annotations.filter((annotation) =>
+        annotationMatchesQuery(annotation, query, definitions?.[annotation]),
+      ),
+    }))
+    .filter((group) => group.annotations.length > 0);
+}
+
+/** Flatten grouped annotations into the order keyboard navigation walks. */
+export function flattenGroupedAnnotations(grouped: GroupedAnnotation[]): string[] {
+  return grouped.flatMap((group) => group.annotations);
 }

@@ -1,5 +1,13 @@
-import { defineConfig, devices } from '@playwright/test';
+import {
+  defineConfig,
+  devices,
+  type BrowserContextOptions,
+  type PlaywrightTestConfig,
+  type Project,
+} from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { STARTUP_DATASET_URL } from './helpers/fixtures';
+import { tourCompletedStorageState } from './helpers/tour-storage-state';
 
 const TEST_DIR = fileURLToPath(new URL('.', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -11,20 +19,42 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
  * (and reused if already running locally). To run against an existing server,
  * just leave it up — Playwright will detect it.
  *
- * The `fasta-prep-live` project requires the real prep backend and is opt-in:
- * set RUN_LIVE_E2E=1 to include it.
+ * Some projects are excluded from the default suite and gated on an env flag — see `optIn`
+ * below, and each project's own comment for what it needs.
  */
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
-const TOUR_COMPLETED_STORAGE_STATE = {
-  cookies: [],
-  origins: [
-    {
-      origin: new URL(BASE_URL).origin,
-      localStorage: [{ name: 'driver.overviewTour', value: 'true' }],
-    },
-  ],
-};
-const EMPTY_STORAGE_STATE = { cookies: [], origins: [] };
+const TOUR_COMPLETED_STORAGE_STATE = tourCompletedStorageState(BASE_URL);
+const EMPTY_STORAGE_STATE: BrowserContextOptions['storageState'] = { cookies: [], origins: [] };
+
+/**
+ * Include an opt-in project only when its env flag is set to '1'.
+ *
+ * Spreading `[]` is how Playwright configs express "not in the default suite"; this keeps the
+ * three opt-in projects from repeating the same ternary-around-an-array-literal boilerplate.
+ */
+const optIn = (envVar: string, project: Project): Project[] =>
+  process.env[envVar] === '1' ? [project] : [];
+
+/**
+ * Restrict the suite to the browsers named in E2E_BROWSERS (comma-separated), e.g.
+ * `E2E_BROWSERS=firefox,webkit`. Unset runs every project.
+ *
+ * CI runs Chromium on the bare runner and Firefox/WebKit in the Playwright container, because
+ * WebKit's apt dependencies (~180 packages) are what stalls on a slow Ubuntu mirror — see
+ * e2e.yml. `devices[...]` presets set `defaultBrowserType`; a hand-written project may set
+ * `browserName` instead, and a project with neither launches Chromium.
+ */
+const E2E_BROWSERS = process.env.E2E_BROWSERS
+  ? process.env.E2E_BROWSERS.split(',').map((b) => b.trim())
+  : undefined;
+const forBrowsers = (
+  projects: NonNullable<PlaywrightTestConfig['projects']>,
+): NonNullable<PlaywrightTestConfig['projects']> =>
+  projects.filter(
+    (p) =>
+      !E2E_BROWSERS ||
+      E2E_BROWSERS.includes(p.use?.browserName ?? p.use?.defaultBrowserType ?? 'chromium'),
+  );
 
 export default defineConfig({
   testDir: TEST_DIR,
@@ -58,6 +88,14 @@ export default defineConfig({
         timeout: 180_000,
         stdout: 'pipe',
         stderr: 'pipe',
+        // Pins the startup demo to a test fixture, so no scenario depends on the
+        // product's demo bundle. A dev server that was already running locally
+        // (reuseExistingServer) was started without it: stop it before a run.
+        env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
+        // Stop the server with the run. A pinned server left on :8080 would be
+        // picked up by `pnpm docs:images` (the root config starts none), whose
+        // captures would then photograph the fixture instead of the product demo.
+        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
       },
 
   use: {
@@ -67,7 +105,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [
+  projects: forBrowsers([
     {
       name: 'product-tour',
       use: {
@@ -110,6 +148,14 @@ export default defineConfig({
       testMatch: /brush-selection\.spec\.ts/,
     },
     {
+      name: 'zoom-indicator',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /zoom-indicator\.spec\.ts/,
+    },
+    {
       name: 'url-view-state',
       use: {
         ...devices['Desktop Chrome'],
@@ -136,21 +182,41 @@ export default defineConfig({
       },
       testMatch: /url-view-state\.spec\.ts/,
     },
-    // Fixture-dependent 573k-protein regression — copy
-    // protspace/data/other/sprot/sprot_50.parquetbundle to
-    // app/tests/fixtures/, then opt in via RUN_LARGE_BUNDLE_E2E=1.
-    ...(process.env.RUN_LARGE_BUNDLE_E2E === '1'
-      ? [
-          {
-            name: 'load-large-bundle',
-            use: {
-              ...devices['Desktop Chrome'],
-              viewport: { width: 1280, height: 720 },
-            },
-            testMatch: /load-large-bundle\.spec\.ts/,
-          },
-        ]
-      : []),
+    // 573k-protein regression on the Swiss-Prot bundle of the perf-datasets
+    // release: run `pnpm perf:fetch --only 573K_swissprot` (into perf/datasets/),
+    // then opt in via RUN_LARGE_BUNDLE_E2E=1.
+    ...optIn('RUN_LARGE_BUNDLE_E2E', {
+      name: 'load-large-bundle',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /load-large-bundle\.spec\.ts/,
+    }),
+    {
+      name: 'camera-no-restage',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /camera-no-restage\.spec\.ts/,
+    },
+    {
+      name: 'density-layer',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /density-layer\.spec\.ts/,
+    },
+    {
+      name: 'label-atlas-limit',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /label-atlas-limit\.spec\.ts/,
+    },
     {
       name: 'figure-editor',
       use: {
@@ -168,6 +234,27 @@ export default defineConfig({
       testMatch: /isolation-dataset-swap\.spec\.ts/,
     },
     {
+      name: 'example-datasets',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /example-datasets\.spec\.ts/,
+    },
+    // The product's examples, opened from the files the product serves (not fixtures):
+    // each must land on its curated view, and the run writes the Example datasets page's
+    // thumbnails. Run `pnpm examples:fetch` first, then opt in via RUN_EXAMPLES_E2E=1.
+    // Serial, so two large bundles never load at once.
+    ...optIn('RUN_EXAMPLES_E2E', {
+      name: 'examples-live',
+      fullyParallel: false,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /examples-live\.spec\.ts/,
+    }),
+    {
       name: 'multi-annotation-tooltip',
       use: {
         ...devices['Desktop Chrome'],
@@ -175,6 +262,16 @@ export default defineConfig({
       },
       testMatch: /multi-annotation-tooltip\.spec\.ts/,
     },
+    // Visual harness, not a CI gate: it asserts nothing beyond the shader compiling and its
+    // only product is a gitignored PNG to look at. Opt in via RUN_GLYPH_HARNESS=1.
+    ...optIn('RUN_GLYPH_HARNESS', {
+      name: 'glyph-outline',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /glyph-outline\.spec\.ts/,
+    }),
     {
       name: 'eat-visualization',
       use: {
@@ -195,19 +292,15 @@ export default defineConfig({
     // Live FASTA-prep flow against a real backend — opt-in via RUN_LIVE_E2E=1
     // (requires `docker compose up -d protspace-prep`; see fasta-prep.live.spec.ts
     // for the full prerequisites). Excluded from the default suite.
-    ...(process.env.RUN_LIVE_E2E === '1'
-      ? [
-          {
-            name: 'fasta-prep-live',
-            use: {
-              ...devices['Desktop Chrome'],
-              viewport: { width: 1280, height: 720 },
-            },
-            testMatch: /fasta-prep\.live\.spec\.ts/,
-          },
-        ]
-      : []),
-  ],
+    ...optIn('RUN_LIVE_E2E', {
+      name: 'fasta-prep-live',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
+      testMatch: /fasta-prep\.live\.spec\.ts/,
+    }),
+  ]),
 
   outputDir: '../test-results/',
 });

@@ -79,7 +79,7 @@ describe('annotationStatSummary', () => {
     expect(summary?.validity[0].value).toBe(0.326);
   });
 
-  it('pairs each validity metric with its source-embedding ceiling', () => {
+  it('pairs each validity metric with its source-embedding reference', () => {
     const summary = annotationStatSummary(ROWS, 'major_group', 'UMAP 2');
     expect(summary?.validity.map((m) => m.embedding)).toEqual([0.095, 2.958, null]);
   });
@@ -113,7 +113,7 @@ describe('annotationStatSummary', () => {
     expect(annotationStatSummary(embeddingOnly, 'major_group', 'UMAP 2')).toBeNull();
   });
 
-  it('drops the embedding ceiling when two embeddings scored the same metric', async () => {
+  it('drops the embedding reference when two embeddings scored the same metric', async () => {
     // A multi-embedding bundle has one embedding row per (annotation, metric, embedding), and
     // nothing in the tidy schema says which embedding this projection came from.
     const summary = annotationStatSummary(
@@ -135,7 +135,7 @@ describe('annotationStatSummary', () => {
     expect(summary!.validity[0].embedding).toBeNull();
   });
 
-  it('keeps the ceiling when a single embedding scored the metric twice-over rows', async () => {
+  it('keeps the reference when a single embedding scored the metric twice-over rows', async () => {
     const summary = annotationStatSummary(
       [
         row({ metric: 'silhouette', value: 0.326 }),
@@ -150,7 +150,7 @@ describe('annotationStatSummary', () => {
 
   it('ignores non-finite rows entirely', () => {
     // A NaN double from a foreign writer is not a score: it must not switch the ⓘ icon on,
-    // and as a ceiling it must not defeat the `embedding === null` column collapse.
+    // and as a reference it must not defeat the `embedding === null` column collapse.
     expect(annotationStatSummary([row({ value: Number.NaN })], 'major_group', 'UMAP 2')).toBeNull();
 
     const summary = annotationStatSummary(
@@ -460,12 +460,12 @@ describe('per-category rows', () => {
     expect(mixed!.validity[0].value).toBeCloseTo(0.326, 3);
   });
 
-  it('does not let a per-category embedding row become the ceiling', () => {
+  it('does not let a per-category embedding row become the reference', () => {
     const rows: ProjectionStatisticRow[] = [
       aggregate,
       // Per-category row listed BEFORE the aggregate embedding row: if the `category == null`
       // filter were ever misplaced (e.g. applied to `inProjection` instead of `forAnnotation`),
-      // this row would win the ceiling map's first-write-wins race and the test would catch it.
+      // this row would win the reference map's first-write-wins race and the test would catch it.
       {
         ...aggregate,
         space_kind: 'embedding',
@@ -546,7 +546,7 @@ describe('annotationCategoryScores', () => {
     ]);
   });
 
-  it('picks up the embedding ceiling per category', () => {
+  it('picks up the embedding reference per category', () => {
     const rows: ProjectionStatisticRow[] = [
       { ...base, category: 'Elapidae', value: 0.44 },
       {
@@ -563,9 +563,9 @@ describe('annotationCategoryScores', () => {
     expect(scores[0].silhouetteEmbedding).toBe(0.9);
   });
 
-  it('drops the ceiling when the bundle carries more than one embedding', () => {
+  it('drops the reference when the bundle carries more than one embedding', () => {
     // Nothing links a projection back to the embedding it came from, so a metric
-    // scored on two embeddings has no ceiling we can attribute to this projection.
+    // scored on two embeddings has no reference we can attribute to this projection.
     const rows: ProjectionStatisticRow[] = [
       { ...base, category: 'Elapidae', value: 0.44 },
       {

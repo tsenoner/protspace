@@ -14,7 +14,9 @@
       // has to be rooted here or knip cannot see what it imports — and reports
       // the reader/conversion internals it pins as unused exports.
       "entry": [
-        "scripts/**/*.ts",
+        // Roots only. Globbing every file under scripts/ made each one its own
+        // entry, so knip could never report anything there as unused.
+        "scripts/docs-screenshots/*.spec.ts",
         "docs/.vitepress/config.mts",
         "perf/**/*.spec.ts",
         "tests/contract/**/*.test.ts",
@@ -28,7 +30,9 @@
       ],
     },
     "packages/core": {
-      "entry": ["src/index.ts", "src/components/publish/index.ts"],
+      // Both entries (src/index.ts, src/components/publish/index.ts) are discovered from
+      // package.json `exports`, whose dist/ paths map back to src/ through tsconfig `rootDir`;
+      // listing them again trips config-hint errors.
       "project": ["src/**/*.ts"],
     },
     "packages/utils": {

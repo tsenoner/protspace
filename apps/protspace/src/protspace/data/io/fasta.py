@@ -8,6 +8,11 @@ logger = logging.getLogger(__name__)
 FASTA_EXTENSIONS = {".fasta", ".fa", ".faa"}
 
 
+def count_residues(sequence: str) -> int:
+    """Count amino-acid residues, ignoring ``*`` terminators and ``-`` gaps."""
+    return len(sequence) - sequence.count("*") - sequence.count("-")
+
+
 def is_fasta_file(path: Path) -> bool:
     """Check whether *path* has a recognised FASTA extension."""
     return path.suffix.lower() in FASTA_EXTENSIONS
@@ -64,14 +69,3 @@ def parse_fasta(path: Path) -> dict[str, str]:
         )
 
     return sequences
-
-
-def parse_fasta_by_identifier(path: Path) -> dict[str, str]:
-    """Parse a FASTA file into ``{identifier: sequence}``.
-
-    Headers are reduced to the protein identifier embeddings are keyed by
-    (``sp|P12345|NAME`` → ``P12345``).
-    """
-    from protspace.data.loaders.h5 import parse_identifier
-
-    return {parse_identifier(header): seq for header, seq in parse_fasta(path).items()}

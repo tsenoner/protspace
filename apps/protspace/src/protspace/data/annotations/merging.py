@@ -6,6 +6,8 @@ This module handles merging annotations from multiple sources (UniProt, Taxonomy
 
 from collections import namedtuple
 
+from protspace.data.annotations.configuration import TAXONOMY_LOOKUP_ANNOTATION
+
 ProteinAnnotations = namedtuple("ProteinAnnotations", ["identifier", "annotations"])
 
 
@@ -72,7 +74,7 @@ class AnnotationMerger:
         # Merge taxonomy annotations
         updated_annotations = self._merge_taxonomy(
             updated_annotations,
-            protein.annotations.get("organism_id"),
+            protein.annotations.get(TAXONOMY_LOOKUP_ANNOTATION),
             taxonomy_annotations,
         )
 

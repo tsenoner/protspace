@@ -1,43 +1,19 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as d3 from 'd3';
-import { WebGLRenderer } from './webgl-renderer';
-import type { PlotData } from '@protspace/utils';
-import type { ScalePair, WebGLStyleGetters } from '../types';
-import { createMockCanvas } from './test-support/mock-webgl2';
+import type { ScalePair } from '../types';
+import {
+  makeRenderer as makeFixtureRenderer,
+  plotDataFrom as pd,
+} from './test-support/renderer-fixture';
 
-function pd(xs: number[], ys: number[]): PlotData {
-  return {
-    length: xs.length,
-    xs: new Float32Array(xs),
-    ys: new Float32Array(ys),
-    zs: null,
-    originalIndices: null,
-    proteinIds: xs.map((_, i) => `p${i}`),
-  };
-}
+// This suite keeps its own [0, 10] data domain instead of the fixture's unit square.
 const scales = (): ScalePair => ({
   x: d3.scaleLinear().domain([0, 10]).range([0, 800]),
   y: d3.scaleLinear().domain([0, 10]).range([0, 600]),
 });
-const style = (): WebGLStyleGetters => ({
-  getColors: () => ['#ff0000'],
-  getPointSize: () => 9,
-  getOpacity: () => 1,
-  getDepth: () => 0,
-  getShape: () => 'circle',
-  isPredicted: () => false,
-});
-
 function makeRenderer() {
-  const { canvas } = createMockCanvas();
-  return new WebGLRenderer(
-    canvas,
-    scales,
-    () => d3.zoomIdentity,
-    () => ({ width: 800, height: 600 }),
-    style(),
-  );
+  return makeFixtureRenderer({}, ['#ff0000'], { getScales: scales }).renderer;
 }
 
 describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', () => {
@@ -92,30 +68,39 @@ describe('WebGLRenderer sampled-slot signatures (F-02 characterization lock)', (
   });
 });
 
-// ── F-55 / F-56 removal guards on a live WebGLRenderer instance ─────────────
-// F-55: the unused public getGamma/setGamma accessors are removed; the gamma
-//       field and its effective-gamma resolver (getEffectiveGamma) stay.
-// F-56: the @deprecated no-op setSelectedAnnotation is removed; the live
-//       signature methods (setStyleSignature) survive.
-describe('WebGLRenderer dead-accessor removal guards (F-55, F-56)', () => {
-  let renderer: ReturnType<typeof makeRenderer>;
-  beforeEach(() => {
-    renderer = makeRenderer();
-  });
-  afterEach(() => vi.restoreAllMocks());
+describe('WebGLRenderer data signature — why re-materialisation was catastrophic (#456)', () => {
+  it('a length change rebuilds even when every sampled coordinate is identical', () => {
+    // This is the mechanism behind the 1M cliff. The viewport cull returned a
+    // freshly materialised PlotData per camera move; its CONTENT at the sampled
+    // slots was often unchanged, but its LENGTH moved as points entered and left
+    // the viewport — and length is the first term of the signature. So a pan that
+    // changed nothing visible still forced a full re-stage: an O(N log N) depth
+    // sort, ~8 style-getter calls per point, and ~44 MB of uploads.
+    //
+    // The fix is upstream of this check, not in it: the renderer is now always
+    // handed the same object, so the signature cannot move. The check itself is
+    // correct and stays.
+    const renderer = makeRenderer();
+    const populateSpy = vi
+      .spyOn(
+        renderer as unknown as { populateBuffers: (...a: unknown[]) => void },
+        'populateBuffers',
+      )
+      .mockImplementation(() => {});
+    vi.spyOn(
+      renderer as unknown as { renderWithGammaCorrection: (...a: unknown[]) => void },
+      'renderWithGammaCorrection',
+    ).mockImplementation(() => {});
 
-  it('F-55: getGamma / setGamma are gone; getEffectiveGamma survives', () => {
-    const surface = renderer as unknown as Record<string, unknown>;
-    expect(surface.getGamma).toBeUndefined();
-    expect(surface.setGamma).toBeUndefined();
-    // getEffectiveGamma is private; reach it through the same indexed view used
-    // by the context-loss lock.
-    expect(typeof surface.getEffectiveGamma).toBe('function');
-  });
+    // Same first, middle and last coordinates; one fewer point in between.
+    const full = pd([0, 5, 5, 9], [0, 5, 5, 9]);
+    const subset = pd([0, 5, 9], [0, 5, 9]);
 
-  it('F-56: setSelectedAnnotation is gone; setStyleSignature survives', () => {
-    const surface = renderer as unknown as Record<string, unknown>;
-    expect(surface.setSelectedAnnotation).toBeUndefined();
-    expect(typeof surface.setStyleSignature).toBe('function');
+    renderer.render(full);
+    populateSpy.mockClear();
+    renderer.render(subset);
+    expect(populateSpy).toHaveBeenCalled();
+
+    vi.restoreAllMocks();
   });
 });

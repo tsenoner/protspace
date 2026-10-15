@@ -8,6 +8,7 @@ import type {
   AnnotationPredictedData,
   ProjectionStatisticRow,
   LegendSortMode,
+  ScatterplotConfig,
 } from '@protspace/utils';
 
 export interface ProtspaceData {
@@ -41,7 +42,7 @@ export interface ProtspaceData {
     }
   >;
   annotation_data?: Record<string, AnnotationData>;
-  numeric_annotation_data?: Record<string, (number | null)[]>;
+  numeric_annotation_data?: Record<string, Float64Array>;
   protein_ids?: string[];
   annotation_predicted?: AnnotationPredictedData;
   /** Rows of the bundle's optional statistics part (backend `--stats`); absent otherwise. */
@@ -52,6 +53,20 @@ export interface DataChangeDetail {
   data: ProtspaceData;
 }
 
+/** One entry of the host app's example-dataset catalog, as shown in the Import menu. */
+export interface ExampleDatasetSummary {
+  id: string;
+  label: string;
+  /** What the dataset is; the first paragraph of the entry's info popover. */
+  description: string;
+  /** One line naming what the example's curated view shows; the popover's second paragraph. */
+  insight?: string;
+  /** The entry's documentation, linked as "Learn more ↗" from its info popover. */
+  docsUrl?: string;
+  /** Slow to download and decode: the item shows a "Large" badge. */
+  large?: boolean;
+}
+
 export interface ScatterplotElementLike extends Element {
   // State properties
   selectedProjectionIndex?: number;
@@ -59,6 +74,7 @@ export interface ScatterplotElementLike extends Element {
   tooltipAnnotations?: string[];
   selectionMode?: boolean;
   selectionTool?: 'rectangle' | 'lasso';
+  config?: Partial<ScatterplotConfig>;
   selectedProteinIds?: string[];
   data?: ProtspaceData;
   filteredProteinIds?: string[];
@@ -66,10 +82,6 @@ export interface ScatterplotElementLike extends Element {
   numericAnnotationSettings?: NumericAnnotationDisplaySettingsMap;
   annotationSortModes?: Record<string, LegendSortMode>;
   numericManualOrderIdsByAnnotation?: Record<string, string[]>;
-  runWebGLRenderPerfMeasurements?: (
-    iterations?: number,
-    options?: { download?: boolean; dataset?: { id: string; url?: string; proteinCount?: number } },
-  ) => Promise<unknown>;
 
   // Data access
   getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => ProtspaceData | undefined;

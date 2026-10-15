@@ -1,12 +1,15 @@
 import type {
   DataErrorEventDetail,
   LegendErrorEventDetail,
+  RendererDegradedDetail,
   SelectionDisabledNotificationDetail,
 } from '@protspace/core';
 import type { NotifyOptions } from '../lib/notify';
 import { buildBugContext, buildMailto, clientContext } from '../lib/support';
+import type { ExampleDataset } from './example-datasets';
 import { FastaPrepError } from './fasta-prep-client';
 import { COLAB_NOTEBOOK_URL, MAX_UPLOAD_LABEL, MAX_SEQUENCES } from './fasta-prep-limits';
+import type { DatasetChangeSource } from './types';
 
 /**
  * Build a "Report this" toast action that opens a prefilled support email
@@ -135,7 +138,81 @@ export function getDataLoadFailureNotification(detail: DataErrorEventDetail): No
   };
 }
 
-export function getExportSuccessNotification(filename: string): NotifyOptions {
+/**
+ * A failed example download (a bundle that downloads but fails to parse is
+ * reported by `getDataLoadFailureNotification` instead): Retry is the primary
+ * action and "Report this" the secondary one.
+ *
+ * The dedupe key names how the load began (`source`), because Retry repeats
+ * that request: a menu choice and a Back/Forward to the same example that both
+ * fail within the dedupe window each keep their own toast and their own Retry.
+ */
+export function getExampleLoadFailureNotification(
+  entry: ExampleDataset,
+  error: unknown,
+  { source, onRetry }: { source: DatasetChangeSource; onRetry: () => void },
+): NotifyOptions {
+  return {
+    title: `Couldn't load "${entry.label}".`,
+    description: getErrorMessage(error),
+    durationMs: 10_000,
+    dedupeKey: `example-load-error:${source}:${entry.id}`,
+    action: { label: 'Retry', onClick: onRetry },
+    secondaryAction: buildReportAction(`Example dataset "${entry.id}"`, error),
+  };
+}
+
+export function getUnknownExampleDatasetNotification(id: string): NotifyOptions {
+  return {
+    title: `Unknown example dataset "${id}".`,
+    description: "That link doesn't match any example dataset. Showing your usual dataset instead.",
+    durationMs: 8_000,
+    dedupeKey: `unknown-example-dataset:${id}`,
+  };
+}
+
+/** "1 protein" / "3 proteins": proteins a loaded file holds without coordinates. */
+function unplacedProteins(count: number): string {
+  return `${count.toLocaleString()} protein${count === 1 ? '' : 's'} without coordinates`;
+}
+
+/**
+ * A user imported a v1/v2 bundle: it loads, but reading that format ends in 5.0.0.
+ *
+ * An export from the app holds only the proteins it shows, so a file that also holds
+ * proteins no projection places is pointed at `protspace convert` alone, which keeps them.
+ */
+export function getLegacyBundleFormatNotification(
+  formatVersion: number,
+  unplacedProteinCount = 0,
+): NotifyOptions {
+  const upgrade =
+    unplacedProteinCount > 0
+      ? `To upgrade this file, run "protspace convert" on it. It also holds ${unplacedProteins(unplacedProteinCount)}, which an export from here leaves out.`
+      : 'To upgrade this file, export it again as a .parquetbundle from here, or run "protspace convert" on it.';
+  return {
+    title: 'This file uses an older bundle format.',
+    description: `Format v${formatVersion} bundles will stop opening in ProtSpace 5.0.0. ${upgrade}`,
+    durationMs: 12_000,
+    dedupeKey: 'legacy-bundle-format',
+  };
+}
+
+/**
+ * `unplacedProteinCount` is what the loaded file holds beyond the dataset the app shows (see
+ * `DataLoadedEventDetail`): a .parquetbundle export leaves those proteins out, so it says so.
+ */
+export function getExportSuccessNotification(
+  filename: string,
+  unplacedProteinCount = 0,
+): NotifyOptions {
+  if (unplacedProteinCount > 0) {
+    return {
+      title: 'Export ready.',
+      description: `${filename} leaves out the ${unplacedProteins(unplacedProteinCount)} the loaded file holds. "protspace convert" keeps them.`,
+      durationMs: 10_000,
+    };
+  }
   return {
     title: 'Export ready.',
     description: filename,
@@ -164,6 +241,34 @@ export function getSelectionDisabledNotification(
     description: detail.message,
     durationMs: 5_000,
     dedupeKey: `selection-disabled:${reason}:${dataSize}`,
+  };
+}
+
+/**
+ * Copy for a renderer capability reduction.
+ *
+ * Every one of these was previously silent or console-only, on hardware that
+ * never said anything was out of range. The toast shows the user-facing message;
+ * the report action carries the measured numbers instead, because the device
+ * limit and the point count are what identify the device class in a bug report.
+ */
+export function getRendererDegradedNotification(detail: RendererDegradedDetail): NotifyOptions {
+  const context = detail.context;
+  const reason = context?.reason ?? 'unknown';
+  return {
+    // Contours are a feature the user switched on, not a quality level.
+    title:
+      reason === 'density-unavailable' ? 'Contours unavailable.' : 'Rendering quality reduced.',
+    description: detail.message,
+    durationMs: 10_000,
+    dedupeKey: `renderer-degraded:${reason}`,
+    action: buildReportAction(
+      'Rendering',
+      context
+        ? `${reason} (maxTextureSize=${context.maxTextureSize}, stride=${context.stride}, ` +
+            `points=${context.pointCount}${context.detail ? `, cause=${context.detail}` : ''})`
+        : detail.message,
+    ),
   };
 }
 

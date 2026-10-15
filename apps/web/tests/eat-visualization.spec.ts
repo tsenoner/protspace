@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, waitForProteinCount } from './helpers/explore';
+import { STARTUP_URL_GLOB } from './helpers/fixtures';
 
 const EAT_FIXTURE = fileURLToPath(
   new URL('./fixtures/phosphatase_eat.parquetbundle', import.meta.url),
@@ -9,14 +10,8 @@ const EAT_FIXTURE = fileURLToPath(
 // Exact asset from issue #277 comment 4902936797. Bundle SHA-256:
 // 06bacd7a1f862bdea4a9bf2e81037a4a7d772636704c74e3f2806958f3b9ba33.
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('driver.overviewTour', 'true');
-  });
-});
-
 async function loadEatFixture(page: Page): Promise<void> {
-  await page.route('**/data.parquetbundle', (route) => route.abort());
+  await page.route(STARTUP_URL_GLOB, (route) => route.abort());
   await page.goto('/explore');
   await dismissTourIfPresent(page);
   await page.waitForFunction(() => {
@@ -27,14 +22,7 @@ async function loadEatFixture(page: Page): Promise<void> {
   });
 
   await page.locator('protspace-data-loader input[type="file"]').setInputFiles(EAT_FIXTURE);
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          data?: { protein_ids?: string[] };
-        })
-      | null;
-    return plot?.data?.protein_ids?.length === 832;
-  });
+  await waitForProteinCount(page, 832);
 }
 
 async function selectEcAnnotation(page: Page): Promise<void> {
@@ -53,45 +41,85 @@ async function selectEcAnnotation(page: Page): Promise<void> {
     .toBe('ec');
 }
 
+/**
+ * Per-protein reliability score for the `ec` annotation, read straight off the
+ * loaded dataset: `null` on curated proteins (they carry no EAT transfer, so
+ * they have no confidence) and the transfer's score on EAT-predicted ones.
+ *
+ * The column is resolved by runtime identity (role + base annotation), the same
+ * way the app resolves it, so a renamed/suffixed confidence column still works.
+ */
+async function readEcEatConfidences(
+  page: Page,
+): Promise<{ id: string; confidence: number | null }[]> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('protspace-scatterplot') as
+      | (Element & {
+          data?: {
+            protein_ids: string[];
+            annotations: Record<string, { runtime?: { role?: string; baseAnnotation?: string } }>;
+            numeric_annotation_data?: Record<string, Float64Array>;
+          };
+        })
+      | null;
+    const data = plot?.data;
+    const key = Object.entries(data?.annotations ?? {}).find(
+      ([, annotation]) =>
+        annotation.runtime?.role === 'eat-confidence' &&
+        annotation.runtime?.baseAnnotation === 'ec',
+    )?.[0];
+    const values = key ? data?.numeric_annotation_data?.[key] : undefined;
+    if (!data || !values) {
+      throw new Error('The EAT confidence column for `ec` is not loaded');
+    }
+    return data.protein_ids.map((id, index) => ({
+      id,
+      confidence: Number.isFinite(values[index]) ? values[index] : null,
+    }));
+  });
+}
+
+/**
+ * Protein ids the scatter plot currently renders. Query filters physically cull
+ * `_plotData` (see scatter-plot.filter-render.test.ts), so this is the visible
+ * point set, and `originalIndices` still addresses the full dataset.
+ */
+async function readRenderedProteinIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const plotData = (
+      document.querySelector('protspace-scatterplot') as unknown as
+        | (Element & {
+            _plotData?: {
+              length: number;
+              proteinIds: string[];
+              originalIndices: Int32Array | null;
+            };
+          })
+        | null
+    )?._plotData;
+    if (!plotData) throw new Error('Scatter plot geometry is not ready');
+    return Array.from(
+      { length: plotData.length },
+      (_, slot) => plotData.proteinIds[plotData.originalIndices?.[slot] ?? slot],
+    );
+  });
+}
+
 async function getProteinScreenPosition(
   page: Page,
   proteinId: string,
 ): Promise<{ x: number; y: number }> {
   return page.evaluate((id) => {
     const plot = document.querySelector('protspace-scatterplot') as
-      | (HTMLElement & {
-          _plotData?: {
-            length: number;
-            xs: Float32Array;
-            ys: Float32Array;
-            originalIndices: Int32Array | null;
-            proteinIds: string[];
-          };
-          _scales?: { x(value: number): number; y(value: number): number };
-          _transform?: { x: number; y: number; k: number };
+      | (Element & {
+          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
         })
       | null;
-    const canvas = plot?.shadowRoot?.querySelector('canvas');
-    const data = plot?._plotData;
-    const scales = plot?._scales;
-    const transform = plot?._transform;
-    if (!plot || !canvas || !data || !scales || !transform) {
-      throw new Error('Scatter plot geometry is not ready');
+    const position = plot?.getProteinClientPosition(id);
+    if (!position) {
+      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
     }
-
-    const proteinIndex = data.proteinIds.indexOf(id);
-    const slot = data.originalIndices
-      ? Array.from(data.originalIndices).findIndex((value) => value === proteinIndex)
-      : proteinIndex;
-    if (proteinIndex < 0 || slot < 0) {
-      throw new Error(`Protein ${id} is not in the rendered view`);
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: rect.left + scales.x(data.xs[slot]) * transform.k + transform.x,
-      y: rect.top + scales.y(data.ys[slot]) * transform.k + transform.y,
-    };
+    return position;
   }, proteinId);
 }
 
@@ -111,7 +139,7 @@ async function sampleEncodedExportMarkers(
 }> {
   return page.evaluate(
     async ({ pointSize, backgroundColor }) => {
-      const plot = document.querySelector('protspace-scatterplot') as
+      const plot = document.querySelector('protspace-scatterplot') as unknown as
         | (HTMLElement & {
             _plotData?: {
               length: number;
@@ -145,6 +173,8 @@ async function sampleEncodedExportMarkers(
             } | null;
             config?: Record<string, unknown>;
             updateComplete?: Promise<unknown>;
+            _webglRenderer?: { pointScale(): number };
+            _mergedConfig?: { width: number; height: number };
           })
         | null;
       const plotData = plot?._plotData;
@@ -222,11 +252,12 @@ async function sampleEncodedExportMarkers(
         const rgba = context.getImageData(Math.round(x), Math.round(y), 1, 1).data;
         return Array.from(rgba);
       };
-      // At 0.75 * radius (sqrt(pointSize)/4 vs. the sqrt(pointSize)/3 sprite radius, see
-      // stage-point.ts POINT_SIZE_DIVISOR) this offset lands well inside the ring band for both
-      // the pre-Task-3 ringWidth clamp(aa*1.75, 0.22, 0.42) and the thicker
-      // clamp(aa*1.75, 0.30, 0.55) — the wider ring only grows margin, it never shrinks it.
-      const ringOffset = Math.max(1, Math.round(Math.sqrt(pointSize) / 4));
+      const live = plot._mergedConfig!;
+      const exportRadius =
+        (Math.sqrt(pointSize) / 3) *
+        plot._webglRenderer!.pointScale() *
+        Math.sqrt((width * height) / (live.width * live.height));
+      const ringOffset = Math.max(1, Math.round(0.75 * exportRadius));
       const diagonalOffset = Math.max(1, Math.round(ringOffset / Math.SQRT2));
       const predictedRingOffsets = [
         [-ringOffset, 0],
@@ -277,7 +308,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const predictedVisibleCount = () =>
     page.evaluate(() => {
       const renderer = (
-        document.querySelector('protspace-scatterplot') as
+        document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
               _webglRenderer?: { predicted?: Float32Array; currentPointCount?: number };
             })
@@ -297,20 +328,8 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(thresholdPercent).toHaveValue('0');
   await expect(filterButton).not.toHaveClass(/filter-active/);
   await expect.poll(predictedVisibleCount).toBe(213);
-
-  // Raising the threshold drives the shared NOT(EAT_confidence < x) filter, which
-  // HIDES sub-threshold predictions (fewer visible points) rather than dimming them.
-  await thresholdPercent.fill('99');
-  await expect(threshold).toHaveValue('0.99');
-  await expect(filterButton).toHaveClass(/filter-active/);
-  await expect.poll(predictedVisibleCount).toBeLessThan(213);
-
-  // Dragging back to 0 removes the condition and restores every prediction.
-  await threshold.press('Home');
-  await expect(threshold).toHaveValue('0');
-  await expect(thresholdPercent).toHaveValue('0');
-  await expect(filterButton).not.toHaveClass(/filter-active/);
-  await expect.poll(predictedVisibleCount).toBe(213);
+  // Raising the threshold (hiding, the filter-active button, exact survivor counts)
+  // is checked by "keeps curated points visible while the reliability filter…".
 
   // The info popover explains predictions are filtered out while curated stays.
   await eatGroup.getByRole('button', { name: 'Information about EAT reliability filter' }).click();
@@ -347,7 +366,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(legendSummary).toContainText(/Predicted by EAT\s*213/);
 
   const noAnnotationExample = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];
@@ -381,7 +400,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const scatterplot = document.querySelector('protspace-scatterplot') as
+        const scatterplot = document.querySelector('protspace-scatterplot') as unknown as
           | (Element & {
               _plotData?: {
                 length: number;
@@ -416,7 +435,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     .poll(() =>
       page.evaluate(() => {
         const renderer = (
-          document.querySelector('protspace-scatterplot') as
+          document.querySelector('protspace-scatterplot') as unknown as
             | (Element & {
                 _webglRenderer?: {
                   predicted?: Float32Array;
@@ -441,7 +460,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(threshold).toBeEnabled();
 
   const exactMultiValueTransfer = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];
@@ -509,7 +528,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   });
 
   const transfer = await page.evaluate(() => {
-    const plotElement = document.querySelector('protspace-scatterplot') as
+    const plotElement = document.querySelector('protspace-scatterplot') as unknown as
       | (Element & {
           data?: {
             protein_ids: string[];
@@ -573,7 +592,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   await expect(plot.locator('.connector-status')).not.toBeVisible();
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const endpoint = plot.locator('circle.eat-provenance-endpoint').first();
+  const haloRadius = () =>
+    plot.evaluate((el) => {
+      const p = el as unknown as { _drawnPointRadiusCss(): number };
+      return Math.max(4, p._drawnPointRadiusCss() + 2);
+    });
   const endpointBeforeZoom = await endpoint.boundingBox();
+  const haloBeforeZoom = await haloRadius();
   const plotBounds = await plot.boundingBox();
   expect(endpointBeforeZoom).not.toBeNull();
   expect(plotBounds).not.toBeNull();
@@ -582,9 +607,13 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     plotBounds!.y + plotBounds!.height / 2,
   );
   await page.mouse.wheel(0, -500);
+  await expect.poll(haloRadius).toBeGreaterThan(haloBeforeZoom);
   await expect
-    .poll(async () => (await endpoint.boundingBox())?.width ?? 0)
-    .toBeCloseTo(endpointBeforeZoom!.width, 0);
+    .poll(async () => {
+      const grownBy = 2 * ((await haloRadius()) - haloBeforeZoom);
+      return ((await endpoint.boundingBox())?.width ?? 0) - endpointBeforeZoom!.width - grownBy;
+    })
+    .toBeCloseTo(0, 0);
   await expect(plot.locator('line.eat-provenance-connector')).toHaveCount(4);
   const firstConnectorX = await plot
     .locator('line.eat-provenance-connector')
@@ -743,4 +772,109 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   expect(fs.statSync(downloadPath!).size).toBeGreaterThan(10_000);
+});
+
+/**
+ * Characterization guard for the reliability filter's NET user-visible outcome:
+ * raising the threshold hides low-confidence EAT predictions while CURATED
+ * points — which carry no confidence score at all — stay on the plot.
+ *
+ * Deliberately outcome-only: it asserts which proteins the scatter plot renders
+ * and never how the filter is expressed (no operator, no query shape, no
+ * condition internals). The mechanism has already changed once under this guard:
+ * curated points used to be re-included by the NOT index-complement, and the
+ * condition is now stated positively as `EAT_confidence >= x` carrying an
+ * explicit "no value" presence chip. The test passed unchanged across that
+ * rewrite, which is the point — if it ever fails, curated annotations really did
+ * start disappearing from the plot, which is the regression it exists to catch.
+ */
+test('keeps curated points visible while the reliability filter hides low-confidence EAT predictions', async ({
+  page,
+}) => {
+  await loadEatFixture(page);
+  await selectEcAnnotation(page);
+
+  const plot = page.locator('protspace-scatterplot');
+  const legend = page.locator('protspace-legend');
+  const eatGroup = legend.getByRole('region', { name: 'Embedding Annotation Transfer' });
+  const thresholdPercent = eatGroup.getByRole('spinbutton', {
+    name: 'EAT reliability filter percentage',
+  });
+  const filterButton = page.locator('protspace-control-bar .filter-container .dropdown-trigger');
+
+  const confidences = await readEcEatConfidences(page);
+  const curated = confidences.filter(({ confidence }) => confidence === null).map(({ id }) => id);
+  const predicted = confidences.filter(
+    (entry): entry is { id: string; confidence: number } => entry.confidence !== null,
+  );
+  // Fixture facts (phosphatase bundle, `ec`): 832 proteins = 619 curated + 213 EAT transfers.
+  expect(curated).toHaveLength(619);
+  expect(predicted).toHaveLength(213);
+
+  /**
+   * Visibility snapshot at a given threshold. `curatedHidden` lists ids rather
+   * than counting them so a regression names the vanished proteins, and
+   * `predictedExpectedVisible` re-derives the expected survivor count from the
+   * data so the hard-coded numbers below stay self-explaining.
+   */
+  const visibility = async (threshold: number) => {
+    const rendered = new Set(await readRenderedProteinIds(page));
+    return {
+      renderedTotal: rendered.size,
+      curatedHidden: curated.filter((id) => !rendered.has(id)),
+      predictedVisible: predicted.filter(({ id }) => rendered.has(id)).length,
+      predictedExpectedVisible: predicted.filter(({ confidence }) => confidence >= threshold)
+        .length,
+    };
+  };
+
+  // Threshold 0: nothing is filtered, the whole dataset is on screen.
+  await expect
+    .poll(() => visibility(0), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 832,
+      curatedHidden: [],
+      predictedVisible: 213,
+      predictedExpectedVisible: 213,
+    });
+
+  // 60%: 94 of the 213 transfers fall below the threshold and are hidden; all
+  // 619 curated points stay, so 619 + 119 = 738 points remain rendered.
+  await thresholdPercent.fill('60');
+  // The threshold drives the shared filter, so the Filter button shows it as active.
+  await expect(filterButton).toHaveClass(/filter-active/);
+  await expect
+    .poll(() => visibility(0.6), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 738,
+      curatedHidden: [],
+      predictedVisible: 119,
+      predictedExpectedVisible: 119,
+    });
+  await expect(plot.locator('.plot-indicator').first()).toHaveText('738 points');
+
+  // 100%: only the 4 transfers at full reliability survive — still no curated
+  // point is dropped, which is the whole point of the filter.
+  await thresholdPercent.fill('100');
+  await expect
+    .poll(() => visibility(1), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 623,
+      curatedHidden: [],
+      predictedVisible: 4,
+      predictedExpectedVisible: 4,
+    });
+
+  // Back to 0: the condition is removed and every prediction returns, so the
+  // filter hid rather than dropped them.
+  await thresholdPercent.fill('0');
+  await expect(filterButton).not.toHaveClass(/filter-active/);
+  await expect
+    .poll(() => visibility(0), { timeout: 15_000 })
+    .toEqual({
+      renderedTotal: 832,
+      curatedHidden: [],
+      predictedVisible: 213,
+      predictedExpectedVisible: 213,
+    });
 });

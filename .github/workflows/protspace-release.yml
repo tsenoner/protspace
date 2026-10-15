@@ -78,19 +78,34 @@ jobs:
           set -e
           echo "Running semantic release..."
 
-          # Run semantic release with error handling
+          # Run semantic release with error handling.
+          #
+          # `released` MUST be decided from the output, not the exit code:
+          # semantic-release exits 0 when it declines to cut a release ("No
+          # release will be made, X has already been released!"). Every release
+          # pushes a version-bump commit that touches apps/protspace/**, which
+          # re-triggers this workflow; that second run is exactly the exit-0
+          # no-op case. Keying off the exit code alone reported released=true
+          # there and dispatched a duplicate publish of the tag that had just
+          # been published (v4.9.1 was uploaded to PyPI twice on 2026-07-24).
           if output=$(uv tool run --from python-semantic-release semantic-release version --commit --changelog --push --tag --vcs-release 2>&1); then
             echo "$output"
-            echo "released=true" >> $GITHUB_OUTPUT
 
-            # Get the latest tag
             latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
             echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+
+            if echo "$output" | grep -q "No release will be made\|no new version"; then
+              echo "No release needed - skipping publish"
+              echo "released=false" >> $GITHUB_OUTPUT
+            else
+              echo "released=true" >> $GITHUB_OUTPUT
+            fi
           else
             echo "Semantic release failed:"
             echo "$output"
 
-            # Check if it's just "no release needed"
+            # Same no-op check on the non-zero path: older versions signalled
+            # "nothing to release" with a failing exit code.
             if echo "$output" | grep -q "No release will be made\|no new version"; then
               echo "No release needed"
               echo "released=false" >> $GITHUB_OUTPUT

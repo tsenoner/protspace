@@ -28,30 +28,31 @@ def _read_format_version(schema_metadata: dict | None) -> int:
 class ArrowReader:
     """Read and manipulate ProtSpace data from Parquet files or a dict.
 
-    Accepts either a ``Path`` to a directory of Parquet files or a
-    pre-built ``dict`` (the same structure previously handled by the
-    legacy ``JsonReader``).
+    Accepts a ``Path`` to a ``.parquetbundle`` file or to a directory of
+    Parquet files, or a pre-built ``dict`` (the same structure previously
+    handled by the legacy ``JsonReader``).
     """
 
     def __init__(self, source: Path | dict):
         """
         Args:
-            source: Path to directory containing .parquet files, or a
-                pre-built data dict (protein_data, projections, …).
+            source: Path to a .parquetbundle file or to a directory
+                containing .parquet files, or a pre-built data dict
+                (protein_data, projections, …).
         """
+        self.settings = None
+        # A bundle's statistics table, or a directory's statistics file bytes
+        self.statistics: pa.Table | bytes | None = None
+        self._protein_annotations_df = None
+        self._projections_metadata_df = None
+        self._projections_data_df = None
         if isinstance(source, dict):
             # Direct dict input
             self.data = source
             self.data_path = None
-            self._protein_annotations_df = None
-            self._projections_metadata_df = None
-            self._projections_data_df = None
         else:
             # Parquet file loading
             self.data_path = Path(source)
-            self._protein_annotations_df = None
-            self._projections_metadata_df = None
-            self._projections_data_df = None
             self.data = {
                 "protein_data": {},
                 "projections": [],
@@ -61,47 +62,70 @@ class ArrowReader:
             self._build_data_structure()
 
     def _load_data(self):
-        """Load data from Parquet files."""
-        try:
-            protein_annotations_path = self.data_path / "selected_annotations.parquet"
-            projections_metadata_path = self.data_path / "projections_metadata.parquet"
-            projections_data_path = self.data_path / "projections_data.parquet"
+        """Load the core tables from a .parquetbundle file or a directory."""
+        path = self.data_path
+        if path.is_file():
+            tables = self._read_bundle(path)
+        elif path.is_dir():
+            tables = self._read_directory(path)
+        else:
+            raise FileNotFoundError(f"No such file or directory: '{path}'")
 
-            if protein_annotations_path.exists():
-                annotations_table = pq.read_table(str(protein_annotations_path))
-                self._protein_annotations_df = annotations_table.to_pandas()
-                self.data["format_version"] = _read_format_version(
-                    annotations_table.schema.metadata
-                )
-            else:
-                self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
+        annotations, metadata, projections = tables
+        if annotations is not None:
+            self._protein_annotations_df = annotations.to_pandas()
+            self.data["format_version"] = _read_format_version(
+                annotations.schema.metadata
+            )
+        else:
+            self._protein_annotations_df = pd.DataFrame(columns=["protein_id"])
+        self._projections_metadata_df = (
+            metadata.to_pandas()
+            if metadata is not None
+            else pd.DataFrame(columns=["projection_name", "dimensions", "info_json"])
+        )
+        self._projections_data_df = (
+            projections.to_pandas()
+            if projections is not None
+            else pd.DataFrame(columns=["projection_name", "identifier", "x", "y", "z"])
+        )
 
-            if projections_metadata_path.exists():
-                self._projections_metadata_df = pq.read_table(
-                    str(projections_metadata_path)
-                ).to_pandas()
-            else:
-                self._projections_metadata_df = pd.DataFrame(
-                    columns=["projection_name", "dimensions", "info_json"]
-                )
+    def _read_bundle(self, path: Path) -> tuple[pa.Table, pa.Table, pa.Table]:
+        """Read a bundle in memory, whatever its container version."""
+        from protspace.data.io.bundle import read_bundle_contents
 
-            if projections_data_path.exists():
-                self._projections_data_df = pq.read_table(
-                    str(projections_data_path)
-                ).to_pandas()
-            else:
-                self._projections_data_df = pd.DataFrame(
-                    columns=["projection_name", "identifier", "x", "y", "z"]
-                )
+        contents = read_bundle_contents(path)
+        self.settings = contents.settings
+        self.statistics = contents.statistics
+        return contents.annotations, contents.metadata, contents.projections
 
-        except Exception as e:
+    def _read_directory(self, path: Path) -> tuple[pa.Table | None, ...]:
+        """Read the core tables a directory holds; a missing one reads as None.
+
+        An annotations-only directory is valid, but one holding none of the core
+        tables is not ProtSpace data and must not read as an empty dataset.
+        """
+        from protspace.data.io.bundle import CORE_FILENAMES, STATISTICS_FILENAME
+
+        core_paths = [path / name for name in CORE_FILENAMES]
+        if not any(p.exists() for p in core_paths):
             raise ValueError(
-                f"Error loading Arrow data from {self.data_path}: {e}"
-            ) from e
+                f"Directory '{path}' contains none of {', '.join(CORE_FILENAMES)}."
+            )
+        statistics_path = path / STATISTICS_FILENAME
+        if statistics_path.exists():
+            # Carried through to save_data unread: the reader never uses it.
+            self.statistics = statistics_path.read_bytes()
+        try:
+            return tuple(
+                pq.read_table(str(p)) if p.exists() else None for p in core_paths
+            )
+        except Exception as e:
+            raise ValueError(f"Error loading Arrow data from {path}: {e}") from e
 
     def _build_data_structure(self):
         """Build the data structure matching the ProtSpace data schema."""
-        # Use the first column as identifier (issue #10)
+        # Use the first column as identifier (tsenoner/protspace-legacy#10)
         id_col = self._protein_annotations_df.columns[0]
 
         # Build protein_data
@@ -156,66 +180,109 @@ class ArrowReader:
         self._load_visualization_state()
 
     def _load_visualization_state(self):
-        """Load visualization state.
+        """Load settings and visualization state.
 
-        Priority: visualization_state.json > settings.parquet (from bundle).
+        A bundle carries them in its settings part, a directory in
+        settings.parquet. A directory's visualization_state.json (written by an
+        older ``protspace style``) wins for the visualization state; the
+        settings are loaded either way, so a rewrite keeps them.
         """
-        viz_state_path = self.data_path / "visualization_state.json"
-        if viz_state_path.exists():
-            try:
-                with open(viz_state_path) as f:
-                    viz_state = json.load(f)
-                    self.data["visualization_state"] = viz_state
-                    return
-            except (json.JSONDecodeError, FileNotFoundError):
-                pass
+        try:
+            from protspace.data.io.bundle import (
+                SETTINGS_FILENAME,
+                read_settings_from_file,
+            )
+            from protspace.data.io.settings_converter import (
+                settings_to_visualization_state,
+            )
 
-        # Fall back to settings.parquet (extracted from a 4-part bundle)
-        settings_path = self.data_path / "settings.parquet"
-        if settings_path.exists():
-            try:
-                from protspace.data.io.bundle import read_settings_from_file
-                from protspace.data.io.settings_converter import (
-                    settings_to_visualization_state,
-                )
-
-                settings = read_settings_from_file(settings_path)
+            settings_path = self.data_path / SETTINGS_FILENAME
+            if self.data_path.is_dir() and settings_path.exists():
+                self.settings = read_settings_from_file(settings_path)
+            if self.settings:
                 self.data["visualization_state"] = settings_to_visualization_state(
-                    settings
+                    self.settings
                 )
-            except Exception:
-                logger.debug(
-                    "Failed to load visualization state from settings", exc_info=True
-                )
+        except Exception:
+            logger.debug(
+                "Failed to load visualization state from settings", exc_info=True
+            )
 
-    def save_data(self, output_path: Path = None):
-        """Save the current data back to parquet files."""
+        from protspace.data.io.bundle import VISUALIZATION_STATE_FILENAME
+
+        if self.data_path.is_dir():
+            viz_state_path = self.data_path / VISUALIZATION_STATE_FILENAME
+            if viz_state_path.exists():
+                try:
+                    with open(viz_state_path) as f:
+                        self.data["visualization_state"] = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    pass
+
+    def save_data(self, output_path: Path | None = None):
+        """Save the data as a ProtSpace directory, via ``write_directory``.
+
+        Colours and shapes set on this reader are stored in its settings, as a
+        bundle stores them.
+
+        Defaults to the directory the data was read from. A reader built from
+        a .parquetbundle needs an explicit ``output_path``: the bundle is a
+        file, not a directory the tables could be written into.
+        """
+        if self.data_path is None:
+            raise ValueError(
+                "save_data writes the parquet tables a reader loaded; this "
+                "reader was built from a dict and holds none."
+            )
         if output_path is None:
+            if self.data_path.is_file():
+                raise ValueError(
+                    f"'{self.data_path}' is a bundle file, not a directory; "
+                    "pass save_data an output directory."
+                )
             output_path = self.data_path
         else:
             output_path = Path(output_path)
 
-        output_path.mkdir(parents=True, exist_ok=True)
+        from protspace.data.io.bundle import write_directory
 
-        # Save protein annotations
-        protein_annotations_path = output_path / "protein_annotations.parquet"
-        protein_annotations_table = pa.Table.from_pandas(self._protein_annotations_df)
-        pq.write_table(protein_annotations_table, str(protein_annotations_path))
+        annotations, metadata, projections = (
+            pa.Table.from_pandas(df)
+            for df in (
+                self._protein_annotations_df,
+                self._projections_metadata_df,
+                self._projections_data_df,
+            )
+        )
+        if self.should_decode():
+            # The cells are written back as they were read, so they keep the
+            # grammar stamp that says so; unstamped they would read as v1.
+            from protspace.data.annotations.encoding import stamp_format_version
 
-        # Save projections metadata
-        projections_metadata_path = output_path / "projections_metadata.parquet"
-        projections_metadata_table = pa.Table.from_pandas(self._projections_metadata_df)
-        pq.write_table(projections_metadata_table, str(projections_metadata_path))
+            annotations = stamp_format_version(annotations)
+        write_directory(
+            [annotations, metadata, projections],
+            output_path,
+            settings=self._current_settings(),
+            statistics=self.statistics,
+        )
 
-        # Save projections data
-        projections_data_path = output_path / "projections_data.parquet"
-        projections_data_table = pa.Table.from_pandas(self._projections_data_df)
-        pq.write_table(projections_data_table, str(projections_data_path))
+    def _current_settings(self) -> dict | None:
+        """The settings read, updated with the colours and shapes set since.
 
-        # Save visualization state as a separate JSON file
-        viz_state_path = output_path / "visualization_state.json"
-        with open(viz_state_path, "w") as f:
-            json.dump(self.data.get("visualization_state", {}), f, indent=2)
+        Unchanged settings are returned as read, never re-converted.
+        """
+        from protspace.data.io.settings_converter import (
+            settings_to_visualization_state,
+            visualization_state_to_settings,
+        )
+
+        state = self.data.get("visualization_state") or {}
+        if not (state.get("annotation_colors") or state.get("marker_shapes")):
+            return self.settings
+        if self.settings and state == settings_to_visualization_state(self.settings):
+            return self.settings
+        return visualization_state_to_settings(state, self.settings)
 
     def get_format_version(self) -> int:
         """Return the bundle format version (1 = legacy/un-encoded, 2 = v2).
@@ -295,11 +362,19 @@ class ArrowReader:
         )
 
     def get_unique_annotation_values(self, annotation: str) -> list[Any]:
-        """Get a list of unique values for a given annotation."""
+        """Get a list of unique values for a given annotation.
+
+        Absent values are skipped, and ``""`` counts as absent: a v3 container
+        spells a missing categorical cell as the empty string (a documented
+        ``decode_v3`` non-identity), so keeping it would add an empty bucket to
+        every column that has any missing value -- 427 of them on
+        ``venom_eat_stats``'s ``ec__pred_value`` alone, which nothing filters out
+        of the annotation list.
+        """
         unique_values = set()
         for protein_data in self.data.get("protein_data", {}).values():
             value = protein_data.get("annotations", {}).get(annotation)
-            if value is not None:
+            if value is not None and value != "":
                 unique_values.add(value)
         return list(unique_values)
 

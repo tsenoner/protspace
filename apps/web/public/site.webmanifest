@@ -1,7 +1,7 @@
 {
   "name": "ProtSpace",
   "short_name": "ProtSpace",
-  "description": "Explore protein language model (pLM) embeddings in your browser — reveal relationships sequence similarity misses.",
+  "description": "Explore protein language model (pLM) embeddings through their biological context: overlay annotations, transfer labels in embedding space, and evaluate projections. Bundles are explored locally in your browser.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -19,7 +19,7 @@
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#030a26",
-  "background_color": "#030a26",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
   "display": "standalone"
 }

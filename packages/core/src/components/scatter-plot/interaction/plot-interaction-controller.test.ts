@@ -95,6 +95,100 @@ describe('PlotInteractionController', () => {
     expect(calls.selections.at(-1)).toEqual(['p0', 'p1']);
   });
 
+  // The guard is unobservable from the app: a two-vertex polygon also hits
+  // PointGridIndex's own guard, and the host ignores an empty selection.
+  it('lasso end with fewer than 3 vertices queries nothing and clears the path', () => {
+    const { bridge, calls } = makeHostBridge(svg);
+    const queryByPolygon = vi.fn(bridge.queryByPolygon);
+    const c = new PlotInteractionController({ ...bridge, queryByPolygon });
+    c.initialize();
+    c.beginLasso([0, 0]);
+    c.extendLasso([10, 10]);
+    expect(svg.querySelector('path.lasso-path')).not.toBeNull();
+    c.endLasso();
+    expect(queryByPolygon).not.toHaveBeenCalled();
+    expect(calls.selections).toEqual([]);
+    expect(svg.querySelector('path.lasso-path')).toBeNull();
+  });
+
+  // #189: the brush extent is the viewport in local (untransformed) coordinates,
+  // so a brush can start anywhere on screen at every zoom level. The plot
+  // margins must not shrink it (the original bug left an 80 px dead zone).
+  describe('brush extent', () => {
+    function extentOf(c: PlotInteractionController) {
+      const brush = (c as unknown as { _brush: d3.BrushBehavior<unknown> | null })._brush;
+      if (!brush) throw new Error('brush not set up');
+      return (brush.extent() as unknown as () => [[number, number], [number, number]])();
+    }
+
+    function setUpBrush(initial: d3.ZoomTransform) {
+      let transform = initial;
+      const { bridge } = makeHostBridge(svg);
+      const c = new PlotInteractionController({
+        ...bridge,
+        getMergedConfig: () => ({
+          ...bridge.getMergedConfig(),
+          margin: { top: 40, right: 40, bottom: 40, left: 40 },
+        }),
+        getSelectionMode: () => true,
+        getTransform: () => transform,
+        onTransform: (t) => {
+          transform = t;
+        },
+      });
+      c.initialize();
+      c.updateSelectionMode();
+      return c;
+    }
+
+    it.each([
+      [
+        'identity',
+        d3.zoomIdentity,
+        [
+          [0, 0],
+          [800, 600],
+        ],
+      ],
+      [
+        'zoomed in about the centre',
+        d3.zoomIdentity.translate(-400, -300).scale(2),
+        [
+          [200, 150],
+          [600, 450],
+        ],
+      ],
+      [
+        'zoomed out about the centre',
+        d3.zoomIdentity.translate(200, 150).scale(0.5),
+        [
+          [-400, -300],
+          [1200, 900],
+        ],
+      ],
+      [
+        'zoomed in and panned',
+        d3.zoomIdentity.translate(-80, -80).scale(2),
+        [
+          [40, 40],
+          [440, 340],
+        ],
+      ],
+    ])('covers the viewport when set up %s', (_name, transform, expected) => {
+      const c = setUpBrush(transform);
+      expect(extentOf(c)).toEqual(expected);
+    });
+
+    it('follows a zoom applied while the rectangle tool is active', () => {
+      const c = setUpBrush(d3.zoomIdentity);
+      c.applyZoom(d3.zoomIdentity.translate(-80, -80).scale(2));
+      expect(extentOf(c)).toEqual([
+        [40, 40],
+        [440, 340],
+      ]);
+    });
+  });
+
   it('teardown() cancels every interaction RAF and clears lasso visuals', () => {
     const cancel = vi.fn();
     vi.stubGlobal('cancelAnimationFrame', cancel);

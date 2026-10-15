@@ -3,16 +3,29 @@ import { readFileSync } from 'node:fs';
 import {
   createParquetBundle,
   getProteinAnnotationIndices,
+  getProteinEvidence,
+  getProteinScores,
+  isCsrAnnotationData,
   materializeEatOverlay,
   materializeVisualizationData,
 } from '@protspace/utils';
+import type { CsrAnnotationData, VisualizationData } from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
+  normalizeEatCompanionColumns,
   parseAnnotationValue,
   splitCategoricalAnnotationValues,
 } from './conversion';
-import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
+import {
+  decodeParquetBundle,
+  extractRowsFromParquetBundle,
+  type BundleExtractionResult,
+} from './bundle';
+
+/** Export `data` and read it back, as a user re-importing their own export would. */
+const reimport = async (data: VisualizationData): Promise<VisualizationData> =>
+  (await decodeParquetBundle(createParquetBundle(data))).data;
 
 function makeCollisionExtraction(
   formatVersion: number,
@@ -67,168 +80,100 @@ function makeCollisionExtraction(
 }
 
 describe('parseAnnotationValue', () => {
-  it('parses label without pipe as full string with empty scores', () => {
-    const result = parseAnnotationValue('taxonomy_value');
-    expect(result.label).toBe('taxonomy_value');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses label|score with single numeric score', () => {
-    const result = parseAnnotationValue('PF00001 (7tm_1)|1.5e-10');
-    expect(result.label).toBe('PF00001 (7tm_1)');
-    expect(result.scores).toHaveLength(1);
-    expect(result.scores[0]).toBeCloseTo(1.5e-10);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses label|score1,score2 with multiple comma-separated scores', () => {
-    const result = parseAnnotationValue('PF00001|1.5e-10,2.3e-5');
-    expect(result.label).toBe('PF00001');
-    expect(result.scores).toHaveLength(2);
-    expect(result.scores[0]).toBeCloseTo(1.5e-10);
-    expect(result.scores[1]).toBeCloseTo(2.3e-5);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('keeps GO:0005524|ATP binding intact (non-numeric after pipe)', () => {
-    const result = parseAnnotationValue('GO:0005524|ATP binding');
-    expect(result.label).toBe('GO:0005524|ATP binding');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles empty string gracefully', () => {
-    const result = parseAnnotationValue('');
-    expect(result.label).toBe('');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles whitespace-only string gracefully', () => {
-    const result = parseAnnotationValue('   ');
-    expect(result.label).toBe('');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles pipe at end of string', () => {
-    const result = parseAnnotationValue('label|');
-    expect(result.label).toBe('label|');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles negative numeric scores', () => {
-    const result = parseAnnotationValue('domain|-3.5');
-    expect(result.label).toBe('domain');
-    expect(result.scores).toEqual([-3.5]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles zero score', () => {
-    const result = parseAnnotationValue('domain|0');
-    expect(result.label).toBe('domain');
-    expect(result.scores).toEqual([0]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles mixed valid and invalid comma-separated values after pipe', () => {
-    // If any part is non-numeric, the whole thing is kept as label
-    const result = parseAnnotationValue('label|1.5,abc');
-    expect(result.label).toBe('label|1.5,abc');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('handles multiple pipes — uses last pipe for score detection', () => {
-    const result = parseAnnotationValue('GO:123|description|1.5e-3');
-    expect(result.label).toBe('GO:123|description');
-    expect(result.scores).toEqual([1.5e-3]);
-    expect(result.evidence).toBeNull();
-  });
-
-  // Evidence code tests
-  it('parses Cytoplasm|EXP as label with EXP evidence', () => {
-    const result = parseAnnotationValue('Cytoplasm|EXP');
-    expect(result.label).toBe('Cytoplasm');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('EXP');
-  });
-
-  it('parses apoptotic process|IDA as label with IDA evidence', () => {
-    const result = parseAnnotationValue('apoptotic process|IDA');
-    expect(result.label).toBe('apoptotic process');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('IDA');
-  });
-
-  it('does not treat long unknown codes as evidence', () => {
-    const result = parseAnnotationValue('value|TOOLONG123');
-    expect(result.label).toBe('value|TOOLONG123');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('does not treat single uppercase letter as evidence', () => {
-    const result = parseAnnotationValue('value|A');
-    expect(result.label).toBe('value|A');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBeNull();
-  });
-
-  it('parses all standard GO evidence codes', () => {
-    const codes = [
-      // Original 11
-      'EXP',
-      'HDA',
+  it.each([
+    [
+      'label without pipe is the full string with empty scores',
+      'taxonomy_value',
+      'taxonomy_value',
+      [],
+      null,
+    ],
+    [
+      'label|score with a single numeric score',
+      'PF00001 (7tm_1)|1.5e-10',
+      'PF00001 (7tm_1)',
+      [1.5e-10],
+      null,
+    ],
+    [
+      'label|score1,score2 with comma-separated scores',
+      'PF00001|1.5e-10,2.3e-5',
+      'PF00001',
+      [1.5e-10, 2.3e-5],
+      null,
+    ],
+    [
+      'non-numeric text after the pipe stays in the label',
+      'GO:0005524|ATP binding',
+      'GO:0005524|ATP binding',
+      [],
+      null,
+    ],
+    ['empty string', '', '', [], null],
+    ['whitespace-only string', '   ', '', [], null],
+    ['pipe at end of string', 'label|', 'label|', [], null],
+    ['negative numeric score', 'domain|-3.5', 'domain', [-3.5], null],
+    ['zero score', 'domain|0', 'domain', [0], null],
+    ['any non-numeric part keeps the whole label', 'label|1.5,abc', 'label|1.5,abc', [], null],
+    [
+      'multiple pipes: the last pipe wins',
+      'GO:123|description|1.5e-3',
+      'GO:123|description',
+      [1.5e-3],
+      null,
+    ],
+    ['Cytoplasm|EXP has EXP evidence', 'Cytoplasm|EXP', 'Cytoplasm', [], 'EXP'],
+    [
+      'apoptotic process|IDA has IDA evidence',
+      'apoptotic process|IDA',
+      'apoptotic process',
+      [],
       'IDA',
-      'TAS',
-      'NAS',
-      'IC',
-      'ISS',
-      'SAM',
-      'COMB',
-      'IMP',
-      'IEA',
-      // Additional GO evidence codes
-      'IPI',
-      'IGI',
-      'IEP',
-      'HTP',
-      'HMP',
-      'HGI',
-      'HEP',
-      'IBA',
-      'IBD',
-      'IKR',
-      'IRD',
-      'ISA',
-      'ISO',
-      'ISM',
-      'RCA',
-      'ND',
-    ];
-    for (const code of codes) {
-      const result = parseAnnotationValue(`some label|${code}`);
-      expect(result.label).toBe('some label');
-      expect(result.scores).toEqual([]);
-      expect(result.evidence).toBe(code);
-    }
+    ],
+    ['a long unknown code is not evidence', 'value|TOOLONG123', 'value|TOOLONG123', [], null],
+    ['a single uppercase letter is not evidence', 'value|A', 'value|A', [], null],
+    ['a raw ECO id is evidence', 'Cytoplasm|ECO:0000269', 'Cytoplasm', [], 'ECO:0000269'],
+    ['a numeric suffix is a score, not evidence', 'PF00001|162.3', 'PF00001', [162.3], null],
+  ] as const)('%s', (_, raw, label, scores, evidence) => {
+    expect(parseAnnotationValue(raw)).toEqual({ label, scores, evidence });
   });
 
-  it('parses raw ECO ID format as evidence', () => {
-    const result = parseAnnotationValue('Cytoplasm|ECO:0000269');
-    expect(result.label).toBe('Cytoplasm');
-    expect(result.scores).toEqual([]);
-    expect(result.evidence).toBe('ECO:0000269');
-  });
-
-  it('prefers numeric score over evidence code for numeric suffixes', () => {
-    const result = parseAnnotationValue('PF00001|162.3');
-    expect(result.label).toBe('PF00001');
-    expect(result.scores).toEqual([162.3]);
-    expect(result.evidence).toBeNull();
+  it.each([
+    // Original 11
+    'EXP',
+    'HDA',
+    'IDA',
+    'TAS',
+    'NAS',
+    'IC',
+    'ISS',
+    'SAM',
+    'COMB',
+    'IMP',
+    'IEA',
+    // Additional GO evidence codes
+    'IPI',
+    'IGI',
+    'IEP',
+    'HTP',
+    'HMP',
+    'HGI',
+    'HEP',
+    'IBA',
+    'IBD',
+    'IKR',
+    'IRD',
+    'ISA',
+    'ISO',
+    'ISM',
+    'RCA',
+    'ND',
+  ])('parses the GO evidence code %s', (code) => {
+    expect(parseAnnotationValue(`some label|${code}`)).toEqual({
+      label: 'some label',
+      scores: [],
+      evidence: code,
+    });
   });
 });
 
@@ -375,7 +320,9 @@ describe('EAT companion normalization', () => {
       null,
     ]);
     expect(data.annotations.ec.values).toEqual(['1.1.1.1', '2.2.2.2', '__NA__']);
-    expect(data.numeric_annotation_data?.ec__eat_confidence).toEqual([null, 0.8, 0.35, null]);
+    expect(data.numeric_annotation_data?.ec__eat_confidence).toEqual(
+      new Float64Array([NaN, 0.8, 0.35, NaN]),
+    );
   });
 
   it('retains ordered multi-valued transfers with aligned score and evidence metadata', () => {
@@ -489,13 +436,13 @@ describe('EAT companion normalization', () => {
       const original = convertParquetToVisualizationData(
         makeCollisionExtraction(formatVersion, { withEat: false }),
       );
-      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-      const reloaded = convertParquetToVisualizationData(extraction);
+      const reloaded = await reimport(original);
 
       expect(original.annotations.ec__eat_confidence.runtime).toBeUndefined();
-      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
       expect(reloaded.annotations.ec__eat_confidence.runtime).toBeUndefined();
-      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
     },
   );
 
@@ -509,19 +456,20 @@ describe('EAT companion normalization', () => {
         ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
       );
 
-      expect(original.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(original.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
       expect(runtimeConfidence?.[0]).toBe('ec__eat_confidence__runtime_2');
       expect(runtimeConfidence?.[1].runtime?.baseAnnotation).toBe('ec');
 
-      const extraction = await extractRowsFromParquetBundle(createParquetBundle(original));
-      const reloaded = convertParquetToVisualizationData(extraction);
+      const reloaded = await reimport(original);
       const reloadedRuntime = Object.entries(reloaded.annotations).filter(
         ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
       );
 
-      expect(extraction.formatVersion).toBe(2);
-      expect(extraction.annotationsById.get('P1')?.ec__eat_confidence).toBe(0.125);
-      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual([0.125, 0.875]);
+      expect(reloaded.numeric_annotation_data?.ec__eat_confidence).toEqual(
+        new Float64Array([0.125, 0.875]),
+      );
       expect(reloaded.annotation_predicted?.ec).toEqual([
         null,
         { value: '2.2.2.2', confidence: expect.closeTo(0.8, 5), source: 'P1' },
@@ -564,16 +512,7 @@ describe('EAT companion normalization', () => {
     expect(selectedView.annotations[confidenceKey].kind).toBe('categorical');
     expect(selectedView.annotations[confidenceKey].runtime).toEqual(confidenceAnnotation.runtime);
 
-    const extraction = await extractRowsFromParquetBundle(createParquetBundle(selectedView));
-    expect(extraction.annotationsById.get('P2')).not.toHaveProperty(confidenceKey);
-    expect(extraction.annotationsById.get('P2')).toMatchObject({
-      ec: null,
-      ec__pred_value: '2.2.2.2',
-      ec__pred_source: 'P1',
-    });
-    expect(extraction.annotationsById.get('P2')?.ec__pred_confidence).toBeCloseTo(0.8, 5);
-
-    const reloaded = convertParquetToVisualizationData(extraction);
+    const reloaded = await reimport(selectedView);
     const reloadedRuntime = Object.entries(reloaded.annotations).filter(
       ([, annotation]) => annotation.runtime?.role === 'eat-confidence',
     );
@@ -621,9 +560,7 @@ describe('EAT companion normalization', () => {
         (index) => displayed.annotations.ec.values[index],
       ),
     ).toEqual(['1.1.1.1', '2.2.2.2']);
-    const extracted = await extractRowsFromParquetBundle(createParquetBundle(displayed));
-    expect(extracted.annotationsById.get('P1')?.ec).toBe('1.1.1.1;2.2.2.2');
-    const reloaded = convertParquetToVisualizationData(extracted);
+    const reloaded = await reimport(displayed);
 
     expect(reloaded.annotation_predicted?.ec[1]).toMatchObject({
       value: '1.1.1.1',
@@ -636,8 +573,9 @@ describe('EAT companion normalization', () => {
     expect(
       getProteinAnnotationIndices(reloaded.annotation_data.ec, 0).map((index) => ecValues[index]),
     ).toEqual(['1.1.1.1', '2.2.2.2']);
-    const p2Index = (reloaded.annotation_data.ec as Int32Array)[1];
-    expect(ecValues[p2Index]).toBe('__NA__');
+    expect(
+      getProteinAnnotationIndices(reloaded.annotation_data.ec, 1).map((index) => ecValues[index]),
+    ).toEqual(['__NA__']);
   });
 
   it('normalizes EAT in the optimized merged-row path', async () => {
@@ -733,5 +671,132 @@ describe('splitCategoricalAnnotationValues v2', () => {
   it('plain-splits on ; (names carry no raw ;)', () => {
     const raw = 'A (n%3B1)|1;B (n%3B2)|2';
     expect(splitCategoricalAnnotationValues(raw, 2)).toEqual(['A (n%3B1)|1', 'B (n%3B2)|2']);
+  });
+});
+
+describe('normalizeEatCompanionColumns over CSR storage (bundle format v3)', () => {
+  /**
+   * Base column `ec` in CSR, values `['A', null, 'B']`. Nothing points at the `null`
+   * slot, so every hit survives the remap and only the value INDICES shift (B: 2 → 1):
+   *   p0 → []      (curated missing → the EAT companion applies)
+   *   p1 → [A]
+   *   p2 → [B]
+   *   p3 → [A, B]
+   * The companion `ec__pred_value` is CSR too, with its scores/evidence in the flat
+   * v3 payloads rather than the nested records.
+   */
+  function csrEatData(): VisualizationData {
+    return {
+      protein_ids: ['p0', 'p1', 'p2', 'p3'],
+      projections: [{ name: 'umap', dimension: 2, data: new Float32Array(8) }],
+      annotations: {
+        ec: {
+          kind: 'categorical',
+          values: ['A', null, 'B'],
+          colors: ['#f00', '#0f0', '#00f'],
+          shapes: ['circle', 'circle', 'circle'],
+        },
+        ec__pred_value: {
+          kind: 'categorical',
+          values: ['C'],
+          colors: ['#fff'],
+          shapes: ['circle'],
+        },
+        ec__pred_confidence: { kind: 'numeric', numericType: 'float', values: [] },
+        ec__pred_source: {
+          kind: 'categorical',
+          values: ['p1'],
+          colors: ['#fff'],
+          shapes: ['circle'],
+        },
+      },
+      annotation_data: {
+        ec: {
+          kind: 'csr',
+          offsets: Int32Array.of(0, 0, 1, 2, 4),
+          codes: Int32Array.of(0, 2, 0, 2),
+          length: 4,
+        },
+        ec__pred_value: {
+          kind: 'csr',
+          offsets: Int32Array.of(0, 1, 1, 1, 1),
+          codes: Int32Array.of(0),
+          length: 4,
+          scores: { offsets: Int32Array.of(0, 2), values: Float64Array.of(0.5, 0.25) },
+          evidence: { codes: Int32Array.of(0), dict: ['IDA'] },
+        },
+        ec__pred_source: {
+          kind: 'csr',
+          offsets: Int32Array.of(0, 1, 1, 1, 1),
+          codes: Int32Array.of(0),
+          length: 4,
+        },
+      },
+      numeric_annotation_data: { ec__pred_confidence: new Float64Array([0.9, NaN, NaN, NaN]) },
+    };
+  }
+
+  it('remaps CSR storage into fresh buffers', () => {
+    const src = csrEatData();
+    const sourceRows = src.annotation_data.ec as CsrAnnotationData;
+    const out = normalizeEatCompanionColumns(src);
+    const rows = out.annotation_data.ec;
+    if (!isCsrAnnotationData(rows)) throw new Error('expected CSR storage');
+
+    // 'A','B' survive, the unreferenced null slot leaves the value list, 'C' is
+    // appended by the transfer — so 'B' moves from index 2 to index 1.
+    expect(out.annotations.ec.values).toEqual(['A', 'B', 'C']);
+    // The transfer itself stays in `annotation_predicted`; only the curated rows
+    // are remapped here (materializeEatOverlay applies the prediction later).
+    expect(getProteinAnnotationIndices(rows, 0)).toEqual([]);
+    expect(getProteinAnnotationIndices(rows, 1)).toEqual([0]); // 'A'
+    expect(getProteinAnnotationIndices(rows, 2)).toEqual([1]); // 'B', renumbered
+    expect(getProteinAnnotationIndices(rows, 3)).toEqual([0, 1]);
+    expect(Array.from(rows.offsets)).toEqual([0, 0, 1, 2, 4]);
+
+    // The source's buffer is not retained: the remap hands back an exactly-sized fresh one.
+    expect(rows.codes.buffer.byteLength).toBe(4 * 4);
+    expect(rows.codes.buffer).not.toBe(sourceRows.codes.buffer);
+    expect(Array.from(sourceRows.codes)).toEqual([0, 2, 0, 2]);
+  });
+
+  it('drops a hit with its score and evidence and keeps every later hit aligned', () => {
+    const src = csrEatData();
+    // p1's hit now points at the null value slot, which the remap drops, renumbering
+    // every later hit.
+    src.annotation_data.ec = {
+      kind: 'csr',
+      offsets: Int32Array.of(0, 0, 1, 2, 4),
+      codes: Int32Array.of(1, 2, 0, 2),
+      length: 4,
+      scores: { offsets: Int32Array.of(0, 1, 2, 3, 4), values: Float64Array.of(1, 2, 3, 4) },
+      evidence: { codes: Int32Array.of(0, 1, 2, -1), dict: ['IDA', 'IEA', 'ISS'] },
+    };
+    const out = normalizeEatCompanionColumns(src);
+
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 1)).toEqual([]);
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 2)).toEqual([1]); // 'B'
+    expect(getProteinAnnotationIndices(out.annotation_data.ec, 3)).toEqual([0, 1]);
+    expect(getProteinScores(out, 2, 'ec')).toEqual([[2]]);
+    expect(getProteinEvidence(out, 2, 'ec')).toEqual(['IEA']);
+    expect(getProteinScores(out, 3, 'ec')).toEqual([[3], [4]]);
+    expect(getProteinEvidence(out, 3, 'ec')).toEqual(['ISS', null]);
+  });
+
+  it('reads the companion column scores/evidence from the CSR payloads', () => {
+    const cell = normalizeEatCompanionColumns(csrEatData()).annotation_predicted?.ec?.[0];
+    expect(cell).toMatchObject({
+      value: 'C',
+      confidence: 0.9,
+      source: 'p1',
+      scores: [[0.5, 0.25]],
+      evidence: ['IDA'],
+    });
+  });
+
+  it('drops the companion columns, payloads included', () => {
+    const out = normalizeEatCompanionColumns(csrEatData());
+    expect(out.annotation_data.ec__pred_value).toBeUndefined();
+    expect(getProteinScores(out, 0, 'ec__pred_value')).toEqual([]);
   });
 });

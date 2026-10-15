@@ -7,6 +7,12 @@ from protspace.utils.arrow_reader import ArrowReader
 # annotation selector) don't re-list them and drift out of sync.
 MISSING_VALUE_TOKENS = ("", "nan", "none", "null", "NA", "NaN")
 
+# The browser's ``MISSING_VALUE_TOKENS`` (packages/utils/src/visualization/
+# missing-values.ts), matched against the trimmed, lower-cased cell. It differs
+# from the list above because the browser also folds ``n/a`` and its own
+# ``__na__`` sentinel, case-insensitively; the v3 encoder mirrors the browser.
+BROWSER_MISSING_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
+
 
 def standardize_missing(series: pd.Series) -> pd.Series:
     """Replaces various forms of missing values with '<N/A>' in a pandas Series."""

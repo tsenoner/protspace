@@ -16,7 +16,7 @@ export default defineConfig({
     root: repoRoot,
     include: ['tests/contract/**/*.contract.test.ts'],
     // The generator does a cold `uv run` (resolving the Python workspace on a
-    // clean CI runner) plus four `protspace bundle` subprocesses.
+    // clean CI runner) plus the `protspace bundle` and `convert` subprocesses.
     hookTimeout: 300_000,
     testTimeout: 60_000,
   },

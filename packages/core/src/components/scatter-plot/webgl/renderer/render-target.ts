@@ -8,6 +8,9 @@
  */
 
 import type { PointUniformLocations } from '../types';
+import { MAX_LABELS, type LabelAtlasPlan } from './label-atlas-plan';
+
+export const LABEL_ATLAS_TEXTURE_UNIT = 1;
 
 /**
  * Binds the given framebuffer (or the default framebuffer when `null`), sets the
@@ -33,8 +36,8 @@ export function setPointBlendState(gl: WebGL2RenderingContext): void {
   gl.depthMask(false);
 }
 
-/** Per-draw inputs for {@link bindPointDrawState}. */
-interface PointDrawStateParams {
+/** The camera inputs of `CAMERA_TO_CLIP_GLSL`, shared by the point and density draws. */
+export interface CameraParams {
   /** Physical target dimensions in device pixels (u_resolution). */
   width: number;
   height: number;
@@ -42,16 +45,39 @@ interface PointDrawStateParams {
   transform: { x: number; y: number; k: number };
   /** Device pixel ratio (u_dpr). */
   dpr: number;
+}
+
+export type CameraUniformLocations = Pick<
+  PointUniformLocations,
+  'resolution' | 'transform' | 'dpr'
+>;
+
+export function setCameraUniforms(
+  gl: WebGL2RenderingContext,
+  loc: CameraUniformLocations,
+  cam: CameraParams,
+): void {
+  gl.uniform2f(loc.resolution, cam.width, cam.height);
+  gl.uniform3f(loc.transform, cam.transform.x, cam.transform.y, cam.transform.k);
+  gl.uniform1f(loc.dpr, cam.dpr);
+}
+
+/** Per-draw inputs for {@link bindPointDrawState}. */
+interface PointDrawStateParams extends CameraParams {
+  pointScale: number;
   /** Effective gamma (u_gamma); 1.0 when the gamma pipeline is unavailable. */
   gamma: number;
   /** Resolved plot-surface color in sRGB, used to mask overlapping marker interiors. */
   knockoutColor: readonly [number, number, number];
-  /** Max labels per point (u_maxLabels). */
-  maxLabels: number;
-  /** Label color texture atlas width in texels. */
-  labelTextureWidth: number;
-  /** Total length of the label-color texel array (RGBA u8); used to derive atlas height. */
-  labelColorDataLength: number;
+  /**
+   * Geometry of the allocated label atlas, or null when none is allocated.
+   *
+   * Passed whole rather than flattened by the caller: the atlas uniforms are
+   * only coherent as a set (a stride is meaningless against the wrong texture
+   * size), and `null` is the one state that has to disable sampling. Deriving
+   * all four here is what stops the two draw paths choosing different fallbacks.
+   */
+  labelAtlas: LabelAtlasPlan | null;
 }
 
 /**
@@ -62,7 +88,7 @@ interface PointDrawStateParams {
  *     ({@link setPointBlendState} — idempotent, so calling it per-draw is
  *     behavior-preserving and removes the live path's dependence on a single
  *     once-at-init call),
- *  3. push the point uniforms (resolution, transform, dpr, gamma, maxLabels,
+ *  3. push the point uniforms (resolution, transform, dpr, pointScale, gamma, maxLabels,
  *     labelTextureSize) in the exact order both paths used,
  *  4. bind the label-color texture to TEXTURE1 and point the sampler at unit 1,
  *  5. bind the point VAO.
@@ -83,21 +109,20 @@ export function bindPointDrawState(
   // blend, depth test/mask off. Idempotent GL-state setup.
   setPointBlendState(gl);
 
-  gl.uniform2f(uniforms.resolution, params.width, params.height);
-  gl.uniform3f(uniforms.transform, params.transform.x, params.transform.y, params.transform.k);
-  gl.uniform1f(uniforms.dpr, params.dpr);
+  setCameraUniforms(gl, uniforms, params);
+  gl.uniform1f(uniforms.pointScale, params.pointScale);
   gl.uniform1f(uniforms.gamma, params.gamma);
   gl.uniform3f(uniforms.knockoutColor, ...params.knockoutColor);
-  gl.uniform1i(uniforms.maxLabels, params.maxLabels);
-  gl.uniform2f(
-    uniforms.labelTextureSize,
-    params.labelTextureWidth,
-    params.labelColorDataLength / 4 / params.labelTextureWidth,
-  );
+  // No atlas: capacity 0 makes the shader's pie branch unreachable, so the
+  // remaining three describe the 1x1 placeholder that is bound in its place.
+  const atlas = params.labelAtlas;
+  gl.uniform1i(uniforms.maxLabels, atlas?.stride ?? MAX_LABELS);
+  gl.uniform1i(uniforms.labelAtlasCapacity, atlas?.pointCapacity ?? 0);
+  gl.uniform2f(uniforms.labelTextureSize, atlas?.width ?? 1, atlas?.height ?? 1);
 
-  gl.activeTexture(gl.TEXTURE1);
+  gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
   gl.bindTexture(gl.TEXTURE_2D, labelTexture);
-  gl.uniform1i(uniforms.labelColors, 1);
+  gl.uniform1i(uniforms.labelColors, LABEL_ATLAS_TEXTURE_UNIT);
 
   gl.bindVertexArray(vao);
 }
@@ -115,10 +140,23 @@ export function drawPoints(
   pointCount: number,
   selectionActive: boolean,
   selectedStartIndex: number,
+  afterBasePass?: {
+    run: () => void;
+    program: WebGLProgram;
+    vao: WebGLVertexArrayObject | null;
+    labelTexture: WebGLTexture | null;
+  },
 ): void {
   if (selectionActive && selectedStartIndex < pointCount) {
     gl.disable(gl.BLEND);
     if (selectedStartIndex > 0) gl.drawArrays(gl.POINTS, 0, selectedStartIndex);
+    if (afterBasePass) {
+      afterBasePass.run();
+      gl.useProgram(afterBasePass.program);
+      gl.bindVertexArray(afterBasePass.vao);
+      gl.activeTexture(gl.TEXTURE0 + LABEL_ATLAS_TEXTURE_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, afterBasePass.labelTexture);
+    }
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, selectedStartIndex, pointCount - selectedStartIndex);
@@ -126,5 +164,6 @@ export function drawPoints(
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.POINTS, 0, pointCount);
+    afterBasePass?.run();
   }
 }

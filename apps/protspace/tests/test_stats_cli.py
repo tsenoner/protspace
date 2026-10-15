@@ -109,7 +109,8 @@ def test_stats_command_writes_aggregate_only_part(tmp_path):
     contributes only its K-selection meta row (n_clusters) — annotation-based
     silhouette/DBI/CH (family=annotation_validity) and cluster_agreement (ARI/NMI)
     both require annotations and are absent here (see
-    test_stats_command_computes_annotation_validity for the annotated path)."""
+    test_stats_command_computes_annotation_validity for the annotated path). The
+    per-protein computation has nowhere to land without -a, so it is skipped."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -202,8 +203,8 @@ def test_stats_command_writes_faithfulness_into_metadata(tmp_path):
 
 
 def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
-    """`protspace stats -a annotations.parquet` merges per-protein cluster
-    membership + silhouette columns into the annotations file in place
+    """`protspace stats -a annotations.parquet` merges the per-protein
+    cluster_* membership columns into the annotations file in place
     (route-projection-statistics Phase 2A), so the prep `bundle -a` carries them."""
     from typer.testing import CliRunner
 
@@ -244,26 +245,9 @@ def test_stats_command_enriches_annotations_with_computed_columns(tmp_path):
     assert value.startswith("cluster ") and "|" not in value
 
 
-def test_stats_without_annotations_does_not_compute_per_protein(tmp_path):
-    """Without -a, stats stays aggregate+faithfulness only (the per-protein
-    computation has nowhere to land, so it is skipped)."""
-    from typer.testing import CliRunner
-
-    from protspace.cli.app import app
-
-    h5_path, proj, _ = _project_dir(tmp_path)
-    out = tmp_path / "statistics.parquet"
-    result = CliRunner().invoke(
-        app, ["stats", "-i", f"{h5_path}:E", "-p", str(proj), "-o", str(out)]
-    )
-    assert result.exit_code == 0, result.output
-    table = pq.read_table(str(out))
-    assert set(table.column("stat_family").to_pylist()) == {"cluster_validity"}
-
-
 def test_stats_a_then_bundle_carries_computed_columns_into_bundle(tmp_path):
     """End-to-end prep path: `stats -a` then `bundle -a` ships a bundle whose
-    protein_annotations part carries the computed cluster_/silhouette_ columns."""
+    protein_annotations part carries the computed cluster_* membership columns."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app

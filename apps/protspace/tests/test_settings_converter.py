@@ -1,11 +1,14 @@
 """Tests for settings_converter — color conversion, sorting, and state conversion."""
 
+import copy
+
 import pytest
 
 from protspace.data.io.settings_converter import (
     _hex_to_rgba,
     _rgba_to_hex,
     _sort_values_for_zorder,
+    is_frontend_envelope,
     settings_to_visualization_state,
     visualization_state_to_settings,
 )
@@ -16,23 +19,22 @@ from protspace.data.io.settings_converter import (
 
 
 class TestHexToRgba:
-    def test_basic(self):
-        assert _hex_to_rgba("#FF0000") == "rgba(255, 0, 0, 0.8)"
-
-    def test_black(self):
-        assert _hex_to_rgba("#000000") == "rgba(0, 0, 0, 0.8)"
-
-    def test_white(self):
-        assert _hex_to_rgba("#FFFFFF") == "rgba(255, 255, 255, 0.8)"
+    @pytest.mark.parametrize(
+        "hex_color,expected",
+        [
+            ("#FF0000", "rgba(255, 0, 0, 0.8)"),
+            ("#000000", "rgba(0, 0, 0, 0.8)"),
+            ("#FFFFFF", "rgba(255, 255, 255, 0.8)"),
+            ("#ff8800", "rgba(255, 136, 0, 0.8)"),
+            ("FF0000", "rgba(255, 0, 0, 0.8)"),
+        ],
+        ids=["red", "black", "white", "lowercase", "no_hash_prefix"],
+    )
+    def test_default_alpha(self, hex_color, expected):
+        assert _hex_to_rgba(hex_color) == expected
 
     def test_custom_alpha(self):
         assert _hex_to_rgba("#00FF00", alpha=1.0) == "rgba(0, 255, 0, 1.0)"
-
-    def test_lowercase_hex(self):
-        assert _hex_to_rgba("#ff8800") == "rgba(255, 136, 0, 0.8)"
-
-    def test_no_hash_prefix(self):
-        assert _hex_to_rgba("FF0000") == "rgba(255, 0, 0, 0.8)"
 
 
 # ---------------------------------------------------------------------------
@@ -41,20 +43,19 @@ class TestHexToRgba:
 
 
 class TestRgbaToHex:
-    def test_basic(self):
-        assert _rgba_to_hex("rgba(255, 0, 0, 0.8)") == "#FF0000"
-
-    def test_black(self):
-        assert _rgba_to_hex("rgba(0, 0, 0, 1.0)") == "#000000"
-
-    def test_rgb_no_alpha(self):
-        assert _rgba_to_hex("rgb(128, 64, 32)") == "#804020"
-
-    def test_hex_passthrough(self):
-        assert _rgba_to_hex("#FF0000") == "#FF0000"
-
-    def test_unrecognized_passthrough(self):
-        assert _rgba_to_hex("not-a-color") == "not-a-color"
+    @pytest.mark.parametrize(
+        "color,expected",
+        [
+            ("rgba(255, 0, 0, 0.8)", "#FF0000"),
+            ("rgba(0, 0, 0, 1.0)", "#000000"),
+            ("rgb(128, 64, 32)", "#804020"),
+            ("#FF0000", "#FF0000"),
+            ("not-a-color", "not-a-color"),
+        ],
+        ids=["rgba", "black", "rgb_no_alpha", "hex_passthrough", "unrecognized"],
+    )
+    def test_conversion(self, color, expected):
+        assert _rgba_to_hex(color) == expected
 
     def test_roundtrip(self):
         original = "#A1CAF1"
@@ -133,16 +134,17 @@ class TestSettingsToVisualizationState:
         assert shapes["kinase"] == "circle"
         assert shapes["phosphatase"] == "square"
 
-    def test_empty_categories(self):
-        result = settings_to_visualization_state({"empty": {"categories": {}}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_no_categories_key(self):
-        result = settings_to_visualization_state({"other": {"sortMode": "alpha-asc"}})
-        assert result == {"annotation_colors": {}, "marker_shapes": {}}
-
-    def test_empty_settings(self):
-        result = settings_to_visualization_state({})
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            {"empty": {"categories": {}}},
+            {"other": {"sortMode": "alpha-asc"}},
+            {},
+        ],
+        ids=["empty_categories", "no_categories_key", "empty_settings"],
+    )
+    def test_nothing_to_style_gives_empty_state(self, settings):
+        result = settings_to_visualization_state(settings)
         assert result == {"annotation_colors": {}, "marker_shapes": {}}
 
     def test_color_only_no_shape(self):
@@ -198,6 +200,7 @@ class TestVisualizationStateToSettings:
         result = visualization_state_to_settings(viz)
         assert result["ann"]["sortMode"] == "size-desc"
         assert result["ann"]["hiddenValues"] == []
+        assert result["ann"]["shapeSize"] == 10
 
     def test_preserves_existing_settings(self):
         existing = {
@@ -224,3 +227,199 @@ class TestVisualizationStateToSettings:
         result = visualization_state_to_settings(viz, style_overrides=overrides)
         assert result["ann"]["sortMode"] == "alpha-desc"
         assert result["ann"]["maxVisibleValues"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Frontend (nested) settings shape — tsenoner/protspace#303 follow-up
+# ---------------------------------------------------------------------------
+
+
+def _frontend_settings() -> dict:
+    """Part 4 exactly as the web frontend's createSettingsParquet writes it."""
+    return {
+        "legendSettings": {
+            "organism": {
+                "maxVisibleValues": 10,
+                "shapeSize": 24,
+                "sortMode": "size-desc",
+                "hiddenValues": [],
+                "categories": {
+                    "Human": {"zOrder": 0, "color": "#F3C300", "shape": "circle"},
+                    "Mouse": {"zOrder": 1, "color": "#875692", "shape": "square"},
+                },
+                "enableDuplicateStackUI": False,
+                "selectedPaletteId": "kellys",
+            }
+        },
+        "exportOptions": {},
+        "publishState": {"title": "demo"},
+        "eatOverlayEnabled": False,
+        "eatConfidenceThreshold": 0.5,
+    }
+
+
+class TestFrontendSettingsShape:
+    """The frontend writes a nested envelope; Python used to assume the flat shape.
+
+    Iterating it hit ``False.get("categories")`` -> AttributeError, which
+    ArrowReader swallowed, so every legend colour/shape vanished silently.
+    """
+
+    def test_reads_colors_and_shapes_from_the_nested_envelope(self):
+        state = settings_to_visualization_state(_frontend_settings())
+        assert state["annotation_colors"] == {
+            "organism": {
+                "Human": "rgba(243, 195, 0, 0.8)",
+                "Mouse": "rgba(135, 86, 146, 0.8)",
+            }
+        }
+        assert state["marker_shapes"] == {
+            "organism": {"Human": "circle", "Mouse": "square"}
+        }
+
+    def test_flat_python_shape_still_works(self):
+        flat = _frontend_settings()["legendSettings"]
+        assert settings_to_visualization_state(flat)["annotation_colors"] == {
+            "organism": {
+                "Human": "rgba(243, 195, 0, 0.8)",
+                "Mouse": "rgba(135, 86, 146, 0.8)",
+            }
+        }
+
+    def test_scalar_entry_does_not_blank_the_legend(self):
+        flat = _frontend_settings()["legendSettings"] | {"eatOverlayEnabled": False}
+        assert "organism" in settings_to_visualization_state(flat)["annotation_colors"]
+
+    def test_restyling_preserves_the_frontend_envelope(self):
+        """`protspace style` on a frontend export must not drop publishState/EAT."""
+        original = _frontend_settings()
+        viz = settings_to_visualization_state(original)
+        result = visualization_state_to_settings(viz, original)
+
+        assert result["publishState"] == {"title": "demo"}
+        assert result["eatOverlayEnabled"] is False
+        assert result["eatConfidenceThreshold"] == 0.5
+        # UI-only fields survive because existing_settings was unwrapped.
+        organism = result["legendSettings"]["organism"]
+        assert organism["shapeSize"] == 24
+        assert organism["selectedPaletteId"] == "kellys"
+        assert sorted(organism["categories"]) == ["Human", "Mouse"]
+
+    def test_flat_input_still_returns_the_flat_shape(self):
+        flat = _frontend_settings()["legendSettings"]
+        viz = settings_to_visualization_state(flat)
+        result = visualization_state_to_settings(viz, flat)
+        assert "legendSettings" not in result
+        assert "organism" in result
+
+    def test_flat_map_with_a_legendSettings_named_annotation_is_not_unwrapped(self):
+        """Annotation names come from user CSV headers, so the collision is possible.
+
+        Unwrapping here would hand back one annotation's own entry as the whole
+        map and silently blank every legend.
+        """
+        flat = {
+            "legendSettings": {
+                "sortMode": "alpha-asc",
+                "shapeSize": 30,
+                "categories": {
+                    "a": {"zOrder": 0, "color": "#FF0000", "shape": "circle"}
+                },
+            },
+            "organism": {
+                "sortMode": "size-desc",
+                "categories": {
+                    "Human": {"zOrder": 0, "color": "#00FF00", "shape": "square"}
+                },
+            },
+        }
+        colors = settings_to_visualization_state(flat)["annotation_colors"]
+        assert colors == {
+            "legendSettings": {"a": "rgba(255, 0, 0, 0.8)"},
+            "organism": {"Human": "rgba(0, 255, 0, 0.8)"},
+        }
+
+    def test_flat_map_is_not_unwrapped_just_because_a_sibling_name_collides(self):
+        """Envelope sibling names are plausible CSV headers too.
+
+        A flat map whose columns happen to be `legendSettings` + `publishState`
+        satisfies the sibling check, so the inner shape has to settle it: here the
+        value under `legendSettings` is one annotation's own settings entry, which
+        a real envelope's annotation-keyed map never looks like.
+        """
+        flat = {
+            "legendSettings": {
+                "sortMode": "alpha-asc",
+                "categories": {
+                    "a": {"zOrder": 0, "color": "#FF0000", "shape": "circle"}
+                },
+            },
+            "publishState": {
+                "categories": {
+                    "Human": {"zOrder": 0, "color": "#00FF00", "shape": "square"}
+                }
+            },
+        }
+        colors = settings_to_visualization_state(flat)["annotation_colors"]
+        assert colors == {
+            "legendSettings": {"a": "rgba(255, 0, 0, 0.8)"},
+            "publishState": {"Human": "rgba(0, 255, 0, 0.8)"},
+        }
+
+    def test_restyling_keeps_annotations_the_viz_state_cannot_carry(self):
+        """A numeric annotation is invisible to `settings_to_visualization_state`.
+
+        The frontend persists numeric categories with empty color/shape, which that
+        function filters out, so the rebuilt map never mentions them. Replacing the
+        envelope's legendSettings wholesale would drop their numericSettings,
+        palette and hidden values — the loss this envelope handling exists to stop.
+        """
+        plddt = {
+            "categories": {"70": {"zOrder": 0, "color": "", "shape": ""}},
+            "numericSettings": {"binningStrategy": "quantile", "reverseGradient": True},
+            "selectedPaletteId": "viridis",
+            "hiddenValues": ["__NA__"],
+            "maxVisibleValues": 8,
+        }
+        original = _frontend_settings()
+        original["legendSettings"]["plddt"] = copy.deepcopy(plddt)
+
+        viz = settings_to_visualization_state(original)
+        assert "plddt" not in viz["annotation_colors"]
+
+        result = visualization_state_to_settings(viz, original)
+        assert result["legendSettings"]["plddt"] == plddt
+        assert "organism" in result["legendSettings"]
+
+    def test_envelope_still_detected_when_its_single_annotation_is_named_legendSettings(
+        self,
+    ):
+        """The reverse collision: a genuine envelope keyed by that same name."""
+        nested = {
+            "legendSettings": {
+                "legendSettings": {
+                    "sortMode": "alpha-asc",
+                    "categories": {
+                        "a": {"zOrder": 0, "color": "#FF0000", "shape": "circle"}
+                    },
+                }
+            },
+            "exportOptions": {},
+        }
+        colors = settings_to_visualization_state(nested)["annotation_colors"]
+        assert colors == {"legendSettings": {"a": "rgba(255, 0, 0, 0.8)"}}
+
+
+def test_is_frontend_envelope_needs_the_nested_shape_and_a_sibling():
+    legends = {"organism": {"categories": {}}}
+    assert is_frontend_envelope({"legendSettings": legends, "exportOptions": {}})
+    assert is_frontend_envelope(
+        {"legendSettings": legends, "eatConfidenceThreshold": 0.5}
+    )
+    assert not is_frontend_envelope(legends)  # the flat Python shape
+    assert not is_frontend_envelope({"legendSettings": legends})  # no sibling
+    # A flat map whose columns are called legendSettings and exportOptions.
+    assert not is_frontend_envelope(
+        {"legendSettings": {"categories": {}}, "exportOptions": {"categories": {}}}
+    )
+    assert not is_frontend_envelope(None)
