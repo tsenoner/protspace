@@ -63,10 +63,15 @@ logger = logging.getLogger(__name__)
 
 PARQUET_BUNDLE_DELIMITER = b"---PARQUET_DELIMITER---"
 
+ANNOTATIONS_FILENAME = "selected_annotations.parquet"
+PROJECTIONS_METADATA_FILENAME = "projections_metadata.parquet"
+PROJECTIONS_DATA_FILENAME = "projections_data.parquet"
+
+#: The three core tables of an unbundled directory, in bundle part order.
 CORE_FILENAMES = [
-    "selected_annotations.parquet",
-    "projections_metadata.parquet",
-    "projections_data.parquet",
+    ANNOTATIONS_FILENAME,
+    PROJECTIONS_METADATA_FILENAME,
+    PROJECTIONS_DATA_FILENAME,
 ]
 
 SETTINGS_FILENAME = "settings.parquet"
@@ -319,27 +324,56 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     """
     if target_dir is None:
         target_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
-    else:
-        target_dir = Path(target_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
 
-    core, settings, statistics, payloads = _parse_bundle(bundle_path)
-
-    if payloads is not None:
-        for table, filename in zip(
-            decode_v3([*core, payloads]), CORE_FILENAMES, strict=True
-        ):
-            pq.write_table(table, str(target_dir / filename))
-    else:
-        for part_bytes, filename in zip(core, CORE_FILENAMES, strict=False):
-            if part_bytes:
-                (target_dir / filename).write_bytes(part_bytes)
-    if settings:
-        (target_dir / SETTINGS_FILENAME).write_bytes(settings)
-    if statistics:
-        (target_dir / STATISTICS_FILENAME).write_bytes(statistics)
-
+    contents = read_bundle_contents(bundle_path)
+    write_directory(
+        [contents.annotations, contents.metadata, contents.projections],
+        target_dir,
+        settings=contents.settings,
+        statistics=contents.statistics,
+    )
     return str(target_dir)
+
+
+def write_directory(
+    core_tables: list[pa.Table | None],
+    target_dir: Path,
+    *,
+    settings: dict | None = None,
+    statistics: pa.Table | None = None,
+) -> None:
+    """Write the unbundled form of a bundle: one parquet file per part.
+
+    The single writer of a ProtSpace directory (``prepare --no-bundled``,
+    :func:`extract_bundle_to_dir`, ``protspace project``, ``protspace style``
+    on a directory), so every one of them names the files as the directory
+    reader looks for them.
+
+    Args:
+        core_tables: The three core tables in bundle part order (see
+            :data:`CORE_FILENAMES`); a ``None`` entry writes no file, as for
+            ``protspace project``, which has no annotations.
+        target_dir: Directory to write into; created when missing.  Existing
+            files of the same names are overwritten.
+        settings: Written as :data:`SETTINGS_FILENAME` when given.
+        statistics: Written as :data:`STATISTICS_FILENAME` when given.
+    """
+    if len(core_tables) != len(CORE_FILENAMES):
+        raise ValueError(
+            f"write_directory expects {len(CORE_FILENAMES)} core tables "
+            f"(annotations, projections_metadata, projections_data), "
+            f"got {len(core_tables)}"
+        )
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for table, filename in zip(core_tables, CORE_FILENAMES, strict=True):
+        if table is not None:
+            pq.write_table(table, str(target_dir / filename))
+    if settings is not None:
+        (target_dir / SETTINGS_FILENAME).write_bytes(create_settings_parquet(settings))
+    if statistics is not None:
+        pq.write_table(statistics, str(target_dir / STATISTICS_FILENAME))
 
 
 def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:

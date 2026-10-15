@@ -195,20 +195,6 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     return frequencies
 
 
-def _annotation_display_values(reader, annotation: str) -> set[str]:
-    """Display values for one annotation — the keys a styles file is keyed by.
-
-    Mirrors :func:`_to_display_value` (v2-decode, ``|`` suffix trim, ``;``
-    split), the exact transform :func:`generate_template` uses, so a styles
-    file built from the template validates and stores against the same keys the
-    plot/legend groups by — not the raw percent-encoded wire cells. NA-like
-    labels carry no reserved char, so they pass through unchanged.
-    """
-    return style_keys(
-        reader.get_all_annotation_values(annotation), decode=reader.should_decode()
-    )
-
-
 def style_keys(cells: Iterable[object], *, decode: bool = True) -> set[str]:
     """The keys a styles file names a column's values by.
 
@@ -315,66 +301,23 @@ def generate_template(input_file: str) -> dict:
     return template
 
 
-def add_annotation_styles_parquet(
-    parquet_dir: str,
+def _styled_settings(
+    reader: ArrowReader,
     annotation_styles: dict[str, dict[str, dict[str, str]]],
-    output_dir: str,
-) -> None:
-    """Add annotation styles to parquet format data."""
-    reader = ArrowReader(Path(parquet_dir))
+) -> dict:
+    """Apply *annotation_styles* to *reader* and return the settings to store.
 
-    for annotation, styles in annotation_styles.items():
-        # Check if the annotation exists
-        all_annotations = reader.get_all_annotations()
-        if annotation not in all_annotations:
-            raise ValueError(
-                f"Annotation '{annotation}' does not exist in the protein data. Available annotations: {all_annotations}"
-            )
-
-        # Validate/store against display values (what the template exposes),
-        # not the raw percent-encoded wire cells, so a template round-trips.
-        all_values = _annotation_display_values(reader, annotation)
-        _warn_if_numeric(annotation, all_values)
-
-        # Add colors
-        if "colors" in styles:
-            for value, color in styles["colors"].items():
-                resolved = _resolve_style_value(str(value), all_values, annotation)
-                reader.update_annotation_color(annotation, resolved, color)
-
-        # Add shapes
-        if "shapes" in styles:
-            for value, shape in styles["shapes"].items():
-                resolved = _resolve_style_value(str(value), all_values, annotation)
-                reader.update_marker_shape(annotation, resolved, shape)
-
-    # Save the updated data
-    reader.save_data(Path(output_dir))
-
-
-def add_annotation_styles_bundle(
-    bundle_file: str,
-    annotation_styles: dict[str, dict[str, dict[str, str]]],
-    output_file: str,
-) -> None:
-    """Add annotation styles to a .parquetbundle file.
-
-    Reads the bundle with ArrowReader, applies styles, converts
-    the visualization_state back to settings_json, then writes the output
-    bundle with updated settings.
-
-    The *annotation_styles* dict may contain per-annotation settings-level
-    keys (``sortMode``, ``maxVisibleValues``, ``shapeSize``, ``hiddenValues``,
-    ``selectedPaletteId``) alongside ``colors`` and ``shapes``.  These are
+    The one styling pass behind both inputs of ``protspace style``, so a bundle
+    and its unbundled directory come out with the same settings.  The
+    *annotation_styles* dict may contain per-annotation settings-level keys
+    (``sortMode``, ``maxVisibleValues``, ``shapeSize``, ``hiddenValues``,
+    ``selectedPaletteId``) alongside ``colors`` and ``shapes``; these are
     forwarded to the settings converter.
     """
-    from protspace.data.io.bundle import replace_settings_in_bundle
     from protspace.data.io.settings_converter import visualization_state_to_settings
 
-    reader = ArrowReader(Path(bundle_file))
-
     # Existing settings (if any), to preserve extra fields.  From the reader,
-    # not the bundle again: this command reads the bundle once (and so logs a
+    # not the file again: this command reads its input once (and so logs a
     # legacy-format warning once).
     existing_settings = reader.settings
 
@@ -383,7 +326,7 @@ def add_annotation_styles_bundle(
 
     # Compute value frequencies once (used for validation below and for
     # frequency-based zOrder). Its keys are the display values a style file is
-    # keyed by — the same set _annotation_display_values would build — so it
+    # keyed by — the same set style_keys builds — so it
     # doubles as the validation set without a second full-protein scan. Style
     # updates only mutate visualization_state, not annotation values, so the
     # frequencies stay valid for the zOrder pass afterwards.
@@ -421,14 +364,45 @@ def add_annotation_styles_bundle(
 
     # Convert updated visualization_state back to settings_json
     viz_state = reader.data.get("visualization_state", {})
-    new_settings = visualization_state_to_settings(
+    return visualization_state_to_settings(
         viz_state,
         existing_settings,
         value_frequencies=value_frequencies,
         style_overrides=style_overrides or None,
     )
 
-    # Write output bundle with updated settings
+
+def add_annotation_styles_parquet(
+    parquet_dir: str,
+    annotation_styles: dict[str, dict[str, dict[str, str]]],
+    output_dir: str,
+) -> None:
+    """Add annotation styles to a ProtSpace parquet directory.
+
+    The styles land in the output directory's settings.parquet, as they land
+    in a bundle's settings part; every other file is written back alongside.
+    """
+    reader = ArrowReader(Path(parquet_dir))
+    reader.save_data(
+        Path(output_dir), settings=_styled_settings(reader, annotation_styles)
+    )
+
+
+def add_annotation_styles_bundle(
+    bundle_file: str,
+    annotation_styles: dict[str, dict[str, dict[str, str]]],
+    output_file: str,
+) -> None:
+    """Add annotation styles to a .parquetbundle file.
+
+    Reads the bundle with ArrowReader, applies styles (see
+    :func:`_styled_settings`), then writes the output bundle with the updated
+    settings.
+    """
+    from protspace.data.io.bundle import replace_settings_in_bundle
+
+    reader = ArrowReader(Path(bundle_file))
+    new_settings = _styled_settings(reader, annotation_styles)
     replace_settings_in_bundle(Path(bundle_file), Path(output_file), new_settings)
 
 

@@ -20,6 +20,7 @@ from protspace.data.io.bundle import (
     read_tables,
     replace_settings_in_bundle,
     write_bundle,
+    write_directory,
 )
 from protspace.data.io.formatters import DataFormatter
 from protspace.data.io.settings_converter import (
@@ -39,6 +40,7 @@ __all__ = [
     "read_statistics_from_bundle",
     "read_tables",
     "write_bundle",
+    "write_directory",
     "replace_settings_in_bundle",
     "create_settings_parquet",
     "read_settings_from_bytes",
