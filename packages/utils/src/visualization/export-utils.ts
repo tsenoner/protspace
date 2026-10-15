@@ -9,8 +9,14 @@ import {
   getProteinAnnotationCount,
   getProteinAnnotationIndexAt,
 } from './annotation-data-access.js';
-import { getEatCompanionColumn, getPredictedCellValues } from './eat-overlay.js';
+import {
+  getEatCompanionColumn,
+  getPredictedCellValues,
+  isEatConfidenceAnnotation,
+} from './eat-overlay.js';
 import { isNumericAnnotation } from './numeric-binning.js';
+import { readNumericValue } from './plot-data-accessors.js';
+import { PROTEIN_ID_COLUMN } from '../generated/shared-constants';
 
 // PDF generation libraries are imported dynamically for better browser compatibility
 declare const window: Window & typeof globalThis;
@@ -997,6 +1003,8 @@ function buildProteinTable(
   rows: readonly number[],
   projectionIndex: number,
 ): string {
+  // Each `cell` returns its field already escaped, so a label is escaped once per category
+  // rather than once per protein.
   const columns: Array<{ name: string; cell: (row: number) => string }> = [];
 
   const projection = data.projections?.[projectionIndex];
@@ -1011,13 +1019,16 @@ function buildProteinTable(
   }
 
   for (const [name, annotation] of Object.entries(data.annotations)) {
-    if (annotation.runtime?.role === 'eat-confidence') continue;
+    if (isEatConfidenceAnnotation(annotation)) continue;
 
     const numeric = data.numeric_annotation_data?.[name];
     if (isNumericAnnotation(annotation) && numeric) {
       columns.push({
         name,
-        cell: (row) => (Number.isFinite(numeric[row]) ? String(numeric[row]) : ''),
+        cell: (row) => {
+          const value = readNumericValue(numeric, row);
+          return value === null ? '' : String(value);
+        },
       });
       continue;
     }
@@ -1025,17 +1036,23 @@ function buildProteinTable(
     const storage = data.annotation_data[name];
     if (!storage) continue;
     const predicted = data.annotation_predicted?.[name];
+    // A value index's label as the table shows it, or null for N/A.
+    const labels = annotation.values.map((label) =>
+      label != null && !isNAValue(label) ? label : null,
+    );
+    const escaped = labels.map((label) => (label === null ? '' : tsvField(label)));
     columns.push({
       name,
       cell: (row) => {
         if (predicted?.[row]) return '';
-        const labels: string[] = [];
         const count = getProteinAnnotationCount(storage, row);
+        if (count === 1) return escaped[getProteinAnnotationIndexAt(storage, row, 0)] ?? '';
+        const hits: string[] = [];
         for (let k = 0; k < count; k++) {
-          const label = annotation.values[getProteinAnnotationIndexAt(storage, row, k)];
-          if (label != null && !isNAValue(label)) labels.push(label);
+          const label = labels[getProteinAnnotationIndexAt(storage, row, k)];
+          if (label != null) hits.push(label);
         }
-        return labels.join(';');
+        return tsvField(hits.join(';'));
       },
     });
 
@@ -1043,7 +1060,8 @@ function buildProteinTable(
       columns.push(
         {
           name: getEatCompanionColumn(name, 'value'),
-          cell: (row) => (predicted[row] ? getPredictedCellValues(predicted[row]!).join(';') : ''),
+          cell: (row) =>
+            predicted[row] ? tsvField(getPredictedCellValues(predicted[row]!).join(';')) : '',
         },
         {
           name: getEatCompanionColumn(name, 'confidence'),
@@ -1051,17 +1069,20 @@ function buildProteinTable(
         },
         {
           name: getEatCompanionColumn(name, 'source'),
-          cell: (row) => predicted[row]?.source ?? '',
+          cell: (row) => tsvField(predicted[row]?.source ?? ''),
         },
       );
     }
   }
 
-  const lines = [['protein_id', ...columns.map(({ name }) => name)]];
+  const header = [PROTEIN_ID_COLUMN, ...columns.map(({ name }) => name)];
+  const lines = [header.map(tsvField).join('\t')];
   for (const row of rows) {
-    lines.push([data.protein_ids[row], ...columns.map(({ cell }) => cell(row))]);
+    let line = tsvField(data.protein_ids[row]);
+    for (const { cell } of columns) line += '\t' + cell(row);
+    lines.push(line);
   }
-  return lines.map((fields) => fields.map(tsvField).join('\t')).join('\n') + '\n';
+  return lines.join('\n') + '\n';
 }
 
 /**

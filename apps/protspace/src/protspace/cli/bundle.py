@@ -78,7 +78,7 @@ def bundle(
 
     import json
 
-    import pyarrow as pa
+    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     from protspace.data.annotations.encoding import (
@@ -96,8 +96,7 @@ def bundle(
     from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
     from protspace.data.processors.custom_annotations import (
         is_custom_annotation_file,
-        load_custom_annotations,
-        resolve_id_column,
+        read_annotation_table,
     )
 
     settings_obj = json.loads(settings.read_text()) if settings is not None else None
@@ -114,26 +113,16 @@ def bundle(
     data_table = with_protein_id(pq.read_table(str(data_path)), source=str(data_path))
     custom = is_custom_annotation_file(annotations)
     try:
-        if custom:
-            ids = dict.fromkeys(data_table.column(PROTEIN_ID_COLUMN).to_pylist())
-            frame = load_custom_annotations([annotations], list(ids))
-            annotations_table = pa.Table.from_pandas(frame, preserve_index=False)
-        else:
-            annotations_table = pq.read_table(str(annotations))
-        id_col = resolve_id_column(
-            annotations_table.column_names, source=str(annotations)
+        # Keyed on protein_id, its metadata (the grammar stamp) kept.
+        annotations_table = read_annotation_table(
+            annotations,
+            pc.unique(data_table.column(PROTEIN_ID_COLUMN)).to_pylist(),
         )
-    except pa.ArrowInvalid as exc:
-        raise typer.BadParameter(
-            f"{annotations} is not a parquet file. -a takes an annotations parquet "
-            "or a .csv/.tsv/.txt file.",
-            param_hint="'-a/--annotations'",
-        ) from exc
     except ValueError as exc:
-        raise typer.BadParameter(f"{annotations}: {exc}") from exc
+        raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
 
-    # Trust boundary: the grammar is decided here, from the input's own stamp, and
-    # before the rename below drops it. `annotate` and the pipeline's annotation
+    # Trust boundary: the grammar is decided here, from the input's own stamp.
+    # `annotate` and the pipeline's annotation
     # cache stamp v2, and a cache written before it carried the stamp is still
     # recognised as the pipeline's own v2 output; any other unstamped table is
     # user input in plain text, i.e. legacy v1, and is migrated explicitly. The
@@ -155,16 +144,6 @@ def bundle(
             "%s has no protspace_format_version stamp; reading its cells as plain "
             "(v1) text",
             annotations,
-        )
-
-    # The id column, chosen by the parquet rule `stats -a` uses (a custom file's loader
-    # puts its first column in `protein_id`), is protein_id in a bundle.
-    if id_col != PROTEIN_ID_COLUMN:
-        annotations_table = annotations_table.rename_columns(
-            [
-                (PROTEIN_ID_COLUMN if c == id_col else c)
-                for c in annotations_table.column_names
-            ]
         )
 
     try:

@@ -24,9 +24,8 @@ from protspace.data.loaders.embedding_set import (
 )
 from protspace.data.processors.base_processor import BaseProcessor
 from protspace.data.processors.custom_annotations import (
-    load_custom_annotations,
     merge_custom_annotations,
-    split_annotation_args,
+    resolve_annotation_request,
 )
 from protspace.deprecations import THREE_D_PROJECTIONS, warn
 from protspace.utils import get_reducers
@@ -414,21 +413,13 @@ class ReductionPipeline:
     ) -> pd.DataFrame:
         """Fetch annotations from APIs with incremental caching support."""
         from protspace.data.annotations.cache import CACHE_FILENAME, fetch_annotations
-        from protspace.data.annotations.configuration import AnnotationConfiguration
 
         # Extract sequences from FASTA files (if available) to avoid re-fetching
         sequences = self._extract_sequences(embedding_sets) if embedding_sets else {}
 
-        annotation_names, csv_paths = self._resolve_annotation_names()
-
-        csv_df = load_custom_annotations(csv_paths, headers) if csv_paths else None
-
-        if annotation_names:
-            annotations_list = AnnotationConfiguration(
-                annotation_names
-            ).user_annotations
-        else:
-            annotations_list = None
+        annotations_list, csv_df = resolve_annotation_request(
+            self.config.annotations, headers
+        )
 
         # CSV-only: no API annotations requested
         self.uniprot_releases = set()
@@ -450,10 +441,6 @@ class ReductionPipeline:
         )
         self.uniprot_releases = set(fetched.uniprot_releases)
         return merge_custom_annotations(fetched.frame, csv_df)
-
-    def _resolve_annotation_names(self) -> tuple[list[str], list[Path]]:
-        """Split the annotation arguments into source names and custom annotation files."""
-        return split_annotation_args(self.config.annotations or [])
 
     # --- Projection caching helpers ---
 

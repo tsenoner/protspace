@@ -20,23 +20,23 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-from protspace import deprecations
 from protspace._generated.shared_constants import NON_ANNOTATION_COLUMNS
 from protspace.data.annotations.encoding import encode_legacy_cell
-from protspace.data.io.ids import LEGACY_ID_COLUMN, PROTEIN_ID_COLUMN, id_column_by_name
+from protspace.data.io.ids import PROTEIN_ID_COLUMN, keyed_on_protein_id
 
 logger = logging.getLogger(__name__)
 
 CUSTOM_ANNOTATION_SUFFIXES = (".csv", ".tsv", ".txt")
-ID_COLUMN = PROTEIN_ID_COLUMN
 
 #: Names a later column of a custom file cannot keep, compared exactly: the names the web viewer
 #: never shows as an annotation (shared with it through contracts/shared-constants.json), which
 #: include the id column every table is written with (``protein_id``) and its older name
 #: (``identifier``).
 RESERVED_COLUMNS = NON_ANNOTATION_COLUMNS
-_DELIMITERS = {"\t": "tab", ",": "comma", ";": "semicolon"}
+_DELIMITERS = ("\t", ",", ";")
 _EXAMPLES = 3
 
 
@@ -82,23 +82,20 @@ def split_annotation_args(items: Iterable[str]) -> tuple[list[str], list[Path]]:
     return names, files
 
 
-def resolve_id_column(columns: Sequence[str], *, source: str | None = None) -> str:
-    """The column holding the protein ids of an annotations parquet (``stats -a``, ``bundle -a``).
-
-    ``protein_id`` (the name every table ProtSpace writes gives it), else ``identifier`` (the
-    name older releases wrote), else the first column. Beside ``protein_id``, an ``identifier``
-    column is an annotation, as the bundle encoder reads it. Taking ``identifier`` logs the
-    deprecation warning when *source*, the file's name, is given. A custom annotation file does
-    not use this: its first column is the id column, always (:func:`_read_file`).
+def resolve_annotation_request(
+    items: Iterable[str] | None, headers: Sequence[str]
+) -> tuple[list[str] | None, pd.DataFrame | None]:
+    """One ``-a`` request as ``(sources, custom)``: the annotation columns to fetch,
+    and the custom files' table on *headers*; each is ``None`` when the request
+    names none. ``prepare`` and ``annotate`` resolve ``-a`` with this. An unknown
+    source or a missing or malformed file raises ``ValueError``/``FileNotFoundError``.
     """
-    name = id_column_by_name(columns)
-    if name == LEGACY_ID_COLUMN and source is not None:
-        deprecations.warn(deprecations.LEGACY_ID_COLUMN, logger, name=source)
-    if name is not None:
-        return name
-    if not len(columns):
-        raise ValueError("The table has no columns.")
-    return columns[0]
+    from protspace.data.annotations.configuration import AnnotationConfiguration
+
+    names, files = split_annotation_args(items or [])
+    custom = load_custom_annotations(files, headers) if files else None
+    sources = AnnotationConfiguration(names).user_annotations if names else None
+    return sources, custom
 
 
 def _unreserved(path: Path, id_header: str, columns: Sequence[str]) -> list[str]:
@@ -107,7 +104,7 @@ def _unreserved(path: Path, id_header: str, columns: Sequence[str]) -> list[str]
     The column stays an annotation: before, such a file failed with a duplicate-column error, or
     the viewer hid the column.
     """
-    taken = {*columns, ID_COLUMN}
+    taken = {*columns, PROTEIN_ID_COLUMN}
     names: list[str] = []
     for column in columns:
         if column not in RESERVED_COLUMNS:
@@ -161,7 +158,7 @@ def _sniff_delimiter(path: Path, header: str) -> str:
 
 
 def _read_file(path: Path) -> pd.DataFrame:
-    """One file as text, its first column renamed to :data:`ID_COLUMN`, one row per id."""
+    """One file as text, its first column renamed to ``protein_id``, one row per id."""
     text = _read_text(path)
     header = next((line for line in text.split("\n") if line.strip()), "")
     if not header:
@@ -176,17 +173,17 @@ def _read_file(path: Path) -> pd.DataFrame:
     except pd.errors.ParserError as exc:
         raise ValueError(f"{path}: {exc}") from exc
     id_header, *rest = (str(c).strip() for c in frame.columns)
-    frame.columns = [ID_COLUMN, *_unreserved(path, id_header, rest)]
-    frame[ID_COLUMN] = frame[ID_COLUMN].str.strip()
-    frame = frame[frame[ID_COLUMN] != ""]
+    frame.columns = [PROTEIN_ID_COLUMN, *_unreserved(path, id_header, rest)]
+    frame[PROTEIN_ID_COLUMN] = frame[PROTEIN_ID_COLUMN].str.strip()
+    frame = frame[frame[PROTEIN_ID_COLUMN] != ""]
 
-    repeated = frame[ID_COLUMN].duplicated()
+    repeated = frame[PROTEIN_ID_COLUMN].duplicated()
     if repeated.any():
         logger.warning(
             "%s: %d repeated id(s), e.g. %r; keeping the first row of each.",
             path,
             int(repeated.sum()),
-            frame.loc[repeated, ID_COLUMN].iloc[0],
+            frame.loc[repeated, PROTEIN_ID_COLUMN].iloc[0],
         )
         frame = frame[~repeated]
     return frame
@@ -219,27 +216,29 @@ def load_custom_annotations(
 ) -> pd.DataFrame:
     """Read custom annotation files into one frame keyed on the input's ids.
 
-    Returns an :data:`ID_COLUMN` column holding exactly *headers*, in order, then every file's
+    Returns an ``protein_id`` column holding exactly *headers*, in order, then every file's
     columns, empty where a file has no row for a protein. Cells are v2-encoded.
     """
     paths = list(dict.fromkeys(Path(p).resolve() for p in paths))
-    merged = pd.DataFrame({ID_COLUMN: list(headers)})
+    merged = pd.DataFrame({PROTEIN_ID_COLUMN: list(headers)})
     owner: dict[str, Path] = {}
     for path in paths:
         logger.info("Loading custom annotations from: %s", path)
         frame = _read_file(path)
-        for column in frame.columns.drop(ID_COLUMN):
+        for column in frame.columns.drop(PROTEIN_ID_COLUMN):
             if column in owner:
                 raise ValueError(
                     f"Column '{column}' is in both {owner[column]} and {path}. "
                     "Rename it in one of them."
                 )
             owner[column] = path
-        _report_coverage(path, frame[ID_COLUMN], headers)
-        merged = merged.merge(frame, on=ID_COLUMN, how="left")
+        _report_coverage(path, frame[PROTEIN_ID_COLUMN], headers)
+        merged = merged.merge(frame, on=PROTEIN_ID_COLUMN, how="left")
 
-    for column in merged.columns.drop(ID_COLUMN):
-        merged[column] = merged[column].fillna("").map(encode_legacy_cell)
+    for column in merged.columns.drop(PROTEIN_ID_COLUMN):
+        values = merged[column].fillna("")
+        # Encode each distinct cell once: a column repeats few labels.
+        merged[column] = values.map({v: encode_legacy_cell(v) for v in values.unique()})
     return merged
 
 
@@ -251,8 +250,8 @@ def merge_custom_annotations(
         return fetched
 
     merged = fetched.merge(
-        custom.drop_duplicates(ID_COLUMN),
-        on=ID_COLUMN,
+        custom.drop_duplicates(PROTEIN_ID_COLUMN),
+        on=PROTEIN_ID_COLUMN,
         how="left",
         suffixes=("_api", ""),
     )
@@ -265,3 +264,27 @@ def merge_custom_annotations(
             else:
                 merged = merged.rename(columns={col: base})
     return merged
+
+
+def read_annotation_table(path: Path, headers: Sequence[str]) -> pa.Table:
+    """The ``-a`` table of ``stats`` and ``bundle``, keyed on ``protein_id``.
+
+    A custom annotation file is loaded onto *headers* (the projected proteins); any
+    other path is read as a parquet, whose id column is ``protein_id``, else
+    ``identifier`` (with the deprecation warning), else its first column. Every
+    failure is a ``ValueError`` naming *path*.
+    """
+    if is_custom_annotation_file(path):
+        frame = load_custom_annotations([path], headers)
+        return pa.Table.from_pandas(frame, preserve_index=False)
+    try:
+        table = pq.read_table(str(path))
+    except pa.ArrowInvalid as exc:
+        raise ValueError(
+            f"{path} is not a parquet file. -a takes an annotations parquet or a "
+            ".csv/.tsv/.txt file."
+        ) from exc
+    try:
+        return keyed_on_protein_id(table, source=str(path))
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc

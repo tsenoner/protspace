@@ -16,7 +16,7 @@
  */
 
 import type { Annotation } from '../types.js';
-import { getEatBaseAnnotationKey } from './eat-overlay.js';
+import { getEatBaseAnnotationKey, getEatNeighborBaseKey } from './eat-overlay.js';
 
 export type AnnotationSource = 'UniProt' | 'InterPro' | 'Taxonomy' | 'TED' | 'Biocentral' | 'Other';
 
@@ -39,9 +39,6 @@ export interface AnnotationMeta {
 
 /** Prefix marking ML-predicted annotation columns (backend convention). */
 export const PREDICTED_PREFIX = 'predicted_';
-
-/** Suffix of the near/distant column `protspace transfer --max-distance` writes beside a base. */
-const EAT_NEIGHBOR_SUFFIX = '__neighbor';
 
 /**
  * Canonical taxonomy rank order, general → specific (the root of the tree of life down to species).
@@ -402,8 +399,9 @@ export function getAnnotationMeta(
         'Embedding Annotation Transfer reliability index from 0 to 1. This is a ranking signal, not a calibrated probability.',
     };
   }
-  if (column.endsWith(EAT_NEIGHBOR_SUFFIX) && column.length > EAT_NEIGHBOR_SUFFIX.length) {
-    const base = getAnnotationMeta(column.slice(0, -EAT_NEIGHBOR_SUFFIX.length));
+  const neighborBase = getEatNeighborBaseKey(column);
+  if (neighborBase) {
+    const base = getAnnotationMeta(neighborBase);
     return {
       label: `${base.label} — EAT neighbourhood`,
       source: base.source,

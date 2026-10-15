@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from protspace.stats._sampling import id_seed, sorted_subsample
+from protspace.stats._sampling import canonical_order, sorted_subsample
 
 
 @dataclass
@@ -80,12 +80,9 @@ def pca_reduce(
     if d <= n_components:
         return X
 
-    if ids is not None and len(ids) == n:
-        order = np.argsort(np.asarray(ids), kind="stable")
-        fit_rng = np.random.default_rng(id_seed(rng_seed, list(ids)))
-    else:
+    order, fit_rng = canonical_order(ids, n, rng_seed)
+    if order is None:
         order = np.arange(n)
-        fit_rng = np.random.default_rng(rng_seed)
     sub = sorted_subsample(n, max_fit_sample, fit_rng)
     fit_rows = order if sub is None else order[sub]
 
@@ -145,16 +142,14 @@ def kmeans_elbow(
     # depend only on the id-SET, not the input order (the _sampling.py contract the
     # other heavy metrics honour). Everything below runs on Xc (canonical order);
     # labels are mapped back to the caller's order at the end.
-    if ids is not None and len(ids) == n:
-        canonical = np.argsort(np.asarray(ids), kind="stable")
+    canonical, fit_rng = canonical_order(ids, n, rng_seed)
+    if canonical is not None:
         inverse = np.empty(n, dtype=int)
         inverse[canonical] = np.arange(n)
         Xc = X[canonical]
-        fit_rng = np.random.default_rng(id_seed(rng_seed, list(ids)))
     else:
-        canonical = inverse = None
+        inverse = None
         Xc = X
-        fit_rng = np.random.default_rng(rng_seed)
 
     # Bound the fit cost: sweep a subsample at large n; keep full-batch below. The
     # draw is id-canonical (sorted positions over Xc, which is in canonical order).

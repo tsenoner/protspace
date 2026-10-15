@@ -65,7 +65,12 @@ from protspace.data.io.bundle_v3 import (
     replace_annotations_v3,
     write_part,
 )
-from protspace.data.io.ids import PROTEIN_ID_COLUMN, id_column_by_name, with_protein_id
+from protspace.data.io.ids import (
+    LEGACY_ID_COLUMN,
+    PROTEIN_ID_COLUMN,
+    id_column_by_name,
+    with_protein_id,
+)
 from protspace.deprecations import (
     DEPRECATIONS,
     LEGACY_BUNDLE_READ,
@@ -159,17 +164,21 @@ def _split(data: bytes) -> tuple[list[bytes], bytes | None, bytes | None, bytes 
 
 
 def _parse_bundle(
-    source: Path | str | bytes, *, warn_legacy: bool = True
+    source: Path | str | bytes, *, warn_legacy: bool = True, warn_3d: bool = False
 ) -> tuple[list[bytes], bytes | None, bytes | None, bytes | None]:
     """:func:`_split` over a file or raw bytes: the single place a read is decoded.
 
     Logs the legacy-format deprecation warning, once per call, unless
-    ``warn_legacy`` is false (the writers and :func:`convert_bundle`).
+    ``warn_legacy`` is false (the writers and :func:`convert_bundle`), and with
+    ``warn_3d`` the 3-D reading one when the bundle holds 3-D projections: a read
+    of the projections passes it, a settings- or statistics-only read does not.
     """
     data = source if isinstance(source, bytes) else Path(source).read_bytes()
     parsed = _split(data)
     if warn_legacy and parsed[3] is None:
         warn(LEGACY_BUNDLE_READ, logger, name=_source_name(source))
+    if warn_3d:
+        _warn_3d(source, parsed[0], parsed[3])
     return parsed
 
 
@@ -319,8 +328,7 @@ def read_tables(
     dataset the browser showed and the v3 write accepts its ids.  The cells and
     the stamp are untouched.  A v3 container's ids are unique already.
     """
-    core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes)
-    _warn_3d(path_or_bytes, core, payloads)
+    core, _settings, _statistics, payloads = _parse_bundle(path_or_bytes, warn_3d=True)
     annotations, metadata, projections = _core_tables(core, payloads)
     if keyed and payloads is None:
         annotations = _keyed_as_the_legacy_reader_keyed_it(annotations)
@@ -362,10 +370,8 @@ def read_bundle_contents(
     does the same for the 3-D projection warning.
     """
     core, settings, statistics, payloads = _parse_bundle(
-        path_or_bytes, warn_legacy=warn_legacy
+        path_or_bytes, warn_legacy=warn_legacy, warn_3d=warn_3d
     )
-    if warn_3d:
-        _warn_3d(path_or_bytes, core, payloads)
     annotations, metadata, projections = _core_tables(core, payloads)
     return BundleContents(
         annotations=annotations,
@@ -420,9 +426,17 @@ def read_bundle_table(
 
     table = pd.DataFrame({PROTEIN_ID_COLUMN: ids})
     if projections:
-        long = coordinates.to_pandas()
-        for name in projections:
-            placed = long[long["projection_name"] == name].set_index(PROTEIN_ID_COLUMN)
+        # Only the projections asked for, and only the columns used, reach pandas.
+        wanted = coordinates.filter(
+            pc.is_in(
+                coordinates.column("projection_name"),
+                value_set=pa.array(list(projections), pa.string()),
+            )
+        ).select(["projection_name", PROTEIN_ID_COLUMN, "x", "y"])
+        groups = dict(tuple(wanted.to_pandas().groupby("projection_name")))
+        empty = wanted.slice(0, 0).to_pandas()
+        for name in projections:  # in the order asked for
+            placed = groups.get(name, empty).set_index(PROTEIN_ID_COLUMN)
             for axis in ("x", "y"):
                 table[f"{name}_{axis}"] = ids.map(placed[axis]).to_numpy()
     return pd.concat([table, frame], axis=1)
@@ -447,19 +461,14 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
     if target_dir is None:
         target_dir = Path(tempfile.mkdtemp(prefix="protspace_bundle_"))
 
-    core, settings, statistics, payloads = _parse_bundle(bundle_path)
-    _warn_3d(bundle_path, core, payloads)
+    core, settings, statistics, payloads = _parse_bundle(bundle_path, warn_3d=True)
     if payloads is not None:
         parts = list(decode_v3([*core, payloads]))
     else:
-        # Keyed on protein_id, as every directory is written: a part keyed on
-        # `identifier` is rewritten, any other is written as stored; an empty
-        # part writes no file.
-        parts = []
-        for part in core:
-            table = read_part(part) if part else None
-            keyed = with_protein_id(table) if table is not None else None
-            parts.append(part if keyed is table else keyed)
+        # Keyed on protein_id, as every directory is written: only a part whose
+        # schema is keyed on `identifier` is decoded and rewritten, any other is
+        # written as stored; an empty part writes no file.
+        parts = [_keyed_part(part) for part in core]
     write_directory(
         parts,
         target_dir,
@@ -467,6 +476,16 @@ def extract_bundle_to_dir(bundle_path: Path, target_dir: Path | None = None) -> 
         statistics=statistics,
     )
     return str(target_dir)
+
+
+def _keyed_part(part: bytes) -> pa.Table | bytes | None:
+    """A legacy part as :func:`write_directory` takes it, keyed on ``protein_id``."""
+    if not part:
+        return None
+    names = pq.read_schema(io.BytesIO(part)).names
+    if id_column_by_name(names) != LEGACY_ID_COLUMN:
+        return part
+    return with_protein_id(read_part(part))
 
 
 def write_directory(
@@ -542,8 +561,9 @@ def read_bundle(bundle_path: Path) -> tuple[list[bytes], dict | None]:
     Returns:
         (core_parts_bytes, settings_dict_or_None)
     """
-    core, settings_bytes, _statistics, payloads = _parse_bundle(bundle_path)
-    _warn_3d(bundle_path, core, payloads)
+    core, settings_bytes, _statistics, payloads = _parse_bundle(
+        bundle_path, warn_3d=True
+    )
     if payloads is not None:
         core = [write_part(t) for t in decode_v3([*core, payloads])]
     settings = read_settings_from_bytes(settings_bytes) if settings_bytes else None
@@ -698,8 +718,12 @@ class Conversion:
     three_d: tuple[str, ...] = ()
     #: Those written as 2-D (input names; each gained :data:`FLATTENED_SUFFIX`).
     flattened: tuple[str, ...] = ()
-    #: Whether anything was written.
-    written: bool = False
+
+    @property
+    def written(self) -> bool:
+        """Whether anything was written: a legacy input always is, a v3 one only
+        when it was flattened."""
+        return self.version != CONTAINER_VERSION or bool(self.flattened)
 
 
 def convert_bundle(
@@ -740,7 +764,7 @@ def convert_bundle(
         core, payloads, version = _legacy_core_as_v3(core)
 
     _write_parts(output_path, core, settings, statistics, payloads=payloads)
-    return Conversion(version, three_d, three_d if flatten else (), written=True)
+    return Conversion(version, three_d, three_d if flatten else ())
 
 
 def flatten_3d_projections(
@@ -763,7 +787,7 @@ def flatten_3d_projections(
     if not renamed:
         return metadata, projections, statistics
 
-    existing = set(projections.column("projection_name").to_pylist())
+    existing = set(pc.unique(projections.column("projection_name")).to_pylist())
     if "projection_name" in metadata.column_names:
         existing |= set(metadata.column("projection_name").to_pylist())
     clashes = sorted(new for new in renamed.values() if new in existing)
@@ -775,9 +799,12 @@ def flatten_3d_projections(
     flat = pa.array(list(renamed), type=pa.string())
     names_column = projections.column("projection_name")
     is_flat = pc.is_in(names_column, value_set=flat)
-    new_names = names_column
-    for old, new in renamed.items():
-        new_names = pc.if_else(pc.equal(names_column, old), new, new_names)
+    # One lookup per row: the flattened name of a renamed projection, else its own.
+    position = pc.index_in(names_column, value_set=flat)
+    new_names = pc.coalesce(
+        pc.take(pa.array(list(renamed.values()), pa.string()), position),
+        names_column,
+    )
     projections = _replace_column(projections, "projection_name", new_names)
     z = projections.column("z")
     projections = _replace_column(
@@ -816,14 +843,18 @@ def _replace_column(table: pa.Table, name: str, values) -> pa.Table:
     return table.set_column(index, table.schema.field(index), values)
 
 
+def parse_info_json(raw: str | None) -> dict:
+    """A projection's ``info_json`` cell as a dict; empty or malformed is ``{}``."""
+    try:
+        info = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return {}
+    return info if isinstance(info, dict) else {}
+
+
 def _flattened_info(info_json: str | None) -> str:
     """A flattened projection's ``info_json``: marked, without its 3-D quality."""
-    try:
-        info = json.loads(info_json) if info_json else {}
-    except (TypeError, ValueError):
-        info = {}
-    if not isinstance(info, dict):
-        info = {}
+    info = parse_info_json(info_json)
     info.pop("quality", None)
     info["flattened_from_3d"] = True
     return json.dumps(info)
@@ -835,10 +866,9 @@ def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
     Returns ``(core_parts, payloads, cell_grammar_version)``.  The annotations
     part is read with its stamp intact, so a v1 table is migrated to the v2 cell
     grammar here, explicitly, and a v2 one passes through.  The rows are keyed
-    first, so the id column is ``protein_id`` or ``identifier`` by the time the
-    migration runs, which leaves those two alone: an id is a key, and escaping
-    one (``sp|P1|A_HUMAN`` to ``sp%7CP1|A_HUMAN``) would detach it from its
-    projection rows.
+    first, so the id column is ``protein_id`` by the time the migration runs,
+    which leaves it alone: an id is a key, and escaping one (``sp|P1|A_HUMAN``
+    to ``sp%7CP1|A_HUMAN``) would detach it from its projection rows.
 
     The internal lookup columns (``organism_id``, ``sequence``) a bundle written
     before they were dropped still carries are dropped here too, as by every
@@ -865,8 +895,9 @@ _LEGACY_ID_CANDIDATES = ("protein_id", "identifier", "id", "uniprot", "entry")
 def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
     """A legacy annotations table with the one id per protein the v2 browser saw.
 
-    The encoder takes its ids from a unique, non-null ``protein_id`` or
-    ``identifier`` column, and v3 refuses anything else.  The v2 browser reader
+    The encoder takes its ids from a unique, non-null ``protein_id`` column
+    (:func:`_core_tables` has renamed an ``identifier`` one), and v3 refuses
+    anything else.  The v2 browser reader
     was looser, and a bundle it rendered has to convert (and ``style``) to the
     same dataset: it took the first column whose name contains ``protein_id``,
     ``identifier``, ``id``, ``uniprot`` or ``entry``, in that order, else the
@@ -876,9 +907,10 @@ def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
     showed are dropped, each time with a warning.
     """
     names = annotations.column_names
+    if not names:
+        return annotations
     metadata = annotations.schema.metadata
-    id_column = id_column_by_name(names)
-    if id_column is None and names:
+    if PROTEIN_ID_COLUMN not in names:
         id_column = next(
             (
                 name
@@ -896,18 +928,15 @@ def _keyed_as_the_legacy_reader_keyed_it(annotations: pa.Table) -> pa.Table:
         annotations = annotations.rename_columns(
             [PROTEIN_ID_COLUMN if name == id_column else name for name in names]
         )
-        id_column = PROTEIN_ID_COLUMN
-    if id_column is None:
-        return annotations
 
-    ids = annotations.column(id_column).to_pylist()
+    ids = annotations.column(PROTEIN_ID_COLUMN).to_pylist()
     last = {str(value): row for row, value in enumerate(ids) if value is not None}
     if len(last) != len(ids):
         logger.warning(
             "legacy annotations hold %d row(s) with a null or repeated '%s'; keeping "
             "the last row per id, as the v2 browser did",
             len(ids) - len(last),
-            id_column,
+            PROTEIN_ID_COLUMN,
         )
         annotations = annotations.take(pa.array(sorted(last.values()), pa.int64()))
     return annotations.replace_schema_metadata(metadata)

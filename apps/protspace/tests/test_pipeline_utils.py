@@ -275,19 +275,15 @@ class TestDisambiguationSuffix:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_annotation_names
+# split_annotation_args on a pipeline's annotations
 # ---------------------------------------------------------------------------
 
 
 class TestResolveAnnotationNames:
     def _resolve(self, annotations):
-        config = PipelineConfig(
-            methods=[MethodSpec("pca", 2)],
-            output_path=None,
-            annotations=annotations,
-        )
-        pipeline = ReductionPipeline(config)
-        return pipeline._resolve_annotation_names()
+        from protspace.data.processors.custom_annotations import split_annotation_args
+
+        return split_annotation_args(annotations or [])
 
     def test_none(self):
         assert self._resolve(None) == ([], [])

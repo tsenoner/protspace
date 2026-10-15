@@ -140,7 +140,7 @@ def _model_from_file_names(h5_files: list[Path]) -> str | None:
     return keys.pop() if len(keys) == 1 else None
 
 
-def _embedding_files(path: Path) -> list[Path]:
+def embedding_files(path: Path) -> list[Path]:
     """The HDF5 files an input names: the file itself, or a directory's files."""
     if path.is_dir():
         return sorted(f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}"))
@@ -189,7 +189,7 @@ def resolve_input_names(
         if explicit:
             resolved.append(NamedInput(path, explicit))
             continue
-        files = _embedding_files(path)
+        files = embedding_files(path)
         name = _resolve_model_name(files) if files else None
         if name:
             resolved.append(NamedInput(path, name))

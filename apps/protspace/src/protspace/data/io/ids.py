@@ -25,6 +25,7 @@ __all__ = [
     "LEGACY_ID_COLUMN",
     "PROTEIN_ID_COLUMN",
     "id_column_by_name",
+    "keyed_on_protein_id",
     "with_protein_id",
 ]
 
@@ -43,28 +44,52 @@ def id_column_by_name(columns: Sequence[str]) -> str | None:
     return None
 
 
+def _columns(table: pa.Table | pd.DataFrame) -> list[str]:
+    return table.column_names if isinstance(table, pa.Table) else list(table.columns)
+
+
+def _renamed[T: (pa.Table, pd.DataFrame)](table: T, column: str) -> T:
+    """*table* with *column* renamed ``protein_id``, its metadata or ``attrs`` kept
+    (``rename_columns`` drops an Arrow table's, and with it the cell-grammar stamp)."""
+    if not isinstance(table, pa.Table):
+        return table.rename(columns={column: PROTEIN_ID_COLUMN})
+    renamed = table.rename_columns(
+        [PROTEIN_ID_COLUMN if c == column else c for c in table.column_names]
+    )
+    return renamed.replace_schema_metadata(table.schema.metadata)
+
+
 def with_protein_id[T: (pa.Table, pd.DataFrame)](
     table: T, *, source: str | None = None
 ) -> T:
     """*table* (Arrow or pandas) with a legacy ``identifier`` ID column renamed
     ``protein_id``.
 
-    A table keyed on ``protein_id``, or holding neither name, comes back unchanged.
-    An Arrow table keeps its schema metadata, which ``rename_columns`` drops and
-    with it the cell-grammar stamp; a pandas frame keeps its ``attrs``. With
-    *source*, the file the table was read from, the rename logs the deprecation
-    warning: pass it for a file the user wrote, not for a v1/v2 bundle (which warns
-    for its format) or the pipeline's own cache.
+    A table keyed on ``protein_id``, or holding neither name, comes back unchanged,
+    the same object. With *source*, the file the table was read from, the rename
+    logs the deprecation warning: pass it for a file the user wrote, not for a
+    v1/v2 bundle (which warns for its format) or the pipeline's own cache.
     """
-    arrow = isinstance(table, pa.Table)
-    columns = table.column_names if arrow else list(table.columns)
-    if id_column_by_name(columns) != LEGACY_ID_COLUMN:
+    if id_column_by_name(_columns(table)) != LEGACY_ID_COLUMN:
         return table
     if source is not None:
         deprecations.warn(deprecations.LEGACY_ID_COLUMN, logger, name=source)
-    if not arrow:
-        return table.rename(columns={LEGACY_ID_COLUMN: PROTEIN_ID_COLUMN})
-    renamed = table.rename_columns(
-        [PROTEIN_ID_COLUMN if c == LEGACY_ID_COLUMN else c for c in columns]
-    )
-    return renamed.replace_schema_metadata(table.schema.metadata)
+    return _renamed(table, LEGACY_ID_COLUMN)
+
+
+def keyed_on_protein_id[T: (pa.Table, pd.DataFrame)](
+    table: T, *, source: str | None = None
+) -> T:
+    """An annotations table a user hands ``stats -a`` or ``bundle -a``, keyed on
+    ``protein_id``.
+
+    Its ID column is ``protein_id``, else ``identifier`` (as :func:`with_protein_id`,
+    warning with *source*), else its first column, whatever its name. A table
+    with no columns raises ``ValueError``.
+    """
+    columns = _columns(table)
+    if not columns:
+        raise ValueError("The table has no columns.")
+    if id_column_by_name(columns) is not None:
+        return with_protein_id(table, source=source)
+    return _renamed(table, columns[0])

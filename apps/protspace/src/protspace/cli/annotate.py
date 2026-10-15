@@ -130,22 +130,13 @@ def annotate(
     logger.info(f"Found {len(headers)} protein identifiers")
 
     from protspace.data.processors.custom_annotations import (
-        load_custom_annotations,
         merge_custom_annotations,
-        split_annotation_args,
+        resolve_annotation_request,
     )
 
     # Resolve annotation names and custom files; both are usage errors, not crashes.
     try:
-        names, files = split_annotation_args(annotations or [])
-        custom = load_custom_annotations(files, headers) if files else None
-        annotations_list = None
-        if names:
-            from protspace.data.annotations.configuration import (
-                AnnotationConfiguration,
-            )
-
-            annotations_list = AnnotationConfiguration(names).user_annotations
+        annotations_list, custom = resolve_annotation_request(annotations, headers)
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
 
@@ -166,9 +157,8 @@ def annotate(
         df, incomplete_sources = _fetch_with_cache(
             headers, annotations_list, sequences, cache_dir, refetch_stages
         )
-
-    if custom is not None and annotations_list is not None:
-        df = merge_custom_annotations(df, custom)
+    if annotations_list is not None:
+        df = merge_custom_annotations(df, custom)  # unchanged without files
 
     if not scores:
         from protspace.data.annotations.scores import strip_scores_from_df

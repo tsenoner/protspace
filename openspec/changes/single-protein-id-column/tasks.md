@@ -14,7 +14,9 @@
       table) on `protein_id`
 - [x] 2.3 Pipeline, annotation manager, formatters, writers and cache key on `protein_id`; the
       cache reads an `identifier` key silently
-- [x] 2.4 Custom loader `ID_COLUMN` is `protein_id`; `resolve_id_column` warns on `identifier`
+- [x] 2.4 Custom loader keys on `protein_id`; a parquet `-a` goes through
+      `ids.keyed_on_protein_id` (one reader, `read_annotation_table`, for `stats` and `bundle`),
+      which warns on `identifier`
 - [x] 2.5 Directory readers (`bundle -p`, `stats -p`, `ArrowReader`) go through `with_protein_id`
 - [x] 2.6 `transfer`, `predictions`, `classification`, `stats`, `export` read `protein_id`
 

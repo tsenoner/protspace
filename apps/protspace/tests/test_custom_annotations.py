@@ -26,11 +26,11 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
     UniProtRetriever,
 )
 from protspace.data.io.bundle import read_tables
+from protspace.data.io.ids import keyed_on_protein_id
 from protspace.data.processors.custom_annotations import (
     CUSTOM_ANNOTATION_SUFFIXES,
     RESERVED_COLUMNS,
     load_custom_annotations,
-    resolve_id_column,
     split_annotation_args,
 )
 from tests.cli_output import plain
@@ -202,10 +202,22 @@ class TestParquetIdColumn:
         ],
     )
     def test_rule(self, columns, expected):
-        assert resolve_id_column(columns) == expected
+        table = keyed_on_protein_id(pa.table({c: [c] for c in columns}))
+        assert table.column("protein_id").to_pylist() == [expected]
 
     def test_protein_id_wins_over_identifier(self):
-        assert resolve_id_column(["identifier", "protein_id", "family"]) == "protein_id"
+        table = keyed_on_protein_id(
+            pa.table({"identifier": ["alias"], "protein_id": ["P1"], "family": ["f"]})
+        )
+        assert table.to_pydict() == {
+            "identifier": ["alias"],
+            "protein_id": ["P1"],
+            "family": ["f"],
+        }
+
+    def test_no_columns_is_refused(self):
+        with pytest.raises(ValueError, match="no columns"):
+            keyed_on_protein_id(pa.table({}))
 
 
 class TestCells:

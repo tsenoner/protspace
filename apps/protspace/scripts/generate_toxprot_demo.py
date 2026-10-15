@@ -38,6 +38,7 @@ import pyarrow.parquet as pq
 import requests
 
 from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+from protspace.data.io.ids import id_column_by_name
 from protspace.data.io.settings_converter import KELLYS_COLORS, NA_PINNED_COLOR
 
 logger = logging.getLogger(__name__)
@@ -222,7 +223,7 @@ def _merge_full_length_columns(
     """
     if full_length is None:
         return annotations
-    id_col = "protein_id" if "protein_id" in full_length.column_names else "identifier"
+    id_col = id_column_by_name(full_length.column_names)
     rows = {pid: i for i, pid in enumerate(full_length.column(id_col).to_pylist())}
     ids = annotations.column("protein_id").to_pylist()
     take = pa.array([rows.get(pid) for pid in ids], type=pa.int64())

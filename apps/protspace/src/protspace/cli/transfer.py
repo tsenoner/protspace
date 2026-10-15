@@ -153,10 +153,11 @@ def run_transfer(
             logger.warning("No queries missing %r; nothing to transfer", column)
             continue
 
+        ref_matrix = np.vstack(ref_vecs)
         preds = eat(
             np.vstack(q_vecs),
             q_ids,
-            np.vstack(ref_vecs),
+            ref_matrix,
             ref_ids,
             ref_labels,
             k=k,
@@ -173,7 +174,7 @@ def run_transfer(
         if max_distance is not None:
             cutoff = max_distance
             if cutoff == "auto":
-                cutoff = _auto_max_distance(column, np.vstack(ref_vecs), metric)
+                cutoff = _auto_max_distance(column, ref_matrix, metric)
                 logger.info(
                     "Max distance for %r: %.6g (%dth percentile of %d references' "
                     "distance to their nearest other reference)",

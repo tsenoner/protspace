@@ -26,6 +26,19 @@ export type EatCompanionKind = keyof typeof EAT_COMPANION_SUFFIXES;
 export const EAT_CONFIDENCE_SUFFIX = '__eat_confidence';
 
 /**
+ * The `<col>__neighbor` column `protspace transfer --max-distance` writes: `near` or `distant`
+ * per query (Python's `NEIGHBOR_SUFFIX`, `data/io/predictions.py`).
+ */
+const EAT_NEIGHBOR_SUFFIX = '__neighbor';
+
+/** The annotation a `<col>__neighbor` column describes, or null for any other column. */
+export function getEatNeighborBaseKey(key: string): string | null {
+  return key.length > EAT_NEIGHBOR_SUFFIX.length && key.endsWith(EAT_NEIGHBOR_SUFFIX)
+    ? key.slice(0, -EAT_NEIGHBOR_SUFFIX.length)
+    : null;
+}
+
+/**
  * Which side(s) of the reliability scale the EAT filter constrains (#380).
  *
  * Lives here rather than beside the query-condition translation in `core` because

@@ -228,8 +228,8 @@ def test_flatten_writes_each_3d_projection_as_its_xy_view(tmp_path, container):
         version=3 if container == "v3" else 2,
         three_d=("UMAP 3",),
         flattened=("UMAP 3",),
-        written=True,
     )
+    assert result.written
     contents = read_bundle_contents(out)
     flat = f"UMAP 3{FLATTENED_SUFFIX}"
     assert contents.metadata.column("projection_name").to_pylist() == ["PCA 2", flat]

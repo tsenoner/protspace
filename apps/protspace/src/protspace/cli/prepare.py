@@ -417,7 +417,7 @@ def prepare(
 
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5, resolve_input_names
-    from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
+    from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS, embedding_files
 
     # Only a run that embeds needs the config, and building one imports the
     # embedding backends (biocentral_api, and torch where installed).
@@ -457,9 +457,7 @@ def prepare(
             named_inputs = resolve_input_names(input_specs, command="prepare")
             for path, name_override, _ in named_inputs:
                 if path.is_dir():
-                    h5s = sorted(
-                        f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")
-                    )
+                    h5s = embedding_files(path)
                     if not h5s:
                         logger.warning(f"No embedding files in: {path}")
                         continue

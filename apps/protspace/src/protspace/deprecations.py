@@ -182,11 +182,14 @@ _REGISTRY = (
         ),
         removal=(
             "apps/protspace/src/protspace/data/io/ids.py: id_column_by_name and "
-            "with_protein_id take protein_id only (see the single-protein-id-column "
-            "OpenSpec change)",
-            "apps/protspace/src/protspace/data/processors/custom_annotations.py: "
-            "resolve_id_column takes protein_id, else the first column (old "
-            "`annotate` output has `identifier` first, so it still reads)",
+            "with_protein_id take protein_id only, and keyed_on_protein_id "
+            "protein_id, else the first column (old `annotate` output has "
+            "`identifier` first, so it still reads; see the "
+            "single-protein-id-column OpenSpec change)",
+            "apps/protspace/src/protspace/cli/transfer.py: run_transfer takes "
+            "protein_id only",
+            "apps/protspace/notebooks/ProtSpace_Preparation.ipynb: the EAT cell "
+            "drops its rename to `identifier` for protspace < 4.17",
             "apps/protspace/src/protspace/data/annotations/cache.py: drop the "
             "identifier rename on read, or treat such a cache as stale",
             "apps/protspace/src/protspace/data/io/bundle_v3.py: encode_v3 takes "

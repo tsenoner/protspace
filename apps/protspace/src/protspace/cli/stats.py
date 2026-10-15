@@ -21,26 +21,6 @@ from protspace.cli.common_options import ClusterSelection, ClusterSpace, Opt_Ver
 logger = logging.getLogger(__name__)
 
 
-def _resolve_id_col(frame, source: str | None = None) -> str:
-    """The id column of the ``-a`` table, by the parquet rule ``bundle -a`` uses too.
-
-    A custom annotation file comes back from its loader with the ids in ``protein_id``.
-    *source* is passed by the one call per run that should warn about an ``identifier``
-    column (see :func:`resolve_id_column`).
-    """
-    from protspace.data.processors.custom_annotations import resolve_id_column
-
-    return resolve_id_column(list(frame.columns), source=source)
-
-
-def _parse_info_json(raw) -> dict:
-    """Parse a projection's ``info_json`` cell into a dict; empty/malformed → {}."""
-    try:
-        return json.loads(raw) if raw else {}
-    except (json.JSONDecodeError, TypeError):
-        return {}
-
-
 def _atomic_write_table(table, path: Path) -> None:
     """Overwrite ``path`` with ``table`` atomically.
 
@@ -71,6 +51,7 @@ def _load_reductions(
     from protspace.data.io.bundle import (
         PROJECTIONS_DATA_FILENAME,
         PROJECTIONS_METADATA_FILENAME,
+        parse_info_json,
     )
     from protspace.data.io.ids import PROTEIN_ID_COLUMN, with_protein_id
 
@@ -89,7 +70,7 @@ def _load_reductions(
         dims_col = mt.get("dimensions", [])
         sources = mt.get("source", [])
         for i, nm in enumerate(names):
-            info = _parse_info_json(infos[i] if i < len(infos) else None)
+            info = parse_info_json(infos[i] if i < len(infos) else None)
             metric_by_name[nm] = info.get("metric") or default_metric
             if i < len(dims_col):
                 dims_by_name[nm] = int(dims_col[i])
@@ -184,6 +165,8 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from protspace.data.io.bundle import parse_info_json
+
     if not quality_by_name or not meta_path.exists():
         return
     table = pq.read_table(str(meta_path))
@@ -197,7 +180,7 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
     infos = table.column("info_json").to_pylist()
     new_infos: list[str] = []
     for nm, raw in zip(names, infos, strict=False):
-        info = _parse_info_json(raw)
+        info = parse_info_json(raw)
         quality = quality_by_name.get(nm)
         if quality is not None:
             info["quality"] = quality
@@ -209,33 +192,17 @@ def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None
 
 
 def _read_annotations(path: Path, reductions: list[dict]):
-    """The ``-a`` table as a DataFrame, read as a parquet or a custom annotation file.
+    """The ``-a`` table as a DataFrame keyed on ``protein_id``, as ``bundle -a`` reads it.
 
     A custom file comes back with one row per projected protein, so the proteins it does not
-    annotate still get cluster columns. A parquet's id column is resolved here too, so a table
-    with no columns is a usage error rather than a traceback later.
+    annotate still get cluster columns. A parquet that cannot be read, or has no columns, is a
+    usage error rather than a traceback later.
     """
-    import pyarrow.parquet as pq
-    from pyarrow import ArrowInvalid
+    from protspace.data.processors.custom_annotations import read_annotation_table
 
-    from protspace.data.processors.custom_annotations import (
-        is_custom_annotation_file,
-        load_custom_annotations,
-    )
-
+    ids = dict.fromkeys(i for r in reductions for i in r["ids"])
     try:
-        if is_custom_annotation_file(path):
-            ids = dict.fromkeys(i for r in reductions for i in r["ids"])
-            return load_custom_annotations([path], list(ids))
-        frame = pq.read_table(str(path)).to_pandas()
-        _resolve_id_col(frame, source=str(path))
-        return frame
-    except ArrowInvalid as exc:
-        raise typer.BadParameter(
-            f"{path} is not a parquet file. -a takes an annotations parquet or a "
-            ".csv/.tsv/.txt file.",
-            param_hint="'-a/--annotations'",
-        ) from exc
+        return read_annotation_table(path, list(ids)).to_pandas()
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="'-a/--annotations'") from exc
 
@@ -266,13 +233,14 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from protspace.data.io.ids import keyed_on_protein_id
     from protspace.stats.carriage import merge_annotation_columns
 
     if not report.annotation_columns or not ann_path.exists():
         return []
     table = pq.read_table(str(ann_path))
-    df = frame if frame is not None else table.to_pandas()
-    added = merge_annotation_columns(report, df, id_col=_resolve_id_col(df))
+    df = frame if frame is not None else keyed_on_protein_id(table.to_pandas())
+    added = merge_annotation_columns(report, df)
     if not added:
         return []
     # Append ONLY the new string columns onto the ORIGINAL Arrow table (row order
@@ -445,9 +413,7 @@ def stats(
     ann_frame = None
     if annotations is not None:
         ann_frame = _read_annotations(annotations, reductions)
-        annotation_labels = build_annotation_labels(
-            ann_frame, stats_annotation, id_col=_resolve_id_col(ann_frame)
-        )
+        annotation_labels = build_annotation_labels(ann_frame, stats_annotation)
 
     report = compute_statistics(
         embedding_sets,
@@ -475,9 +441,7 @@ def stats(
         # The user's own file is not rewritten. The table it became is named after
         # it, not `selected_annotations.parquet`, which in an unbundled `prepare`
         # directory holds the fetched annotations.
-        added_cols = merge_annotation_columns(
-            report, ann_frame, id_col=_resolve_id_col(ann_frame)
-        )
+        added_cols = merge_annotation_columns(report, ann_frame)
         enriched = projections / f"{annotations.stem}.annotations.parquet"
         _write_custom_annotations(ann_frame, enriched)
         typer.echo(

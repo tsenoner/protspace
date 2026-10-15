@@ -308,8 +308,16 @@ export function isAutoClusterColumn(
   statistics: readonly ProjectionStatisticRow[] | undefined,
   annotation: string,
 ): boolean {
-  if (!statistics?.length || !annotation) return false;
-  return statistics.some(
+  return clusterValidityRow(statistics, annotation) !== undefined;
+}
+
+/** The `cluster_validity` row of the auto-clustering whose membership column is `annotation`. */
+function clusterValidityRow(
+  statistics: readonly ProjectionStatisticRow[] | undefined,
+  annotation: string,
+): ProjectionStatisticRow | undefined {
+  if (!statistics?.length || !annotation) return undefined;
+  return statistics.find(
     (row) =>
       row.stat_family === 'cluster_validity' &&
       clusterColumnName(row.label_kind, row.space_name) === annotation,
@@ -362,7 +370,7 @@ export const EMBEDDING_CLUSTER_SCORE_CAVEAT =
  * Which caveat `annotation`'s separation scores need, or `null` when it is not one of this
  * bundle's auto-clusterings.
  *
- * Same `cluster_validity` match as `isAutoClusterColumn`; that row's `space_kind` says where
+ * The row `isAutoClusterColumn` matches; its `space_kind` says where
  * K-means ran. An embedding clustering is scored in each projection as an `annotation_validity`
  * row only, so its one `cluster_validity` row is the embedding's own.
  */
@@ -370,12 +378,7 @@ export function autoClusterScoreCaveat(
   statistics: readonly ProjectionStatisticRow[] | undefined,
   annotation: string,
 ): string | null {
-  if (!statistics?.length || !annotation) return null;
-  const found = statistics.find(
-    (row) =>
-      row.stat_family === 'cluster_validity' &&
-      clusterColumnName(row.label_kind, row.space_name) === annotation,
-  );
+  const found = clusterValidityRow(statistics, annotation);
   if (!found) return null;
   return found.space_kind === 'embedding'
     ? EMBEDDING_CLUSTER_SCORE_CAVEAT

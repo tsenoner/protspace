@@ -52,11 +52,6 @@ REEXPORTS = [
         shared.NON_ANNOTATION_COLUMNS,
     ),
     ("protspace.data.io.ids", "PROTEIN_ID_COLUMN", shared.PROTEIN_ID_COLUMN),
-    (
-        "protspace.data.processors.custom_annotations",
-        "ID_COLUMN",
-        shared.PROTEIN_ID_COLUMN,
-    ),
 ]
 
 

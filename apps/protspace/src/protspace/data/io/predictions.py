@@ -154,9 +154,16 @@ def report_rows(
     the rank-1 neighbour.
     """
     decode = format_version >= 2
+    shown: dict[str, str] = {}  # each label decoded once: a column repeats few
+
+    def display(cell: str) -> str:
+        if cell not in shown:
+            shown[cell] = to_display_value(cell, decode=decode)
+        return shown[cell]
+
     rows = []
     for pred in predictions:
-        label = to_display_value(pred.label, decode=decode)
+        label = display(pred.label)
         for rank, neighbor in enumerate(pred.neighbors, start=1):
             rows.append(
                 {
@@ -168,7 +175,7 @@ def report_rows(
                     "reliability": pred.reliability,
                     "rank": rank,
                     "reference_id": neighbor.reference_id,
-                    "reference_label": to_display_value(neighbor.label, decode=decode),
+                    "reference_label": display(neighbor.label),
                     "reference_distance": neighbor.distance,
                 }
             )

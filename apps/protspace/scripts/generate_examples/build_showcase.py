@@ -98,6 +98,8 @@ from protspace.data.io.bundle import (
 )
 from protspace.data.io.bundle import BundleContents as Bundle
 from protspace.data.io.bundle_v3 import CONTAINER_VERSION
+from protspace.data.io.ids import PROTEIN_ID_COLUMN as ID_COLUMN
+from protspace.data.io.ids import keyed_on_protein_id
 from protspace.data.io.settings_converter import (
     KELLYS_COLORS,
     LEGEND_SETTINGS_KEY,
@@ -124,7 +126,6 @@ GITHUB_REPO = "tsenoner/protspace"
 #: carries different bytes.
 DEFAULT_FILE_PATTERN = "{id}_{release}_v3.parquetbundle"
 
-ID_COLUMN = "protein_id"
 LEGACY_COLUMNS = ("length_fixed", "length_quantile")
 TOOLTIP_ONLY_COLUMNS = frozenset({"gene_name", "protein_name", "uniprot_kb_id"})
 PRED_MARKER = "__pred_"
@@ -366,12 +367,8 @@ def rebuild_bundle(
 
 def normalize_id(table: pa.Table) -> pa.Table:
     """Name the identifier column ``protein_id`` (``annotate`` before protspace
-    4.17.0 wrote ``identifier``)."""
-    names = table.column_names
-    if ID_COLUMN in names:
-        return table
-    source = "identifier" if "identifier" in names else names[0]
-    return table.rename_columns([ID_COLUMN if n == source else n for n in names])
+    4.17.0 wrote ``identifier``; a table without either is keyed on its first)."""
+    return keyed_on_protein_id(table)
 
 
 def extract_ann(bundle_path: Path) -> pa.Table:
