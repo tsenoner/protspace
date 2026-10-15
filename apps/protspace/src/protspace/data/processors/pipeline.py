@@ -299,11 +299,9 @@ class ReductionPipeline:
         sequences = {}
         for emb_set in embedding_sets:
             if emb_set.fasta_path and Path(emb_set.fasta_path).exists():
-                from protspace.data.io.fasta import parse_fasta
-                from protspace.data.loaders.h5 import parse_identifier
+                from protspace.data.io.fasta import parse_fasta_by_identifier
 
-                raw = parse_fasta(Path(emb_set.fasta_path))
-                sequences.update({parse_identifier(h): s for h, s in raw.items()})
+                sequences.update(parse_fasta_by_identifier(Path(emb_set.fasta_path)))
         return sequences
 
     def _validate_headers(self, embedding_sets: list[EmbeddingSet]) -> list[str]:

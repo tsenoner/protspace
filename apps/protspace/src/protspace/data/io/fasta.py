@@ -64,3 +64,14 @@ def parse_fasta(path: Path) -> dict[str, str]:
         )
 
     return sequences
+
+
+def parse_fasta_by_identifier(path: Path) -> dict[str, str]:
+    """Parse a FASTA file into ``{identifier: sequence}``.
+
+    Headers are reduced to the protein identifier embeddings are keyed by
+    (``sp|P12345|NAME`` → ``P12345``).
+    """
+    from protspace.data.loaders.h5 import parse_identifier
+
+    return {parse_identifier(header): seq for header, seq in parse_fasta(path).items()}

@@ -94,33 +94,24 @@ def tmbed_predictions(value: object) -> list[Prediction]:
     ]
 
 
-# Derive this fixture value from the real annotation adapter rather than copying
-# its vocabulary into the contract test. A topology with only inside/outside
-# labels is a completed TMbed prediction with no membrane-spanning segment.
+# The first proteins' TMbed payloads, each run through the real annotation adapter
+# rather than copying its vocabulary into the contract test. A topology of only
+# inside/outside labels is a completed prediction with no membrane-spanning
+# segment, which must surface as a category. The missing and malformed payloads
+# are unavailable predictions, kept as explicit rows apart from the fixture's
+# other empty ones so an adapter that invents a negative biological result fails
+# before the bundle reader has a chance to normalize the missing representation.
+TMBED_PAYLOADS = ["oooooiiiii", None, "garbage"]
+NEGATIVE_TMBED_INDEX, MISSING_TMBED_INDEX, MALFORMED_TMBED_INDEX = range(3)
 NEGATIVE_TMBED_CATEGORY = BiocentralPredictionRetriever._extract_transmembrane(
-    tmbed_predictions("oooooiiiii")
+    tmbed_predictions(TMBED_PAYLOADS[NEGATIVE_TMBED_INDEX])
 )
 
-# Keep one explicit missing-payload row separate from the fixture's other empty
-# rows. This catches an adapter that invents a negative biological result before
-# the bundle reader has a chance to normalize the missing representation.
-MISSING_TMBED_INDEX = 1
-MISSING_TMBED_VALUE = BiocentralPredictionRetriever._extract_transmembrane(
-    tmbed_predictions(None)
-)
-MISSING_SIGNAL_PEPTIDE_VALUE = BiocentralPredictionRetriever._extract_signal_peptide(
-    tmbed_predictions(None)
-)
 
-# Malformed payloads are unavailable predictions, not completed negatives. Keep
-# one explicit row so this producer decision is exercised through bundle ingestion.
-MALFORMED_TMBED_INDEX = 2
-MALFORMED_TMBED_VALUE = BiocentralPredictionRetriever._extract_transmembrane(
-    tmbed_predictions("garbage")
-)
-MALFORMED_SIGNAL_PEPTIDE_VALUE = BiocentralPredictionRetriever._extract_signal_peptide(
-    tmbed_predictions("garbage")
-)
+def tmbed_column(extract, count: int) -> list[str]:
+    """A TMbed-derived annotation column: the payload rows, then empty cells."""
+    cells = [extract(tmbed_predictions(value)) for value in TMBED_PAYLOADS]
+    return cells + [""] * (count - len(cells))
 
 
 def build_annotations_table(ids: list[str]) -> pa.Table:
@@ -130,25 +121,22 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
     the pre-rename name here keeps that rename inside the tested surface.
 
     The payload is positional and identical at every size: protein 1 carries the
-    percent-encoded label and the multi-hit cell, protein 4 carries the null
-    length. The large variant therefore asserts exactly the same encoding
-    contract as the small one, just through the optimized reader path.
+    percent-encoded label and the multi-hit cell, proteins 1-3 carry the TMbed
+    payloads, protein 4 carries the null length. The large variant therefore
+    asserts exactly the same encoding contract as the small one, just through the
+    optimized reader path.
     """
     rest = len(ids) - 1
     family = [encode_field(LABEL_WITH_RESERVED_CHAR)] + [
         encode_field("Hydrolase")
     ] * rest
     domains = [MULTI_HIT_CELL] + [f"{encode_field('DomB')}|0.75"] * rest
-    predicted_transmembrane = [
-        NEGATIVE_TMBED_CATEGORY,
-        MISSING_TMBED_VALUE,
-        MALFORMED_TMBED_VALUE,
-    ] + [""] * (rest - 2)
-    predicted_signal_peptide = [
-        "False",
-        MISSING_SIGNAL_PEPTIDE_VALUE,
-        MALFORMED_SIGNAL_PEPTIDE_VALUE,
-    ] + [""] * (rest - 2)
+    predicted_signal_peptide = tmbed_column(
+        BiocentralPredictionRetriever._extract_signal_peptide, len(ids)
+    )
+    predicted_transmembrane = tmbed_column(
+        BiocentralPredictionRetriever._extract_transmembrane, len(ids)
+    )
 
     # A genuine double column with a null -- distinguishes "missing" from 0 and
     # from NaN across the language boundary. Real bundles carry both string-typed
@@ -400,7 +388,7 @@ def main(out_dir: Path) -> None:
                 "projectionCount": len(PROJECTIONS),
                 "labelWithReservedChar": LABEL_WITH_RESERVED_CHAR,
                 "negativeTransmembraneCategory": NEGATIVE_TMBED_CATEGORY,
-                "missingTransmembraneIndex": MISSING_TMBED_INDEX,
+                "missingTmbedIndex": MISSING_TMBED_INDEX,
                 "malformedTmbedIndex": MALFORMED_TMBED_INDEX,
                 "nullLengthIndex": NULL_LENGTH_INDEX,
                 "statisticsColumns": STATS_SCHEMA.names,

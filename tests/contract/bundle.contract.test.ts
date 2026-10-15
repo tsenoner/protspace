@@ -27,6 +27,7 @@ import {
 // working tree, not built package output. (The vitest config still aliases
 // `@protspace/utils` — packages/core's own sources import it that way.)
 import { BUNDLE_DELIMITER_BYTES } from '../../packages/utils/src/parquet/constants';
+import { NA_VALUE } from '../../packages/utils/src/visualization/missing-values';
 import { getProteinAnnotationValues } from '../../packages/utils/src/visualization/plot-data-accessors';
 
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -42,7 +43,7 @@ interface Manifest {
   projectionCount: number;
   labelWithReservedChar: string;
   negativeTransmembraneCategory: string;
-  missingTransmembraneIndex: number;
+  missingTmbedIndex: number;
   malformedTmbedIndex: number;
   nullLengthIndex: number;
   statisticsColumns: string[];
@@ -51,6 +52,16 @@ interface Manifest {
 
 let outDir: string;
 let manifest: Manifest;
+
+/** Both TMbed-derived annotations of one protein read back as missing. */
+function expectTmbedMissing(
+  data: Parameters<typeof getProteinAnnotationValues>[0],
+  proteinIndex: number,
+): void {
+  for (const annotation of ['predicted_transmembrane', 'predicted_signal_peptide']) {
+    expect(getProteinAnnotationValues(data, proteinIndex, annotation)).toEqual([NA_VALUE]);
+  }
+}
 
 function loadBundle(variant: string): ArrayBuffer {
   const buffer = readFileSync(join(outDir, `${variant}.parquetbundle`));
@@ -238,32 +249,11 @@ describe('annotation encoding across the language boundary', () => {
   });
 
   it('preserves a missing TMbed payload as N/A', () => {
-    expect(
-      getProteinAnnotationValues(
-        data,
-        manifest.missingTransmembraneIndex,
-        'predicted_transmembrane',
-      ),
-    ).toEqual(['__NA__']);
-  });
-
-  it('preserves a missing TMbed payload as N/A for signal peptide', () => {
-    expect(
-      getProteinAnnotationValues(
-        data,
-        manifest.missingTransmembraneIndex,
-        'predicted_signal_peptide',
-      ),
-    ).toEqual(['__NA__']);
+    expectTmbedMissing(data, manifest.missingTmbedIndex);
   });
 
   it('preserves a malformed TMbed payload as N/A', () => {
-    expect(
-      getProteinAnnotationValues(data, manifest.malformedTmbedIndex, 'predicted_transmembrane'),
-    ).toEqual(['__NA__']);
-    expect(
-      getProteinAnnotationValues(data, manifest.malformedTmbedIndex, 'predicted_signal_peptide'),
-    ).toEqual(['__NA__']);
+    expectTmbedMissing(data, manifest.malformedTmbedIndex);
   });
 
   it('reports a missing numeric value as missing rather than zero', () => {
@@ -328,13 +318,7 @@ describe('the optimized conversion path real datasets take', () => {
     expect(data.annotations.predicted_transmembrane.values).toContain(
       manifest.negativeTransmembraneCategory,
     );
-    expect(
-      getProteinAnnotationValues(
-        data,
-        manifest.missingTransmembraneIndex,
-        'predicted_transmembrane',
-      ),
-    ).toEqual(['__NA__']);
+    expectTmbedMissing(data, manifest.missingTmbedIndex);
 
     const lengths = data.numeric_annotation_data?.length;
     expect(lengths).toHaveLength(manifest.largeProteinCount);

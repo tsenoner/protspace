@@ -62,7 +62,6 @@ def annotate(
 
     # Extract identifiers from input
     input_is_fasta = is_fasta_file(input)
-    sequences = None
     if input_is_fasta:
         from protspace.data.loaders.query import extract_identifiers_from_fasta
 
@@ -86,27 +85,22 @@ def annotate(
     # Resolve annotation names
     from protspace.data.annotations.configuration import AnnotationConfiguration
 
-    annotations_list = None
-    if annotations:
-        names = []
-        for item in annotations:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    names.append(part)
-        if names:
-            annotations_list = AnnotationConfiguration(names).user_annotations
+    names = []
+    for item in annotations or []:
+        for part in item.split(","):
+            part = part.strip()
+            if part:
+                names.append(part)
+    config = AnnotationConfiguration(names or None)
+    annotations_list = config.user_annotations if names else None
 
-    if input_is_fasta:
-        config = AnnotationConfiguration(annotations_list)
-        if config.interpro_annotations or config.biocentral_annotations:
-            from protspace.data.io.fasta import parse_fasta
-            from protspace.data.loaders.h5 import parse_identifier
+    # Sequence-backed sources get the FASTA's own sequences, so proteins without
+    # a UniProt entry still reach them.
+    sequences = None
+    if input_is_fasta and config.needs_sequence:
+        from protspace.data.io.fasta import parse_fasta_by_identifier
 
-            sequences = {
-                parse_identifier(header): sequence
-                for header, sequence in parse_fasta(input).items()
-            }
+        sequences = parse_fasta_by_identifier(input)
 
     # Fetch annotations
     df = ProteinAnnotationManager(

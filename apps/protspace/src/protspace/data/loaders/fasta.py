@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from protspace.data.loaders.embedding_set import EmbeddingSet
-from protspace.data.loaders.h5 import load_h5, parse_identifier
+from protspace.data.loaders.h5 import load_h5
 
 if TYPE_CHECKING:
     from protspace.data.embedding.biocentral import EmbedConfig
@@ -43,14 +43,12 @@ def embed_fasta(
         raise ValueError(f"Unknown backend {backend!r}; use 'local' or 'biocentral'.")
 
     from protspace.data.embedding.biocentral import derive_h5_cache_path
-    from protspace.data.io.fasta import parse_fasta
+    from protspace.data.io.fasta import parse_fasta_by_identifier
 
-    raw_sequences = parse_fasta(fasta_path)
-    if not raw_sequences:
+    # Keys are remapped sp|P12345|NAME → P12345 (shared by both backends).
+    sequences = parse_fasta_by_identifier(fasta_path)
+    if not sequences:
         raise ValueError(f"No sequences found in {fasta_path}")
-
-    # Remap keys: sp|P12345|NAME → P12345 (shared by both backends).
-    sequences = {parse_identifier(header): seq for header, seq in raw_sequences.items()}
 
     if backend == "local":
         from protspace.data.embedding.local import embed_sequences

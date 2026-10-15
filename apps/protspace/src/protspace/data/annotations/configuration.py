@@ -117,6 +117,11 @@ class AnnotationConfiguration:
             self.biocentral_annotations,
         ) = self._split_by_source()
 
+    @property
+    def needs_sequence(self) -> bool:
+        """Whether a requested source (InterPro, Biocentral) works from sequences."""
+        return bool(self.interpro_annotations or self.biocentral_annotations)
+
     @staticmethod
     def categorize_annotations_by_source(annotations: set[str]) -> dict[str, set[str]]:
         """

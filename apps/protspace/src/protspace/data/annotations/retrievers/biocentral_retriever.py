@@ -230,14 +230,7 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
     @staticmethod
     def _extract_tmbed_topology(predictions: list) -> str | None:
         """Return a supported TMbed topology, or ``None`` when unavailable."""
-        for pred in predictions:
-            if pred.model_name == "TMbed":
-                value = pred.value
-                if (
-                    not isinstance(value, str)
-                    or not value
-                    or not set(value) <= _TMBED_TOPOLOGY_LABELS
-                ):
-                    return None
-                return value
+        value = next((p.value for p in predictions if p.model_name == "TMbed"), None)
+        if isinstance(value, str) and value and set(value) <= _TMBED_TOPOLOGY_LABELS:
+            return value
         return None
