@@ -422,7 +422,8 @@ describe('exportTable', () => {
     annotations: {
       species: {
         kind: 'categorical',
-        values: ['human', 'mouse', null],
+        // The loader gives every missing cell the synthetic NA category, not a null.
+        values: ['human', 'mouse', NA_VALUE],
         colors: ['#ff0000', '#00ff00', '#888888'],
         shapes: ['circle', 'square', 'triangle'],
       },

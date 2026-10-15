@@ -3,7 +3,7 @@
  */
 
 import { SHAPE_PATH_GENERATORS, renderPathOnCanvas, toDisplayValue } from './shapes';
-import { NA_VALUE } from './missing-values';
+import { isNAValue, NA_VALUE } from './missing-values';
 import type { Annotation, AnnotationData, AnnotationPredictedData, Projection } from '../types.js';
 import {
   getProteinAnnotationCount,
@@ -1033,7 +1033,7 @@ function buildProteinTable(
         const count = getProteinAnnotationCount(storage, row);
         for (let k = 0; k < count; k++) {
           const label = annotation.values[getProteinAnnotationIndexAt(storage, row, k)];
-          if (label != null) labels.push(label);
+          if (label != null && !isNAValue(label)) labels.push(label);
         }
         return labels.join(';');
       },

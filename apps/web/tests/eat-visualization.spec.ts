@@ -936,6 +936,9 @@ test('exports the visible proteins as a table, the same set as the ID export', a
 
   expect(rows.map((row) => row[0])).toEqual(ids);
   expect(rows).toHaveLength(738);
+  // A missing cell is empty, never the loader's internal N/A token.
+  expect(rows.flat()).not.toContain('__NA__');
+  expect(rows.some((row) => row.includes(''))).toBe(true);
 
   const predicted = rows.filter((row) => row[value] !== '');
   expect(predicted).toHaveLength(119);
