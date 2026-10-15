@@ -6,9 +6,11 @@ small synthetic inputs with no network (a CSV-only `-a` fetches nothing).
 
 import json
 import logging
+import re
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -25,6 +27,7 @@ from protspace.data.annotations.retrievers.uniprot_retriever import (
 )
 from protspace.data.io.bundle import read_tables
 from protspace.data.processors.custom_annotations import (
+    CUSTOM_ANNOTATION_SUFFIXES,
     load_custom_annotations,
     resolve_id_column,
     split_annotation_args,
@@ -32,6 +35,7 @@ from protspace.data.processors.custom_annotations import (
 from tests.cli_output import plain
 
 HEADERS = ["P1", "P2", "P3", "P4"]
+GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "python-cli.md"
 
 
 def _write(path, text: str) -> str:
@@ -77,6 +81,13 @@ class TestSplitAnnotationArgs:
         xlsx.write_bytes(b"PK")
         with pytest.raises(ValueError, match=r"\.csv, \.tsv or \.txt"):
             split_annotation_args([str(xlsx)])
+
+
+def test_the_guide_lists_the_accepted_suffixes():
+    section = GUIDE.read_text().split("### Custom annotation files")[1]
+    bullet = section.split("**File type.**")[1].split("\n- ")[0]
+    listed = set(re.findall(r"`(\.\w+)`", bullet))
+    assert listed - {".xlsx"} == set(CUSTOM_ANNOTATION_SUFFIXES)
 
 
 # ---------------------------------------------------------------------------
