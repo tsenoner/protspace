@@ -46,6 +46,14 @@
 
 - [x] 8.1 `openspec validate deprecate-3d-and-serve --strict`, `uv run pytest -m "not slow"`, `uv run ruff check src/ packages/ tests/ scripts/`, `pnpm precommit`, `pnpm format:check` all pass; plus `pnpm test`
 
+## 9. Merge into the user-feedback integration branch
+
+- [x] 9.1 Merge `feedback/e-deprecate-3d-serve` with a merge commit, keeping both sides of `docs/guide/python-cli.md` (commands table with `export`, deprecated `project`/`serve` rows), `apps/protspace/CLAUDE.md`, `cli/common_options.py` and `data/processors/pipeline.py` imports, and every path in `protspace-ci.yml`'s filter
+- [x] 9.2 State the deprecation wherever the merged docs still offered 3-D or `serve` as supported: the "Upgrading from v4.4" note (removed in 5.0.0, #544), the `serve` section's 3-D sentence, the `export` paragraph and the web Table Export (X/Y only, no `z`), `apps/protspace/docs/cli.md`'s command list; verify `test_export_cli.py` pins the 3-D read warning on `read_bundle_table`
+- [x] 9.3 Parse `-m` in `prepare` before any embedding, so the 3-D warning and a malformed-spec error come first on a FASTA or `-q` input; verify `test_deprecations.py` with a mocked embedder (warns before it, refuses `umap2:bogus=5` without calling it)
+- [x] 9.4 State `--flatten-3d` as the exception to `bundle-conversion`'s "leave a v3 input untouched" in `deprecation-policy`, and add the unticked carve-out task 5.5 to `parquetbundle-v3`
+- [x] 9.5 `pnpm precommit`, `pnpm format:check`, `pnpm quality`, `pnpm test`, `uv run pytest -q` (only the network-bound `TestTaxonomyRetrieverIntegration` fails), ruff check and format, `test_notebooks.py` with ipywidgets 7.7.1, and the Chromium e2e suite all pass
+
 ## Workflow follow-up
 
 - Archive this change at integration, before the merge (`/opsx:archive`).
