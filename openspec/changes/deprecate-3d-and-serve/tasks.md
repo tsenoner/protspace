@@ -26,17 +26,17 @@
 
 ## 5. Reading 3-D projections
 
-- [ ] 5.1 Register `3d-projection-read` (remove_in 5.0.0) with removal notes from the design inventory; verify the registry tests (paths exist, version in text)
-- [ ] 5.2 Warn once per Python bundle read of projections holding a finite `z` (`read_tables`, `read_bundle_contents`, `read_bundle`, `extract_bundle_to_dir`) and in `stats` for a 3-D projection directory; verify tests for a 3-D read, a 2-D read, a settings-only read, `warn_3d=False`, and that existing legacy-warning counts still hold
-- [ ] 5.3 Add `getThreeDProjectionNotification` and show it for user imports with a 3-D projection; verify `notifications.test.ts`, the dataset-controller unit tests and an e2e test importing the `umap3` fixture (`pnpm test`, `pnpm test:e2e` for the notice spec)
-- [ ] 5.4 Extend the Python TS pin to the 3-D notice; verify it fails on a different version
-- [ ] 5.5 Update `docs/explore/control-bar.md`, `docs/guide/python-cli.md`, `docs/guide/data-format.md`; verify `pnpm docs:build`
+- [x] 5.1 Register `3d-projection-read` (remove_in 5.0.0) with removal notes from the design inventory; verify the registry tests (paths exist, version in text)
+- [x] 5.2 Warn once per Python bundle read of projections holding a finite `z` (`read_tables`, `read_bundle_contents`, `read_bundle`, `extract_bundle_to_dir`) and in `stats` for a 3-D projection directory; verify tests for a 3-D read, a 2-D read, a settings-only read, `warn_3d=False`, and that existing legacy-warning counts still hold
+- [x] 5.3 Add `getThreeDProjectionNotification` and show it for user imports with a 3-D projection; verify `notifications.test.ts`, the dataset-controller unit tests and an e2e test importing the `umap3` fixture (`pnpm test`, `pnpm test:e2e` for the notice spec)
+- [x] 5.4 Extend the Python TS pin to the 3-D notice; verify it fails on a different version
+- [x] 5.5 Update `docs/explore/control-bar.md`, `docs/guide/python-cli.md`, `docs/guide/data-format.md`; verify `pnpm docs:build`
 
 ## 6. `protspace convert` as the lasting upgrade path
 
-- [ ] 6.1 Add `convert --flatten-3d` (X/Y kept, ` (X/Y)` name suffix, `flattened_from_3d`, 3-D quality and statistics rows dropped, v3 inputs too) and the 4.x warning without the flag; verify `tests/test_convert.py` cases for v2 and v3 inputs, nothing-to-flatten, a name collision, and settings/other statistics kept
-- [ ] 6.2 Say in the v1/v2 registry entry, the registry docstring and `AGENTS.md` that convert's legacy reader is retained and not a registry entry; verify the gate's 5.0.0 output does not list convert
-- [ ] 6.3 Amend `parquetbundle-v3` task 6.2 and its Migration Plan step 4: convert keeps reading v1/v2 in 5.0.0; verify the diff touches only those passages and `openspec validate parquetbundle-v3` reports the same (pre-existing) issues as before
+- [x] 6.1 Add `convert --flatten-3d` (X/Y kept, ` (X/Y)` name suffix, `flattened_from_3d`, 3-D quality and statistics rows dropped, v3 inputs too) and the 4.x warning without the flag; verify `tests/test_convert.py` cases for v2 and v3 inputs, nothing-to-flatten, a name collision, and settings/other statistics kept
+- [x] 6.2 Say in the v1/v2 registry entry, the registry docstring and `AGENTS.md` that convert's legacy reader is retained and not a registry entry; verify the gate's 5.0.0 output does not list convert
+- [x] 6.3 Amend `parquetbundle-v3` task 6.2 and its Migration Plan step 4: convert keeps reading v1/v2 in 5.0.0; verify the diff touches only those passages and `openspec validate parquetbundle-v3` reports the same (pre-existing) issues as before
 
 ## 7. Agent docs
 
@@ -44,7 +44,7 @@
 
 ## 8. Integration
 
-- [ ] 8.1 `openspec validate deprecate-3d-and-serve --strict`, `uv run pytest -m "not slow"`, `uv run ruff check src/ packages/ tests/ scripts/`, `pnpm precommit`, `pnpm format:check` all pass; plus `pnpm test`
+- [x] 8.1 `openspec validate deprecate-3d-and-serve --strict`, `uv run pytest -m "not slow"`, `uv run ruff check src/ packages/ tests/ scripts/`, `pnpm precommit`, `pnpm format:check` all pass; plus `pnpm test`
 
 ## Workflow follow-up
 

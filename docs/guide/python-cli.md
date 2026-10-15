@@ -172,7 +172,9 @@ Specify `pca2`, not `pca` alone.
 ::: warning 3D projections are deprecated
 3D projections (any `*3` method) are deprecated and will be removed in protspace 5.0.0. They
 still run, with a warning; use the `*2` variant instead. The web app shows a 3D projection only
-as its X/Y view.
+as its X/Y view. Reading them is deprecated too: every command that reads a bundle's projections
+warns when it holds a 3D one, and from 5.0.0 only `protspace convert` reads them, to turn them
+into 2D (see [`--flatten-3d`](#protspace-convert)).
 :::
 
 ### Inline parameter overrides
@@ -770,22 +772,32 @@ refuses is refused here too, with the same reason, and nothing is written.
 ## `protspace convert`
 
 Rewrite a bundle written in format v1 or v2 as format v3. Reading v1/v2 bundles is deprecated:
-they still open, with a warning, until protspace 5.0.0 removes support for them.
+they still open everywhere, with a warning, until protspace 5.0.0. `convert` itself keeps
+reading them after that, so an old file can always be upgraded.
 
 ```bash
 protspace convert old.parquetbundle new.parquetbundle
 protspace convert old.parquetbundle --in-place
+protspace convert data.parquetbundle --in-place --flatten-3d
 ```
 
-| Flag            | Description                                 |
-| --------------- | ------------------------------------------- |
-| `--in-place`    | Overwrite the input with its v3 conversion. |
-| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.      |
+| Flag            | Description                                                                    |
+| --------------- | ------------------------------------------------------------------------------ |
+| `--in-place`    | Overwrite the input with its v3 conversion.                                    |
+| `--flatten-3d`  | Write each 3D projection as 2D, keeping its X/Y view; works on v3 bundles too. |
+| `-v, --verbose` | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                         |
+
+**3D projections.** Reading them is deprecated and ends in protspace 5.0.0. `--flatten-3d`
+rewrites each one as a 2D projection holding its X and Y coordinates, the view the web app shows
+today, so the picture does not change. It is renamed `<name> (X/Y)` and marked
+`flattened_from_3d` in its metadata so it is not mistaken for a 2D fit, and the quality figures
+computed on the 3D layout (its faithfulness and its statistics rows) are dropped. Without the
+flag, `convert` keeps 3D projections and warns; from 5.0.0 it flattens them automatically.
 
 Give either an output path or `--in-place`; the input is never overwritten otherwise. Settings
 (legend colors, shapes, order) and projection statistics are kept as they are, and the file is
 written atomically, so a failed run leaves the destination unchanged. A bundle that is already v3
-is reported as current and nothing is written. The internal `organism_id` and `sequence`
+is reported as current and nothing is written, unless `--flatten-3d` finds 3D projections in it. The internal `organism_id` and `sequence`
 columns an older bundle may carry are dropped, as from every bundle ProtSpace writes.
 
 The converted bundle holds the proteins the web app showed for the old file. Older web builds
