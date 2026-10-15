@@ -126,6 +126,9 @@ def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
     that actually landed values in the annotations frame), so a column dropped for
     an id mismatch is not given a phantom legend.
     """
+    from protspace._generated.shared_constants import (
+        DEFAULT_CATEGORICAL_PALETTE_ID,
+    )
     from protspace.data.io.settings_converter import KELLYS_COLORS
 
     allowed = None if columns is None else set(columns)
@@ -156,7 +159,7 @@ def build_cluster_legend_settings(report: StatsReport, columns=None) -> dict:
             "sortMode": "size-desc",
             "hiddenValues": [],
             "enableDuplicateStackUI": False,
-            "selectedPaletteId": "kellys",
+            "selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID,
             "categories": categories,
         }
     return settings

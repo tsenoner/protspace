@@ -17,23 +17,13 @@ import typer
 
 from protspace.cli.app import PANEL_REFINE, app, setup_logging
 from protspace.cli.common_options import Opt_Verbose
-from protspace.core.constants import MISSING_VALUE_TOKENS
+from protspace.core.constants import is_missing_value
 from protspace.utils.constants import METRIC_TYPES
 
 if TYPE_CHECKING:
     from protspace.analysis.classification import Rule
 
 logger = logging.getLogger(__name__)
-
-# Reuse the shared missing-value vocabulary ("", "nan", "none", "null", "NA",
-# "NaN") so transfer's notion of "missing" can't drift from the rest of
-# protspace.  This also makes a real float NaN missing (``str(nan) == "nan"``),
-# which a bare ``== ""`` check would treat as a present value.
-_MISSING = frozenset(MISSING_VALUE_TOKENS)
-
-
-def _is_missing(value) -> bool:
-    return value is None or str(value).strip() in _MISSING
 
 
 #: ``--max-distance auto``: the percentile of the references' distances to their
@@ -128,11 +118,14 @@ def run_transfer(
 
         col_vals = embedded.column(column).to_pylist()
 
+        # A cell is missing exactly when the web shows it as N/A, so one spelled
+        # "N/A" is filled rather than handed on as a label, and a float NaN is
+        # missing rather than the label "nan".
         # References: classified refs that HAVE a value in this column.
         ref_ids, ref_labels, ref_vecs = [], [], []
         for i in ref_idx:
             value = col_vals[i]
-            if not _is_missing(value):
+            if not is_missing_value(value):
                 rid = id_list[i]
                 ref_ids.append(rid)
                 ref_labels.append(str(value))
@@ -144,7 +137,7 @@ def run_transfer(
         # Queries: classified queries MISSING a value in this column.
         q_ids, q_vecs = [], []
         for i in query_idx:
-            if _is_missing(col_vals[i]):
+            if is_missing_value(col_vals[i]):
                 qid = id_list[i]
                 q_ids.append(qid)
                 q_vecs.append(embeddings[qid])

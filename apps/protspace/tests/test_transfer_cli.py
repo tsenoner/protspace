@@ -506,9 +506,13 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
 # holding one is a reference — no marker column, no second dataset.
 
 
-def _transfer_rows(query_rule=None):
-    """Transfer ``protein_category`` over the 3-protein fixture, keyed by id."""
-    annotations, embeddings = _three_protein_inputs()
+def _transfer_rows(query_rule=None, categories=None):
+    """Transfer ``protein_category`` over the 3-protein fixture, keyed by id.
+
+    ``categories`` replaces the column's three values.
+    """
+    extra = {"protein_category": categories} if categories else None
+    annotations, embeddings = _three_protein_inputs(extra)
     out = run_transfer(
         annotations=annotations,
         embeddings=embeddings,
@@ -541,6 +545,17 @@ def test_run_transfer_without_rules_never_uses_a_protein_as_its_own_source():
         source = row["protein_category__pred_source"]
         if source is not None:
             assert source != identifier
+
+
+@pytest.mark.parametrize("spelled", ["N/A", "NULL", "None", " na ", "__NA__"])
+def test_run_transfer_fills_a_cell_spelled_missing_and_never_copies_it(spelled):
+    # A cell the web shows as N/A is missing here too. P00001 sits on TRINITY_1;
+    # read as a category, it would be TRINITY_1's reference and hand it the
+    # spelling as a label. Both are queries for the far-off enzyme instead.
+    by_id = _transfer_rows(categories=[spelled, spelled, "enzyme"])
+    for query in ("TRINITY_1", "P00001"):
+        assert by_id[query]["protein_category__pred_value"] == "enzyme"
+        assert by_id[query]["protein_category__pred_source"] == "P00002"
 
 
 def test_run_transfer_with_only_a_query_rule_still_finds_references():

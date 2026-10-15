@@ -1,32 +1,31 @@
 """Tests for Biocentral prediction retriever."""
 
-import re
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 import requests
+from biocentral_api import Prediction
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS, standardize_missing
+from protspace.core.constants import is_missing_value, standardize_missing
 from protspace.data.annotations.retrievers.biocentral_retriever import (
     BIOCENTRAL_ANNOTATIONS,
     BiocentralPredictionRetriever,
 )
 from tests.prep_source import biocentral_down_patterns
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WEB_MISSING_VALUES = (
-    REPO_ROOT / "packages" / "utils" / "src" / "visualization" / "missing-values.ts"
-)
-
 
 def _make_prediction(model_name, value):
-    """Build a mock Prediction object."""
-    pred = MagicMock()
-    pred.model_name = model_name
-    pred.value = value
-    return pred
+    """Build the generated model returned by biocentral-api.
+
+    The adapter only reads ``model_name`` and ``value``.
+    """
+    return Prediction(
+        model_name=model_name,
+        prediction_name="test",
+        protocol="test",
+        value=value,
+    )
 
 
 class TestBiocentralConstants:
@@ -82,6 +81,11 @@ class TestTransmembraneExtraction:
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == "non-transmembrane"
 
+    def test_dot_label_is_non_transmembrane(self):
+        preds = [_make_prediction("TMbed", "........")]
+        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
+        assert result == "non-transmembrane"
+
     def test_lowercase_labels(self):
         """TMbed uses lowercase h/b for non-TM side of helix/strand."""
         preds = [_make_prediction("TMbed", "ooohhHHHHHhhoooo")]
@@ -93,41 +97,14 @@ class TestTransmembraneExtraction:
         result = BiocentralPredictionRetriever._extract_transmembrane(preds)
         assert result == ""
 
-    @pytest.mark.parametrize("value", ["", None], ids=["empty", "none"])
-    def test_an_empty_payload_is_missing_not_negative(self, value):
-        """A TMbed entry with no topology predicted nothing.
-
-        Before the negative got a name it came out as `none`, which displays as
-        N/A; `non-transmembrane` would turn it into a confident negative.
-        """
-        preds = [_make_prediction("TMbed", value)]
-        result = BiocentralPredictionRetriever._extract_transmembrane(preds)
-        assert result == ""
-
-
-def _web_missing_tokens() -> set[str]:
-    """The web app's MISSING_VALUE_TOKENS, read from its source."""
-    source = WEB_MISSING_VALUES.read_text()
-    block = re.search(
-        r"MISSING_VALUE_TOKENS[^=]*=\s*new Set\(\[(.*?)\]\)", source, re.S
-    )
-    assert block, f"MISSING_VALUE_TOKENS not found in {WEB_MISSING_VALUES}"
-    return set(re.findall(r"'([^']*)'", block.group(1)))
-
-
-def test_browser_missing_tokens_match_the_web_app():
-    """``BROWSER_MISSING_TOKENS`` is the web's list: the v3 encoder and the
-    showcase build's gates count N/A exactly as the legend does."""
-    assert _web_missing_tokens() == BROWSER_MISSING_TOKENS
-
 
 class TestNoTransmembraneIsACategory:
     """A protein without a TM segment is a prediction, not a missing value.
 
     Both readers turn a set of literal tokens into N/A: the CLI's
-    `standardize_missing` (exact match) and the web app's `normalizeMissingValue`
-    (trimmed, case-insensitive). `none` was one of them, so every negative
-    prediction displayed as N/A.
+    `standardize_missing`, through `is_missing_value`, and the web app's
+    `normalizeMissingValue`, which the bundle contract suite pins it to.
+    `none` was one of them, so every negative prediction displayed as N/A.
     """
 
     LABEL = BiocentralPredictionRetriever._extract_transmembrane(
@@ -138,10 +115,26 @@ class TestNoTransmembraneIsACategory:
         assert standardize_missing(pd.Series([self.LABEL])).tolist() == [self.LABEL]
 
     def test_the_web_app_keeps_it(self):
-        tokens = _web_missing_tokens()
+        assert is_missing_value("none")  # the old label still reads as missing
+        assert not is_missing_value(self.LABEL)
 
-        assert "none" in tokens  # the list was read, and still has the old label
-        assert self.LABEL.strip() and self.LABEL.strip().lower() not in tokens
+
+class TestTmbedPayloadValidation:
+    @pytest.mark.parametrize(
+        "value",
+        ["", None, 0, [], {}, "   ", b"abc", "garbage"],
+        ids=["empty", "none", "zero", "list", "dict", "blank", "bytes", "labels"],
+    )
+    def test_an_unusable_payload_is_missing_not_negative(self, value):
+        """A TMbed entry with no usable topology predicted nothing.
+
+        Before the negative got a name it came out as `none`, which displays as
+        N/A; `non-transmembrane`, or signal peptide `False`, would turn it into a
+        confident negative.
+        """
+        preds = [_make_prediction("TMbed", value)]
+        assert BiocentralPredictionRetriever._extract_transmembrane(preds) == ""
+        assert BiocentralPredictionRetriever._extract_signal_peptide(preds) == ""
 
 
 class TestPerSequenceExtraction:

@@ -20,16 +20,18 @@ name: protspace CI (Python)
 #
 # The same holds for every other file outside apps/protspace that the tests read
 # (protspace cannot import TypeScript or protspace_prep, so its copies are checked
-# against their source): the web's missing-value tokens and palette ids, prep's
-# Biocentral outage patterns, the data-format guide's "Read a Bundle in Python"
-# snippet (run as written), the web-side v3 fixtures the decoder is checked
-# against, the served demo bundle, the web catalog whose defaultView each showcase
-# example opens on, the perf manifest stage_perf.py writes, the web's copies of the
-# v1/v2 removal version (pinned to the deprecation registry), and the release
-# workflow whose deprecation gate a test pins. A change to only one
+# against their source): prep's Biocentral outage patterns, the data-format guide's
+# "Read a Bundle in Python" snippet (run as written), the web-side v3 fixtures the
+# decoder is checked against, the served demo bundle, the web catalog whose
+# defaultView each showcase example opens on, the perf manifest stage_perf.py writes,
+# the web's copies of the v1/v2 removal version (pinned to the deprecation registry),
+# and the release workflow whose deprecation gate a test pins. A change to only one
 # of them would otherwise never run the test that reads it. A checkout holding only
 # apps/protspace, the uv workspace files and the files listed below passes the fast
-# suite with no skips; a new test reading outside it belongs in the list.
+# suite with no skips; a new test reading outside it belongs in the list. Constants
+# shared with the web (missing-value tokens, palette ids, ...) are not here: both
+# sides are generated from contracts/shared-constants.json, and bundle-contract.yml,
+# which runs on every pull request, checks the generated modules and the contract.
 
 on:
   push:
@@ -38,9 +40,6 @@ on:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
       - 'docs/guide/data-format.md'
-      - 'packages/utils/src/visualization/missing-values.ts'
-      - 'packages/utils/src/visualization/color-scheme.ts'
-      - 'packages/utils/src/visualization/numeric-binning.ts'
       - 'apps/prep/src/protspace_prep/pipeline.py'
       - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
       - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'
@@ -58,9 +57,6 @@ on:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
       - 'docs/guide/data-format.md'
-      - 'packages/utils/src/visualization/missing-values.ts'
-      - 'packages/utils/src/visualization/color-scheme.ts'
-      - 'packages/utils/src/visualization/numeric-binning.ts'
       - 'apps/prep/src/protspace_prep/pipeline.py'
       - 'packages/core/src/components/data-loader/utils/__fixtures__/v3-sample.parquetbundle'
       - 'apps/web/tests/fixtures/venom_eat_stats_811_v3.parquetbundle'

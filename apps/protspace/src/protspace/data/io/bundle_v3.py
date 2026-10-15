@@ -48,7 +48,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from protspace.core.constants import BROWSER_MISSING_TOKENS
+from protspace.core.constants import MISSING_VALUE_TOKENS
 from protspace.data.annotations.encoding import (
     ARROW_BOOLEAN_LABELS,
     BUNDLE_FORMAT_VERSION,
@@ -242,7 +242,7 @@ def _blank_mask(trimmed: pa.Array) -> np.ndarray:
 
 
 def _missing_mask(trimmed: pa.Array) -> np.ndarray:
-    """``normalizeMissingValue``: null, blank, or a ``BROWSER_MISSING_TOKENS`` spelling.
+    """``normalizeMissingValue``: null, blank, or a ``MISSING_VALUE_TOKENS`` spelling.
 
     Only numeric inference consults it: a column of ``NA`` stays categorical
     instead of becoming all-NaN numeric, but a cell literally spelled ``none``
@@ -252,7 +252,7 @@ def _missing_mask(trimmed: pa.Array) -> np.ndarray:
     ``none``).  The browser re-applies ``normalizeMissingValue`` at read time, so
     folding these into NA stays *its* decision, on both v2 and v3.
     """
-    tokens = pa.array(sorted(BROWSER_MISSING_TOKENS))
+    tokens = pa.array(sorted(MISSING_VALUE_TOKENS))
     token = pc.is_in(pc.utf8_lower(trimmed), value_set=tokens)
     return _blank_mask(trimmed) | np.asarray(pc.fill_null(token, False))
 

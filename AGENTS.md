@@ -37,10 +37,13 @@ One-time CLI setup is in [CONTRIBUTING.md](CONTRIBUTING.md#openspec-one-time-per
 ## Before committing
 
 Always run `pnpm precommit` before any git commit. It is
-`lint-staged && quality && docs:annotations:check && docs:examples:check && docs:build`:
+`lint-staged && quality && shared-constants:check && docs:annotations:check &&
+docs:examples:check && docs:build`:
 
 - ESLint `--fix` and Prettier `--write`, on staged files only (lint-staged)
 - TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`)
+- `shared-constants:check` — the generated TypeScript and Python modules must match
+  `contracts/shared-constants.json` (see below)
 - `docs:annotations:check` — the generated annotation reference must match its source
 - `docs:examples:check` — the generated Example datasets page must match the example catalog,
   the bundle manifest and its prose (`docs/scripts/example-details.ts`)
@@ -68,6 +71,14 @@ Move these in the same PR — `pnpm precommit` covers none, and all three have s
 
 Pin a fact that has to live in two places with a test, not a comment asking the next reader to
 keep them in step — see `apps/protspace/tests/test_docs_extras_sync.py`.
+
+A **value** both the Python package and the web app hold (a token list, a palette id, a colour)
+goes in `contracts/shared-constants.json` instead: `pnpm shared-constants` generates it into
+`packages/utils/src/generated/` and `apps/protspace/src/protspace/_generated/`, both committed,
+and each side re-exports it under the name its code already uses. Never edit the generated
+modules. A **rule** both sides implement (how a cell is matched, which column holds the ids) is
+code, and is pinned by running both on the same inputs in the bundle contract suite
+(`tests/contract`). [`contracts/README.md`](contracts/README.md) has the details.
 
 ## End-to-end tests (Playwright)
 

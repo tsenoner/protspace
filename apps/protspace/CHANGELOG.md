@@ -1,6 +1,90 @@
 # CHANGELOG
 
 
+## v4.16.7 (2026-10-15)
+
+### Bug Fixes
+
+- **annotations**: Preserve fasta and tmbed missing data
+  ([`b7f798b`](https://github.com/tsenoner/protspace/commit/b7f798b370efacf0ace0cd597c4351807a231505))
+
+- **annotations**: Preserve missing tmbed payloads
+  ([`5ec9fe2`](https://github.com/tsenoner/protspace/commit/5ec9fe2da94e8626583670cc8f16cbd37680a029))
+
+- **annotations**: Preserve negative transmembrane predictions
+  ([`9cee2b6`](https://github.com/tsenoner/protspace/commit/9cee2b6827e6e411148a38a22e138cce86a4b791))
+
+- **annotations**: Preserve source-specific sequences
+  ([`f6cea0a`](https://github.com/tsenoner/protspace/commit/f6cea0a74299a4bd1677da99f07282be9c6b970a))
+
+- **annotations**: Refresh every stale column of a source refetched whole
+  ([`82271a2`](https://github.com/tsenoner/protspace/commit/82271a2fc36ee3e3ebb4dcfa5702e08c08c4e582))
+
+- **annotations**: Refresh InterPro columns cached before the canonical lookup
+  ([`786a0e3`](https://github.com/tsenoner/protspace/commit/786a0e30aa45e76f330e233b7e7530c3a52d4704))
+
+- **annotations**: Refresh TMbed columns cached before payload validation
+  ([`13b236d`](https://github.com/tsenoner/protspace/commit/13b236d74e9d266850895ae40ccd7569ad5dc368))
+
+- **annotations**: Reject malformed tmbed payloads
+  ([`a30032a`](https://github.com/tsenoner/protspace/commit/a30032a2ac858d92062b17aa17481dc4958cf78b))
+
+- **style**: Fold N/A spellings in stored hiddenValues too
+  ([`fe2dbab`](https://github.com/tsenoner/protspace/commit/fe2dbab9b4e1eb8a114188a29acd36457361b259))
+
+- **style**: Keep the categorical palette out of a numeric template column
+  ([`5dae4d7`](https://github.com/tsenoner/protspace/commit/5dae4d7a9ccfb643a751427b62688a8a7da541c8))
+
+- **style**: Pre-fill the template's N/A with the web's default colour
+  ([`d5e059c`](https://github.com/tsenoner/protspace/commit/d5e059c9c8a05e5fa291292336bade326626bbaf))
+
+- **style**: Store every N/A style under the web's __NA__ key
+  ([`bc5f0cc`](https://github.com/tsenoner/protspace/commit/bc5f0cc81f974d5c43efe479f00de6d81cd1b930))
+
+### Chores
+
+- Generate the constants Python and the web share from one file
+  ([`599143a`](https://github.com/tsenoner/protspace/commit/599143a8ec72eed7e3676f2ae4e9437e49c8a1d6))
+
+### Documentation
+
+- Explain where constants shared with Python live
+  ([`518808f`](https://github.com/tsenoner/protspace/commit/518808f19fca8e46d60e05dbb4cc01b36f7de32d))
+
+### Refactoring
+
+- Share the default categorical palette with the web
+  ([`0cfcd3f`](https://github.com/tsenoner/protspace/commit/0cfcd3f11d015f74f12b5041b940a3f67b4617cd))
+
+- Tidy the missing-values batch after review
+  ([`427eceb`](https://github.com/tsenoner/protspace/commit/427ecebfb6f2a133741bc869d0cd0a32deb633a6))
+
+- **annotations**: Drop regex label scan and re-pad docs table
+  ([`1c09429`](https://github.com/tsenoner/protspace/commit/1c0942948abbe1b06637fa47d108141c5d4f2603))
+
+- **annotations**: Simplify PR 406 sequence and TMbed plumbing
+  ([`5e13588`](https://github.com/tsenoner/protspace/commit/5e1358812e1f2460115ab0e7d0571ca1b743d43f))
+
+- **protspace**: Read the web-shared constants from the generated module
+  ([`e574ba2`](https://github.com/tsenoner/protspace/commit/e574ba2b75903f794372d73a08ddb0dc224d031c))
+
+### Testing
+
+- **style**: Port the N/A cases #546's version covered and this lacked
+  ([`8949d5e`](https://github.com/tsenoner/protspace/commit/8949d5eb614d373814fb6dbd32aee8ba667617ea))
+
+
+## v4.16.6 (2026-10-15)
+
+### Bug Fixes
+
+- **protspace**: Read missing annotation values as the web app does
+  ([`e8495fc`](https://github.com/tsenoner/protspace/commit/e8495fcf0af0521ab1c8fe779b4a5f7afa4552bc))
+
+- **protspace**: Read pandas nulls as missing; tidy after review
+  ([`cd48efb`](https://github.com/tsenoner/protspace/commit/cd48efbfaf4f5cccb3ae14cebe03cb0d55aabd6d))
+
+
 ## v4.16.5 (2026-10-15)
 
 ### Bug Fixes

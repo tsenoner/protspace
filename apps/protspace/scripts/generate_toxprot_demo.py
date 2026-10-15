@@ -5,10 +5,11 @@ Fetches UniProt sequences + signal-peptide positions, strips SPs, embeds
 the mature peptides with ProtT5 and ESM2-650M, then runs DR + the
 sequence-independent annotation sources via `protspace prepare`. The
 sequence-based sources (InterPro, Biocentral) run separately through
-`protspace annotate` on the FULL-LENGTH sequences: local FASTA sequences
-take priority over UniProt's, so feeding them the mature peptides made
-InterPro miss by MD5 (73 % empty Pfam) and made TMbed predict no signal
-peptide for secreted toxins.
+`protspace annotate` on the FULL-LENGTH sequences: Biocentral predicts the
+local FASTA sequence over UniProt's, so feeding it the mature peptides made
+TMbed predict no signal peptide for secreted toxins. (InterPro once missed by
+MD5 the same way, 73 % empty Pfam; it now prefers UniProt's canonical
+sequence, falling back to the FASTA's only without one.)
 
 Finally the bundle keeps every annotation column (protein_families first),
 replaces `length` with the mature length, and patches the settings JSON:

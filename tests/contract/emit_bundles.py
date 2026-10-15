@@ -43,8 +43,13 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from biocentral_api import Prediction
 
+from protspace.core.constants import MISSING_VALUE_TOKENS, is_missing_value
 from protspace.data.annotations.encoding import encode_field, stamp_format_version
+from protspace.data.annotations.retrievers.biocentral_retriever import (
+    BiocentralPredictionRetriever,
+)
 from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER, create_settings_parquet
 from protspace.stats.base import STATS_SCHEMA
 
@@ -97,6 +102,23 @@ HASH_VALUES = [2**60 + 1, 5, None, 2**62, -(2**61), 7]
 EDGE_VALUES = [2**53, 1, None, -(2**53), 2, 3]
 
 
+# Spellings around the missing-value rule, each published with Python's verdict:
+# every token as written, upper-cased and padded, blank cells, and
+# near misses (TMbed's negative among them; the display forms `stats` drops on
+# its own, which the web shows as categories). The reader asserts its own
+# verdict on each, so a change in how either side matches fails, not only a
+# token added on one side.
+MISSING_VALUE_PROBES = sorted(
+    {
+        spelling
+        for token in MISSING_VALUE_TOKENS
+        for spelling in (token, token.upper(), f"  {token}\t")
+    }
+    | {"", " ", "\t\n", "\u00a0", "non-transmembrane", "nan%", "n.a.", "NA_"}
+    | {"<N/A>", "<NA>", "0", "False"}
+)
+
+
 def protein_ids(count: int) -> list[str]:
     return [f"P{i:05d}" for i in range(1, count + 1)]
 
@@ -138,6 +160,38 @@ def length_value(index: int) -> float | None:
     return None if index == NULL_LENGTH_INDEX else float(100 + index * 10)
 
 
+def tmbed_predictions(value: object) -> list[Prediction]:
+    """Build the real generated prediction shape consumed by the adapter."""
+    return [
+        Prediction(
+            model_name="TMbed",
+            prediction_name="topology",
+            protocol="per_residue",
+            value=value,
+        )
+    ]
+
+
+# The first proteins' TMbed payloads, each run through the real annotation adapter
+# rather than copying its vocabulary into the contract test. A topology of only
+# inside/outside labels is a completed prediction with no membrane-spanning
+# segment, which must surface as a category. The missing and malformed payloads
+# are unavailable predictions, kept as explicit rows apart from the fixture's
+# other empty ones so an adapter that invents a negative biological result fails
+# before the bundle reader has a chance to normalize the missing representation.
+TMBED_PAYLOADS = ["oooooiiiii", None, "garbage"]
+NEGATIVE_TMBED_INDEX, MISSING_TMBED_INDEX, MALFORMED_TMBED_INDEX = range(3)
+NEGATIVE_TMBED_CATEGORY = BiocentralPredictionRetriever._extract_transmembrane(
+    tmbed_predictions(TMBED_PAYLOADS[NEGATIVE_TMBED_INDEX])
+)
+
+
+def tmbed_column(extract, count: int) -> list[str]:
+    """A TMbed-derived annotation column: the payload rows, then empty cells."""
+    cells = [extract(tmbed_predictions(value)) for value in TMBED_PAYLOADS]
+    return (cells + [""] * count)[:count]
+
+
 def build_annotations_table(ids: list[str]) -> pa.Table:
     """Mimic ``protspace annotate`` output: an ``identifier`` column plus annotations.
 
@@ -148,15 +202,22 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
 
     Every cell follows one per-row rule at every size (``family_label``,
     ``domain_hits``, ``length_value``): protein 1 carries the percent-encoded
-    label and the multi-hit cell, protein 4 the null length, and every other row
-    its own labels, hit count and scores. The large variant therefore asserts
-    the same encoding contract as the small one, and can be checked row by row.
+    label and the multi-hit cell, proteins 1-3 the TMbed payloads, protein 4 the
+    null length, and every other row its own labels, hit count and scores. The
+    large variant therefore asserts the same encoding contract as the small one,
+    and can be checked row by row.
     """
     family = [encode_field(family_label(i)) for i in range(len(ids))]
     domains = [
         ";".join(f"{encode_field(label)}|{score}" for label, score in domain_hits(i))
         for i in range(len(ids))
     ]
+    predicted_signal_peptide = tmbed_column(
+        BiocentralPredictionRetriever._extract_signal_peptide, len(ids)
+    )
+    predicted_transmembrane = tmbed_column(
+        BiocentralPredictionRetriever._extract_transmembrane, len(ids)
+    )
 
     # A genuine double column with a null -- distinguishes "missing" from 0 and
     # from NaN across the language boundary. Real bundles carry both string-typed
@@ -169,6 +230,12 @@ def build_annotations_table(ids: list[str]) -> pa.Table:
                 "identifier": pa.array(ids, pa.string()),
                 "family": pa.array(family, pa.string()),
                 "domains": pa.array(domains, pa.string()),
+                "predicted_signal_peptide": pa.array(
+                    predicted_signal_peptide, pa.string()
+                ),
+                "predicted_transmembrane": pa.array(
+                    predicted_transmembrane, pa.string()
+                ),
                 "length": pa.array(length, pa.float64()),
             }
         )
@@ -348,8 +415,11 @@ def write_legacy_v2_bundle(path: Path, ids: list[str]) -> None:
     ``size`` as numeric, since it inferred over the placed proteins, and the
     converted bundle has to as well, with the same dataset hash.
     """
-    annotations = build_annotations_table(ids).rename_columns(
-        ["protein_id", "family", "domains", "length"]
+    # The legacy file's own columns; the TMbed ones are checked on the v3 variants.
+    annotations = (
+        build_annotations_table(ids)
+        .select(["identifier", "family", "domains", "length"])
+        .rename_columns(["protein_id", "family", "domains", "length"])
     )
     annotations = annotations.append_column(
         "size", pa.array([str(10 * i) if i % 3 else "NA" for i in range(len(ids))])
@@ -535,6 +605,9 @@ def main(out_dir: Path) -> None:
                 },
                 "projectionCount": len(PROJECTIONS),
                 "labelWithReservedChar": LABEL_WITH_RESERVED_CHAR,
+                "negativeTransmembraneCategory": NEGATIVE_TMBED_CATEGORY,
+                "missingTmbedIndex": MISSING_TMBED_INDEX,
+                "malformedTmbedIndex": MALFORMED_TMBED_INDEX,
                 "nullLengthIndex": NULL_LENGTH_INDEX,
                 "statisticsColumns": STATS_SCHEMA.names,
                 "statisticsCategory": STATISTICS_CATEGORY,
@@ -551,6 +624,12 @@ def main(out_dir: Path) -> None:
                         strict=True,
                     )
                 ),
+                # What Python reads as a missing annotation value; the web reader
+                # must read exactly the same cells as N/A.
+                "missingValueTokens": sorted(MISSING_VALUE_TOKENS),
+                "missingValueVerdicts": [
+                    [probe, is_missing_value(probe)] for probe in MISSING_VALUE_PROBES
+                ],
             }
         ),
         encoding="utf-8",

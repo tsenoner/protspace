@@ -23,12 +23,22 @@ Every `.parquetbundle` used by the contract suite SHALL be produced during the t
 
 ### Requirement: Bundles are produced through the real bundle CLI
 
-The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's `identifier` to `protein_id` rename and its format-version stamping are inside the tested surface. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
+The generator SHALL invoke the `protspace bundle` command as a subprocess rather than calling `write_bundle` directly, so that the CLI's `identifier` to `protein_id` rename, its cell-grammar decision and its v3 encoding are inside the tested surface. The generator's stand-in for `protspace annotate` output SHALL be stamped as v2 cell grammar, as `annotate` stamps it. A non-zero exit from the subprocess SHALL fail the suite with the subprocess's captured stderr included in the failure message.
 
-#### Scenario: Format-version stamping is removed from the CLI
+#### Scenario: The producer stops writing v3
 
-- **WHEN** the annotations table is no longer stamped before bundling
-- **THEN** the contract suite fails because the reader reports format version `1` instead of `2`
+- **WHEN** the CLI writes a container other than the six-part layout, or part 1 stops declaring `protspace_container_version` `3`, or starts carrying `protspace_format_version`
+- **THEN** the contract suite fails on the layout assertion
+
+#### Scenario: The CLI loses the input's cell grammar
+
+- **WHEN** the CLI stops reading the input's grammar stamp before its rename drops it, so the encoder is handed an unstamped table
+- **THEN** the bundle subprocess fails and the suite reports its stderr
+
+#### Scenario: The CLI treats `annotate` output as plain text
+
+- **WHEN** the CLI migrates the stamped `annotate` stand-in as if it were v1, escaping its cells a second time
+- **THEN** the contract suite fails because the reader surfaces a percent-encoded label still escaped
 
 #### Scenario: The bundle subprocess exits non-zero
 
@@ -37,36 +47,36 @@ The generator SHALL invoke the `protspace bundle` command as a subprocess rather
 
 ### Requirement: The reader accepts every layout the producer can write
 
-The web reader SHALL accept bundles of three, four, and five parts. Parts beyond the settings part SHALL be ignored rather than parsed or rejected. A zero-byte settings part SHALL be reported as absent settings.
+The web reader SHALL accept six-part format v3 bundles, and SHALL keep accepting legacy bundles of three, four, and five parts until legacy read support is removed. A zero-byte settings slot SHALL be reported as absent settings. A statistics part SHALL be carried through unmodified and parsed into statistics rows, without leaking into the settings. A file with more parts than the format defines SHALL be rejected.
 
-#### Scenario: A three-part bundle is read
+#### Scenario: A bundle without settings or statistics is read
 
-- **WHEN** a bundle without settings or statistics is read
-- **THEN** extraction succeeds and settings are reported as absent
+- **WHEN** a bundle written without settings or statistics is read
+- **THEN** extraction succeeds and settings and statistics are reported as absent
 
-#### Scenario: A four-part bundle is read
+#### Scenario: A bundle with settings is read
 
 - **WHEN** a bundle with a settings part is read
 - **THEN** extraction succeeds and the settings are normalized through the shared settings normalizer
 
-#### Scenario: A five-part bundle with settings and statistics is read
+#### Scenario: A bundle with settings and statistics is read
 
 - **WHEN** a bundle written with both settings and statistics is read
-- **THEN** extraction succeeds, the settings are returned, and the statistics part is ignored
+- **THEN** extraction succeeds, the settings are returned, and the statistics are returned as the original bytes and as rows whose columns match the producer's statistics schema
 
-#### Scenario: A five-part bundle carries the zero-byte settings sentinel
+#### Scenario: A bundle carries the zero-byte settings sentinel
 
 - **WHEN** a bundle written with statistics but without settings is read
-- **THEN** extraction succeeds, settings are reported as absent, and the statistics part is ignored
+- **THEN** extraction succeeds, settings are reported as absent without entering the settings parser, and the statistics are returned
 
 #### Scenario: A bundle carries more parts than the format defines
 
-- **WHEN** a file with more than five parts is read
-- **THEN** extraction fails with an error naming the observed part count
+- **WHEN** a file with more than six parts is read
+- **THEN** extraction fails with an error naming the observed delimiter count
 
 ### Requirement: The contract payload exercises the annotation encoding
 
-The generated bundle SHALL carry annotation and projection values that distinguish a correct reader from one that only parses the part layout: at least one percent-encoded label, at least one multi-hit cell using the reserved delimiter, at least one numeric annotation column containing a null, at least one three-dimensional projection, and projection metadata whose JSON contains a value that arrives from parquet as a big integer.
+The generated bundle SHALL carry annotation and projection values that distinguish a correct reader from one that only parses the part layout: at least one percent-encoded label, at least one multi-hit cell using the reserved delimiter, at least one numeric annotation column containing a null, at least one boolean annotation column, at least one three-dimensional projection, at least one protein that one projection does not cover, and projection metadata whose JSON contains a value that arrives from parquet as a big integer.
 
 #### Scenario: A percent-encoded label round-trips
 
@@ -83,29 +93,25 @@ The generated bundle SHALL carry annotation and projection values that distingui
 - **WHEN** a numeric annotation is missing for a protein
 - **THEN** the reader reports that protein as having no value for the annotation rather than a zero or a not-a-number value
 
+#### Scenario: A boolean annotation column is read
+
+- **WHEN** the producer writes an annotation column of Arrow type `BOOLEAN`
+- **THEN** the reader reports its values as `true` and `false`
+
 #### Scenario: A three-dimensional projection is read
 
-- **WHEN** a projection declares three dimensions
-- **THEN** the reader exposes its `z` coordinates and reports the dimension count from the projection metadata
+- **WHEN** a projection's rows carry `z` coordinates
+- **THEN** the reader exposes its `z` coordinates and reports three dimensions
+
+#### Scenario: A protein is missing from one projection
+
+- **WHEN** the producer writes a protein with coordinates in one projection and none in another
+- **THEN** the reader reports NaN coordinates for it in the projection that does not cover it, and keeps it in the protein list
 
 #### Scenario: Projection metadata contains a big integer
 
 - **WHEN** projection metadata JSON carries a value parsed from parquet as a big integer
 - **THEN** extraction completes without a serialization failure
-
-### Requirement: The contract covers both conversion implementations
-
-The reader routes datasets past a row-count threshold through a separate, optimized conversion implementation. The contract SHALL exercise both that implementation and the small-data one, asserting the same annotation encoding contract through each.
-
-#### Scenario: A dataset large enough to take the optimized path is read
-
-- **WHEN** a generated bundle exceeds the reader's optimized-path row threshold
-- **THEN** the optimized conversion entry point decodes its percent-encoded labels, splits its multi-hit cells, and reports its missing numeric values exactly as the small-data path does
-
-#### Scenario: Only the optimized implementation regresses
-
-- **WHEN** annotation decoding breaks in the optimized implementation but not the small-data one
-- **THEN** the contract suite fails
 
 ### Requirement: Contract assertions fail when the behavior they name regresses
 
@@ -153,10 +159,11 @@ The contract suite SHALL be a standalone test project that is not part of the de
 ### Requirement: A bundle never carries the internal lookup columns
 
 Every path that writes a bundle's annotations part SHALL omit the internal lookup columns
-`organism_id` and `sequence`: `prepare`, `bundle`, `transfer` and the Python bundle-writing
-functions. ProtSpace fetches these only to drive the taxonomy and sequence-based lookups. The
-annotation-metadata registry and no bundle reader use them. In a bundle they show up in the web
-app as meaningless near-unique categorical columns, and the sequences inflate the file.
+`organism_id` and `sequence`: `prepare`, `bundle`, `transfer`, `convert`, `style` on a v1 or v2
+input, and the Python bundle-writing functions. ProtSpace fetches these only to drive the taxonomy
+and sequence-based lookups. The annotation-metadata registry and no bundle reader use them. In a
+bundle they show up in the web app as meaningless near-unique categorical columns, and the
+sequences inflate the file.
 
 #### Scenario: A table holding internal columns is bundled
 
@@ -171,6 +178,12 @@ app as meaningless near-unique categorical columns, and the sequences inflate th
   input bundle carried `organism_id` or `sequence`
 - **THEN** the output bundle carries neither column
 
+#### Scenario: A legacy bundle that carries them is rewritten as v3
+
+- **WHEN** `protspace convert`, or `protspace style`, rewrites a v1 or v2 bundle whose annotations
+  carry `organism_id` or `sequence`
+- **THEN** the v3 output carries neither column, and every other annotation column is kept
+
 #### Scenario: The pipeline writes a bundle
 
 - **WHEN** `protspace prepare` writes a bundle
@@ -180,3 +193,118 @@ app as meaningless near-unique categorical columns, and the sequences inflate th
 
 - **WHEN** `protspace annotate -a sequence` writes its parquet output
 - **THEN** that output keeps the `sequence` column, because it is not a bundle
+
+### Requirement: Producer and reader read the same cells as missing
+
+The Python package SHALL treat an annotation cell as missing exactly when the web reader
+does: a null, a non-finite number, a blank string, or a string that, trimmed and
+lower-cased, is one of the web reader's missing-value spellings. Python SHALL hold one
+definition of this, used by every Python reader of annotation cells (the Dash plot,
+`protspace stats` and `protspace transfer`). The contract suite SHALL fail when the two
+sides' spellings or matching rules differ.
+
+#### Scenario: A spelling is added on one side only
+
+- **WHEN** a missing-value spelling is added to the web reader's set but not to Python's, or
+  the reverse
+- **THEN** the contract suite fails
+
+#### Scenario: One side changes how it matches
+
+- **WHEN** either side stops trimming, stops comparing case-insensitively, or stops treating
+  a blank cell as missing
+- **THEN** the contract suite fails
+
+#### Scenario: A cell spelled like a missing value in another case
+
+- **WHEN** an annotation cell holds `N/A`, `NULL`, `None`, or `na` padded with spaces
+- **THEN** the Dash plot shows it as N/A, `protspace stats` leaves it out of every category,
+  and `protspace transfer` treats the protein as missing a value in that column
+
+### Requirement: Producer categories are never spelled like a missing value
+
+The Python producer SHALL NOT write a fixed category, or any hit of a multi-hit category,
+that the web reader would read as missing. A test SHALL run each fixed producer vocabulary
+through the shared missing-value definition, and SHALL fail on any string literal in the
+annotation producer modules spelled like a missing value.
+
+#### Scenario: A producer's negative category is renamed to a missing spelling
+
+- **WHEN** a fixed producer vocabulary (for example TMbed's `non-transmembrane`) is changed
+  to a value such as `none`
+- **THEN** the Python test suite fails, naming the value
+
+#### Scenario: A new producer writes a literal missing spelling
+
+- **WHEN** a module under the annotation retrievers, transformers or parsers gains a string
+  literal spelled like a missing value
+- **THEN** the Python test suite fails, naming the file and line
+
+### Requirement: A style for N/A reaches the web's N/A category
+
+`protspace style` SHALL store every style that names a value the web reads as missing under the
+web's N/A key, `__NA__`, whatever spelling the data or the styles file uses. This covers colours,
+shapes, `pinnedValues` and `hiddenValues`. The settings it writes SHALL hold at most one N/A
+category, and a newly given N/A style SHALL replace a stored one.
+
+#### Scenario: Missing cells spelled in a way the old alias list missed
+
+- **WHEN** a column's missing cells are spelled `N/A` and the styles file colours `N/A`
+- **THEN** the settings hold that colour under `__NA__` and no `N/A` category
+
+#### Scenario: Restyling N/A
+
+- **WHEN** a bundle's settings already colour `__NA__` and `protspace style` is given a new N/A
+  colour under any N/A spelling
+- **THEN** the written settings hold the new colour under `__NA__`
+
+#### Scenario: Hiding or pinning N/A by its spelling
+
+- **WHEN** `hiddenValues` or `pinnedValues` name N/A as `N/A`, `""` or `none`
+- **THEN** the written settings name it `__NA__`, once
+
+### Requirement: Produced annotation categories do not collide with missing-value sentinels
+
+The Python annotation producer SHALL serialize a completed categorical prediction using
+a value that the TypeScript bundle consumer preserves as a category rather than
+normalizing to missing data.
+
+#### Scenario: Negative TMbed prediction crosses the bundle boundary
+
+- **WHEN** Biocentral returns a completed TMbed prediction containing neither an
+  alpha-helical nor a beta-barrel transmembrane segment
+- **THEN** the producer emits `non-transmembrane`
+- **AND** the TypeScript visualization data exposes `non-transmembrane` as a categorical
+  value rather than `N/A`
+
+#### Scenario: Missing TMbed prediction remains missing
+
+- **WHEN** Biocentral returns no TMbed prediction for a protein
+- **THEN** the producer emits the established missing representation
+- **AND** the TypeScript visualization data does not invent a transmembrane category
+
+#### Scenario: Empty or malformed TMbed payload remains missing
+
+- **WHEN** Biocentral returns a TMbed prediction object whose optional `value` payload
+  is `None`, empty, non-string, blank, or contains unsupported topology labels
+- **THEN** the producer emits the established missing representation before scanning
+  topology labels
+- **AND** the TypeScript visualization data exposes the protein as `N/A` rather than
+  `non-transmembrane`
+- **AND** the derived signal-peptide annotation is also exposed as `N/A` rather than
+  `False`
+
+### Requirement: The contract covers the reader at production scale
+
+The contract SHALL read, besides the small bundles, a generated bundle large enough that shortcuts sized from the first rows (a label dictionary, a CSR payload, a hit count) would show and that spans several data pages per column, SHALL assert the same annotation encoding contract on it as on the small bundles, and SHALL check its labels, hits, scores, numeric values and coordinates row by row.
+
+#### Scenario: A dataset of production scale is read
+
+- **WHEN** the large generated bundle is read
+- **THEN** its protein count matches the producer's, and it decodes percent-encoded labels, splits multi-hit cells and reports missing numeric values exactly as the small bundles do
+
+#### Scenario: Only large payloads regress
+
+- **WHEN** the reader mishandles a payload only past its first rows, or a chunk that starts past
+  row 0
+- **THEN** the contract suite fails

@@ -21,6 +21,7 @@ import {
   isLegendItemHidden,
   openExplore,
   openImportMenu,
+  pickAnnotation,
   waitForExploreDataLoad,
   waitForPersistedExploreDataset,
   waitForProteinCount,
@@ -95,14 +96,6 @@ async function isExampleDisabled(page: Page, id: string): Promise<boolean> {
 
 async function getSearch(page: Page): Promise<string> {
   return page.evaluate(() => window.location.search);
-}
-
-/** Picks `annotation` in the control bar's annotation dropdown (a user change, so a push). */
-async function pickAnnotation(page: Page, annotation: string): Promise<void> {
-  const controlBar = page.locator('protspace-control-bar');
-  await controlBar.locator('protspace-annotation-select .dropdown-trigger').click();
-  await controlBar.locator(`.dropdown-item[data-annotation="${annotation}"]`).click();
-  await expect.poll(() => getSelectedAnnotation(page)).toBe(annotation);
 }
 
 /** The error toast for a failed download of `entry`, and its Retry button. */
@@ -1011,6 +1004,20 @@ test.describe('Example datasets: examples reopen in their curated state (d)', ()
     await waitForExploreDataLoad(page, { proteinCount: USER_IMPORT_COUNT });
     await dismissTourIfPresent(page);
     expect(await isLegendItemHidden(page, importValue)).toBe(true);
+  });
+
+  test('a reload also drops a legend change to the EAT example', async ({ page }) => {
+    // The EAT example's bundled legend settings cover only its cluster annotations, so on its
+    // transferred annotation nothing but the load's sweep of the saved settings undoes a change.
+    await openExplore(page, `?dataset=${EAT.id}`, EAT.count);
+    const value = await hideFirstLegendCategory(page);
+
+    await page.reload();
+    await waitForExploreDataLoad(page, { proteinCount: EAT.count });
+    await dismissTourIfPresent(page);
+
+    expect(await isLegendItemHidden(page, value)).toBe(false);
+    expect(await isHiddenInSavedLegend(page, value)).toBe(false);
   });
 });
 

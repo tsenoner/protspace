@@ -54,6 +54,7 @@ import { rankByFrequency, remapCsr } from '../visualization/csr.js';
 import { getProteinEvidence, getProteinScores } from '../visualization/plot-data-accessors.js';
 import { getEatCompanionColumn, getPredictedCellValues } from '../visualization/eat-overlay.js';
 import { isNAValue } from '../visualization/missing-values.js';
+import { ARROW_BOOLEAN_LABELS } from '../generated/shared-constants';
 
 /**
  * The names Python's encoder takes the id column from, in its order of preference
@@ -65,6 +66,9 @@ const ID_COLUMN = 'identifier';
 const FALLBACK_ID_COLUMN = 'protein_id';
 
 const ENCODER = new TextEncoder();
+
+/** The labels a `bool` column is stored under, shared with Python's decoder. */
+const BOOLEAN_LABELS: ReadonlySet<string> = new Set(ARROW_BOOLEAN_LABELS);
 
 /**
  * One manifest column. `sourceType` is Python-private and the browser ignores it: it is the
@@ -467,9 +471,7 @@ function fitsSourceType(
   if (sourceType === 'bool') {
     return (
       entry.kind === 'categorical' &&
-      labels.every(
-        (label) => label == null || isNAValue(label) || label === 'true' || label === 'false',
-      )
+      labels.every((label) => label == null || isNAValue(label) || BOOLEAN_LABELS.has(label))
     );
   }
   return true;
