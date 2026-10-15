@@ -58,22 +58,30 @@ field under every candidate, the loader SHALL warn that the file has a single co
 - **WHEN** a file's header contains none of the candidate delimiters
 - **THEN** a warning says the file parsed to a single column and names the accepted delimiters
 
-### Requirement: The id column is resolved by one rule
+### Requirement: The first column holds the ids
 
-The id column SHALL be the column named `identifier` or `protein_id` (case-insensitive) in any
-position; otherwise the column named `id` (case-insensitive); otherwise the first column. Two
-columns matching the first rule SHALL be an error naming them. `stats` and `bundle` SHALL resolve a parquet annotation table's id column
-with the same rule.
+The loader SHALL take a custom annotation file's first column as its id column, whatever its
+header. A later column named exactly `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
+`projection_name`, `x`, `y` or `z` SHALL be kept, renamed `<name>_annotation`, with a warning
+naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `protein_id` or
+`identifier`, else its first column, and SHALL refuse a parquet with both.
 
 #### Scenario: protein_id is not the first column
 
 - **WHEN** a file has the columns `family,protein_id,group`
-- **THEN** `protein_id` holds the ids and `family` and `group` reach the output
+- **THEN** `family` holds the ids, and `protein_id` reaches the output as `protein_id_annotation`
+  with a warning naming the rename
 
 #### Scenario: identifier is not the first column
 
-- **WHEN** a file has the columns `family,identifier,group`
-- **THEN** `identifier` holds the ids
+- **WHEN** `prepare -a labels.csv` reads a file with the columns `seq,identifier,group`
+- **THEN** the run succeeds, `seq` holds the ids, and the bundle carries `identifier_annotation`
+  and `group`
+
+#### Scenario: A column named id
+
+- **WHEN** a file has the columns `accession,id,family`
+- **THEN** `accession` holds the ids and `id` reaches the output as `id_annotation`
 
 #### Scenario: No id-named column
 
@@ -82,13 +90,31 @@ with the same rule.
 
 #### Scenario: Two id-named columns
 
-- **WHEN** a file has both an `identifier` and a `protein_id` column
-- **THEN** loading fails with a message naming both
+- **WHEN** a file has the columns `accession,identifier,protein_id`
+- **THEN** `accession` holds the ids, and `identifier_annotation` and `protein_id_annotation` reach
+  the output, instead of the file being refused
+
+#### Scenario: A name that only differs in case
+
+- **WHEN** a file has the columns `accession,Protein_ID`
+- **THEN** `Protein_ID` reaches the output under its own name
+
+#### Scenario: stats' table is one bundle accepts
+
+- **WHEN** `stats -a labels.csv` scores a file whose columns are `seq,protein_id,grp`
+- **THEN** `labels.annotations.parquet` holds the ids in `identifier` and the annotation in
+  `protein_id_annotation`, and `bundle -a` on it carries both `grp` and the cluster columns
 
 #### Scenario: stats and bundle agree on a parquet
 
-- **WHEN** a parquet annotation table's id column is `ProteinID`, first, with no id-named column
+- **WHEN** a parquet annotation table's id column is `ProteinID`, first, with no `protein_id` or
+  `identifier` column
 - **THEN** `stats -a` and `bundle -a` both key the table on `ProteinID`
+
+#### Scenario: A parquet naming its ids twice
+
+- **WHEN** a parquet annotation table has both an `identifier` and a `protein_id` column
+- **THEN** `bundle -a` fails with a message naming both
 
 ### Requirement: Cells are read as text
 

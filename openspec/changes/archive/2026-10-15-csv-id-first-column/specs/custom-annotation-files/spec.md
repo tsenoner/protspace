@@ -8,13 +8,10 @@
 ### Requirement: The first column holds the ids
 
 The loader SHALL take a custom annotation file's first column as its id column, whatever its
-header; no column name SHALL take precedence over it. A later column whose header is exactly one of
-the reserved names `identifier`, `protein_id`, `id`, `uniprot`, `entry`, `projection_name`, `x`,
-`y` or `z` SHALL be kept as an annotation renamed `<name>_annotation` (numbered when the file
-already has that name), and a warning SHALL name the file, the column and its new name. `stats` and
-`bundle` SHALL resolve a parquet annotation table's id column by one rule: the column named
-`protein_id` or `identifier`, else the first column. A parquet with both SHALL be an error naming
-them.
+header. A later column named exactly `identifier`, `protein_id`, `id`, `uniprot`, `entry`,
+`projection_name`, `x`, `y` or `z` SHALL be kept, renamed `<name>_annotation`, with a warning
+naming the rename. `stats` and `bundle` SHALL take a parquet's id column from `protein_id` or
+`identifier`, else its first column, and SHALL refuse a parquet with both.
 
 #### Scenario: protein_id is not the first column
 
