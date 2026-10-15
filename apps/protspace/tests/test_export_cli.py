@@ -145,7 +145,45 @@ def test_cli_export_writes_a_tsv(tmp_path):
     assert lines[0].split("\t")[:4] == ["protein_id", "UMAP 2_x", "UMAP 2_y", "fam"]
     table = pd.read_csv(out, sep="\t", keep_default_na=False)
     assert table["fam"].tolist() == ["Kunitz; BPTI", "", "A;B"]
-    assert table["UMAP 2_x"].tolist() == ["1.5", "-2.0", ""]  # p2 unplaced
+    assert table["UMAP 2_x"].tolist() == ["1.5", "-2", ""]  # p2 unplaced
+
+
+def test_cli_export_writes_numbers_and_booleans_as_the_app_does(tmp_path):
+    """The web Table export writes `true`/`false` and a number as JavaScript's
+    `String` does; `protspace export` matches it, gaps included."""
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2"],
+                "reviewed": pa.array([True, False, None]),
+                "count": pa.array([1, None, 3], pa.int64()),
+                "ratio": pa.array([0.5, None, 2.0]),
+                "score": pa.array([0.1, 0.25, 3.0], pa.float32()),
+            }
+        )
+    )
+    metadata = pa.table({"projection_name": ["P"], "dimensions": [2]})
+    data = pa.table(
+        {
+            "projection_name": ["P"] * 3,
+            "protein_id": ["p0", "p1", "p2"],
+            "x": pa.array([0.1, 1.0, 2.5], pa.float32()),
+            "y": pa.array([0.0, 1.0, 2.0], pa.float32()),
+        }
+    )
+    bundle = tmp_path / "b.parquetbundle"
+    write_bundle([annotations, metadata, data], bundle)
+    out = tmp_path / "t.tsv"
+
+    result = _export(str(bundle), str(out), "-p", "P")
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text().splitlines() == [
+        "protein_id\tP_x\tP_y\treviewed\tcount\tratio\tscore",
+        "p0\t0.1\t0\ttrue\t1\t0.5\t0.1",
+        "p1\t1\t1\tfalse\t\t\t0.25",
+        "p2\t2.5\t2\t\t3\t2\t3",
+    ]
 
 
 def test_cli_export_unknown_projection_is_a_usage_error(tmp_path):

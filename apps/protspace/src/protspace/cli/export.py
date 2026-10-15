@@ -49,6 +49,13 @@ def export(
     except ValueError as exc:
         raise typer.BadParameter(f"cannot export {input_file}: {exc}") from exc
 
+    # A float cell as the web app's table export writes it: a whole number without
+    # its ".0" (JavaScript's `String`), a float32 one at float32 precision, a
+    # missing one empty.
+    for name in table.columns:
+        if table[name].dtype.kind == "f":
+            text = table[name].astype(str).str.replace(r"\.0$", "", regex=True)
+            table[name] = text.where(table[name].notna(), "")
     with staged_write(output_file) as staged:
         table.to_csv(staged, sep="\t", index=False, lineterminator="\n")
     typer.echo(f"Saved {len(table)} proteins to {output_file}")

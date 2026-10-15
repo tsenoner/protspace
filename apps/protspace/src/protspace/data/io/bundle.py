@@ -49,6 +49,7 @@ import pyarrow.parquet as pq
 
 from protspace.core.constants import is_missing_value
 from protspace.data.annotations.encoding import (
+    ARROW_BOOLEAN_LABELS,
     migrate_legacy_annotation_table,
     read_format_version,
     to_display_value,
@@ -417,12 +418,22 @@ def read_bundle_table(
     decode = read_format_version(annotations) >= 2
     frame = annotations.to_pandas()
     ids = frame.pop(PROTEIN_ID_COLUMN).astype(str)
+    false, true = ARROW_BOOLEAN_LABELS
     for field in annotations.schema:
-        if field.name != PROTEIN_ID_COLUMN and pa.types.is_string(field.type):
+        if field.name == PROTEIN_ID_COLUMN:
+            continue
+        if pa.types.is_string(field.type):
             # Map each distinct cell once: a large bundle repeats few labels.
             values = frame[field.name]
             shown = {v: _table_cell(v, decode) for v in values.dropna().unique()}
             frame[field.name] = values.map(shown)
+        elif pa.types.is_boolean(field.type):
+            # The labels the app shows a bool column under, not pandas' True/False.
+            frame[field.name] = frame[field.name].map({False: false, True: true})
+        elif pa.types.is_integer(field.type):
+            # Whole numbers stay whole: pandas reads an integer column with a gap
+            # as float64, which would write 1.0.
+            frame[field.name] = frame[field.name].astype("Int64")
 
     table = pd.DataFrame({PROTEIN_ID_COLUMN: ids})
     if projections:

@@ -1035,7 +1035,8 @@ order the bundle stores them. That includes the `cluster_*` membership columns
 [`stats`](#protspace-stats) writes
 and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
 the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
-values of a multi-valued cell are joined with `;`. Missing values, including a value spelled
+values of a multi-valued cell are joined with `;`. Numbers and booleans are written as the web
+app's Table export writes them: `true`/`false`, and `2` rather than `2.0`. Missing values, including a value spelled
 `N/A`, `None` and the like (see [Missing Values](./data-format.md#missing-values)), and the
 coordinates of a protein a projection does not place, are empty. Projection names are the ones the
 [web app lists](#projection-naming); a name the bundle does not hold is an error that lists the

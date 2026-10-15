@@ -366,6 +366,45 @@ def test_preparation_eat_cell_writes_a_transferred_bundle(tmp_path, monkeypatch)
     assert transferred.column("loc").to_pylist() == [label, "", "Cytoplasm"]
 
 
+def test_preparation_eat_cell_keeps_an_identifier_annotation(tmp_path, monkeypatch):
+    """Beside `protein_id`, `identifier` is an annotation (#551): the cell must not
+    rename the ids onto it, which left two `identifier` columns and failed."""
+    import types
+
+    import numpy as np
+    import pyarrow as pa
+
+    from protspace.data.annotations.encoding import stamp_format_version
+    from protspace.data.io.bundle import read_tables, write_bundle
+    from tests.bundle_v3_helpers import projection_tables
+
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2"],
+                "identifier": ["a0", "a1", "a2"],
+                "loc": ["Membrane", "", "Cytoplasm"],
+            }
+        )
+    )
+    metadata, data = projection_tables(3, (2,))
+    bundle = tmp_path / "data.parquetbundle"
+    write_bundle([annotations, metadata, data], bundle)
+    emb_set = types.SimpleNamespace(
+        headers=["p0", "p1", "p2"],
+        data=np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]], dtype=np.float32),
+    )
+
+    downloads = _run_preparation_eat_cell(monkeypatch, bundle, emb_set, "loc")
+
+    out = tmp_path / "data.eat.parquetbundle"
+    assert downloads == [str(out)]
+    transferred = read_tables(out)[0]
+    assert transferred.column("protein_id").to_pylist() == ["p0", "p1", "p2"]
+    assert transferred.column("identifier").to_pylist() == ["a0", "a1", "a2"]
+    assert transferred.column("loc__pred_source").to_pylist() == ["", "p0", ""]
+
+
 def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     """Cell 4 promises the rows that received a label. A v3 read hands a missing
     categorical cell back as "", not null, so the filter cannot test the value
