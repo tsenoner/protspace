@@ -425,7 +425,7 @@ class TestStats:
         )
         assert result.exit_code == 0, result.output
         assert csv.read_bytes() == before
-        written = pd.read_parquet(proj / "selected_annotations.parquet")
+        written = pd.read_parquet(proj / "labels.annotations.parquet")
         assert sorted(written["identifier"]) == sorted(headers)
         cluster = [c for c in written.columns if c.startswith("cluster_elbow_")]
         assert cluster and (written[cluster[0]] != "").all()
@@ -439,7 +439,7 @@ class TestStats:
             "-p",
             proj,
             "-a",
-            proj / "selected_annotations.parquet",
+            proj / "labels.annotations.parquet",
             "-s",
             proj / "statistics.parquet",
             "-o",
@@ -447,6 +447,20 @@ class TestStats:
         )
         assert result.exit_code == 0, result.output
         assert {"grp", cluster[0]} <= set(_bundle_annotations(bundle).columns)
+
+    def test_a_csv_leaves_the_directory_annotations_alone(self, tmp_path):
+        # An unbundled `prepare` directory keeps its fetched annotations under this name.
+        h5, proj, headers = _project(tmp_path)
+        fetched = proj / "selected_annotations.parquet"
+        pq.write_table(pa.table({"protein_id": headers, "pfam": ["PF1"] * 40}), fetched)
+        before = fetched.read_bytes()
+        csv = _write(tmp_path / "labels.csv", "identifier,grp\np0,a\np1,b\n")
+        result = _invoke(
+            "stats", "-i", f"{h5}:E", "-p", proj, "-a", csv, "-o", proj / "s.parquet"
+        )
+        assert result.exit_code == 0, result.output
+        assert fetched.read_bytes() == before
+        assert (proj / "labels.annotations.parquet").exists()
 
     def test_a_non_parquet_file_is_a_usage_error(self, tmp_path):
         h5, proj, _ = _project(tmp_path)

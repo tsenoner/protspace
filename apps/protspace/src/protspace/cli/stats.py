@@ -282,8 +282,8 @@ def stats(
             help="Annotations parquet to enrich in place with per-protein "
             "cluster-membership columns, or a custom .csv/.tsv/.txt file, which is "
             "left as is: its columns and the cluster columns go to "
-            "selected_annotations.parquet in the projections directory. Omit to skip "
-            "per-protein outputs.",
+            "<file stem>.annotations.parquet in the projections directory. Omit to "
+            "skip per-protein outputs.",
             rich_help_panel="Input",
         ),
     ] = None,
@@ -348,10 +348,7 @@ def stats(
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
-    from protspace.data.io.bundle import (
-        ANNOTATIONS_FILENAME,
-        PROJECTIONS_METADATA_FILENAME,
-    )
+    from protspace.data.io.bundle import PROJECTIONS_METADATA_FILENAME
     from protspace.data.loaders import load_h5
     from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.data.processors.custom_annotations import (
@@ -412,12 +409,13 @@ def stats(
 
     added_cols: list[str] = []
     if annotations is not None and is_custom_annotation_file(annotations):
-        # The user's own file is not rewritten; the table it became is written
-        # where `bundle -p` already looks for the other parts.
+        # The user's own file is not rewritten. The table it became is named after
+        # it, not `selected_annotations.parquet`, which in an unbundled `prepare`
+        # directory holds the fetched annotations.
         added_cols = merge_annotation_columns(
             report, ann_frame, id_col=_resolve_id_col(ann_frame)
         )
-        enriched = projections / ANNOTATIONS_FILENAME
+        enriched = projections / f"{annotations.stem}.annotations.parquet"
         _write_custom_annotations(ann_frame, enriched)
         typer.echo(
             f"Wrote {annotations.name} with the cluster columns to {enriched}; "
