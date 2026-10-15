@@ -11,6 +11,10 @@ This behavior crosses the Python annotation producer, the parquet bundle contrac
 the TypeScript visualization consumer. The fix must preserve the generic importer's
 established missing-value semantics while making newly produced TMbed data unambiguous.
 
+`main` shipped the `non-transmembrane` label, the empty-payload case for
+`predicted_transmembrane` and FASTA sequences in `annotate` (PR 495) before this change
+merged; the decisions below keep the full record, and the code adds what main lacked.
+
 ## Goals / Non-Goals
 
 **Goals:**

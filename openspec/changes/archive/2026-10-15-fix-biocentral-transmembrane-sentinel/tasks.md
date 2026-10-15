@@ -107,3 +107,6 @@
       dropping it.
 - [x] 16.3 Run Ruff, the non-slow ProtSpace and hosted-prep suites, the bundle contract,
       strict OpenSpec validation, and `pnpm precommit`.
+- [x] 16.4 Batch with #545 and #546 for one release, fold stored `hiddenValues` N/A
+      spellings, compute the refetched sources before the stale-column discard, and
+      archive this change.
