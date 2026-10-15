@@ -113,22 +113,22 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 7. Docs, docs media and tour (plan: `plans/phase-7-docs.md`)
 
-- [ ] 7.1 Shared page helpers reachable from the docs captures
-- [ ] 7.2 Page helpers the captures need
-- [ ] 7.3 Capture runner for screenshots; the example thumbnails move here
-- [ ] 7.4 GIF recording with a size budget
-- [ ] 7.5 Docs media lint in the pre-commit hook
-- [ ] 7.6 Tour steps as data for every layout
-- [ ] 7.7 Tour rewrite: new key, What's new, lazy driver.js
-- [ ] 7.8 The tour on phones
-- [ ] 7.9 Bars and Filtering pages replace the control-bar page
-- [ ] 7.10 Interface overview page and its images
-- [ ] 7.11 Scatterplot page and its images
-- [ ] 7.12 Legend page and its images
-- [ ] 7.13 Structures and figure editor pages
-- [ ] 7.14 EAT page and its images
-- [ ] 7.15 Importing, exporting, phones and tablets, FAQ
-- [ ] 7.16 Developer docs, the images README, allowlists retired
+- [x] 7.1 Shared page helpers reachable from the docs captures
+- [x] 7.2 Page helpers the captures need
+- [x] 7.3 Capture runner for screenshots; the example thumbnails move here
+- [x] 7.4 GIF recording with a size budget
+- [x] 7.5 Docs media lint in the pre-commit hook
+- [x] 7.6 Tour steps as data for every layout
+- [x] 7.7 Tour rewrite: new key, What's new, lazy driver.js
+- [x] 7.8 The tour on phones
+- [x] 7.9 Bars and Filtering pages replace the control-bar page
+- [x] 7.10 Interface overview page and its images
+- [x] 7.11 Scatterplot page and its images
+- [x] 7.12 Legend page and its images
+- [x] 7.13 Structures and figure editor pages
+- [x] 7.14 EAT page and its images
+- [x] 7.15 Importing, exporting, phones and tablets, FAQ
+- [x] 7.16 Developer docs, the images README, allowlists retired
 
 ## 8. Wrap-up (plan: `plans/phase-8-wrap-up.md`)
 
