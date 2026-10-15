@@ -33,6 +33,9 @@ for p in preds:
     print(p.query_id, p.label, round(p.reliability, 3))
 ```
 
+Pass `keep_neighbors=True` to also get, on each prediction, the `k` references it was
+computed from (`p.neighbors`: reference id, label and raw distance, nearest first).
+
 `Lookup` builds and serialises a reusable reference set (`.npz` sidecar) so the
 reference matrix can be rebuilt on demand rather than shipped.
 

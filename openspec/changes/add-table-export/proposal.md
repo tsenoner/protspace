@@ -17,10 +17,11 @@ against `read_tables` and decode the cells themselves.
   with `;`, missing values empty.
 - **`read_bundle_table(path, projections=())`** in `protspace.data.io.bundle`: the same table as a
   pandas DataFrame, for scripts and notebooks.
-- **Web Quick Export "Table (TSV)"**: a fourth data format beside IDs and Parquet. It writes the
-  proteins currently visible, the same set the Protein IDs export writes (filters, the EAT
-  reliability filter, isolation and hidden legend categories all apply), with `protein_id`, the
-  current projection's coordinates and every annotation, the EAT companions included.
+- **Web export format "Table"**: a fifth format in the Export menu, beside IDs and Parquet,
+  downloaded with **Export TSV**. It writes the proteins currently visible, the same set the
+  Protein IDs export writes (filters, the EAT reliability filter, isolation and hidden legend
+  categories all apply), with `protein_id`, the current projection's coordinates and every
+  annotation, the EAT companions included.
 - The docs say what the existing ID export honours (the page says only "isolated or all").
 
 ### Non-goals
@@ -47,8 +48,13 @@ None.
   the Refine panel; `read_bundle_table` in `data/io/bundle.py`. `feat:` on `apps/protspace/`.
 - Web: `packages/utils/src/visualization/export-utils.ts` (`exportTable`, visible-protein set
   shared with `exportProteinIds`), `packages/core/src/components/control-bar/control-bar.ts`
-  (format button), `apps/web/src/explore/export-handler.ts` (dispatch).
-- Docs: `docs/explore/exporting.md`, `docs/guide/python-cli.md` (command table and section),
+  (format button; the format grid goes from four columns to three, two rows),
+  `apps/web/src/explore/export-handler.ts` (dispatch).
+- Docs: `docs/explore/exporting.md`, `docs/explore/control-bar.md` (format table, regenerated
+  `control-bar-export.png`), `docs/guide/python-cli.md` (command table and section),
   `docs/guide/data-format.md` (Read a bundle in Python); `apps/protspace/CLAUDE.md`.
+- CI: `protspace-ci.yml` also runs on `docs/guide/data-format.md`, whose snippet a Python test
+  runs as written.
 - Tests: `tests/test_export_cli.py` (new), `export-utils.test.ts`, control-bar test, and an e2e
-  spec for the Quick Export path.
+  test for the Export menu path (`eat-visualization.spec.ts`, which loads a bundle with EAT
+  predictions).

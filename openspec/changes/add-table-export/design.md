@@ -40,7 +40,8 @@ values of the coloured annotation are all hidden in the legend.
   EAT-confidence view skipped; for an annotation with EAT predictions, the base column holds only
   curated values (as the bundle export writes it) and `<col>__pred_value`, `__pred_confidence`,
   `__pred_source` follow it, the names Python writes. Coordinates of the selected projection only,
-  as raw stored values (not the plane-mapped plot positions).
+  as raw stored values (not the plane-mapped plot positions), each float32 written as the
+  shortest decimal that reads back as the same float32, as pandas prints a float32 column.
 - **Quoting.** Tab-separated, `\n` line ends; a field containing a tab, newline, carriage return
   or `"` is wrapped in quotes with inner quotes doubled, which is what `pandas.to_csv` writes and
   `read_csv` reads. The CLI writes through `pandas.to_csv`, so both sides quote alike.
@@ -50,6 +51,7 @@ values of the coloured annotation are all hidden in the legend.
 ## Risks / Trade-offs
 
 - [Large datasets make large tables] → The web export is bounded by what is visible; the CLI
-  writes streaming via pandas.
+  builds the table in memory as a DataFrame, decoding each distinct cell once, which is the same
+  order of memory as reading the bundle.
 - [A label containing `;` is indistinguishable from two hits] → Same rule as the app's display;
   the bundle keeps the exact cells.
