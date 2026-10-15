@@ -120,9 +120,11 @@ and Biocentral (predicted).
 See the [Annotations reference](/guide/annotations) for the complete per-column catalogue: what each
 annotation means, where it comes from, and which ones are predicted.
 
-To add your own columns, give a CSV or TSV (gzipped is fine) whose first column holds the protein
-IDs: enter its path, or choose it with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those
-columns, for example when your IDs are not UniProt accessions.
+To add your own columns, give a CSV or TSV (gzipped is fine) with the protein IDs in a column named
+`identifier`, `protein_id` or `id`, or else in its first column (the full rules are under
+[Custom annotation files](/guide/python-cli#custom-annotation-files)): enter its path, or choose it
+with **Choose CSV/TSV**. Pick **CSV only (no UniProt fetch)** to use just those columns, for example
+when your IDs are not UniProt accessions.
 
 ### Dimensionality Reduction
 

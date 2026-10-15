@@ -41,9 +41,10 @@
       `KeyError: 'ESM_8M'` troubleshooting
 - [x] 4.2 `docs/guide/faq.md`: custom-annotation answer, bundle part count
 - [x] 4.3 `apps/protspace/CLAUDE.md`: new module and test file
-- [ ] 4.4 Colab Preparation notebook (owned by the notebook workstream; hand over): change the
-      upload hint "first column = protein IDs" to "id column: `identifier`/`protein_id`/`id`,
-      else the first column", and `accept=".csv,.tsv"` to `accept=".csv,.tsv,.txt"`
+- [x] 4.4 Colab Preparation notebook (applied at integration): the upload hint names the id
+      columns before the first column, and the panel takes its accepted suffixes from
+      `CUSTOM_ANNOTATION_SUFFIXES` (`.csv`/`.tsv` on a released package without it);
+      `data-preparation.md` states the same rule
 - [x] 4.5 Pin the guide's accepted suffixes to `CUSTOM_ANNOTATION_SUFFIXES` with a test
 
 ## 5. Review round
