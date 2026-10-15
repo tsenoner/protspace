@@ -21,10 +21,10 @@ const GATES = {
 type Gated = keyof typeof GATES;
 
 /**
- * Colours below their gate, kept because a palette is a published standard. On the dark plot
- * these points are close to invisible: the outline darkens the point's own colour
- * (point-shaders.ts, `finalColor * 0.5`), so nothing bounds them. Whether to give them a light rim
- * in dark or accept it is an open user decision for the phase 6 exit (block-3 review B, M1).
+ * Colours below their gate, kept because a palette is a published standard. On the dark plot the
+ * point shader gives a point below 2:1 against the background a light rim instead of the darkened
+ * one (point-shaders.ts), so these near-black colours stay bounded and visible; light mode and
+ * exports keep the darkened rim. Pinned in scatter-plot.theme.browser.test.ts.
  * Only shrinks: the last test fails while a listed colour passes.
  */
 const ALLOWED: Record<Gated, readonly string[]> = {

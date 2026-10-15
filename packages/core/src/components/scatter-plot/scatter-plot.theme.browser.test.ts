@@ -3,6 +3,7 @@ import { adoptStyles } from 'lit';
 import { userEvent } from 'vitest/browser';
 import type { TooltipView, VisualizationData } from '@protspace/utils';
 import { adoptTheme } from '../kit/adopt-theme';
+import { contrast } from '../../test-support/contrast';
 import { colourChannels } from '../../test-support/css-colour';
 import type { ProtspaceScatterplot } from './scatter-plot';
 import './scatter-plot';
@@ -17,6 +18,7 @@ interface PlotPrivates {
     invalidateStyleCache(): void;
   } | null;
   _renderLoop: { request(): void };
+  _drawnPointRadiusCss(): number;
 }
 
 const root = document.documentElement;
@@ -55,13 +57,13 @@ function makeData(): VisualizationData {
   } as unknown as VisualizationData;
 }
 
-/** The RGB the plot's WebGL canvas holds at a protein's centre. */
-function pixelAt(plot: ProtspaceScatterplot, id: string): number[] {
+/** The RGB the plot's WebGL canvas holds at a protein's centre, or `dx` CSS px to its right. */
+function pixelAt(plot: ProtspaceScatterplot, id: string, dx = 0): number[] {
   const canvas = plot.shadowRoot!.querySelector('canvas')!;
   const rect = canvas.getBoundingClientRect();
   const at = plot.getProteinClientPosition(id);
   if (!at || rect.width === 0) return [-1, -1, -1];
-  const x = Math.round((at.x - rect.left) * (canvas.width / rect.width));
+  const x = Math.round((at.x + dx - rect.left) * (canvas.width / rect.width));
   const y = Math.round((at.y - rect.top) * (canvas.height / rect.height));
   const copy = document.createElement('canvas');
   copy.width = canvas.width;
@@ -72,16 +74,22 @@ function pixelAt(plot: ProtspaceScatterplot, id: string): number[] {
 }
 
 /** A drawn plot: mounted at 480×360 with opaque points, so a centre pixel is the point's colour. */
-async function mountPlot(): Promise<ProtspaceScatterplot> {
+async function mountPlot(
+  familyA = '#ff0000',
+  config: Record<string, unknown> = {},
+): Promise<ProtspaceScatterplot> {
   const plot = document.createElement('protspace-scatterplot');
   plot.style.cssText = 'display: block; width: 480px; height: 360px';
   plot.selectedAnnotation = 'fam';
   plot.otherAnnotationValues = ['B'];
-  plot.config = { baseOpacity: 1 };
-  plot.data = makeData();
+  plot.config = { baseOpacity: 1, ...config };
+  const data = makeData();
+  (data.annotations.fam as { colors: string[] }).colors[0] = familyA;
+  plot.data = data;
   document.body.append(plot);
   await plot.updateComplete;
-  await vi.waitFor(() => expect(near(pixelAt(plot, 'P1'), FAMILY_A)).toBe(true), {
+  const want = [1, 3, 5].map((i) => parseInt(familyA.slice(i, i + 2), 16));
+  await vi.waitFor(() => expect(near(pixelAt(plot, 'P1'), want)).toBe(true), {
     timeout: 5_000,
   });
   return plot;
@@ -194,6 +202,32 @@ describe('scatterplot theme', () => {
     // The live view's dark grey never reaches the export (its rims and anti-aliasing are
     // neutral greys, never the slate-blue #64748b).
     expect(dark).toBe(0);
+  });
+
+  it('in dark a near-black point gets a light rim; light and exports keep the darkened rim', async () => {
+    // Kelly's Very Dark Gray at radius ~30 CSS px, so 0.9 of the radius is well inside the rim.
+    const big = { pointSize: 8100 };
+    const rimOf = (plot: ProtspaceScatterplot) =>
+      pixelAt(plot, 'P1', 0.9 * (plot as unknown as PlotPrivates)._drawnPointRadiusCss());
+    const exportOf = (plot: ProtspaceScatterplot) => {
+      const out = plot.captureAtResolution(480, 360);
+      return out.getContext('2d')!.getImageData(0, 0, out.width, out.height).data;
+    };
+
+    const light = await mountPlot('#222222', big);
+    // The rim darkens the point's own colour: #222222 × 0.5 in linear light is about #191919.
+    const lightRim = rimOf(light);
+    expect(near(lightRim, [0x19, 0x19, 0x19]), `light rim is ${lightRim}`).toBe(true);
+    const lightExport = exportOf(light);
+    light.remove();
+
+    root.dataset.theme = 'dark';
+    const dark = await mountPlot('#222222', big);
+    const darkRim = rimOf(dark);
+    const ratio = contrast(`rgb(${darkRim.join(', ')})`, '#0b1120');
+    expect(ratio, `dark rim is ${darkRim}, ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(2);
+    // Exports always draw the light rules on white, whatever the live theme.
+    expect(exportOf(dark)).toEqual(lightExport);
   });
 
   it('a plot mounted in dark draws in the dark greys from the start, with no theme restyle', async () => {

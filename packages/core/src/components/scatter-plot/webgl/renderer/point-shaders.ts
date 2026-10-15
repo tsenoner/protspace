@@ -296,6 +296,8 @@ void main() {
   // Still skipped for faded points (low alpha), where the darkening is disproportionately visible.
   float outlineWidth =
     min(max(OUTLINE_RADIUS_FRACTION, OUTLINE_DEVICE_PX * fieldPerPixel), outlineBudget);
+  // The knockout colour is the live plot background (white in light and in every export).
+  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
   if (v_color.a > 0.5) {
     // Smooth the inner edge. The outer edge is already anti-aliased by shapeAlpha, so a hard
     // threshold here left the outline smooth outside and stepped inside. edgeDist is positive
@@ -308,14 +310,21 @@ void main() {
     // whose gradient is 2, that cost a predicted glyph ~3x of its darkening at default point
     // sizes. Widening the band is safe; widening the feather past the band is not.
     float outlineMix = 1.0 - smoothstep(outlineWidth - pixelScale, outlineWidth, edgeDist);
-    finalColor = mix(finalColor, finalColor * 0.5, outlineMix);
+    // On a dark plot, a point below 2:1 against the background (Kelly #222222 and #2B3D26,
+    // Okabe-Ito #000000) gets a light rim instead, or nothing would bound it. A light background
+    // (the light theme, every export) always takes the darkened rim.
+    vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+    float bgLum = dot(linearKnockoutColor, luma);
+    float fgLum = dot(finalColor, luma);
+    bool lightRim = bgLum < 0.05 && fgLum + 0.05 < 2.0 * (bgLum + 0.05);
+    vec3 rim = lightRim ? mix(finalColor, vec3(0.55), 0.7) : finalColor * 0.5;
+    finalColor = mix(finalColor, rim, outlineMix);
   }
 
   // Predicted interiors mix toward PREDICTED_INTERIOR_FILL (hollow=0.0, filled-knockout=1.0).
   // Mix premultiplied components explicitly so the ring/interior transition remains correct
   // for reliability-faded points.
   float finalAlpha = mix(v_color.a, PREDICTED_INTERIOR_FILL, predictedInterior) * shapeAlpha;
-  vec3 linearKnockoutColor = pow(max(u_knockoutColor, vec3(0.0)), vec3(u_gamma));
   vec3 premultipliedColor =
     mix(finalColor * v_color.a, linearKnockoutColor * PREDICTED_INTERIOR_FILL, predictedInterior) *
     shapeAlpha;
