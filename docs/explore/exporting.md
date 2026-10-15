@@ -89,8 +89,10 @@ one row per protein:
   curated values, followed by `<annotation>__pred_value`, `__pred_confidence` and `__pred_source`
   with the transfers.
 
-The columns and values are the ones [`protspace export`](/guide/python-cli#protspace-export) writes
-from the command line, which exports every protein of a bundle instead of the visible ones.
+[`protspace export`](/guide/python-cli#protspace-export) writes the same columns from the command
+line, for every protein of a bundle instead of the visible ones. Read them by name, not position:
+the command line keeps the bundle's column order, so its `__pred_*` columns need not follow their
+annotation.
 
 To list the members of one cluster, colour by its `cluster_*` annotation, double-click the cluster
 in the legend to show it alone, and export.

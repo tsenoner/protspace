@@ -34,6 +34,8 @@ values of the coloured annotation are all hidden in the legend.
   available ones. A protein a projection does not place gets empty coordinates.
 - **Column order: id, coordinates, annotations in bundle order.** The id column is always called
   `protein_id`, whatever the bundle names it (`protein_id` or `identifier`), in both CLI and web.
+  The two share column names, not positions: the web places an annotation's `__pred_*` columns
+  right after it, the CLI keeps the bundle's order, and the docs say to read columns by name.
 - **Web: one visible-set helper for IDs and table.** The hidden-legend filter in
   `exportProteinIds` moves into a private method both exports call, so the two cannot drift.
 - **Web columns.** Categorical annotations as their labels (`;`-joined for multi-valued cells,
