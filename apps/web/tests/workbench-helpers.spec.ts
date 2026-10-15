@@ -69,6 +69,7 @@ import {
   emptyScreenPointNear,
   plotSettled,
   proteinScreenPosition,
+  provenancePair,
 } from './helpers/plot';
 import { waitForStructureLoaded, watchStructureLoads } from './helpers/structure';
 import { exploreStorageState, seedTourSeen } from './helpers/tour-storage-state';
@@ -605,5 +606,21 @@ test.describe('view-bar menus and the filter draft', () => {
     await second.getByLabel('Minimum value').fill('0');
     await expect(filterApplyButton(page)).toBeEnabled();
     await expect(statusChip(page, 'filter')).toHaveCount(0);
+  });
+});
+
+test.describe('provenancePair', () => {
+  test('finds a source and one of its dependants', async ({ page }) => {
+    // The EAT example's fixture: its toxin_class carries transferred values and their sources.
+    await serveExampleFixtures(page);
+    await openExample(page, 'three-finger-toxins', { proteinCount: e2eExample('eat').count });
+    // No clearance: the fixture's islands are tighter than the real example's.
+    const pair = await provenancePair(page, 'toxin_class', { clearancePx: 0 });
+    expect(pair.source).not.toBe(pair.target);
+    expect(pair.dependantCount).toBeGreaterThanOrEqual(2);
+    expect(pair.dependantCount).toBeLessThanOrEqual(20);
+    // Both are plotted: proteinScreenPosition throws for a protein that is not.
+    await proteinScreenPosition(page, pair.source);
+    await proteinScreenPosition(page, pair.target);
   });
 });

@@ -1,5 +1,6 @@
 import type { CaptureEntry } from './capture-plan';
 import { CONTROLS_CAPTURES } from './scenes/controls';
+import { EAT_CAPTURES } from './scenes/eat';
 import { EXAMPLE_CAPTURES } from './scenes/examples';
 import { FIGURE_EDITOR_CAPTURES } from './scenes/figure-editor';
 import { LEGEND_CAPTURES } from './scenes/legend';
@@ -16,4 +17,5 @@ export const MANIFEST: readonly CaptureEntry[] = [
   ...LEGEND_CAPTURES,
   ...STRUCTURE_CAPTURES,
   ...FIGURE_EDITOR_CAPTURES,
+  ...EAT_CAPTURES,
 ];

@@ -16,6 +16,8 @@ interface PlotAutomation extends HTMLElement {
     protein_ids: string[];
     annotations?: Record<string, { values: Array<string | null> }>;
     annotation_data?: Record<string, AnnotationData>;
+    /** Per annotation, per protein: the transferred (EAT) cell and the protein it came from. */
+    annotation_predicted?: Record<string, Array<{ source: string } | null>>;
   } | null;
   selectedAnnotation?: string;
   /** The interactive point within `minRadiusPx` of a point in the plot's own coordinates. */
@@ -185,4 +187,71 @@ export async function duplicateStacks(
       return at ? [{ key: stack.key, x: at.x, y: at.y, count: stack.count }] : [];
     });
   });
+}
+
+/**
+ * A pair for showing EAT provenance connectors on `annotation`: `source`, a protein other
+ * proteins borrowed their value from and that is not itself transferred, and `target`, one of
+ * those dependants. Picks the source with the most dependants within 2..`maxDependants` (the
+ * renderer draws at most 20 lines: MAX_PROVENANCE_CONNECTORS in
+ * apps/web/src/explore/eat-provenance.ts; past it the extra lines are dropped without notice).
+ * Both proteins stand `clearancePx` clear of every other plotted protein, so a click there picks
+ * that protein and not a neighbour (4 px: the plot's smallest hit radius). Read at call time, not
+ * hard-coded, so a rebuilt bundle cannot silently give an empty GIF. Throws when nothing
+ * qualifies.
+ */
+export async function provenancePair(
+  page: Page,
+  annotation: string,
+  options: { maxDependants?: number; clearancePx?: number } = {},
+): Promise<{ source: string; target: string; dependantCount: number }> {
+  const { maxDependants = 20, clearancePx = 4 } = options;
+  const pair = await page.locator('#myPlot').evaluate(
+    (element, { key, cap, clearance }) => {
+      const plot = element as PlotAutomation;
+      const ids = plot.data?.protein_ids;
+      const cells = plot.data?.annotation_predicted?.[key];
+      if (!ids || !cells) return null;
+      const positions = ids.map((id) => plot.getProteinClientPosition(id));
+      const standsClear = (index: number | undefined): boolean => {
+        const here = index === undefined ? null : positions[index];
+        if (!here) return false;
+        return positions.every(
+          (other, j) =>
+            j === index || !other || Math.hypot(other.x - here.x, other.y - here.y) > clearance,
+        );
+      };
+      const indexById = new Map(ids.map((id, index) => [id, index]));
+      const dependants = new Map<string, string[]>();
+      cells.forEach((cell, i) => {
+        const source = cell?.source;
+        if (!source) return;
+        const list = dependants.get(source);
+        if (list) list.push(ids[i]);
+        else dependants.set(source, [ids[i]]);
+      });
+      const ranked = [...dependants.entries()]
+        .filter(([source, targets]) => {
+          const sourceIndex = indexById.get(source);
+          // In the dataset, and not itself transferred: clicking a transferred protein draws its
+          // own single source line instead of the fan-out.
+          return targets.length >= 2 && sourceIndex !== undefined && !cells[sourceIndex];
+        })
+        .sort((a, b) => b[1].length - a[1].length);
+      for (const [source, targets] of ranked) {
+        if (targets.length > cap || !standsClear(indexById.get(source))) continue;
+        const target = targets.find((id) => standsClear(indexById.get(id)));
+        if (target) return { source, target, dependantCount: targets.length };
+      }
+      return null;
+    },
+    { key: annotation, cap: maxDependants, clearance: clearancePx },
+  );
+  if (!pair) {
+    throw new Error(
+      `No provenance pair for "${annotation}": needs a non-transferred source with 2-${maxDependants} ` +
+        `dependants, it and one of them ${clearancePx} px clear of every other protein`,
+    );
+  }
+  return pair;
 }

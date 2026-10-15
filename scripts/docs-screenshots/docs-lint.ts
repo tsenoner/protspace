@@ -62,11 +62,7 @@ const STALE_TERMS: readonly RegExp[] = [
  * Images from the old layout that their page task has not yet regenerated or deleted. Only
  * shrinks: each page task removes what it replaces, and Task 7.16 deletes the set.
  */
-export const LEGACY_IMAGES: ReadonlySet<string> = new Set([
-  'eat-connectors.gif',
-  'eat-legend-section.png',
-  'eat-reliability.gif',
-]);
+export const LEGACY_IMAGES: ReadonlySet<string> = new Set<string>();
 
 /**
  * User-guide pages that still name removed UI until their page task rewrites them. Only
