@@ -81,7 +81,8 @@ Exports the same proteins as a tab-separated `.tsv` table that opens in a spread
 one row per protein:
 
 - `protein_id`
-- the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y`
+- the coordinates of the projection on screen, as `<projection>_x` and `<projection>_y` (for a
+  [deprecated 3D projection](/explore/control-bar#_1-projection-selector), the X/Y view you see; no `z`)
 - one column per annotation, `cluster_*` columns included. A cell holds the labels you see in the
   legend, joined with `;` when a protein has several; a numeric annotation holds its value, not its
   bin. Missing values are empty.

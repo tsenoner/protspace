@@ -1,5 +1,7 @@
 """`protspace export` and `read_bundle_table`: a bundle as one TSV table."""
 
+import logging
+
 import pandas as pd
 import pyarrow as pa
 import pytest
@@ -75,7 +77,9 @@ def test_read_bundle_table_adds_the_coordinates_asked_for(tmp_path):
     assert table.loc[2, "fam"] == "A;B"
 
 
-def test_read_bundle_table_writes_no_z_for_a_legacy_3d_projection(tmp_path):
+def test_read_bundle_table_writes_no_z_for_a_legacy_3d_projection(tmp_path, caplog):
+    """The X/Y view the web app shows, and the 3-D reading deprecation warning: an
+    export reads the projections, so it warns like every other reader."""
     annotations = stamp_format_version(pa.table({"protein_id": ["p0"]}))
     metadata = pa.table({"projection_name": ["PCA 3"], "dimensions": [3]})
     coordinates = pa.table(
@@ -89,8 +93,15 @@ def test_read_bundle_table_writes_no_z_for_a_legacy_3d_projection(tmp_path):
     )
     path = tmp_path / "data.parquetbundle"
     write_bundle([annotations, metadata, coordinates], path)
-    table = read_bundle_table(path, ["PCA 3"])
+    with caplog.at_level(logging.WARNING, logger="protspace.data.io.bundle"):
+        table = read_bundle_table(path, ["PCA 3"])
     assert list(table.columns) == ["protein_id", "PCA 3_x", "PCA 3_y"]
+    (warning,) = [
+        r.getMessage()
+        for r in caplog.records
+        if "Reading 3-D projections" in r.getMessage()
+    ]
+    assert "PCA 3" in warning and "--flatten-3d" in warning
 
 
 def test_read_bundle_table_names_the_id_column_protein_id(tmp_path):

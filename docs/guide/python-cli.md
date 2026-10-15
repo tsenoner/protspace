@@ -1016,8 +1016,11 @@ protspace export data.parquetbundle data.tsv -p "ProtT5 — UMAP 2"
 | `-p, --projection` | Also write this projection's coordinates (repeatable). Default: none. |
 | `-v, --verbose`    | Verbosity: `-v` = INFO, `-vv` = DEBUG.                                |
 
-The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`,
-then every annotation in the order the bundle stores them. That includes the `cluster_*` membership columns [`stats`](#protspace-stats) writes
+The columns are `protein_id`, then `<projection>_x` and `<projection>_y` for each `--projection`
+(a 3D projection writes only this X/Y view, the one the web app shows; its `z` is not exported, and
+reading it prints the [3D deprecation warning](#projection-methods)), then every annotation in the
+order the bundle stores them. That includes the `cluster_*` membership columns
+[`stats`](#protspace-stats) writes
 and the `__pred_*` and `__neighbor` columns of [`transfer`](#protspace-transfer). A cell holds what
 the web app shows: score and evidence suffixes are dropped, encoded characters are decoded, and the
 values of a multi-valued cell are joined with `;`. Missing values, and the coordinates of a protein
@@ -1039,7 +1042,8 @@ Running it prints a warning. Explore bundles at
 works, and the file is read in your browser, never uploaded.
 :::
 
-Run a local Dash viewer, for offline viewing; it also renders 3D projections.
+Run a local Dash viewer, for offline viewing. It still renders 3D projections in 3D, the one
+viewer that does; both are deprecated and go in protspace 5.0.0, so do not build on either.
 
 ```bash
 protspace serve output.parquetbundle --port 8050 --pdb-zip structures.zip
@@ -1067,9 +1071,12 @@ Coming from ProtSpace 4.4, or from the v3 `protspace-local` command:
   always. Now a column named `identifier`, `protein_id` or `id`, in any case and any position,
   takes precedence. If your file has, say, `accession,id,family` with the accessions as ids,
   rename the `id` column; ProtSpace warns when a file's ids match no input protein.
-- **Plan for 2-D projections.** 3-D dimensionality reduction is not supported going forward: the
-  `*3` methods still run for now, but nothing new is built for them. If you used `umap3` or
-  `tsne3`, switch to `umap2` and `tsne2`.
+- **3D projections and `protspace serve` are deprecated.** Both still work, with a warning, and
+  are removed in protspace 5.0.0 (tracked in
+  [#544](https://github.com/tsenoner/protspace/issues/544)). If you used `umap3`, `tsne3` or any
+  other `*3` method, switch to its `*2` variant; turn the 3D projections of existing bundles into
+  2D with [`protspace convert --flatten-3d`](#protspace-convert); and explore bundles at
+  [protspace.app/explore](https://protspace.app/explore) instead of with `serve`.
 
 ## See Also
 
