@@ -121,7 +121,7 @@ def run_transfer(
     )
 
     out = annotations
-    total_transferred = 0
+    total_queries = 0
     for column in transfer_columns:
         if column not in annotations.column_names:
             raise KeyError(f"Transfer column {column!r} not in annotations table")
@@ -192,6 +192,13 @@ def run_transfer(
                 row["max_distance"] = cutoff
             if skip_distant:
                 preds = [p for p in preds if classes[p.query_id] == "near"]
+                if not preds:
+                    logger.warning(
+                        "Every query of %r is beyond --max-distance %.6g, so none "
+                        "was predicted. Try --max-distance auto or a larger value.",
+                        column,
+                        cutoff,
+                    )
         if report is not None:
             report.extend(rows)
 
@@ -203,7 +210,7 @@ def run_transfer(
             format_version=format_version,
         )
         out = set_neighbor_column(out, column, classes, identifiers=all_ids)
-        total_transferred += len(q_ids)
+        total_queries += len(q_ids)
         logger.info("Transferred %r to %d quer(ies)", column, len(preds))
         if len(preds) < len(q_ids):
             logger.info(
@@ -212,7 +219,7 @@ def run_transfer(
                 column,
             )
 
-    if total_transferred == 0:
+    if total_queries == 0:
         logger.warning(
             "No annotations were transferred: the target column(s) have either "
             "no missing values to fill or no values to transfer from. If you "

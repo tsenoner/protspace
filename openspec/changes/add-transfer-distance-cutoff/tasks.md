@@ -8,6 +8,7 @@
 ## 2. CLI
 
 - [x] 2.1 `--max-distance D|auto` (non-negative number or `auto`) and `--skip-distant` (needs a cutoff) as usage errors otherwise
+- [x] 2.2 Warn at default verbosity when `--skip-distant` leaves every query of a column unpredicted
 
 ## 3. Web label
 
@@ -15,7 +16,7 @@
 
 ## 4. Tests
 
-- [x] 4.1 `tests/test_transfer_cli.py`: fixed cutoff classes, references null, default still labels distant queries, `--skip-distant` drops their predictions, `auto` equals the percentile computed by hand and lands in the report, single-reference `auto` and `--skip-distant` alone are usage errors, a re-run without cutoff drops the column
+- [x] 4.1 `tests/test_transfer_cli.py`: fixed cutoff classes, references null, default still labels distant queries, `--skip-distant` drops their predictions and warns when it drops them all, `auto` equals the percentile computed by hand and lands in the report, single-reference `auto` and `--skip-distant` alone are usage errors, a re-run without cutoff drops the column
 - [x] 4.2 `tests/test_predictions_overlay.py`: `set_neighbor_column` alignment and replacement
 
 ## 5. Docs

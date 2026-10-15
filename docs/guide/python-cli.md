@@ -735,7 +735,7 @@ it.
 | Column               | Holds                                                                          |
 | -------------------- | ------------------------------------------------------------------------------ |
 | `column`             | The `--transfer` column the row belongs to.                                    |
-| `query_id`           | The protein that received a label.                                             |
+| `query_id`           | The query protein.                                                             |
 | `label`              | The transferred label (`COL__pred_value`).                                     |
 | `source_id`          | The reference it came from (`COL__pred_source`).                               |
 | `distance`           | The raw embedding distance from the query to `source_id`, in `--metric` units. |
@@ -779,10 +779,12 @@ protspace transfer -b space.parquetbundle -e emb.h5:esm2_650m -t toxin_family \
   (ESM2 cosine distances are small even between unrelated proteins), so a number from one model or
   paper does not carry over to another.
 - **`--skip-distant`** leaves the distant queries unpredicted: they get `COL__neighbor = distant`
-  and no `__pred_*` values. Without it they keep the nearest label, as without a cutoff.
+  and no `__pred_*` values. Without it they keep the nearest label, as without a cutoff. When the
+  cutoff leaves every query of a column distant, transfer warns: try `auto` or a larger `D`.
 
 With `--report`, every row also carries `neighbor` (the query's class) and `max_distance` (the
-cutoff used). Transferring a column again replaces its `COL__neighbor`, and a run without
+cutoff used). With `--skip-distant`, a `distant` row still shows the `label` and `source_id` the
+query would have been given; the bundle holds no prediction for it. Transferring a column again replaces its `COL__neighbor`, and a run without
 `--max-distance` removes it, so the class never describes predictions that are gone.
 
 ### Reliability index

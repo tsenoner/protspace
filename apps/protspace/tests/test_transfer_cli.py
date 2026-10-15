@@ -893,6 +893,19 @@ def test_run_transfer_skip_distant_leaves_distant_queries_unpredicted():
     assert rows["Q_near"]["fam__pred_value"] == "alpha"
 
 
+def test_run_transfer_warns_when_skip_distant_leaves_every_query_unpredicted(caplog):
+    annotations, embeddings = _four_protein_inputs()
+    with caplog.at_level(logging.WARNING):
+        rows = _rows(
+            _run(annotations, embeddings, k=1, max_distance=0.01, skip_distant=True)
+        )
+    assert rows["Q_near"]["fam__pred_value"] is None
+    assert rows["Q_far"]["fam__pred_value"] is None
+    assert "Every query of 'fam' is beyond --max-distance 0.01" in caplog.text
+    # The cause is the cutoff, not a column with nothing to fill.
+    assert "No annotations were transferred" not in caplog.text
+
+
 def test_run_transfer_auto_max_distance_is_the_reference_spacing_percentile():
     # Each reference's nearest other reference: R_a 1 (R_b), R_b 1 (R_a), R_c 2 (R_b).
     annotations, embeddings = _four_protein_inputs()

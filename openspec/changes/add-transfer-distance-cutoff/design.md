@@ -43,7 +43,10 @@ query and, for `auto`, the same quantity for each reference against the other re
 - **`--skip-distant` is opt-in.** Labelling every query stays the default, so existing runs and
   the reliability filter's workflow are unchanged. With the flag, a distant query is dropped from
   the predictions before the overlay columns are built, so it has no `__pred_*` cells at all
-  rather than a low-confidence one.
+  rather than a low-confidence one. Its report rows keep the would-be label and source (marked
+  `distant`), so the report still says what the nearest reference was. A cutoff that leaves every
+  query of a column distant is almost always a `D` taken from another model, and the command is
+  otherwise silent on success, so that case warns at default verbosity.
 - **The chosen cutoff is logged at INFO and written to the report.** The command logs nothing at
   default verbosity on success, so `-v` shows it; the report's `max_distance` column carries it
   per row, next to the class.

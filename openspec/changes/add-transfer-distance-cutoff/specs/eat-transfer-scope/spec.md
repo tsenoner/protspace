@@ -25,6 +25,13 @@ transferred again.
 
 - **WHEN** transfer runs with `--max-distance` and `--skip-distant`
 - **THEN** a distant query has no `__pred_*` values and `<COL>__neighbor` is `distant`
+- **AND** with `--report`, its rows still name the label and source it would have been given,
+  with `neighbor` `distant`
+
+#### Scenario: Every query distant
+
+- **WHEN** `--skip-distant` leaves every query of a column unpredicted
+- **THEN** transfer logs a warning at default verbosity naming the column and the cutoff
 
 #### Scenario: Skipping needs a cutoff
 
