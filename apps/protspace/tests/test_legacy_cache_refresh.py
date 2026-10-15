@@ -446,9 +446,9 @@ BIOCENTRAL = {
     "predicted_signal_peptide": "False",
     "predicted_transmembrane": "non-transmembrane",
 }
+# No InterPro column: a v2 cache's are stale under v4 as well (TestVersion4).
 V3_ANNOTATIONS = [
     "gene_name",
-    "pfam",
     "ted_domains",
     "root",
     "species",
@@ -590,7 +590,6 @@ class TestVersion3:
         assert result["predicted_transmembrane"].tolist() == ["non-transmembrane"]
         # Every other source's value is the cached one.
         assert result["gene_name"].tolist() == ["CACHED_GENE"]
-        assert result["pfam"].tolist() == [CURRENT_PFAM]
         assert result["ted_domains"].tolist() == ["3.40.50.2000|94.2"]
         cache = _read_cache(tmp_path)
         assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
@@ -859,10 +858,37 @@ class TestVersion3:
 
 
 class TestVersion4:
-    def test_version_4_covers_both_tmbed_columns(self):
+    def test_version_4_covers_both_tmbed_columns_and_every_interpro_column(self):
         assert CACHE_SEMANTICS_CHANGES[4] == frozenset(
             {"predicted_signal_peptide", "predicted_transmembrane"}
-        )
+        ) | frozenset(INTERPRO_ANNOTATIONS)
+
+    def test_a_v3_cache_refetches_interpro_once_and_reuses_uniprot(
+        self, tmp_path, monkeypatch
+    ):
+        """v3 looked InterPro up by the FASTA's sequence when one was given; v4
+        looks up UniProt's canonical one, so a cached match may be the wrong one."""
+        _write_v1_cache(tmp_path)
+        cache = _read_cache(tmp_path)
+        cache.attrs = {ANNOTATION_CACHE_VERSION_ATTR: 3}
+        cache.to_parquet(tmp_path / CACHE_NAME, index=False)
+        calls: list = []
+        _forbid(monkeypatch, UniProtRetriever, "UniProt")
+        _serve_interpro(monkeypatch, calls)
+        annotations = ["gene_name", "pfam"]
+
+        result = _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == [("interpro", {"P01308": "MALWMRLLPL"})]
+        assert result["pfam"].tolist() == [CURRENT_PFAM]
+        assert result["gene_name"].tolist() == ["CACHED_GENE"]
+        cache = _read_cache(tmp_path)
+        assert read_annotation_cache_version(cache) == ANNOTATION_CACHE_VERSION
+
+        calls.clear()
+        _pipeline(tmp_path, annotations)._fetch_annotations(["P01308"])
+
+        assert calls == []
 
     def test_a_v3_cache_refetches_biocentral_once_and_nothing_else(
         self, tmp_path, monkeypatch
