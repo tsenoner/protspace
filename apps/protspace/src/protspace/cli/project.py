@@ -94,7 +94,12 @@ def project(
 
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.io.bundle import write_directory
-    from protspace.data.loaders import EmbeddingSet, compute_similarity, load_h5
+    from protspace.data.loaders import (
+        EmbeddingSet,
+        compute_similarity,
+        load_h5,
+        resolve_input_names,
+    )
     from protspace.data.loaders.embedding_set import format_projection_name
     from protspace.data.processors.base_processor import BaseProcessor
     from protspace.data.processors.pipeline import (
@@ -106,11 +111,29 @@ def project(
     from protspace.utils import get_reducers
     from protspace.utils.constants import MDS_NAME
 
-    input_specs = _parse_input_specs(input)
+    try:
+        named_inputs = resolve_input_names(_parse_input_specs(input), command="project")
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    # Unlike prepare, project does not merge inputs of the same name, and their
+    # projections would share one label and one header list.
+    names = Counter(name for _, name, _ in named_inputs)
+    shared = [name for name, count in names.items() if count > 1]
+    if shared:
+        clashes = "; ".join(
+            f"'{name}': " + ", ".join(str(p) for p, n, _ in named_inputs if n == name)
+            for name in shared
+        )
+        raise typer.BadParameter(
+            f"Inputs share an embedding name ({clashes}). project labels each "
+            f"input's projections with its name, so the names must differ. To "
+            f"project files from one model together, use protspace prepare, "
+            f"which merges inputs of the same name."
+        )
     embedding_sets: list[EmbeddingSet] = []
 
-    for path, name_override in input_specs:
-        embedding_sets.append(load_h5([path], name_override=name_override))
+    for path, name, _ in named_inputs:
+        embedding_sets.append(load_h5([path], name_override=name))
 
     if not embedding_sets:
         raise typer.BadParameter("No valid HDF5 files found.")

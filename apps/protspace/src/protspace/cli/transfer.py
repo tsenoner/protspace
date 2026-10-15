@@ -240,7 +240,7 @@ def transfer(
         upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
-    from protspace.data.loaders import load_h5, split_h5_spec
+    from protspace.data.loaders import load_h5, resolve_input_names, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
         clauses = []
@@ -266,9 +266,12 @@ def transfer(
     if k < 1:
         raise typer.BadParameter("--k must be >= 1")
 
-    # Load embeddings (optional ':name' override; colon/Windows-safe parsing).
-    h5_path, name_override = split_h5_spec(embeddings)
-    emb_set = load_h5([h5_path], name_override=name_override)
+    # Load embeddings (optional ':name' override; colon/Windows-safe parsing). The
+    # transfer reads only the vectors, so a single input always resolves a name.
+    ((h5_path, name, _),) = resolve_input_names(
+        [split_h5_spec(embeddings)], command="transfer"
+    )
+    emb_set = load_h5([h5_path], name_override=name)
     emb_map = {header: emb_set.data[i] for i, header in enumerate(emb_set.headers)}
 
     # Read the annotations part of the bundle.  read_tables hands back the v2

@@ -371,7 +371,7 @@ def prepare(
         return
 
     # --- Build embedding sets ---
-    from protspace.data.loaders import EmbeddingSet, load_h5
+    from protspace.data.loaders import EmbeddingSet, load_h5, resolve_input_names
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
     embed_config = build_embed_config(backend, batch_size, max_length)
@@ -403,7 +403,8 @@ def prepare(
             fasta_for_similarity = fasta_path
 
         elif input_specs:
-            for path, name_override in input_specs:
+            named_inputs = resolve_input_names(input_specs, command="prepare")
+            for path, name_override, _ in named_inputs:
                 if path.is_dir():
                     h5s = sorted(
                         f for ext in EMBEDDING_EXTENSIONS for f in path.glob(f"*{ext}")

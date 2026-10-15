@@ -10,6 +10,7 @@ from protspace.data.loaders.h5 import (
     EMBEDDING_EXTENSIONS,
     load_h5,
     parse_identifier,
+    resolve_input_names,
     split_h5_spec,
 )
 from protspace.data.loaders.query import (
@@ -32,6 +33,7 @@ __all__ = [
     "parse_identifier",
     "query_cache_path",
     "query_uniprot",
+    "resolve_input_names",
     "resolve_query_fasta",
     "split_h5_spec",
 ]
