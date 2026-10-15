@@ -349,8 +349,11 @@ Q54321,Eukaryota,Kinase,Transferase
   or the FASTA identifiers). When some of a file's ids match no input protein, ProtSpace warns and
   shows examples of both, so `P12345` against `sp|P12345|KIN_HUMAN` is reported instead of leaving
   empty columns. A file may cover only some proteins; the others get empty values.
-- **Cells are text.** An empty cell stays empty and `NA` is the label `NA`. Separate several values
-  in one cell with `;` outside parentheses: `Membrane (single-pass; type I)` stays one value.
+- **Cells are text.** Every cell is kept as written, and an empty cell stays empty. A cell spelled
+  like a missing value, such as `NA`, `N/A` or `None` in any case, is missing to the web app (which
+  shows it as N/A), `stats` and `transfer`, as in any bundle (see
+  [Missing Values](./data-format.md#missing-values)). Separate several values in one cell with `;`
+  outside parentheses: `Membrane (single-pass; type I)` stays one value.
 - **Several files are merged** on the id column, so `-a metadata.csv -a neighbors.csv` keeps both
   files' columns. A column that two files both define is an error; rename it in one of them.
 - **Encoding and line endings.** UTF-8, with or without the byte-order mark Excel writes, and
