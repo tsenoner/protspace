@@ -63,6 +63,9 @@ interface Manifest {
   };
   projectionCount: number;
   labelWithReservedChar: string;
+  negativeTransmembraneCategory: string;
+  missingTmbedIndex: number;
+  malformedTmbedIndex: number;
   nullLengthIndex: number;
   statisticsColumns: string[];
   statisticsCategory: string;
@@ -278,6 +281,19 @@ function expectAnnotationContract(
   // "DomA|0.91;DomB|0.82" — a reader that splits on '|' before ';' loses DomB.
   expect(data.annotations.domains.values).toContain('DomA');
   expect(data.annotations.domains.values).toContain('DomB');
+
+  // A TMbed prediction with no membrane segment is a category, while a missing or
+  // malformed payload is N/A in both TMbed-derived annotations, not a negative.
+  expect(data.annotations.predicted_transmembrane.values).toContain(
+    manifest.negativeTransmembraneCategory,
+  );
+  for (const row of [manifest.missingTmbedIndex, manifest.malformedTmbedIndex]) {
+    for (const annotation of ['predicted_transmembrane', 'predicted_signal_peptide']) {
+      expect(getProteinAnnotationValues(data, row, annotation), `${annotation}[${row}]`).toEqual([
+        NA_VALUE,
+      ]);
+    }
+  }
 
   const lengths = data.numeric_annotation_data?.length;
   // Assert the length first: an out-of-range index yields `undefined`, which
@@ -555,6 +571,9 @@ describe('bundles the web app exports, read by the Python tooling', () => {
 // prediction, `none`, came to be displayed as N/A (#339).
 describe('what counts as a missing annotation value', () => {
   it('names the same missing-value spellings as the producer', () => {
+    // Both sets are generated from contracts/shared-constants.json, whose own check covers
+    // the generated modules. This compares the sets each side actually uses, so a re-export
+    // replaced by a local literal still fails here.
     expect([...MISSING_VALUE_TOKENS].sort()).toEqual(manifest.missingValueTokens);
   });
 

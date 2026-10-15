@@ -122,6 +122,8 @@ Model shortcuts are defined in `MODEL_SHORT_KEYS` (the models the client lists i
 
 ```
 src/protspace/
+├── _generated/
+│   └── shared_constants.py     # Values shared with the web app, generated from contracts/shared-constants.json (`pnpm shared-constants`); never edit, re-exported under their old names
 ├── cli/
 │   ├── app.py                  # Typer app root, shared utilities, setup_logging()
 │   ├── common_options.py       # Shared Typer options
@@ -315,7 +317,8 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_biocentral_retriever.py` | Biocentral prediction retriever (TMbed parsing, per-sequence), batches of at most `_BATCH_SIZE`, a failed batch keeps the others and warns clear of `_BIOCENTRAL_DOWN_PATTERNS`, long sequences still sent, no usable server fails the source and the warning says why, a model the client no longer lists fails the source (blank columns would be cached as complete) and every model the retriever names is one the client lists |
 | `test_taxonomy_annotation_retriever.py` | Taxonomy via UniProt Taxonomy API (mocked + integration) |
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
-| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
+| `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type); `kellys` is a categorical palette |
+| `test_shared_constants.py` | Every name the package exports for a constant shared with the web app (`MISSING_VALUE_TOKENS`, `NA_INTERNAL`, `NA_PINNED_COLOR`, `KELLYS_COLORS`, the palette ids, `ALLOWED_SHAPES`, `ARROW_BOOLEAN_LABELS`) holds the value generated from `contracts/shared-constants.json`; the generated module is plain data (no imports) |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
 | `test_base_data_processor.py` | BaseProcessor: reduction (the MDS input actually fed: a similarity matrix converted with `sqrt(max(s) - s)`, a distance matrix passed through), output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
@@ -326,7 +329,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_transfer_cli.py` | Transfer orchestration core (k>1 confidence, cosine metric, self-transfer, a cell spelled missing such as `N/A` filled and never copied) and the `transfer` CLI: bad input (no matching embedding, no query match, both id columns) as a usage error with its message, `--help` rendering, `protein_id` and legacy v1 bundles end to end |
 | `test_predictions_overlay.py` | Building the per-cell prediction overlay columns |
 | `test_display_decode.py` | Display-side decoding of encoded values, multi-hit rendering, gated-off passthrough |
-| `test_missing_values.py` | One definition of a missing cell (`is_missing_value`, the web's `normalizeMissingValue`; the bundle contract suite pins the two): the Dash plot and `stats` read cased, padded and `__NA__` spellings and pandas nulls as missing; every fixed producer vocabulary (TMbed, signal peptide, PDB, fragment, reviewed, boolean labels) stays a category, hit by hit; no string literal in `data/annotations/` or `data/parsers/` is spelled like a missing value |
+| `test_missing_values.py` | One definition of a missing cell (`is_missing_value`, the web's `normalizeMissingValue`; the bundle contract suite pins the two): the Dash plot and `stats` read cased, padded and `__NA__` spellings and pandas nulls as missing; `protspace style` stores an N/A colour, shape, pin or hide named by any spelling under `__NA__`, once, a restyle replacing the stored one, and `--generate-template` lists N/A once; every fixed producer vocabulary (TMbed, signal peptide, PDB, fragment, reviewed, boolean labels) stays a category, hit by hit; no string literal in `data/annotations/` or `data/parsers/` is spelled like a missing value |
 | `test_toxprot_demo.py` | Signal-peptide bound parsing, mature-FASTA stripping, bundle post-processing (column filter/reorder) |
 | `test_build_showcase.py` | `scripts/generate_examples/build_showcase.py`, the showcase bundle build: bundle reading and rebuilding (legacy and v3), projection selection, column order from the web catalog's `defaultView`, styles filtering, mature chains and the three-finger-toxins hold-out and EAT gates, provenance stamping read back by `write_manifest.py`, step markers and reruns, fetch release checks, `stage-release` never giving a published name new bytes; one offline end-to-end EAT build (three-finger toxins), run in CI |
 | `test_write_manifest.py` | `scripts/generate_examples/write_manifest.py`: every record value read from the file (legacy and v3 containers), provenance and the build command's machine paths redacted, a bundle stamped for another example refused, retained files kept one release and never under a current file's name, the Zenodo DOI kept while the bytes are unchanged, `--check` |

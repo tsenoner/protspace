@@ -3,6 +3,7 @@ import { property, query, state } from 'lit/decorators.js';
 import { customElement } from '../../utils/safe-custom-element';
 import {
   COLOR_SCHEMES,
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   DEFAULT_NUMERIC_PALETTE_ID,
   DEFAULT_NUMERIC_STRATEGY,
   getNumericBinLabelMap,
@@ -252,7 +253,7 @@ export class ProtspaceLegend extends LitElement {
   @state() private _colorPickerItem: string | null = null;
   @state() private _colorPickerPosition: { x: number; y: number } | null = null;
   @state() private _showShapePicker = false;
-  @state() private _selectedPaletteId = 'kellys';
+  @state() private _selectedPaletteId: string = DEFAULT_CATEGORICAL_PALETTE_ID;
   @state() private _numericSettingsByAnnotation: NumericAnnotationDisplaySettingsMap = {};
   @state() private _numericManualOrderIdsByAnnotation: Record<string, string[]> = {};
   @state() private _eatCounts: EatPopulationCounts | null = null;
@@ -348,7 +349,7 @@ export class ProtspaceLegend extends LitElement {
     shapeSize: LEGEND_DEFAULTS.symbolSize,
     enableDuplicateStackUI: false,
     annotationSortModes: {},
-    selectedPaletteId: 'kellys',
+    selectedPaletteId: DEFAULT_CATEGORICAL_PALETTE_ID,
     numericStrategy: DEFAULT_NUMERIC_STRATEGY,
     reverseGradient: false,
   };
@@ -1204,7 +1205,7 @@ export class ProtspaceLegend extends LitElement {
     this._showSettingsDialog = false;
     this._showOtherDialog = false;
     this._colorPickerItem = null;
-    this._selectedPaletteId = 'kellys';
+    this._selectedPaletteId = DEFAULT_CATEGORICAL_PALETTE_ID;
     this._numericSettingsByAnnotation = {};
     this._numericManualOrderIdsByAnnotation = {};
     this._eatCounts = null;
@@ -1969,7 +1970,7 @@ export class ProtspaceLegend extends LitElement {
       if (isNumericAnnotation) {
         this._applyNumericDisplayLabels();
         this._applyDerivedNumericColors();
-      } else if (this._selectedPaletteId !== 'kellys') {
+      } else if (this._selectedPaletteId !== DEFAULT_CATEGORICAL_PALETTE_ID) {
         this._applyPaletteColors(this._selectedPaletteId);
       }
 
@@ -2175,7 +2176,7 @@ export class ProtspaceLegend extends LitElement {
 
   private _normalizeCategoricalPaletteId(paletteId: string | undefined | null): string {
     if (!paletteId || isGradientPalette(paletteId)) {
-      return 'kellys';
+      return DEFAULT_CATEGORICAL_PALETTE_ID;
     }
     return paletteId;
   }
@@ -2658,7 +2659,9 @@ export class ProtspaceLegend extends LitElement {
     this._clearShapeSize();
     const isNumericAnnotation = this._isCurrentAnnotationNumeric();
 
-    this._selectedPaletteId = isNumericAnnotation ? DEFAULT_NUMERIC_PALETTE_ID : 'kellys';
+    this._selectedPaletteId = isNumericAnnotation
+      ? DEFAULT_NUMERIC_PALETTE_ID
+      : DEFAULT_CATEGORICAL_PALETTE_ID;
     if (isNumericAnnotation) {
       this._numericSettingsByAnnotation = {
         ...this._numericSettingsByAnnotation,

@@ -7,6 +7,7 @@ import type {
 } from '@protspace/utils';
 import {
   COLOR_SCHEMES,
+  DEFAULT_CATEGORICAL_PALETTE_ID,
   getEatConfidenceAnnotationKey,
   getProteinAnnotationIndices,
   getProteinEvidence,
@@ -1083,7 +1084,10 @@ function convertBundleFormatData(
     const valueToIndex = new Map<string | null, number>();
     uniqueValues.forEach((value, idx) => valueToIndex.set(value, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     const annotationDataArray = uniqueProteinIds.map((proteinId) => {
       const value = annotationMap.get(proteinId);
@@ -1356,7 +1360,10 @@ function convertLegacyFormatData(
     const valueToIndex = new Map<string, number>();
     uniqueValues.forEach((value, idx) => valueToIndex.set(value, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     const annotationDataArray = labelsByRow.map((valueArray) =>
       valueArray.map((v) => valueToIndex.get(v) ?? -1),
@@ -1482,7 +1489,7 @@ const SUPPORTED_SHAPES = [
  * `colors[i % colors.length]` and `shapes[i % shapes.length]` to handle
  * categories beyond the cap (they wrap around to the beginning of the cycle).
  *
- * @param paletteId - Key of the palette in COLOR_SCHEMES (falls back to 'kellys')
+ * @param paletteId - Key of the palette in COLOR_SCHEMES (falls back to DEFAULT_CATEGORICAL_PALETTE_ID)
  * @param count - Number of (color, shape) pairs to generate
  */
 export function generateColorsAndShapes(
@@ -1656,7 +1663,10 @@ async function extractAnnotationsByProtein(
     const valueToIndex = new Map<string | null, number>();
     uniqueValues.forEach((val, idx) => valueToIndex.set(val, idx));
 
-    const { colors, shapes } = generateColorsAndShapes('kellys', uniqueValues.length);
+    const { colors, shapes } = generateColorsAndShapes(
+      DEFAULT_CATEGORICAL_PALETTE_ID,
+      uniqueValues.length,
+    );
 
     // === Pass 2: map cached labels → dictionary indices. Use Int32Array for
     //     strict single-valued columns to avoid the per-protein number[] cliff. ===

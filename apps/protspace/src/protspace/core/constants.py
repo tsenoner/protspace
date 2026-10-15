@@ -3,13 +3,12 @@ from numbers import Real
 
 import pandas as pd
 
+# The spellings the web app reads as a missing annotation value, compared against
+# the trimmed, lower-cased cell. Both languages generate them from
+# contracts/shared-constants.json; the bundle contract suite (tests/contract) checks
+# that the two matching rules agree.
+from protspace._generated.shared_constants import MISSING_VALUE_TOKENS
 from protspace.utils.arrow_reader import ArrowReader
-
-# The spellings the web app reads as a missing annotation value: its
-# ``MISSING_VALUE_TOKENS`` (packages/utils/src/visualization/missing-values.ts),
-# which it compares against the trimmed, lower-cased cell. The bundle contract
-# suite (tests/contract) fails when the two sets differ.
-MISSING_VALUE_TOKENS = frozenset({"na", "n/a", "nan", "null", "none", "__na__"})
 
 
 def is_missing_value(value) -> bool:

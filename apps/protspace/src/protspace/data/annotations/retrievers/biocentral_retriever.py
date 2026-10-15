@@ -29,6 +29,7 @@ _PREDICTION_MODELS = {
 # Unique sequences per prediction request. One request with every sequence is
 # untested beyond a few thousand, and an example-scale run is 100K-485K.
 _BATCH_SIZE = 1000
+_TMBED_TOPOLOGY_LABELS = frozenset("BbHhSio.")
 
 # The server's per-sequence length limits (the same on v1.2.1 and v2.0.1). It
 # answers a request holding any sequence outside them with 422 for the whole
@@ -370,34 +371,41 @@ class BiocentralPredictionRetriever(BaseAnnotationRetriever):
 
         TMbed labels: S = signal peptide, H/h = TM helix, B/b = TM beta, i/o = non-TM
         """
-        for pred in predictions:
-            if pred.model_name == "TMbed":
-                topology = str(pred.value) if pred.value else ""
-                return "True" if "S" in topology else "False"
-        return ""
+        topology = BiocentralPredictionRetriever._extract_tmbed_topology(predictions)
+        if topology is None:
+            return ""
+        return "True" if "S" in topology else "False"
 
     @staticmethod
     def _extract_transmembrane(predictions: list) -> str:
         """Derive transmembrane type from TMbed per-residue output.
 
         Returns: 'alpha-helical', 'beta-barrel', or 'non-transmembrane', and
-        '' when TMbed predicted nothing
+        '' when TMbed predicted nothing usable
         """
-        for pred in predictions:
-            if pred.model_name == "TMbed":
-                topology = str(pred.value) if pred.value else ""
-                if not topology:
-                    # No topology is no prediction, not a negative one.
-                    return ""
-                has_helix = bool(re.search(r"[Hh]", topology))
-                has_beta = bool(re.search(r"[Bb]", topology))
-                if has_helix and has_beta:
-                    return "alpha-helical;beta-barrel"
-                elif has_helix:
-                    return "alpha-helical"
-                elif has_beta:
-                    return "beta-barrel"
-                # Not "none": the CLI and the web app both read that as a
-                # missing value, which showed every negative prediction as N/A.
-                return "non-transmembrane"
-        return ""
+        topology = BiocentralPredictionRetriever._extract_tmbed_topology(predictions)
+        if topology is None:
+            return ""
+
+        has_helix = "H" in topology or "h" in topology
+        has_beta = "B" in topology or "b" in topology
+        if has_helix and has_beta:
+            return "alpha-helical;beta-barrel"
+        elif has_helix:
+            return "alpha-helical"
+        elif has_beta:
+            return "beta-barrel"
+        # Not "none": the CLI and the web app both read that as a missing value,
+        # which showed every negative prediction as N/A.
+        return "non-transmembrane"
+
+    @staticmethod
+    def _extract_tmbed_topology(predictions: list) -> str | None:
+        """Return a supported TMbed topology, or ``None`` when unavailable.
+
+        An empty or malformed payload is no prediction, not a negative one.
+        """
+        value = next((p.value for p in predictions if p.model_name == "TMbed"), None)
+        if isinstance(value, str) and value and set(value) <= _TMBED_TOPOLOGY_LABELS:
+            return value
+        return None
