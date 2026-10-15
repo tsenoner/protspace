@@ -46,15 +46,20 @@ def run_transfer(
     k: int = 1,
     metric: str = "cosine",
     format_version: int = 2,
+    report: list[dict] | None = None,
 ) -> pa.Table:
     """Pure core: classify, transfer per column, return the augmented table.
 
     ``embeddings`` maps protein id -> 1-D float32 vector. Proteins without an
     embedding cannot act as queries or references.
+
+    ``report``, when given, receives one row per query and neighbour (see
+    :func:`protspace.data.io.predictions.report_rows`); the table is the same
+    either way.
     """
     from protlabel import eat
     from protspace.analysis.classification import classify
-    from protspace.data.io.predictions import add_overlay_columns
+    from protspace.data.io.predictions import add_overlay_columns, report_rows
 
     # Full-table identifiers, materialized once: reused both for the has-embedding
     # filter and for aligning every column's overlay (invariant across columns).
@@ -118,7 +123,10 @@ def run_transfer(
             ref_labels,
             k=k,
             metric=metric,
+            keep_neighbors=report is not None,
         )
+        if report is not None:
+            report.extend(report_rows(column, preds, format_version=format_version))
         out = add_overlay_columns(
             out,
             column,
@@ -223,6 +231,14 @@ def transfer(
             rich_help_panel="Transfer",
         ),
     ] = "cosine",
+    report: Annotated[
+        Path | None,
+        typer.Option(
+            "--report",
+            help="Also write a TSV of every query's neighbours: label, source, distance, reliability.",
+            rich_help_panel="Input / Output",
+        ),
+    ] = None,
     verbose: Opt_Verbose = 0,
 ) -> None:
     """Fill missing annotations from nearest neighbours (EAT).
@@ -240,6 +256,7 @@ def transfer(
         upgrade_cell_grammar,
     )
     from protspace.data.io.bundle import read_tables, replace_annotations_in_bundle
+    from protspace.data.io.predictions import write_report
     from protspace.data.loaders import load_h5, split_h5_spec
 
     def _parse_where(items: list[str] | None) -> list[tuple[str, str]]:
@@ -311,6 +328,7 @@ def transfer(
 
     # Translate input-driven errors from the core into clean CLI errors rather
     # than leaking raw KeyError/ValueError tracebacks to the user.
+    report_rows = [] if report is not None else None
     try:
         augmented = run_transfer(
             annotations=annotations,
@@ -321,6 +339,7 @@ def transfer(
             k=k,
             metric=metric,
             format_version=input_format_version,
+            report=report_rows,
         )
     except (KeyError, ValueError) as exc:
         # Use the raw message (KeyError stringifies with repr quotes) rather than
@@ -347,3 +366,6 @@ def transfer(
     except ValueError as exc:
         raise typer.BadParameter(f"cannot write {output}: {exc}") from exc
     logger.info("Wrote transferred bundle to %s", output)
+    if report is not None:
+        write_report(report, report_rows)
+        logger.info("Wrote %d neighbour row(s) to %s", len(report_rows), report)

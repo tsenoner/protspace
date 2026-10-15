@@ -733,3 +733,123 @@ def test_cli_transfer_reports_a_legacy_bundle_v3_cannot_hold_as_a_usage_error(
     assert isinstance(result.exception, SystemExit)
     assert "cannot write" in plain(result.output)
     assert not out_path.exists()
+
+
+# ── --report: every query's neighbours, beside the bundle ────────────────────
+
+
+def _four_protein_inputs():
+    """Two queries and three references on a line, so neighbour ranks are known."""
+    annotations = pa.table(
+        {
+            "identifier": ["Q_near", "Q_far", "R_a", "R_b", "R_c"],
+            "fam": ["", "", "alpha", "beta", "alpha"],
+        }
+    )
+    embeddings = {
+        "Q_near": np.array([0.1, 0.0], dtype=np.float32),
+        "Q_far": np.array([30.0, 0.0], dtype=np.float32),
+        "R_a": np.array([0.0, 0.0], dtype=np.float32),
+        "R_b": np.array([1.0, 0.0], dtype=np.float32),
+        "R_c": np.array([3.0, 0.0], dtype=np.float32),
+    }
+    return annotations, embeddings
+
+
+def _run(annotations, embeddings, **kwargs):
+    return run_transfer(
+        annotations=annotations,
+        embeddings=embeddings,
+        transfer_columns=["fam"],
+        query_rule=Rule(),
+        reference_rule=Rule(),
+        metric="euclidean",
+        **kwargs,
+    )
+
+
+def test_run_transfer_report_has_one_row_per_query_at_k1():
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    _run(annotations, embeddings, k=1, report=report)
+    assert [(r["query_id"], r["rank"], r["reference_id"]) for r in report] == [
+        ("Q_near", 1, "R_a"),
+        ("Q_far", 1, "R_c"),
+    ]
+    near, far = report
+    assert near["column"] == "fam"
+    assert near["source_id"] == near["reference_id"]
+    # The raw distance, not the reliability index derived from it.
+    assert near["distance"] == pytest.approx(0.1, abs=1e-6)
+    assert far["distance"] == pytest.approx(27.0, abs=1e-4)
+    assert far["reliability"] == pytest.approx(0.5 / 27.5, abs=1e-6)
+
+
+def test_run_transfer_report_ranks_k_neighbours():
+    annotations, embeddings = _four_protein_inputs()
+    report = []
+    _run(annotations, embeddings, k=3, report=report)
+    near = [r for r in report if r["query_id"] == "Q_near"]
+    assert [r["rank"] for r in near] == [1, 2, 3]
+    assert [r["reference_id"] for r in near] == ["R_a", "R_b", "R_c"]
+    assert [r["reference_label"] for r in near] == ["alpha", "beta", "alpha"]
+    assert [r["reference_distance"] for r in near] == pytest.approx(
+        [0.1, 0.9, 2.9], abs=1e-5
+    )
+    # Every row of a query repeats its prediction.
+    assert {(r["label"], r["source_id"]) for r in near} == {("alpha", "R_a")}
+
+
+def test_run_transfer_report_shows_labels_decoded():
+    annotations = pa.table(
+        {"identifier": ["Q", "R"], "fam": ["", "Kunitz%3B BPTI|0.9"]}
+    )
+    embeddings = {
+        "Q": np.array([0.0, 0.0], dtype=np.float32),
+        "R": np.array([1.0, 0.0], dtype=np.float32),
+    }
+    report = []
+    _run(annotations, embeddings, k=1, report=report)
+    assert report[0]["label"] == "Kunitz; BPTI"
+    assert report[0]["reference_label"] == "Kunitz; BPTI"
+
+
+def test_run_transfer_report_leaves_the_table_unchanged():
+    annotations, embeddings = _four_protein_inputs()
+    assert _run(annotations, embeddings, k=3, report=[]).equals(
+        _run(annotations, embeddings, k=3)
+    )
+
+
+def test_cli_transfer_writes_the_report(tmp_path):
+    import csv
+
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+    from protspace.data.io.predictions import REPORT_COLUMNS
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    args = ["transfer", "-b", str(bundle), "-e", str(h5), "-t", "protein_category"]
+    with_report, without = (
+        tmp_path / "with.parquetbundle",
+        tmp_path / "without.parquetbundle",
+    )
+    report_path = tmp_path / "predictions.tsv"
+    result = CliRunner().invoke(
+        app, [*args, "-o", str(with_report), "--report", str(report_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert CliRunner().invoke(app, [*args, "-o", str(without)]).exit_code == 0
+
+    with open(report_path, newline="") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    assert tuple(rows[0]) == REPORT_COLUMNS
+    (row,) = (dict(zip(rows[0], r, strict=True)) for r in rows[1:])
+    assert row["query_id"] == "TRINITY_1"
+    assert row["label"] == "neurotoxin"
+    assert row["reference_id"] == row["source_id"] == "P00001"
+    # Cosine, k=1: the reliability index is 1 - distance, both written out.
+    assert float(row["reliability"]) == pytest.approx(1 - float(row["distance"]))
+    assert read_tables(with_report)[0].equals(read_tables(without)[0])

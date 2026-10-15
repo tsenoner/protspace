@@ -709,6 +709,7 @@ protspace transfer \
 | `--query-where`         | Restrict queries to rows where `col` contains `substr` (`col~substr`). | any protein missing a value  |
 | `--reference-id-prefix` | Only use references whose ID has this prefix (repeatable).             | any protein that has a value |
 | `--reference-where`     | Restrict references the same way (`col~substr`).                       | any protein that has a value |
+| `--report`              | Also write a TSV of each query's neighbours, see below.                | -                            |
 
 A bundle carrying these columns renders the transferred proteins as ringed markers with their own
 legend section, see [Transferred Annotations (EAT)](/explore/eat).
@@ -718,6 +719,37 @@ The output is always a format v3 bundle. A v1 or v2 input is read the way
 over the proteins the web app showed: a row with no ID, or an earlier row whose ID a later row
 repeats, is neither a query nor a reference. A legacy input that `convert` refuses is refused
 here too, with the same reason, and nothing is written.
+
+### Neighbour report
+
+The bundle keeps one label, one reliability index and one source per query. `--report
+predictions.tsv` also writes the neighbours they came from, as a tab-separated table with one row
+per query and neighbour (with `--k 1`, one row per query). The bundle is the same with or without
+it.
+
+| Column               | Holds                                                                          |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `column`             | The `--transfer` column the row belongs to.                                    |
+| `query_id`           | The protein that received a label.                                             |
+| `label`              | The transferred label (`COL__pred_value`).                                     |
+| `source_id`          | The reference it came from (`COL__pred_source`).                               |
+| `distance`           | The raw embedding distance from the query to `source_id`, in `--metric` units. |
+| `reliability`        | The reliability index (`COL__pred_confidence`).                                |
+| `rank`               | 1 for the nearest reference, up to `--k`.                                      |
+| `reference_id`       | The reference at that rank; equidistant references are ordered by ID.          |
+| `reference_label`    | Its value in the transferred column.                                           |
+| `reference_distance` | Its distance from the query.                                                   |
+
+Labels are written as the web app shows them, without score suffixes. With `--k > 1` the
+prediction's source is the nearest reference carrying the winning label, so it need not be the
+rank-1 row. To list the unknowns closest to a reference, sort the report by `distance`:
+
+```python
+import pandas as pd
+
+report = pd.read_csv("predictions.tsv", sep="\t")
+report[report["rank"] == 1].sort_values("distance")
+```
 
 ### Reliability index
 

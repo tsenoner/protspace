@@ -405,3 +405,37 @@ def test_transfer_notebook_shows_only_the_predicted_rows(tmp_path, monkeypatch):
     (frame,) = shown
     assert frame["fam__pred_value"].tolist() == ["a"]
     assert frame["fam__pred_source"].tolist() == ["p0"]
+
+
+def test_transfer_notebook_shows_and_saves_the_neighbour_report(
+    tmp_path, monkeypatch, capsys
+):
+    """Step 3 passes `--report predictions.tsv`; step 5 reads that file back, shows
+    the nearest queries first, and (outside Colab) says where the file is."""
+    from protlabel import Neighbor, Prediction
+    from protspace.data.io.predictions import report_rows, write_report
+
+    def prediction(query, distance):
+        return Prediction(
+            query, "a", "p0", distance, 1 - distance, 1, "cosine",
+            neighbors=(Neighbor("p0", "a", distance),),
+        )  # fmt: skip
+
+    cells = list(_code_cells(NOTEBOOK_DIR / "ProtSpace_Transfer.ipynb"))
+    (run,) = [source for _, source in cells if "Run transfer" in source]
+    assert "--report predictions.tsv" in run
+
+    monkeypatch.chdir(tmp_path)
+    write_report(
+        tmp_path / "predictions.tsv",
+        report_rows("fam", [prediction("far", 0.6), prediction("near", 0.1)]),
+    )
+    (source,) = [source for _, source in cells if "Neighbour report" in source]
+    shown = []
+    exec(
+        compile(source, "ProtSpace_Transfer.ipynb:5", "exec"), {"display": shown.append}
+    )
+
+    (frame,) = shown
+    assert frame["query_id"].tolist() == ["near", "far"]
+    assert "predictions.tsv" in capsys.readouterr().out

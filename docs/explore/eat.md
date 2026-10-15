@@ -83,7 +83,7 @@ They do survive everything that only changes the view. Connectors hold protein i
 
 ## Reading The Reliability Number
 
-The reliability index is a transform of the distance to the reference protein: closer neighbour, higher number. Its exact form depends on the `--metric` and `--k` used at transfer time, and the [reliability index](/guide/python-cli#reliability-index) section gives the formulas.
+The reliability index is a transform of the distance to the reference protein: closer neighbour, higher number. Its exact form depends on the `--metric` and `--k` used at transfer time, and the [reliability index](/guide/python-cli#reliability-index) section gives the formulas. The distance itself is not stored in the bundle; `protspace transfer --report` writes it, with each query's nearest references, to a [neighbour report](/guide/python-cli#neighbour-report).
 
 ::: warning Rank, not probability
 With the default `cosine` metric the reliability index is a bounded cosine similarity; with `--metric euclidean` it is the goPredSim transform, which was calibrated on ProtT5. On other embedding spaces, whose raw distances can be on a very different scale, treat it as a way of ranking predictions against each other rather than as a probability that the label is correct. A 0.9 is more trustworthy than a 0.6 in the same dataset, but it is not a 90% chance of being right. Values produced with different `--k` settings are not comparable at all.
