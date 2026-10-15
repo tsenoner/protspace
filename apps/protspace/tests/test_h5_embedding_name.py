@@ -279,8 +279,12 @@ def test_project_labels_one_unnamed_file_by_its_stem(tmp_path):
 
 def test_project_refuses_two_unnamed_files(tmp_path):
     a, b = _h5(tmp_path / "a.h5"), _h5(tmp_path / "b.h5")
+    # Wide enough that Rich does not wrap the command inside a long temporary
+    # path, which `plain` would rejoin with a space (macOS paths are ~100 chars).
     result = CliRunner().invoke(
-        app, ["project", "-i", str(a), "-i", str(b), "-o", str(tmp_path / "proj")]
+        app,
+        ["project", "-i", str(a), "-i", str(b), "-o", str(tmp_path / "proj")],
+        env={"COLUMNS": "1000"},
     )
     assert result.exit_code != 0
     assert f"protspace project -i {a}:<model> -i {b}:<model>" in plain(result.output)
