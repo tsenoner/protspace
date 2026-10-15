@@ -1711,3 +1711,21 @@ def test_precomputed_projection_cache_misses_a_changed_matrix(tmp_path):
     np.testing.assert_array_equal(
         changed["data"], np.full((3, 2), 9.0, dtype=np.float32)
     )
+
+
+def test_align_annotations_keys_every_header_and_leaves_missing_cells_empty():
+    """One row per header, in order, keyed on protein_id; a null and a protein the
+    annotations miss are empty, never "nan" (#550)."""
+    from protspace.data.processors.pipeline import align_annotations
+
+    fetched = pd.DataFrame(
+        {"accession": ["P2", "P1", "P1"], "family": ["b", float("nan"), "dup"]}
+    )
+    table = align_annotations(fetched, ["P1", "P2", "P3"])
+
+    assert table.columns.tolist() == ["protein_id", "family"]
+    assert table["protein_id"].tolist() == ["P1", "P2", "P3"]
+    assert table["family"].tolist() == ["", "b", ""]
+    assert align_annotations(pd.DataFrame({"protein_id": []}), ["P1"]).to_dict(
+        "list"
+    ) == {"protein_id": ["P1"]}

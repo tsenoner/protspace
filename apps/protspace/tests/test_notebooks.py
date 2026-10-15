@@ -743,6 +743,47 @@ def test_preparation_reads_a_gzipped_csv(monkeypatch, tmp_path):
     assert len(downloads) == 1
 
 
+@pytest.mark.parametrize("loader", ["current", "released"])
+def test_preparation_keeps_empty_csv_cells_empty(monkeypatch, tmp_path, loader):
+    """An empty cell, or a protein the CSV leaves out, is missing in the bundle,
+    as `prepare -a` makes it, never the label `nan` (#550). The released package
+    (protspace <= 4.16) hands empty cells back as NaN, which the panel then
+    stringified, and has no `align_annotations`, so the panel's fallback runs."""
+    from protspace.core.constants import is_missing_value
+    from protspace.data.io.bundle import read_tables
+    from protspace.data.processors import pipeline
+
+    if loader == "released":
+        fetch = pipeline.ReductionPipeline._fetch_annotations
+
+        def as_nan(self, *args, **kwargs):
+            frame = fetch(self, *args, **kwargs)
+            return frame.replace("", float("nan"))
+
+        monkeypatch.setattr(pipeline.ReductionPipeline, "_fetch_annotations", as_nan)
+        monkeypatch.delattr(pipeline, "align_annotations")
+
+    namespace, downloads, _ = _run_preparation_panel(monkeypatch, tmp_path)
+    csv = tmp_path / "custom.csv"
+    csv.write_text("identifier,group,note\nprot000,a,\nprot001,,x\n")
+    namespace["h5_path_field"].value = str(_clickthrough_h5(tmp_path / "results.h5"))
+    namespace["_on_h5_load"]()
+    namespace["tabs"].selected_index = 1
+    _generate_pca_from_csv(namespace, csv)
+
+    (bundle,) = downloads
+    rows = {r["protein_id"]: r for r in read_tables(bundle)[0].to_pylist()}
+    assert rows["prot000"]["group"] == "a" and rows["prot001"]["note"] == "x"
+    for pid, column in [
+        ("prot000", "note"),
+        ("prot001", "group"),
+        ("prot002", "group"),
+    ]:
+        assert is_missing_value(rows[pid][column]), (pid, column, rows[pid][column])
+    cells = {v for r in rows.values() for k, v in r.items() if k != "protein_id"}
+    assert "nan" not in cells
+
+
 def test_preparation_reports_a_failed_example_fetch(monkeypatch, tmp_path, capsys):
     """The network is refused here, as on a dead connection: Generate says so
     and gives the button back."""

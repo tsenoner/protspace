@@ -248,6 +248,26 @@ def _run_with_overridden_config(
         base.config = saved
 
 
+def align_annotations(metadata: pd.DataFrame, headers: list[str]) -> pd.DataFrame:
+    """The fetched annotations as the bundle's table: one row per header, in order.
+
+    *metadata*'s first column holds the ids, whatever its name; it comes back as
+    ``protein_id``. Every cell is text, and a missing one (null, or a protein the
+    annotations do not cover) is empty, never the label ``nan``. ``prepare`` and
+    the Preparation notebook both build their annotations table with this.
+    """
+    full = pd.DataFrame({PROTEIN_ID_COLUMN: list(headers)})
+    if len(metadata.columns) <= 1:
+        return full
+    # fillna first: astype(str) would spell a null "nan".
+    metadata = metadata.fillna("").astype(str)
+    metadata = metadata.rename(columns={metadata.columns[0]: PROTEIN_ID_COLUMN})
+    full = full.merge(
+        metadata.drop_duplicates(PROTEIN_ID_COLUMN), on=PROTEIN_ID_COLUMN, how="left"
+    )
+    return full.fillna("")
+
+
 class ReductionPipeline:
     """Unified pipeline: load → annotate → reduce → output.
 
@@ -293,20 +313,7 @@ class ReductionPipeline:
 
             metadata = strip_scores_from_df(metadata)
 
-        # Build full metadata with all headers
-        full_metadata = pd.DataFrame({PROTEIN_ID_COLUMN: all_headers})
-        if len(metadata.columns) > 1:
-            # fillna first: a protein a merge left unannotated would read "nan".
-            metadata = metadata.fillna("").astype(str)
-            id_col = metadata.columns[0]
-            if id_col != PROTEIN_ID_COLUMN:
-                metadata = metadata.rename(columns={id_col: PROTEIN_ID_COLUMN})
-            full_metadata = full_metadata.merge(
-                metadata.drop_duplicates(PROTEIN_ID_COLUMN),
-                on=PROTEIN_ID_COLUMN,
-                how="left",
-            )
-        metadata = full_metadata
+        metadata = align_annotations(metadata, all_headers)
 
         # DR: each embedding set × each method
         all_reductions = self._run_reductions(embedding_sets)
