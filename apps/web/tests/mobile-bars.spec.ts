@@ -41,6 +41,7 @@ import {
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
 import { stubStructureRequests } from './helpers/workbench';
 import { DARK_SURFACE, htmlTheme, themeButton } from './helpers/theme';
+import { LEGACY_TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 
 /**
  * The app bar, the view bar and the More sheet on phones, a phone on its side and a portrait
@@ -403,7 +404,6 @@ test.describe('the product tour on a phone', () => {
     test(`${label}: every tour popover stays on screen at ${viewport.width}x${viewport.height}`, async ({
       page,
     }) => {
-      test.fixme(true, 'task 7.4');
       await page.setViewportSize(viewport);
       await stubStructureRequests(page);
       await page.goto('/explore');
@@ -441,6 +441,8 @@ test.describe('the product tour on a phone', () => {
         const next = popover.locator('.driver-popover-next-btn');
         if (/finish|done/i.test(((await next.textContent()) ?? '').trim())) break;
         await next.tap();
+        // driver.js animates the change: read the next step only once its title shows.
+        await expect(popover.locator('.driver-popover-title')).not.toHaveText(titles.at(-1)!);
       }
 
       expect(titles.at(-1)).toBe("You're All Set!");
@@ -453,6 +455,82 @@ test.describe('the product tour on a phone', () => {
       expect(legendSteps[0]).toContain('double-tap');
     });
   }
+
+  test("a returning visitor gets What's new on a phone", async ({ page }) => {
+    // The pre-workbench tour seen: what a returning visitor's browser holds.
+    await page.addInitScript((key) => {
+      try {
+        localStorage.setItem(key, 'true');
+      } catch {
+        // about:blank has no storage.
+      }
+    }, LEGACY_TOUR_STORAGE_KEY);
+    await stubStructureRequests(page);
+    await page.goto('/explore');
+    await waitForExploreDataLoad(page);
+
+    const popover = page.locator('.driver-popover');
+    const title = popover.locator('.driver-popover-title');
+    const more = viewBar(page).locator('[data-driver-id="more"]');
+    const titles: string[] = [];
+    for (let step = 0; step < 10; step++) {
+      await expect(popover).toBeVisible({ timeout: 10_000 });
+      await expect(async () => {
+        await expectWithinViewport(page, popover);
+      }).toPass();
+      const current = ((await title.textContent()) ?? '').trim();
+      titles.push(current);
+      if (current === 'More Options') {
+        await expect(more).toHaveClass(/(^|\s)driver-active-element(\s|$)/);
+      }
+
+      const next = popover.locator('.driver-popover-next-btn');
+      if (/finish/i.test(((await next.textContent()) ?? '').trim())) {
+        await next.tap();
+        break;
+      }
+      await next.tap();
+      await expect(title).not.toHaveText(current);
+    }
+
+    expect(titles).toEqual([
+      "What's new in ProtSpace",
+      'The View Bar',
+      'More Options',
+      'Legend Panel',
+      'Selection Tools',
+      "That's it",
+    ]);
+    await expect(popover).toHaveCount(0);
+    // driver.js overwrote More's own popup state while it was lit; the tour put it back.
+    await expect(moreButton(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test.describe('in Dark', () => {
+    test.use({ colorScheme: 'dark' });
+
+    test('the tour popover is dark in Dark', async ({ page }) => {
+      await stubStructureRequests(page);
+      await page.goto('/explore');
+      await waitForExploreDataLoad(page);
+      const popover = page.locator('.driver-popover');
+      await expect(popover).toBeVisible({ timeout: 10_000 });
+      // Nothing stored: the theme is System, and the OS is dark.
+      expect(await htmlTheme(page)).toBe('system');
+
+      // The token as the page resolves it, painted on a probe.
+      const raised = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.style.backgroundColor = 'var(--ps-surface-raised)';
+        document.body.append(probe);
+        const colour = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return colour;
+      });
+      expect(raised).not.toBe('rgb(255, 255, 255)');
+      await expect(popover).toHaveCSS('background-color', raised);
+    });
+  });
 });
 
 test.describe('search on a phone', () => {

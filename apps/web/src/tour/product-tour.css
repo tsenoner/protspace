@@ -23,7 +23,7 @@
   color: var(--ps-text);
   box-shadow: var(--ps-shadow-lg);
   border: 1px solid var(--ps-border);
-  max-width: 380px;
+  max-width: min(380px, calc(100vw - 32px));
 }
 
 /* driver.css draws the arrow as a 5 px white border and clears three sides per placement; only the
@@ -253,4 +253,43 @@
 .driver-popover-footer .driver-tour-full-btn:hover {
   background: none;
   color: var(--ps-text);
+}
+
+/* ── Touch screens (design decision 17) ───────────────────── *
+ *
+ * Finger-sized close and footer buttons, a popover that leaves a 16 px margin on a 360 px phone,
+ * footer buttons that wrap rather than overflow (What's new has Skip, Full tour and Start Tour),
+ * and on a short landscape screen a description that scrolls, so the popover stays under 360 px.
+ */
+
+@media (pointer: coarse) {
+  .driver-popover {
+    max-width: min(300px, calc(100vw - 32px));
+  }
+
+  .driver-popover .driver-popover-close-btn {
+    width: var(--ps-touch-target);
+    height: var(--ps-touch-target);
+  }
+
+  .driver-popover-footer .driver-popover-navigation-btns {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: var(--ps-space-1);
+  }
+
+  .driver-popover-footer .driver-popover-prev-btn,
+  .driver-popover-footer .driver-popover-next-btn,
+  .driver-popover-footer .driver-tour-skip-btn,
+  .driver-popover-footer .driver-tour-full-btn {
+    min-width: var(--ps-touch-target);
+    min-height: var(--ps-touch-target);
+  }
+}
+
+@media (pointer: coarse) and (max-height: 500px) {
+  .driver-popover .driver-popover-description {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
 }
