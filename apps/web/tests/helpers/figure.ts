@@ -7,6 +7,16 @@ export const figureEditor = (page: Page): Locator =>
   page.getByRole('dialog', { name: 'Figure editor' });
 
 /**
+ * The editor's content. It is slotted into ps-dialog, so it is not inside the <dialog> that
+ * `figureEditor(page)` (role dialog) finds: query it from the modal host instead.
+ */
+export const figureEditorContent = (page: Page): Locator => page.locator('protspace-publish-modal');
+
+/** The editor's preview canvas. */
+export const figurePreviewCanvas = (page: Page): Locator =>
+  figureEditorContent(page).locator('canvas.publish-preview-canvas');
+
+/**
  * Export → "Figure editor…", then waits for the dialog and for its preview canvas to have a size,
  * which it gets once the first preview is drawn. Returns the dialog.
  */
@@ -14,8 +24,7 @@ export async function openFigureEditor(page: Page): Promise<Locator> {
   await exportAction(page, 'Figure editor…');
   const dialog = figureEditor(page);
   await expect(dialog).toBeVisible();
-  // The canvas is slotted into the dialog, so it is found from the modal, not from the dialog.
-  const canvas = page.locator('protspace-publish-modal .publish-preview-canvas');
+  const canvas = figurePreviewCanvas(page);
   await expect
     .poll(() =>
       canvas.evaluate((element) => {

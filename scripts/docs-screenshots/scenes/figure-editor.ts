@@ -4,7 +4,12 @@
  * zoom inset, drawn with the editor's own tools.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
-import { figureEditor, openFigureEditor } from '../../../apps/web/tests/helpers/figure';
+import {
+  figureEditor,
+  figureEditorContent,
+  figurePreviewCanvas,
+  openFigureEditor,
+} from '../../../apps/web/tests/helpers/figure';
 import { plotSettled } from '../../../apps/web/tests/helpers/plot';
 import type { CaptureApi, CaptureEntry } from '../capture-plan';
 
@@ -16,9 +21,10 @@ type Spot = { x: number; y: number };
  * demo's curated view; if a capture frames empty space, move these and capture again.
  */
 const SPOTS = {
-  // A circle around the orange cluster below the centre, labelled to its right.
+  // A circle around the orange cluster below the centre, labelled to its right (a label is
+  // centred on its spot).
   circle: { centre: { x: 0.467, y: 0.535 }, edge: { x: 0.503, y: 0.535 } },
-  circleLabel: { x: 0.55, y: 0.535 },
+  circleLabel: { x: 0.6, y: 0.535 },
   // An arrow into the purple cluster on the left, labelled at its tail.
   arrow: { from: { x: 0.17, y: 0.34 }, to: { x: 0.27, y: 0.53 } },
   arrowLabel: { x: 0.16, y: 0.3 },
@@ -27,40 +33,74 @@ const SPOTS = {
   empty: { x: 0.01, y: 0.01 },
 };
 
-/**
- * The editor's content. It is slotted into ps-dialog, so it is not inside the <dialog> that
- * `figureEditor(page)` (role dialog) finds: query it from the modal host instead.
- */
-const editor = (page: Page): Locator => page.locator('protspace-publish-modal');
-
-const previewCanvas = (page: Page): Locator =>
-  editor(page).locator('canvas.publish-preview-canvas');
-
 const tool = (page: Page, name: 'Select' | 'Circle' | 'Arrow' | 'Label' | 'Zoom Inset'): Locator =>
-  editor(page).getByRole('button', { name, exact: true });
+  figureEditorContent(page).getByRole('button', { name, exact: true });
 
 /** A spot on the preview canvas in page coordinates. */
 async function onCanvas(page: Page, spot: Spot): Promise<Spot> {
-  const box = await previewCanvas(page).boundingBox();
+  const box = await figurePreviewCanvas(page).boundingBox();
   if (!box) throw new Error('The figure preview canvas has no box');
   return { x: box.x + box.width * spot.x, y: box.y + box.height * spot.y };
 }
 
-/** Places a label at `spot` and gives it `text` through the sidebar's "Label text" field. */
+/**
+ * A label's size in figure pixels. The default 16 px is about 3 px tall in the docs column, which
+ * shows the 2048 px figure at roughly a sixth of its size.
+ */
+const LABEL_SIZE_PX = '56';
+
+/**
+ * Places a label at `spot` and gives it `text` and LABEL_SIZE_PX through the sidebar's "Label
+ * text" and "Label size" fields.
+ */
 async function addLabel(page: Page, cap: CaptureApi, spot: Spot, text: string): Promise<void> {
   await tool(page, 'Label').click();
   await cap.click(await onCanvas(page, spot));
-  const field = editor(page).getByRole('textbox', { name: 'Label text' }).last();
+  const field = figureEditorContent(page).getByRole('textbox', { name: 'Label text' }).last();
   await field.fill(text);
   await field.press('Enter');
   await expect(field).toHaveValue(text);
+  const size = figureEditorContent(page).getByRole('spinbutton', { name: 'Label size' }).last();
+  await size.fill(LABEL_SIZE_PX);
+  await size.press('Enter');
+  await expect(size).toHaveValue(LABEL_SIZE_PX);
+}
+
+/** The space left above a heading scrolled to the sidebar's top. */
+const SIDEBAR_HEADING_GAP_PX = 12;
+
+/**
+ * Scrolls the sidebar so `heading` sits at its top, or as near as the sidebar's end allows, and
+ * waits for the scroll to land.
+ */
+async function scrollSidebarTo(page: Page, cap: CaptureApi, heading: Locator): Promise<void> {
+  const sidebar = figureEditorContent(page).locator('.publish-sidebar-content');
+  const offset = async (): Promise<number> => {
+    const [outer, inner] = await Promise.all([sidebar.boundingBox(), heading.boundingBox()]);
+    if (!outer || !inner) throw new Error('The figure editor sidebar or its heading has no box');
+    return Math.round(inner.y - outer.y);
+  };
+  const box = await sidebar.boundingBox();
+  if (!box) throw new Error('The figure editor sidebar has no box');
+  await cap.moveTo({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, { steps: 1 });
+  await page.mouse.wheel(0, (await offset()) - SIDEBAR_HEADING_GAP_PX);
+  // Settled once two reads agree.
+  let last = Number.NaN;
+  await expect
+    .poll(async () => {
+      const now = await offset();
+      const settled = now === last;
+      last = now;
+      return settled;
+    })
+    .toBe(true);
 }
 
 /** Back to the Select tool, and a click on the canvas corner clears the selection's handles. */
 async function deselect(page: Page, cap: CaptureApi): Promise<void> {
   await tool(page, 'Select').click();
   await cap.click(await onCanvas(page, SPOTS.empty));
-  await expect(editor(page).locator('.publish-overlay-item.selected')).toHaveCount(0);
+  await expect(figureEditorContent(page).locator('.publish-overlay-item.selected')).toHaveCount(0);
 }
 
 export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
@@ -84,7 +124,7 @@ export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
       await openFigureEditor(page);
     },
     target: (page) =>
-      editor(page)
+      figureEditorContent(page)
         .locator('.publish-section')
         .filter({ has: page.getByText('Presets', { exact: true }) }),
   },
@@ -106,8 +146,16 @@ export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
       await tool(page, 'Arrow').click();
       await cap.drag(await onCanvas(page, SPOTS.arrow.from), await onCanvas(page, SPOTS.arrow.to));
       await addLabel(page, cap, SPOTS.arrowLabel, 'Cluster 2');
-      await expect(editor(page).getByText('Overlays (4)', { exact: true })).toBeVisible();
+      const overlays = figureEditorContent(page).getByText('Overlays (4)', { exact: true });
+      await expect(overlays).toBeVisible();
       await deselect(page, cap);
+      // The overlays' rows scroll the sidebar. Its end stops the Overlays heading short of the
+      // top, cutting a row above it; the Legend heading fits, with every overlay below it.
+      await scrollSidebarTo(
+        page,
+        cap,
+        figureEditorContent(page).locator('.publish-section-title', { hasText: /^Legend$/ }),
+      );
     },
     target: figureEditor,
   },
@@ -130,7 +178,9 @@ export const FIGURE_EDITOR_CAPTURES: CaptureEntry[] = [
         await onCanvas(page, SPOTS.insetTarget.from),
         await onCanvas(page, SPOTS.insetTarget.to),
       );
-      await expect(editor(page).getByText('Zoom Insets (1)', { exact: true })).toBeVisible();
+      await expect(
+        figureEditorContent(page).getByText('Zoom Insets (1)', { exact: true }),
+      ).toBeVisible();
       await deselect(page, cap);
       // The inset renders from the plot in a separate pass; the perf counters settle after it.
       await plotSettled(page);
