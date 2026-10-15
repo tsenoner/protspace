@@ -113,12 +113,22 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 7. Docs, docs media and tour (plan: `plans/phase-7-docs.md`)
 
-- [ ] 7.1 Page helpers shared by the e2e tests and the docs captures (role-based, signal waits)
-- [ ] 7.2 Capture runner: one entry per image, light and dark variants, GIF size budget, example
-      thumbnails moved here
-- [ ] 7.3 Every docs image regenerated; images named after removed UI deleted; dark variants shown
-- [ ] 7.4 Tour rewritten for the workbench; "What's new" tour for returning visitors
-- [ ] 7.5 User guide and developer docs (the split elements, theming for embedders)
+- [ ] 7.1 Shared page helpers reachable from the docs captures
+- [ ] 7.2 Page helpers the captures need
+- [ ] 7.3 Capture runner for screenshots; the example thumbnails move here
+- [ ] 7.4 GIF recording with a size budget
+- [ ] 7.5 Docs media lint in the pre-commit hook
+- [ ] 7.6 Tour steps as data for every layout
+- [ ] 7.7 Tour rewrite: new key, What's new, lazy driver.js
+- [ ] 7.8 The tour on phones
+- [ ] 7.9 Bars and Filtering pages replace the control-bar page
+- [ ] 7.10 Interface overview page and its images
+- [ ] 7.11 Scatterplot page and its images
+- [ ] 7.12 Legend page and its images
+- [ ] 7.13 Structures and figure editor pages
+- [ ] 7.14 EAT page and its images
+- [ ] 7.15 Importing, exporting, phones and tablets, FAQ
+- [ ] 7.16 Developer docs, the images README, allowlists retired
 
 ## 8. Wrap-up (plan: `plans/phase-8-wrap-up.md`)
 
