@@ -878,3 +878,71 @@ test('keeps curated points visible while the reliability filter hides low-confid
       predictedExpectedVisible: 213,
     });
 });
+
+/**
+ * The Table (TSV) export holds exactly the proteins the Protein IDs export holds — here after
+ * the reliability filter — with the projection's coordinates, the curated column and its EAT
+ * companions. Driven through the real Export menu, as a user would.
+ */
+test('exports the visible proteins as a table, the same set as the ID export', async ({ page }) => {
+  await loadEatFixture(page);
+  await selectEcAnnotation(page);
+
+  const legend = page.locator('protspace-legend');
+  await legend
+    .getByRole('region', { name: 'Embedding Annotation Transfer' })
+    .getByRole('spinbutton', { name: 'EAT reliability filter percentage' })
+    .fill('60');
+  // 619 curated + the 119 transfers at or above 0.6 (see the reliability filter test).
+  await expect.poll(async () => (await readRenderedProteinIds(page)).length).toBe(738);
+
+  const controlBar = page.locator('protspace-control-bar');
+  const download = async (format: 'IDs' | 'Table', action: string) => {
+    if (!(await controlBar.locator('.export-menu').isVisible())) {
+      await controlBar.getByRole('button', { name: 'Export', exact: true }).click();
+    }
+    await controlBar.getByRole('button', { name: format, exact: true }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await controlBar.getByRole('button', { name: action, exact: true }).click();
+    const file = await downloadPromise;
+    return { name: file.suggestedFilename(), text: fs.readFileSync((await file.path())!, 'utf8') };
+  };
+
+  const ids = (await download('IDs', 'Export IDS')).text.split('\n');
+  const table = await download('Table', 'Export TSV');
+  expect(table.name).toMatch(/\.tsv$/);
+
+  const [header, ...rows] = table.text
+    .trimEnd()
+    .split('\n')
+    .map((line) => line.split('\t'));
+  expect(header[0]).toBe('protein_id');
+  expect(header[1]).toMatch(/_x$/);
+  expect(header[2]).toMatch(/_y$/);
+  const column = (name: string) => {
+    expect(header).toContain(name);
+    return header.indexOf(name);
+  };
+  const [ec, value, confidence, source] = [
+    'ec',
+    'ec__pred_value',
+    'ec__pred_confidence',
+    'ec__pred_source',
+  ].map(column);
+  // The synthetic confidence views are filter-only: no column but the stored companions.
+  for (const name of header.filter((candidate) => /confidence/i.test(candidate))) {
+    expect(name).toMatch(/__pred_confidence$/);
+  }
+
+  expect(rows.map((row) => row[0])).toEqual(ids);
+  expect(rows).toHaveLength(738);
+
+  const predicted = rows.filter((row) => row[value] !== '');
+  expect(predicted).toHaveLength(119);
+  for (const row of predicted) {
+    expect(row[ec]).toBe('');
+    expect(Number(row[confidence])).toBeGreaterThanOrEqual(0.6);
+    expect(row[source]).not.toBe('');
+  }
+  expect(rows.filter((row) => row[ec] !== '').length).toBeGreaterThan(0);
+});

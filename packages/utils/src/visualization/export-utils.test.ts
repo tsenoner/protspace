@@ -364,3 +364,149 @@ describe('exportCanvasAsPdf', () => {
     vi.doUnmock('jspdf');
   });
 });
+
+/**
+ * Call exportTable via the real exporter and return the downloaded TSV text. The Blob is
+ * captured where the exporter turns it into an object URL.
+ */
+async function exportTableText(
+  data: ExportableData,
+  annotation: string,
+  hiddenAnnotationValues: string[] = [],
+): Promise<string> {
+  const el = createMockElement({
+    getCurrentData: () => data,
+    selectedAnnotation: annotation,
+    hiddenAnnotationValues,
+  });
+  const exporter = createExporter(el);
+  let blob: Blob | undefined;
+  let fileName = '';
+  vi.stubGlobal('URL', {
+    createObjectURL: (b: Blob) => {
+      blob = b;
+      return 'blob:table';
+    },
+    revokeObjectURL: () => {},
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vi.spyOn(exporter as any, 'downloadFile').mockImplementation((_url, name) => {
+    fileName = name as string;
+  });
+  try {
+    exporter.exportTable();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  expect(fileName).toMatch(/\.tsv$/);
+  return blob!.text();
+}
+
+/** {@link exportTableText}, split into rows of fields (no field in these fixtures is quoted). */
+async function callExportTable(
+  data: ExportableData,
+  annotation: string,
+  hiddenAnnotationValues: string[] = [],
+): Promise<string[][]> {
+  const text = await exportTableText(data, annotation, hiddenAnnotationValues);
+  expect(text.endsWith('\n')).toBe(true);
+  return text
+    .slice(0, -1)
+    .split('\n')
+    .map((line) => line.split('\t'));
+}
+
+describe('exportTable', () => {
+  const tableData: ExportableData = {
+    protein_ids: ['P1', 'P2', 'P3', 'P4'],
+    annotations: {
+      species: {
+        kind: 'categorical',
+        values: ['human', 'mouse', null],
+        colors: ['#ff0000', '#00ff00', '#888888'],
+        shapes: ['circle', 'square', 'triangle'],
+      },
+      length: {
+        kind: 'numeric',
+        values: ['0-100', '100-200'],
+        colors: ['#000', '#111'],
+        shapes: ['circle', 'circle'],
+      },
+    },
+    annotation_data: {
+      species: [[0], [1], [2], [0, 1]],
+      length: Int32Array.from([0, 1, 1, -1]),
+    },
+    numeric_annotation_data: { length: Float64Array.from([42, 150, 199.5, NaN]) },
+    projections: [
+      { name: 'UMAP 2', dimension: 2, data: Float32Array.from([0.1, 1, 2, 3, 4, 5, -6.5, 7]) },
+    ],
+  };
+
+  it('writes protein_id, the projection coordinates and every annotation', async () => {
+    const [header, ...rows] = await callExportTable(tableData, 'species');
+    expect(header).toEqual(['protein_id', 'UMAP 2_x', 'UMAP 2_y', 'species', 'length']);
+    expect(rows).toEqual([
+      ['P1', '0.1', '1', 'human', '42'],
+      ['P2', '2', '3', 'mouse', '150'],
+      // N/A is empty; a numeric cell is its raw value, not its bin label.
+      ['P3', '4', '5', '', '199.5'],
+      ['P4', '-6.5', '7', 'human;mouse', ''],
+    ]);
+  });
+
+  it('holds the proteins the ID export holds', async () => {
+    for (const hidden of [['mouse'], [NA_VALUE], ['human', NA_VALUE]]) {
+      const [, ...rows] = await callExportTable(tableData, 'species', hidden);
+      expect(rows.map((row) => row[0])).toEqual(callExportProteinIds(tableData, 'species', hidden));
+    }
+  });
+
+  it('writes predictions in their own columns and leaves the curated cell empty', async () => {
+    const data: ExportableData = {
+      protein_ids: ['Q', 'R'],
+      annotations: {
+        fam: { kind: 'categorical', values: ['kunitz'], colors: ['#f00'], shapes: ['circle'] },
+        fam__eat_confidence: {
+          kind: 'numeric',
+          values: [],
+          colors: [],
+          shapes: [],
+          runtime: { role: 'eat-confidence', baseAnnotation: 'fam' },
+        },
+      },
+      // The overlay materialises the prediction into the base column for display.
+      annotation_data: {
+        fam: Int32Array.from([0, 0]),
+        fam__eat_confidence: Int32Array.from([-1, -1]),
+      },
+      numeric_annotation_data: { fam__eat_confidence: Float64Array.from([0.75, NaN]) },
+      annotation_predicted: {
+        fam: [{ value: 'kunitz', confidence: Math.fround(0.9), source: 'R' }, null],
+      },
+    };
+    const [header, ...rows] = await callExportTable(data, 'fam');
+    expect(header).toEqual([
+      'protein_id',
+      'fam',
+      'fam__pred_value',
+      'fam__pred_confidence',
+      'fam__pred_source',
+    ]);
+    expect(rows).toEqual([
+      ['Q', '', 'kunitz', '0.9', 'R'],
+      ['R', 'kunitz', '', '', ''],
+    ]);
+  });
+
+  it('quotes a field that holds a tab, a line break or a quote', async () => {
+    const data: ExportableData = {
+      protein_ids: ['P1'],
+      annotations: {
+        note: { values: ['a\tb "c"'], colors: ['#000'], shapes: ['circle'] },
+      },
+      annotation_data: { note: [[0]] },
+    };
+    expect(await exportTableText(data, 'note')).toBe('protein_id\tnote\nP1\t"a\tb ""c"""\n');
+  });
+});

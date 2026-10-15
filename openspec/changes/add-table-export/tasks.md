@@ -6,19 +6,19 @@
 
 ## 2. Web
 
-- [ ] 2.1 `export-utils.ts`: shared visible-protein helper; `exportTable` (columns, quoting, Blob download)
-- [ ] 2.2 `control-bar.ts`: Table format button; `export-handler.ts`: dispatch `tsv`
-- [ ] 2.3 Unit tests: `export-utils.test.ts` (rows equal the ID export's, hidden category, numeric, EAT companions, quoting), control-bar format list
-- [ ] 2.4 e2e: extend the export spec with a Table (TSV) download
+- [x] 2.1 `export-utils.ts`: shared visible-protein helper; `exportTable` (columns, quoting, Blob download)
+- [x] 2.2 `control-bar.ts`: Table format button; `export-handler.ts`: dispatch `tsv`
+- [x] 2.3 Unit tests: `export-utils.test.ts` (rows equal the ID export's, hidden category, numeric, EAT companions, quoting), control-bar format list
+- [x] 2.4 e2e: extend the export spec with a Table (TSV) download
 
 ## 3. Docs
 
-- [ ] 3.1 `docs/explore/exporting.md`: Table format; what both ID and table exports honour
+- [x] 3.1 `docs/explore/exporting.md`: Table format; what both ID and table exports honour
 - [x] 3.2 `docs/guide/python-cli.md`: command table row and `protspace export` section
 - [x] 3.3 `docs/guide/data-format.md`: Read a bundle in Python (snippet tested)
-- [ ] 3.4 `apps/protspace/CLAUDE.md`: command row, package structure, test-file row
+- [x] 3.4 `apps/protspace/CLAUDE.md`: command row, package structure, test-file row
 
 ## 4. Verification
 
-- [ ] 4.1 pytest, ruff, `pnpm test`, the export e2e specs, `pnpm precommit`, `pnpm format:check`
-- [ ] 4.2 `openspec validate add-table-export --strict`
+- [x] 4.1 pytest, ruff, `pnpm test`, the export e2e specs, `pnpm precommit`, `pnpm format:check`
+- [x] 4.2 `openspec validate add-table-export --strict`

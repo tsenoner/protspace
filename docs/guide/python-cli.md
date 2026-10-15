@@ -890,8 +890,10 @@ a projection does not place, are empty. Projection names are the ones the
 [web app lists](#projection-naming); a name the bundle does not hold is an error that lists the
 ones it does.
 
-To export only some proteins, filter the table in pandas. The same table is available in Python,
-see [Read a bundle in Python](/guide/data-format#read-a-bundle-in-python).
+To export only some proteins, filter the table in pandas, or use the web app's
+[Table export](/explore/exporting#table-export), which writes the proteins currently visible. The
+same table is available in Python, see
+[Read a bundle in Python](/guide/data-format#read-a-bundle-in-python).
 
 ## `protspace serve`
 
