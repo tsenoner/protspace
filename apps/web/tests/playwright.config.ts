@@ -122,9 +122,8 @@ export default defineConfig({
           // product's demo bundle. A dev server that was already running locally
           // (reuseExistingServer) was started without it: stop it before a run.
           env: { VITE_STARTUP_DATASET_URL: STARTUP_DATASET_URL },
-          // Stop the server with the run. A pinned server left on :8080 would be
-          // picked up by `pnpm docs:images` (the root config starts none), whose
-          // captures would then photograph the fixture instead of the product demo.
+          // Stop the server with the run, so a pinned server is never left on :8080.
+          // (`pnpm docs:images` starts its own on :8096 and refuses a pinned one.)
           gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
         },
 
@@ -313,8 +312,8 @@ export default defineConfig({
       testMatch: /example-datasets\.spec\.ts/,
     },
     // The product's examples, opened from the files the product serves (not fixtures):
-    // each must land on its curated view, and the run writes the Example datasets page's
-    // thumbnails. Run `pnpm examples:fetch` first, then opt in via RUN_EXAMPLES_E2E=1.
+    // each must land on its curated view (the page's thumbnails come from the docs
+    // captures). Run `pnpm examples:fetch` first, then opt in via RUN_EXAMPLES_E2E=1.
     // Serial, so two large bundles never load at once.
     ...optIn('RUN_EXAMPLES_E2E', {
       name: 'examples-live',

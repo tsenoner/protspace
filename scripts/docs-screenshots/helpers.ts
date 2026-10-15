@@ -1,17 +1,10 @@
-import { test, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
-import { IMAGES_DIR, TEMP_VIDEOS_DIR } from './paths';
+import { TEMP_VIDEOS_DIR } from './paths';
 
 // The load and tour helpers are the e2e suite's, shared with the captures (design decision 19).
 export { dismissTourIfPresent, waitForExploreDataLoad } from '../../apps/web/tests/helpers/explore';
-
-/**
- * Viewport every capture runs at. Mirrors the `screenshots`/`animations`
- * projects in `playwright.config.ts`; specs that open their own context must
- * use this so captured images stay a consistent size.
- */
-const SCREENSHOT_VIEWPORT = { width: 1536, height: 864 } as const;
 
 /**
  * Pause at the top of each animation so the GIF opens on a settled frame.
@@ -24,7 +17,7 @@ export const INITIAL_PAUSE = 2000;
  * have committed before we proceed. Cheaper and more deterministic than a
  * fixed `waitForTimeout` since it ties to the actual render loop.
  */
-export async function awaitTwoFrames(page: Page): Promise<void> {
+async function awaitTwoFrames(page: Page): Promise<void> {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -51,118 +44,6 @@ export async function waitForLegend(page: Page, timeout = 15000): Promise<void> 
   );
 
   await awaitTwoFrames(page);
-}
-
-/**
- * Wait for the structure viewer to load a protein.
- * Note: Mol* loading can take a long time (CDN + AlphaFold fetch), so we're lenient.
- */
-export async function waitForStructureViewer(page: Page, timeout = 20000): Promise<void> {
-  // Wait for element to exist (not necessarily visible yet)
-  await page.waitForSelector('#myStructureViewer', { state: 'attached', timeout });
-
-  // Wait for structure viewer to become visible (display !== 'none')
-  await page.waitForFunction(
-    () => {
-      const viewer = document.querySelector('#myStructureViewer') as HTMLElement;
-      if (!viewer) return false;
-
-      // Check if viewer is visible (not display:none)
-      const computedStyle = window.getComputedStyle(viewer);
-      return computedStyle.display !== 'none' && viewer.style.display !== 'none';
-    },
-    undefined,
-    { timeout, polling: 500 },
-  );
-
-  // Try to wait for Mol* canvas, but don't fail if it doesn't appear
-  // Mol* needs to load from CDN + fetch from AlphaFold which can be slow
-  try {
-    await page.waitForFunction(
-      () => {
-        const viewer = document.querySelector('#myStructureViewer') as HTMLElement;
-        if (!viewer?.shadowRoot) return false;
-
-        // Check for Mol* plugin container in shadow root
-        const plugin = viewer.shadowRoot.querySelector('.msp-plugin');
-        const viewerContent = viewer.shadowRoot.querySelector('.viewer-content');
-        const nestedPlugin = viewerContent?.querySelector('.msp-plugin');
-
-        return !!(plugin || nestedPlugin);
-      },
-      undefined,
-      { timeout: 15000, polling: 1000 },
-    );
-    // If plugin found, wait a bit more for canvas rendering and structure loading
-    await page.waitForTimeout(5000);
-
-    // Wait for WebGL context to be ready in the Mol* canvas
-    try {
-      await page.waitForFunction(
-        () => {
-          const viewer = document.querySelector('#myStructureViewer') as HTMLElement;
-          if (!viewer?.shadowRoot) return false;
-
-          // Find canvas in shadow root
-          const canvas = viewer.shadowRoot.querySelector('canvas');
-          if (!canvas) return false;
-
-          const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-          return !!gl && !(gl.isContextLost && gl.isContextLost());
-        },
-        undefined,
-        { timeout: 10000, polling: 500 },
-      );
-
-      await awaitTwoFrames(page);
-    } catch {
-      console.log('Note: WebGL context check timed out, proceeding anyway');
-    }
-  } catch {
-    // Mol* didn't appear in time
-    console.log('Note: Mol* plugin did not load in time, capturing current state');
-    await page.waitForTimeout(1000);
-  }
-}
-
-/**
- * Click on a protein point in the scatterplot.
- * Directly shows the structure viewer and loads a protein.
- */
-export async function clickProteinPoint(page: Page): Promise<void> {
-  const plot = page.locator('#myPlot');
-  const box = await plot.boundingBox();
-
-  if (!box) throw new Error('Could not get scatterplot bounding box');
-
-  // Dispatch a protein-click event AND directly load the protein to ensure visibility
-  const proteinId = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    const structureViewer = document.querySelector('#myStructureViewer') as any;
-
-    if (!plot?.data?.protein_ids?.length || !structureViewer) return null;
-
-    // Get the first protein ID
-    const id = plot.data.protein_ids[0];
-
-    // Programmatically select it on the plot
-    plot.selectedProteinIds = [id];
-
-    // Directly call loadProtein on the structure viewer
-    structureViewer.loadProtein(id);
-
-    // Force display to be visible
-    structureViewer.style.display = 'flex';
-
-    return id;
-  });
-
-  if (proteinId) {
-    logAction('mouse', 'Click Protein Point', `Load protein: ${proteinId}`);
-  }
-
-  // Give the structure viewer time to load
-  await page.waitForTimeout(1000);
 }
 
 /**
@@ -352,39 +233,6 @@ export async function saveTestVideo(page: Page, testInfo: TestInfo): Promise<voi
   fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
   await video.saveAs(destPath);
   console.log(`🎬 Video saved: ${destPath}`);
-}
-
-/**
- * Share one pre-loaded page across every test in a static-capture spec.
- *
- * Loading and parsing a bundle costs far more than the screenshots do, so it
- * happens once in `beforeAll`. Registers the `beforeAll`/`afterAll` pair and
- * returns the accessor tests use to reach the page.
- */
-export function createSharedCapturePage(load: (page: Page) => Promise<void>): () => Page {
-  let context: BrowserContext | null = null;
-  let page: Page | null = null;
-
-  test.beforeAll(async ({ browser }) => {
-    fs.mkdirSync(IMAGES_DIR, { recursive: true });
-    context = await browser.newContext({ viewport: { ...SCREENSHOT_VIEWPORT } });
-    page = await context.newPage();
-    await load(page);
-  });
-
-  test.afterAll(async () => {
-    await page?.close();
-    page = null;
-    await context?.close();
-    context = null;
-  });
-
-  return () => {
-    if (!page) {
-      throw new Error('shared capture page not initialized — beforeAll did not run');
-    }
-    return page;
-  };
 }
 
 /** Pick an annotation from the control bar's dropdown by its data key. */

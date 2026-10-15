@@ -18,7 +18,8 @@ Every file here is generated, so the capture specs in `scripts/docs-screenshots/
 inventory — no list is maintained in this README, because a hand-copied one goes stale the
 first time someone adds a capture without updating it.
 
-- Static screenshots: `capture-static.spec.ts`, named by the test title
+- Screenshots: the entries in `manifest.ts` (grouped in `scenes/`), captured by `runner.ts` and
+  named by the entry (`-dark` for the dark variant)
 - Animated GIFs: `capture-animations.spec.ts`, converted by `convert-to-gif.ts`
 
 To find which pages use an image, grep the docs for its filename.
@@ -37,27 +38,28 @@ pnpm examples:fetch
 They live in `capture-eat-static.spec.ts` and `capture-eat-animations.spec.ts`, with shared setup in
 `eat-helpers.ts`.
 
-## Capturing against another port
+## The capture server
 
-The captures start no server of their own: they expect `pnpm dev` on `:8080`, serving the product
-demo. With `:8080` taken (or held by an E2E dev server, which pins the startup load to a test fixture
-and which the captures refuse), start a plain dev server on another port and point the captures at it:
+The captures start their own dev server on `:8096` (`DOCS_CAPTURE_PORT` moves it), with this
+checkout's packages built and without the E2E startup fixture, and stop it afterwards. To capture
+from a server that is already running, point them at it; a server started for the E2E suite, which
+pins the startup demo to a test fixture, is refused:
 
 ```bash
-pnpm --filter @protspace/app exec vite --port 8095 --strictPort  # in one terminal
-PLAYWRIGHT_BASE_URL=http://localhost:8095 pnpm docs:images        # in another
+PLAYWRIGHT_BASE_URL=http://localhost:8095 pnpm docs:screenshots
 ```
 
 ## The example thumbnails
 
 `examples/<id>.png` are the [Example Datasets](../example-datasets.md) page's thumbnails, one per
-catalog example. They come from the opt-in `examples-live` E2E project, which opens every example
-from the files the product serves and checks that it lands on its curated view:
+catalog example (`scenes/examples.ts`). Each opens the example by its `?dataset=` link from the file
+the product serves and shoots the workbench body on its curated view, light, in a 1280×720 window. The
+release-hosted bundles must be fetched first:
 
 ```bash
 pnpm examples:fetch
-RUN_EXAMPLES_E2E=1 pnpm test:e2e --project=examples-live
+pnpm docs:screenshots -g "examples/"
 ```
 
-Set `EXAMPLES_THUMBNAIL_DIR` to write them elsewhere, for example to review a candidate curated
-view before committing it. `pnpm docs:examples:check` fails when a card's thumbnail is missing.
+`pnpm docs:examples:check` fails when a card's thumbnail is missing. The opt-in `examples-live` E2E
+project still checks that every example lands on its curated view; it writes no images.

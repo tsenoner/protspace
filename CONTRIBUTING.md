@@ -321,7 +321,7 @@ to exercise the large-dataset path.
 pnpm dev:docs      # Start dev server (localhost:5174)
 pnpm docs:build    # Build static site
 pnpm docs:preview  # Preview production build
-pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
+pnpm docs:images   # Generate all documentation images (starts its own app server on :8096)
 ```
 
 **Generated pages:** two pages are written by scripts, so edit their sources and regenerate
@@ -333,8 +333,8 @@ rather than editing the page. `pnpm precommit` and CI fail when either is stale.
 - `docs/explore/example-datasets.md`: from the example catalog
   (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
   (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
-  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
-  (see `docs/explore/images/README.md`).
+  with `pnpm docs:examples`. Its thumbnails come from the docs captures
+  (`pnpm docs:screenshots -g "examples/"`; see `docs/explore/images/README.md`).
 
 **Documentation standards:**
 

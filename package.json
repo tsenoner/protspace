@@ -15,7 +15,7 @@
     "examples:fetch": "tsx scripts/examples/fetch.mts",
     "docs:build": "NODE_ENV=production vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "docs:screenshots": "playwright test --project=screenshots",
+    "docs:screenshots": "playwright test --project=docs-png",
     "docs:animations": "playwright test --project=animations",
     "docs:gifs": "tsx scripts/docs-screenshots/convert-to-gif.ts",
     "docs:images": "pnpm docs:screenshots && pnpm docs:animations && pnpm docs:gifs",
