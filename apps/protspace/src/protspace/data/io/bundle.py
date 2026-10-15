@@ -614,22 +614,150 @@ def replace_annotations_in_bundle(
     logger.info(f"Wrote bundle with updated annotations to: {output_path}")
 
 
-def convert_bundle(input_path: Path, output_path: Path) -> int:
-    """Rewrite a v1/v2 bundle as v3 and return the input's format version.
+#: Appended to a 3-D projection's name when ``convert --flatten-3d`` writes it as
+#: 2-D, so the projection menu never shows it as a 2-D fit.
+FLATTENED_SUFFIX = " (X/Y)"
+
+
+@dataclass(frozen=True)
+class Conversion:
+    """What :func:`convert_bundle` found and did."""
+
+    #: The input's version: :data:`CONTAINER_VERSION` for v3, else 1 or 2.
+    version: int
+    #: The input's 3-D projections, in order.
+    three_d: tuple[str, ...] = ()
+    #: Those written as 2-D (input names; each gained :data:`FLATTENED_SUFFIX`).
+    flattened: tuple[str, ...] = ()
+    #: Whether anything was written.
+    written: bool = False
+
+
+def convert_bundle(
+    input_path: Path, output_path: Path, *, flatten_3d: bool = False
+) -> Conversion:
+    """Rewrite a v1/v2 bundle as v3, optionally flattening its 3-D projections.
 
     The legacy annotations part is read with its stamp intact, so its grammar is
     known: a v1 table is migrated to the v2 cell grammar here, explicitly, and a
     v2 one passes through.  Settings and statistics are carried over as stored
-    bytes.  A v3 input returns :data:`CONTAINER_VERSION` and nothing is written.
-    ``output_path`` may be ``input_path``: the write is atomic.
+    bytes.  ``output_path`` may be ``input_path``: the write is atomic.
+
+    With ``flatten_3d`` every 3-D projection is written as 2-D (see
+    :func:`flatten_3d_projections`), from a v3 input too.  A v3 input is otherwise
+    left untouched and nothing is written.  This is the upgrade path that
+    outlives protspace 5.0.0: the general readers drop v1/v2 and 3-D there, and
+    this function keeps reading both (it is not a deprecation-registry entry).
     """
     core, settings, statistics, payloads = _parse_bundle(input_path, warn_legacy=False)
-    if payloads is not None:
-        return CONTAINER_VERSION
+    three_d = tuple(_core_three_d_names(core, payloads))
+    flatten = flatten_3d and bool(three_d)
 
-    core, payloads, version = _legacy_core_as_v3(core)
+    if payloads is not None:
+        if not flatten:
+            return Conversion(CONTAINER_VERSION, three_d)
+        annotations, metadata, projections = decode_v3([*core, payloads])
+        metadata, projections, statistics = flatten_3d_projections(
+            metadata, projections, statistics, three_d
+        )
+        part1, part2, part3, payloads = encode_v3(annotations, metadata, projections)
+        core, version = [part1, part2, part3], CONTAINER_VERSION
+    else:
+        if flatten:
+            metadata, projections, statistics = flatten_3d_projections(
+                read_part(core[1]), read_part(core[2]), statistics, three_d
+            )
+            core = [core[0], write_part(metadata), write_part(projections)]
+        core, payloads, version = _legacy_core_as_v3(core)
+
     _write_parts(output_path, core, settings, statistics, payloads=payloads)
-    return version
+    return Conversion(version, three_d, three_d if flatten else (), written=True)
+
+
+def flatten_3d_projections(
+    metadata: pa.Table,
+    projections: pa.Table,
+    statistics: bytes | None,
+    names: tuple[str, ...] | list[str],
+) -> tuple[pa.Table, pa.Table, bytes | None]:
+    """Write each of the 3-D projections *names* as a 2-D one, on v2-shaped tables.
+
+    It keeps the X and Y coordinates -- the view every reader shows today, so the
+    picture does not change -- drops ``z``, renames the projection with
+    :data:`FLATTENED_SUFFIX` and marks its ``info_json`` ``flattened_from_3d``.
+    Quality figures computed on the 3-D layout are dropped: its faithfulness
+    (``info_json.quality``) and its rows in the statistics part.  Returns the new
+    ``(metadata, projections, statistics)``; statistics are returned as given when
+    no row is dropped.
+    """
+    renamed = {name: f"{name}{FLATTENED_SUFFIX}" for name in names}
+    if not renamed:
+        return metadata, projections, statistics
+
+    existing = set(projections.column("projection_name").to_pylist())
+    if "projection_name" in metadata.column_names:
+        existing |= set(metadata.column("projection_name").to_pylist())
+    clashes = sorted(new for new in renamed.values() if new in existing)
+    if clashes:
+        raise ValueError(
+            f"cannot flatten 3-D projections: {', '.join(clashes)} already exist"
+        )
+
+    flat = pa.array(list(renamed), type=pa.string())
+    names_column = projections.column("projection_name")
+    is_flat = pc.is_in(names_column, value_set=flat)
+    new_names = names_column
+    for old, new in renamed.items():
+        new_names = pc.if_else(pc.equal(names_column, old), new, new_names)
+    projections = _replace_column(projections, "projection_name", new_names)
+    z = projections.column("z")
+    projections = _replace_column(
+        projections, "z", pc.if_else(is_flat, pa.scalar(None, z.type), z)
+    )
+
+    if "projection_name" in metadata.column_names:
+        rows = metadata.to_pylist()
+        for row in rows:
+            old = row["projection_name"]
+            if old not in renamed:
+                continue
+            row["projection_name"] = renamed[old]
+            if "dimensions" in row:
+                row["dimensions"] = 2
+            if "info_json" in row:
+                row["info_json"] = _flattened_info(row["info_json"])
+        metadata = pa.Table.from_pylist(rows, schema=metadata.schema)
+
+    if statistics:
+        table = read_part(statistics)
+        if {"space_kind", "space_name"} <= set(table.column_names):
+            drop = pc.and_(
+                pc.equal(table.column("space_kind"), "projection"),
+                pc.is_in(table.column("space_name"), value_set=flat),
+            )
+            drop = pc.fill_null(drop, False)
+            if pc.any(drop).as_py():
+                statistics = write_part(table.filter(pc.invert(drop)))
+
+    return metadata, projections, statistics
+
+
+def _replace_column(table: pa.Table, name: str, values) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    return table.set_column(index, table.schema.field(index), values)
+
+
+def _flattened_info(info_json: str | None) -> str:
+    """A flattened projection's ``info_json``: marked, without its 3-D quality."""
+    try:
+        info = json.loads(info_json) if info_json else {}
+    except (TypeError, ValueError):
+        info = {}
+    if not isinstance(info, dict):
+        info = {}
+    info.pop("quality", None)
+    info["flattened_from_3d"] = True
+    return json.dumps(info)
 
 
 def _legacy_core_as_v3(core: list[bytes]) -> tuple[list[bytes], bytes, int]:
