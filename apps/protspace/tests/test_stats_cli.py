@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 import h5py
@@ -763,3 +764,161 @@ def test_prepare_rejects_stats_annotation_without_stats(tmp_path):
     # is enabled, as it is on CI — strip escape sequences before the substring match.
     plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert "--stats-annotation requires --stats" in plain
+
+
+def _run_stats_with_annotations(tmp_path, *extra):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, headers = _project_dir(tmp_path)
+    ann_path = tmp_path / "annotations.parquet"
+    pq.write_table(
+        pa.table({"identifier": headers, "organism": ["x"] * len(headers)}),
+        str(ann_path),
+    )
+    settings_path = tmp_path / "styles.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-a",
+            str(ann_path),
+            "--settings-out",
+            str(settings_path),
+            "-o",
+            str(tmp_path / "statistics.parquet"),
+            *extra,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    df = pq.read_table(str(ann_path)).to_pandas()
+    cluster_cols = {c for c in df.columns if c.startswith("cluster_")}
+    return df, cluster_cols, json.loads(settings_path.read_text())
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ((), {"cluster_elbow_E — PCA 2", "cluster_elbow_E"}),
+        (("--cluster-space", "projection"), {"cluster_elbow_E — PCA 2"}),
+        (("--cluster-space", "embedding"), {"cluster_elbow_E"}),
+    ],
+)
+def test_stats_cluster_space_picks_columns_and_styles_them(tmp_path, extra, expected):
+    """`--cluster-space` decides which cluster columns land in the annotations
+    parquet, and `--settings-out` styles exactly those."""
+    df, cluster_cols, settings = _run_stats_with_annotations(tmp_path, *extra)
+    assert cluster_cols == expected
+    assert set(settings) == expected
+    for col in expected:
+        assert df[col].str.startswith("cluster ").all()
+
+
+def test_stats_rejects_bad_cluster_space(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    h5_path, proj, _ = _project_dir(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "stats",
+            "-i",
+            f"{h5_path}:E",
+            "-p",
+            str(proj),
+            "-o",
+            str(tmp_path / "statistics.parquet"),
+            "--cluster-space",
+            "bogus",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_prepare_rejects_cluster_space_without_stats(tmp_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            str(tmp_path / "missing.h5"),  # never loaded; guard fires first
+            "-m",
+            "pca2",
+            "--cluster-space",
+            "embedding",  # non-default, but no --stats
+        ],
+    )
+    assert result.exit_code != 0
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--cluster-space requires --stats" in plain
+
+
+def test_cluster_space_default_is_the_same_everywhere():
+    """The default lives in four places: both CLI options, PipelineConfig and the
+    statistic's fallback for a params dict that names none."""
+    import inspect
+    from dataclasses import fields
+
+    from protspace.cli.prepare import prepare
+    from protspace.cli.stats import stats
+    from protspace.data.processors.pipeline import PipelineConfig
+    from protspace.stats.metrics.validity import DEFAULT_CLUSTER_SPACE
+
+    defaults = {
+        "prepare": inspect.signature(prepare).parameters["cluster_space"].default,
+        "stats": inspect.signature(stats).parameters["cluster_space"].default,
+        "PipelineConfig": next(
+            f.default for f in fields(PipelineConfig) if f.name == "cluster_space"
+        ),
+    }
+    assert defaults == dict.fromkeys(defaults, DEFAULT_CLUSTER_SPACE)
+
+
+def test_prepare_cluster_space_reaches_the_bundle(tmp_path):
+    """`prepare --stats --cluster-space embedding` threads through PipelineConfig:
+    the bundle carries the embedding's cluster column and no projection one."""
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_tables
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=5, random_state=1)
+    headers = [f"p{i}" for i in range(120)]
+    h5_path = tmp_path / "emb.h5"
+    with h5py.File(h5_path, "w") as f:
+        for i, h in enumerate(headers):
+            f.create_dataset(h, data=X[i].astype(np.float32))
+
+    output_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        app,
+        [
+            "prepare",
+            "-i",
+            f"{h5_path}:E",
+            "-m",
+            "pca2",
+            "--stats",
+            "--cluster-space",
+            "embedding",
+            "--no-log",
+            "-o",
+            str(output_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    annotations = read_tables(output_dir / "data.parquetbundle")[0]
+    assert {c for c in annotations.column_names if c.startswith("cluster_")} == {
+        "cluster_elbow_E"
+    }

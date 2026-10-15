@@ -25,6 +25,14 @@ class ClusterSelection(StrEnum):
     both = "both"  # emit both clusterings
 
 
+class ClusterSpace(StrEnum):
+    """Where `--stats` clusters: each projection, each embedding, or both."""
+
+    projection = "projection"  # each projection's own coordinates
+    embedding = "embedding"  # once per embedding, shared by its projections
+    both = "both"  # both kinds of column (default)
+
+
 class Backend(StrEnum):
     """Which engine computes the embeddings from FASTA sequences."""
 

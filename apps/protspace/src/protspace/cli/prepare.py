@@ -24,6 +24,7 @@ from protspace.cli.common_options import (
     EMBEDDER_MODELS,
     Backend,
     ClusterSelection,
+    ClusterSpace,
     Metric,
     Opt_Backend,
     Opt_BatchSize,
@@ -125,6 +126,16 @@ Opt_ClusterSelection = Annotated[
         "--cluster-selection",
         help="With --stats, how to choose the cluster count K: 'elbow' (default), "
         "'silhouette' (max-silhouette K), or 'both' (emit both clusterings).",
+        rich_help_panel="Output",
+    ),
+]
+Opt_ClusterSpace = Annotated[
+    ClusterSpace,
+    typer.Option(
+        "--cluster-space",
+        help="With --stats, where to cluster: 'both' (default), 'projection' (one "
+        "clustering per projection), or 'embedding' (one per embedding, shared by "
+        "its projections, so cluster ids compare across them).",
         rich_help_panel="Output",
     ),
 ]
@@ -270,6 +281,7 @@ def prepare(
     scores: Opt_Scores = True,
     stats: Opt_Stats = False,
     cluster_selection: Opt_ClusterSelection = ClusterSelection.elbow,
+    cluster_space: Opt_ClusterSpace = ClusterSpace.both,
     stats_annotation: Opt_StatsAnnotation = "auto",
     refetch: Opt_Refetch = None,
     # Output
@@ -296,13 +308,16 @@ def prepare(
             "At least one of -i/--input or -q/--query is required."
         )
 
-    # --stats-annotation / --cluster-selection only do anything under --stats;
-    # a non-default value without --stats would be silently ignored, so reject it.
+    # --stats-annotation / --cluster-selection / --cluster-space only do anything
+    # under --stats; a non-default value without --stats would be silently ignored,
+    # so reject it.
     if not stats:
         if stats_annotation.strip().lower() != "auto":
             raise typer.BadParameter("--stats-annotation requires --stats.")
         if cluster_selection != ClusterSelection.elbow:
             raise typer.BadParameter("--cluster-selection requires --stats.")
+        if cluster_space != ClusterSpace.both:
+            raise typer.BadParameter("--cluster-space requires --stats.")
 
     setup_logging(verbose)
 
@@ -505,6 +520,7 @@ def prepare(
             no_scores=not scores,
             stats=stats,
             cluster_selection=cluster_selection.value,
+            cluster_space=cluster_space.value,
             stats_annotation=stats_annotation,
             refetch_stages=refetch_stages,
             annotations=annotation_list,

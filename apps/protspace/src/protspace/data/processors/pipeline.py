@@ -76,6 +76,7 @@ class PipelineConfig:
     no_scores: bool = False
     stats: bool = False
     cluster_selection: str = "elbow"  # elbow | silhouette | both (for --stats)
+    cluster_space: str = "both"  # projection | embedding | both (for --stats)
     stats_annotation: str = "auto"  # which annotation(s) to score (for --stats)
     refetch_stages: frozenset[str] = field(default_factory=frozenset)
     annotations: list[str] | None = None
@@ -709,7 +710,10 @@ class ReductionPipeline:
                 embedding_sets,
                 all_reductions,
                 rng_seed=self.config.reducer_params.random_state,
-                params={"cluster_selection": self.config.cluster_selection},
+                params={
+                    "cluster_selection": self.config.cluster_selection,
+                    "cluster_space": self.config.cluster_space,
+                },
                 # Faithfulness high-dim metric: reducers like PCA/MDS/PaCMAP omit
                 # 'metric' from their params, so fall back to the run's metric
                 # rather than silently assuming euclidean.

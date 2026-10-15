@@ -14,8 +14,8 @@ Before every commit: `pnpm precommit` (changes staged), `pnpm format:check`, and
 
 ## 3. CLI
 
-- [ ] 3.1 `ClusterSpace` enum and `Opt_ClusterSpace` in `common_options.py`; `--cluster-space` on `stats`; `--cluster-space` on `prepare`, rejected without `--stats`; `PipelineConfig.cluster_space` passed through.
-- [ ] 3.2 Tests: `stats --cluster-space` wiring (columns in the annotations parquet, settings), `prepare` rejects it without `--stats`, invalid value rejected, and one test pinning the default in the CLI options, the pipeline config and the statistics API.
+- [x] 3.1 `ClusterSpace` enum and `Opt_ClusterSpace` in `common_options.py`; `--cluster-space` on `stats`; `--cluster-space` on `prepare`, rejected without `--stats`; `PipelineConfig.cluster_space` passed through.
+- [x] 3.2 Tests: `stats --cluster-space` wiring (columns in the annotations parquet, settings), `prepare` rejects it without `--stats`, invalid value rejected, and one test pinning the default in the CLI options, the pipeline config and the statistics API.
 
 ## 4. Docs
 
