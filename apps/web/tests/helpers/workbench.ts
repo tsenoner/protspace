@@ -11,7 +11,7 @@ import {
 } from '../../src/explore/layout-defaults';
 
 /** The workbench's root element, which carries the layout's data attributes. */
-export const workbenchRoot = (page: Page): Locator => workbenchRoot(page);
+export const workbenchRoot = (page: Page): Locator => page.locator('.workbench');
 
 /** The structure section of the sidebar: the docked viewer, or its empty footer. */
 export function structurePanel(page: Page): Locator {
