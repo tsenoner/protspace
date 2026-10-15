@@ -1,9 +1,8 @@
 /**
  * `pnpm docs:images:check`, in the pre-commit hook: the docs-lint rules against the disk. Every
- * image under docs/explore/images/ must come from the capture manifest (or still be listed in
- * LEGACY_IMAGES), be shown by the pages its entry names, and keep GIFs within their budget; the
- * pages' image refs, light/dark pairs, #anchor links and user-guide wording must hold. Reads
- * files only; runs no browser.
+ * image under docs/explore/images/ must come from the capture manifest, be shown by the pages its
+ * entry names, and keep GIFs within their budget; the pages' image refs, light/dark pairs, #anchor
+ * links and user-guide wording must hold. Reads files only; runs no browser.
  */
 import * as fs from 'fs';
 import * as path from 'path';

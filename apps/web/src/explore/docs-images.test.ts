@@ -10,16 +10,15 @@ import {
 import {
   headingSlug,
   imageRefs,
-  LEGACY_IMAGES,
   lintDocs,
   lintManifest,
   pageAnchors,
-  STALE_PAGES,
   type DocsPage,
   type ImageFile,
   type ImageRef,
   type MediaOutput,
 } from '../../../../scripts/docs-screenshots/docs-lint';
+import * as docsLint from '../../../../scripts/docs-screenshots/docs-lint';
 
 /**
  * Pins the docs media pipeline's pure rules (scripts/docs-screenshots/capture-plan.ts): how an
@@ -459,18 +458,6 @@ describe('docs lint: stale terms', () => {
     const api = lintPage('developers/api/index.md', 'The control bar is removed.');
     expect(lintDocs([api], [])).toEqual([]);
   });
-
-  it('leaves a page in STALE_PAGES alone until its rewrite', () => {
-    // Empty once every page task has run (7.15); Task 7.16 deletes this case with the set. Until
-    // then an empty set must still flag a stale term, so the case never passes with no assertion.
-    if (STALE_PAGES.size === 0) {
-      expect(lintDocs([lintPage('explore/x.md', 'Use the control bar.')], [])).toHaveLength(1);
-      return;
-    }
-    for (const path of STALE_PAGES) {
-      expect(lintDocs([lintPage(path, 'Use the control bar.')], [])).toEqual([]);
-    }
-  });
 });
 
 describe('docs lint: manifest', () => {
@@ -524,23 +511,6 @@ describe('docs lint: manifest', () => {
       'a.png: its docs page explore/none.md does not exist',
     ]);
   });
-
-  it('lets a legacy image stand without an entry, but not once an entry makes it', () => {
-    // Empty after Task 7.14: an uncovered file must then fail, so the case still asserts.
-    if (LEGACY_IMAGES.size === 0) {
-      expect(lintManifest([], [{ file: 'x.png' }], [])).toEqual([
-        expect.stringMatching(/^x\.png: no manifest entry makes it/),
-      ]);
-      return;
-    }
-    for (const file of [...LEGACY_IMAGES].slice(0, 1)) {
-      expect(lintManifest([], [{ file }], [])).toEqual([]);
-      const made = output(file);
-      expect(lintManifest([made], [{ file }], [shows(file)])).toEqual([
-        `${file}: an entry makes it, so remove it from LEGACY_IMAGES`,
-      ]);
-    }
-  });
 });
 
 // ─── docs-lint.ts: the real docs ─────────────────────────────────────────────
@@ -570,19 +540,16 @@ describe('docs lint: the real docs', () => {
   it('passes every page and image', () => {
     expect(lintDocs(REAL_PAGES, REAL_FILES)).toEqual([]);
   });
+});
 
-  it('LEGACY_IMAGES lists only files that exist', () => {
-    const names = new Set(REAL_FILES.map((file) => file.file));
-    expect([...LEGACY_IMAGES].filter((file) => !names.has(file))).toEqual([]);
-  });
-
-  it('STALE_PAGES lists only pages that still use a stale term', () => {
-    const stillStale = (path: string) => {
-      // Read as a page outside STALE_PAGES, so the check itself decides (prose only).
-      const text = REAL_PAGES.find((page) => page.path === path)?.text ?? '';
-      const probe = { path: 'explore/stale-probe.md', text };
-      return lintDocs([probe], []).some((problem) => problem.endsWith('names removed UI'));
-    };
-    expect([...STALE_PAGES].filter((path) => !stillStale(path))).toEqual([]);
+describe('docs lint: no allowlist left', () => {
+  it('exports only the checks: every image comes from the manifest, every page is current', () => {
+    expect(Object.keys(docsLint).sort()).toEqual([
+      'headingSlug',
+      'imageRefs',
+      'lintDocs',
+      'lintManifest',
+      'pageAnchors',
+    ]);
   });
 });

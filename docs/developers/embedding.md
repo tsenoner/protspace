@@ -9,21 +9,27 @@ the monorepo (or have added the workspace package as a local dependency). There 
 
 ## Components Overview
 
-| Component        | Tag                                                                                           | Purpose                                             |
-| ---------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Scatterplot      | `<protspace-scatterplot>`                                                                     | Main projection visualization                       |
-| Legend           | `<protspace-legend>`                                                                          | Category filtering                                  |
-| View controls    | `<protspace-projection-select>`, `<protspace-annotation-select>`, `<protspace-contours-menu>` | Projection, Color by and contours                   |
-| Plot tools       | `<protspace-plot-tools>`                                                                      | Move, box and lasso selection                       |
-| Search           | `<protspace-protein-search>`                                                                  | Find and select proteins by ID; reports missing IDs |
-| Import, Export   | `<protspace-import-menu>`, `<protspace-export-menu>`                                          | Load data, export figures                           |
-| Structure Viewer | `<protspace-structure-viewer>`                                                                | 3D protein structures                               |
-| Data Loader      | `<protspace-data-loader>`                                                                     | `.parquetbundle` / FASTA loading                    |
+| Component        | Tag                                                                                              | Purpose                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Scatterplot      | `<protspace-scatterplot>`                                                                        | Main projection visualization                                       |
+| Legend           | `<protspace-legend>`                                                                             | Category filtering                                                  |
+| View controls    | `<protspace-projection-select>`, `<protspace-annotation-select>`, `<protspace-contours-menu>`    | Projection, Color by and contours                                   |
+| Plot tools       | `<protspace-plot-tools>`                                                                         | Move, box and lasso selection                                       |
+| Search           | `<protspace-protein-search>`                                                                     | Find and select proteins by ID; reports missing IDs                 |
+| Import, Export   | `<protspace-import-menu>`, `<protspace-export-menu>`                                             | Load data, export figures                                           |
+| Structure Viewer | `<protspace-structure-viewer>`                                                                   | 3D protein structures                                               |
+| Data Loader      | `<protspace-data-loader>`                                                                        | `.parquetbundle` / FASTA loading                                    |
+| Selection bar    | `<protspace-selection-bar>`                                                                      | The selected count; Show only these, Zoom to them, Copy IDs, Clear  |
+| Status corner    | `<protspace-plot-status>`                                                                        | Protein count and a chip per filter, Show only or hidden categories |
+| Filter           | `<protspace-query-builder>`                                                                      | Build and apply an annotation filter                                |
+| Figure editor    | `<protspace-publish-modal>`                                                                      | Publication figures; registered by `@protspace/core/publish`        |
+| Kit              | `<ps-button>`, `<ps-icon-button>`, `<ps-menu>`, `<ps-popover>`, `<ps-dialog>`, `<ps-tooltip>`, … | The design-system elements the others are built from                |
 
 Importing `@protspace/core` once registers every element.
 
-The [API Reference](/developers/api/) lists every control, including the query builder and the
-projection details card.
+`<protspace-publish-modal>` is the exception: it lives in the `@protspace/core/publish` entry, so a
+host loads it only when a figure is wanted. The [API Reference](/developers/api/) lists every
+control, including the projection details card.
 
 ## Getting the package
 
@@ -118,6 +124,69 @@ example `selectedAnnotation` is settable as `selectedannotation="family"`. Only 
 `attribute: false` are JavaScript-only, such as the data loader's `loadFromFileHandler`. Object and
 array properties are parsed from JSON strings in markup, so set those from JavaScript, which is why
 `data` is assigned in the script above. See the [API Reference](/developers/api/).
+:::
+
+## Theming
+
+Importing `@protspace/core` (or `@protspace/core/kit`) adds the design tokens to the page once: a
+stylesheet of `--ps-*` custom properties on `:root`, in the `ps-theme` cascade layer. Every
+component reads its colours, type sizes, spacing and radii from these tokens, so they are the one
+place to restyle them.
+
+### Light and dark
+
+The page is light unless `<html>` carries `data-theme="dark"` (always dark) or
+`data-theme="system"` (dark while the operating system prefers dark, following a change live):
+
+```js
+document.documentElement.dataset.theme = 'system'; // or 'dark'; delete it for light
+```
+
+With no `data-theme`, or any other value, the tokens hold their light values. Set the attribute
+before the components first render to avoid a light flash. The scatterplot and the structure
+viewer restyle themselves when the theme changes, without reloading anything. Exports (PNG, PDF and
+the figure editor's output) always use the light colours on white.
+
+### Your own colours
+
+The tokens sit in a cascade layer, so any unlayered rule of yours wins over them, whatever its
+specificity:
+
+```css
+/* Both themes */
+:root {
+  --ps-accent: #7c3aed;
+}
+
+/* Dark only: under data-theme="dark", and under "system" while the OS prefers dark */
+:root[data-theme='dark'] {
+  --ps-accent: #a78bfa;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] {
+    --ps-accent: #a78bfa;
+  }
+}
+```
+
+A rule inside another cascade layer (Tailwind's `@layer base`, for example) does not override a
+token; keep token overrides unlayered. The tokens are listed, light and dark, in
+`packages/core/src/styles/theme.ts`; the ones a host most often sets are `--ps-accent`,
+`--ps-surface`, `--ps-surface-raised`, `--ps-text`, `--ps-text-muted`, `--ps-border` and
+`--ps-plot-bg`.
+
+### Components in another document
+
+The tokens are added to the document that imports the module. Components rendered into an
+`<iframe>` need `@protspace/core` imported by a script inside that iframe, which adds the tokens to
+the iframe's own document.
+
+::: warning BREAKING
+The `--protspace-*` colour properties (the scatterplot's background, brush, tooltip and overlay
+colours; the structure viewer's `--protspace-viewer-bg`, `-border`, `-header-bg`, `-text`,
+`-text-muted`, `-error`, `-loading`) are removed. A host that set them sets the `--ps-*` token the
+component now reads instead. Size properties such as `--protspace-viewer-height` stay. See
+[Component properties](./style-architecture.md#component-properties).
 :::
 
 ## Auto-Sync Feature

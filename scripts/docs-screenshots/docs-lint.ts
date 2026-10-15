@@ -58,18 +58,6 @@ const STALE_TERMS: readonly RegExp[] = [
   /settings dialog/i,
 ];
 
-/**
- * Images from the old layout that their page task has not yet regenerated or deleted. Only
- * shrinks: each page task removes what it replaces, and Task 7.16 deletes the set.
- */
-export const LEGACY_IMAGES: ReadonlySet<string> = new Set<string>();
-
-/**
- * User-guide pages that still name removed UI until their page task rewrites them. Only
- * shrinks; Task 7.16 deletes the set.
- */
-export const STALE_PAGES: ReadonlySet<string> = new Set<string>();
-
 /** The pages the stale-term check reads: the user guide, not the developer docs. */
 const USER_GUIDE = /^(index\.md|explore\/.+\.md|guide\/.+\.md)$/;
 const IMAGES_DIR = 'explore/images/';
@@ -279,7 +267,7 @@ function anchorProblems(pages: readonly DocsPage[]): string[] {
 function staleProblems(pages: readonly DocsPage[]): string[] {
   const problems: string[] = [];
   for (const page of pages) {
-    if (!USER_GUIDE.test(page.path) || STALE_PAGES.has(page.path)) continue;
+    if (!USER_GUIDE.test(page.path)) continue;
     prose(page.text).forEach((line, index) => {
       for (const term of STALE_TERMS) {
         const words = term.exec(line)?.[0];
@@ -379,7 +367,7 @@ export function lintDocs(pages: readonly DocsPage[], files: readonly ImageFile[]
 
 /**
  * The checks that need the capture manifest: every output on disk, within its budget and shown by
- * each page its entry names; every file made by an entry or still in `LEGACY_IMAGES`.
+ * each page its entry names; every image file made by an entry.
  */
 export function lintManifest(
   outputs: readonly MediaOutput[],
@@ -402,9 +390,6 @@ export function lintManifest(
         `${output.file}: ${file.bytes} bytes, over its ${output.budgetBytes}-byte budget`,
       );
     }
-    if (LEGACY_IMAGES.has(output.file)) {
-      problems.push(`${output.file}: an entry makes it, so remove it from LEGACY_IMAGES`);
-    }
     for (const doc of output.docs) {
       const page = byPath.get(doc);
       if (!page) problems.push(`${output.file}: its docs page ${doc} does not exist`);
@@ -415,7 +400,7 @@ export function lintManifest(
   }
   const made = new Set(outputs.map((output) => output.file));
   for (const file of files) {
-    if (!made.has(file.file) && !LEGACY_IMAGES.has(file.file)) {
+    if (!made.has(file.file)) {
       problems.push(
         `${file.file}: no manifest entry makes it; add one under scripts/docs-screenshots/scenes/ or delete the file`,
       );
