@@ -67,7 +67,7 @@ protspace prepare -i <input> -m <methods> -o <output> [options]
 # Multi-model: protspace prepare -i seq.fasta -e prot_t5,esm2_3b -m pca2 -o output
 # All 12 pLMs: protspace prepare -i seq.fasta -e prot_t5,prost_t5,esm2_8m,esm2_35m,esm2_150m,esm2_650m,esm2_3b,ankh_base,ankh_large,ankh3_large,esmc_300m,esmc_600m -m pca2 -o output
 # Combine datasets (same name → union): protspace prepare -i species_a.h5:prot_t5 -i species_b.h5:prot_t5 -m umap2 -o output
-# Multi-embedding (different names → intersection): protspace prepare -i esm2.h5 -i prott5.h5 -m pca2 -o output
+# Multi-embedding (different names → intersection): protspace prepare -i esm2_650m.h5 -i prot_t5.h5 -m pca2 -o output
 # With similarity: protspace prepare -i emb.h5 -f seq.fasta -s -m pca2,mds2 -o output
 # Name override: protspace prepare -i emb.h5:custom_name -m pca2 -o output
 # Parameter sweep: protspace prepare -i emb.h5 -m "umap2:n_neighbors=15" -m "umap2:n_neighbors=50" -m pca2 -o output
@@ -139,7 +139,7 @@ src/protspace/
 │   ├── biocentral_connection.py # Biocentral server address + wait_for_server(): one wait for embedding and annotation, and a failure that says why
 │   ├── loaders/
 │   │   ├── embedding_set.py    # EmbeddingSet dataclass
-│   │   ├── h5.py               # HDF5 loading with model_name resolution
+│   │   ├── h5.py               # HDF5 loading; embedding-name resolution (:name > model_name > file name > stem)
 │   │   ├── fasta.py            # FASTA → Biocentral → HDF5
 │   │   ├── query.py            # UniProt query → FASTA download
 │   │   └── similarity.py       # FASTA → MMseqs2 → similarity matrix
@@ -317,6 +317,7 @@ For a live count run `uv run pytest tests/ --collect-only -q`.
 | `test_config_validation.py` | DimensionReductionConfig parameter validation |
 | `test_style_warnings.py` | `protspace style` warnings: numeric-column detection (tsenoner/protspace-legacy#67) + `selectedPaletteId` validation (categorical vs gradient palette, per column type) + pinned palette-catalog contract |
 | `test_h5_parse_identifier.py` | HDF5 key parsing, identifier extraction |
+| `test_h5_embedding_name.py` | Embedding-name resolution: `:name` > `model_name` attr > a model key the file name ends in (longest, case-insensitive; every embedder key and every ClickThrough notebook key recognised) > the stem for a command's only input; several unnamed inputs refused before loading with the command's own example; `prepare`/`project`/`stats`/`transfer` on one unnamed file; `stats` adopting the projections' single source for a file-named input and refusing several non-matching ones |
 | `test_base_data_processor.py` | BaseProcessor: reduction (the MDS input actually fed: a similarity matrix converted with `sqrt(max(s) - s)`, a distance matrix passed through), output creation, save (incl. settings in unbundled output) |
 | `test_ted_retriever.py` | TED domain retriever (mocked AlphaFold API, CATH names), final retry pass for failed lookups (10-in-a-row cut-off, 404 never retried), parallel lookups equal to one at a time under jitter, one session, CATH names loaded once, a slow first-pass lookup not holding up the others, a tripped final-pass breaker stopping lookups still retrying |
 | `test_pfam_clan.py` | Pfam CLAN transformer (mapping, dedup, edge cases) |

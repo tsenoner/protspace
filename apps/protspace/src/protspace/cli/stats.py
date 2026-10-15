@@ -125,6 +125,32 @@ def _load_reductions(
     return reductions
 
 
+def _match_projection_source(named_input, reductions: list[dict]):
+    """Name a single file-named input after the embedding its projections came from.
+
+    A name read off the file name is a guess, and the projections were labelled
+    when they were built, possibly under another name. With one embedding behind
+    them, that one is this input; with several and no match, scoring every
+    projection against this one embedding would be wrong, so refuse instead.
+    """
+    sources = {r["source"] for r in reductions if r.get("source")} - {"MMseqs2"}
+    if not sources or named_input.name in sources:
+        return named_input
+    if len(sources) == 1:
+        (source,) = sources
+        logger.info(
+            f"Naming {named_input.path} '{source}', the embedding its projections "
+            f"were built from (its file name gave '{named_input.name}')."
+        )
+        return named_input._replace(name=source)
+    raise typer.BadParameter(
+        f"The projections come from several embeddings ({', '.join(sorted(sources))}) "
+        f"and the name '{named_input.name}' taken from {named_input.path} matches none "
+        f"of them. Name the input after the one it holds, e.g. "
+        f"-i {named_input.path}:{min(sources)}"
+    )
+
+
 def _merge_quality_into_metadata(meta_path: Path, quality_by_name: dict) -> None:
     """Fold faithfulness ``quality`` objects into ``projections_metadata.parquet``.
 
@@ -300,7 +326,7 @@ def stats(
 
     from protspace.cli.prepare import _parse_input_specs
     from protspace.data.io.bundle import PROJECTIONS_METADATA_FILENAME
-    from protspace.data.loaders import load_h5
+    from protspace.data.loaders import load_h5, resolve_input_names
     from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.stats import compute_statistics
     from protspace.stats.annotation_select import build_annotation_labels
@@ -309,16 +335,21 @@ def stats(
         route_faithfulness_to_metadata,
     )
 
+    try:
+        named_inputs = resolve_input_names(
+            _parse_input_specs(list(input)), command="stats"
+        )
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    reductions = _load_reductions(projections, default_metric=metric)
+    if len(named_inputs) == 1 and named_inputs[0].from_file_name:
+        named_inputs = [_match_projection_source(named_inputs[0], reductions)]
+
     # Union same-name inputs (e.g. two species sharing one embedding model), mirroring
     # the prepare pipeline — otherwise repeated same-name -i collapse to the last one.
     embedding_sets = merge_same_name_sets(
-        [
-            load_h5([path], name_override=name_override)
-            for path, name_override in _parse_input_specs(list(input))
-        ]
+        [load_h5([path], name_override=name) for path, name, _ in named_inputs]
     )
-
-    reductions = _load_reductions(projections, default_metric=metric)
     # Per-protein output (the cluster membership column, and the self-validity rows
     # gated on it) is only computed when there's an annotations file to land it in.
     params = {"cluster_selection": cluster_selection.value}
