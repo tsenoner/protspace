@@ -7,7 +7,7 @@ import {
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { box } from './helpers/mobile';
-import { seedTourSeen } from './helpers/tour-storage-state';
+import { seedLegacyTourSeen, seedTourSeen } from './helpers/tour-storage-state';
 import {
   clickProteinNearPlotCentre,
   collapseSidebar,
@@ -98,11 +98,23 @@ async function takeTheTour(page: Page): Promise<void> {
 const storedTour = (page: Page): Promise<string | null> =>
   page.evaluate((key) => localStorage.getItem(key), TOUR_STORAGE_KEY);
 
+const legacyTour = (page: Page): Promise<string | null> =>
+  page.evaluate((key) => localStorage.getItem(key), LEGACY_TOUR_STORAGE_KEY);
+
+/** The tour's code requested by the page from now on; call before the navigation it watches. */
+function watchTourRequests(page: Page): string[] {
+  const urls: string[] = [];
+  page.on('request', (request) => {
+    if (/product-tour/.test(request.url())) urls.push(request.url());
+  });
+  return urls;
+}
+
 /**
- * A tour that stays off leaves no signal: watch for its popover for 2 s after the load, which
- * covers the 800 ms start delay and the lazy load of the tour's code.
+ * No tour starts: no popover for 2 s after the load, which covers the 800 ms start delay, and,
+ * since a lazy load could still start one later, the tour's code was never requested.
  */
-async function expectNoTourStarts(page: Page): Promise<void> {
+async function expectNoTourStarts(page: Page, tourRequests: readonly string[]): Promise<void> {
   const started = await popover(page)
     .waitFor({ state: 'visible', timeout: 2_000 })
     .then(
@@ -110,17 +122,7 @@ async function expectNoTourStarts(page: Page): Promise<void> {
       () => false,
     );
   expect(started, 'a tour started').toBe(false);
-}
-
-/** The pre-workbench tour seen: what a returning visitor's browser holds. */
-async function seedLegacyTourSeen(page: Page): Promise<void> {
-  await page.addInitScript((key) => {
-    try {
-      localStorage.setItem(key, 'true');
-    } catch {
-      // about:blank has no storage.
-    }
-  }, LEGACY_TOUR_STORAGE_KEY);
+  expect(tourRequests, 'the tour code loaded').toEqual([]);
 }
 
 test.describe('Product Tour', () => {
@@ -167,9 +169,10 @@ test.describe('Product Tour', () => {
     expect(await storedTour(page)).toBe('full');
 
     await page.goto('/');
+    const tourRequests = watchTourRequests(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
-    await expectNoTourStarts(page);
+    await expectNoTourStarts(page, tourRequests);
   });
 
   test('Help → Take the tour starts it again', async ({ page }) => {
@@ -240,6 +243,41 @@ test.describe('Product Tour', () => {
     await expect(page.locator('[data-driver-id="help"] button')).toHaveCSS('box-shadow', 'none');
   });
 
+  test('Next clicked faster than the highlight moves leaves one step lit', async ({ page }) => {
+    const lit = page.locator('.driver-active-element:not(#driver-dummy-element)');
+    for (let i = 0; i < 4; i++) await nextButton(page).click();
+    // Right away, not eventually: each step being left is unlit before the next one lights.
+    expect(await lit.count()).toBe(1);
+    await expect(title(page)).toHaveText(FULL[4].title);
+    await expectHighlighted(page, FULL[4].target);
+  });
+
+  test('focus goes back to Help when the tour ends', async ({ page }) => {
+    const help = page.locator('[data-driver-id="help"]');
+    await skip(page);
+
+    // The close button, after Next.
+    await takeTheTour(page);
+    await next(page, FULL[1].title);
+    await popover(page).locator('.driver-popover-close-btn').click();
+    await expect(popover(page)).toHaveCount(0);
+    await expect(help).toBeFocused();
+
+    // Escape, after Next.
+    await takeTheTour(page);
+    await next(page, FULL[1].title);
+    await page.keyboard.press('Escape');
+    await expect(popover(page)).toHaveCount(0);
+    await expect(help).toBeFocused();
+
+    // Finish.
+    await takeTheTour(page);
+    await walk(page, FULL);
+    await nextButton(page).click();
+    await expect(popover(page)).toHaveCount(0);
+    await expect(help).toBeFocused();
+  });
+
   test('Escape during a tour started from Help keeps the selection', async ({ page }) => {
     await skip(page);
     const id = await clickProteinNearPlotCentre(page);
@@ -262,6 +300,11 @@ test.describe('under reduced motion', () => {
     const body = page.locator('body');
     await expect(body).toHaveClass(/(^|\s)driver-simple(\s|$)/);
     await expect(body).not.toHaveClass(/(^|\s)driver-fade(\s|$)/);
+    // The welcome step's ring on Help appears without a transition of the tour's own.
+    await expect(page.locator('[data-driver-id="help"]')).toHaveCSS('z-index', '100001');
+    expect(
+      await page.locator('[data-driver-id="help"] button').evaluate((b) => b.style.transition),
+    ).toBe('');
   });
 });
 
@@ -307,10 +350,13 @@ test.describe("What's new", () => {
     await nextButton(page).click();
     await expect(popover(page)).toHaveCount(0);
     expect(await storedTour(page)).toBe('whats-new');
+    // Read, never written or removed: a rollback must not replay the old tour (Ruling R3).
+    expect(await legacyTour(page)).toBe('true');
 
+    const tourRequests = watchTourRequests(page);
     await page.reload();
     await waitForExploreDataLoad(page);
-    await expectNoTourStarts(page);
+    await expectNoTourStarts(page, tourRequests);
   });
 
   test('Full tour switches to the full tour', async ({ page }) => {
@@ -318,22 +364,25 @@ test.describe("What's new", () => {
     await expect(title(page)).toHaveText('Welcome to ProtSpace');
     await expect(progress(page)).toHaveText(`1 of ${FULL.length}`);
     expect(await storedTour(page)).toBe('full');
+    expect(await legacyTour(page)).toBe('true');
   });
 });
 
 test.describe('with a tour already recorded', () => {
   test('nothing starts', async ({ page }) => {
     await seedTourSeen(page);
+    const tourRequests = watchTourRequests(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
-    await expectNoTourStarts(page);
+    await expectNoTourStarts(page, tourRequests);
   });
 
   test('nothing starts, even with the old key there too', async ({ page }) => {
     await seedTourSeen(page);
     await seedLegacyTourSeen(page);
+    const tourRequests = watchTourRequests(page);
     await page.goto('/explore');
     await waitForExploreDataLoad(page);
-    await expectNoTourStarts(page);
+    await expectNoTourStarts(page, tourRequests);
   });
 });

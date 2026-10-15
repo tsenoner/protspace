@@ -8,7 +8,7 @@
  * resolved when the step activates, and cleans up what `document.querySelectorAll` cannot reach.
  */
 
-import { type Config, driver, type DriveStep, type PopoverDOM, type State } from 'driver.js';
+import { type Config, driver, type DriveStep, type PopoverDOM } from 'driver.js';
 // The kit entry, not '@protspace/core': Help imports this module from the shell, and a value
 // import of core there would load all of core early (eslint.config.mjs:81-84). kit.mjs and
 // core.mjs share one kit chunk, so there is one layer stack.
@@ -19,7 +19,6 @@ import { openPanel } from '../explore/layout-state';
 import './product-tour.css';
 import { TOUR_STORAGE_KEY, type TourKind } from './storage-key';
 import { tourSteps, type TourStepSpec } from './tour-steps';
-import { waitForElement } from './wait-for-element';
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 const COARSE_POINTER = '(pointer: coarse)';
@@ -38,6 +37,8 @@ let savedAria: Array<{ element: Element; values: Array<string | null> }> = [];
 let shadowTargets: Array<{ host: string; inner: string }> = [];
 /** Bumped by every start: a start superseded while its layout settles never drives. */
 let startCount = 0;
+/** What had focus when the tour started (Help, More), given back when it ends. */
+let returnFocus: HTMLElement | null = null;
 
 // ---------------------------------------------------------------------------
 // Shadow DOM
@@ -74,7 +75,7 @@ function setSpotlight(selector: string, on: boolean): void {
     // Above the driver.js overlay (z-index ~100000); the focus token follows the theme.
     host.style.zIndex = '100001';
     glow.style.boxShadow = '0 0 0 3px var(--ps-focus)';
-    glow.style.transition = 'box-shadow 0.3s ease';
+    if (!matchMedia(REDUCED_MOTION).matches) glow.style.transition = 'box-shadow 0.3s ease';
   } else {
     host.style.removeProperty('z-index');
     glow.style.removeProperty('box-shadow');
@@ -103,19 +104,13 @@ function saveAria(steps: readonly TourStepSpec[]): void {
 
 /**
  * driver.js unlights only the element it recorded when the last highlight finished, so a step left
- * during its highlight transition (a quick Next) stays lit. Once a highlight finishes, every other
- * target is unlit, the Other row inside the legend's shadow root too.
+ * during its highlight transition (a quick Next) would stay lit. Back and Next unlight the step
+ * being left first: `getActiveElement()` is updated as soon as a move starts. restoreAria puts a
+ * light-DOM target's own aria back.
  */
-function unlightOthers(active: Element | undefined): void {
-  document.querySelectorAll('.driver-active-element').forEach((element) => {
-    if (element !== active && element.id !== 'driver-dummy-element') {
-      element.classList.remove('driver-active-element', 'driver-no-interaction');
-    }
-  });
-  for (const { host, inner } of shadowTargets) {
-    const element = shadowEl(host, inner);
-    if (element !== active) cleanupShadowElement(element);
-  }
+function unlight(element: Element | undefined): void {
+  if (!element || element.id === 'driver-dummy-element') return;
+  cleanupShadowElement(element);
 }
 
 /** Puts back every saved target's own attributes, except on the element highlighted now. */
@@ -143,6 +138,26 @@ function stripDummyAria(): void {
 // Ending
 // ---------------------------------------------------------------------------
 
+/** The control the tour lives behind on this layout: Help, or More on a phone. */
+function tourHome(): HTMLElement | null {
+  const home = ['[data-driver-id="help"]', '[data-driver-id="more"]'].find(isShown);
+  return home ? document.querySelector<HTMLElement>(home) : null;
+}
+
+/**
+ * Gives focus back to what started the tour, or to the tour's home control when that is gone.
+ * driver.js focuses what had focus when the last step was driven, mostly the popover's own Next
+ * button, which destroy removes; a focus it did land on elsewhere stays.
+ */
+function giveFocusBack(): void {
+  const opener = returnFocus;
+  returnFocus = null;
+  if (!opener) return;
+  const active = document.activeElement;
+  if (active !== null && active !== document.body) return;
+  (opener.isConnected ? opener : tourHome())?.focus();
+}
+
 /** Every way out: Skip, Finish, the close button, the overlay, Escape and a layout change. */
 function endTour(): void {
   clearSpotlight();
@@ -151,43 +166,13 @@ function endTour(): void {
   running = null;
   driverObj.destroy();
   restoreAria();
+  // destroy() cleans up only the settled step: a tour ended during the move onto the Other row
+  // leaves it marked.
+  for (const { host, inner } of shadowTargets) cleanupShadowElement(shadowEl(host, inner));
   savedAria = [];
   shadowTargets = [];
+  giveFocusBack();
 }
-
-// ---------------------------------------------------------------------------
-// Navigation
-// ---------------------------------------------------------------------------
-
-const moveNext = async (driverOpts: { config: Config; state: State }) => {
-  if (driverObj.hasNextStep() && driverOpts.config.steps) {
-    const stepIndex = driverObj.getActiveIndex() ?? 0;
-    const nextStep = driverOpts.config.steps[stepIndex + 1];
-
-    if (nextStep && typeof nextStep.element === 'string') {
-      await waitForElement(nextStep.element).catch(() => {
-        /* element may already be visible – continue anyway */
-      });
-    }
-
-    driverObj.moveNext();
-  }
-};
-
-const movePrevious = async (driverOpts: { config: Config; state: State }) => {
-  if (driverObj.hasPreviousStep() && driverOpts.config.steps) {
-    const stepIndex = driverObj.getActiveIndex() ?? 0;
-    const previousStep = driverOpts.config.steps[stepIndex - 1];
-
-    if (previousStep && typeof previousStep.element === 'string') {
-      await waitForElement(previousStep.element).catch(() => {
-        /* continue anyway */
-      });
-    }
-  }
-
-  driverObj.movePrevious();
-};
 
 // ---------------------------------------------------------------------------
 // Steps
@@ -229,14 +214,18 @@ function toDriveStep(spec: TourStepSpec, index: number, count: number, kind: Tou
   const popover: NonNullable<DriveStep['popover']> = {
     title: spec.title,
     description: spec.description,
-    onPrevClick: async (_element, _step, options) => movePrevious(options),
+    onPrevClick: () => {
+      unlight(driverObj.getActiveElement());
+      driverObj.movePrevious();
+    },
     onNextClick: last
       ? () => endTour()
-      : async (_element, _step, options) => {
+      : () => {
           // driver.js skips onDeselected when a step is left during its highlight transition, so
           // Next clears the first step's spotlight itself; endTour covers every other way out.
           clearSpotlight();
-          await moveNext(options);
+          unlight(driverObj.getActiveElement());
+          driverObj.moveNext();
         },
   };
 
@@ -297,7 +286,6 @@ const BASE_CONFIG: Config = {
   onPopoverRender,
   onHighlighted: (element) => {
     stripDummyAria();
-    unlightOthers(element);
     restoreAria(element);
   },
   // Every user close (the close button, an overlay click) comes through here, even during a
@@ -374,6 +362,9 @@ export function startTour(kind: TourKind, options: { force?: boolean } = {}): vo
   if (!options.force && readSeen() !== null) return;
   if (!writeSeen(kind) && !options.force) return;
   if (running) endTour();
+  // Full tour ends this tour first, which gives focus back to its opener: the new one keeps it.
+  const active = document.activeElement as HTMLElement | null;
+  returnFocus = active && active !== document.body ? active : null;
 
   // The legend steps need the legend on screen: the sidebar open on the Legend panel, a phone's
   // panel unfolded. openPanel writes nothing when they already are.

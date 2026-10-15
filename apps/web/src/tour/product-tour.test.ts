@@ -22,9 +22,7 @@ const modeListeners = vi.hoisted(() => new Set<() => void>());
 vi.mock('driver.js', () => ({
   driver: () => ({
     ...driverApi,
-    getActiveIndex: () => 0,
-    hasNextStep: () => true,
-    hasPreviousStep: () => true,
+    getActiveElement: (): undefined => undefined,
     moveNext: vi.fn(),
     movePrevious: vi.fn(),
   }),
@@ -50,6 +48,7 @@ type FakeElement = {
   getAttribute(name: string): string | null;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
+  classList: { remove(...names: string[]): void };
   shadowRoot: { querySelector(selector: string): FakeElement | null };
 };
 
@@ -65,6 +64,7 @@ function fakeElement(
     getAttribute: (name) => attrs.get(name) ?? null,
     setAttribute: (name, value) => void attrs.set(name, value),
     removeAttribute: (name) => void attrs.delete(name),
+    classList: { remove: () => {} },
     shadowRoot: { querySelector: (selector) => shadow[selector] ?? null },
   };
 }
@@ -239,6 +239,19 @@ describe('startTour', () => {
 
     expect(actions.getAttribute('aria-haspopup')).toBe('dialog');
     expect(actions.getAttribute('aria-expanded')).toBeNull();
+  });
+
+  it('unmarks the Other row when the tour ends during the move onto it', async () => {
+    const other = fakeElement();
+    elements.set(selector('legend'), fakeElement(10, {}, { [selector('other-row')]: other }));
+    startTour('full', { force: true });
+    await driven();
+    // What driver.js sets on the Other row; destroy() cleans only the step that settled.
+    other.setAttribute('aria-expanded', 'true');
+
+    lastLayer().close();
+
+    expect(other.getAttribute('aria-expanded')).toBeNull();
   });
 
   it('ends when the layout mode changes, and lets go of its listener', async () => {

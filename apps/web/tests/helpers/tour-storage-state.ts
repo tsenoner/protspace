@@ -1,6 +1,10 @@
 import type { BrowserContextOptions, Page } from '@playwright/test';
 import { LAYOUT_STORAGE_KEY, type LayoutState } from '../../src/explore/layout-defaults';
-import { TOUR_STORAGE_KEY, type TourKind } from '../../src/tour/storage-key';
+import {
+  LEGACY_TOUR_STORAGE_KEY,
+  TOUR_STORAGE_KEY,
+  type TourKind,
+} from '../../src/tour/storage-key';
 import { THEME_STORAGE_KEY, type ThemeChoice } from '../../src/explore/theme-defaults';
 
 /**
@@ -62,4 +66,15 @@ export async function seedTourSeen(page: Page): Promise<void> {
       // No storage to write to: nothing to seed.
     }
   }, TOUR_SEEN);
+}
+
+/** The pre-workbench tour seen, before any of the page's scripts run: a returning visitor. */
+export async function seedLegacyTourSeen(page: Page): Promise<void> {
+  await page.addInitScript((key) => {
+    try {
+      localStorage.setItem(key, 'true');
+    } catch {
+      // about:blank has no storage.
+    }
+  }, LEGACY_TOUR_STORAGE_KEY);
 }
