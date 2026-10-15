@@ -558,6 +558,12 @@ test.describe('view-bar menus and the filter draft', () => {
     for (const [trigger, menu] of pairs) {
       await trigger.click();
       await expect(menu).toBeVisible();
+      // The docs crops frame trigger and menu together, so the menu has to sit right at it.
+      const t = (await trigger.boundingBox())!;
+      const m = (await menu.boundingBox())!;
+      expect(Math.abs(m.y - (t.y + t.height))).toBeLessThan(24);
+      expect(m.x).toBeLessThan(t.x + t.width);
+      expect(m.x + m.width).toBeGreaterThan(t.x);
       await page.keyboard.press('Escape');
       await expect(menu).toBeHidden();
     }
