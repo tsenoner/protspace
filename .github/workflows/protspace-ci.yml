@@ -21,7 +21,8 @@ name: protspace CI (Python)
 # The same holds for every other file outside apps/protspace that the tests read
 # (protspace cannot import TypeScript or protspace_prep, so its copies are checked
 # against their source): the web's missing-value tokens and palette ids, prep's
-# Biocentral outage patterns, the web-side v3 fixtures the decoder is checked
+# Biocentral outage patterns, the data-format guide's "Read a Bundle in Python"
+# snippet (run as written), the web-side v3 fixtures the decoder is checked
 # against, the served demo bundle, the web catalog whose defaultView each showcase
 # example opens on, and the perf manifest stage_perf.py writes. A change to only one
 # of them would otherwise never run the test that reads it. A checkout holding only
@@ -34,6 +35,7 @@ on:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
+      - 'docs/guide/data-format.md'
       - 'packages/utils/src/visualization/missing-values.ts'
       - 'packages/utils/src/visualization/color-scheme.ts'
       - 'packages/utils/src/visualization/numeric-binning.ts'
@@ -49,6 +51,7 @@ on:
     paths:
       - 'apps/protspace/**'
       - 'docs/guide/python-cli.md'
+      - 'docs/guide/data-format.md'
       - 'packages/utils/src/visualization/missing-values.ts'
       - 'packages/utils/src/visualization/color-scheme.ts'
       - 'packages/utils/src/visualization/numeric-binning.ts'
