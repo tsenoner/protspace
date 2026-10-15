@@ -226,7 +226,7 @@ class ArrowReader:
                 "reader was built from a dict and holds none."
             )
         if output_path is None:
-            if not self.data_path.is_dir():
+            if self.data_path.is_file():
                 raise ValueError(
                     f"'{self.data_path}' is a bundle file, not a directory; "
                     "pass save_data an output directory."
