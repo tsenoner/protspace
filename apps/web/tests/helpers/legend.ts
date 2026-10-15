@@ -275,3 +275,37 @@ export async function readLegendSettings(page: Page): Promise<{
   }
   return result;
 }
+
+/**
+ * A real double click on a row: click (detail 1), a pause, click (detail 2) and dblclick, as a
+ * hand makes one. Playwright's `dblclick()` sends the two clicks back to back, which the legend
+ * cannot tell from one click being repeated.
+ */
+export async function doubleClickLegendRow(page: Page, value: string, gapMs = 120): Promise<void> {
+  const box = await legendRow(page, value).boundingBox();
+  if (!box) throw new Error(`No legend row for ${value}`);
+  await page.mouse.move(box.x + 24, box.y + box.height / 2);
+  await page.mouse.down({ clickCount: 1 });
+  await page.mouse.up({ clickCount: 1 });
+  await page.waitForTimeout(gapMs);
+  await page.mouse.down({ clickCount: 2 });
+  await page.mouse.up({ clickCount: 2 });
+}
+
+/**
+ * Drags row `from` by its "Reorder …" handle onto the middle of row `to`, with the mouse and in
+ * steps, which is what Sortable reads as a drag. Hovers the row first, which shows its handle.
+ */
+export async function dragLegendRow(page: Page, from: string, to: string): Promise<void> {
+  await legendRow(page, from).hover();
+  const handle = await legendItem(page, from)
+    .getByRole('button', { name: /^Reorder / })
+    .boundingBox();
+  if (!handle) throw new Error(`No drag handle on the legend row ${from}`);
+  const target = await legendItem(page, to).boundingBox();
+  if (!target) throw new Error(`No legend row for ${to}`);
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
+  await page.mouse.up();
+}

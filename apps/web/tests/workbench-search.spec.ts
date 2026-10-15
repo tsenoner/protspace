@@ -4,6 +4,7 @@ import {
   closeFilterPanel,
   getSelectedProteinIds,
   openExplore,
+  pasteIntoSearch,
   searchInput,
   selectionBarAction,
 } from './helpers/explore';
@@ -24,23 +25,6 @@ function proteinIds(page: Page, count: number): Promise<string[]> {
         ),
       count,
     );
-}
-
-/** Pastes `text` into the search box, as a browser does on ⌘V / Ctrl+V. */
-async function paste(page: Page, text: string): Promise<void> {
-  await searchInput(page).focus();
-  await searchInput(page).evaluate((input, value) => {
-    const data = new DataTransfer();
-    data.setData('text/plain', value);
-    input.dispatchEvent(
-      new ClipboardEvent('paste', {
-        clipboardData: data,
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }),
-    );
-  }, text);
 }
 
 type Transform = { k: number; x: number; y: number };
@@ -80,7 +64,7 @@ test.describe('protein search feedback', () => {
     await openExplore(page);
     const [a, b] = await proteinIds(page, 2);
 
-    await paste(page, `${a}, ${b.toLowerCase()}; MISSING_ONE\nMISSING_TWO`);
+    await pasteIntoSearch(page, `${a}, ${b.toLowerCase()}; MISSING_ONE\nMISSING_TWO`);
 
     const shown = report(page);
     await expect(shown).toContainText('2 of 4 found');
@@ -153,7 +137,7 @@ test.describe('protein search feedback', () => {
     const ids = await proteinIds(page, 3);
     const before = await readTransform(page);
 
-    await paste(page, ids.join('\n'));
+    await pasteIntoSearch(page, ids.join('\n'));
 
     await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids);
     expect(await readTransform(page)).toEqual(before);

@@ -365,6 +365,48 @@ export const selectionBarAction = (
   name: 'Show only these' | 'Zoom to them' | 'Copy IDs' | 'Clear',
 ): Locator => selectionBar(page).getByRole('button', { name, exact: true });
 
+/** The search's report under the field: found and missing ids, or why a hit is not shown. */
+const searchReport = (page: Page): Locator =>
+  page.locator('protspace-protein-search .search-report');
+
+/** Pastes `text` into the search box, as a browser does on ⌘V / Ctrl+V. */
+export async function pasteIntoSearch(page: Page, text: string): Promise<void> {
+  await searchInput(page).focus();
+  await searchInput(page).evaluate((input, value) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', value);
+    input.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+  }, text);
+}
+
+/**
+ * Selects proteins through the search box: one id is typed and entered, several are pasted one per
+ * line. Resolves once the selection bar or the search's report shows.
+ */
+export async function searchProteins(page: Page, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) throw new Error('searchProteins needs at least one id');
+  if (ids.length === 1) {
+    await searchInput(page).fill(ids[0]);
+    await searchInput(page).press('Enter');
+  } else {
+    await pasteIntoSearch(page, ids.join('\n'));
+  }
+  await expect(
+    selectionBar(page).or(searchReport(page)).filter({ visible: true }).first(),
+  ).toBeVisible();
+}
+
+/** A notification (a Sonner toast) by its text. */
+export const toast = (page: Page, text: string | RegExp): Locator =>
+  page.locator('[data-sonner-toast]').filter({ hasText: text });
+
 type StatusChipKind = 'filter' | 'isolation' | 'hidden';
 
 const STATUS_CLEAR_NAMES: Readonly<Record<StatusChipKind, string>> = {

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent, exportMenu, waitForExploreDataLoad } from './helpers/explore';
+import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
+import { openFigureEditor } from './helpers/figure';
 
 /**
  * E2E coverage for the Publish (Figure Editor) modal — specifically the
@@ -20,30 +21,6 @@ interface Inset {
   border: number;
   connector: 'lines' | 'none';
   pointSizeScale?: number;
-}
-
-async function openFigureEditor(page: Page): Promise<void> {
-  // Dispatch open-publish-editor from the Export menu directly — the same handler the
-  // Export → Figure Editor button click goes through. Skips the dropdown
-  // animation and possible viewport-clipping headaches.
-  await exportMenu(page).evaluate((menu) =>
-    menu.dispatchEvent(new CustomEvent('open-publish-editor', { bubbles: true, composed: true })),
-  );
-  await page.waitForFunction(() => !!document.querySelector('protspace-publish-modal'), undefined, {
-    timeout: 5_000,
-  });
-  // Wait for the preview canvas to be created and have non-zero pixels.
-  await page.waitForFunction(
-    () => {
-      const m = document.querySelector('protspace-publish-modal') as
-        | (HTMLElement & { shadowRoot: ShadowRoot })
-        | null;
-      const c = m?.shadowRoot?.querySelector('.publish-preview-canvas') as HTMLCanvasElement | null;
-      return !!c && c.width > 0 && c.height > 0;
-    },
-    undefined,
-    { timeout: 5_000 },
-  );
 }
 
 /** Inject an inset via state mutation — far more reliable than mouse drags

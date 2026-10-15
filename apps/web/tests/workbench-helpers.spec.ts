@@ -2,10 +2,14 @@ import { expect, test, type Page } from '@playwright/test';
 import { DEFAULT_EXAMPLE_DATASET, EXAMPLE_DATASETS } from '../src/explore/example-datasets';
 import { TOUR_STORAGE_KEY } from '../src/tour/storage-key';
 import { e2eExample, serveExampleFixtures } from './helpers/example-fixtures';
+import { expectProductDemo, openExample } from './helpers/examples';
 import {
   appBar,
+  applyFirstCategoryFilter,
   chooseTool,
   clearSelection,
+  clearStatusChip,
+  closeFilterPanel,
   expectUrlParam,
   exportMenu,
   filterButton,
@@ -13,6 +17,8 @@ import {
   getColorByOptions,
   getContoursMode,
   getCurrentDatasetName,
+  getFirstLegendItemValue,
+  getProteinCount,
   getSelectedProteinIds,
   getViewState,
   importMenu,
@@ -21,21 +27,41 @@ import {
   openExportMenu,
   openFilter,
   openImportMenu,
+  pasteIntoSearch,
   pickExample,
   plotArea,
   queryBuilder,
   resetIsolation,
   searchInput,
+  searchProteins,
   selectAnnotation,
+  selectionBar,
   selectProjection,
   setContours,
   sidebar,
   statusChip,
+  toast,
   waitForExploreDataLoad,
   waitForProteinCount,
   type ViewState,
 } from './helpers/explore';
+import { figureEditor, openFigureEditor } from './helpers/figure';
+import {
+  closeLegendSettings,
+  doubleClickLegendRow,
+  dragLegendRow,
+  legendRowValues,
+  toggleLegendSetting,
+} from './helpers/legend';
+import {
+  clusterScreenPoints,
+  duplicateStacks,
+  plotSettled,
+  proteinScreenPosition,
+} from './helpers/plot';
+import { waitForStructureLoaded, watchStructureLoads } from './helpers/structure';
 import { exploreStorageState, seedTourSeen } from './helpers/tour-storage-state';
+import { clickProteinNearPlotCentre, stubStructureRequests } from './helpers/workbench';
 
 /**
  * The contract of the layout-free helpers in helpers/explore.ts. A task that moves a control
@@ -248,5 +274,225 @@ test.describe('tour storage helpers', () => {
         () => false,
       );
     expect(shown).toBe(false);
+  });
+});
+
+/** The first `count` protein ids of the loaded dataset. */
+function firstProteinIds(page: Page, count: number): Promise<string[]> {
+  return page
+    .locator('#myPlot')
+    .evaluate(
+      (plot, n) =>
+        ((plot as Element & { data?: { protein_ids?: string[] } }).data?.protein_ids ?? []).slice(
+          0,
+          n,
+        ),
+      count,
+    );
+}
+
+/** A protein drawn on top at its own position, clear of the plot's edges: a hover there shows it. */
+function unoccludedProtein(page: Page): Promise<string> {
+  return page.locator('#myPlot').evaluate((element) => {
+    const plot = element as HTMLElement & {
+      data: { protein_ids: string[] };
+      getProteinClientPosition(id: string): { x: number; y: number } | null;
+      pickInteractivePointAt(x: number, y: number): { id: string } | null;
+    };
+    const rect = plot.getBoundingClientRect();
+    const margin = 80;
+    for (const id of plot.data.protein_ids.slice(0, 500)) {
+      const at = plot.getProteinClientPosition(id);
+      if (!at) continue;
+      if (at.x < rect.left + margin || at.x > rect.right - margin) continue;
+      if (at.y < rect.top + margin || at.y > rect.bottom - margin) continue;
+      if (plot.pickInteractivePointAt(at.x - rect.left, at.y - rect.top)?.id === id) return id;
+    }
+    throw new Error('No unoccluded protein among the first 500');
+  });
+}
+
+const plotTooltip = (page: Page) => page.locator('#myPlot protspace-protein-tooltip');
+
+/** Whether `point` lies inside `box`. */
+const inside = (
+  point: { x: number; y: number },
+  box: { x: number; y: number; width: number; height: number },
+) =>
+  point.x >= box.x &&
+  point.x <= box.x + box.width &&
+  point.y >= box.y &&
+  point.y <= box.y + box.height;
+
+test.describe('capture helpers', () => {
+  test('plotSettled resolves after a zoom, and needs ?perfCounters=1', async ({ page }) => {
+    await openExplore(page, '?perfCounters=1');
+    const box = (await plotArea(page).boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -400);
+    await plotSettled(page);
+
+    await openExplore(page);
+    await expect(plotSettled(page)).rejects.toThrow('load the page with ?perfCounters=1');
+  });
+
+  test('proteinScreenPosition lands on a plotted protein', async ({ page }) => {
+    await openExplore(page);
+    const id = await unoccludedProtein(page);
+
+    const at = await proteinScreenPosition(page, id);
+    await page.mouse.move(at.x, at.y);
+    await expect(plotTooltip(page)).toContainText(id);
+
+    await expect(proteinScreenPosition(page, 'NOT_A_PROTEIN_ZZZ')).rejects.toThrow(
+      'NOT_A_PROTEIN_ZZZ is not plotted',
+    );
+  });
+
+  test('clusterScreenPoints finds the points of one category', async ({ page }) => {
+    await openExplore(page);
+    const value = await getFirstLegendItemValue(page);
+
+    const points = await clusterScreenPoints(page, value, 10);
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.length).toBeLessThanOrEqual(10);
+    const box = (await page.locator('#myPlot').boundingBox())!;
+    for (const point of points) expect(inside(point, box)).toBe(true);
+
+    // A hover on one of them names the category (a neighbour may be drawn over some).
+    const named: boolean[] = [];
+    for (const point of points.slice(0, 5)) {
+      await page.mouse.move(point.x, point.y);
+      named.push(
+        await plotTooltip(page)
+          .filter({ hasText: value })
+          .waitFor({ timeout: 1_500 })
+          .then(
+            () => true,
+            () => false,
+          ),
+      );
+    }
+    expect(named).toContain(true);
+    expect(await clusterScreenPoints(page, 'NO_SUCH_CATEGORY_ZZZ')).toEqual([]);
+  });
+
+  test('duplicateStacks returns the stacks on the plot', async ({ page }) => {
+    await openExplore(page);
+    expect(await duplicateStacks(page)).toEqual([]);
+    await toggleLegendSetting(page, 'Show duplicate counts and spread overlaps');
+    await closeLegendSettings(page);
+
+    // Exact duplicates show in some projections and not others: take the first that has them.
+    let stacked = false;
+    for (const projection of await plotProjections(page)) {
+      await selectProjection(page, projection);
+      stacked = await expect
+        .poll(async () => (await duplicateStacks(page)).length, { timeout: 5_000 })
+        .toBeGreaterThan(0)
+        .then(
+          () => true,
+          () => false,
+        );
+      if (stacked) break;
+    }
+    expect(stacked, 'a projection of the startup fixture has duplicate stacks').toBe(true);
+    const box = (await page.locator('#myPlot').boundingBox())!;
+    for (const stack of await duplicateStacks(page)) {
+      expect(stack.count).toBeGreaterThan(1);
+      expect(inside(stack, box)).toBe(true);
+    }
+  });
+
+  test('waitForStructureLoaded resolves once the clicked protein has loaded', async ({ page }) => {
+    await stubStructureRequests(page);
+    await openExplore(page);
+    await expect(waitForStructureLoaded(page, 'ANY')).rejects.toThrow('watchStructureLoads');
+
+    await watchStructureLoads(page);
+    await watchStructureLoads(page);
+    const id = await clickProteinNearPlotCentre(page);
+    await waitForStructureLoaded(page, id);
+    await expect(page.locator('#myStructureViewer')).toHaveJSProperty('proteinId', id);
+    await expect(waitForStructureLoaded(page, 'NOT_A_PROTEIN_ZZZ', 1_000)).rejects.toThrow();
+  });
+
+  test('openFigureEditor opens the figure editor', async ({ page }) => {
+    await openExplore(page);
+    const dialog = await openFigureEditor(page);
+    await expect(dialog).toBeVisible();
+    await expect(figureEditor(page)).toBeVisible();
+  });
+
+  test('searchProteins selects the given ids', async ({ page }) => {
+    await openExplore(page);
+    const ids = await firstProteinIds(page, 2);
+
+    await searchProteins(page, ids);
+    await expect(selectionBar(page)).toContainText('2 proteins selected');
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids);
+
+    await clearSelection(page);
+    await searchProteins(page, ids.slice(0, 1));
+    await expect.poll(() => getSelectedProteinIds(page)).toEqual(ids.slice(0, 1));
+  });
+
+  test('pasteIntoSearch reports found and missing ids', async ({ page }) => {
+    await openExplore(page);
+    const [id] = await firstProteinIds(page, 1);
+
+    await pasteIntoSearch(page, `${id}\nNOT_A_PROTEIN_ZZZ`);
+    await expect(page.locator('protspace-protein-search .search-report')).toContainText(
+      '1 of 2 found',
+    );
+  });
+
+  test('toast finds a notification by its text', async ({ page }) => {
+    await openExplore(page);
+    await applyFirstCategoryFilter(page);
+    await closeFilterPanel(page);
+    await clearStatusChip(page, 'filter');
+
+    await expect(toast(page, 'Filter removed')).toBeVisible();
+    await expect(toast(page, /^Filter rem/)).toBeVisible();
+    await expect(toast(page, 'NO_SUCH_NOTIFICATION')).toHaveCount(0);
+  });
+
+  test('doubleClickLegendRow shows only that category', async ({ page }) => {
+    await openExplore(page);
+    const value = await getFirstLegendItemValue(page);
+
+    await doubleClickLegendRow(page, value);
+    await expect.poll(() => legendRowValues(page, { visible: true })).toEqual([value]);
+  });
+
+  test('dragLegendRow moves a row above another', async ({ page }) => {
+    await openExplore(page);
+    const rows = (await legendRowValues(page)).filter(
+      (value) => value !== 'Other' && value !== '__NA__',
+    );
+    const [first, second] = rows;
+
+    await dragLegendRow(page, second, first);
+    await expect
+      .poll(async () => {
+        const order = await legendRowValues(page);
+        return order.indexOf(second) < order.indexOf(first);
+      })
+      .toBe(true);
+  });
+
+  test('openExample opens an example by its link', async ({ page }) => {
+    await serveExampleFixtures(page);
+    const example = e2eExample('other');
+
+    await openExample(page, example.id, { proteinCount: example.count });
+    expect(await getProteinCount(page)).toBe(example.count);
+    expect(new URL(page.url()).searchParams.get('dataset')).toBe(example.id);
+  });
+
+  test('expectProductDemo refuses the e2e startup fixture', async ({ page }) => {
+    await openExplore(page);
+    await expect(expectProductDemo(page)).rejects.toThrow('E2E startup fixture');
   });
 });

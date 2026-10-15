@@ -5,11 +5,12 @@ import {
   waitForExploreDataLoad,
   waitForExploreInteractionReady,
 } from './helpers/explore';
+import { doubleClickLegendRow, legendRow } from './helpers/legend';
 
 /**
  * A real double-click is click (detail 1), click (detail 2), dblclick, the two clicks tens of
- * milliseconds apart. Playwright's `dblclick()` sends them back to back, so these specs press
- * the button themselves with a pause between the clicks.
+ * milliseconds apart. Playwright's `dblclick()` sends them back to back, so these specs use
+ * `doubleClickLegendRow`, which pauses between the clicks.
  */
 
 interface LegendWindow extends Window {
@@ -46,23 +47,6 @@ async function legendItemCount(page: Page): Promise<number> {
   );
 }
 
-const legendRow = (page: Page, value: string) =>
-  page
-    .locator('protspace-legend')
-    .getByRole('button', { name: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`) });
-
-async function realDoubleClick(page: Page, value: string, gapMs = 120): Promise<void> {
-  const row = legendRow(page, value);
-  const box = await row.boundingBox();
-  if (!box) throw new Error(`No legend row for ${value}`);
-  await page.mouse.move(box.x + 24, box.y + box.height / 2);
-  await page.mouse.down({ clickCount: 1 });
-  await page.mouse.up({ clickCount: 1 });
-  await page.waitForTimeout(gapMs);
-  await page.mouse.down({ clickCount: 2 });
-  await page.mouse.up({ clickCount: 2 });
-}
-
 test.describe('Legend double-click', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/explore');
@@ -75,7 +59,7 @@ test.describe('Legend double-click', () => {
   test('isolates the item without toggling it a second time', async ({ page }) => {
     const value = await getFirstLegendItemValue(page);
 
-    await realDoubleClick(page, value);
+    await doubleClickLegendRow(page, value);
 
     await expect.poll(() => visibleLegendValues(page)).toEqual([value]);
     // The first click hides the item; the second click is left to the dblclick.
@@ -86,10 +70,10 @@ test.describe('Legend double-click', () => {
     const value = await getFirstLegendItemValue(page);
     const total = await legendItemCount(page);
 
-    await realDoubleClick(page, value);
+    await doubleClickLegendRow(page, value);
     await expect.poll(() => visibleLegendValues(page)).toEqual([value]);
 
-    await realDoubleClick(page, value);
+    await doubleClickLegendRow(page, value);
     await expect.poll(async () => (await visibleLegendValues(page)).length).toBe(total);
   });
 

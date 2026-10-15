@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   applyFirstCategoryFilter,
   clearStatusChip,
@@ -8,15 +8,13 @@ import {
   filterResetButton,
   openExplore,
   plotArea,
-  searchInput,
+  searchProteins,
   selectionBar,
   statusChip,
+  toast,
   waitForExploreDataLoad,
 } from './helpers/explore';
 import { clearOpfs, seedOpfsState } from './helpers/opfs';
-
-const toast = (page: Page, text: string): Locator =>
-  page.locator('[data-sonner-toast]').filter({ hasText: text });
 
 /** The dataset's first protein. */
 function firstProteinId(page: Page): Promise<string> {
@@ -25,12 +23,6 @@ function firstProteinId(page: Page): Promise<string> {
     .evaluate(
       (plot) => (plot as unknown as { data: { protein_ids: string[] } }).data.protein_ids[0],
     );
-}
-
-async function selectBySearch(page: Page, id: string): Promise<void> {
-  await searchInput(page).fill(id);
-  await searchInput(page).press('Enter');
-  await expect(selectionBar(page)).toBeVisible();
 }
 
 test.describe('notifications', () => {
@@ -58,7 +50,7 @@ test.describe('notifications', () => {
 
   test('with a selection the toast sits above the selection bar', async ({ page }) => {
     await openExplore(page);
-    await selectBySearch(page, await firstProteinId(page));
+    await searchProteins(page, [await firstProteinId(page)]);
     await applyFirstCategoryFilter(page);
 
     await filterResetButton(page).click();
@@ -102,7 +94,7 @@ test.describe('notifications', () => {
     await expect(removed).toBeVisible();
 
     // A selection is a newer history step: Undo would no longer take back the removal.
-    await selectBySearch(page, await firstProteinId(page));
+    await searchProteins(page, [await firstProteinId(page)]);
 
     await expect(removed).toHaveCount(0);
   });

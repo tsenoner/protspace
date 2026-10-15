@@ -21,6 +21,7 @@ import {
   waitForProteinCount,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
+import { proteinScreenPosition } from './helpers/plot';
 import { seedTourSeen } from './helpers/tour-storage-state';
 import { rail } from './helpers/workbench';
 
@@ -111,24 +112,6 @@ async function readRenderedProteinIds(page: Page): Promise<string[]> {
       (_, slot) => plotData.proteinIds[plotData.originalIndices?.[slot] ?? slot],
     );
   });
-}
-
-async function getProteinScreenPosition(
-  page: Page,
-  proteinId: string,
-): Promise<{ x: number; y: number }> {
-  return page.evaluate((id) => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getProteinClientPosition(proteinId: string): { x: number; y: number } | null;
-        })
-      | null;
-    const position = plot?.getProteinClientPosition(id);
-    if (!position) {
-      throw new Error(`Protein ${id} is not plotted, or the scatter plot has no geometry yet`);
-    }
-    return position;
-  }, proteinId);
 }
 
 async function sampleEncodedExportMarkers(
@@ -484,7 +467,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     });
   while ((await dismiss.count()) > 0) await dismiss.first().click();
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
-  const isolatedPosition = await getProteinScreenPosition(page, 'A0JMF6');
+  const isolatedPosition = await proteinScreenPosition(page, 'A0JMF6');
   await page.mouse.move(isolatedPosition.x, isolatedPosition.y);
   const isolatedTooltip = plot.locator('protspace-protein-tooltip');
   await expect(isolatedTooltip).toContainText('A0JMF6');
@@ -527,7 +510,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     ],
   });
 
-  const o88488Position = await getProteinScreenPosition(page, 'O88488');
+  const o88488Position = await proteinScreenPosition(page, 'O88488');
   await page.mouse.move(o88488Position.x, o88488Position.y);
   const tooltip = plot.locator('protspace-protein-tooltip');
   const transferredLabels = tooltip.locator('.eat-transferred-label');
@@ -551,7 +534,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
   for (const width of [320, 360]) {
     await page.setViewportSize({ width, height: 844 });
     await plot.scrollIntoViewIfNeeded();
-    const responsivePosition = await getProteinScreenPosition(page, 'O88488');
+    const responsivePosition = await proteinScreenPosition(page, 'O88488');
     // Whole pixels: Chrome truncates the mouse event's coordinates, and at this size O88488 sits
     // 1.5 px from P0C5E4, so a truncated fractional probe can land nearer the neighbour.
     await page.mouse.move(Math.round(responsivePosition.x), Math.round(responsivePosition.y));
@@ -597,7 +580,7 @@ test('renders and explores EAT transfers from the real phosphatase bundle', asyn
     };
   });
 
-  const targetPosition = await getProteinScreenPosition(page, transfer.target);
+  const targetPosition = await proteinScreenPosition(page, transfer.target);
   await page.mouse.move(targetPosition.x, targetPosition.y);
   await expect(tooltip).toContainText('Predicted (transferred)');
   await expect(tooltip).toContainText('Reliability index');

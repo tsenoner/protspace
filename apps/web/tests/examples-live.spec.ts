@@ -1,16 +1,20 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { EXAMPLE_DATASETS } from '../src/explore/example-datasets';
-import { EXAMPLE_MANIFEST } from '../src/explore/example-manifest';
-import { exampleServedPath } from '../src/explore/example-served-path';
+import {
+  exampleFetched,
+  exampleFile,
+  openExample,
+  refuseProductionFallback,
+  serveProductDemo,
+} from './helpers/examples';
 import {
   collectDefaultViewDriftWarnings,
   curatedViewOf,
   dismissTourIfPresent,
   getViewState,
-  waitForExploreDataLoad,
 } from './helpers/explore';
 import { STARTUP_URL_GLOB } from './helpers/fixtures';
 
@@ -29,37 +33,8 @@ import { STARTUP_URL_GLOB } from './helpers/fixtures';
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const PUBLIC_DIR = path.join(REPO_ROOT, 'apps/web/public');
 const THUMBNAIL_DIR =
   process.env.EXAMPLES_THUMBNAIL_DIR ?? path.join(REPO_ROOT, 'docs/explore/images/examples');
-
-/** Where `pnpm examples:fetch` puts a release-hosted file, or where a repo-hosted one is committed. */
-function localFile(id: string): string {
-  return path.join(PUBLIC_DIR, exampleServedPath(EXAMPLE_MANIFEST.examples[id]));
-}
-
-/**
- * The Playwright web server points the startup demo at a test fixture
- * (`VITE_STARTUP_DATASET_URL`); this project photographs the product, so the
- * demo's requests get the product demo back.
- */
-async function serveProductDemo(page: Page): Promise<void> {
-  const demo = EXAMPLE_DATASETS[0];
-  await page.route(STARTUP_URL_GLOB, (route) =>
-    route.fulfill({ path: localFile(demo.id), contentType: 'application/octet-stream' }),
-  );
-}
-
-/**
- * A development build fetches a missing example from protspace.app; refuse
- * that, so a missing local file fails here instead of testing the deployed copy.
- */
-async function refuseProductionFallback(page: Page, fallbacks: string[]): Promise<void> {
-  await page.route('https://protspace.app/**', (route) => {
-    fallbacks.push(route.request().url());
-    return route.abort();
-  });
-}
 
 async function waitForLegendItems(page: Page, timeout: number): Promise<void> {
   await page.waitForFunction(
@@ -85,21 +60,18 @@ test.describe('every example opens on its curated view', () => {
       const loadTimeout = entry.large ? 180_000 : 60_000;
       test.setTimeout(loadTimeout + 60_000);
 
-      const record = EXAMPLE_MANIFEST.examples[entry.id];
       expect(
-        existsSync(localFile(entry.id)),
-        `${path.relative(REPO_ROOT, localFile(entry.id))} is missing; run \`pnpm examples:fetch\`.`,
+        exampleFetched(entry.id),
+        `${path.relative(REPO_ROOT, exampleFile(entry.id))} is missing; run \`pnpm examples:fetch\`.`,
       ).toBe(true);
 
       const driftWarnings = collectDefaultViewDriftWarnings(page);
-      const fallbacks: string[] = [];
-      await refuseProductionFallback(page, fallbacks);
-      await serveProductDemo(page);
+      const fallbacks = await refuseProductionFallback(page);
+      await serveProductDemo(page, STARTUP_URL_GLOB);
 
-      await page.goto(`/explore?dataset=${entry.id}`);
+      // Waits for the manifest's count, so the wait cannot pass on another dataset.
+      await openExample(page, entry.id, { timeout: loadTimeout });
       await dismissTourIfPresent(page);
-      // The manifest's count, so the wait cannot pass on another dataset.
-      await waitForExploreDataLoad(page, { timeout: loadTimeout, proteinCount: record.proteins });
       await expect.poll(() => getViewState(page)).toEqual(curatedViewOf(entry));
       expect(await page.evaluate(() => window.location.search)).toBe(`?dataset=${entry.id}`);
       expect(driftWarnings).toEqual([]);
