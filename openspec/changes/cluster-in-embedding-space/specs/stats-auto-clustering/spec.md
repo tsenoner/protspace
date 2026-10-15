@@ -89,6 +89,20 @@ An embedding-space clustering SHALL be scored as an annotation, with `label_kind
 - **WHEN** `protspace stats` runs without `-a`
 - **THEN** no embedding cluster column and none of its separation rows are written
 
+### Requirement: Auto-cluster score caveat names where K-means ran
+
+The web app SHALL print one caveat under an auto-cluster column's separation scores, in the legend strips and in the panel's Separation block, chosen by the `space_kind` of that column's `n_clusters` row. A projection clustering SHALL get the caveat that its scores in this projection are optimistic. An embedding clustering SHALL get the caveat that its Embedding scores are optimistic and that its scores in a projection show how well the layout keeps its groups.
+
+#### Scenario: Embedding clustering on a projection
+
+- **WHEN** a projection is coloured by `cluster_elbow_<embedding>`
+- **THEN** the note under the strips and under Separation says K-means found the clusters in the embedding, and does not call this projection's scores optimistic
+
+#### Scenario: Projection clustering
+
+- **WHEN** a projection is coloured by its own `cluster_elbow_<projection>`
+- **THEN** the note says K-means found the clusters in this projection, so these scores are optimistic
+
 ### Requirement: Embedding cluster K and agreement rows
 
 An embedding-space clustering's chosen K SHALL be recorded as an `n_clusters` meta row with `space_kind=embedding`. When annotations are scored, its ARI and NMI against each one SHALL be recorded once, with `space_kind=embedding`.

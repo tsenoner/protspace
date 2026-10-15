@@ -15,7 +15,7 @@ The web app (`packages/utils/src/visualization/annotation-statistics.ts`) finds 
 
 **Goals:** one cluster column per embedding, shared by every projection of it, so cluster ids compare across UMAP and t-SNE (#324); scores for it that mean what the app's labels say; bounded cost at about 5,000 × 1,280; existing columns unchanged.
 
-**Non-goals:** other algorithms or K-selection methods; frontend changes; any 3-D option.
+**Non-goals:** other algorithms or K-selection methods; frontend changes beyond the caveat wording (Decision 6); any 3-D option, since 3-D dimensionality reduction is no longer supported.
 
 ## Decisions
 
@@ -62,8 +62,13 @@ Projection-space clusterings are not compared against the embedding clustering. 
 
 A precomputed similarity matrix (`EmbeddingSet.precomputed`) is skipped by the embedding pass, as it already is for annotation validity, so it gets no embedding cluster column. `projection` clustering still runs for its projections under `both`.
 
+### 6. The web caveat follows the clustering's space
+
+The legend strips and the panel print a fixed caveat under any auto-cluster column: "K-means found these clusters in this projection, so these scores are optimistic." For an embedding column that is wrong twice: K-means never saw the projection, so its scores there measure how well the layout keeps the groups, and the optimistic numbers are the Embedding reference. With `both` as the default the column reaches every new bundle, so the sentence is fixed here rather than left for later.
+
+`autoClusterScoreCaveat(statistics, annotation)` in `packages/utils` matches the column's `cluster_validity` row exactly as `isAutoClusterColumn` does and returns the sentence for its `space_kind`; both surfaces call it, so they still cannot word it differently. No new row or field is needed: an embedding clustering's only `cluster_validity` row is the embedding's own, since its projection scores are `annotation_validity` rows.
+
 ## Risks / Trade-offs
 
 - **One more column per embedding by default.** Users who never asked for it see it in the annotation dropdown. Accepted: it is the column #324 asked for, and `--cluster-space projection` restores the old set.
-- **The app's caveat names the wrong space for the new column.** The legend and panel print "K-means found these clusters in this projection, so these scores are optimistic." under any auto-cluster column. For an embedding column the projection scores are not optimistic (KMeans did not draw boundaries there) and the embedding reference is. The numbers are correct; only that sentence is off. Rewording it belongs to the web app (`AUTO_CLUSTER_SCORE_CAVEAT` in `packages/utils`) and is left as a follow-up rather than done here.
 - **Synthetic benchmark.** The timing table uses well-separated synthetic groups; real pLM embeddings converge more slowly, so expect somewhat more than 20 s. The cost stays bounded by the same caps (K ≤ 50, ≤ 50,000 fitted rows).
