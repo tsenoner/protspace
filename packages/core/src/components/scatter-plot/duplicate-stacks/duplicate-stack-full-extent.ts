@@ -2,7 +2,7 @@
  * Full-extent duplicate-stack compute for figure export (#301).
  *
  * The live overlay computes stacks only for the current viewport
- * (DuplicateStackOverlayController.ensureForViewport — chunked, quadtree-
+ * (DuplicateStackOverlayController.ensureForViewport — chunked, point-index-
  * scoped) as a deliberate perf optimization; a figure-export capture renders
  * the fit-all view and therefore needs stacks for the WHOLE extent. This
  * module is that capture-time compute: a synchronous two-pass sweep over the
@@ -11,7 +11,7 @@
  * Perf contract (measured: .flow/research/2026-07-15-issue-301-export-badges/
  * 04-sync-compute-perf.md — 570k points, Apple M4, 5-run medians):
  * - Pass 1 iterates the visible-slot list against pd.xs/pd.ys directly. NEVER
- *   enumerate via the quadtree (queryByPixels(±Infinity) measured 280ms vs
+ *   enumerate via the point index (queryByPixels(±Infinity) measured 280ms vs
  *   3ms, ~93× slower) and NEVER materialize PlotDataPoints per slot.
  * - Pass 1 keys on a collision-free BigInt packed from the two Float32 bit
  *   patterns — NEVER per-slot `${x}|${y}` strings (measured ~940–1170ms

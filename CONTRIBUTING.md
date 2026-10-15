@@ -7,6 +7,7 @@ Thanks for your interest in contributing! All types of contributions are welcome
 - [Contributing to ProtSpace](#contributing-to-protspace)
   - [Table of Contents](#table-of-contents)
   - [Quick Start](#quick-start)
+    - [OpenSpec (one time per machine)](#openspec-one-time-per-machine)
   - [Development Workflow](#development-workflow)
   - [Reporting Issues](#reporting-issues)
     - [Bug Reports](#bug-reports)
@@ -14,14 +15,18 @@ Thanks for your interest in contributing! All types of contributions are welcome
     - [Questions](#questions)
   - [Code Contributions](#code-contributions)
     - [Monorepo Structure](#monorepo-structure)
+    - [Technology Stack](#technology-stack)
     - [Making Changes](#making-changes)
     - [Code Quality Standards](#code-quality-standards)
+    - [Messaging Consistency](#messaging-consistency)
     - [Testing](#testing)
   - [Documentation](#documentation)
   - [Pull Request Process](#pull-request-process)
   - [Commit Message Guidelines](#commit-message-guidelines)
+  - [Release Process](#release-process)
   - [Code of Conduct](#code-of-conduct)
   - [Getting Help](#getting-help)
+  - [License](#license)
 
 ## Quick Start
 
@@ -35,11 +40,29 @@ pnpm install
 # Start development
 pnpm dev          # App + docs
 pnpm dev:app      # App only
-pnpm dev:docs     # Docs only (localhost:5174)
+pnpm dev:docs     # Docs only
 
 # Before committing (matches the installed Git hook, including docs validation)
 pnpm precommit
 ```
+
+The app runs at `http://localhost:8080` and the docs at `http://localhost:5174/docs/`. Both ports are
+defined once in `config/urls.ts`.
+
+### OpenSpec (one time per machine)
+
+Non-trivial work is planned as a spec before implementation — see
+[AGENTS.md](AGENTS.md#spec-driven-development-with-openspec-default-workflow). The workflow
+skills shell out to the `openspec` CLI, so install it once:
+
+```bash
+npm i -g @fission-ai/openspec   # the CLI the workflow skills call
+openspec init                   # generates per-tool skills/commands for this repo
+```
+
+Only `AGENTS.md` and `openspec/` (specs + changes) are committed. The per-tool skills and
+commands under `.claude/` and `.codex/`, and Codex's global prompts in `~/.codex/prompts/`,
+are CLI-generated and gitignored — regenerate them with `openspec init` / `openspec update`.
 
 ## Development Workflow
 
@@ -98,7 +121,7 @@ Before suggesting an enhancement:
 For general questions:
 
 1. Check [existing issues](https://github.com/tsenoner/protspace/issues)
-2. Search the [documentation](https://github.com/tsenoner/protspace/tree/main/docs)
+2. Search the [documentation](https://protspace.app/docs/)
 3. If unresolved, [open a new issue](https://github.com/tsenoner/protspace/issues/new) with context and environment details
 
 ## Code Contributions
@@ -109,14 +132,32 @@ For general questions:
 
 ```
 apps/
-├── web/           # Web application + landing page (Vite + React)
-├── protspace/     # Python CLI package (PyPI: protspace)
+├── web/           # Web application + landing page (Vite host shell for the Lit components)
+├── protspace/     # Python CLI package (PyPI: protspace) + notebooks
 └── prep/          # FASTA → .parquetbundle prep service (FastAPI)
 packages/
-├── core/          # Core web components (Lit + WebGL canvas)
+├── core/          # Web components library (Lit)
+│   └── src/components/
+│       ├── scatter-plot/     # WebGL2 renderer, interaction, tooltips
+│       ├── legend/
+│       ├── control-bar/
+│       ├── data-loader/
+│       └── structure-viewer/ # Mol* integration
 └── utils/         # Color, data-processing, export utilities
+config/            # Shared URLs, ports, and navigation config
 docs/              # Documentation site (VitePress)
+scripts/           # Repo tooling (documentation screenshot capture)
 ```
+
+### Technology Stack
+
+| Area              | Technologies                                   |
+| ----------------- | ---------------------------------------------- |
+| **Components**    | Lit 3, TypeScript                              |
+| **Web app**       | React 19 host shell, Vite; Turbo for the tasks |
+| **Visualization** | Hand-written WebGL2 (no rendering library), D3 |
+| **3D structures** | Mol\* (loaded at runtime from a CDN)           |
+| **Data**          | Parquet via `hyparquet` and `hyparquet-writer` |
 
 **Working on individual packages:**
 
@@ -139,6 +180,8 @@ pnpm test         # Run test suites
 pnpm clean        # Clean build artifacts
 ```
 
+Built package output lands in `packages/core/dist/` and `packages/utils/dist/`.
+
 **Code quality checks:**
 
 ```bash
@@ -155,6 +198,14 @@ pnpm test:ci      # Run the CI test suite locally
 pnpm docs:build   # Verify the documentation build
 ```
 
+**Constants shared with the Python package** (missing-value tokens, the N/A key and colour,
+Kelly's colours, palette ids, point shapes, boolean labels) live in
+`contracts/shared-constants.json`. Edit them there and run `pnpm shared-constants`, which
+regenerates `packages/utils/src/generated/shared-constants.ts` and
+`apps/protspace/src/protspace/_generated/shared_constants.py`; commit all three.
+`pnpm shared-constants:check` (in `pnpm precommit` and `bundle-contract.yml`) fails while they
+disagree. See [`contracts/README.md`](contracts/README.md) for what belongs there.
+
 ### Code Quality Standards
 
 **Automated CI checks** (all PRs must pass):
@@ -165,6 +216,12 @@ pnpm docs:build   # Verify the documentation build
 4. Build compilation
 5. Test suite execution
 6. Documentation build
+7. Bundle format contract (`bundle-contract.yml`), `pnpm test:contract` against a real Python-produced
+   bundle, plus `pnpm shared-constants:check`. Deliberately **unfiltered**: it runs on every PR,
+   including PRs that touch no code it covers.
+8. E2E, Playwright (`e2e.yml`), on PRs touching the web app, the packages it builds on, or the root
+   files that decide what those resolve to — `e2e.yml` owns the exact list — plus nightly on `main`.
+   Outside those paths, dispatch it: `gh workflow run e2e.yml --ref <branch>`.
 
 **Code style requirements:**
 
@@ -204,10 +261,51 @@ pnpm docs:build   # Verify the documentation build
 ### Testing
 
 ```bash
-pnpm test         # Run tests in watch mode
-pnpm test:ci      # Run the non-watch CI test suite
-pnpm test:e2e     # Run Playwright browser coverage
+pnpm test          # Run tests in watch mode
+pnpm test:ci       # Run the non-watch CI test suite
+pnpm test:e2e      # Run Playwright browser coverage
+pnpm test:contract # Bundle format contract: Python producer vs TypeScript reader
 ```
+
+`pnpm test:contract` shells out to the real `protspace bundle` CLI, so it needs `uv` on your
+PATH and a synced Python workspace. Without them it fails rather than skipping (deliberately, a
+missing producer must not read as a pass):
+
+```bash
+uv sync --package protspace --no-dev --locked   # what bundle-contract.yml does
+```
+
+**E2E:** the Playwright web server starts `pnpm dev:app` with `VITE_STARTUP_DATASET_URL`
+pointing the startup demo at a pinned fixture, so no scenario depends on the product's demo.
+Locally Playwright reuses a dev server already listening on :8080, and one you started yourself
+lacks that variable: stop it first (`lsof -iTCP:8080 -sTCP:LISTEN`), or the suite fails its
+"pinned startup demo" check.
+
+**Fixtures, examples and perf data are three different things:**
+
+- **Test fixtures** live in `apps/web/tests/fixtures/` and are the only bundles tests read
+  (`apps/web/tests/helpers/fixtures.ts` names them). A test never reads what the product serves,
+  so rebuilding an example cannot break it. Add a new fixture there rather than pointing a test
+  at `apps/web/public/`. The `example_role_*` fixtures, which stand in for the catalog examples
+  the E2E suite loads (`apps/web/tests/helpers/example-fixtures.ts`), are derived from the
+  others: edit and rerun `uv run apps/web/tests/fixtures/derive-example-role-fixtures.py`
+  rather than editing them by hand.
+- **Examples** are the Import menu's datasets (`apps/web/src/explore/example-datasets.ts`). Only
+  the startup demo is committed (`apps/web/public/data.parquetbundle`). The others are assets of
+  a GitHub release, pinned by size and sha256 in the generated
+  `apps/web/src/explore/example-manifest.ts` (written by
+  `apps/protspace/scripts/generate_examples/write_manifest.py`; never edit it by hand). The
+  deploy downloads and verifies them. For local work, `pnpm examples:fetch` puts them in the
+  gitignored `apps/web/public/examples/`; without it, a dev build fetches a missing example from
+  protspace.app.
+- **Perf datasets** are the WebGL benchmark's bundles, pinned in `perf/datasets.manifest.json`:
+  `pnpm perf:fetch` downloads them into the gitignored `perf/datasets/` (see `perf/README.md`).
+  The opt-in large-bundle E2E project reads the Swiss-Prot one from there.
+
+**Manual testing:** start `pnpm dev` and open the examples from the Import menu, or import a
+bundle yourself: `apps/web/tests/fixtures/toxprot_5181_pca3d.parquetbundle` for a quick check,
+or `perf/datasets/573K_swissprot.parquetbundle` (after `pnpm perf:fetch --only 573K_swissprot`)
+to exercise the large-dataset path.
 
 ## Documentation
 
@@ -219,6 +317,18 @@ pnpm docs:build    # Build static site
 pnpm docs:preview  # Preview production build
 pnpm docs:images   # Generate all documentation images (screenshots, animations, GIFs)
 ```
+
+**Generated pages:** two pages are written by scripts, so edit their sources and regenerate
+rather than editing the page. `pnpm precommit` and CI fail when either is stale.
+
+- `docs/guide/annotations.md`: from the annotation registry
+  (`packages/utils/src/visualization/annotation-metadata.ts`) and
+  `docs/scripts/annotation-details.ts`; regenerate with `pnpm docs:annotations`.
+- `docs/explore/example-datasets.md`: from the example catalog
+  (`apps/web/src/explore/example-datasets.ts`), the bundle manifest
+  (`apps/web/src/explore/example-manifest.ts`) and `docs/scripts/example-details.ts`; regenerate
+  with `pnpm docs:examples`. Its thumbnails come from the opt-in `examples-live` E2E project
+  (see `docs/explore/images/README.md`).
 
 **Documentation standards:**
 
@@ -302,6 +412,22 @@ test(core): add integration tests for data loader
 - Reference issues in footer: `Fixes #123` or `Closes #456`
 - Breaking changes: Include `BREAKING CHANGE:` in footer
 
+## Release Process
+
+Releases are automated, there is no manual version bump to make. The root `package.json` is private
+and has no `version` field; versions live per package.
+
+- **Python CLI (`apps/protspace`, PyPI: `protspace`)**, `.github/workflows/protspace-release.yml`
+  runs semantic-release on pushes to `main` that touch `apps/protspace/**`. It derives the next
+  version from your [conventional commit](#commit-message-guidelines) messages, updates
+  `apps/protspace/pyproject.toml` and the changelog, tags the release, then dispatches
+  `protspace-publish.yml` to publish to PyPI. Writing accurate commit types is what drives this.
+- **Web app**, `.github/workflows/deploy.yml` deploys to GitHub Pages on every push to `main` that
+  touches anything outside `apps/protspace/` and `apps/prep/`. No tagging involved.
+
+> **Note:** `@protspace/core` and `@protspace/utils` are versioned in their own `package.json` files
+> but are not currently published to npm; they are consumed inside the monorepo via `workspace:*`.
+
 ## Code of Conduct
 
 This project follows our [Code of Conduct](https://github.com/tsenoner/protspace/blob/main/CODE_OF_CONDUCT.md). We expect all contributors to:
@@ -317,6 +443,11 @@ Report unacceptable behavior to project maintainers.
 
 ## Getting Help
 
-- 📖 [Documentation](https://github.com/tsenoner/protspace/tree/main/docs)
+- 📖 [Documentation](https://protspace.app/docs/)
 - 🐛 [Bug Reports](https://github.com/tsenoner/protspace/issues?q=label%3Abug)
 - 💡 [Feature Requests](https://github.com/tsenoner/protspace/issues?q=label%3Aenhancement)
+- 💬 [Discussions](https://github.com/tsenoner/protspace/discussions)
+
+## License
+
+MIT, see [LICENSE](https://github.com/tsenoner/protspace/blob/main/LICENSE).

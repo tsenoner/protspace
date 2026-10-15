@@ -81,7 +81,7 @@ function makeFamilyData(): VisualizationData {
     // rather than echoing the source ref (its categorical-only short-circuit).
     // This lets the reference-change assertions below distinguish re-materialization.
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -114,7 +114,7 @@ function makeDataset2(): VisualizationData {
       other: families.map((v) => [families.indexOf(v)]),
     },
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -160,7 +160,7 @@ function makeNumericData(): VisualizationData {
       score: scores.map(() => [0]),
     },
     numeric_annotation_data: {
-      score: scores,
+      score: Float64Array.from(scores),
     },
   } as unknown as VisualizationData;
 }

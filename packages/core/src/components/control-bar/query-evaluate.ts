@@ -5,10 +5,16 @@ import type {
   FilterCondition,
   NumericCondition,
 } from './query-types';
-import { isFilterGroup } from './query-types';
+import { isFilterGroup, ANY_VALUE } from './query-types';
 import { isNumericConditionReady, matchesNumericValue } from './query-numeric-helpers';
 import { toInternalValue } from '../legend/config';
-import { getFirstAnnotationIndex, getProteinAnnotationIndices } from '@protspace/utils';
+import {
+  getFirstAnnotationIndex,
+  getProteinAnnotationCount,
+  getProteinAnnotationIndexAt,
+  isNAValue,
+  readNumericValue,
+} from '@protspace/utils';
 
 /**
  * Resolve the FIRST string annotation value for a protein at the given index.
@@ -61,12 +67,13 @@ export function resolveAnnotationInternalValues(
 
   if (!idxData || !valuesArr) return [normalizeValue(null)];
 
-  const indices = getProteinAnnotationIndices(idxData, proteinIndex);
-  if (indices.length === 0) return [normalizeValue(null)];
+  const count = getProteinAnnotationCount(idxData, proteinIndex);
+  if (count === 0) return [normalizeValue(null)];
 
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const idx of indices) {
+  for (let k = 0; k < count; k++) {
+    const idx = getProteinAnnotationIndexAt(idxData, proteinIndex, k);
     const raw = idx >= 0 && idx < valuesArr.length ? (valuesArr[idx] ?? null) : null;
     const normalized = normalizeValue(raw);
     if (!seen.has(normalized)) {
@@ -80,8 +87,9 @@ export function resolveAnnotationInternalValues(
 /**
  * Evaluate a single condition against all proteins, returning a Set of matching indices.
  * Categorical conditions use "is" semantics (value is among the selected set);
- * numeric conditions apply a comparison operator. Negation is handled at the
- * combining level via the NOT logical operator.
+ * numeric conditions apply a comparison operator. Both kinds additionally
+ * honour the presence sentinels `NA_VALUE` and `ANY_VALUE`. Negation is handled
+ * at the combining level via the NOT logical operator.
  */
 function evaluateCondition(
   condition: FilterCondition,
@@ -101,17 +109,95 @@ function evaluateCondition(
   }
 
   const valuesSet = new Set(condition.values);
+  // ANY_VALUE means "carries a real label", so it is satisfied by any resolved
+  // value other than the N/A sentinel — including a multi-label protein whose
+  // labels are a mix of real values and nulls.
+  const wantsAnyValue = valuesSet.has(ANY_VALUE);
   const matches = new Set<number>();
 
   for (let i = 0; i < numProteins; i++) {
     const resolved = resolveAnnotationInternalValues(i, condition.annotation, data);
 
-    if (resolved.some((value) => valuesSet.has(value))) {
-      matches.add(i);
+    for (const value of resolved) {
+      if (valuesSet.has(value) || (wantsAnyValue && !isNAValue(value))) {
+        matches.add(i);
+        break;
+      }
     }
   }
 
   return matches;
+}
+
+/**
+ * Every annotation referenced by an item (a condition, or every condition
+ * nested in a group). Used to scope NOT's "must have a value" guard.
+ */
+function collectAnnotations(item: FilterQueryItem, out: Set<string>): void {
+  if (isFilterGroup(item)) {
+    for (const condition of item.conditions) collectAnnotations(condition, out);
+  } else if (item.annotation) {
+    out.add(item.annotation);
+  }
+}
+
+/**
+ * Proteins carrying a value for at least ONE of the given annotations.
+ *
+ * "At least one" rather than "all" keeps NOT over a multi-annotation group as
+ * permissive as possible: only a protein that is N/A across every annotation
+ * the group touches is dropped. For the overwhelmingly common single-condition
+ * case the distinction does not arise.
+ */
+function proteinsWithAnyValue(
+  annotations: Set<string>,
+  data: ProtspaceData,
+  numProteins: number,
+): Set<number> {
+  const result = new Set<number>();
+
+  for (const annotation of annotations) {
+    const numericValues = data.numeric_annotation_data?.[annotation];
+    if (numericValues) {
+      for (let i = 0; i < numProteins; i++) {
+        if (readNumericValue(numericValues, i) !== null) result.add(i);
+      }
+      continue;
+    }
+
+    // Hand-rolled rather than looping resolveAnnotationInternalValues: this runs
+    // once per protein per NOT, and only needs "is there ONE real label?" — so it
+    // hoists the two record lookups out of the loop and short-circuits on the
+    // first hit instead of allocating a deduplicated array per row. The
+    // normalization rule itself is still the shared toInternalValue/isNAValue pair.
+    const idxData = data.annotation_data?.[annotation];
+    const valuesArr = data.annotations?.[annotation]?.values;
+    if (!idxData || !valuesArr) continue;
+
+    // Decide "is this a real value?" once per DECLARED value rather than once per
+    // label per protein: toInternalValue stringifies, so the per-label spelling
+    // allocated a throwaway string for all ~570K rows on every NOT evaluation
+    // (and the query builder re-evaluates once per condition on each keystroke).
+    // The table is as long as the category list, not the protein list.
+    const isRealValue = new Uint8Array(valuesArr.length);
+    for (let v = 0; v < valuesArr.length; v++) {
+      isRealValue[v] = isNAValue(toInternalValue(valuesArr[v] ?? null)) ? 0 : 1;
+    }
+
+    for (let i = 0; i < numProteins; i++) {
+      if (result.has(i)) continue;
+      for (let k = 0, count = getProteinAnnotationCount(idxData, i); k < count; k++) {
+        const idx = getProteinAnnotationIndexAt(idxData, i, k);
+        // Out-of-range indices normalize to null, i.e. NOT a real value.
+        if (idx >= 0 && idx < valuesArr.length && isRealValue[idx]) {
+          result.add(i);
+          break;
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -133,7 +219,7 @@ function evaluateNumericCondition(
 
   const matches = new Set<number>();
   for (let i = 0; i < numProteins; i++) {
-    if (matchesNumericValue(values[i] ?? null, condition)) {
+    if (matchesNumericValue(readNumericValue(values, i), condition)) {
       matches.add(i);
     }
   }
@@ -229,7 +315,15 @@ function evaluateItems(
     const op = item.logicalOp;
 
     if (op === 'NOT') {
-      itemResult = complement(itemResult, numProteins);
+      // NOT means "has a value AND does not match" — not a bare set complement.
+      // Complementing alone would sweep in every protein that is N/A on the
+      // negated annotation, which is what forced users to bolt an explicit
+      // `AND NOT N/A` onto their queries. Subtracting the matches from the
+      // proteins that actually carry a value makes `NOT` self-contained, and
+      // makes `NOT (is N/A)` mean exactly "has any value".
+      const annotations = new Set<string>();
+      collectAnnotations(item, annotations);
+      itemResult = difference(proteinsWithAnyValue(annotations, data, numProteins), itemResult);
     }
 
     if (accumulated === null) {
@@ -264,10 +358,11 @@ function intersection(a: Set<number>, b: Set<number>): Set<number> {
   return result;
 }
 
-function complement(s: Set<number>, n: number): Set<number> {
+/** `a \ b`. Used by NOT, whose scope is already narrowed to proteins with a value. */
+function difference(a: Set<number>, b: Set<number>): Set<number> {
   const result = new Set<number>();
-  for (let i = 0; i < n; i++) {
-    if (!s.has(i)) result.add(i);
+  for (const v of a) {
+    if (!b.has(v)) result.add(v);
   }
   return result;
 }

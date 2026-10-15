@@ -5,6 +5,7 @@ import { NA_VALUE, NA_DEFAULT_COLOR } from '@protspace/utils';
 import {
   convertParquetToVisualizationData,
   convertParquetToVisualizationDataOptimized,
+  generateColorsAndShapes,
 } from './conversion';
 import { extractRowsFromParquetBundle, type BundleExtractionResult } from './bundle';
 import type { GenericRow, Rows } from './types';
@@ -31,7 +32,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.length.kind).toBe('numeric');
     expect(result.annotations.length.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.length).toEqual([100, 200, null]);
+    expect(result.numeric_annotation_data?.length).toEqual(new Float64Array([100, 200, NaN]));
     expect(result.annotation_data.length).toBeUndefined();
     expect(result.annotations.family.kind).toBe('categorical');
   });
@@ -57,7 +58,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.cluster_id.kind).toBe('numeric');
     expect(result.annotations.cluster_id.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.cluster_id).toEqual([101, 203, 101]);
+    expect(result.numeric_annotation_data?.cluster_id).toEqual(new Float64Array([101, 203, 101]));
     expect(result.annotation_data.cluster_id).toBeUndefined();
   });
 
@@ -70,7 +71,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.length.kind).toBe('numeric');
     expect(result.annotations.length.numericType).toBe('float');
-    expect(result.numeric_annotation_data?.length).toEqual([1.1, 2.2, 3.3]);
+    expect(result.numeric_annotation_data?.length).toEqual(new Float64Array([1.1, 2.2, 3.3]));
     expect(result.annotation_data.length).toBeUndefined();
   });
 
@@ -83,7 +84,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.length.kind).toBe('numeric');
     expect(result.annotations.length.numericType).toBe('float');
-    expect(result.numeric_annotation_data?.length).toEqual([1, 2, 3.5]);
+    expect(result.numeric_annotation_data?.length).toEqual(new Float64Array([1, 2, 3.5]));
     expect(result.annotation_data.length).toBeUndefined();
   });
 
@@ -97,7 +98,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.length.kind).toBe('numeric');
     expect(result.annotations.length.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.length).toEqual([null, null, null, 4]);
+    expect(result.numeric_annotation_data?.length).toEqual(new Float64Array([NaN, NaN, NaN, 4]));
     expect(result.annotation_data.length).toBeUndefined();
   });
 
@@ -163,7 +164,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(numericResult.annotations.length.kind).toBe('numeric');
     expect(numericResult.annotations.length.numericType).toBe('int');
-    expect(numericResult.numeric_annotation_data?.length).toEqual([1, null, 2]);
+    expect(numericResult.numeric_annotation_data?.length).toEqual(new Float64Array([1, NaN, 2]));
     expect(numericResult.annotation_data.length).toBeUndefined();
 
     // 'Infinity' is no longer treated as missing — it forces categorical fallback.
@@ -202,7 +203,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.length.kind).toBe('numeric');
     expect(result.annotations.length.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.length).toEqual([100, 200, null]);
+    expect(result.numeric_annotation_data?.length).toEqual(new Float64Array([100, 200, NaN]));
     expect(result.annotation_data.length).toBeUndefined();
     expect(result.annotations.family.kind).toBe('categorical');
     expect(result.projections).toHaveLength(1);
@@ -302,9 +303,9 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
       expect(result.annotation_data[columnName]).toBeUndefined();
     }
 
-    expect(result.numeric_annotation_data?.num_sequential?.slice(0, 8)).toEqual([
-      1, 2, 714, 3, 4, 1321, 1322, 1323,
-    ]);
+    expect(result.numeric_annotation_data?.num_sequential?.slice(0, 8)).toEqual(
+      new Float64Array([1, 2, 714, 3, 4, 1321, 1322, 1323]),
+    );
     expect(result.numeric_annotation_data?.num_random_float?.[0]).toBeCloseTo(63.94);
     expect(result.numeric_annotation_data?.num_random_float?.[1]).toBeCloseTo(2.5);
     expect(result.numeric_annotation_data?.num_random_float?.[2]).toBeCloseTo(50.05);
@@ -342,7 +343,9 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.score.kind).toBe('numeric');
     expect(result.annotations.score.numericType).toBe('float');
-    expect(result.numeric_annotation_data?.score).toEqual([1.5, null, 2.5, null, null, null]);
+    expect(result.numeric_annotation_data?.score).toEqual(
+      new Float64Array([1.5, NaN, 2.5, NaN, NaN, NaN]),
+    );
   });
 
   it("does NOT treat '-' or '.' as missing — they demote a numeric column to categorical", () => {
@@ -371,7 +374,7 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.val.kind).toBe('numeric');
     expect(result.annotations.val.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.val).toEqual([10, null, null, 20]);
+    expect(result.numeric_annotation_data?.val).toEqual(new Float64Array([10, NaN, NaN, 20]));
   });
 
   it('falls back to categorical when ALL values are missing markers', () => {
@@ -406,7 +409,9 @@ describe('convertParquetToVisualizationData numeric annotations', () => {
 
     expect(result.annotations.val.kind).toBe('numeric');
     expect(result.annotations.val.numericType).toBe('int');
-    expect(result.numeric_annotation_data?.val).toEqual([5, null, null, null, null, 10]);
+    expect(result.numeric_annotation_data?.val).toEqual(
+      new Float64Array([5, NaN, NaN, NaN, NaN, 10]),
+    );
   });
 });
 
@@ -728,8 +733,6 @@ describe('annotation_data storage shape', () => {
   });
 });
 
-import { generateColorsAndShapes } from './conversion';
-
 describe('generateColorsAndShapes', () => {
   it('returns palette.length × shapeCount distinct (color, shape) pairs', () => {
     const { colors, shapes } = generateColorsAndShapes('kellys', 200);
@@ -748,20 +751,19 @@ describe('generateColorsAndShapes', () => {
     expect(shapes).toHaveLength(10);
   });
 
-  it('cycles after palette.length × shapeCount entries', () => {
-    // The array is capped at distinctPairs (126 for Kelly's).
-    // Consumers index via colors[i % colors.length] to cycle for i >= 126.
-    const { colors: c1, shapes: s1 } = generateColorsAndShapes('kellys', 1);
-    const { colors: c126, shapes: s126 } = generateColorsAndShapes('kellys', 126);
-    // Entry 127 (index 126) wraps to index 0 via consumer-side modular indexing.
-    expect(c126[126 % c126.length]).toBe(c1[0]);
-    expect(s126[126 % s126.length]).toBe(s1[0]);
+  it('advances the colour first and the shape once per full palette cycle', () => {
+    // Colour-major order keeps neighbouring categories apart by colour before shape.
+    const { colors, shapes } = generateColorsAndShapes('kellys', 126);
+    expect(colors[1]).not.toBe(colors[0]);
+    expect(shapes[20]).toBe(shapes[0]);
+    expect(colors[21]).toBe(colors[0]);
+    expect(shapes[21]).not.toBe(shapes[0]);
   });
 
   it('falls back to kellys for unknown palette ids', () => {
-    const { colors } = generateColorsAndShapes('not-a-real-palette', 5);
-    expect(colors).toHaveLength(5);
-    // Should be the first 5 entries of the Kelly's palette
+    expect(generateColorsAndShapes('not-a-real-palette', 5)).toEqual(
+      generateColorsAndShapes('kellys', 5),
+    );
   });
 
   it('handles zero or negative counts as empty arrays', () => {

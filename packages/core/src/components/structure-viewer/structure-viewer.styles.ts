@@ -1,6 +1,7 @@
 import { css } from 'lit';
 import { tokens } from '../../styles/tokens';
 import { overlayMixins } from '../../styles/overlay-mixins';
+import { segmentedControlMixin } from '../../styles/mixins';
 
 const structureViewerStylesCore = css`
   :host {
@@ -51,14 +52,17 @@ const structureViewerStylesCore = css`
     font-weight: 500;
     color: var(--protspace-viewer-text);
     margin: 0;
-    text-decoration: none;
-    cursor: pointer;
-    transition:
-      color 0.2s,
-      text-decoration-color 0.2s;
   }
 
+  /* Two stacked rows: what this is, then where it goes. */
   .header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  .header-title-row {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -73,33 +77,76 @@ const structureViewerStylesCore = css`
   .header-links {
     display: flex;
     align-items: baseline;
-    gap: 0.25rem;
+    flex-wrap: wrap;
+    column-gap: 0.35rem;
+    row-gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
     font-size: 0.75rem;
   }
 
+  .header-links-item {
+    display: inline-flex;
+    align-items: baseline;
+  }
+
   .header-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.1rem;
     color: var(--protspace-viewer-text-muted);
     text-decoration: none;
     cursor: pointer;
-    transition:
-      color 0.2s,
-      text-decoration-color 0.2s;
+    transition: color 0.2s;
   }
 
-  .header-link-separator {
+  /*
+   * Underline the label only. A text-decoration set on the anchor propagates
+   * into its descendants and cannot be cancelled there, so underlining the
+   * anchor would drag the arrow under the same line.
+   */
+  .header-link-label {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: color-mix(in srgb, var(--protspace-viewer-text-muted) 45%, transparent);
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.2s;
+  }
+
+  /*
+   * The separator is a CSS rule rather than a hand-placed element, so adding a
+   * resource cannot forget one or misplace it. It hangs off the list item, not
+   * the link, so it stays out of the link's name, click area and focus ring,
+   * and it trails its own item so a wrapped row starts on a label. The empty
+   * alt text keeps screen readers from announcing it; the first declaration is
+   * the fallback for engines without that syntax.
+   */
+  .header-links-item:not(:last-child)::after {
+    content: '·';
+    content: '·' / '';
+    margin-left: 0.35rem;
     color: var(--protspace-viewer-text-muted);
     opacity: 0.5;
   }
 
-  .title:hover,
-  .title:focus-visible,
-  .header-link:hover,
-  .header-link:focus-visible {
-    text-decoration: underline;
-    text-underline-offset: 2px;
+  .header-link-external {
+    font-size: 0.85em;
+    line-height: 1;
+    opacity: 0.7;
   }
 
-  .title:focus-visible,
+  .header-link:hover,
+  .header-link:focus-visible {
+    color: var(--protspace-viewer-text);
+  }
+
+  .header-link:hover .header-link-label,
+  .header-link:focus-visible .header-link-label {
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+  }
+
   .header-link:focus-visible {
     outline: 2px solid var(--protspace-viewer-loading);
     outline-offset: 2px;
@@ -126,7 +173,9 @@ const structureViewerStylesCore = css`
   .viewer-container {
     position: relative;
     width: 100%;
-    height: 100%;
+    /* Take only the height the header and footer leave, so the footer never overflows */
+    flex: 1 1 0;
+    min-height: 0;
     background: var(--protspace-viewer-bg);
     border-radius: 0 0 6px 6px;
   }
@@ -188,22 +237,54 @@ const structureViewerStylesCore = css`
     font-size: 0.875rem;
   }
 
-  .viewer-content {
+  .viewer-content,
+  .molstar-mount {
     width: 100%;
     height: 100%;
     border-radius: 0 0 6px 6px;
   }
 
+  .color-toolbar,
   .tips {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding: 0.2rem 0.5rem;
     background: var(--disabled-bg);
-    column-gap: 5px;
     border-top: 1px solid var(--protspace-viewer-border);
-    font-size: 0.75rem;
     color: var(--protspace-viewer-text-muted);
+    font-size: 0.75rem;
+  }
+
+  .color-toolbar {
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  /* Without tips the toolbar is the panel's last row, so it carries the bottom corners */
+  .color-toolbar:last-child {
+    border-radius: 0 0 6px 6px;
+  }
+
+  .color-toolbar-label {
+    font-weight: 600;
+  }
+
+  /* Bridge the viewer's theming hooks into the shared segmented control */
+  .color-mode-group {
+    --segmented-border: var(--protspace-viewer-border);
+    --segmented-bg: var(--protspace-viewer-bg);
+    --segmented-text: var(--protspace-viewer-text-muted);
+    --segmented-hover-bg: color-mix(
+      in srgb,
+      var(--protspace-viewer-text) 8%,
+      var(--protspace-viewer-bg)
+    );
+    --segmented-hover-text: var(--protspace-viewer-text);
+  }
+
+  .tips {
+    flex-direction: column;
+    padding: 0.2rem 0.5rem;
     border-radius: 0 0 6px 6px;
   }
 
@@ -220,6 +301,11 @@ const structureViewerStylesCore = css`
     :host {
       width: calc(50% - 6px);
     }
+
+    /* The stacked layout leaves the panel short and half-width; keep only the color legend */
+    .interaction-tip {
+      display: none;
+    }
   }
 
   @media (max-width: 550px) {
@@ -230,4 +316,9 @@ const structureViewerStylesCore = css`
   }
 `;
 
-export const structureViewerStyles = [tokens, overlayMixins, structureViewerStylesCore];
+export const structureViewerStyles = [
+  tokens,
+  overlayMixins,
+  segmentedControlMixin,
+  structureViewerStylesCore,
+];

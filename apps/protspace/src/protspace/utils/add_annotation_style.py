@@ -1,20 +1,26 @@
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
+from protspace._generated.shared_constants import (
+    CATEGORICAL_PALETTE_IDS,
+    DEFAULT_CATEGORICAL_PALETTE_ID,
+    GRADIENT_PALETTE_IDS,
+    NA_DEFAULT_COLOR,
+    POINT_SHAPES,
+)
 from protspace.data.annotations.encoding import to_display_value
+from protspace.data.io.settings_converter import (
+    NA_INTERNAL,
+    is_na_label,
+    visualization_state_to_settings,
+)
 from protspace.utils.arrow_reader import ArrowReader
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_SHAPES = [
-    "circle",
-    "square",
-    "diamond",
-    "triangle-up",
-    "triangle-down",
-    "plus",
-]
+ALLOWED_SHAPES = list(POINT_SHAPES)
 
 # Settings-level keys that are passed through to the bundle settings
 # (everything except "colors" and "shapes" which are applied via the reader).
@@ -30,15 +36,11 @@ _SETTINGS_KEYS = {
     "pinnedValues",
 }
 
-# Built-in palette IDs, mirrored from the web frontend — the source of truth:
-# packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES) and
-# numeric-binning.ts (GRADIENT_COLOR_SCHEME_IDS). `selectedPaletteId` may only be a
-# categorical id; numeric gradients are chosen in the UI (see docs/styling.md).
-# Keep this list in sync with those files.
-_CATEGORICAL_PALETTE_IDS = frozenset(
-    {"kellys", "okabeIto", "tolBright", "set2", "dark2", "tableau10"}
-)
-_GRADIENT_PALETTE_IDS = frozenset({"batlow", "viridis", "cividis", "inferno", "plasma"})
+# Built-in palette IDs, shared with the web app through
+# contracts/shared-constants.json. `selectedPaletteId` may only be a categorical id;
+# numeric gradients are chosen in the UI (see https://protspace.app/docs/guide/styling).
+_CATEGORICAL_PALETTE_IDS = frozenset(CATEGORICAL_PALETTE_IDS)
+_GRADIENT_PALETTE_IDS = frozenset(GRADIENT_PALETTE_IDS)
 
 
 def load_annotation_styles(
@@ -79,22 +81,73 @@ def detect_data_format(input_path: str) -> str:
         )
 
 
-_NA_LABELS = {"", "<NA>", "NaN"}
-
-
 def _resolve_na(value: str, all_values: set[str]) -> str | None:
-    """If *value* is an NA-like label, return the matching label in *all_values*.
+    """If *value* names N/A, return the N/A spelling *all_values* holds.
 
-    Different data sources represent missing values as ``""``, ``"<NA>"``, or
-    ``"NaN"``.  This helper maps between them so styles using one form still
-    work when the data uses another.  Returns *None* when no match is found.
+    The web draws every missing spelling as one N/A category
+    (:func:`~protspace.data.io.settings_converter.is_na_label`): a v3 bundle's
+    missing cell decodes as ``""``, a Parquet NULL as ``"None"``, and a cell may
+    say ``N/A`` outright. A styles file may use any of them. The first spelling
+    in sorted order, so the answer does not depend on set order; *None* when the
+    column has no missing cell.
     """
-    if value not in _NA_LABELS:
+    if not is_na_label(value):
         return None
-    for candidate in _NA_LABELS:
-        if candidate in all_values:
-            return candidate
+    return min((v for v in all_values if is_na_label(v)), default=None)
+
+
+def _resolve_numeric(value: str, all_values: set[str]) -> str | None:
+    """Match *value* against *all_values* numerically (``'100.0'`` → ``'100'``).
+
+    A numeric column's physical parquet type decides the spelling its values read
+    back as. The frontend writer stores an integral column as INT32, where it used
+    to widen every numeric column to DOUBLE, so a styles file written against an
+    older export is keyed ``'100.0'`` while the same column now reads ``'100'``.
+    Returns *None* when neither side is numeric or nothing matches.
+    """
+    try:
+        target = float(value)
+    except ValueError:
+        return None
+    for candidate in all_values:
+        try:
+            if float(candidate) == target:
+                return candidate
+        except ValueError:
+            continue
     return None
+
+
+def resolve_style_key(value: str, values: set[str]) -> str | None:
+    """Return the key in *values* that a styles file's *value* refers to, or None.
+
+    The value itself; else, for an NA-like label, the NA spelling the data uses
+    (:func:`_resolve_na`); else the same number spelled another way
+    (:func:`_resolve_numeric`). ``protspace style`` refuses a key this returns
+    None for, so a caller can drop such keys before styling.
+    """
+    if value in values:
+        return value
+    for resolver in (_resolve_na, _resolve_numeric):
+        resolved = resolver(value, values)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _resolve_style_value(value: str, all_values: set[str], annotation: str) -> str:
+    """Return the key in *all_values* that a styles file's *value* refers to.
+
+    Raises:
+        ValueError: when *value* names no value of *annotation*.
+    """
+    resolved = resolve_style_key(value, all_values)
+    if resolved is not None:
+        return resolved
+    raise ValueError(
+        f"Value '{value}' does not exist for annotation '{annotation}'. "
+        f"Available values: {sorted(all_values)}"
+    )
 
 
 def _to_display_value(raw: str, *, decode: bool = True) -> list[str]:
@@ -136,18 +189,15 @@ def compute_value_frequencies(reader) -> dict[str, dict[str, int]]:
     return frequencies
 
 
-def _annotation_display_values(reader, annotation: str) -> set[str]:
-    """Display values for one annotation — the keys a styles file is keyed by.
+def style_keys(cells: Iterable[object], *, decode: bool = True) -> set[str]:
+    """The keys a styles file names a column's values by.
 
-    Mirrors :func:`_to_display_value` (v2-decode, ``|`` suffix trim, ``;``
-    split), the exact transform :func:`generate_template` uses, so a styles
-    file built from the template validates and stores against the same keys the
-    plot/legend groups by — not the raw percent-encoded wire cells. NA-like
-    labels carry no reserved char, so they pass through unchanged.
+    Every display value (:func:`_to_display_value`) of every cell, read as
+    ``str()``, so a null cell is ``"None"``. ``decode`` as for
+    :func:`_to_display_value`: true for a v2 (or later) table.
     """
-    decode = reader.should_decode()
     values: set[str] = set()
-    for raw in reader.get_all_annotation_values(annotation):
+    for raw in cells:
         values.update(_to_display_value(str(raw), decode=decode))
     return values
 
@@ -158,8 +208,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
     The CLI styling model is categorical-only, but the web frontend bins numeric
     columns into gradient ranges — so per-value colors/shapes/pins set via the
     CLI silently do not apply. Naming the column + its distinct-value count makes
-    that visible instead of a surprise. See ``docs/styling.md`` (Numeric
-    annotations).
+    that visible instead of a surprise. See https://protspace.app/docs/guide/styling#numeric-annotations.
     """
     from protspace.stats.annotation_select import _is_missing, _is_numeric
 
@@ -172,7 +221,7 @@ def _warn_if_numeric(annotation: str, display_values) -> bool:
         "--generate-template lists every number as its own category. Pre-bin it into "
         "categorical range labels (e.g. '100-200') or color it as a continuous "
         "gradient in the web app (https://protspace.app/explore). "
-        "See docs/styling.md#numeric-annotations.",
+        "See https://protspace.app/docs/guide/styling#numeric-annotations.",
         annotation,
         len(cleaned),
     )
@@ -183,8 +232,7 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
     """Warn when a categorical column's ``selectedPaletteId`` is not a categorical id.
 
     For a categorical column ``selectedPaletteId`` picks the palette, and the frontend
-    silently resets a gradient or unknown id to ``kellys`` (see ``docs/styling.md`` —
-    Color palettes). Naming the offending id makes that reset visible instead of a
+    silently resets a gradient or unknown id to ``kellys`` (see https://protspace.app/docs/guide/styling#color-palettes). Naming the offending id makes that reset visible instead of a
     surprise. A numeric column instead reads ``selectedPaletteId`` as its gradient, so
     callers skip this check for numeric columns.
     """
@@ -199,9 +247,10 @@ def _warn_if_bad_palette(annotation: str, styles: dict) -> None:
         reason = f"'{palette}' is not a known palette"
     logger.warning(
         "Annotation '%s': selectedPaletteId %s; the frontend will fall back to "
-        "'kellys'. Categorical palettes: %s. See docs/styling.md#color-palettes.",
+        "'%s'. Categorical palettes: %s. See https://protspace.app/docs/guide/styling#color-palettes.",
         annotation,
         reason,
+        DEFAULT_CATEGORICAL_PALETTE_ID,
         ", ".join(sorted(_CATEGORICAL_PALETTE_IDS)),
     )
 
@@ -210,42 +259,39 @@ def generate_template(input_file: str) -> dict:
     """Generate a pre-filled styles template from an input file.
 
     Reads annotations, computes value frequencies, and outputs a template
-    with values in frequency-descending order. ``<NA>`` gets a default
-    light-gray color.
+    with values in frequency-descending order. N/A, whatever the data spells
+    it, is one ``__NA__`` entry, last, with the web's default N/A colour,
+    ``NA_DEFAULT_COLOR``.
     """
-    data_format = detect_data_format(input_file)
-
-    if data_format == "parquetbundle":
-        from protspace.data.io.bundle import extract_bundle_to_dir
-
-        temp_dir = extract_bundle_to_dir(Path(input_file))
-        reader = ArrowReader(Path(temp_dir))
-    elif data_format == "parquet":
-        reader = ArrowReader(Path(input_file))
+    detect_data_format(input_file)
+    reader = ArrowReader(Path(input_file))
 
     frequencies = compute_value_frequencies(reader)
     template: dict = {}
 
     for annotation in sorted(reader.get_all_annotations()):
         freqs = frequencies.get(annotation, {})
-        _warn_if_numeric(annotation, freqs.keys())
+        numeric = _warn_if_numeric(annotation, freqs.keys())
         # Sort values by frequency descending
         sorted_values = sorted(
             freqs.keys(), key=lambda v: freqs.get(v, 0), reverse=True
         )
 
-        colors: dict[str, str] = {}
-        for value in sorted_values:
-            if value in ("<NA>", "NaN", ""):
-                colors[value] = "#C0C0C0"
-            else:
-                colors[value] = ""
+        # Every N/A spelling is the web's one N/A entry: listed once, last, as
+        # the legend places it, in the colour the web gives an unstyled N/A.
+        colors: dict[str, str] = {v: "" for v in sorted_values if not is_na_label(v)}
+        if any(is_na_label(v) for v in sorted_values):
+            colors[NA_INTERNAL] = NA_DEFAULT_COLOR
 
         template[annotation] = {
             "sortMode": "size-desc",
             "maxVisibleValues": 10,
-            "shapeSize": 30,
-            "selectedPaletteId": "kellys",
+            "shapeSize": 10,
+            # A numeric column reads selectedPaletteId as its gradient, where the
+            # categorical default would reset any gradient chosen in the web app.
+            **(
+                {} if numeric else {"selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID}
+            ),
             "hiddenValues": [],
             "colors": colors,
             "shapes": {},
@@ -254,98 +300,33 @@ def generate_template(input_file: str) -> dict:
     return template
 
 
-def add_annotation_styles_parquet(
-    parquet_dir: str,
+def _styled_settings(
+    reader: ArrowReader,
     annotation_styles: dict[str, dict[str, dict[str, str]]],
-    output_dir: str,
-) -> None:
-    """Add annotation styles to parquet format data."""
-    reader = ArrowReader(Path(parquet_dir))
+) -> dict:
+    """Apply *annotation_styles* to *reader* and return the settings to store.
 
-    for annotation, styles in annotation_styles.items():
-        # Check if the annotation exists
-        all_annotations = reader.get_all_annotations()
-        if annotation not in all_annotations:
-            raise ValueError(
-                f"Annotation '{annotation}' does not exist in the protein data. Available annotations: {all_annotations}"
-            )
-
-        # Validate/store against display values (what the template exposes),
-        # not the raw percent-encoded wire cells, so a template round-trips.
-        all_values = _annotation_display_values(reader, annotation)
-        _warn_if_numeric(annotation, all_values)
-
-        # Add colors
-        if "colors" in styles:
-            for value, color in styles["colors"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_annotation_color(annotation, resolved, color)
-
-        # Add shapes
-        if "shapes" in styles:
-            for value, shape in styles["shapes"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation '{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_marker_shape(annotation, resolved, shape)
-
-    # Save the updated data
-    reader.save_data(Path(output_dir))
-
-
-def add_annotation_styles_bundle(
-    bundle_file: str,
-    annotation_styles: dict[str, dict[str, dict[str, str]]],
-    output_file: str,
-) -> None:
-    """Add annotation styles to a .parquetbundle file.
-
-    Extracts the bundle to a temp dir, applies styles via ArrowReader, converts
-    the visualization_state back to settings_json, then writes the output
-    bundle with updated settings.
-
-    The *annotation_styles* dict may contain per-annotation settings-level
-    keys (``sortMode``, ``maxVisibleValues``, ``shapeSize``, ``hiddenValues``,
-    ``selectedPaletteId``) alongside ``colors`` and ``shapes``.  These are
+    The one styling pass behind both inputs of ``protspace style``, so a bundle
+    and its unbundled directory come out with the same settings.  The
+    *annotation_styles* dict may contain per-annotation settings-level keys
+    (``sortMode``, ``maxVisibleValues``, ``shapeSize``, ``hiddenValues``,
+    ``selectedPaletteId``) alongside ``colors`` and ``shapes``; these are
     forwarded to the settings converter.
     """
-    from protspace.data.io.bundle import (
-        extract_bundle_to_dir,
-        read_bundle,
-        replace_settings_in_bundle,
-    )
-    from protspace.data.io.settings_converter import visualization_state_to_settings
-
-    # Extract bundle so ArrowReader can load the data
-    temp_dir = extract_bundle_to_dir(Path(bundle_file))
-    reader = ArrowReader(Path(temp_dir))
-
-    # Read existing settings from the bundle (if any) to preserve extra fields
-    _, existing_settings = read_bundle(Path(bundle_file))
+    # Existing settings (if any), to preserve extra fields.  From the reader,
+    # not the file again: this command reads its input once (and so logs a
+    # legacy-format warning once).
+    existing_settings = reader.settings
 
     # Collect settings-level overrides from the styles input
     style_overrides: dict[str, dict] = {}
 
     # Compute value frequencies once (used for validation below and for
     # frequency-based zOrder). Its keys are the display values a style file is
-    # keyed by — the same set _annotation_display_values would build — so it
-    # doubles as the validation set without a second full-protein scan. Style
-    # updates only mutate visualization_state, not annotation values, so the
-    # frequencies stay valid for the zOrder pass afterwards.
+    # keyed by — the same set style_keys builds — so it doubles as the
+    # validation set without a second full-protein scan. Style updates only
+    # mutate visualization_state, not annotation values, so the frequencies
+    # stay valid for the zOrder pass afterwards.
     value_frequencies = compute_value_frequencies(reader)
 
     for annotation, styles in annotation_styles.items():
@@ -358,7 +339,7 @@ def add_annotation_styles_bundle(
 
         all_values = set(value_frequencies.get(annotation, {}))
         # selectedPaletteId is the categorical palette; a numeric column reads it as
-        # its gradient instead (a gradient id applies — see docs/styling.md), so the
+        # its gradient instead (a gradient id applies — see https://protspace.app/docs/guide/styling), so the
         # categorical-palette check only runs when the column is not numeric.
         if not _warn_if_numeric(annotation, all_values):
             _warn_if_bad_palette(annotation, styles)
@@ -368,44 +349,62 @@ def add_annotation_styles_bundle(
         if overrides:
             style_overrides[annotation] = overrides
 
+        # An N/A style goes under __NA__, the key the stored settings already
+        # use, so it replaces the stored N/A style rather than competing with it.
         if "colors" in styles:
             for value, color in styles["colors"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation "
-                            f"'{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_annotation_color(annotation, resolved, color)
+                resolved = _resolve_style_value(str(value), all_values, annotation)
+                key = NA_INTERNAL if is_na_label(resolved) else resolved
+                reader.update_annotation_color(annotation, key, color)
 
         if "shapes" in styles:
             for value, shape in styles["shapes"].items():
-                resolved = str(value)
-                if resolved not in all_values:
-                    na_match = _resolve_na(resolved, all_values)
-                    if na_match is not None:
-                        resolved = na_match
-                    else:
-                        raise ValueError(
-                            f"Value '{value}' does not exist for annotation "
-                            f"'{annotation}'. Available values: {sorted(all_values)}"
-                        )
-                reader.update_marker_shape(annotation, resolved, shape)
+                resolved = _resolve_style_value(str(value), all_values, annotation)
+                key = NA_INTERNAL if is_na_label(resolved) else resolved
+                reader.update_marker_shape(annotation, key, shape)
 
     # Convert updated visualization_state back to settings_json
     viz_state = reader.data.get("visualization_state", {})
-    new_settings = visualization_state_to_settings(
+    return visualization_state_to_settings(
         viz_state,
         existing_settings,
         value_frequencies=value_frequencies,
         style_overrides=style_overrides or None,
     )
 
-    # Write output bundle with updated settings
+
+def add_annotation_styles_parquet(
+    parquet_dir: str,
+    annotation_styles: dict[str, dict[str, dict[str, str]]],
+    output_dir: str,
+) -> None:
+    """Add annotation styles to a ProtSpace parquet directory.
+
+    The directory counterpart of :func:`add_annotation_styles_bundle`: the
+    styles land in settings.parquet and every other file is kept as stored.
+    """
+    from protspace.data.io.bundle import replace_settings_in_directory
+
+    reader = ArrowReader(Path(parquet_dir))
+    new_settings = _styled_settings(reader, annotation_styles)
+    replace_settings_in_directory(Path(parquet_dir), Path(output_dir), new_settings)
+
+
+def add_annotation_styles_bundle(
+    bundle_file: str,
+    annotation_styles: dict[str, dict[str, dict[str, str]]],
+    output_file: str,
+) -> None:
+    """Add annotation styles to a .parquetbundle file.
+
+    Reads the bundle with ArrowReader, applies styles (see
+    :func:`_styled_settings`), then writes the output bundle with the updated
+    settings.
+    """
+    from protspace.data.io.bundle import replace_settings_in_bundle
+
+    reader = ArrowReader(Path(bundle_file))
+    new_settings = _styled_settings(reader, annotation_styles)
     replace_settings_in_bundle(Path(bundle_file), Path(output_file), new_settings)
 
 
@@ -428,22 +427,26 @@ def dump_settings(input_file: str) -> None:
     data_format = detect_data_format(input_file)
 
     if data_format == "parquetbundle":
-        from protspace.data.io.bundle import read_bundle
+        from protspace.data.io.bundle import read_settings_from_bundle
 
-        _, settings = read_bundle(Path(input_file))
+        settings = read_settings_from_bundle(Path(input_file))
         if settings is None:
-            print("No settings found in bundle (3-part bundle).")
+            print("No settings found in bundle.")
         else:
             print(json.dumps(settings, indent=2))
     elif data_format == "parquet":
-        viz_state_path = Path(input_file) / "visualization_state.json"
-        settings_path = Path(input_file) / "settings.parquet"
+        from protspace.data.io.bundle import (
+            SETTINGS_FILENAME,
+            VISUALIZATION_STATE_FILENAME,
+            read_settings_from_file,
+        )
+
+        viz_state_path = Path(input_file) / VISUALIZATION_STATE_FILENAME
+        settings_path = Path(input_file) / SETTINGS_FILENAME
         if viz_state_path.exists():
             with open(viz_state_path) as f:
                 print(f.read())
         elif settings_path.exists():
-            from protspace.data.io.bundle import read_settings_from_file
-
             settings = read_settings_from_file(settings_path)
             print(json.dumps(settings, indent=2))
         else:

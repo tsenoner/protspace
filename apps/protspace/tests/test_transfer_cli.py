@@ -8,6 +8,8 @@ import pytest
 
 from protspace.analysis.classification import Rule
 from protspace.cli.transfer import run_transfer
+from protspace.data.annotations.encoding import stamp_format_version
+from tests.cli_output import plain
 
 
 def _three_protein_inputs(extra_columns=None):
@@ -18,12 +20,28 @@ def _three_protein_inputs(extra_columns=None):
     if extra_columns:
         cols.update(extra_columns)
     annotations = pa.table(cols)
+    # TRINITY_1 sits right on top of the neurotoxin reference P00001.
     embeddings = {
         "TRINITY_1": np.array([0.0, 0.0], dtype=np.float32),
         "P00001": np.array([0.05, 0.0], dtype=np.float32),
         "P00002": np.array([9.0, 0.0], dtype=np.float32),
     }
     return annotations, embeddings
+
+
+def _projection_tables(identifiers, name="PCA 2"):
+    """The long-format projection tables the pipeline writes, for ``identifiers``."""
+    return (
+        pa.table({"projection_name": [name], "dimensions": [2]}),
+        pa.table(
+            {
+                "projection_name": [name] * len(identifiers),
+                "identifier": list(identifiers),
+                "x": [float(i) for i in range(len(identifiers))],
+                "y": [0.0] * len(identifiers),
+            }
+        ),
+    )
 
 
 def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
@@ -34,11 +52,8 @@ def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     cols = {id_col: ["TRINITY_1", "P00001"], "protein_category": ["", "neurotoxin"]}
     if extra_columns:
         cols.update(extra_columns)
-    annotations = pa.table(cols)
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", "P00001"], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
+    annotations = stamp_format_version(pa.table(cols))
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
 
@@ -50,24 +65,8 @@ def _write_bundle_and_h5(tmp_path, *, id_col="protein_id", extra_columns=None):
     return bundle_path, h5_path
 
 
-def _inputs():
-    annotations = pa.table(
-        {
-            "identifier": ["TRINITY_1", "P00001", "P00002"],
-            "protein_category": ["", "neurotoxin", "enzyme"],
-        }
-    )
-    # TRINITY_1 sits right on top of the neurotoxin reference P00001.
-    embeddings = {
-        "TRINITY_1": np.array([0.0, 0.0], dtype=np.float32),
-        "P00001": np.array([0.05, 0.0], dtype=np.float32),
-        "P00002": np.array([9.0, 0.0], dtype=np.float32),
-    }
-    return annotations, embeddings
-
-
 def test_run_transfer_predicts_for_query_with_missing_value():
-    annotations, embeddings = _inputs()
+    annotations, embeddings = _three_protein_inputs()
     out = run_transfer(
         annotations=annotations,
         embeddings=embeddings,
@@ -117,7 +116,7 @@ def test_run_transfer_treats_nan_as_missing():
 
 
 def test_run_transfer_skips_proteins_without_embeddings():
-    annotations, embeddings = _inputs()
+    annotations, embeddings = _three_protein_inputs()
     embeddings.pop("TRINITY_1")  # no embedding -> cannot be a query
     with pytest.raises(ValueError, match="no query"):
         run_transfer(
@@ -165,6 +164,11 @@ def test_run_transfer_k_greater_than_one():
     )
     by_id = {r["identifier"]: r for r in out.to_pylist()}
     assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    # The nearest neighbour wins for any k here; only the confidence sees the
+    # second vote (k=1 would give ~0.909).
+    assert by_id["TRINITY_1"]["protein_category__pred_confidence"] == pytest.approx(
+        0.4545, abs=1e-3
+    )
 
 
 def test_run_transfer_cosine_metric():
@@ -243,10 +247,11 @@ def test_cli_bad_where_column_is_clean_error(tmp_path):
     )
     assert result.exit_code != 0
     assert not isinstance(result.exception, KeyError)
-    assert "nonexistent" in result.output
+    assert "nonexistent" in plain(result.output)
 
 
 def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
+    import click
     import h5py
     from typer.testing import CliRunner
 
@@ -276,11 +281,13 @@ def test_cli_no_matching_embeddings_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, ValueError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "matching embedding" in plain(result.output)
 
 
 def test_cli_no_query_match_is_clean_error(tmp_path):
+    import click
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -305,11 +312,13 @@ def test_cli_no_query_match_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, ValueError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "matched no query proteins" in plain(result.output)
 
 
 def test_cli_both_id_columns_present_is_clean_error(tmp_path):
+    import click
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
@@ -336,18 +345,22 @@ def test_cli_both_id_columns_present_is_clean_error(tmp_path):
             "P0",
         ],
     )
-    assert result.exit_code != 0
-    assert not isinstance(result.exception, KeyError)
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "both 'protein_id'" in plain(result.output)
 
 
-def test_transfer_command_is_registered():
+def test_transfer_help_renders():
+    """The only `--help` render test in the suite: the usage line alone always
+    names the command, so check that a real option made it into the help."""
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
 
-    result = CliRunner().invoke(app, ["transfer", "--help"])
-    assert result.exit_code == 0
-    assert "transfer" in result.output.lower()
+    # Wide enough that Rich does not truncate the option names.
+    result = CliRunner().invoke(app, ["transfer", "--help"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert "--query-id-prefix" in plain(result.output)
 
 
 def test_cli_end_to_end_protein_id_bundle(tmp_path):
@@ -362,13 +375,15 @@ def test_cli_end_to_end_protein_id_bundle(tmp_path):
     from protspace.cli.app import app
     from protspace.data.io.bundle import read_bundle, write_bundle
 
-    annotations = pa.table(
-        {"protein_id": ["TRINITY_1", "P00001"], "protein_category": ["", "neurotoxin"]}
+    annotations = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["TRINITY_1", "P00001"],
+                "protein_category": ["", "neurotoxin"],
+            }
+        )
     )
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", "P00001"], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", "P00001"])
     bundle_path = tmp_path / "in.parquetbundle"
     write_bundle([annotations, proj_meta, proj_data], bundle_path)
 
@@ -418,13 +433,12 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
     from typer.testing import CliRunner
 
     from protspace.cli.app import app
-    from protspace.data.io.bundle import (
-        PARQUET_BUNDLE_DELIMITER,
-        read_bundle,
-        write_bundle,
-    )
+    from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER, read_bundle
 
     source_id = "P0|ref;literal%3B"
+    # A genuine v1 container, assembled here rather than via write_bundle: every
+    # write now emits v3, whose annotations part comes back stamped v2, so a
+    # bundle built that way could not stand in for a legacy one.
     annotations = pa.table(
         {
             "protein_id": ["TRINITY_1", source_id],
@@ -432,21 +446,18 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
             "literal_percent": ["name%3Bpart", "plain"],
         }
     )
-    proj_meta = pa.table({"name": ["PCA 2"], "dims": [2]})
-    proj_data = pa.table(
-        {"id": ["TRINITY_1", source_id], "x": [0.0, 9.0], "y": [0.0, 0.0]}
-    )
-    stamped_path = tmp_path / "stamped.parquetbundle"
-    write_bundle([annotations, proj_meta, proj_data], stamped_path)
-    parts, _ = read_bundle(stamped_path)
-    legacy_annotations = pq.read_table(io.BytesIO(parts[0])).replace_schema_metadata(
-        None
-    )
-    first_part = io.BytesIO()
-    pq.write_table(legacy_annotations, first_part)
+    proj_meta, proj_data = _projection_tables(["TRINITY_1", source_id])
+
+    def _part(table):
+        buf = io.BytesIO()
+        pq.write_table(table, buf)
+        return buf.getvalue()
+
     bundle_path = tmp_path / "legacy.parquetbundle"
     bundle_path.write_bytes(
-        PARQUET_BUNDLE_DELIMITER.join([first_part.getvalue(), parts[1], parts[2]])
+        PARQUET_BUNDLE_DELIMITER.join(
+            [_part(annotations), _part(proj_meta), _part(proj_data)]
+        )
     )
 
     h5_path = tmp_path / "legacy.h5"
@@ -486,3 +497,254 @@ def test_cli_migrates_legacy_cells_and_encodes_reserved_source_id(tmp_path):
     assert (
         rows["TRINITY_1"]["protein_category__pred_source"] == "P0%7Cref%3Bliteral%253B"
     )
+
+
+# ── Self-transfer: no query/reference rules (#393) ──────────────────────────
+#
+# "Apply EAT to all NA values in the current dataset": with no rules, every
+# protein missing a value in the target column is a query and every protein
+# holding one is a reference — no marker column, no second dataset.
+
+
+def _transfer_rows(query_rule=None, categories=None):
+    """Transfer ``protein_category`` over the 3-protein fixture, keyed by id.
+
+    ``categories`` replaces the column's three values.
+    """
+    extra = {"protein_category": categories} if categories else None
+    annotations, embeddings = _three_protein_inputs(extra)
+    out = run_transfer(
+        annotations=annotations,
+        embeddings=embeddings,
+        transfer_columns=["protein_category"],
+        query_rule=query_rule or Rule(),
+        reference_rule=Rule(),
+        k=1,
+        metric="euclidean",
+    )
+    return {r["identifier"]: r for r in out.to_pylist()}
+
+
+def test_run_transfer_without_rules_fills_missing_values():
+    by_id = _transfer_rows()
+    # TRINITY_1 is the only protein with a missing value; it sits on top of the
+    # neurotoxin reference P00001.
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    assert by_id["TRINITY_1"]["protein_category__pred_source"] == "P00001"
+
+
+def test_run_transfer_without_rules_never_predicts_over_a_curated_value():
+    by_id = _transfer_rows()
+    for annotated in ("P00001", "P00002"):
+        assert by_id[annotated]["protein_category__pred_value"] is None
+        assert by_id[annotated]["protein_category"] != ""
+
+
+def test_run_transfer_without_rules_never_uses_a_protein_as_its_own_source():
+    for identifier, row in _transfer_rows().items():
+        source = row["protein_category__pred_source"]
+        if source is not None:
+            assert source != identifier
+
+
+@pytest.mark.parametrize("spelled", ["N/A", "NULL", "None", " na ", "__NA__"])
+def test_run_transfer_fills_a_cell_spelled_missing_and_never_copies_it(spelled):
+    # A cell the web shows as N/A is missing here too. P00001 sits on TRINITY_1;
+    # read as a category, it would be TRINITY_1's reference and hand it the
+    # spelling as a label. Both are queries for the far-off enzyme instead.
+    by_id = _transfer_rows(categories=[spelled, spelled, "enzyme"])
+    for query in ("TRINITY_1", "P00001"):
+        assert by_id[query]["protein_category__pred_value"] == "enzyme"
+        assert by_id[query]["protein_category__pred_source"] == "P00002"
+
+
+def test_run_transfer_with_only_a_query_rule_still_finds_references():
+    # Regression: an absent reference rule used to yield an empty reference set,
+    # so the column was skipped and the bundle written back unchanged.
+    by_id = _transfer_rows(query_rule=Rule(id_prefixes=["TRINITY_"]))
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_without_rules_fills_missing_values(tmp_path):
+    import io
+
+    import pyarrow.parquet as pq
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+    from protspace.data.io.bundle import read_bundle
+
+    bundle, h5 = _write_bundle_and_h5(tmp_path)
+    out_path = tmp_path / "out.parquetbundle"
+    result = CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            "-b",
+            str(bundle),
+            "-e",
+            str(h5),
+            "-t",
+            "protein_category",
+            "-o",
+            str(out_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    parts, _ = read_bundle(out_path)
+    rows = {r["protein_id"]: r for r in pq.read_table(io.BytesIO(parts[0])).to_pylist()}
+    assert rows["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+    # A reference protein gets no prediction. The overlay writes null; a v3
+    # container stores "absent" as a -1 dictionary code and spells it back as ""
+    # (a documented decode_v3 non-identity). The browser cannot tell the two
+    # apart (readCategoricalStorageValue folds both into missing) but Dash can:
+    # ArrowReader hands the raw cell out, so an "" is a value where a null was
+    # not. get_unique_annotation_values skips "" for exactly that reason -- see
+    # test_unique_annotation_values_skip_empty_strings.
+    assert rows["P00001"]["protein_category__pred_value"] == ""
+
+
+# ── Transfer on a legacy bundle the v2 browser keyed loosely ────────────────
+#
+# A v1/v2 bundle can hold rows v3 refuses: a repeated or null id, or an id
+# column named other than protein_id/identifier.  `convert` and `style` key such
+# rows as the v2 browser did; `transfer` reads the same dataset, so it neither
+# crashes at the write nor transfers from rows the browser never showed.
+
+
+def _write_legacy_bundle_and_h5(tmp_path, annotations, projected, names=("p", "p")):
+    import io
+
+    import h5py
+    import pyarrow.parquet as pq
+
+    from protspace.data.io.bundle import PARQUET_BUNDLE_DELIMITER
+
+    def _part(table):
+        buf = io.BytesIO()
+        pq.write_table(table, buf)
+        return buf.getvalue()
+
+    meta = pa.table({"projection_name": [names[0]], "dimensions": [2]})
+    data = pa.table(
+        {
+            "projection_name": [names[1]] * len(projected),
+            "identifier": list(projected),
+            "x": [float(i) for i in range(len(projected))],
+            "y": [0.0] * len(projected),
+        }
+    )
+    bundle_path = tmp_path / "legacy.parquetbundle"
+    bundle_path.write_bytes(
+        PARQUET_BUNDLE_DELIMITER.join(
+            [_part(stamp_format_version(annotations)), _part(meta), _part(data)]
+        )
+    )
+    h5_path = tmp_path / "legacy.h5"
+    with h5py.File(h5_path, "w") as handle:
+        handle.attrs["model_name"] = "test_model"
+        handle.create_dataset("TRINITY_1", data=np.array([1.0, 0.05], dtype=np.float32))
+        handle.create_dataset("P00001", data=np.array([1.0, 0.0], dtype=np.float32))
+        handle.create_dataset("P00002", data=np.array([0.0, 1.0], dtype=np.float32))
+    return bundle_path, h5_path
+
+
+def _transfer_cli(bundle_path, h5_path, out_path):
+    from typer.testing import CliRunner
+
+    from protspace.cli.app import app
+
+    return CliRunner().invoke(
+        app,
+        [
+            "transfer",
+            "-b",
+            str(bundle_path),
+            "-e",
+            str(h5_path),
+            "-t",
+            "protein_category",
+            "-o",
+            str(out_path),
+        ],
+    )
+
+
+def test_cli_transfer_keys_a_legacy_bundle_as_the_v2_browser_did(tmp_path):
+    from protspace.data.io.bundle import read_tables
+
+    # P00001 twice: the earlier row's label is one the v2 browser never showed
+    # (the later row replaced it), and a row with a null id it skipped.
+    annotations = pa.table(
+        {
+            "protein_id": ["TRINITY_1", "P00001", "P00002", "P00001", None],
+            "protein_category": ["", "hidden", "enzyme", "neurotoxin", "orphan"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path, annotations, ["TRINITY_1", "P00001", "P00002"]
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == 0, result.output
+    rows = read_tables(out_path)[0].to_pylist()
+    assert sorted(row["protein_id"] for row in rows) == [
+        "P00001",
+        "P00002",
+        "TRINITY_1",
+    ]
+    by_id = {row["protein_id"]: row for row in rows}
+    assert by_id["P00001"]["protein_category"] == "neurotoxin"
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_reads_a_legacy_id_column_as_the_v2_browser_did(tmp_path):
+    from protspace.data.io.bundle import read_tables
+
+    annotations = pa.table(
+        {
+            "Entry": ["TRINITY_1", "P00001", "P00002"],
+            "protein_category": ["", "neurotoxin", "enzyme"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path, annotations, ["TRINITY_1", "P00001", "P00002"]
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == 0, result.output
+    by_id = {row["protein_id"]: row for row in read_tables(out_path)[0].to_pylist()}
+    assert by_id["TRINITY_1"]["protein_category__pred_value"] == "neurotoxin"
+
+
+def test_cli_transfer_reports_a_legacy_bundle_v3_cannot_hold_as_a_usage_error(
+    tmp_path,
+):
+    import click
+
+    # Projection metadata and data that name different projections: the v2
+    # reader tolerated it, the v3 encoder refuses it at the write.
+    annotations = pa.table(
+        {
+            "protein_id": ["TRINITY_1", "P00001", "P00002"],
+            "protein_category": ["", "neurotoxin", "enzyme"],
+        }
+    )
+    bundle_path, h5_path = _write_legacy_bundle_and_h5(
+        tmp_path,
+        annotations,
+        ["TRINITY_1", "P00001", "P00002"],
+        names=("p", "q"),
+    )
+    out_path = tmp_path / "out.parquetbundle"
+
+    result = _transfer_cli(bundle_path, h5_path, out_path)
+
+    assert result.exit_code == click.UsageError.exit_code, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "cannot write" in plain(result.output)
+    assert not out_path.exists()

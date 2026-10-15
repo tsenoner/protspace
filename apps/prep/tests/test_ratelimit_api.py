@@ -33,6 +33,8 @@ async def test_rate_limit_returns_429_after_threshold(make_client, monkeypatch):
     assert r1.status_code == 202
     assert r2.status_code == 202
     assert r3.status_code == 429
+    # The web client turns this into its "try again in ..." message.
+    assert r3.headers.get("retry-after") is not None
 
 
 async def test_rate_limit_is_per_client_ip(make_client, monkeypatch):
@@ -88,13 +90,3 @@ async def test_cors_absent_for_unconfigured_origin(make_client, monkeypatch):
             },
         )
     assert r.headers.get("access-control-allow-origin") is None
-
-
-async def test_rate_limit_429_carries_retry_after(make_client, monkeypatch):
-    monkeypatch.setenv("PREP_RATE_LIMIT", "1/hour")
-    files = {"file": ("seq.fasta", b">P12345\nMKTAYIAK\n", "text/plain")}
-    async with make_client() as c:
-        await c.post("/api/prepare", files=files)
-        r = await c.post("/api/prepare", files=files)
-    assert r.status_code == 429
-    assert r.headers.get("retry-after") is not None

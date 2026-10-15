@@ -12,6 +12,11 @@ export interface IScatterplotElement extends Element {
   getCurrentData(options?: { includeFilteredProteinIds?: boolean }): ScatterplotData | null;
   getMaterializedData?(): ScatterplotData | null;
   selectedAnnotation: string;
+  /**
+   * Index into `getCurrentData().projections`. The scatterplot tracks the projection by
+   * position, not by name, so the name is resolved through that array.
+   */
+  selectedProjectionIndex?: number;
   eatOverlayEnabled?: boolean;
 
   // Annotation values (using scatterplot's property names)

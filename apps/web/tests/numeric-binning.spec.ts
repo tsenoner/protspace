@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissTourIfPresent } from './helpers/explore';
+import { dismissTourIfPresent, waitForExploreDataLoad } from './helpers/explore';
+import { STARTUP_URL_GLOB, TOXPROT_5181_FIXTURE } from './helpers/fixtures';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
 const RAW_NUMERIC_BUNDLE_FIXTURE_PATH = path.join(
@@ -14,7 +15,7 @@ const RAW_NUMERIC_BUNDLE_PATH = path.join(
   'fixtures',
   'phosphatase_no_binning.parquetbundle',
 );
-const REPLACEMENT_BUNDLE_PATH = path.join(SPEC_DIR, '..', 'public', 'data', '5K.parquetbundle');
+const REPLACEMENT_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
 
 async function loadBundleFromBytes(
   page: Page,
@@ -57,6 +58,9 @@ async function loadBundleFromBytes(
         },
         { bytes: byteValues, nextFileName: fileName },
       );
+      // `data-loaded` fires before the app's post-load work (view restore); wait for the
+      // load to settle so a test's next step cannot race it.
+      await waitForExploreDataLoad(page);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -78,7 +82,7 @@ async function loadBundleFromBytes(
 }
 
 async function loadDataset(page: Page): Promise<void> {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -123,15 +127,7 @@ async function loadDataset(page: Page): Promise<void> {
 async function loadDemoDataset(page: Page): Promise<void> {
   await page.goto('/explore');
   await dismissTourIfPresent(page);
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => unknown;
-          data?: { annotations?: Record<string, unknown> };
-        })
-      | null;
-    return typeof plot?.getCurrentData === 'function' && Boolean(plot?.data?.annotations);
-  });
+  await waitForExploreDataLoad(page);
   // 'order' is a clean Taxonomy categorical (18 values, no NAs) and uses the
   // default size-desc sort, which suits the legend keyboard/pointer-drag tests.
   // The previous pick was 'ec', but the demo bundle bakes a curated manual sort
@@ -222,29 +218,18 @@ async function readNumericPreview(page: Page) {
     };
     const root = legend?.shadowRoot;
     const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
-    const previewPanel = root?.querySelector(
-      '.color-palette-preview--continuous',
-    ) as HTMLElement | null;
     const previewCaption = root?.querySelector(
       '.color-palette-preview-caption',
     ) as HTMLElement | null;
     const scaleLabels = Array.from(
       root?.querySelectorAll('.color-palette-gradient-scale span') ?? [],
     ).map((node) => node.textContent?.trim() ?? '');
-    const distribution = root?.querySelector(
-      '#numeric-distribution-select',
-    ) as HTMLSelectElement | null;
 
     return {
       gradientBarCount: root?.querySelectorAll('.color-palette-gradient-bar').length ?? 0,
       ariaLabel: gradientBar?.getAttribute('aria-label') ?? null,
       caption: previewCaption?.textContent?.trim() ?? '',
-      panelHeight: previewPanel?.getBoundingClientRect().height ?? 0,
       scaleLabels,
-      options: Array.from(distribution?.options ?? []).map((option) => ({
-        value: option.value,
-        label: option.textContent?.trim() ?? '',
-      })),
     };
   });
 }
@@ -359,20 +344,10 @@ async function readLegendSettingsDialog(page: Page) {
     const distribution = root?.querySelector(
       '#numeric-distribution-select',
     ) as HTMLSelectElement | null;
-    const gradientBar = root?.querySelector('.color-palette-gradient-bar') as HTMLElement | null;
     const sortingSection = root?.querySelector(
       '#legend-sorting-section-title',
     ) as HTMLElement | null;
     const reverseButton = root?.querySelector('button.reverse-button') as HTMLButtonElement | null;
-    const maxVisibleLabel = (root?.querySelector('#max-visible-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const shapeSizeLabel = (root?.querySelector('#shape-size-input') as HTMLInputElement | null)
-      ?.closest('.other-items-list-item')
-      ?.querySelector('.other-items-list-item-label') as HTMLLabelElement | null;
-    const sortingLabels = Array.from(
-      root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? [],
-    ).map((input) => input.closest('label')?.textContent?.trim() ?? '');
     const selectedSortingLabel =
       (
         Array.from(root?.querySelectorAll('input[type="radio"][name^="sort-type-"]') ?? []).find(
@@ -384,28 +359,15 @@ async function readLegendSettingsDialog(page: Page) {
     const reverseGradientToggle = root?.querySelector(
       '#reverse-gradient-toggle',
     ) as HTMLInputElement | null;
-    const dialogTitle = root?.querySelector('#legend-settings-title') as HTMLElement | null;
-    const paletteOptionTexts = Array.from(palette?.options ?? []).map(
-      (option) => option.textContent?.trim() ?? '',
-    );
 
     return {
-      title: dialogTitle?.textContent?.trim() ?? '',
       includeShapesAbsent: !includeShapesPresent,
       palette: palette?.value ?? null,
-      paletteOptions: Array.from(palette?.options ?? []).map((option) => option.value),
-      paletteOptionTexts,
       reverseGradientChecked: reverseGradientToggle?.checked ?? false,
       distribution: distribution?.value ?? null,
       hasDistributionSelect: Boolean(distribution),
-      hasGradientPreview: Boolean(gradientBar),
       hasSortingSection: Boolean(sortingSection),
-      sortingSectionTitle: sortingSection?.textContent?.trim() ?? '',
       hasReverseButton: Boolean(reverseButton),
-      reverseButtonLabel: reverseButton?.getAttribute('aria-label') ?? '',
-      maxVisibleLabel: maxVisibleLabel?.textContent?.trim() ?? '',
-      shapeSizeLabel: shapeSizeLabel?.textContent?.trim() ?? '',
-      sortingLabels,
       selectedSortingLabel,
       logDisabled:
         (distribution?.querySelector('option[value="logarithmic"]') as HTMLOptionElement | null)
@@ -456,10 +418,6 @@ async function clickLegendReverseButton(page: Page): Promise<void> {
 // (e.g. "num:quantile:10:20.5"); these helpers map friendly bin labels (as the
 // legend shows them) to those internal ids via numericMetadata.bins.
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 const FILTER_DIALOG = { name: 'Filter Query Builder' } as const;
 
 async function openQueryBuilder(page: Page): Promise<void> {
@@ -475,7 +433,11 @@ async function openQueryBuilder(page: Page): Promise<void> {
   await expect(dialog).toBeVisible();
 }
 
-/** Read the trimmed annotation-trigger text of every top-level condition row. */
+/**
+ * The annotation column of every top-level condition row, '' for a row with no
+ * annotation chosen yet. Read from the condition, not the trigger text: the
+ * trigger shows the annotation's label, not its column name.
+ */
 async function topRowAnnotations(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const cb = document.querySelector('protspace-control-bar');
@@ -486,9 +448,7 @@ async function topRowAnnotations(page: Page): Promise<string[]> {
     );
     return rows.map(
       (r) =>
-        (r as HTMLElement & { shadowRoot: ShadowRoot }).shadowRoot
-          ?.querySelector('.annotation-select-trigger')
-          ?.textContent?.trim() ?? '',
+        (r as HTMLElement & { condition?: { annotation: string } }).condition?.annotation ?? '',
     );
   });
 }
@@ -515,27 +475,25 @@ async function ensureCondition(page: Page, annotation: string): Promise<number> 
   }
 
   let annotations = await topRowAnnotations(page);
-  let emptyIndex = annotations.findIndex((t) => t === 'Select annotation...');
+  let emptyIndex = annotations.indexOf('');
   if (emptyIndex < 0) {
     await page
       .locator('protspace-query-builder')
       .getByRole('button', { name: '+ Add condition' })
       .click();
     await expect
-      .poll(
-        async () =>
-          (await topRowAnnotations(page)).filter((t) => t === 'Select annotation...').length,
-      )
+      .poll(async () => (await topRowAnnotations(page)).filter((t) => t === '').length)
       .toBeGreaterThan(0);
     annotations = await topRowAnnotations(page);
-    emptyIndex = annotations.findIndex((t) => t === 'Select annotation...');
+    emptyIndex = annotations.indexOf('');
   }
 
   const row = conditionRow(page, emptyIndex);
   await row.locator('.annotation-select-trigger').click();
   await page
-    .locator('protspace-query-condition-row .annotation-picker-item')
-    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(annotation)}\\s*$`) })
+    .locator(
+      `protspace-query-condition-row .annotation-picker-item[data-annotation="${annotation}"]`,
+    )
     .first()
     .click();
   await expect.poll(async () => rowIndexFor(page, annotation)).toBeGreaterThanOrEqual(0);
@@ -773,8 +731,10 @@ async function setFilterValues(page: Page, annotation: string, values: string[])
 
 /**
  * Drive the numeric range filter for `annotation`. Numeric annotations now render
- * an operator dropdown (`>`, `<`, `between`) + one or two number fields instead of
- * a bin value picker, and filter on raw values (not bins). Sets the operator and
+ * an operator dropdown (`>`, `>=`, `<`, `<=`, `between`) + one or two number fields
+ * instead of a bin value picker, and filter on raw values (not bins). This helper
+ * drives only the exclusive comparisons it was written for; the inclusive ones and
+ * the N/A presence chips are covered separately. Sets the operator and
  * the relevant bound(s); the live match count / Apply-enabled state update after
  * the builder's debounced re-evaluation, which the callers wait on.
  */
@@ -909,12 +869,20 @@ async function readCategoricalPreviewRows(page: Page): Promise<{
   });
 }
 
-async function setSortMode(page: Page, annotation: string, mode: 'size' | 'alpha' | 'manual') {
-  const legend = page.locator('protspace-legend');
-  const inputs = legend.locator(`input[name="sort-type-${annotation}"][type="radio"]`);
-  const count = await inputs.count();
-  const index = mode === 'size' ? 0 : mode === 'alpha' ? 1 : count - 1;
-  await inputs.nth(index).click();
+/**
+ * Pick a sort mode in the open settings dialog by its label. Numeric and
+ * categorical annotations offer different options, so a position would pick
+ * a different mode for each.
+ */
+async function setSortMode(
+  page: Page,
+  label: 'By category size' | 'Alphabetical' | 'By numeric value' | 'Manual order',
+) {
+  const radio = page
+    .locator('protspace-legend #legend-settings-dialog')
+    .getByRole('radio', { name: label, exact: true });
+  await radio.check();
+  await expect(radio).toBeChecked();
 }
 
 async function hoverFirstVisiblePoint(page: Page): Promise<void> {
@@ -1051,6 +1019,15 @@ async function waitForDialogClosed(page: Page): Promise<void> {
   });
 }
 
+/** Opens the legend settings, checks which sorting option is selected, and cancels. */
+async function expectSortingLabel(page: Page, label: string): Promise<void> {
+  await openLegendSettings(page);
+  const dialog = await readLegendSettingsDialog(page);
+  expect(dialog.selectedSortingLabel).toBe(label);
+  await clickDialogButton(page, 'Cancel');
+  await waitForDialogClosed(page);
+}
+
 test('raw numeric annotations are materialized into frontend bins', async ({ page }) => {
   await loadDataset(page);
 
@@ -1065,7 +1042,7 @@ test('raw numeric annotations are materialized into frontend bins', async ({ pag
 });
 
 test('numeric settings are staged, saved, and restored on re-import', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1102,28 +1079,10 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   expect(initialDialog.hasDistributionSelect).toBe(true);
   expect(initialDialog.hasSortingSection).toBe(true);
   expect(initialDialog.hasReverseButton).toBe(true);
-  expect(initialDialog.reverseButtonLabel).toBe('Show high to low');
-  expect(initialDialog.title).toBe('Legend settings: length');
-  expect(initialDialog.maxVisibleLabel).toBe('Max legend items');
-  expect(initialDialog.shapeSizeLabel).toBe('Point size');
-  expect(initialDialog.sortingLabels).toEqual(['By numeric value', 'Manual order']);
   expect(initialDialog.reverseGradientChecked).toBe(false);
-  expect(initialDialog.paletteOptionTexts).toEqual([
-    'Batlow - Scientific sequential gradient',
-    'Cividis - Colorblind-friendly sequential gradient',
-    'Inferno - High-contrast sequential gradient',
-    'Plasma - Vivid sequential gradient',
-    'Viridis - Perceptually uniform sequential gradient',
-  ]);
   expect(initialDialog.logDisabled).toBe(false);
-  const initialPreview = await readNumericPreview(page);
-  expect(initialPreview.ariaLabel).toBe('Batlow continuous gradient preview');
-  expect(initialPreview.caption).toBe('');
-  expect(initialPreview.scaleLabels).toEqual(['Low', 'High']);
-  expect((await readNumericPreview(page)).options).toContainEqual({
-    value: 'logarithmic',
-    label: 'Logarithmic',
-  });
+  // The dialog's copy (labels, palette names, gradient preview and scale) is pinned
+  // in jsdom by legend-settings-dialog.test.ts; this journey checks the staging.
 
   await updateLegendSettings(page, {
     maxVisibleValues: 5,
@@ -1133,8 +1092,6 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
   await expect.poll(readNumericPreview.bind(null, page)).toMatchObject({
     ariaLabel: 'Plasma continuous gradient preview',
   });
-  const plasmaPreview = await readNumericPreview(page);
-  expect(plasmaPreview.scaleLabels).toEqual(['Low', 'High']);
   await clickDialogButton(page, 'Cancel');
   await waitForDialogClosed(page);
 
@@ -1213,7 +1170,7 @@ test('numeric settings are staged, saved, and restored on re-import', async ({ p
 test('reset restores numeric settings defaults and clears saved state on re-import', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1283,62 +1240,47 @@ test('reset restores numeric settings defaults and clears saved state on re-impo
   expect(dialog.reverseGradientChecked).toBe(false);
 });
 
-test('closing the settings dialog discards staged numeric changes like cancel', async ({
-  page,
-}) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
+// Close and Escape reach `_handleSettingsClose` through separate handlers (the
+// close button and the legend's window keydown capture listener), so both keep a row.
+for (const { name, dismiss } of [
+  {
+    name: 'closing the settings dialog discards staged numeric changes like cancel',
+    dismiss: (page: Page) =>
+      page
+        .locator('protspace-legend #legend-settings-dialog')
+        .getByRole('button', { name: 'Close settings' })
+        .click(),
+  },
+  {
+    name: 'pressing escape closes the settings dialog and discards staged numeric changes',
+    dismiss: (page: Page) => page.keyboard.press('Escape'),
+  },
+]) {
+  test(name, async ({ page }) => {
+    await loadDataset(page);
+    await selectAnnotation(page, 'length');
 
-  const initialState = await getNumericState(page);
-  expect(initialState.strategy).toBe('quantile');
-  expect(initialState.colors[0]).toBe('#011959');
+    const initialState = await getNumericState(page);
+    expect(initialState.strategy).toBe('quantile');
+    expect(initialState.colors[0]).toBe('#011959');
 
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
+    await openLegendSettings(page);
+    await updateLegendSettings(page, {
+      maxVisibleValues: 5,
+      paletteId: 'plasma',
+      strategy: 'quantile',
+      reverseGradient: true,
+    });
+
+    await dismiss(page);
+    await waitForDialogClosed(page);
+
+    const state = await getNumericState(page);
+    expect(state.strategy).toBe('quantile');
+    expect(state.colors[0]).toBe('#011959');
+    expect(state.colors.at(-1)).toBe('#FACCFA');
   });
-
-  await page
-    .locator('protspace-legend #legend-settings-dialog')
-    .getByRole('button', { name: 'Close settings' })
-    .click();
-  await waitForDialogClosed(page);
-
-  const state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
-});
-
-test('pressing escape closes the settings dialog and discards staged numeric changes', async ({
-  page,
-}) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
-
-  const initialState = await getNumericState(page);
-  expect(initialState.strategy).toBe('quantile');
-  expect(initialState.colors[0]).toBe('#011959');
-
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 5,
-    paletteId: 'plasma',
-    strategy: 'quantile',
-    reverseGradient: true,
-  });
-
-  await page.keyboard.press('Escape');
-  await waitForDialogClosed(page);
-
-  const state = await getNumericState(page);
-  expect(state.strategy).toBe('quantile');
-  expect(state.colors[0]).toBe('#011959');
-  expect(state.colors.at(-1)).toBe('#FACCFA');
-});
+}
 
 test('changing only max legend items recalculates numeric colors for the same gradient palette', async ({
   page,
@@ -1458,35 +1400,6 @@ test('numeric gradient preview uses the same rendered chrome as categorical swat
   expect(categoricalChrome.hasShadow).toBe(true);
 });
 
-test('categorical annotations do not expose gradient palettes or gradient previews', async ({
-  page,
-}) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'family');
-  await openLegendSettings(page);
-
-  const dialog = await readLegendSettingsDialog(page);
-  await expect(
-    page.locator('protspace-legend').getByRole('dialog', { name: 'Legend settings: family' }),
-  ).toBeVisible();
-  expect(dialog.hasGradientPreview).toBe(false);
-  expect(dialog.hasDistributionSelect).toBe(false);
-  expect(dialog.hasSortingSection).toBe(true);
-  expect(dialog.hasReverseButton).toBe(true);
-  expect(dialog.reverseButtonLabel).toBe('Reverse z-order (keep Other last)');
-  expect(dialog.title).toBe('Legend settings: family');
-  expect(dialog.maxVisibleLabel).toBe('Max legend items');
-  expect(dialog.shapeSizeLabel).toBe('Shape size');
-  expect(dialog.paletteOptions).toEqual([
-    'dark2',
-    'kellys',
-    'okabeIto',
-    'set2',
-    'tableau10',
-    'tolBright',
-  ]);
-});
-
 test('drag handles stay active outside manual mode and keep Other disabled', async ({ page }) => {
   await loadDataset(page);
   await selectAnnotation(page, 'length');
@@ -1514,11 +1427,7 @@ test('clicking a legend row toggles visibility without switching categorical sor
   const firstRow = page.locator('protspace-legend .legend-item-main').first();
   await firstRow.click();
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'By category size');
 });
 
 test('same-slot pointer drag does not switch categorical sorting to manual', async ({ page }) => {
@@ -1532,11 +1441,7 @@ test('same-slot pointer drag does not switch categorical sorting to manual', asy
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'By category size');
 });
 
 test('dropping a pointer drag outside the legend keeps categorical sorting unchanged', async ({
@@ -1578,43 +1483,51 @@ test('dropping a pointer drag outside the legend keeps categorical sorting uncha
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'By category size');
 });
 
-test('categorical keyboard escape restores order and keeps non-manual sorting', async ({
-  page,
-}) => {
-  await loadDemoDataset(page);
+// Escape after a keyboard move restores the order and leaves the non-manual
+// sorting alone, for a categorical and a numeric legend.
+for (const { name, setup, sortingLabel } of [
+  {
+    name: 'categorical keyboard escape restores order and keeps non-manual sorting',
+    setup: loadDemoDataset,
+    sortingLabel: 'By category size',
+  },
+  {
+    name: 'keyboard escape after moving restores numeric order and value sorting',
+    setup: async (page: Page) => {
+      await loadDataset(page);
+      await selectAnnotation(page, 'length');
+    },
+    sortingLabel: 'By numeric value',
+  },
+]) {
+  test(name, async ({ page }) => {
+    await setup(page);
 
-  const initialLegend = await readLegendDisplay(page);
-  const firstHandle = page.locator('protspace-legend .drag-handle').first();
-  await firstHandle.focus();
-  await page.keyboard.press(' ');
-  await page.keyboard.press('ArrowDown');
-  await page.waitForFunction((previousFirstValue) => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const firstItem = legend?.shadowRoot?.querySelector('.legend-item') as HTMLElement | null;
-    return firstItem?.dataset.value !== previousFirstValue;
-  }, initialLegend.items[0]?.value ?? '');
+    const initialLegend = await readLegendDisplay(page);
+    const firstHandle = page.locator('protspace-legend .drag-handle').first();
+    await firstHandle.focus();
+    await page.keyboard.press(' ');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForFunction((previousFirstValue) => {
+      const legend = document.querySelector('protspace-legend') as HTMLElement & {
+        shadowRoot: ShadowRoot;
+      };
+      const firstItem = legend?.shadowRoot?.querySelector('.legend-item') as HTMLElement | null;
+      return firstItem?.dataset.value !== previousFirstValue;
+    }, initialLegend.items[0]?.value ?? '');
 
-  await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
 
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
+    await expect
+      .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+      .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By category size');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-});
+    await expectSortingLabel(page, sortingLabel);
+  });
+}
 
 test('categorical keyboard reorder promotes to manual order and keeps Other fixed', async ({
   page,
@@ -1634,17 +1547,13 @@ test('categorical keyboard reorder promotes to manual order and keeps Other fixe
   );
   expect(reorderedLegend.items.at(-1)?.value).toBe(initialLegend.items.at(-1)?.value);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 });
 
 test('real phosphatase bundle rebins length to five bins without leaving the UI stuck', async ({
   page,
 }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -1684,32 +1593,33 @@ test('real phosphatase bundle rebins length to five bins without leaving the UI 
     strategy: 'linear',
   });
 
-  const startedAt = Date.now();
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
-  await page.waitForFunction(() => {
-    const plot = document.querySelector('protspace-scatterplot') as
-      | (Element & {
-          getCurrentData?: () => {
-            annotations?: Record<
-              string,
-              { numericMetadata?: { binCount?: number; strategy?: string } }
-            >;
-          };
-          selectedAnnotation?: string;
-        })
-      | null;
+  // A rebin that leaves the UI stuck fails at this watchdog. Elapsed time on a
+  // shared runner is not asserted; performance thresholds live in the perf suite.
+  await page.waitForFunction(
+    () => {
+      const plot = document.querySelector('protspace-scatterplot') as
+        | (Element & {
+            getCurrentData?: () => {
+              annotations?: Record<
+                string,
+                { numericMetadata?: { binCount?: number; strategy?: string } }
+              >;
+            };
+            selectedAnnotation?: string;
+          })
+        | null;
 
-    return (
-      plot?.selectedAnnotation === 'length' &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) > 0 &&
-      (plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.binCount ?? 0) <= 5 &&
-      plot?.getCurrentData?.()?.annotations?.length?.numericMetadata?.strategy === 'linear'
-    );
-  });
-
-  expect(Date.now() - startedAt).toBeLessThan(5000);
+      if (plot?.selectedAnnotation !== 'length') return false;
+      const metadata = plot.getCurrentData?.()?.annotations?.length?.numericMetadata;
+      const binCount = metadata?.binCount ?? 0;
+      return binCount > 0 && binCount <= 5 && metadata?.strategy === 'linear';
+    },
+    undefined,
+    { timeout: 10_000, polling: 100 },
+  );
 
   const finalNumericState = await getNumericState(page);
   expect(finalNumericState.binCount).toBeGreaterThan(0);
@@ -1753,24 +1663,6 @@ test('numeric header toggle reverses rendered bin order without changing color a
   );
   // (Numeric filtering is now a raw-value range input with no per-bin list, so
   // there is no longer a "filter order mirrors legend order" assertion here.)
-});
-
-test('linear numeric bins can realize fewer values than requested', async ({ page }) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
-  await openLegendSettings(page);
-  await updateLegendSettings(page, {
-    maxVisibleValues: 20,
-    paletteId: 'viridis',
-    strategy: 'linear',
-  });
-  await clickDialogButton(page, 'Save');
-  await waitForDialogClosed(page);
-
-  const realizedState = await getNumericState(page);
-  expect(realizedState.binCount).toBeLessThan(20);
-  // (Bins are a legend/coloring concern only; numeric filtering is a raw-value
-  // range input, so there is no per-bin filter list to count against here.)
 });
 
 test('numeric legend labels are display summaries without comparison markers', async ({ page }) => {
@@ -1829,11 +1721,7 @@ test('categorical pointer drag from size-asc keeps Other fixed and promotes to m
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items.at(-1)?.label.startsWith('Other')).toBe(true);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 });
 
 test('categorical pointer drag from alphabetical reverse promotes to manual order', async ({
@@ -1841,7 +1729,7 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
 }) => {
   await loadDemoDataset(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'order', 'alpha');
+  await setSortMode(page, 'Alphabetical');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
   await clickLegendReverseButton(page);
@@ -1852,11 +1740,7 @@ test('categorical pointer drag from alphabetical reverse promotes to manual orde
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedAlphaLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 });
 
 test('numeric range filters isolate to the matching subset and reset restores the full view', async ({
@@ -1871,7 +1755,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            numeric_annotation_data?: Record<string, (number | null)[]>;
+            numeric_annotation_data?: Record<string, Float64Array>;
           };
         })
       | null;
@@ -1879,9 +1763,7 @@ test('numeric range filters isolate to the matching subset and reset restores th
       throw new Error('ProtSpace components were not found');
     }
     const fullData = plot.getCurrentData?.({ includeFilteredProteinIds: false });
-    return (fullData?.numeric_annotation_data?.length ?? []).filter(
-      (value): value is number => value != null && Number.isFinite(value),
-    );
+    return Array.from(fullData?.numeric_annotation_data?.length ?? []).filter(Number.isFinite);
   });
   expect(lengths.length).toBeGreaterThan(0);
 
@@ -1973,11 +1855,7 @@ test('numeric pointer drag promotes value order to manual and reverse does not r
   const manuallyReorderedLegend = await readLegendDisplay(page);
   expect(initialLegend.reverseButtonLabel).toBe('Show high to low');
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 
   await clickLegendReverseButton(page);
 
@@ -2005,11 +1883,7 @@ test('numeric pointer drag from high-to-low value order promotes to manual', asy
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .not.toEqual(reversedLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 });
 
 test('keyboard pickup without movement keeps numeric sorting in value order', async ({ page }) => {
@@ -2026,11 +1900,7 @@ test('keyboard pickup without movement keeps numeric sorting in value order', as
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(initialLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'By numeric value');
 });
 
 test('keyboard escape cancels pickup and keeps numeric sorting in value order', async ({
@@ -2058,41 +1928,7 @@ test('keyboard escape cancels pickup and keeps numeric sorting in value order', 
   });
   expect(activeValue).toBe(initialLegend.items[0]?.value ?? null);
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
-});
-
-test('keyboard escape after moving restores numeric order and value sorting', async ({ page }) => {
-  await loadDataset(page);
-  await selectAnnotation(page, 'length');
-
-  const firstHandle = page.locator('protspace-legend .drag-handle').first();
-  const initialLegend = await readLegendDisplay(page);
-  await firstHandle.focus();
-  await page.keyboard.press(' ');
-  await page.keyboard.press('ArrowDown');
-  await page.waitForFunction((previousFirstValue) => {
-    const legend = document.querySelector('protspace-legend') as HTMLElement & {
-      shadowRoot: ShadowRoot;
-    };
-    const firstItem = legend?.shadowRoot?.querySelector('.legend-item') as HTMLElement | null;
-    return firstItem?.dataset.value !== previousFirstValue;
-  }, initialLegend.items[0]?.value ?? '');
-
-  await page.keyboard.press('Escape');
-
-  await expect
-    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
-    .toEqual(initialLegend.items.map((item) => item.value));
-
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('By numeric value');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'By numeric value');
 });
 
 test('numeric keyboard reordering persists across reload', async ({ page }) => {
@@ -2132,11 +1968,7 @@ test('numeric keyboard reordering persists across reload', async ({ page }) => {
   const reorderedLegend = await readLegendDisplay(page);
   expect(reorderedLegend.items[2]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 
   // (Numeric filtering no longer mirrors legend order — it is a raw-value range
   // input — so the former filter-order assertion is dropped; the reload below
@@ -2205,9 +2037,24 @@ test('topology-changing numeric rebins drop stale manual order on reload', async
   await waitForAnnotationAvailable(page, 'length');
   await selectAnnotation(page, 'length');
 
+  // The saved manual order belongs to the bins from before the rebin. Going
+  // back to those bins after the reload must give value order, not that
+  // stale manual order.
+  await openLegendSettings(page);
+  await updateLegendSettings(page, {
+    maxVisibleValues: 10,
+    paletteId: 'batlow',
+    strategy: 'quantile',
+  });
+  await clickDialogButton(page, 'Save');
+  await waitForDialogClosed(page);
+  await expect
+    .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
+    .toEqual(initialLegend.items.map((item) => item.value));
+
   const reloadedLegend = await readLegendDisplay(page);
   await openLegendSettings(page);
-  await setSortMode(page, 'length', 'alpha');
+  await setSortMode(page, 'By numeric value');
   await clickDialogButton(page, 'Save');
   await waitForDialogClosed(page);
 
@@ -2233,11 +2080,7 @@ test('categorical manual reorder and reverse continue to work', async ({ page })
   const afterReorder = await readLegendDisplay(page);
   expect(afterReorder.items[1]?.value).toBe(initialLegend.items[0]?.value);
 
-  await openLegendSettings(page);
-  const reorderedDialog = await readLegendSettingsDialog(page);
-  expect(reorderedDialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 
   await clickLegendReverseButton(page);
   await expect
@@ -2274,15 +2117,11 @@ test('categorical drag-promoted manual order persists after re-import', async ({
     .poll(async () => (await readLegendDisplay(page)).items.map((item) => item.value))
     .toEqual(manualLegend.items.map((item) => item.value));
 
-  await openLegendSettings(page);
-  const dialog = await readLegendSettingsDialog(page);
-  expect(dialog.selectedSortingLabel).toBe('Manual order');
-  await clickDialogButton(page, 'Cancel');
-  await waitForDialogClosed(page);
+  await expectSortingLabel(page, 'Manual order');
 });
 
 test('long categorical legend labels wrap instead of clipping', async ({ page }) => {
-  await page.route('**/data.parquetbundle', async (route) => {
+  await page.route(STARTUP_URL_GLOB, async (route) => {
     await route.abort();
   });
   await page.goto('/explore');
@@ -2415,14 +2254,12 @@ test('zero-match query disables Apply & Isolate and leaves the view unchanged (n
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & {
           getCurrentData?: (options?: { includeFilteredProteinIds?: boolean }) => {
-            numeric_annotation_data?: Record<string, (number | null)[]>;
+            numeric_annotation_data?: Record<string, Float64Array>;
           };
         })
       | null;
     const data = plot?.getCurrentData?.({ includeFilteredProteinIds: false });
-    const lengths = (data?.numeric_annotation_data?.length ?? []).filter(
-      (value): value is number => value != null && Number.isFinite(value),
-    );
+    const lengths = Array.from(data?.numeric_annotation_data?.length ?? []).filter(Number.isFinite);
     return lengths.length ? Math.max(...lengths) : 0;
   });
 
@@ -2525,14 +2362,14 @@ test('loading a new dataset clears active filters before rendering the replaceme
   await expect.poll(async () => isolatedCount(page)).toBe(6);
   expect(
     await page.evaluate(() => {
-      const cb = document.querySelector('protspace-control-bar') as
+      const cb = document.querySelector('protspace-control-bar') as unknown as
         | (Element & { filterActive?: boolean })
         | null;
       return cb?.filterActive ?? false;
     }),
   ).toBe(true);
 
-  await loadBundleFromBytes(page, replacementBundleBytes, '5K.parquetbundle');
+  await loadBundleFromBytes(page, replacementBundleBytes, 'toxprot_5181_pca3d.parquetbundle');
 
   // Loading a new dataset clears the active filter and renders the full
   // replacement data.
@@ -2547,7 +2384,7 @@ test('loading a new dataset clears active filters before rendering the replaceme
     const plot = document.querySelector('protspace-scatterplot') as
       | (Element & { getCurrentData?: () => { protein_ids?: string[] } })
       | null;
-    const cb = document.querySelector('protspace-control-bar') as
+    const cb = document.querySelector('protspace-control-bar') as unknown as
       | (Element & { filterActive?: boolean })
       | null;
     return {

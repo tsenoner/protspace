@@ -1,6 +1,6 @@
 [project]
 name = "protspace"
-version = "4.9.1"
+version = "4.16.7"
 description = "Prepare protein language model (pLM) embeddings for interactive exploration at protspace.app — embed, project, annotate, transfer labels (EAT), and bundle."
 authors = [{ name = "Tobias Senoner", email = "tobias.senoner@tum.de" }]
 readme = "README.md"
@@ -14,12 +14,11 @@ dependencies = [
     "numpy>=1.23.0",
     "pandas>=2.0.0",
     "tqdm>=4.67.1",
-    "pymmseqs>=1.0.4",
     "pyarrow>=20.0.0",
-    "biocentral-api>=1.2.1",
+    "biocentral-api>=2.0.0,<3",
     "requests>=2.32.4",
     "typer>=0.24.1",
-    "rich>=14.3.3",
+    "rich>=13.8.0",
     "protlabel>=4.4.0",
 ]
 
@@ -42,10 +41,16 @@ frontend = [
 ]
 local = [
     "einops>=0.8.2",
-    "protobuf>=7.35.1",
+    # Floor only, deliberately low: needed by transformers' slow-tokenizer
+    # conversion (ProtT5/Ankh T5Tokenizer). A tighter pin conflicted with
+    # Colab's preinstalled protobuf.
+    "protobuf>=3.20",
     "sentencepiece>=0.2.2",
     "torch>=2.4",
     "transformers>=5.13.1",
+]
+similarity = [
+    "pymmseqs>=1.2.0",
 ]
 
 [project.scripts]
@@ -62,7 +67,6 @@ dev = [
     "biopython>=1.84",
     "cairosvg>=2.7.1",
     "dash-mantine-components>=0.14.5",
-    "dash-treeview-antd>=0.0.1",
     "holoviews>=1.19.1",
     "hvplot>=0.11.0",
     "ijson>=3.3.0",
@@ -107,6 +111,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:selenium.*:",
     "ignore::DeprecationWarning:kaleido.*:",
     "ignore::DeprecationWarning:dash_molstar.*:",
+    "ignore::DeprecationWarning:biotrainer_core.*:",
     "ignore::RuntimeWarning:sklearn.utils.extmath:",
     "ignore:n_jobs value:UserWarning:umap:",
 ]
@@ -131,12 +136,18 @@ select = [
     "ARG001", # unused-function-args
     "F401", # unused-import
     "F841", # unused-variable
+    "TID251", # banned-api: see flake8-tidy-imports.banned-api below
 ]
 ignore = [
     "E501", # line too long, handled by black
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Importing through `src.` loads a second copy of every protspace module next to the
+# installed one, so a `patch("src.protspace...")` misses the copy the code under test uses.
+"src".msg = "Import from `protspace`, not `src.protspace`."
 
 [tool.ruff.lint.isort]
 # protlabel lives in the packages/protlabel workspace member (not src/), so

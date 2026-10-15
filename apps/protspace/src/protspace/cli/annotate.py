@@ -7,7 +7,12 @@ from typing import Annotated
 import typer
 
 from protspace.cli.app import PANEL_STAGES, app, setup_logging
-from protspace.cli.common_options import Opt_Verbose
+from protspace.cli.common_options import (
+    ANNOTATION_REFETCH_SHORTHANDS,
+    ANNOTATION_SOURCES,
+    Opt_Verbose,
+    parse_refetch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,15 +46,50 @@ def annotate(
             "--scores/--no-scores", help="Include annotation confidence scores."
         ),
     ] = True,
+    cache_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--cache-dir",
+            help=(
+                "Keep the annotation cache here (created if missing): each "
+                "source is saved as it finishes, and a rerun fetches only what "
+                "is missing. prepare's {output}/tmp/ works too."
+            ),
+            file_okay=False,
+        ),
+    ] = None,
+    refetch: Annotated[
+        str | None,
+        typer.Option(
+            "--refetch",
+            help=(
+                "With --cache-dir, fetch these sources again (comma-separated): "
+                f"{', '.join(sorted(ANNOTATION_SOURCES))}. Shorthand: annotations."
+            ),
+        ),
+    ] = None,
     verbose: Opt_Verbose = 0,
 ) -> None:
     """Fetch UniProt / InterPro / taxonomy annotations.
 
     \b
     Extracts protein identifiers from the input file and fetches
-    annotations, saving them as a parquet file.
+    annotations, saving them as a parquet file. With --cache-dir, an
+    interrupted run resumes where it stopped.
     """
     setup_logging(verbose)
+
+    # Both are argument checks, so they fail before any input is read or API
+    # called.
+    refetch_stages = parse_refetch(
+        refetch, ANNOTATION_SOURCES, ANNOTATION_REFETCH_SHORTHANDS
+    )
+    if refetch_stages and cache_dir is None:
+        raise typer.BadParameter(
+            "--refetch needs --cache-dir: without a cache every source is "
+            "fetched anyway.",
+            param_hint="--refetch",
+        )
 
     import h5py
     import pyarrow as pa
@@ -61,10 +101,13 @@ def annotate(
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
 
     # Extract identifiers from input
+    sequences = None
     if is_fasta_file(input):
+        from protspace.data.loaders.fasta import parse_fasta_normalized
         from protspace.data.loaders.query import extract_identifiers_from_fasta
 
         headers = extract_identifiers_from_fasta(input)
+        sequences = parse_fasta_normalized(input)
     elif input.suffix.lower() in EMBEDDING_EXTENSIONS:
         from protspace.data.loaders.h5 import _collect_datasets
 
@@ -96,11 +139,19 @@ def annotate(
             annotations_list = AnnotationConfiguration(names).user_annotations
 
     # Fetch annotations
-    df = ProteinAnnotationManager(
-        headers=headers,
-        annotations=annotations_list,
-        output_path=None,
-    ).to_pd()
+    if cache_dir is None:
+        manager = ProteinAnnotationManager(
+            headers=headers,
+            annotations=annotations_list,
+            output_path=None,
+            sequences=sequences,
+        )
+        df = manager.to_pd()
+        incomplete_sources = manager.incomplete_sources
+    else:
+        df, incomplete_sources = _fetch_with_cache(
+            headers, annotations_list, sequences, cache_dir, refetch_stages
+        )
 
     if not scores:
         from protspace.data.annotations.scores import strip_scores_from_df
@@ -116,3 +167,56 @@ def annotate(
     pq.write_table(table, str(output))
 
     typer.echo(f"Saved annotations for {len(headers)} proteins to {output}")
+
+    # Unlike the cache, this file is the user's deliverable, so it is written
+    # either way -- a partial result beats no result. But a source that did not
+    # finish emits empty values indistinguishable from a real absence, so say
+    # so rather than reporting a clean run. Deliberately not a non-zero exit:
+    # the hosted prepare service treats that as a failed job and would discard
+    # a bundle the user can still use.
+    if incomplete_sources:
+        incomplete = ", ".join(sorted(incomplete_sources))
+        logger.warning(
+            f"Incomplete annotations from: {incomplete}. The affected proteins "
+            f"have empty values in {output}, which cannot be told apart from a "
+            "genuine absence. Re-run to fetch them."
+        )
+
+
+def _fetch_with_cache(
+    headers: list[str],
+    annotations: list[str] | None,
+    sequences: dict[str, str] | None,
+    cache_dir: Path,
+    refetch_stages: frozenset[str],
+):
+    """Fetch through the annotation cache in *cache_dir*, as ``prepare`` does.
+
+    Returns the frame for exactly *headers*, in their order, and the sources
+    that did not complete.
+    """
+    from protspace.data.annotations.cache import CACHE_FILENAME, fetch_annotations
+    from protspace.data.annotations.configuration import AnnotationConfiguration
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fetched = fetch_annotations(
+        headers,
+        # Spelled out rather than None, which would serve every cached column
+        # (the internal lookup ones included) instead of the default group.
+        annotations or AnnotationConfiguration(None).user_annotations,
+        sequences=sequences,
+        cache_path=cache_dir / CACHE_FILENAME,
+        refetch=refetch_stages,
+    )
+    # The cache keeps rows for proteins outside this run, and a frame served
+    # from it carries the cache's own metadata; the output file wants neither.
+    id_col = fetched.frame.columns[0]
+    df = fetched.frame.drop_duplicates(subset=id_col)
+    df = (
+        df.set_index(df[id_col].astype(str).rename(None))
+        .reindex([str(h) for h in headers])
+        .dropna(subset=[id_col])
+        .reset_index(drop=True)
+    )
+    df.attrs = {}
+    return df, fetched.incomplete_sources

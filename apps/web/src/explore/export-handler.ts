@@ -24,6 +24,8 @@ interface ExportEventDetail {
 interface ExportHandlerOptions {
   controlBar: ProtspaceControlBar;
   getSelectedProteins(): string[];
+  /** Proteins the loaded file holds that the dataset, and so a bundle export, leaves out. */
+  getUnplacedProteinCount(): number;
   legendElement: ProtspaceLegend;
   plotElement: ProtspaceScatterplot;
 }
@@ -56,20 +58,11 @@ function loadPublishState(): Record<string, unknown> | null {
 export function createExportHandler({
   controlBar,
   getSelectedProteins,
+  getUnplacedProteinCount,
   legendElement,
   plotElement,
 }: ExportHandlerOptions) {
   // ── Publish editor handler ─────────────────────────
-
-  function getCurrentProjection(): { projection: string; dimensionality: number } | null {
-    const sp = plotElement as Record<string, unknown>;
-    if (typeof sp.selectedProjection !== 'string' || !sp.selectedProjection) return null;
-    const name = sp.selectedProjection;
-    const dimensionality = name.toLowerCase().includes('3d') ? 3 : 2;
-    // Extract projection method (e.g., "UMAP_2D" → "UMAP")
-    const projection = name.replace(/[_-]?[23][dD]$/i, '') || name;
-    return { projection, dimensionality };
-  }
 
   function setupPublishEditorHandler() {
     controlBar.addEventListener('open-publish-editor', async () => {
@@ -89,23 +82,10 @@ export function createExportHandler({
         const modal = document.createElement('protspace-publish-modal') as InstanceType<
           typeof ProtspacePublishModal
         >;
-        modal.plotElement = plotElement as unknown as HTMLElement;
-        modal.legendElement = legendElement as unknown as HTMLElement;
-        modal.currentProjection = getCurrentProjection();
-
-        // Restore saved publish state: bundle > localStorage > defaults
-        const plotEl = plotElement as Record<string, unknown>;
-        const bundleSettings =
-          'bundleSettings' in plotEl &&
-          typeof plotEl.bundleSettings === 'object' &&
-          plotEl.bundleSettings !== null
-            ? (plotEl.bundleSettings as { publishState?: Record<string, unknown> })
-            : undefined;
-        if (bundleSettings?.publishState) {
-          modal.savedPublishState = bundleSettings.publishState;
-        } else {
-          modal.savedPublishState = loadPublishState();
-        }
+        modal.plotElement = plotElement;
+        modal.legendElement = legendElement;
+        // Restore the last saved publish state (localStorage), else the modal's defaults.
+        modal.savedPublishState = loadPublishState();
 
         // Handle export from the figure editor
         modal.addEventListener('publish-export', (async (e: CustomEvent) => {
@@ -213,15 +193,20 @@ export function createExportHandler({
             // The reliability slider position lives on the legend now (it drives
             // the query filter, not scatter-plot dimming), so persist it from there.
             eatConfidenceThreshold: legendElement.reliabilityThreshold,
+            // Only a picked size: the live one may be seeded from the current
+            // annotation, and as a top-level size it would override every other one.
+            shapeSize: legendElement.pickedShapeSize,
           };
         }
 
         const filename = generateBundleFilename(includeSettings);
+        // Subset exports carry no statistics by construction: sliceVisualizationDataByIndices
+        // strips them, so whole-dataset scores can never describe an isolated/filtered slice.
         exportParquetBundle(currentData, filename, {
           includeSettings,
           settings,
         });
-        notify.success(getExportSuccessNotification(filename));
+        notify.success(getExportSuccessNotification(filename, getUnplacedProteinCount()));
         return;
       }
 

@@ -4,43 +4,10 @@ import {
   DuplicateBadgesCanvasRenderer,
   BADGE_RADIUS,
   BADGE_OFFSET,
+  BADGE_EXPANDED_FILL,
+  BADGE_DEFAULT_FILL,
 } from './duplicate-badges-canvas-renderer';
-import type { RenderDuplicateStack } from './duplicate-stack-types';
-
-/**
- * Fake canvas recording both method calls and property sets (the sibling
- * fakeCanvas in duplicate-badges-canvas-renderer.test.ts records calls only;
- * renderExport assertions also need font / lineWidth values).
- */
-function fakeCanvas(width: number, height: number) {
-  const calls: Array<[string, unknown[]]> = [];
-  const props: Record<string, unknown> = {};
-  const ctx = new Proxy({} as Record<string, unknown>, {
-    get: (_t, p) =>
-      typeof p === 'string' &&
-      ['setTransform', 'clearRect', 'beginPath', 'arc', 'fill', 'stroke', 'fillText'].includes(p)
-        ? (...a: unknown[]) => calls.push([p, a])
-        : undefined,
-    set: (_t, p, v) => {
-      if (typeof p === 'string') props[p] = v;
-      return true;
-    },
-  });
-  const canvas = { width, height, getContext: () => ctx } as unknown as HTMLCanvasElement;
-  return { canvas, calls, props };
-}
-
-const stk = (key: string, px: number, py: number, n: number): RenderDuplicateStack => ({
-  key,
-  px,
-  py,
-  points: Array.from({ length: n }, (_, i) => ({
-    id: `${key}-${i}`,
-    x: 0,
-    y: 0,
-    originalIndex: i,
-  })),
-});
+import { fakeCanvas, stk } from './test-support/badge-canvas-fake';
 
 const { renderExport } = DuplicateBadgesCanvasRenderer;
 
@@ -84,6 +51,10 @@ describe('DuplicateBadgesCanvasRenderer.renderExport (#302)', () => {
     const { canvas, calls } = fakeCanvas(800, 600);
     renderExport(canvas, [stk('a', 10, 10, 3), stk('b', 20, 20, 5)], 1, 'b');
     expect(calls.filter(([m]) => m === 'arc')).toHaveLength(2);
+    expect(calls.filter(([m]) => m === 'fill').map(([, a]) => a[0])).toEqual([
+      BADGE_DEFAULT_FILL,
+      BADGE_EXPANDED_FILL,
+    ]);
     expect(calls.filter(([m]) => m === 'fillText').map(([, a]) => a[0])).toEqual(['3', '5']);
   });
 

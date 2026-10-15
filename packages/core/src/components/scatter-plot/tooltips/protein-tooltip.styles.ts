@@ -172,7 +172,7 @@ export const proteinTooltipStyles = css`
     flex-shrink: 0;
     white-space: nowrap;
     color: #94a3b8;
-    font-size: 0.6875rem;
+    font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
 
@@ -190,7 +190,7 @@ export const proteinTooltipStyles = css`
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
-    font-size: 0.6875rem;
+    font-size: var(--text-caption);
     color: #475569;
   }
 

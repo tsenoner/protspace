@@ -15,23 +15,22 @@
  *
  * Findings:
  *   - F-35 + F-11: firstUpdated constructs EXACTLY ONE WebGLRenderer and never
- *     orphans one (currently RED — firstUpdated double-constructs via
- *     _updateSizeAndRender then again inline).
+ *     orphans one (_updateSizeAndRender already constructs it lazily, so
+ *     firstUpdated only constructs when none exists).
  *   - F-05: a numeric recompute does not complete after disconnect — the busy
- *     state is cleared and a superseded RAF body bails (ALREADY SATISFIED by
- *     B6/F-04 NumericRecomputeRunner.cancel(); this is a characterization lock).
+ *     state is cleared and a superseded RAF body bails (via
+ *     NumericRecomputeRunner.cancel()).
  *     (F-46 removed the old `numeric-recompute-end` event; re-characterized via
  *     the kept `_numericRecomputeRunning` mirror.)
  *   - F-12: the 750ms resetZoom transition is interrupted on disconnect
- *     (ALREADY SATISFIED by B8 PlotInteractionController.teardown(); this is a
- *     characterization lock asserted via the controller teardown path).
+ *     (via PlotInteractionController.teardown()).
  *   - F-16: a selection committed then disconnected before its deferred RAF
  *     fires dispatches nothing — disconnectedCallback cancels the tracked
- *     _commitSelectionRafId (currently RED — the RAF id is not cancelled). The
- *     suppression is via cancellation, NOT an isConnected body-guard, so the
- *     connected dispatch (scatter-plot.test.ts B7 locks) stays byte-identical.
+ *     _commitSelectionRafId. The suppression is via cancellation, NOT an
+ *     isConnected body-guard, so the connected dispatch (scatter-plot.test.ts
+ *     B7 locks) stays byte-identical.
  *   - F-21: `_renderWebGL` is a no-op (does not throw) when `_webglRenderer` is
- *     null (currently RED — uses a non-null assertion).
+ *     null (it returns early instead of dereferencing the renderer).
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { VisualizationData } from '@protspace/utils';
@@ -47,7 +46,7 @@ beforeAll(() => {
 });
 
 // Count WebGLRenderer constructions without a real GL context. We preserve the
-// real module's other exports (MAX_POINTS_DIRECT_RENDER) and replace only the
+// real module's other exports (MAX_RENDERABLE_POINTS) and replace only the
 // renderer with an instrumented stub that records each construction + destroy.
 // The class + registry live in vi.hoisted so the hoisted vi.mock factory can
 // close over them (a top-level const would be a TDZ ReferenceError at mock time).
@@ -106,7 +105,7 @@ function makeFamilyData(): VisualizationData {
       fam: families.map((v) => [families.indexOf(v)]),
     },
     numeric_annotation_data: {
-      score: families.map((_, i) => i),
+      score: Float64Array.from(families, (_, i) => i),
     },
   } as unknown as VisualizationData;
 }
@@ -247,11 +246,9 @@ describe('F-16: _commitSelection RAF cancelled on disconnect', () => {
 describe('F-21: _renderWebGL is a no-op when the renderer is null', () => {
   it('does not throw when _webglRenderer is null', () => {
     const sp = makeHost();
-    // No firstUpdated ran, so the renderer was never constructed (null). The
-    // current code dereferences `this._webglRenderer!` unconditionally and
-    // throws a TypeError; a hardened _renderWebGL bails when the renderer is
-    // null. `_scales` is a getter (null with no processed data), so
-    // _getPointsForRendering returns EMPTY_PLOT_DATA before the null deref.
+    // No firstUpdated ran, so the renderer was never constructed (null).
+    // _renderWebGL must bail on the null renderer rather than dereference it
+    // (a `this._webglRenderer!` there threw a TypeError).
     sp._webglRenderer = null;
 
     expect(() => sp._renderWebGL('plot')).not.toThrow();

@@ -1,13 +1,15 @@
 import type { ProtspaceControlBar, ProtspaceScatterplot } from '@protspace/core';
-import type { VisualizationData } from '@protspace/utils';
+import { DENSITY_DEFAULT, type DensityLayerMode, type VisualizationData } from '@protspace/utils';
 import type {
   EffectiveExploreView,
   ExploreViewChangeSource,
+  ExploreViewDefaults,
   ExploreViewRequestState,
 } from './view-state';
 import {
   cloneExploreViewRequest,
   createEmptyExploreViewRequest,
+  createExploreViewRequestFromView,
   getResolvedExploreViewNormalization,
   resolveExploreView,
 } from './url-state';
@@ -29,9 +31,35 @@ export interface ViewController {
   ): EffectiveExploreView | null;
   applyLatestViewForDatasetLoad(dataOverride?: VisualizationData): EffectiveExploreView | null;
   setRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Stores `viewRequest` as the latest request WITHOUT resolving or applying
+   * it. Used when a dataset switch is also pending (Back/Forward changing
+   * both `dataset` and a view param at once): resolving here would run
+   * against whichever dataset is still on screen, normalize against its
+   * annotations/projections, and write that normalization over the URL
+   * entry the switch is headed to. `applyLatestViewForDatasetLoad` resolves
+   * the recorded request against the new dataset once it's loaded.
+   */
+  recordRequestedView(viewRequest: ExploreViewRequestState): void;
+  /**
+   * Records the view on screen as the latest request, as a URL naming it
+   * would. After a failed Back/Forward the recorded request still holds the
+   * failed entry's parameters; this drops them, so a later file import or
+   * load doesn't inherit them.
+   */
+  recordCurrentView(): void;
+  /**
+   * Sets the loaded dataset's own landing view (an example's curated
+   * `defaultView`), which fills whatever the view request leaves unset (see
+   * `resolveExploreView`); `null` for a dataset without one. Both resolve
+   * paths use it, so Back to a bare entry of the same dataset, which never
+   * reloads, also lands on the curated view.
+   */
+  setDatasetDefaults(defaults: ExploreViewDefaults | null): void;
   handleUserAnnotationChange(): void;
   handleUserProjectionChange(): void;
   handleUserTooltipAnnotationsChange(): void;
+  handleUserDensityLayerChange(): void;
   subscribeToViewChanges(callback: (change: ExploreViewChange) => void): () => void;
   dispose(): void;
 }
@@ -41,25 +69,12 @@ export function createViewController({
   controlBar,
 }: ViewControllerOptions): ViewController {
   let latestViewRequest = createEmptyExploreViewRequest();
-  let activeViewChangeSource: ExploreViewChangeSource | null = null;
-  let activeViewChangeResetFrame = 0;
+  let datasetDefaults: ExploreViewDefaults = {};
+  let isApplyingView = false;
   const subscribers = new Set<(change: ExploreViewChange) => void>();
 
   const emitViewChange = (change: ExploreViewChange) => {
     subscribers.forEach((callback) => callback(change));
-  };
-
-  const scheduleActiveViewChangeSourceReset = (source: ExploreViewChangeSource) => {
-    if (activeViewChangeResetFrame) {
-      cancelAnimationFrame(activeViewChangeResetFrame);
-    }
-
-    activeViewChangeResetFrame = requestAnimationFrame(() => {
-      if (activeViewChangeSource === source) {
-        activeViewChangeSource = null;
-      }
-      activeViewChangeResetFrame = 0;
-    });
   };
 
   const getViewOptions = (data: VisualizationData | undefined) => ({
@@ -111,6 +126,7 @@ export function createViewController({
       annotation,
       projection,
       tooltip,
+      density: plotElement.config?.densityLayer ?? DENSITY_DEFAULT,
     };
   };
 
@@ -126,6 +142,11 @@ export function createViewController({
     controlBar.applyTooltipAnnotationsSelection?.(tooltipAnnotations);
   };
 
+  const selectDensityLayer = (density: DensityLayerMode) => {
+    controlBar.densityLayer = density;
+    plotElement.config = { ...(plotElement.config ?? {}), densityLayer: density };
+  };
+
   const arraysEqual = (a: readonly string[], b: readonly string[]) => {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
@@ -138,9 +159,10 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
     return resolved?.effective ?? null;
   };
@@ -155,9 +177,10 @@ export function createViewController({
     const currentData = dataOverride ?? plotElement.getCurrentData?.();
     const { availableAnnotations, availableProjections } = getViewOptions(currentData);
     const resolved = resolveExploreView(
-      latestViewRequest.requested,
+      latestViewRequest,
       availableAnnotations,
       availableProjections,
+      datasetDefaults,
     );
 
     if (!resolved) {
@@ -169,18 +192,30 @@ export function createViewController({
     const projectionChanged = currentView?.projection !== effective.projection;
     const annotationChanged = currentView?.annotation !== effective.annotation;
     const tooltipChanged = !arraysEqual(currentView?.tooltip ?? [], effective.tooltip);
+    const densityChanged = currentView?.density !== effective.density;
 
-    activeViewChangeSource = source;
-    if (projectionChanged) {
-      selectProjection(effective.projection);
+    // The control bar dispatches its change events synchronously from these
+    // apply* calls, and the app routes them back here as user changes. Guard
+    // only that synchronous window: anything arriving later is a real user
+    // interaction, not an echo of what we just applied.
+    const wasApplyingView = isApplyingView;
+    isApplyingView = true;
+    try {
+      if (projectionChanged) {
+        selectProjection(effective.projection);
+      }
+      if (annotationChanged) {
+        selectAnnotation(effective.annotation);
+      }
+      if (tooltipChanged) {
+        selectTooltipAnnotations(effective.tooltip);
+      }
+      if (densityChanged) {
+        selectDensityLayer(effective.density);
+      }
+    } finally {
+      isApplyingView = wasApplyingView;
     }
-    if (annotationChanged) {
-      selectAnnotation(effective.annotation);
-    }
-    if (tooltipChanged) {
-      selectTooltipAnnotations(effective.tooltip);
-    }
-    scheduleActiveViewChangeSourceReset(source);
 
     emitViewChange({
       effective,
@@ -192,7 +227,7 @@ export function createViewController({
   };
 
   const emitCurrentUserViewChange = () => {
-    if (activeViewChangeSource) {
+    if (isApplyingView) {
       return;
     }
 
@@ -208,6 +243,7 @@ export function createViewController({
         annotation: false,
         projection: false,
         tooltip: false,
+        density: false,
       },
     });
   };
@@ -224,6 +260,18 @@ export function createViewController({
       latestViewRequest = cloneExploreViewRequest(viewRequest);
       applyViewSelection(latestViewRequest, 'url');
     },
+    recordRequestedView(viewRequest: ExploreViewRequestState) {
+      latestViewRequest = cloneExploreViewRequest(viewRequest);
+    },
+    recordCurrentView() {
+      const effective = getCurrentEffectiveView();
+      latestViewRequest = effective
+        ? createExploreViewRequestFromView(effective)
+        : createEmptyExploreViewRequest();
+    },
+    setDatasetDefaults(defaults: ExploreViewDefaults | null) {
+      datasetDefaults = defaults ?? {};
+    },
     handleUserAnnotationChange() {
       emitCurrentUserViewChange();
     },
@@ -233,6 +281,9 @@ export function createViewController({
     handleUserTooltipAnnotationsChange() {
       emitCurrentUserViewChange();
     },
+    handleUserDensityLayerChange() {
+      emitCurrentUserViewChange();
+    },
     subscribeToViewChanges(callback: (change: ExploreViewChange) => void) {
       subscribers.add(callback);
       return () => {
@@ -240,10 +291,6 @@ export function createViewController({
       };
     },
     dispose() {
-      if (activeViewChangeResetFrame) {
-        cancelAnimationFrame(activeViewChangeResetFrame);
-        activeViewChangeResetFrame = 0;
-      }
       subscribers.clear();
     },
   };

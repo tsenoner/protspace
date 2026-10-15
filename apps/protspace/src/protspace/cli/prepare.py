@@ -19,6 +19,9 @@ import typer
 
 from protspace.cli.app import PANEL_START, app, setup_logging
 from protspace.cli.common_options import (
+    EMBEDDER_HELP_LICENSE,
+    EMBEDDER_HELP_MODELS,
+    EMBEDDER_MODELS,
     Backend,
     ClusterSelection,
     Metric,
@@ -29,6 +32,7 @@ from protspace.cli.common_options import (
     Opt_FpRatio,
     Opt_LearningRate,
     Opt_MaxIter,
+    Opt_MaxLength,
     Opt_Methods,
     Opt_Metric,
     Opt_MinDist,
@@ -39,27 +43,14 @@ from protspace.cli.common_options import (
     Opt_RandomState,
     Opt_Similarity,
     Opt_Verbose,
+    build_embed_config,
+    parse_refetch,
+    require_similarity_extra,
 )
 
 logger = logging.getLogger(__name__)
 
-ANNOTATIONS_URL = (
-    "https://github.com/tsenoner/protspace/blob/main/apps/protspace/docs/annotations.md"
-)
-EMBEDDER_MODELS = {
-    "prot_t5",
-    "prost_t5",
-    "esm2_8m",
-    "esm2_35m",
-    "esm2_150m",
-    "esm2_650m",
-    "esm2_3b",
-    "ankh_base",
-    "ankh_large",
-    "ankh3_large",
-    "esmc_300m",
-    "esmc_600m",
-}
+ANNOTATIONS_URL = "https://protspace.app/docs/guide/annotations"
 
 
 # ---------------------------------------------------------------------------
@@ -94,10 +85,7 @@ Opt_Embedder = Annotated[
         "--embedder",
         help=(
             "pLM model(s), comma-separated. "
-            "Models: prot_t5, prost_t5, esm2_8m, esm2_35m, esm2_150m, "
-            "esm2_650m, esm2_3b, ankh_base, ankh_large, ankh3_large, "
-            "esmc_300m, esmc_600m. "
-            "Note: ankh_*, ankh3_*, esmc_600m are non-commercial licenses."
+            f"{EMBEDDER_HELP_MODELS} {EMBEDDER_HELP_LICENSE}"
         ),
         rich_help_panel="Embedding",
     ),
@@ -126,9 +114,8 @@ Opt_Stats = Annotated[
     typer.Option(
         "--stats/--no-stats",
         help="Compute projection quality statistics (cluster-validity + "
-        "faithfulness); adds cluster_* membership columns (with per-point "
-        "silhouette confidence) + legend styles to the bundle. Opt-in (off by "
-        "default): can be slow on large runs.",
+        "faithfulness); adds cluster_* membership columns + legend styles to the "
+        "bundle. Opt-in (off by default): can be slow on large runs.",
         rich_help_panel="Output",
     ),
 ]
@@ -150,32 +137,6 @@ Opt_StatsAnnotation = Annotated[
         rich_help_panel="Output",
     ),
 ]
-REFETCH_STAGES = frozenset(
-    {
-        "query",
-        "embed",
-        "similarity",
-        "projections",
-        "uniprot",
-        "taxonomy",
-        "interpro",
-        "ted",
-        "biocentral",
-    }
-)
-ANNOTATION_SOURCES = frozenset(
-    {
-        "uniprot",
-        "taxonomy",
-        "interpro",
-        "ted",
-        "biocentral",
-    }
-)
-REFETCH_SHORTHANDS: dict[str, frozenset[str]] = {
-    "all": REFETCH_STAGES,
-    "annotations": ANNOTATION_SOURCES,
-}
 Opt_Refetch = Annotated[
     str | None,
     typer.Option(
@@ -227,28 +188,6 @@ Opt_NoLog = Annotated[
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _parse_refetch(raw: str | None) -> frozenset[str]:
-    """Parse ``--refetch`` value into a set of stage names."""
-    if not raw:
-        return frozenset()
-    stages: set[str] = set()
-    for token in raw.split(","):
-        token = token.strip().lower()
-        if not token:
-            continue
-        if token in REFETCH_SHORTHANDS:
-            stages |= REFETCH_SHORTHANDS[token]
-        elif token in REFETCH_STAGES:
-            stages.add(token)
-        else:
-            raise typer.BadParameter(
-                f"Unknown refetch stage: '{token}'. "
-                f"Valid stages: {', '.join(sorted(REFETCH_STAGES))}. "
-                f"Shorthands: {', '.join(sorted(REFETCH_SHORTHANDS))}."
-            )
-    return frozenset(stages)
 
 
 def _embed_all(
@@ -311,6 +250,7 @@ def prepare(
     embedder: Opt_Embedder = None,
     backend: Opt_Backend = Backend.biocentral,
     batch_size: Opt_BatchSize = None,
+    max_length: Opt_MaxLength = None,
     # Projection
     methods: Opt_Methods = None,
     similarity: Opt_Similarity = False,
@@ -366,7 +306,7 @@ def prepare(
 
     setup_logging(verbose)
 
-    refetch_stages = _parse_refetch(refetch)
+    refetch_stages = parse_refetch(refetch)
     if refetch_stages:
         logger.info(f"Refetching stages: {', '.join(sorted(refetch_stages))}")
 
@@ -377,6 +317,16 @@ def prepare(
     has_fasta = any(
         is_fasta_file(spec[0]) for spec in input_specs if not spec[0].is_dir()
     )
+
+    # Both similarity preconditions are pure argument checks, so they run before
+    # anything is read: similarity happens last, and failing here rather than at
+    # the import site keeps a full HDF5 load (or embed) off the wasted path.
+    # `has_fasta` is extension-based, the same test the input loop branches on,
+    # so this is exactly "the loop will not produce a FASTA for similarity".
+    if similarity:
+        if fasta is None and not query and not has_fasta:
+            raise typer.BadParameter("-s requires FASTA. Use -f when input is HDF5.")
+        require_similarity_extra()
 
     embedders = _parse_embedders(embedder)
 
@@ -423,47 +373,16 @@ def prepare(
     # --- Build embedding sets ---
     from protspace.data.loaders import EmbeddingSet, load_h5
     from protspace.data.loaders.h5 import EMBEDDING_EXTENSIONS
-    from protspace.data.loaders.query import (
-        extract_identifiers_from_fasta,
-        query_uniprot,
-    )
 
-    if backend == Backend.local:
-        from protspace.data.embedding.local import LocalEmbedConfig
-
-        embed_config = (
-            LocalEmbedConfig(batch_size=batch_size)
-            if batch_size is not None
-            else LocalEmbedConfig()
-        )
-    else:
-        from protspace.data.embedding.biocentral import EmbedConfig
-
-        embed_config = (
-            EmbedConfig(batch_size=batch_size)
-            if batch_size is not None
-            else EmbedConfig()
-        )
+    embed_config = build_embed_config(backend, batch_size, max_length)
     embedding_sets: list[EmbeddingSet] = []
     fasta_for_similarity: Path | None = fasta
 
     try:
         if query:
-            fasta_save = cache_dir / "sequences.fasta" if cache_dir else None
-            if (
-                fasta_save
-                and fasta_save.exists()
-                and fasta_save.stat().st_size > 0
-                and "query" not in refetch_stages
-            ):
-                headers = extract_identifiers_from_fasta(fasta_save)
-                logger.warning(
-                    "Using cached FASTA (%s sequences)",
-                    f"{len(headers):,}",
-                )
-                fasta_path = fasta_save
-            else:
-                headers, fasta_path = query_uniprot(query, save_to=fasta_save)
+            from protspace.data.loaders.query import resolve_query_fasta
+
+            headers, fasta_path = resolve_query_fasta(query, cache_dir, refetch_stages)
             if not headers:
                 raise typer.BadParameter(f"No sequences for query: '{query}'")
 
@@ -492,13 +411,9 @@ def prepare(
                     if not h5s:
                         logger.warning(f"No embedding files in: {path}")
                         continue
-                    embedding_sets.append(load_h5(h5s, name_override=name_override))
+                    emb_set = load_h5(h5s, name_override=name_override)
                 elif path.suffix.lower() in EMBEDDING_EXTENSIONS:
                     emb_set = load_h5([path], name_override=name_override)
-                    # Attach FASTA path from -f flag if provided (for sequence reuse)
-                    if fasta_for_similarity:
-                        emb_set.fasta_path = fasta_for_similarity
-                    embedding_sets.append(emb_set)
                 elif path.suffix.lower() in {".fasta", ".fa", ".faa"}:
                     _embed_all(
                         embedders,
@@ -510,18 +425,35 @@ def prepare(
                         force_reembed="embed" in refetch_stages,
                     )
                     fasta_for_similarity = path
+                    continue
                 else:
                     raise typer.BadParameter(f"Unsupported file: {path}")
+
+                # -f carries the sequences into the bundle, and it applies to
+                # every HDF5 input -- a directory of them as much as one file.
+                if fasta_for_similarity:
+                    emb_set.fasta_path = fasta_for_similarity
+                embedding_sets.append(emb_set)
 
         if not embedding_sets:
             raise typer.BadParameter("No valid input data found.")
 
+        # --- FASTA coverage ---
+        # Before similarity, not after: an uncovered protein inverts the whole
+        # MDS projection rather than degrading its own row.
+        if fasta_for_similarity is not None and embedding_sets:
+            from protspace.data.loaders.fasta import check_fasta_coverage
+
+            check_fasta_coverage(
+                fasta_for_similarity,
+                embedding_sets[0].headers,
+                required=bool(similarity),
+            )
+
         # --- Similarity ---
+        # Both preconditions were checked before any input was read, so
+        # `fasta_for_similarity` is set here whenever `similarity` is on.
         if similarity:
-            if fasta_for_similarity is None:
-                raise typer.BadParameter(
-                    "-s requires FASTA. Use -f when input is HDF5."
-                )
             from protspace.data.loaders import compute_similarity
 
             embedding_sets.append(
@@ -580,7 +512,8 @@ def prepare(
             reducer_params=reducer_params,
         )
 
-        ReductionPipeline(config).run(embedding_sets)
+        pipeline = ReductionPipeline(config)
+        pipeline.run(embedding_sets)
 
         if keep_tmp and not refetch_stages:
             logger.warning(
@@ -608,6 +541,7 @@ def prepare(
             output_path=output_path,
             n_proteins=len(embedding_sets[0].headers) if embedding_sets else 0,
             n_embedding_sets=len(embedding_sets),
+            uniprot_releases=pipeline.uniprot_releases,
         )
 
 
@@ -662,6 +596,7 @@ def _write_run_log(
     output_path: Path,
     n_proteins: int,
     n_embedding_sets: int,
+    uniprot_releases: set[str],
 ) -> None:
     """Write a reproducibility log to {output_dir}/run.log.
 
@@ -711,6 +646,11 @@ def _write_run_log(
         "## Annotations",
         f"categories: {', '.join(pipeline_config.annotations or ['default'])}",
         f"scores: {scores}",
+        # The same query can return different values a release later, so the
+        # numbers in a bundle trace back only through this line. "none" when
+        # no UniProt data was used, "unknown" for values from a cache that
+        # never recorded its release.
+        f"uniprot_release: {', '.join(sorted(uniprot_releases)) or 'none'}",
         "",
         "## Output",
         f"format: {'parquetbundle' if pipeline_config.bundled else 'parquet'}",

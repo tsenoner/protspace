@@ -1,5 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createLoadingOverlayController, type OverlayNote } from './loading-overlay';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  EXAMPLE_DOWNLOAD_SHARE,
+  createLoadingOverlayController,
+  progressAfterExampleDownload,
+  type OverlayNote,
+} from './loading-overlay';
+
+describe('progressAfterExampleDownload', () => {
+  it("maps a decode or render phase's 0–100 onto the bar left after the download", () => {
+    expect(EXAMPLE_DOWNLOAD_SHARE).toBeGreaterThan(0);
+    expect(EXAMPLE_DOWNLOAD_SHARE).toBeLessThan(100);
+    expect(progressAfterExampleDownload(0)).toBe(EXAMPLE_DOWNLOAD_SHARE);
+    expect(progressAfterExampleDownload(50)).toBe(
+      EXAMPLE_DOWNLOAD_SHARE + (100 - EXAMPLE_DOWNLOAD_SHARE) / 2,
+    );
+    expect(progressAfterExampleDownload(100)).toBe(100);
+  });
+
+  it('clamps out-of-range progress', () => {
+    expect(progressAfterExampleDownload(150)).toBe(100);
+    expect(progressAfterExampleDownload(-5)).toBe(EXAMPLE_DOWNLOAD_SHARE);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Minimal fake DOM — avoids needing jsdom/happy-dom as a dependency.
@@ -142,10 +164,6 @@ beforeEach(() => {
   doc = makeDoc();
 });
 
-afterEach(() => {
-  // nothing to clean up — new doc per test
-});
-
 function getNote() {
   return doc.getElementById('loading-note');
 }
@@ -204,31 +222,44 @@ describe('loading-overlay note rendering', () => {
     const noteEl = getNoteEl();
     expect(noteEl).not.toBeNull();
     const span = noteEl!.children.find((c) => c._tag === 'span');
-    // textContent assignment — no script element is created
+    // Set as textContent: an innerHTML assignment would leave the fake span's text empty.
     expect(span?.textContent).toBe('<script>alert(1)</script>');
-    const hasScript = (function walk(el: FakeEl): boolean {
-      if (el._tag === 'script') return true;
-      return el.children.some(walk);
-    })(doc._body);
-    expect(hasScript).toBe(false);
     ctrl.dispose();
   });
 
-  it.skip('javascript: href — URL validation out of scope; current behavior is unvalidated', () => {
-    // Intentionally skipped per spec §2.5: URL sanitization is out of scope.
-  });
-
   it('does not render a note after hide+show when no note arg is passed on re-show', () => {
-    vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => {} });
     const ctrl = createLoadingOverlayController(doc as unknown as Document);
     ctrl.update(true, 10, 'msg', 'sub', { text: 'Ephemeral note' });
     expect(getNoteEl()).not.toBeNull();
-    // hide resets currentNote (triggers window.setTimeout for fade-out)
+    // hide resets currentNote and removes the overlay
     ctrl.update(false);
     // Re-show without a note arg — overlay is recreated fresh, no note
     ctrl.update(true, 5, 'new msg', 'new sub');
     expect(getNoteEl()).toBeNull();
     ctrl.dispose();
-    vi.unstubAllGlobals();
+  });
+});
+
+describe('loading-overlay dismissal', () => {
+  it('removes the overlay synchronously, with no fade and no timer', () => {
+    // No `window` stub: a removal timer would throw here, and a fade would leave
+    // the element in the document after update(false) returns.
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    ctrl.update(true, 50, 'msg', 'sub');
+    expect(doc.getElementById('progressive-loading')).not.toBeNull();
+
+    ctrl.update(false);
+
+    expect(doc.getElementById('progressive-loading')).toBeNull();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    ctrl.dispose();
+  });
+
+  it('is a no-op when no overlay is shown', () => {
+    const ctrl = createLoadingOverlayController(doc as unknown as Document);
+    expect(() => ctrl.update(false)).not.toThrow();
+    expect(doc.getElementById('progressive-loading')).toBeNull();
   });
 });

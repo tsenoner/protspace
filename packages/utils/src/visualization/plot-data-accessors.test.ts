@@ -8,7 +8,7 @@ import {
   getProteinEvidence,
   buildTooltipView,
 } from './plot-data-accessors';
-import type { VisualizationData } from '../types';
+import type { CsrAnnotationData, CsrEvidence, CsrScores, VisualizationData } from '../types';
 
 const baseData = (): VisualizationData => ({
   protein_ids: ['p0', 'p1', 'p2'],
@@ -46,7 +46,7 @@ describe('plot-data-accessors', () => {
       expect(getProteinAnnotationValues(baseData(), 1, 'species')).toEqual(['mouse']);
     });
 
-    it('returns __NA__ for missing slot (-1) in Int32Array column', () => {
+    it('returns [] for missing slot (-1) in Int32Array column', () => {
       expect(getProteinAnnotationValues(baseData(), 1, 'gene_name')).toEqual([]);
     });
 
@@ -96,9 +96,11 @@ describe('plot-data-accessors', () => {
   describe('getProteinNumericValue', () => {
     it('returns the numeric value at the protein index', () => {
       const data = baseData();
-      data.numeric_annotation_data = { score: [3.14, 2.71, null] };
+      data.numeric_annotation_data = { score: new Float64Array([3.14, 2.71, NaN]) };
       expect(getProteinNumericValue(data, 0, 'score')).toBe(3.14);
       expect(getProteinNumericValue(data, 2, 'score')).toBeNull();
+      // Past the end of the column is missing too, not undefined.
+      expect(getProteinNumericValue(data, 3, 'score')).toBeNull();
     });
 
     it('returns null when the column is absent', () => {
@@ -249,7 +251,7 @@ describe('plot-data-accessors', () => {
       expect(view.blocks).toEqual([]);
     });
 
-    it('returns empty header arrays when the named annotations are absent', () => {
+    it('returns empty header arrays for absent protein_name / uniprot_kb_id (gene_name still set)', () => {
       const view = buildTooltipView(baseData(), 0, 'species');
       expect(view.geneName).toEqual(['BRCA1']); // baseData has gene_name
       // No protein_name / uniprot_kb_id in baseData
@@ -277,6 +279,97 @@ describe('plot-data-accessors', () => {
     it('drops extras whose annotation is missing from the dataset', () => {
       const view = buildTooltipView(baseData(), 0, 'species', ['nonexistent', 'gene_name']);
       expect(view.blocks.map((b) => b.key)).toEqual(['species', 'gene_name']);
+    });
+
+    it('drops the per-point silhouette an auto-cluster column carries', () => {
+      // Bundles prepared before the backend stopped attaching it still ship
+      // `cluster N|0.4970`, which the loader parses into annotation_scores. The
+      // legend strips report each cluster's silhouette instead, so the tooltip must
+      // not be the one place in the app showing a separation score per protein.
+      const data: VisualizationData = {
+        ...baseData(),
+        annotations: {
+          ...baseData().annotations,
+          cluster_elbow_t: {
+            kind: 'categorical',
+            values: ['cluster 0', 'cluster 1'],
+            colors: ['#f00', '#0f0'],
+            shapes: ['circle', 'circle'],
+          },
+        },
+        annotation_data: { ...baseData().annotation_data, cluster_elbow_t: Int32Array.of(0, 1, 0) },
+        annotation_scores: { cluster_elbow_t: [[[0.497]], [[0.601]], [[0.3]]], species: [[[42]]] },
+        statisticsRows: [
+          {
+            space_kind: 'projection',
+            space_name: 't',
+            annotation: '',
+            stat_family: 'cluster_validity',
+            label_kind: 'kmeans_elbow',
+            metric: 'n_clusters',
+            metric_kind: 'meta',
+            value: 2,
+          },
+        ],
+      };
+
+      const view = buildTooltipView(data, 0, 'cluster_elbow_t', ['species']);
+      expect(view.blocks[0].displayValues).toEqual(['cluster 0']);
+      expect(view.blocks[0].scores).toEqual([]);
+      // A real scored annotation in the same tooltip keeps its bit score.
+      expect(view.blocks[1].scores).toEqual([[42]]);
+    });
+
+    it('drops it from the column name alone, with no statistics rows present', () => {
+      // The decision cannot depend on `statisticsRows`: `sliceVisualizationDataByIndices`
+      // clears them for a filtered or isolated view, and a bundle exported from that view
+      // still carries the `cluster_*` column and its `label|silhouette` payload. Judged
+      // from the rows, that re-opened bundle resurrects the per-point number — and
+      // `getAnnotationHeaderType` labels any surviving score "Bitscore", so it comes back
+      // both restored and mislabelled as a bit score.
+      const data: VisualizationData = {
+        ...baseData(),
+        annotations: {
+          ...baseData().annotations,
+          cluster_elbow_t: {
+            kind: 'categorical',
+            values: ['cluster 0', 'cluster 1'],
+            colors: ['#f00', '#0f0'],
+            shapes: ['circle', 'circle'],
+          },
+        },
+        annotation_data: { ...baseData().annotation_data, cluster_elbow_t: Int32Array.of(0, 1, 0) },
+        annotation_scores: { cluster_elbow_t: [[[0.497]], [[0.601]], [[0.3]]] },
+        // No statisticsRows at all — the filtered-export case.
+      };
+
+      const view = buildTooltipView(data, 0, 'cluster_elbow_t');
+      expect(view.blocks[0].displayValues).toEqual(['cluster 0']);
+      expect(view.blocks[0].scores).toEqual([]);
+    });
+
+    it('keeps scores on a curated column whose name merely mentions cluster', () => {
+      // Only the two generated prefixes count; an ordinary annotation must be untouched.
+      const data: VisualizationData = {
+        ...baseData(),
+        annotations: {
+          ...baseData().annotations,
+          cluster_of_differentiation: {
+            kind: 'categorical',
+            values: ['CD4'],
+            colors: ['#f00'],
+            shapes: ['circle'],
+          },
+        },
+        annotation_data: {
+          ...baseData().annotation_data,
+          cluster_of_differentiation: Int32Array.of(0, 0, 0),
+        },
+        annotation_scores: { cluster_of_differentiation: [[[88]]] },
+      };
+
+      const view = buildTooltipView(data, 0, 'cluster_of_differentiation');
+      expect(view.blocks[0].scores).toEqual([[88]]);
     });
 
     it('returns only extra blocks when primary is null', () => {
@@ -322,5 +415,74 @@ describe('plot-data-accessors', () => {
       expect(block.scores).toEqual([[0.9], null]);
       expect(block.evidence).toEqual([null, 'EXP']);
     });
+  });
+});
+
+describe('CSR score and evidence payloads', () => {
+  // hit 0 -> [1.5]; hit 1 -> no scores; hit 2 -> [0.25, 0.5]
+  const csrScores: CsrScores = {
+    offsets: Int32Array.from([0, 1, 1, 3]),
+    values: Float64Array.from([1.5, 0.25, 0.5]),
+  };
+  const csrEvidence: CsrEvidence = {
+    codes: Int32Array.from([0, -1, 1]),
+    dict: ['IDA', 'ECO:1'],
+  };
+  // species rows: p0 -> hits 0,1 ; p1 -> no hits ; p2 -> hit 2
+  const csrRows: CsrAnnotationData = {
+    kind: 'csr',
+    offsets: Int32Array.from([0, 2, 2, 3]),
+    codes: Int32Array.from([0, 1, 2]),
+    length: 3,
+    scores: csrScores,
+    evidence: csrEvidence,
+  };
+
+  const csrData = (): VisualizationData => {
+    const data = baseData();
+    data.annotation_data.species = csrRows;
+    return data;
+  };
+
+  it('reads scores per hit, null for a hit with no score values', () => {
+    const data = csrData();
+    expect(getProteinScores(data, 0, 'species')).toEqual([[1.5], null]);
+    expect(getProteinScores(data, 1, 'species')).toEqual([]);
+    expect(getProteinScores(data, 2, 'species')).toEqual([[0.25, 0.5]]);
+  });
+
+  it('reads evidence per hit, null for code -1', () => {
+    const data = csrData();
+    expect(getProteinEvidence(data, 0, 'species')).toEqual(['IDA', null]);
+    expect(getProteinEvidence(data, 1, 'species')).toEqual([]);
+    expect(getProteinEvidence(data, 2, 'species')).toEqual(['ECO:1']);
+  });
+
+  it('returns empty for out-of-range and negative protein indices', () => {
+    const data = csrData();
+    for (const idx of [3, 99, -1]) {
+      expect(getProteinScores(data, idx, 'species')).toEqual([]);
+      expect(getProteinEvidence(data, idx, 'species')).toEqual([]);
+    }
+  });
+
+  it('prefers the nested records when both forms are present', () => {
+    const data = csrData();
+    data.annotation_scores = { species: [[[9]], [], []] };
+    data.annotation_evidence = { species: [['NESTED'], [], []] };
+    expect(getProteinScores(data, 0, 'species')).toEqual([[9]]);
+    expect(getProteinEvidence(data, 0, 'species')).toEqual(['NESTED']);
+  });
+
+  it('resolves annotation values through CSR storage', () => {
+    expect(getProteinAnnotationValues(csrData(), 0, 'species')).toEqual(['human', 'mouse']);
+    expect(getProteinAnnotationValues(csrData(), 1, 'species')).toEqual([]);
+  });
+
+  it('feeds the tooltip view without changing its shape', () => {
+    const view = buildTooltipView(csrData(), 0, 'species');
+    expect(view.blocks[0].scores).toEqual([[1.5], null]);
+    expect(view.blocks[0].evidence).toEqual(['IDA', null]);
+    expect(view.blocks[0].displayValues).toEqual(['human', 'mouse']);
   });
 });

@@ -43,9 +43,10 @@ def _atomic_write_table(table, path: Path) -> None:
     """
     import pyarrow.parquet as pq
 
-    tmp = path.with_name(path.name + ".tmp")
-    pq.write_table(table, str(tmp))
-    tmp.replace(path)
+    from protspace.data.io.atomic import staged_write
+
+    with staged_write(path) as staged:
+        pq.write_table(table, str(staged))
 
 
 def _load_reductions(
@@ -60,8 +61,13 @@ def _load_reductions(
     import numpy as np
     import pyarrow.parquet as pq
 
-    data_path = projections / "projections_data.parquet"
-    meta_path = projections / "projections_metadata.parquet"
+    from protspace.data.io.bundle import (
+        PROJECTIONS_DATA_FILENAME,
+        PROJECTIONS_METADATA_FILENAME,
+    )
+
+    data_path = projections / PROJECTIONS_DATA_FILENAME
+    meta_path = projections / PROJECTIONS_METADATA_FILENAME
     if not data_path.exists():
         raise typer.BadParameter(f"Missing: {data_path}")
 
@@ -159,8 +165,8 @@ def _merge_annotations_with_columns(ann_path: Path, report, frame=None) -> list[
     """Merge the report's per-protein ``AnnotationColumn``s into ``ann_path``.
 
     Rewrites the annotations parquet in place with the computed ``cluster_*``
-    membership columns joined by identifier (each value a ``cluster N`` label with
-    the per-point silhouette attached as ``|score``). Added columns are stringified
+    membership columns joined by identifier (each value a bare ``cluster N``
+    label). Added columns are stringified
     (absent → empty) so they match the prepare path's all-string annotations and the
     frontend's content-based type inference. ``frame`` reuses an already-loaded
     DataFrame instead of re-reading ``ann_path``. Returns the names of columns added
@@ -228,8 +234,7 @@ def stats(
             "-a",
             "--annotations",
             help="Annotations parquet to enrich in place with per-protein "
-            "cluster-membership columns (per-point silhouette attached as |score). "
-            "Omit to skip per-protein outputs.",
+            "cluster-membership columns. Omit to skip per-protein outputs.",
             rich_help_panel="Input",
         ),
     ] = None,
@@ -294,6 +299,7 @@ def stats(
     import pyarrow.parquet as pq
 
     from protspace.cli.prepare import _parse_input_specs
+    from protspace.data.io.bundle import PROJECTIONS_METADATA_FILENAME
     from protspace.data.loaders import load_h5
     from protspace.data.loaders.embedding_set import merge_same_name_sets
     from protspace.stats import compute_statistics
@@ -313,9 +319,8 @@ def stats(
     )
 
     reductions = _load_reductions(projections, default_metric=metric)
-    # Per-protein output (cluster membership with attached per-point silhouette) is
-    # only computed when there's an annotations file to land it in — silhouette_samples
-    # is O(n^2), so we don't pay for it with nowhere to write.
+    # Per-protein output (the cluster membership column, and the self-validity rows
+    # gated on it) is only computed when there's an annotations file to land it in.
     params = {"cluster_selection": cluster_selection.value}
     if annotations is None:
         params["cluster_annotations"] = False
@@ -346,7 +351,7 @@ def stats(
         if isinstance(r.get("info"), dict) and "quality" in r["info"]
     }
     _merge_quality_into_metadata(
-        projections / "projections_metadata.parquet", quality_by_name
+        projections / PROJECTIONS_METADATA_FILENAME, quality_by_name
     )
 
     added_cols: list[str] = []

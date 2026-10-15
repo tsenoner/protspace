@@ -14,36 +14,57 @@ plus UI preferences (maxVisibleValues, sortMode, hiddenValues, etc.).
 
 import re
 
-NA_COLOR = "#C0C0C0"  # light gray for missing / <NA> values
-NA_INTERNAL = "__NA__"  # frontend internal key for N/A categories
-NA_PINNED_COLOR = "#DDDDDD"  # lighter gray used for N/A in pinned settings
-_NA_LABELS = {"", "<NA>", "NaN", "__NA__"}
+# Kelly's colours in the web's slot order, the web's N/A key and its N/A swatch,
+# generated from contracts/shared-constants.json.
+from protspace._generated.shared_constants import (
+    DEFAULT_CATEGORICAL_PALETTE_ID,
+    KELLYS_COLORS,
+    NA_DEFAULT_COLOR,
+    NA_VALUE,
+)
+from protspace.core.constants import is_missing_value
+
+NA_INTERNAL = NA_VALUE  # frontend internal key for N/A categories
+NA_PINNED_COLOR = NA_DEFAULT_COLOR  # the web's N/A swatch, used for a pinned N/A
 REST_MARKER = "__REST__"  # auto-fill remaining slots from top values by frequency
 
-# Kelly's 21 Colors of Maximum Contrast (same order as the web frontend)
-KELLYS_COLORS = [
-    "#F3C300",
-    "#875692",
-    "#F38400",
-    "#A1CAF1",
-    "#BE0032",
-    "#C2B280",
-    "#008856",
-    "#E68FAC",
-    "#0067A5",
-    "#F99379",
-    "#604E97",
-    "#F6A600",
-    "#B3446C",
-    "#DCD300",
-    "#882D17",
-    "#8DB600",
-    "#654522",
-    "#E25822",
-    "#2B3D26",
-    "#F2F3F4",
-    "#222222",
-]
+
+def is_na_label(value: str) -> bool:
+    """Whether a styles or settings key names the web's one N/A category.
+
+    Every spelling the web reads as missing (:func:`is_missing_value`): a v3
+    bundle's missing cell decodes as ``""``, a Parquet NULL as ``"None"``, and a
+    cell may say ``N/A`` or ``null`` outright. Plus ``"<NA>"``, the ``str()`` of a
+    pandas missing value, which styles files from earlier templates carry.
+    """
+    return value == "<NA>" or is_missing_value(value)
+
+
+def _fold_na(by_key: dict) -> dict:
+    """Key the entries of every N/A spelling as one, under :data:`NA_INTERNAL`.
+
+    The web draws them all as one legend entry, so one value has to win:
+    ``__NA__`` itself (what the web stored), then the other spellings in sorted
+    order.
+    """
+    folded = {k: v for k, v in by_key.items() if not is_na_label(k)}
+    na_keys = [k for k in by_key if is_na_label(k)]
+    if na_keys:
+        winner = min(na_keys, key=lambda k: (k != NA_INTERNAL, k))
+        folded[NA_INTERNAL] = by_key[winner]
+    return folded
+
+
+def _fold_na_list(values: list[str]) -> list[str]:
+    """*values* with the N/A spellings named :data:`NA_INTERNAL`, once, where the
+    first of them stood."""
+    out: list[str] = []
+    for value in values:
+        if not is_na_label(value):
+            out.append(value)
+        elif NA_INTERNAL not in out:
+            out.append(NA_INTERNAL)
+    return out
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 0.8) -> str:
@@ -62,12 +83,109 @@ def _rgba_to_hex(rgba_str: str) -> str:
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
+LEGEND_SETTINGS_KEY = "legendSettings"
+
+
+# Envelope siblings of "legendSettings" in the frontend shape. "exportOptions" is a
+# required field of the frontend's BundleSettings, so a genuine envelope always
+# carries at least one of these.
+_ENVELOPE_SIBLING_KEYS = frozenset(
+    {"exportOptions", "publishState", "eatOverlayEnabled", "eatConfidenceThreshold"}
+)
+
+# Keys of a single annotation's settings entry. Their presence at the top level of
+# a ``legendSettings`` value means it is one annotation's entry, not a map of them.
+_ANNOTATION_SETTINGS_KEYS = frozenset(
+    {
+        "categories",
+        "sortMode",
+        "maxVisibleValues",
+        "hiddenValues",
+        "includeShapes",
+        "shapeSize",
+        "selectedPaletteId",
+        "numericSettings",
+    }
+)
+
+
+def is_frontend_envelope(settings: object) -> bool:
+    """True only for the frontend's nested part-4 shape.
+
+    Bare key presence is not a safe discriminator: annotation names come from
+    user CSV headers, so a **flat** Python map can legitimately hold a column
+    literally called ``legendSettings``. Unwrapping that would hand back one
+    annotation's own entry as if it were the whole map and blank every legend.
+    Requiring a sibling mirrors the frontend reader's own two-field check in
+    ``settings-validation.ts`` (``isNormalizedBundleSettings``).
+
+    A sibling alone is not enough either — the siblings are plausible column
+    names too, so two colliding headers (``legendSettings`` + ``publishState``)
+    would be misread as an envelope. The inner shape settles it: in a real
+    envelope the value under ``legendSettings`` is keyed by annotation name, so
+    it never carries per-annotation settings keys at its top level, whereas a
+    colliding column's own entry is exactly such a settings dict.
+    """
+    if not isinstance(settings, dict):
+        return False
+    inner = settings.get(LEGEND_SETTINGS_KEY)
+    return (
+        isinstance(inner, dict)
+        and bool(_ENVELOPE_SIBLING_KEYS & settings.keys())
+        and not (_ANNOTATION_SETTINGS_KEYS & inner.keys())
+    )
+
+
+def unwrap_settings(settings: dict) -> dict:
+    """Return the annotation-keyed settings map from either bundle-part-4 shape.
+
+    Two writers produce the settings part and their shapes differ:
+
+    * Python (:func:`visualization_state_to_settings`) writes the **flat** shape,
+      keyed directly by annotation name.
+    * The web frontend writes a **nested** envelope,
+      ``{"legendSettings": {<annotation>: ...}, "exportOptions": ..., "publishState": ...,
+      "eatOverlayEnabled": ..., "eatConfidenceThreshold": ...}``.
+
+    The frontend reader (``normalizeBundleSettings``) already accepts both, so
+    this is the Python-side half of that contract. Without it, iterating a
+    frontend-written dict hits scalar envelope values (``eatOverlayEnabled`` is a
+    bool) and every legend colour/shape is silently dropped.
+    """
+    return settings[LEGEND_SETTINGS_KEY] if is_frontend_envelope(settings) else settings
+
+
+def rewrap_settings(settings: dict, template: dict | None) -> dict:
+    """Re-apply the envelope *template* was read in, so a rewrite stays non-lossy.
+
+    ``protspace style`` reads part 4, rebuilds the annotation map, and writes it
+    back. When the source bundle came from the frontend, writing the bare map
+    would drop ``publishState``, ``exportOptions`` and the EAT display settings.
+
+    *settings* is overlaid on the template's own annotation map rather than
+    replacing it, in either shape. Only annotations that survive
+    :func:`settings_to_visualization_state` get rebuilt, and a numeric annotation
+    never does — the frontend persists its categories with empty colors/shapes,
+    which that function filters out — so replacing the map wholesale would drop
+    every numeric annotation's ``numericSettings``, palette and hidden values.
+    """
+    if not template:
+        return settings
+    if not is_frontend_envelope(template):
+        return {**template, **settings}
+    return {
+        **template,
+        LEGEND_SETTINGS_KEY: {**template[LEGEND_SETTINGS_KEY], **settings},
+    }
+
+
 def settings_to_visualization_state(settings: dict) -> dict:
     """Convert *settings_json* to *visualization_state*.
 
     Args:
-        settings: Settings dict keyed by annotation name, each containing a
-            ``categories`` mapping with ``color`` (hex) and ``shape`` entries.
+        settings: Settings in either bundle shape (see :func:`unwrap_settings`) —
+            keyed by annotation name, each containing a ``categories`` mapping
+            with ``color`` (hex) and ``shape`` entries.
 
     Returns:
         ``{"annotation_colors": {...}, "marker_shapes": {...}}``
@@ -75,7 +193,10 @@ def settings_to_visualization_state(settings: dict) -> dict:
     annotation_colors: dict[str, dict[str, str]] = {}
     marker_shapes: dict[str, dict[str, str]] = {}
 
-    for annotation_name, annotation_settings in settings.items():
+    for annotation_name, annotation_settings in unwrap_settings(settings).items():
+        # Tolerate stray scalars so one malformed entry cannot blank the whole legend.
+        if not isinstance(annotation_settings, dict):
+            continue
         categories = annotation_settings.get("categories", {})
         if not categories:
             continue
@@ -109,8 +230,8 @@ def _sort_values_for_zorder(
 ) -> list[str]:
     """Return *values* ordered according to *sort_mode*.
 
-    NA-like values (``""``, ``"<NA>"``, ``"NaN"``) are always placed last
-    regardless of sort mode.
+    N/A values (:func:`is_na_label`) are always placed last regardless of
+    sort mode.
 
     Args:
         values: The set of category values.
@@ -119,9 +240,8 @@ def _sort_values_for_zorder(
         frequencies: Mapping ``{value: count}``.  Required for size-based
             modes; ignored for alphabetical / manual modes.
     """
-    na_labels = {"", "<NA>", "NaN"}
-    regular = sorted(v for v in values if v not in na_labels)
-    na_present = sorted(v for v in values if v in na_labels)
+    regular = sorted(v for v in values if not is_na_label(v))
+    na_present = sorted(v for v in values if is_na_label(v))
 
     if sort_mode in ("size-desc", "size-asc") and frequencies:
         regular.sort(
@@ -149,7 +269,9 @@ def visualization_state_to_settings(
 
     Args:
         viz_state: ``{"annotation_colors": {...}, "marker_shapes": {...}}``
-        existing_settings: Optional prior settings to merge with.
+        existing_settings: Optional prior settings to merge with, in either
+            bundle shape. A frontend-written envelope is preserved on output so
+            styling a frontend export keeps its publishState/EAT settings.
         value_frequencies: Optional ``{annotation_name: {value: count}}``
             used to assign zOrder when sortMode is size-based.
         style_overrides: Optional ``{annotation_name: {key: value}}`` with
@@ -157,10 +279,12 @@ def visualization_state_to_settings(
             from the user's styles input.
 
     Returns:
-        Settings dict keyed by annotation name.
+        Settings in the same bundle shape *existing_settings* was given in —
+        keyed by annotation name, or wrapped back into the frontend envelope.
     """
     annotation_colors = viz_state.get("annotation_colors", {})
     marker_shapes = viz_state.get("marker_shapes", {})
+    existing = unwrap_settings(existing_settings) if existing_settings else None
 
     # Collect all annotation names referenced in colors, shapes, or style_overrides
     all_annotations = set(annotation_colors.keys()) | set(marker_shapes.keys())
@@ -169,21 +293,23 @@ def visualization_state_to_settings(
 
     settings: dict = {}
     for annotation_name in all_annotations:
-        colors = annotation_colors.get(annotation_name, {})
-        shapes = marker_shapes.get(annotation_name, {})
+        # The web draws every N/A spelling as one category, keyed __NA__, so the
+        # styles, stored categories and counts of all of them are one entry here.
+        colors = _fold_na(annotation_colors.get(annotation_name, {}))
+        shapes = _fold_na(marker_shapes.get(annotation_name, {}))
 
         # Start from existing settings if available
-        if existing_settings and annotation_name in existing_settings:
-            ann_settings = dict(existing_settings[annotation_name])
-            existing_categories = dict(ann_settings.get("categories", {}))
+        if existing and annotation_name in existing:
+            ann_settings = dict(existing[annotation_name])
+            existing_categories = _fold_na(ann_settings.get("categories", {}))
         else:
             ann_settings = {
                 "includeShapes": bool(shapes),
-                "shapeSize": 30,
+                "shapeSize": 10,
                 "sortMode": "size-desc",
                 "hiddenValues": [],
                 "enableDuplicateStackUI": False,
-                "selectedPaletteId": "kellys",
+                "selectedPaletteId": DEFAULT_CATEGORICAL_PALETTE_ID,
             }
             existing_categories = {}
 
@@ -201,6 +327,9 @@ def visualization_state_to_settings(
             for key, val in style_overrides[annotation_name].items():
                 if key in _SETTINGS_KEYS:
                     ann_settings[key] = val
+        # Overridden or already stored: the web hides N/A by its one key.
+        if ann_settings.get("hiddenValues"):
+            ann_settings["hiddenValues"] = _fold_na_list(ann_settings["hiddenValues"])
 
         # Pop processing-only keys (not stored in output settings).
         # "zOrderSort" overrides "sortMode" for zOrder computation only
@@ -212,6 +341,11 @@ def visualization_state_to_settings(
         pinned_values: list[str] = ann_settings.pop("pinnedValues", None) or []
         sort_mode = zorder_sort or ann_settings.get("sortMode", "size-desc")
         freqs = value_frequencies.get(annotation_name) if value_frequencies else None
+        if freqs:
+            na_count = sum(n for v, n in freqs.items() if is_na_label(v))
+            freqs = {v: n for v, n in freqs.items() if not is_na_label(v)}
+            if na_count:
+                freqs[NA_INTERNAL] = na_count
 
         # Build categories from colors, shapes, and (if needed) frequency data.
         # When style_overrides reference an annotation with no pre-existing
@@ -222,7 +356,7 @@ def visualization_state_to_settings(
             all_values = set(freqs.keys())
 
         if pinned_values:
-            # Resolve pinned values against all_values (with NA alias matching).
+            # Resolve pinned values against all_values (N/A spellings folded).
             # ONLY pinned values go into categories — this ensures the
             # frontend's _visibleValues matches exactly the pinned set.
             #
@@ -232,6 +366,7 @@ def visualization_state_to_settings(
             max_vis = ann_settings.get("maxVisibleValues", 10)
 
             # First pass: collect explicit (non-REST) pinned values
+            pinned_values = _fold_na_list(pinned_values)
             explicit_pinned: list[str] = []
             has_rest = False
             for pv in pinned_values:
@@ -239,16 +374,11 @@ def visualization_state_to_settings(
                     has_rest = True
                 elif pv in all_values:
                     explicit_pinned.append(pv)
-                elif pv in _NA_LABELS:
-                    for alias in _NA_LABELS:
-                        if alias in all_values:
-                            explicit_pinned.append(alias)
-                            break
 
             if has_rest and freqs:
                 # Auto-fill: pick top values by sort_mode, excluding already-pinned and NA
                 candidates = _sort_values_for_zorder(
-                    all_values - _NA_LABELS - set(explicit_pinned),
+                    all_values - {NA_INTERNAL} - set(explicit_pinned),
                     sort_mode,
                     freqs,
                 )
@@ -264,11 +394,6 @@ def visualization_state_to_settings(
                         valid_pinned.extend(rest_values)
                     elif pv in all_values:
                         valid_pinned.append(pv)
-                    elif pv in _NA_LABELS:
-                        for alias in _NA_LABELS:
-                            if alias in all_values:
-                                valid_pinned.append(alias)
-                                break
             else:
                 valid_pinned = explicit_pinned
 
@@ -286,7 +411,7 @@ def visualization_state_to_settings(
                 cat["color"] = _rgba_to_hex(color) if "rgba" in str(color) else color
             elif pinned_values:
                 # Auto-assign Kelly's palette colors for pinned values
-                if value in _NA_LABELS:
+                if value == NA_INTERNAL:
                     cat["color"] = NA_PINNED_COLOR
                 else:
                     cat["color"] = KELLYS_COLORS[color_slot % len(KELLYS_COLORS)]
@@ -295,15 +420,7 @@ def visualization_state_to_settings(
             shape = shapes.get(value, cat.get("shape", "circle"))
             cat["shape"] = shape
 
-            # Use __NA__ as the key for NA values (frontend internal format)
-            key = NA_INTERNAL if value in _NA_LABELS else value
-            categories[key] = cat
-
-        if not pinned_values:
-            # Ensure <NA> / empty values always get light gray
-            for na_label in ("", "<NA>", "NaN"):
-                if na_label in categories:
-                    categories[na_label].setdefault("color", NA_COLOR)
+            categories[value] = cat
 
         ann_settings["categories"] = categories
         # Set maxVisibleValues to actual category count
@@ -313,4 +430,4 @@ def visualization_state_to_settings(
 
         settings[annotation_name] = ann_settings
 
-    return settings
+    return rewrap_settings(settings, existing_settings)

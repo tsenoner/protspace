@@ -2,21 +2,17 @@
  * @vitest-environment jsdom
  *
  * F-48 characterization: writing `_transform` must NOT schedule a Lit reactive
- * update. Pre-change (`@state() _transform`) Lit installs a reactive accessor,
- * so a write calls `requestUpdate('_transform', old)`, enqueues an update, and
- * once that update flushes `updated()` runs and (because `_transform` is not in
- * `_reconcileSelectionOverlays`'s selectionKeys) calls `_renderPlot()` every
- * zoom frame. Post-change (plain field) a write is inert to Lit: it does NOT
- * call `requestUpdate`, schedules no update, and triggers no `_renderPlot()`.
+ * update. As `@state() _transform`, Lit would install a reactive accessor, so a
+ * write would call `requestUpdate('_transform', old)`, enqueue an update, and
+ * once that update flushed `updated()` would run and (because `_transform` is
+ * not in NO_ADDITIONAL_RENDER_KEYS) call `_renderPlot()` every zoom frame. As a
+ * plain field a write is inert to Lit: it does NOT call `requestUpdate`,
+ * schedules no update, and triggers no `_renderPlot()`.
  *
  * The load-bearing signal: a `_transform` write does not call `requestUpdate`,
  * the single Lit hook that schedules an update (and hence the downstream
  * `updated()` -> `_renderPlot()` pass for this non-selection key). Spying
  * `requestUpdate` pins exactly the cause F-48 removes, with no downstream noise.
- *
- * RED/GREEN status on the UNMODIFIED tree: RED by design — today `_transform` is
- * `@state`, so the write calls `requestUpdate`. It goes GREEN once F-48 demotes
- * `_transform` to a plain (non-reactive) field.
  *
  * The element is constructed via `createElement` and NEVER appended: a reactive
  * `@state` setter calls `requestUpdate` synchronously on write, so the signal is

@@ -19,13 +19,13 @@ describe('composePaintDepth', () => {
 });
 
 describe('buildPaintOrder', () => {
-  it('orders slots far -> near (descending depth, ascending-index tie-break) in place', () => {
+  it('sorts the given order array in place and returns that same instance', () => {
+    // The far -> near ordering itself is pinned by depth-sort.test.ts and by the
+    // callback draw order below.
     const order = new Uint32Array(4);
     const depths = new Float32Array([0.5, 0.1, 0.9, 0.1]);
     const plan = buildPaintOrder(order, depths, 4, false, () => 1);
-    // 0.9 (idx2) > 0.5 (idx0) > 0.1 (idx1, idx3 — ascending tiebreak)
-    expect(Array.from(plan.order)).toEqual([2, 0, 1, 3]);
-    expect(plan.order).toBe(order); // sorted in place, same instance returned
+    expect(plan.order).toBe(order);
   });
 
   it('invokes the opacity callback exactly once per slot, in sorted draw order', () => {

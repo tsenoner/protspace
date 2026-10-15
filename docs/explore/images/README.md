@@ -12,41 +12,52 @@ Run `pnpm docs:images` to automatically generate all images. This command:
 
 You can also run these commands individually if needed.
 
-## Static Screenshots
+## Where each image comes from
 
-### Interface Overview (`index.md`)
+Every file here is generated, so the capture specs in `scripts/docs-screenshots/` are the
+inventory — no list is maintained in this README, because a hand-copied one goes stale the
+first time someone adds a capture without updating it.
 
-- `interface-overview.png` - Full page layout
-- `scatterplot-example.png` - Scatterplot with colored proteins
-- `legend-panel.png` - Legend panel
-- `structure-viewer.png` - 3D structure viewer
+- Static screenshots: `capture-static.spec.ts`, named by the test title
+- Animated GIFs: `capture-animations.spec.ts`, converted by `convert-to-gif.ts`
 
-### Control Bar (`control-bar.md`)
+To find which pages use an image, grep the docs for its filename.
 
-- `control-bar-annotated.png` - Full control bar with numbered annotations (1-9)
-- `control-bar-projection.png` - Projection dropdown
-- `control-bar-annotation.png` - Annotation dropdown
-- `control-bar-export.png` - Export menu
+## The EAT captures
 
-## Animated GIFs
+The EAT captures are the only ones that do not use the app's built-in demo dataset, which carries no
+`*__pred_*` columns. They open the Import menu's EAT example,
+[three-finger toxins](../example-datasets.md#three-finger-toxins), by its `?dataset=` link and colour it
+by `toxin_class`. Its bundle is a release asset, so fetch it first:
 
-### Scatterplot (`scatterplot.md`)
+```bash
+pnpm examples:fetch
+```
 
-- `zoom.gif` - Zooming and panning
-- `select-single.gif` - Single protein selection
-- `select-box.gif` - Box selection
-- `duplicate-badges.gif` - Duplicate count badge: spiderfy and per-point selection
+They live in `capture-eat-static.spec.ts` and `capture-eat-animations.spec.ts`, with shared setup in
+`eat-helpers.ts`.
 
-### Legend (`legend.md`)
+## Capturing against another port
 
-- `legend-toggle.gif` - Toggling category visibility
-- `legend-reorder.gif` - Reordering labels
-- `legend-others.gif` - Expanding/collapsing Others group
+The captures start no server of their own: they expect `pnpm dev` on `:8080`, serving the product
+demo. With `:8080` taken (or held by an E2E dev server, which pins the startup load to a test fixture
+and which the captures refuse), start a plain dev server on another port and point the captures at it:
 
-## Shared Images
+```bash
+pnpm --filter @protspace/app exec vite --port 8095 --strictPort  # in one terminal
+PLAYWRIGHT_BASE_URL=http://localhost:8095 pnpm docs:images        # in another
+```
 
-These images are used in multiple documentation pages:
+## The example thumbnails
 
-- `control-bar-annotated.png` - `index.md`, `control-bar.md`
-- `control-bar-export.png` - `control-bar.md`, `exporting.md`
-- `structure-viewer.png` - `index.md`, `structures.md`
+`examples/<id>.png` are the [Example Datasets](../example-datasets.md) page's thumbnails, one per
+catalog example. They come from the opt-in `examples-live` E2E project, which opens every example
+from the files the product serves and checks that it lands on its curated view:
+
+```bash
+pnpm examples:fetch
+RUN_EXAMPLES_E2E=1 pnpm test:e2e --project=examples-live
+```
+
+Set `EXAMPLES_THUMBNAIL_DIR` to write them elsewhere, for example to review a candidate curated
+view before committing it. `pnpm docs:examples:check` fails when a card's thumbnail is missing.

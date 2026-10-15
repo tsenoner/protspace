@@ -1,3 +1,4 @@
+import { DEFAULT_NUMERIC_PALETTE_ID, GRADIENT_PALETTE_IDS } from '../generated/shared-constants';
 import { sampleColorSchemeColor } from './color-scheme';
 import { NA_VALUE, NA_DEFAULT_COLOR } from './missing-values';
 import type {
@@ -11,15 +12,9 @@ import type {
 } from '../types';
 import { djb2Hash } from '../storage/data-hash';
 
-export const DEFAULT_NUMERIC_PALETTE_ID = 'batlow';
+export { DEFAULT_NUMERIC_PALETTE_ID };
 export const DEFAULT_NUMERIC_STRATEGY: NumericBinningStrategy = 'quantile';
-export const GRADIENT_COLOR_SCHEME_IDS = new Set([
-  'viridis',
-  'cividis',
-  'inferno',
-  'batlow',
-  'plasma',
-]);
+export const GRADIENT_COLOR_SCHEME_IDS: ReadonlySet<string> = new Set(GRADIENT_PALETTE_IDS);
 const NUMERIC_COLOR_ALGORITHM_VERSION = 'numeric-gradient-v2';
 
 export interface NumericAnnotationDisplaySettings {
@@ -48,7 +43,10 @@ interface NumericSummary {
   allIntegers: boolean;
 }
 
-const numericSummaryCache = new WeakMap<Array<number | null | undefined>, NumericSummary>();
+/** A numeric column as the binning reads it: NaN, null and undefined all mean missing. */
+type NumericValues = ArrayLike<number | null | undefined>;
+
+const numericSummaryCache = new WeakMap<NumericValues, NumericSummary>();
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -116,7 +114,7 @@ export function resolveNumericAnnotationDisplaySettings({
 }
 
 function createSummary(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   options: { includeSortedValues?: boolean } = {},
 ): NumericSummary {
   const includeSortedValues = options.includeSortedValues === true;
@@ -134,7 +132,8 @@ function createSummary(
   const distinctValues = new Set<number>();
   const finiteValues = includeSortedValues ? ([] as number[]) : null;
 
-  for (const value of values) {
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       continue;
     }
@@ -583,7 +582,7 @@ function createBinColors(
 }
 
 export function materializeNumericAnnotation(
-  values: Array<number | null | undefined>,
+  values: NumericValues,
   settings: NumericAnnotationDisplaySettings,
   numericType?: NumericAnnotationType,
 ): {
@@ -609,12 +608,18 @@ export function materializeNumericAnnotation(
 
   if (summary.nonNullCount === 0) {
     const emptyTopologySignature = createTopologySignature(effectiveSettings.strategy, []);
+    // Zero numeric bins, but the rows still exist and every one of them is missing.
+    // Emit the same N/A pseudo-bin the populated path appends below: leaving every
+    // index on the -1 sentinel renders an empty legend and hides every point. This
+    // is the documented "N numeric bins + 1 N/A" shape degenerating to N = 0.
+    const hasRows = values.length > 0;
     return {
       annotation: {
         kind: 'categorical',
-        values: [],
-        colors: [],
-        shapes: [],
+        // With no rows there is nothing to label; otherwise every row is N/A.
+        ...(hasRows
+          ? { values: [NA_VALUE], colors: [NA_DEFAULT_COLOR], shapes: ['circle'] }
+          : { values: [], colors: [], shapes: [] }),
         sourceKind: 'numeric',
         numericType: resolvedNumericType,
         numericMetadata: {
@@ -627,30 +632,34 @@ export function materializeNumericAnnotation(
           bins: [],
         },
       },
-      annotationData: new Int32Array(values.length).fill(-1),
+      // Int32Array is zero-initialized, so every row already points at the N/A slot.
+      annotationData: new Int32Array(values.length),
     };
   }
 
   const edges = createEdges(summary, effectiveSettings);
   const counts = new Array(Math.max(0, edges.length - 1)).fill(0);
-  const observedRanges: Array<ObservedBinRange | null> = Array.from(
-    { length: counts.length },
-    () => null,
-  );
-  const rawBinIndices = values.map((value) => {
-    if (value == null || !Number.isFinite(value)) return -1;
+  // A preallocated loop with per-bin min/max in typed arrays: one pass, no per-row object
+  // allocation and no `Int32Array.from(mapFn)` slow path (this runs over every row on each
+  // numeric selection and bin-setting change). Math.min/Math.max keep -0 handling exact.
+  const binMin = new Float64Array(counts.length).fill(Infinity);
+  const binMax = new Float64Array(counts.length).fill(-Infinity);
+  const rawBinIndices = new Int32Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value == null || !Number.isFinite(value)) {
+      rawBinIndices[i] = -1;
+      continue;
+    }
     const binIndex = assignBinIndex(value, edges);
     counts[binIndex] += 1;
-    const currentRange = observedRanges[binIndex];
-    observedRanges[binIndex] =
-      currentRange === null
-        ? { min: value, max: value }
-        : {
-            min: Math.min(currentRange.min, value),
-            max: Math.max(currentRange.max, value),
-          };
-    return binIndex;
-  });
+    binMin[binIndex] = Math.min(binMin[binIndex], value);
+    binMax[binIndex] = Math.max(binMax[binIndex], value);
+    rawBinIndices[i] = binIndex;
+  }
+  const observedRanges: Array<ObservedBinRange | null> = counts.map((count: number, bin: number) =>
+    count > 0 ? { min: binMin[bin], max: binMax[bin] } : null,
+  );
 
   const allBins = counts.map((count, index) => ({
     id: createNumericBinId(effectiveSettings.strategy, edges[index], edges[index + 1]),

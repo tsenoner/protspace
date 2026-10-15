@@ -1,0 +1,703 @@
+"""Decoder half of parquetbundle format v3 (``data/io/bundle_v3.decode_v3``).
+
+Six Python consumers (``utils/arrow_reader``, ``cli/serve``, ``cli/style`` +
+``utils/add_annotation_style``, ``cli/transfer``, ``cli/bundle`` and the
+``scripts/``) parse the v2 string grammar, so v3 only ever exists between
+``write_bundle`` and ``read_tables``.  The contract these tests pin is therefore
+``decode_v3(encode_v3(T)) == T`` on pipeline-shaped tables, plus the handful of
+places where that equality is deliberately *not* exact: v3 stores what the
+browser's v2 reader would have parsed out of a cell, not the cell.
+"""
+
+import json
+from pathlib import Path
+
+import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
+import pytest
+
+from protlabel import Prediction
+from protspace.data.annotations.configuration import INTERNAL_ANNOTATIONS
+from protspace.data.annotations.encoding import (
+    FORMAT_VERSION_KEY,
+    stamp_format_version,
+)
+from protspace.data.io.bundle_v3 import (
+    CONTAINER_VERSION_KEY,
+    MANIFEST_KEY,
+    _flat,
+    decode_v3,
+    encode_v3,
+    replace_annotations_v3,
+    write_part,
+)
+from protspace.data.io.predictions import add_overlay_columns
+from tests.bundle_v3_helpers import (
+    annotations_table,
+    manifest_of,
+    parts_of,
+    projection_tables,
+    read,
+)
+
+WEB_APP = Path(__file__).resolve().parents[3] / "apps" / "web"
+# The 811-protein bundle the app served as ``data/venom_eat_stats`` until the
+# curated example catalog replaced ``public/data/``, as #477 converted it to v3.
+REAL_BUNDLE = WEB_APP / "tests" / "fixtures" / "venom_eat_stats_811_v3.parquetbundle"
+
+
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+
+
+def round_trip(annotations: pa.Table, dimensions=(2, 3)):
+    """Encode then decode ``annotations`` with matching projections."""
+    metadata, data = projection_tables(annotations.num_rows, dimensions)
+    return decode_v3(encode_v3(annotations, metadata, data))
+
+
+def cells(annotations: pa.Table, column: str, dimensions=(2, 3)) -> list:
+    return round_trip(annotations, dimensions)[0].column(column).to_pylist()
+
+
+def encoded(**columns: list[str]) -> list[bytes]:
+    """The four parts for ``columns`` over one 2D projection, as a mutable list."""
+    source = annotations_table(**columns)
+    return list(encode_v3(source, *projection_tables(source.num_rows, (2,))))
+
+
+def rewrite(part: bytes, edit) -> bytes:
+    """Read a part, hand the table to ``edit``, write the result back."""
+    return write_part(edit(read(part)))
+
+
+# --------------------------------------------------------------------------- #
+# the round trip on pipeline-shaped tables
+# --------------------------------------------------------------------------- #
+
+
+def pipeline_annotations() -> pa.Table:
+    """Every cell shape the encoder dispatches on, in one pipeline-built table."""
+    table = annotations_table(
+        # plain categorical, and one all-empty column
+        kingdom=["Bacteria", "Archaea", "Bacteria", "Eukaryota", "Archaea", "Bacteria"],
+        unknown=["", "", "", "", "", ""],
+        # multi + scores, with zero hits first, interior and last, and labels
+        # carrying the encoded ';' and '|' the v2 grammar reserves
+        pfam=[
+            "",
+            "PF00001 (7tm%3B1)|1e-10,2.5;PF00002|0.5",
+            "",
+            "PF00001 (7tm%3B1)|0.25",
+            "PF00003 (a%7Cb)|3;PF00004",
+            "",
+        ],
+        # multi + evidence
+        go_mf=[
+            "GO:0005524|IDA",
+            "",
+            "GO:0005524|IDA;GO:0016787|ECO:0000269",
+            "GO:0016787|IEA",
+            "",
+            "GO:0005524|IDA",
+        ],
+        # numeric int with blanks, numeric float
+        length=["100", "", "250", "", "3000", "42"],
+        annotation_score=["0.5", "1.25", "", "0.5", "2.0", "0.125"],
+    )
+    return overlay(table, range(table.num_rows))
+
+
+def overlay(table: pa.Table, predicted) -> pa.Table:
+    """Attach EAT ``ec__pred_*`` companions for the given row indices."""
+    predictions = [
+        Prediction(
+            query_id=f"p{i}",
+            label="3.4.21.- (Serine endopeptidases)",
+            source_id="P20005",
+            distance=0.5,
+            reliability=0.35313386,
+            k=1,
+            metric="euclidean",
+        )
+        for i in predicted
+    ]
+    return add_overlay_columns(
+        table,
+        "ec",
+        predictions,
+        identifiers=table.column("protein_id").to_pylist(),
+    )
+
+
+def test_pipeline_round_trip_is_cell_for_cell():
+    source = pipeline_annotations()
+    metadata, data = projection_tables(source.num_rows)
+    decoded, decoded_metadata, decoded_data = decode_v3(
+        encode_v3(source, metadata, data)
+    )
+
+    assert decoded.column_names == source.column_names
+    for name in source.column_names:
+        assert decoded.column(name).to_pylist() == source.column(name).to_pylist(), name
+    assert decoded.equals(source)
+
+    assert decoded_metadata.equals(metadata)
+    assert decoded_data.to_pydict() == data.to_pydict()
+
+
+def test_a_partial_eat_overlay_keeps_null_confidences_but_blanks_the_strings():
+    """float32 nulls survive ``sourceType``; string nulls hit the one missing code."""
+    source = overlay(annotations_table(kingdom=["A", "B"]), [1])
+    decoded = round_trip(source, (2,))[0]
+    assert decoded.schema.field("ec__pred_confidence").type == pa.float32()
+    assert decoded.column("ec__pred_confidence").to_pylist() == [
+        None,
+        pytest.approx(0.35313386),
+    ]
+    assert decoded.column("ec__pred_source").to_pylist() == ["", "P20005"]
+
+
+def test_footer_says_two_and_the_container_keys_are_gone():
+    """What comes back is a v2-shaped table: stamped with its cell grammar, and
+    carrying neither the container version nor the manifest of the v3 part it
+    came from."""
+    source = pipeline_annotations()
+    decoded = round_trip(source)[0]
+    assert decoded.schema.metadata[FORMAT_VERSION_KEY] == b"2"
+    assert MANIFEST_KEY not in decoded.schema.metadata
+    assert CONTAINER_VERSION_KEY not in decoded.schema.metadata
+    # ``stamp_format_version`` merges, so the pandas key the pipeline wrote lives on.
+    assert decoded.schema.metadata == source.schema.metadata
+
+
+def test_decoded_fields_are_nullable_again():
+    """Part 1 is written REQUIRED for hyparquet; a v2-shaped table is not."""
+    decoded = round_trip(pipeline_annotations())[0]
+    assert all(field.nullable for field in decoded.schema)
+
+
+# --------------------------------------------------------------------------- #
+# projections
+# --------------------------------------------------------------------------- #
+
+
+def test_projections_are_long_manifest_ordered_and_protein_ordered():
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (2, 3))
+    _, decoded_metadata, decoded_data = decode_v3(encode_v3(source, metadata, data))
+
+    assert decoded_metadata.column("projection_name").to_pylist() == ["PCA 2", "PCA 3"]
+    columns = decoded_data.to_pydict()
+    assert columns["projection_name"] == ["PCA 2"] * 3 + ["PCA 3"] * 3
+    assert columns["identifier"] == ["p0", "p1", "p2"] * 2
+    assert columns["x"] == [0.0, 2.0, 4.0, 0.0, 3.0, 6.0]
+    assert columns["z"] == [None, None, None, 2.0, 5.0, 8.0]
+    assert decoded_data.schema.field("z").type == pa.float32()
+
+
+def test_decoded_metadata_dimensions_follow_the_manifest():
+    """A part 2 whose ``dimensions`` disagrees with the manifest (written by
+    another tool; ``encode_v3`` no longer writes one) decodes to the manifest's
+    value, which is the one part 3 was laid out by."""
+    parts = encoded(kingdom=["A", "B"])
+    parts[1] = rewrite(
+        parts[1],
+        lambda t: t.set_column(
+            t.schema.get_field_index("dimensions"),
+            "dimensions",
+            pa.array([3], type=t.schema.field("dimensions").type),
+        ),
+    )
+    _, metadata, data = decode_v3(parts)
+    assert metadata.column("dimensions").to_pylist() == [2]
+    assert data.column("z").null_count == data.num_rows
+
+
+def test_a_protein_absent_from_a_projection_comes_back_without_a_row():
+    """Part 3 stores NaN for it; the long table has no way to say that but absence."""
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (2, 3))
+    data = data.filter(
+        pa.compute.invert(
+            pa.compute.and_(
+                pa.compute.equal(data.column("projection_name"), "PCA 3"),
+                pa.compute.equal(data.column("identifier"), "p1"),
+            )
+        )
+    )
+    decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
+    columns = decoded_data.to_pydict()
+    assert columns["identifier"] == ["p0", "p1", "p2", "p0", "p2"]
+    assert columns["x"] == [0.0, 2.0, 4.0, 0.0, 6.0]
+    # p1 keeps its annotations and its PCA 2 row.
+    assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
+
+
+def test_a_non_finite_coordinate_comes_back_without_a_row():
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (3,))
+    z = data.column("z").to_numpy(zero_copy_only=False).copy()
+    z[1] = np.inf
+    data = data.set_column(data.schema.get_field_index("z"), "z", pa.array(z))
+    decoded_data = decode_v3(encode_v3(source, metadata, data))[2]
+    assert decoded_data.column("identifier").to_pylist() == ["p0", "p2"]
+
+
+def test_an_annotation_only_protein_keeps_its_annotations():
+    """No projection covers p2, so no projection row, but the file is lossless."""
+    source = annotations_table(kingdom=["A", "B", "C"])
+    metadata, data = projection_tables(3, (2,))
+    data = data.filter(pa.compute.not_equal(data.column("identifier"), pa.scalar("p2")))
+    decoded, _, decoded_data = decode_v3(encode_v3(source, metadata, data))
+    assert decoded_data.column("identifier").to_pylist() == ["p0", "p1"]
+    assert decoded.column("protein_id").to_pylist() == ["p0", "p1", "p2"]
+    assert decoded.column("kingdom").to_pylist() == ["A", "B", "C"]
+
+
+# --------------------------------------------------------------------------- #
+# numeric restoration
+# --------------------------------------------------------------------------- #
+
+
+def test_source_type_restores_non_string_numeric_columns():
+    source = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2"],
+                "length": pa.array([10, None, 30], type=pa.int32()),
+                "confidence": pa.array([0.5, 1.5, None], type=pa.float32()),
+            }
+        )
+    )
+    decoded = round_trip(source, (2,))[0]
+    assert decoded.schema.field("length").type == pa.int32()
+    assert decoded.schema.field("confidence").type == pa.float32()
+    assert decoded.column("length").to_pylist() == [10, None, 30]
+    assert decoded.column("confidence").to_pylist() == [0.5, 1.5, None]
+
+
+@pytest.mark.parametrize("type_", [pa.int64(), pa.uint64()])
+def test_a_64_bit_integer_column_past_2_53_round_trips_exactly(type_):
+    """A 64-bit hash or id column cannot go through float64 without losing
+    digits (and a safe cast refuses it). It is stored as exact labels, as the
+    v2 browser reader showed a non-safe bigint, and restored to its type."""
+    big = [2**60 + 1, None, 3, 2**60 + 1]
+    source = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1", "p2", "p3"],
+                "hash": pa.array(big, type=type_),
+            }
+        )
+    )
+    metadata, data = projection_tables(source.num_rows, (2,))
+    parts = encode_v3(source, metadata, data)
+    assert manifest_of(parts[0])["columns"]["hash"] == {
+        "kind": "categorical",
+        "sourceType": str(type_),
+    }
+
+    decoded = decode_v3(parts)[0]
+    assert decoded.schema.field("hash").type == type_
+    assert decoded.column("hash").to_pylist() == big
+
+
+def test_int_columns_never_come_back_with_a_decimal_point():
+    assert cells(annotations_table(length=["100", "", "3"]), "length") == [
+        "100",
+        "",
+        "3",
+    ]
+
+
+def test_float_columns_keep_the_python_float_spelling():
+    values = ["1.5", "2.0", "1e-10", ""]
+    assert cells(annotations_table(score=values), "score") == values
+
+
+def test_an_unrestorable_source_type_falls_back_to_strings():
+    """``str(dictionary<...>)`` is no alias, so the v2 spelling is the fallback."""
+    source = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1"],
+                "species": pa.array(["Human", "Mouse"]).dictionary_encode(),
+            }
+        )
+    )
+    decoded = round_trip(source, (2,))[0]
+    assert decoded.schema.field("species").type == pa.string()
+    assert decoded.column("species").to_pylist() == ["Human", "Mouse"]
+
+
+# --------------------------------------------------------------------------- #
+# deliberate non-identities
+# --------------------------------------------------------------------------- #
+
+
+def test_hits_and_cells_are_trimmed_and_empty_hits_collapse():
+    table = annotations_table(pfam=[" A ;B ", "A;;B", "A; ;B"])
+    assert cells(table, "pfam") == ["A;B", "A;B", "A;B"]
+
+
+def test_only_null_and_blank_cells_come_back_as_the_empty_string():
+    """``none``/``NA``/``null`` are labels, not missing values.
+
+    ``protspace style`` resolves a legend entry by its literal cell value, so
+    collapsing these would delete a real category (1383 of the 1587
+    ``phosphatase.predicted_transmembrane`` rows are literally ``none``).
+    """
+    table = annotations_table(col=["A", "NA", "n/a", "None", "__NA__", "  "])
+    assert cells(table, "col") == ["A", "NA", "n/a", "None", "__NA__", ""]
+
+
+def test_null_cells_come_back_as_the_empty_string():
+    """v3 has one missing code, so a null and a blank are the same cell."""
+    source = stamp_format_version(
+        pa.table({"protein_id": ["p0", "p1"], "col": ["A", None]})
+    )
+    assert round_trip(source, (2,))[0].column("col").to_pylist() == ["A", ""]
+
+
+def test_a_raw_pipe_in_a_label_comes_back_percent_encoded():
+    """v2 requires ``|`` inside a label to be escaped; decode emits the legal form."""
+    table = annotations_table(col=["PF3 (a|b)|0.5"])
+    assert cells(table, "col") == ["PF3 (a%7Cb)|0.5"]
+
+
+def test_percent_encoding_is_normalised_to_upper_case():
+    table = annotations_table(col=["a%3bb|0.5", "a%3Bb|0.5"])
+    assert cells(table, "col") == ["a%3Bb|0.5", "a%3Bb|0.5"]
+
+
+def test_an_unscored_hit_in_a_scored_column_keeps_no_suffix():
+    """``score_count`` is per hit, so a bare hit must not gain a dangling ``|``."""
+    table = annotations_table(col=["PF1|0.5;PF2", "PF3"])
+    assert cells(table, "col") == ["PF1|0.5;PF2", "PF3"]
+
+
+def test_scores_round_trip_through_float64():
+    table = annotations_table(col=["A|0.5700", "A|1", "A|0.1", "A|1e-10,2.5"])
+    # 0.5700 loses its trailing zero (a float has no such notion) and an integral
+    # score keeps the JavaScript spelling ``[1].join(',') === '1'``.
+    assert cells(table, "col") == ["A|0.57", "A|1", "A|0.1", "A|1e-10,2.5"]
+
+
+def test_e_values_survive_the_round_trip():
+    """float32 scores would spell these ``0``, ``0``, ``inf`` and ``1.2345679e+08``."""
+    table = annotations_table(col=["A|1e-200", "A|1e-300", "A|1e40", "A|123456789"])
+    assert cells(table, "col") == [
+        "A|1e-200",
+        "A|1e-300",
+        "A|1e+40",
+        "A|123456789",
+    ]
+
+
+def test_an_int_column_re_spells_its_cells_canonically():
+    table = annotations_table(col=["1", "2.0", "+3", "4e1"])
+    assert cells(table, "col") == ["1", "2", "3", "40"]
+
+
+def test_an_int_past_the_int64_range_only_re_spells_itself():
+    """The magnitude guard is per value: one huge cell is not a column-wide float."""
+    table = annotations_table(col=["100", "250", "10000000000000000000"])
+    assert cells(table, "col") == ["100", "250", "1e+19"]
+
+
+def test_a_large_string_column_comes_back_as_its_v2_spelling():
+    """``large_string`` is a parseable alias but not a numeric type to restore."""
+    source = stamp_format_version(
+        pa.table(
+            {
+                "protein_id": ["p0", "p1"],
+                "length": pa.array(["100", "200"], type=pa.large_string()),
+            }
+        )
+    )
+    decoded = round_trip(source, (2,))[0]
+    part1 = encode_v3(source, *projection_tables(2, (2,)))[0]
+    assert manifest_of(part1)["columns"]["length"]["sourceType"] == "large_string"
+    assert decoded.schema.field("length").type == pa.string()
+    assert decoded.column("length").to_pylist() == ["100", "200"]
+
+
+def test_a_bool_column_comes_back_as_bool():
+    """Stored as ``true``/``false`` labels, restored from ``sourceType`` like v2 read."""
+    source = stamp_format_version(
+        pa.table({"protein_id": ["p0", "p1", "p2"], "flag": [True, False, None]})
+    )
+    decoded = round_trip(source, (2,))[0]
+    assert decoded.schema.field("flag").type == pa.bool_()
+    assert decoded.column("flag").to_pylist() == [True, False, None]
+
+
+# --------------------------------------------------------------------------- #
+# guards
+# --------------------------------------------------------------------------- #
+
+
+def test_rejects_a_part_list_that_is_not_the_encoder_output():
+    with pytest.raises(ValueError, match="expects the 4 parts"):
+        decode_v3([b"", b"", b""])
+
+
+def test_rejects_an_annotations_part_without_a_manifest():
+    parts = encoded(col=["A", "B"])
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.replace_schema_metadata({CONTAINER_VERSION_KEY: b"3"}),
+    )
+    with pytest.raises(ValueError, match="not a v3 part"):
+        decode_v3(parts)
+
+
+def test_rejects_an_unknown_kind():
+    parts = encoded(col=["A", "B"])
+    manifest = manifest_of(parts[0])
+    manifest["columns"]["col"]["kind"] = "sparse"
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.replace_schema_metadata(
+            {**table.schema.metadata, MANIFEST_KEY: json.dumps(manifest).encode()}
+        ),
+    )
+    with pytest.raises(ValueError, match="unknown v3 kind"):
+        decode_v3(parts)
+
+
+# --------------------------------------------------------------------------- #
+# replacing the annotations of an encoded core
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["p0", "p1", "p2", "p3"],  # same rows
+        ["p3", "p2", "p1", "p0"],  # reordered
+        ["p0", "p1", "p2"],  # a projected protein dropped, so added back
+        ["p0", "p2"],  # two added back, in the long table's order: p3, then p1
+        ["new", "p3", "p1"],  # a protein no projection covers
+    ],
+)
+def test_replace_annotations_v3_matches_the_decode_encode_round_trip(ids):
+    """The wide shortcut has to write what decoding the core back to long tables
+    and encoding them again writes, byte for byte, including the protein missing
+    from one projection and the one whose 3D point has a non-finite axis."""
+    metadata, data = projection_tables(4)
+    uncovered = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 2"),
+        pc.equal(data.column("identifier"), "p1"),
+    )
+    data = data.filter(pc.invert(uncovered))
+    broken_z = pc.and_(
+        pc.equal(data.column("projection_name"), "PCA 3"),
+        pc.equal(data.column("identifier"), "p2"),
+    )
+    z = pc.if_else(broken_z, pa.scalar(np.nan, pa.float32()), data.column("z"))
+    data = data.set_column(data.schema.get_field_index("z"), "z", z)
+    parts = list(encode_v3(annotations_table(cat=["a", "b", "a", "c"]), metadata, data))
+
+    replacement = stamp_format_version(
+        pa.table({"protein_id": ids, "cat": [f"x{i}" for i in range(len(ids))]})
+    )
+    _annotations, decoded_metadata, decoded_data = decode_v3(parts)
+
+    assert replace_annotations_v3(replacement, parts) == encode_v3(
+        replacement, decoded_metadata, decoded_data
+    )
+
+
+def _with_missing_z(data: pa.Table, identifier: str) -> pa.Table:
+    """``data`` with ``identifier``'s ``z`` nulled in every projection."""
+    z = pc.if_else(
+        pc.equal(data.column("identifier"), identifier),
+        pa.scalar(None, data.schema.field("z").type),
+        data.column("z"),
+    )
+    return data.set_column(data.schema.get_field_index("z"), "z", z)
+
+
+def test_a_point_with_some_finite_axes_decides_the_numeric_type():
+    """The browser lists a protein with any finite coordinate, so a 3D point
+    missing only ``z`` is placed, and its ``2.5`` makes the column ``float``."""
+    metadata, data = projection_tables(4, (3,))
+    data = _with_missing_z(data, "p3")
+    source = annotations_table(length=["1", "2", "3", "2.5"])
+    parts = encode_v3(source, metadata, data)
+    assert manifest_of(parts[0])["columns"]["length"]["numericType"] == "float"
+
+
+def test_a_projection_that_places_no_protein_round_trips():
+    """The web writer writes every projection, NaN where it places nobody; the
+    decoded tables must agree on the projection set so they can be written
+    back."""
+    metadata, data = projection_tables(2, (2, 3))
+    in_pca3 = pc.equal(data.column("projection_name"), "PCA 3")
+    for axis in ("x", "y", "z"):
+        nan = pa.scalar(np.nan, data.schema.field(axis).type)
+        values = pc.if_else(in_pca3, nan, data.column(axis))
+        data = data.set_column(data.schema.get_field_index(axis), axis, values)
+    source = annotations_table(cat=["a", "b"])
+
+    decoded = decode_v3(list(encode_v3(source, metadata, data)))
+
+    assert decoded[1].column("projection_name").to_pylist() == ["PCA 2"]
+    assert set(decoded[2].column("projection_name").to_pylist()) == {"PCA 2"}
+    rewritten = encode_v3(*decoded)
+    assert [p["name"] for p in manifest_of(rewritten[0])["projections"]] == ["PCA 2"]
+    # A transfer keeps it: it does not go through the long tables.
+    transferred = replace_annotations_v3(
+        source, list(encode_v3(source, metadata, data))
+    )
+    assert [p["name"] for p in manifest_of(transferred[0])["projections"]] == [
+        "PCA 2",
+        "PCA 3",
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# corrupt payloads (a v3 bundle is user-supplied input)
+# --------------------------------------------------------------------------- #
+
+
+def corrupt_payload(parts: list[bytes], name: str, data: bytes) -> list[bytes]:
+    """Replace one payload row of part 6."""
+
+    def edit(table):
+        names = table.column("name").to_pylist()
+        blobs = table.column("data").to_pylist()
+        blobs[names.index(name)] = data
+        return pa.table({"name": names, "data": blobs})
+
+    return [*parts[:3], rewrite(parts[3], edit)]
+
+
+def test_rejects_label_lengths_that_do_not_tile_the_blob():
+    """Python slicing clamps, so this would yield duplicated and empty labels."""
+    parts = corrupt_payload(
+        encoded(col=["Alpha", "Beta", "Gamma"]),
+        "dict:col:len",
+        np.array([100, 100, 100], dtype="<i4").tobytes(),
+    )
+    with pytest.raises(ValueError, match="dict:col:len' is corrupt"):
+        decode_v3(parts)
+
+
+def test_rejects_a_negative_label_length():
+    parts = corrupt_payload(
+        encoded(col=["Alpha", "Beta"]),
+        "dict:col:len",
+        np.array([-4, 13], dtype="<i4").tobytes(),
+    )
+    with pytest.raises(ValueError, match="dict:col:len' is corrupt"):
+        decode_v3(parts)
+
+
+def test_rejects_score_counts_that_do_not_tile_the_scores():
+    """A short total silently empties the tail cells instead of raising."""
+    parts = corrupt_payload(
+        encoded(col=["A|0.5;B|0.25", "C|1"]),
+        "score_count:col",
+        np.array([1, 1, 0], dtype="<i4").tobytes(),
+    )
+    with pytest.raises(ValueError, match="score_count:col' is corrupt"):
+        decode_v3(parts)
+
+
+def test_rejects_hit_counts_that_do_not_tile_the_codes():
+    parts = encoded(col=["A|0.5;B|0.25", "C|1"])
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.set_column(
+            table.schema.get_field_index("col__count"),
+            "col__count",
+            pa.array([1, 1], type=pa.int32()),
+        ),
+    )
+    with pytest.raises(ValueError, match=r"col__count' is corrupt"):
+        decode_v3(parts)
+
+
+def test_rejects_a_negative_hit_count():
+    """A negative count keeps the total right but misaligns every later row."""
+    parts = encoded(col=["A;B;C", "D"])
+    parts[0] = rewrite(
+        parts[0],
+        lambda table: table.set_column(
+            table.schema.get_field_index("col__count"),
+            "col__count",
+            pa.array([-1, 5], type=pa.int32()),
+        ),
+    )
+    with pytest.raises(ValueError, match=r"col__count' is corrupt"):
+        decode_v3(parts)
+
+
+def test_flat_concatenates_a_multi_chunk_column():
+    """Every v3 part is one row group, but a >2 GB column reads back chunked."""
+    chunked = pa.chunked_array(
+        [pa.array([1, 2], type=pa.int32()), pa.array([3], type=pa.int32())]
+    )
+    assert _flat(chunked).to_pylist() == [1, 2, 3]
+    assert isinstance(_flat(chunked), pa.Array)
+
+
+# --------------------------------------------------------------------------- #
+# a real converted bundle, and the bundle the app serves
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.skipif(
+    not REAL_BUNDLE.exists(), reason="web test fixtures not checked out"
+)
+def test_real_bundle_round_trip():
+    """``venom_eat_stats`` (v3, converted from v2; 811 x 36) is a fixed point.
+
+    Decoding the converted bundle and encoding the tables again gives back the same
+    parts, column for column: numerics, scored hits, the EAT overlay, the
+    projection gap handling and part 2.  The v2 -> v3 differences this dataset
+    went through on conversion (``%.4f`` scores losing a trailing zero, null
+    overlay cells becoming ``""``) are the ones ``decode_v3`` documents, and they
+    are one-off: nothing drifts on a second pass.
+    """
+    core = parts_of(REAL_BUNDLE)
+    decoded, metadata, data = decode_v3([*core[:3], core[5]])
+
+    parts = encode_v3(decoded, metadata, data)
+    again, again_metadata, again_data = decode_v3(list(parts))
+
+    assert again.schema.metadata == decoded.schema.metadata
+    assert again.equals(decoded)
+    assert again_metadata.equals(metadata)
+    assert again_data.equals(data)
+    # The encoder is deterministic: re-encoding is byte-identical, payloads too.
+    assert list(parts) == [*core[:3], core[5]]
+
+
+# The one bundle the repository serves: the startup demo. Every other example is
+# a release asset, pinned by sha256 in ``apps/web/src/explore/example-manifest.ts``.
+SERVED_BUNDLES = [WEB_APP / "public" / "data.parquetbundle"]
+
+
+@pytest.mark.skipif(
+    not all(path.exists() for path in SERVED_BUNDLES),
+    reason="web sample data not checked out",
+)
+@pytest.mark.parametrize("path", SERVED_BUNDLES, ids=lambda path: path.name)
+def test_served_bundle_is_what_convert_writes_today(path):
+    """Every dataset the app serves is v3 without the internal lookup columns.
+
+    They were converted with ``protspace convert``, which drops ``organism_id``
+    and ``sequence`` when it upgrades a legacy bundle. A served file converted
+    before that rule keeps both columns: the app would offer a ``sequence``
+    legend and ship every sequence, and a fresh ``convert`` of the same source
+    would write a different file.
+    """
+    # manifest_of raises on a part 1 that is not v3.
+    manifest = manifest_of(parts_of(path)[0])
+    assert not {manifest["idColumn"], *manifest["columns"]} & set(INTERNAL_ANNOTATIONS)

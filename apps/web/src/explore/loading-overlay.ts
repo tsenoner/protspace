@@ -4,7 +4,7 @@ export interface OverlayNote {
   linkText?: string;
 }
 
-interface LoadingOverlayController {
+export interface LoadingOverlayController {
   update(
     show: boolean,
     progress?: number,
@@ -16,11 +16,24 @@ interface LoadingOverlayController {
   dispose(): void;
 }
 
+/**
+ * The share of the loading bar, in percent, that an example's download fills
+ * (persisted-dataset.ts). Decoding and rendering report progress on a 0–100
+ * scale of their own, which `progressAfterExampleDownload` maps onto the rest,
+ * so the bar never runs backwards.
+ */
+export const EXAMPLE_DOWNLOAD_SHARE = 40;
+
+/** Maps a decode or render phase's 0–100 progress onto the bar left after an example's download. */
+export function progressAfterExampleDownload(progress: number): number {
+  const clamped = Math.min(100, Math.max(0, progress));
+  return EXAMPLE_DOWNLOAD_SHARE + (clamped * (100 - EXAMPLE_DOWNLOAD_SHARE)) / 100;
+}
+
 const CANCEL_BUTTON_ID = 'progressive-loading-cancel';
 const CANCEL_DEFAULT_LABEL = 'Cancel';
 
 export function createLoadingOverlayController(doc: Document = document): LoadingOverlayController {
-  let overlayRemovalTimeout = 0;
   let cancelHandler: (() => void) | null = null;
   let cancelLabel = CANCEL_DEFAULT_LABEL;
   let currentNote: OverlayNote | null = null;
@@ -88,23 +101,10 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
 
     if (!show) {
       currentNote = null;
-      if (overlay) {
-        if (overlayRemovalTimeout) {
-          clearTimeout(overlayRemovalTimeout);
-        }
-        overlay.style.transition = 'opacity 0.5s ease';
-        overlay.style.opacity = '0';
-        overlayRemovalTimeout = window.setTimeout(() => {
-          overlay?.remove();
-          overlayRemovalTimeout = 0;
-        }, 500);
-      }
+      // Removed at once, with no fade: callers dismiss only when the load has settled,
+      // and a fading overlay still covers (and blocks clicks on) the page meanwhile.
+      overlay?.remove();
       return;
-    }
-
-    if (overlayRemovalTimeout) {
-      clearTimeout(overlayRemovalTimeout);
-      overlayRemovalTimeout = 0;
     }
 
     if (!overlay) {
@@ -137,9 +137,6 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
         </div>
       `;
       doc.body.appendChild(overlay);
-    } else {
-      overlay.style.opacity = '1';
-      overlay.style.transition = 'none';
     }
 
     overlay.setAttribute('aria-label', [subMessage, message].filter(Boolean).join('. '));
@@ -170,10 +167,6 @@ export function createLoadingOverlayController(doc: Document = document): Loadin
     update,
     setCancelHandler,
     dispose() {
-      if (overlayRemovalTimeout) {
-        clearTimeout(overlayRemovalTimeout);
-        overlayRemovalTimeout = 0;
-      }
       cancelHandler = null;
       currentNote = null;
       doc.getElementById('progressive-loading')?.remove();

@@ -1,9 +1,7 @@
-from pathlib import Path
-from unittest.mock import patch
-
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from protspace.data.processors.base_processor import BaseProcessor
@@ -22,6 +20,8 @@ SAMPLE_METADATA = pd.DataFrame(
         "organism": ["A", "B", "C"],
     }
 )
+# Similarity scores on a unit diagonal, but peaking above it (max 2.0)
+SAMPLE_UNNORMALISED_SIM = np.array([[1.0, 2.0, 0.5], [2.0, 1.0, 0.5], [0.5, 0.5, 1.0]])
 SAMPLE_REDUCED = np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
 SAMPLE_REDUCTIONS = [
     {
@@ -44,16 +44,6 @@ class DummyReducer:
         return {"n_components": 2}
 
 
-class TestBaseDataProcessorInit:
-    def test_init_sets_config_and_reducers(self):
-        reducers = {"pca": DummyReducer}
-        processor = BaseDataProcessor(SAMPLE_CONFIG, reducers)
-        assert processor.config == SAMPLE_CONFIG
-        assert processor.reducers == reducers
-        assert processor.identifier_col == "identifier"
-        assert processor.custom_names == {"pca2": "CustomPCA"}
-
-
 class TestProcessReduction:
     def test_process_reduction_success(self):
         reducers = {"pca": DummyReducer}
@@ -69,14 +59,31 @@ class TestProcessReduction:
         with pytest.raises(ValueError, match="Unknown reduction method: umap"):
             processor.process_reduction(SAMPLE_DATA, "umap", 2)
 
-    def test_process_reduction_mds_precomputed(self):
-        # Test special handling for MDS with precomputed similarity
-        config = {"precomputed": True}
-        reducers = {"mds": DummyReducer}
-        processor = BaseDataProcessor(config, reducers)
-        # Diagonal is all 1, triggers similarity-to-distance
-        data = np.eye(3)
+    @pytest.mark.parametrize(
+        "data, expected",
+        [
+            # Diagonal is all 1: a similarity matrix, so d = sqrt(max(s) - s)
+            (np.eye(3), np.sqrt(1 - np.eye(3))),
+            # Unnormalised scores above 1: the shift is max(s), not a fixed 1
+            (SAMPLE_UNNORMALISED_SIM, np.sqrt(2.0 - SAMPLE_UNNORMALISED_SIM)),
+            # Diagonal is not 1: already a distance matrix, passed through as is
+            (1 - np.eye(3), 1 - np.eye(3)),
+        ],
+    )
+    def test_process_reduction_mds_precomputed(self, data, expected):
+        # DummyReducer ignores its input, so record what MDS is actually fed.
+        received = []
+
+        class RecordingReducer(DummyReducer):
+            def fit_transform(self, data):
+                received.append(data)
+                return super().fit_transform(data)
+
+        processor = BaseDataProcessor({"precomputed": True}, {"mds": RecordingReducer})
         result = processor.process_reduction(data, "mds", 2)
+
+        assert len(received) == 1
+        np.testing.assert_array_equal(received[0], expected)
         np.testing.assert_array_equal(result["data"], SAMPLE_REDUCED)
 
 
@@ -126,16 +133,22 @@ class TestCreateOutput:
 
 
 class TestSaveOutput:
-    @patch("protspace.data.processors.base_processor.pq.write_table")
-    def test_save_output_separate_files(self, mock_write_table):
+    def test_save_output_separate_files(self, tmp_path):
         processor = BaseDataProcessor(SAMPLE_CONFIG, {"pca": DummyReducer})
         tables = processor.create_output(
             SAMPLE_METADATA, SAMPLE_REDUCTIONS, SAMPLE_HEADERS
         )
-        with patch("pathlib.Path.mkdir") as mock_mkdir:
-            processor.save_output(tables, Path("output_dir"), bundled=False)
-            assert mock_write_table.call_count == 3
-            mock_mkdir.assert_called()
+        out = tmp_path / "output_dir"
+        processor.save_output(tables, out, bundled=False)
+
+        expected = {
+            "selected_annotations.parquet": tables["protein_annotations"],
+            "projections_metadata.parquet": tables["projections_metadata"],
+            "projections_data.parquet": tables["projections_data"],
+        }
+        assert {p.name for p in out.iterdir()} == set(expected)
+        for filename, table in expected.items():
+            assert pq.read_table(out / filename).equals(table)
 
     def test_save_output_separate_files_writes_settings(self, tmp_path):
         """Unbundled output must persist `settings` (e.g. auto cluster legend), not

@@ -5,27 +5,18 @@
  * the default display label, the default swatch color, and the normalization
  * function that runs at the data ingestion boundary — lives here.
  *
- * Downstream code MUST NOT define its own missing-value detection. Add a
- * spelling to MISSING_VALUE_TOKENS here and every consumer picks it up.
+ * Downstream code MUST NOT define its own missing-value detection. The values the
+ * Python package shares (the missing spellings, the internal token, the swatch
+ * color) are generated from contracts/shared-constants.json, which documents each:
+ * add a spelling to MISSING_VALUE_TOKENS there and every consumer, in both
+ * languages, picks it up.
  */
+import { MISSING_VALUE_TOKENS, NA_DEFAULT_COLOR, NA_VALUE } from '../generated/shared-constants';
 
-/** Strings that mean "this value is missing". Compared case-insensitively. */
-export const MISSING_VALUE_TOKENS: ReadonlySet<string> = new Set([
-  'na',
-  'n/a',
-  'nan',
-  'null',
-  'none',
-]);
-
-/** Internal identity token for NA after ingestion. Never displayed to users. */
-export const NA_VALUE = '__NA__';
+export { MISSING_VALUE_TOKENS, NA_DEFAULT_COLOR, NA_VALUE };
 
 /** Default display label for NA in legends and tooltips. */
 export const NA_DISPLAY = 'N/A';
-
-/** Default swatch color for NA. Override-able via persisted category color (categorical only). */
-export const NA_DEFAULT_COLOR = '#DDDDDD';
 
 /**
  * Normalize a raw cell value to JS `null` if it represents missingness.

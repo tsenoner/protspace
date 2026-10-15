@@ -59,7 +59,7 @@ describe('numeric-binning', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        length: [1, 2, 10, 11, 100, 101],
+        length: new Float64Array([1, 2, 10, 11, 100, 101]),
       },
     };
 
@@ -199,7 +199,7 @@ describe('numeric-binning', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        abundance: [1200, 2500, 3900],
+        abundance: new Float64Array([1200, 2500, 3900]),
       },
     };
 
@@ -236,8 +236,8 @@ describe('numeric-binning', () => {
         weight: [[], [], []],
       },
       numeric_annotation_data: {
-        length: [1, 2, 3],
-        weight: [10, 20, 30],
+        length: new Float64Array([1, 2, 3]),
+        weight: new Float64Array([10, 20, 30]),
       },
     };
 
@@ -559,6 +559,43 @@ describe('numeric-binning', () => {
       expect(result.annotationData[i]).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it('gives an all-missing numeric column one N/A bin instead of hiding every point', () => {
+    // Reachable from a subset export (isolation / query filter) whose surviving
+    // rows are all null. Leaving every index on the -1 sentinel rendered an empty
+    // legend and a blank plot.
+    const result = materializeNumericAnnotation(
+      [null, null, null],
+      {
+        binCount: 5,
+        strategy: 'linear',
+        paletteId: 'viridis',
+      },
+      'int',
+    );
+
+    expect(result.annotation.values).toEqual([NA_VALUE]);
+    expect(result.annotation.colors).toEqual([NA_DEFAULT_COLOR]);
+    expect(result.annotation.sourceKind).toBe('numeric');
+    expect(result.annotation.numericType).toBe('int');
+    expect(result.annotation.numericMetadata?.bins).toEqual([]);
+    expect(Array.from(result.annotationData as Int32Array)).toEqual([0, 0, 0]);
+  });
+
+  it('emits nothing at all for a numeric column with zero rows', () => {
+    const result = materializeNumericAnnotation(
+      [],
+      {
+        binCount: 5,
+        strategy: 'linear',
+        paletteId: 'viridis',
+      },
+      'float',
+    );
+
+    expect(result.annotation.values).toEqual([]);
+    expect(Array.from(result.annotationData as Int32Array)).toEqual([]);
+  });
 });
 
 describe('materializeVisualizationData null-selection gate', () => {
@@ -590,8 +627,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        a: [1.0, 2.0],
-        b: [3, 4],
+        a: new Float64Array([1.0, 2.0]),
+        b: new Float64Array([3, 4]),
       },
     };
 
@@ -630,8 +667,8 @@ describe('materializeVisualizationData null-selection gate', () => {
       },
       annotation_data: {},
       numeric_annotation_data: {
-        a: [1.0, 2.0],
-        b: [3, 4],
+        a: new Float64Array([1.0, 2.0]),
+        b: new Float64Array([3, 4]),
       },
     };
 

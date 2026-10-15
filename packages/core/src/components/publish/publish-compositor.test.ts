@@ -30,76 +30,19 @@ describe('publish-compositor', () => {
     const W = 2000;
     const H = 1000;
 
-    it('right position reserves legend on the right', () => {
-      const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: 'right' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x).toBeGreaterThan(0);
-      expect(legendRect!.x + legendRect!.w).toBe(W);
-      expect(plotRect.x).toBe(0);
-      expect(plotRect.w + legendRect!.w).toBe(W);
-    });
-
-    it('left position reserves legend on the left', () => {
-      const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: 'left' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x).toBe(0);
-      expect(plotRect.x).toBe(legendRect!.w);
-      expect(plotRect.w + legendRect!.w).toBe(W);
-    });
-
-    it('top position reserves legend at the top', () => {
-      const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: 'top' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.y).toBe(0);
-      expect(plotRect.y).toBe(legendRect!.h);
-      expect(plotRect.h + legendRect!.h).toBe(H);
-    });
-
-    it('bottom position reserves legend at the bottom', () => {
-      const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: 'bottom' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.y + legendRect!.h).toBe(H);
-      expect(plotRect.y).toBe(0);
-      expect(plotRect.h + legendRect!.h).toBe(H);
-    });
-
-    it('corner positions give full canvas to plot', () => {
-      for (const pos of ['tl', 'tr', 'bl', 'br'] as const) {
-        const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: pos }));
-        expect(plotRect.x).toBe(0);
-        expect(plotRect.y).toBe(0);
-        expect(plotRect.w).toBe(W);
-        expect(plotRect.h).toBe(H);
-        expect(legendRect).not.toBeNull();
-      }
-    });
-
-    it('tr corner places legend in top-right', () => {
-      const { legendRect } = computeLayout(W, H, makeLegend({ position: 'tr' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x + legendRect!.w).toBe(W);
-      expect(legendRect!.y).toBe(0);
-    });
-
-    it('bl corner places legend in bottom-left', () => {
-      const { legendRect } = computeLayout(W, H, makeLegend({ position: 'bl' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x).toBe(0);
-      expect(legendRect!.y + legendRect!.h).toBe(H);
-    });
-
-    it('br corner places legend in bottom-right', () => {
-      const { legendRect } = computeLayout(W, H, makeLegend({ position: 'br' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x + legendRect!.w).toBe(W);
-      expect(legendRect!.y + legendRect!.h).toBe(H);
-    });
-
-    it('tl corner places legend in top-left', () => {
-      const { legendRect } = computeLayout(W, H, makeLegend({ position: 'tl' }));
-      expect(legendRect).not.toBeNull();
-      expect(legendRect!.x).toBe(0);
-      expect(legendRect!.y).toBe(0);
+    // widthPercent 20: a side legend takes 20% of the width (or height for top/bottom); a
+    // corner legend floats over the full-canvas plot, 20% wide and half the height.
+    it.each([
+      ['right', { x: 0, y: 0, w: 1600, h: 1000 }, { x: 1600, y: 0, w: 400, h: 1000 }],
+      ['left', { x: 400, y: 0, w: 1600, h: 1000 }, { x: 0, y: 0, w: 400, h: 1000 }],
+      ['top', { x: 0, y: 200, w: 2000, h: 800 }, { x: 0, y: 0, w: 2000, h: 200 }],
+      ['bottom', { x: 0, y: 0, w: 2000, h: 800 }, { x: 0, y: 800, w: 2000, h: 200 }],
+      ['tl', { x: 0, y: 0, w: 2000, h: 1000 }, { x: 0, y: 0, w: 400, h: 500 }],
+      ['tr', { x: 0, y: 0, w: 2000, h: 1000 }, { x: 1600, y: 0, w: 400, h: 500 }],
+      ['bl', { x: 0, y: 0, w: 2000, h: 1000 }, { x: 0, y: 500, w: 400, h: 500 }],
+      ['br', { x: 0, y: 0, w: 2000, h: 1000 }, { x: 1600, y: 500, w: 400, h: 500 }],
+    ] as const)('lays out the %s legend position', (position, plotRect, legendRect) => {
+      expect(computeLayout(W, H, makeLegend({ position }))).toEqual({ plotRect, legendRect });
     });
 
     it('none position returns null legendRect', () => {
@@ -147,21 +90,6 @@ describe('publish-compositor', () => {
       expect(legendRect!.h).toBe(Math.round(H * (pct / 100)));
     });
 
-    it('all side positions correctly sum to full width/height', () => {
-      for (const pos of ['right', 'left'] as const) {
-        const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: pos }));
-        expect(plotRect.w + legendRect!.w).toBe(W);
-        expect(plotRect.h).toBe(H);
-        expect(legendRect!.h).toBe(H);
-      }
-      for (const pos of ['top', 'bottom'] as const) {
-        const { plotRect, legendRect } = computeLayout(W, H, makeLegend({ position: pos }));
-        expect(plotRect.h + legendRect!.h).toBe(H);
-        expect(plotRect.w).toBe(W);
-        expect(legendRect!.w).toBe(W);
-      }
-    });
-
     it('corner legend height uses visibleItemCount when provided', () => {
       const { legendRect: noCount } = computeLayout(
         W,
@@ -176,8 +104,9 @@ describe('publish-compositor', () => {
       );
       expect(noCount).not.toBeNull();
       expect(withCount).not.toBeNull();
-      // With only 3 items, the legend should be shorter (tight) than the fallback 50%
-      expect(withCount!.h).toBeLessThanOrEqual(noCount!.h);
+      // 3 items fit in a tight 173px (15px font, 1 column) instead of the fallback 50%.
+      expect(noCount!.h).toBe(500);
+      expect(withCount!.h).toBe(173);
     });
   });
 

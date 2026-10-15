@@ -1,3 +1,4 @@
+import { DEFAULT_CATEGORICAL_PALETTE_ID } from '../generated/shared-constants';
 import type {
   BundleSettings,
   ExportOptionsMap,
@@ -20,6 +21,8 @@ const VALID_SORT_MODES: LegendSortMode[] = [
   'alpha-desc',
   'manual',
   'manual-reverse',
+  'silhouette-desc',
+  'silhouette-asc',
 ];
 
 const VALID_NUMERIC_BINNING_STRATEGIES: NumericBinningStrategy[] = [
@@ -268,12 +271,15 @@ function sanitizeLegendSettingsEntry(obj: unknown): LegendPersistedSettings | nu
     hiddenValues: s.hiddenValues,
     categories,
     enableDuplicateStackUI: s.enableDuplicateStackUI,
-    selectedPaletteId: typeof s.selectedPaletteId === 'string' ? s.selectedPaletteId : 'kellys',
+    selectedPaletteId:
+      typeof s.selectedPaletteId === 'string'
+        ? s.selectedPaletteId
+        : DEFAULT_CATEGORICAL_PALETTE_ID,
     numericSettings,
   };
 }
 
-export function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
+function sanitizeLegendSettingsMap(obj: unknown): LegendSettingsMap | null {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
     return null;
   }
@@ -303,6 +309,9 @@ function sanitizeExportOptionsMap(obj: unknown): ExportOptionsMap | null {
   return result;
 }
 
+const positiveOrUndefined = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+
 export interface NormalizeBundleSettingsOptions {
   /** Optional sanitizer applied to `publishState` before it leaves the boundary.
    *  Injected because `@protspace/utils` cannot depend on `@protspace/core`. */
@@ -326,6 +335,7 @@ export function normalizeBundleSettings(
           : obj.publishState,
       eatOverlayEnabled: obj.eatOverlayEnabled,
       eatConfidenceThreshold: obj.eatConfidenceThreshold,
+      shapeSize: positiveOrUndefined(obj.shapeSize),
     };
   }
 
@@ -366,6 +376,7 @@ export function normalizeBundleSettings(
           settings.eatConfidenceThreshold <= 1
             ? settings.eatConfidenceThreshold
             : undefined,
+        shapeSize: positiveOrUndefined(settings.shapeSize),
       };
     }
   }

@@ -289,6 +289,7 @@ export class LegendRenderer {
       onKeyDown?: (e: KeyboardEvent) => void;
       onDragHandleKeyDown?: (e: KeyboardEvent) => void;
       onSymbolClick?: (e: MouseEvent) => void;
+      onHover?: (category: string | null) => void;
     },
     symbolSize: number = LEGEND_DEFAULTS.symbolSize,
     otherItemsCount?: number,
@@ -305,6 +306,8 @@ export class LegendRenderer {
         data-value="${item.value}"
         data-display-value="${displayLabel}"
         data-driver-id=${item.value === LEGEND_VALUES.OTHER ? 'other-row' : nothing}
+        @mouseenter=${() => eventHandlers.onHover?.(item.value)}
+        @mouseleave=${() => eventHandlers.onHover?.(null)}
       >
         <div class="legend-item-content">
           ${this.renderDragHandle(dragEnabled, displayLabel, eventHandlers.onDragHandleKeyDown)}

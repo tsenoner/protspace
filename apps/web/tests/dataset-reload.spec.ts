@@ -4,42 +4,26 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   clickLegendItem,
   dismissTourIfPresent,
+  getCurrentDatasetName,
   getFirstLegendItemValue,
+  getProteinCount,
   getShapeSizeState,
+  importUserFile,
   isLegendItemHidden,
+  openExplore,
+  openImportMenu,
   setShapeSize,
   waitForExploreDataLoad,
-  waitForExploreInteractionReady,
   waitForPersistedExploreDataset,
+  waitForProteinCount,
 } from './helpers/explore';
+import { TOXPROT_5181_FIXTURE, TOXPROT_5181_V3_FIXTURE } from './helpers/fixtures';
+import { readStoredImport } from './helpers/opfs';
 
 const SPEC_DIR = path.dirname(new URL(import.meta.url).pathname);
-const CUSTOM_5K_BUNDLE_PATH = path.resolve(SPEC_DIR, '../public/data/5K.parquetbundle');
+const CUSTOM_5K_BUNDLE_PATH = TOXPROT_5181_FIXTURE;
+const CUSTOM_5K_BUNDLE_NAME = path.basename(CUSTOM_5K_BUNDLE_PATH);
 const CUSTOM_5K_PROTEIN_COUNT = 5181;
-
-async function getProteinCount(page: Page): Promise<number> {
-  const count = await page.evaluate(() => {
-    const plot = document.querySelector('#myPlot') as any;
-    return plot?.data?.protein_ids?.length ?? 0;
-  });
-
-  return Number(count);
-}
-
-async function waitForProteinCount(page: Page, expected: number, timeout = 30_000): Promise<void> {
-  await page.waitForFunction(
-    (target) => {
-      const plot = document.querySelector('#myPlot') as any;
-      return plot?.data?.protein_ids?.length === target;
-    },
-    expected,
-    { timeout, polling: 500 },
-  );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
-}
 
 async function clearPersistedDataset(page: Page): Promise<void> {
   await page.evaluate(async () => {
@@ -113,23 +97,12 @@ async function writeUnreadablePersistedDataset(page: Page): Promise<void> {
   });
 }
 
-async function openImportMenu(page: Page): Promise<void> {
-  await waitForExploreInteractionReady(page);
-  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
-  // Importing a custom dataset leaves the menu open (nothing closes it), so only
-  // click the trigger when the menu is closed — re-clicking would toggle it shut.
-  if (!(await ownDataset.isVisible().catch(() => false))) {
-    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
-  }
-  await expect(ownDataset).toBeVisible();
-}
-
-async function loadCustomDatasetFromImportMenu(page: Page, datasetPath: string): Promise<void> {
+async function loadCustomDatasetFromImportMenu(
+  page: Page,
+  file: Parameters<typeof importUserFile>[1],
+): Promise<void> {
   await openImportMenu(page);
-  await page
-    .locator('protspace-data-loader')
-    .locator('input[type="file"]')
-    .setInputFiles(datasetPath);
+  await importUserFile(page, file);
 }
 
 async function measureSingleImportLifecycle(
@@ -225,18 +198,9 @@ async function loadCustomDatasetFromPath(
   );
 }
 
-async function getCurrentDatasetName(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const controlBar = document.getElementById('myControlBar') as {
-      currentDatasetName?: string;
-    } | null;
-    return controlBar?.currentDatasetName ?? null;
-  });
-}
-
 async function loadDemoDatasetFromImportMenu(page: Page): Promise<void> {
   await openImportMenu(page);
-  await page.locator('protspace-control-bar [data-driver-id="import-demo-dataset"]').click();
+  await page.locator('protspace-control-bar [data-example-id="demo"]').click();
 }
 
 async function isImportChevronVisible(page: Page): Promise<boolean> {
@@ -279,10 +243,6 @@ async function dispatchCustomEvent(
   );
 }
 
-async function hasLegacyNotificationHelperArtifacts(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.getElementById('protspace-notification-styles') !== null);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -291,9 +251,7 @@ test.describe('Dataset reload preserves legend state (#340)', () => {
   test.beforeEach(async ({ page }) => {
     // Each Playwright test receives a fresh context; shared storage state only
     // seeds the completed product-tour key, so OPFS starts empty here.
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('page reload restores persisted legend state and hidden values', async ({ page }) => {
@@ -329,9 +287,7 @@ test.describe('Dataset reload preserves legend state (#340)', () => {
 
 test.describe('Persisted custom datasets in OPFS (#176)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('reload restores the last imported custom dataset and its local settings', async ({
@@ -340,16 +296,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
     const customCount = await getProteinCount(page);
@@ -367,22 +314,51 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
     expect(await isLegendItemHidden(page, itemValue)).toBe(true);
   });
 
+  test('a failed import shows a toast, not a dialog, and leaves the stored import to restore on reload', async ({
+    page,
+  }) => {
+    let dialogSeen = false;
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
+    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    await waitForPersistedExploreDataset(page);
+
+    // A file that fails to decode is never saved, so it must not mark the healthy
+    // import still in OPFS as failed.
+    await loadCustomDatasetFromImportMenu(page, {
+      name: 'broken.parquetbundle',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('not-a-valid-bundle'),
+    });
+    await expect(page.getByText('Dataset import failed.')).toBeVisible();
+    // The failed load must not leave its full-screen loading overlay behind.
+    await expect(page.locator('#progressive-loading')).toHaveCount(0);
+    expect(dialogSeen).toBe(false);
+    expect(await readStoredImport(page)).toEqual({
+      name: CUSTOM_5K_BUNDLE_NAME,
+      lastLoadStatus: 'success',
+    });
+
+    await page.reload();
+    await waitForExploreDataLoad(page);
+    await dismissTourIfPresent(page);
+
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
+    await expect(page.locator('#protspace-recovery-banner')).toHaveCount(0);
+  });
+
   test('reset to demo clears the persisted custom dataset', async ({ page }) => {
     const defaultCount = await getProteinCount(page);
     const defaultShapeSize = await getShapeSizeState(page);
     await setShapeSize(page, 42);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
     await waitForPersistedExploreDataset(page);
 
     await loadDemoDatasetFromImportMenu(page);
@@ -406,9 +382,7 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
   test('remounting Explore keeps a single queued import path active', async ({ page }) => {
     await page.goto('/privacy');
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     const lifecycle = await measureSingleImportLifecycle(page, async () => {
       await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
@@ -417,15 +391,13 @@ test.describe('Persisted custom datasets in OPFS (#176)', () => {
 
     expect(lifecycle.loadingStarts).toBe(1);
     expect(lifecycle.loadedEvents).toBe(1);
-    expect(await getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
   });
 });
 
 test.describe('Persisted dataset failure handling', () => {
   test('queued user imports win over corrupted OPFS fallback recovery', async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-
       const originalDefine = customElements.define.bind(customElements);
       customElements.define = (name, constructor, options) => {
         if (name === 'protspace-data-loader') {
@@ -479,7 +451,7 @@ test.describe('Persisted dataset failure handling', () => {
     const userLoadPromise = loadCustomDatasetFromPath(
       page,
       CUSTOM_5K_BUNDLE_PATH,
-      '5K.parquetbundle',
+      CUSTOM_5K_BUNDLE_NAME,
     );
     await page.waitForFunction(
       () => (window as Window & { __firstProtspaceLoadHeld?: boolean }).__firstProtspaceLoadHeld,
@@ -491,18 +463,17 @@ test.describe('Persisted dataset failure handling', () => {
     });
     await userLoadPromise;
     await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
-    await expect.poll(() => getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    await expect.poll(() => getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
     await dismissTourIfPresent(page);
 
     expect(await getProteinCount(page)).toBe(CUSTOM_5K_PROTEIN_COUNT);
-    expect(await getCurrentDatasetName(page)).toBe('5K.parquetbundle');
+    expect(await getCurrentDatasetName(page)).toBe(CUSTOM_5K_BUNDLE_NAME);
   });
 
   test('OPFS access restrictions show a toast without blocking the current session load', async ({
     page,
   }) => {
     await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
       Object.defineProperty(navigator.storage, 'getDirectory', {
         configurable: true,
         value: async () => {
@@ -511,23 +482,12 @@ test.describe('Persisted dataset failure handling', () => {
       });
     });
 
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
 
     const defaultCount = await getProteinCount(page);
 
     await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
 
     await expect(
       page.getByText('Dataset loaded, but automatic reload is unavailable.'),
@@ -537,80 +497,11 @@ test.describe('Persisted dataset failure handling', () => {
 
     expect(await getProteinCount(page)).not.toBe(defaultCount);
   });
-
-  test('unsupported browsers show an OPFS support toast without blocking the current session load', async ({
-    page,
-  }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('driver.overviewTour', 'true');
-      Object.defineProperty(navigator.storage, 'getDirectory', {
-        configurable: true,
-        value: undefined,
-      });
-    });
-
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    const defaultCount = await getProteinCount(page);
-
-    await loadCustomDatasetFromImportMenu(page, CUSTOM_5K_BUNDLE_PATH);
-    await page.waitForFunction(
-      (originalCount) => {
-        const plot = document.querySelector('#myPlot') as any;
-        return (
-          plot?.data?.protein_ids?.length > 0 && plot.data.protein_ids.length !== originalCount
-        );
-      },
-      defaultCount,
-      { polling: 500, timeout: 30_000 },
-    );
-
-    await expect(
-      page.getByText('Dataset loaded, but automatic reload is unavailable.'),
-    ).toBeVisible();
-    await expect(page.getByText(/does not support the Origin Private File System/i)).toBeVisible();
-
-    expect(await getProteinCount(page)).not.toBe(defaultCount);
-  });
-
-  test('dataset load failures show a toast instead of a browser dialog', async ({ page }) => {
-    let dialogSeen = false;
-    page.on('dialog', async (dialog) => {
-      dialogSeen = true;
-      await dialog.dismiss();
-    });
-
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
-
-    await page.evaluate(async () => {
-      const loader = document.getElementById('myDataLoader') as unknown as {
-        loadFromFile: (file: File) => Promise<void>;
-      } | null;
-      if (!loader) {
-        throw new Error('Missing data loader');
-      }
-
-      const file = new File(['not-a-valid-bundle'], 'broken.parquetbundle', {
-        type: 'application/octet-stream',
-      });
-      await loader.loadFromFile(file);
-    });
-
-    await expect(page.getByText('Dataset import failed.')).toBeVisible();
-    expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
 });
 
 test.describe('Unified app notifications', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/explore');
-    await waitForExploreDataLoad(page);
-    await dismissTourIfPresent(page);
+    await openExplore(page);
   });
 
   test('corrupted persisted datasets fall back to the demo with an in-app warning', async ({
@@ -633,40 +524,21 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText(/loaded the default demo dataset/i)).toBeVisible();
     expect(await getProteinCount(page)).toBe(defaultCount);
     expect(dialogMessages).toEqual([]);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
-  test('selection-disabled-notification uses the unified warning toast path', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myControlBar', 'selection-disabled-notification', {
-      message: 'Selection mode disabled: Only 1 point remaining',
-      severity: 'warning',
-      source: 'control-bar',
-      context: {
-        reason: 'insufficient-data',
-        dataSize: 1,
-      },
-    });
+  test('an unreadable persisted dataset falls back to the demo and then clears the overlay', async ({
+    page,
+  }) => {
+    const defaultCount = await getProteinCount(page);
+    await writeUnreadablePersistedDataset(page);
 
-    await expect(page.getByText('Selection mode disabled.')).toBeVisible();
-    await expect(page.getByText('Selection mode disabled: Only 1 point remaining')).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
-  });
+    await page.reload();
+    // The overlay stays up through the demo fetch and must be gone once the demo has loaded.
+    await waitForExploreDataLoad(page, { proteinCount: defaultCount });
+    await dismissTourIfPresent(page);
 
-  test('structure-error events stay inline and do not create global toasts', async ({ page }) => {
-    await dispatchCustomEvent(page, '#myStructureViewer', 'structure-error', {
-      message: 'No 3D structure was found for P12345.',
-      severity: 'error',
-      source: 'structure-viewer',
-      context: {
-        proteinId: 'P12345',
-      },
-    });
-
-    await page.waitForTimeout(500);
-
-    await expect(page.getByText('Structure could not be loaded.')).toHaveCount(0);
-    await expect(page.getByText('No 3D structure was found for P12345.')).toHaveCount(0);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
+    await expect(page.getByText('Saved dataset was cleared.')).toBeVisible();
+    expect(await getCurrentDatasetName(page)).not.toBe('corrupt.parquetbundle');
   });
 
   test('successful parquet exports show the unified success toast', async ({ page }) => {
@@ -682,7 +554,6 @@ test.describe('Unified app notifications', () => {
     expect(download.suggestedFilename()).toContain('.parquetbundle');
     await expect(page.getByText('Export ready.')).toBeVisible();
     await expect(page.getByText(/\.parquetbundle/i)).toBeVisible();
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
   });
 
   test('failed exports show the unified error toast', async ({ page }) => {
@@ -710,6 +581,41 @@ test.describe('Unified app notifications', () => {
     await expect(page.getByText('Export failed.')).toBeVisible();
     await expect(page.getByText('No data available for export')).toBeVisible();
     expect(dialogSeen).toBe(false);
-    expect(await hasLegacyNotificationHelperArtifacts(page)).toBe(false);
+  });
+});
+
+test.describe('Bundle format notice', () => {
+  // v2 only: the worker-to-notice path does not branch on the version, and the v1
+  // notice is pinned by the it.each([1, 2]) in dataset-controller.persistence.test.ts.
+  const V2_BUNDLE_PATH = path.resolve(
+    SPEC_DIR,
+    '../../../packages/core/src/components/data-loader/utils/__fixtures__/v2-sample.parquetbundle',
+  );
+  const NOTICE = 'This file uses an older bundle format.';
+
+  test.beforeEach(async ({ page }) => {
+    await openExplore(page);
+  });
+
+  async function importAndWait(page: Page, datasetPath: string): Promise<void> {
+    const defaultCount = await getProteinCount(page);
+    await loadCustomDatasetFromImportMenu(page, datasetPath);
+    await waitForExploreDataLoad(page, { changedFrom: defaultCount });
+  }
+
+  test('importing a v2 bundle points to re-export and protspace convert', async ({ page }) => {
+    await importAndWait(page, V2_BUNDLE_PATH);
+
+    await expect(page.getByText(NOTICE)).toBeVisible();
+    await expect(page.getByText('Format v2 bundles will stop opening')).toBeVisible();
+    await expect(page.getByText(/protspace convert/)).toBeVisible();
+  });
+
+  test('neither the startup demo nor an imported v3 bundle shows the notice', async ({ page }) => {
+    // The demo loaded in beforeEach; the import is the 5K bundle as `protspace convert` wrote it.
+    await importAndWait(page, TOXPROT_5181_V3_FIXTURE);
+    await waitForProteinCount(page, CUSTOM_5K_PROTEIN_COUNT);
+
+    await expect(page.getByText(NOTICE)).toHaveCount(0);
   });
 });

@@ -4,7 +4,6 @@ import {
   toDisplayValue,
   SHAPE_PATH_GENERATORS,
   NA_VALUE,
-  NA_DISPLAY,
   NA_DEFAULT_COLOR,
   isNAValue,
   toInternalValue,
@@ -16,6 +15,9 @@ export const LEGEND_DEFAULTS = {
   maxVisibleValues: 10,
   symbolSize: DEFAULT_CONFIG.pointSize / SYMBOL_SIZE_MULTIPLIER,
   symbolSizeMultiplier: SYMBOL_SIZE_MULTIPLIER,
+  // A UX bound from the original spinner, not a GPU limit: with zoom (<=4x) and plot-area (<=1.5x)
+  // growth the largest live sprite at dpr 3 is ~340 device px, inside ANGLE/Metal's 511 px limit.
+  maxSymbolSize: 64,
   dragTimeout: 100,
   scatterplotSelector: 'protspace-scatterplot',
   autoSyncDelay: 100,
@@ -43,18 +45,9 @@ export {
   toInternalValue,
   SHAPE_PATH_GENERATORS,
   NA_VALUE,
-  NA_DISPLAY,
   NA_DEFAULT_COLOR,
   isNAValue,
 };
-
-/**
- * Convert internal legend value back to raw data value for matching.
- * NA_VALUE becomes null for matching against raw annotation data.
- */
-export function toDataValue(value: string): string | null {
-  return value === NA_VALUE ? null : value;
-}
 
 /** Event name constants for legend component */
 export const LEGEND_EVENTS = {
@@ -66,4 +59,5 @@ export const LEGEND_EVENTS = {
   ERROR: 'legend-error',
   DATA_CHANGE: 'data-change',
   ANNOTATION_CHANGE: 'annotation-change',
+  PROJECTION_CHANGE: 'projection-change',
 } as const;

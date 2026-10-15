@@ -16,7 +16,10 @@ import {
  */
 export interface SettingsDialogState {
   maxVisibleValues: number;
-  shapeSize: number;
+  /** The size in the field, or null once the user empties it to return to the default. */
+  shapeSize: number | null;
+  /** The dataset's default shape size, from its protein count. */
+  defaultShapeSize: number;
   enableDuplicateStackUI: boolean;
   selectedAnnotation: string;
   annotationSortModes: Record<string, LegendSortMode>;
@@ -26,6 +29,8 @@ export interface SettingsDialogState {
   hasPersistedSettings: boolean;
   selectedPaletteId: string;
   reverseGradient: boolean;
+  /** Whether the selected annotation has per-category silhouette scores to sort by. */
+  hasCategoryScores: boolean;
 }
 
 /**
@@ -33,7 +38,8 @@ export interface SettingsDialogState {
  */
 export interface SettingsDialogCallbacks {
   onMaxVisibleValuesChange: (value: number) => void;
-  onShapeSizeChange: (value: number) => void;
+  /** A typed size, or null for an emptied field: Save then applies the dataset's default. */
+  onShapeSizeChange: (value: number | null) => void;
   onEnableDuplicateStackUIChange: (checked: boolean) => void;
   onSortModeChange: (annotation: string, mode: LegendSortMode) => void;
   onPaletteChange: (paletteId: string) => void;
@@ -132,8 +138,20 @@ function renderShapeSizeInput(
   callbacks: SettingsDialogCallbacks,
 ): TemplateResult {
   const onInput = (e: Event) => {
-    const value = parsePositiveInt((e.target as HTMLInputElement).value);
-    if (value !== null) callbacks.onShapeSizeChange(value);
+    const input = e.target as HTMLInputElement;
+    // A number field also reads '' while it holds text it cannot parse; only an empty one is
+    // a request for the default.
+    if (input.value === '' && !input.validity?.badInput) {
+      callbacks.onShapeSizeChange(null);
+      return;
+    }
+    const value = parsePositiveInt(input.value);
+    if (value === null) return;
+    const capped = Math.min(value, LEGEND_DEFAULTS.maxSymbolSize);
+    // Lit skips `.value` when the capped size equals the last one it rendered, so
+    // without this the field would keep showing e.g. 640 while 64 is applied.
+    if (capped !== value) input.value = String(capped);
+    callbacks.onShapeSizeChange(capped);
   };
 
   return renderFieldCard(
@@ -143,14 +161,14 @@ function renderShapeSizeInput(
         class="legend-form-control"
         id="shape-size-input"
         type="number"
-        min="6"
-        max="64"
-        .value=${String(state.shapeSize)}
-        placeholder=${String(LEGEND_DEFAULTS.symbolSize)}
+        min="1"
+        max=${LEGEND_DEFAULTS.maxSymbolSize}
+        .value=${state.shapeSize === null ? '' : String(state.shapeSize)}
+        placeholder=${String(state.defaultShapeSize)}
         @input=${onInput}
       />
     `,
-    undefined,
+    `Default for this dataset: ${state.defaultShapeSize}; clear the field to use it. Larger datasets default to smaller dots.`,
     '',
     'shape-size-input',
   );
@@ -256,7 +274,9 @@ function renderCategoricalPalettePreview(selectedPalette: readonly string[]): Te
 /**
  * Returns the appropriate sort mode for a given category
  */
-function getSortModeForCategory(category: 'size' | 'alpha' | 'manual'): LegendSortMode {
+function getSortModeForCategory(
+  category: 'size' | 'alpha' | 'manual' | 'silhouette',
+): LegendSortMode {
   switch (category) {
     case 'size':
       return 'size-asc';
@@ -264,6 +284,8 @@ function getSortModeForCategory(category: 'size' | 'alpha' | 'manual'): LegendSo
       return 'alpha-asc';
     case 'manual':
       return 'manual';
+    case 'silhouette':
+      return 'silhouette-desc';
   }
 }
 
@@ -285,8 +307,11 @@ function renderSortingSection(
   const isSize = currentMode.startsWith('size');
   const isAlphabetic = currentMode.startsWith('alpha');
   const isManual = currentMode.startsWith('manual');
+  // Both directions, or the radio group renders with nothing checked after the header's
+  // reverse button has flipped the mode to ascending.
+  const isSilhouette = currentMode === 'silhouette-desc' || currentMode === 'silhouette-asc';
 
-  const handleTypeChange = (category: 'size' | 'alpha' | 'manual') => {
+  const handleTypeChange = (category: 'size' | 'alpha' | 'manual' | 'silhouette') => {
     callbacks.onSortModeChange(aname, getSortModeForCategory(category));
   };
 
@@ -299,6 +324,12 @@ function renderSortingSection(
         { checked: isSize, label: 'By category size', category: 'size' as const },
         { checked: isAlphabetic, label: 'Alphabetical', category: 'alpha' as const },
         { checked: isManual, label: 'Manual order', category: 'manual' as const },
+        // Keep the option present when it's already selected, even if this projection's
+        // statistics are absent (e.g. after a reload): otherwise the radio group would
+        // render with nothing checked.
+        ...(state.hasCategoryScores || isSilhouette
+          ? [{ checked: isSilhouette, label: 'By separation', category: 'silhouette' as const }]
+          : []),
       ];
 
   return renderSection(

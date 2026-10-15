@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { encodeAnnotationField } from '@protspace/utils';
 import { decodeField } from './annotation-codec';
 
-// The encoder is the single production one in `@protspace/utils`
-// (`encodeAnnotationField`); `decodeField` here is its read-path partner. Pairing
-// them in these round-trips guards the actual cross-package write→read contract.
+// The only production encoder is Python's `encode_field` (encoding.py): the web exporter
+// writes v3, whose labels are stored decoded. This reference copy of its rule, pinned by
+// the literal cases below, is what the round trips pair `decodeField` with.
+const encodeAnnotationField = (value: string): string =>
+  value.replace(
+    /[;|%\x00-\x1F\x7F]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`,
+  );
+
 describe('annotation codec (v2)', () => {
   const cases = [
     '',

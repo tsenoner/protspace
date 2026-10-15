@@ -37,8 +37,13 @@ export function getUniprotKbId(uniprotKbIdValues: string[]): string | null {
 
 /**
  * Determine the annotation header type based on available scores and evidence.
- * Returns 'bitscore' if any scores are present, 'evidence' if any evidence codes
- * are present (but no scores), or null if neither exists.
+ * Returns 'bitscore' if any scores are present, 'evidence' if any evidence codes are
+ * present (but no scores), or null if neither exists.
+ *
+ * Auto-cluster membership columns used to land here as their own 'silhouette' header,
+ * being the only columns whose scores were not bit scores. They no longer reach it:
+ * `buildAnnotationBlock` drops their per-point silhouette in favour of the legend's
+ * per-cluster strips.
  */
 export function getAnnotationHeaderType(
   scores: (number[] | null)[],

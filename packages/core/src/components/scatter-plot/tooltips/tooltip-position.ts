@@ -11,11 +11,11 @@
 /** Min gap (px) kept between the tooltip and any viewport edge. */
 export const TOOLTIP_EDGE_PADDING = 15;
 /** Assumed max tooltip width (px) used for right/left overflow decisions. */
-export const TOOLTIP_MAX_WIDTH = 350;
+const TOOLTIP_MAX_WIDTH = 350;
 /** Horizontal offset (px) of the tooltip anchor from the cursor. */
-export const TOOLTIP_ANCHOR_OFFSET_X = 15;
+const TOOLTIP_ANCHOR_OFFSET_X = 15;
 /** Vertical offset (px): tooltip top sits this far ABOVE the cursor. */
-export const TOOLTIP_ANCHOR_OFFSET_Y = 60;
+const TOOLTIP_ANCHOR_OFFSET_Y = 60;
 /** Fallback height (px) when no measured/estimated height is available. */
 export const TOOLTIP_FALLBACK_HEIGHT = 160;
 

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -27,36 +27,226 @@ export async function dismissTourIfPresent(page: Page): Promise<void> {
   }
 }
 
-export async function waitForExploreDataLoad(page: Page, timeout = 30_000): Promise<void> {
+/**
+ * Wait until the loading overlay is gone, polling every 100 ms. A locator assertion would back
+ * off to 500 ms polls after a few hundred milliseconds, adding up to half a second to every load
+ * whose post-load work runs that long. An overlay that stays up fails the wait with that reason.
+ */
+async function waitForLoadingOverlayRemoved(page: Page, timeout: number): Promise<void> {
+  try {
+    await page.waitForFunction(() => !document.getElementById('progressive-loading'), undefined, {
+      timeout,
+      polling: 100,
+    });
+  } catch (error) {
+    throw new Error(
+      `The loading overlay (#progressive-loading) was still shown after ${timeout} ms`,
+      {
+        cause: error,
+      },
+    );
+  }
+}
+
+interface ExploreDataLoadOptions {
+  /** Applies to each stage of the wait. Defaults to 30 s. */
+  timeout?: number;
+  /** Wait for exactly this many proteins, so the wait cannot pass on the previous dataset. */
+  proteinCount?: number;
+  /**
+   * Wait for any protein count other than this one, for a replacement dataset whose size the
+   * test does not know. Pass the count read before the load was started.
+   */
+  changedFrom?: number;
+}
+
+/**
+ * Wait until an Explore load has settled: the plot holds the expected data and the loading
+ * overlay is gone.
+ *
+ * The app removes the overlay synchronously once a load's post-load work (view restore,
+ * persistence bookkeeping) has finished, so its absence is the settle signal. An overlay that
+ * stays up is a bug, and the wait fails instead of swallowing it. The protein-count gate comes
+ * first because the overlay is also absent before a queued load has started. The closing
+ * animation frame lets the scatterplot rebuild its point index, which it does in a
+ * requestAnimationFrame after a data or projection update.
+ */
+export async function waitForExploreDataLoad(
+  page: Page,
+  { timeout = 30_000, proteinCount, changedFrom }: ExploreDataLoadOptions = {},
+): Promise<void> {
   await page.waitForSelector('#myPlot', { timeout });
   await page.waitForFunction(
-    () => {
+    ({ exact, previous }) => {
       const plot = document.querySelector('#myPlot') as
         | (Element & {
             data?: { protein_ids?: string[] };
           })
         | null;
-      return (plot?.data?.protein_ids?.length ?? 0) > 0;
+      const count = plot?.data?.protein_ids?.length ?? 0;
+      if (exact !== null) return count === exact;
+      return count > 0 && count !== previous;
     },
-    undefined,
-    { timeout, polling: 500 },
+    { exact: proteinCount ?? null, previous: changedFrom ?? null },
+    { timeout, polling: 100 },
   );
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await waitForLoadingOverlayRemoved(page, timeout);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
+/** {@link waitForExploreDataLoad} for a dataset of a known size. */
+export async function waitForProteinCount(
+  page: Page,
+  proteinCount: number,
+  timeout = 30_000,
+): Promise<void> {
+  await waitForExploreDataLoad(page, { timeout, proteinCount });
+}
+
+/** How many proteins the plot currently holds. */
+export async function getProteinCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const plot = document.querySelector('#myPlot') as
+      | (Element & { data?: { protein_ids?: string[] } })
+      | null;
+    return plot?.data?.protein_ids?.length ?? 0;
+  });
 }
 
 export async function waitForExploreInteractionReady(page: Page, timeout = 10_000): Promise<void> {
-  await page
-    .locator('#progressive-loading')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await waitForLoadingOverlayRemoved(page, timeout);
   await dismissTourIfPresent(page);
-  await page
-    .locator('.driver-overlay')
-    .waitFor({ state: 'hidden', timeout })
-    .catch(() => {});
+  await expect(page.locator('.driver-overlay')).toBeHidden({ timeout });
+}
+
+/**
+ * Opens Explore at `/explore` plus `search`, waits for its dataset to load and
+ * closes the product tour; given `count`, also waits until the plot holds that
+ * many proteins.
+ */
+export async function openExplore(page: Page, search = '', count?: number): Promise<void> {
+  await page.goto(`/explore${search}`);
+  await waitForExploreDataLoad(page, { proteinCount: count });
+  await dismissTourIfPresent(page);
+}
+
+/** The decoded value of the page URL's `key` query parameter, or null when it is absent. */
+export async function getUrlParam(page: Page, key: string): Promise<string | null> {
+  return page.evaluate((name) => new URL(window.location.href).searchParams.get(name), key);
+}
+
+/**
+ * Waits until the page URL's `key` query parameter decodes to `expected` (null:
+ * absent), robust to `+`/`%20`/em-dash encoding.
+ */
+export async function expectUrlParam(
+  page: Page,
+  key: string,
+  expected: string | null,
+): Promise<void> {
+  await expect.poll(() => getUrlParam(page, key)).toBe(expected);
+}
+
+/**
+ * Holds the next request matching `glob` until the returned function is
+ * called. The page may abort the held request meanwhile (a cancelled or
+ * superseded download), so continuing it is allowed to fail.
+ */
+export async function holdNextRequest(page: Page, glob: string): Promise<() => void> {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    glob,
+    async (route) => {
+      await gate;
+      await route.fallback().catch(() => {});
+    },
+    { times: 1 },
+  );
+  return release;
+}
+
+/** The view the control bar shows: colour-by annotation, projection and tooltip annotations. */
+interface ControlBarView {
+  annotation: string | null;
+  projection: string | null;
+  tooltip: string[];
+}
+
+export async function getControlBarView(page: Page): Promise<ControlBarView> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & {
+          selectedAnnotation?: string;
+          selectedProjection?: string;
+          tooltipAnnotations?: string[];
+        })
+      | null;
+    return {
+      annotation: controlBar?.selectedAnnotation ?? null,
+      projection: controlBar?.selectedProjection ?? null,
+      tooltip: [...(controlBar?.tooltipAnnotations ?? [])],
+    };
+  });
+}
+
+/** A catalog entry's curated view, in the shape `getControlBarView` reads. */
+export function curatedViewOf(entry: {
+  defaultView: { projection: string; annotation: string; tooltip?: readonly string[] };
+}): ControlBarView {
+  return {
+    annotation: entry.defaultView.annotation,
+    projection: entry.defaultView.projection,
+    tooltip: [...(entry.defaultView.tooltip ?? [])],
+  };
+}
+
+/**
+ * Collects the development-mode warnings `dataset-controller.ts` logs when a
+ * loaded example's bundle lacks one of its `defaultView` names.
+ */
+export function collectDefaultViewDriftWarnings(page: Page): string[] {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().includes('defaultView names missing')) {
+      warnings.push(message.text());
+    }
+  });
+  return warnings;
+}
+
+export async function getCurrentDatasetName(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const controlBar = document.querySelector('protspace-control-bar') as
+      | (Element & { currentDatasetName?: string })
+      | null;
+    return controlBar?.currentDatasetName ?? null;
+  });
+}
+
+export async function openImportMenu(page: Page): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  const ownDataset = page.locator('protspace-control-bar [data-driver-id="import-own-dataset"]');
+  // Importing a custom dataset leaves the menu open (nothing closes it), so only
+  // click the trigger when the menu is closed — re-clicking would toggle it shut.
+  if (!(await ownDataset.isVisible().catch(() => false))) {
+    await page.locator('protspace-control-bar [data-driver-id="import"] .dropdown-trigger').click();
+  }
+  await expect(ownDataset).toBeVisible();
+}
+
+/**
+ * Imports `file` (a path, or a payload built in the test) through the data
+ * loader's file input, the input the Import menu's "Load your dataset" opens.
+ */
+export async function importUserFile(
+  page: Page,
+  file: Parameters<Locator['setInputFiles']>[0],
+): Promise<void> {
+  await waitForExploreInteractionReady(page);
+  await page.locator('protspace-data-loader').locator('input[type="file"]').setInputFiles(file);
 }
 
 export async function getFirstLegendItemValue(page: Page): Promise<string> {

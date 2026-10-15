@@ -27,8 +27,9 @@ export default defineConfig({
 
   // Shared settings for all projects
   use: {
-    // Base URL for the app
-    baseURL: 'http://localhost:8080',
+    // Base URL for the app. PLAYWRIGHT_BASE_URL points the captures at a dev server on
+    // another port, as it does for the E2E config.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
 
     // Capture trace on failure for debugging
     trace: 'on-first-retry',
@@ -58,7 +59,8 @@ export default defineConfig({
         // For better WebGL on CI, consider using xvfb with headless: false
         headless: !!process.env.CI,
       },
-      testMatch: /capture-static\.spec\.ts/,
+      // Any `capture-*static.spec.ts` registers itself; no per-file listing.
+      testMatch: /static\.spec\.ts$/,
     },
     {
       name: 'animations',
@@ -76,7 +78,8 @@ export default defineConfig({
         // For better WebGL on CI, consider using xvfb with headless: false
         headless: !!process.env.CI,
       },
-      testMatch: /capture-animations\.spec\.ts/,
+      // Any `capture-*animations.spec.ts` registers itself; no per-file listing.
+      testMatch: /animations\.spec\.ts$/,
     },
   ],
 

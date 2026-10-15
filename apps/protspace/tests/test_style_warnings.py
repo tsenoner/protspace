@@ -1,29 +1,34 @@
 """Advisory warnings + palette contract for `protspace style`.
 
 Covers three things:
-- the numeric-column warning (issue #67) — the CLI styling model is
+- the numeric-column warning (tsenoner/protspace-legacy#67) — the CLI styling model is
   categorical-only while the web frontend bins numeric columns into gradients, so
   per-value colors/shapes set via the CLI are silently dropped;
 - the `selectedPaletteId` validation warning (gradient/unknown id → resets to
   kellys in the frontend);
-- a pinned contract keeping the Python palette-id catalog reconciled with the
-  frontend source of truth (see the section at the bottom of this file).
+- the palette catalog, generated from contracts/shared-constants.json like the
+  web's (see the section below).
 """
 
 import logging
 
 import pyarrow as pa
+import pytest
 
+from protspace._generated.shared_constants import DEFAULT_CATEGORICAL_PALETTE_ID
 from protspace.data.annotations.encoding import stamp_format_version
 from protspace.data.io.bundle import extract_bundle_to_dir, write_bundle
 from protspace.utils.add_annotation_style import (
     _CATEGORICAL_PALETTE_IDS,
     _GRADIENT_PALETTE_IDS,
+    _resolve_style_value,
     _warn_if_bad_palette,
     _warn_if_numeric,
     add_annotation_styles_bundle,
     add_annotation_styles_parquet,
     generate_template,
+    resolve_style_key,
+    style_keys,
 )
 
 
@@ -105,6 +110,23 @@ def test_generate_template_warns_only_on_numeric_column(tmp_path, caplog):
     assert {"length", "family"} <= set(template)
 
 
+def test_template_gives_only_a_categorical_column_the_categorical_palette(tmp_path):
+    """A numeric column reads ``selectedPaletteId`` as its gradient, so the
+    categorical default would reset a gradient chosen in the web app."""
+    bundle = _make_bundle(
+        tmp_path,
+        ["P1", "P2", "P3"],
+        {
+            "length": ["100", "200", "300"],
+            "family": ["kinase", "phosphatase", "kinase"],
+        },
+    )
+    template = generate_template(str(bundle))
+
+    assert template["family"]["selectedPaletteId"] == DEFAULT_CATEGORICAL_PALETTE_ID
+    assert "selectedPaletteId" not in template["length"]
+
+
 def test_apply_styles_warns_on_numeric_column(tmp_path, caplog):
     bundle = _make_bundle(tmp_path, ["P1", "P2"], {"length": ["100", "200"]})
     proj_dir = extract_bundle_to_dir(bundle)
@@ -182,42 +204,63 @@ def test_apply_styles_skips_palette_warning_for_numeric_gradient(tmp_path, caplo
     assert not any("kellys" in m for m in messages)
 
 
-# --- pinned contract: keep the Python palette catalog in sync with the frontend ---
+# --- palette catalog --------------------------------------------------------
 #
-# The authoritative source is the web frontend:
-#   packages/utils/src/visualization/color-scheme.ts (COLOR_SCHEMES)
-#   packages/utils/src/visualization/numeric-binning.ts
-#                                                   (GRADIENT_COLOR_SCHEME_IDS)
-# These pins make the Python copy a deliberate, reviewed value: changing a palette
-# id trips a test, prompting a matching update to docs/styling.md (Color palettes)
-# and a re-check against the frontend. The test compares the catalog to a literal
-# copy here, so it guards accidental in-repo edits — it cannot read the frontend
-# and does not detect drift from the source of truth.
-
-_EXPECTED_CATEGORICAL_PALETTE_IDS = {
-    "kellys",
-    "okabeIto",
-    "tolBright",
-    "set2",
-    "dark2",
-    "tableau10",
-}
-_EXPECTED_GRADIENT_PALETTE_IDS = {"batlow", "viridis", "cividis", "inferno", "plasma"}
+# The ids come from contracts/shared-constants.json, which also generates the web's;
+# the generator checks the sets are disjoint and that the numeric default is a
+# gradient. This pins the one id the CLI writes and the web falls back to.
 
 
-def test_categorical_palette_ids_pinned():
-    assert set(_CATEGORICAL_PALETTE_IDS) == _EXPECTED_CATEGORICAL_PALETTE_IDS
-
-
-def test_gradient_palette_ids_pinned():
-    assert set(_GRADIENT_PALETTE_IDS) == _EXPECTED_GRADIENT_PALETTE_IDS
-
-
-def test_palette_id_sets_are_disjoint():
-    assert _CATEGORICAL_PALETTE_IDS.isdisjoint(_GRADIENT_PALETTE_IDS)
-
-
-def test_palette_defaults_belong_to_their_sets():
-    # Frontend defaults: categorical → 'kellys', numeric gradient → 'batlow'.
+def test_kellys_is_a_categorical_palette():
     assert "kellys" in _CATEGORICAL_PALETTE_IDS
-    assert "batlow" in _GRADIENT_PALETTE_IDS
+    assert "kellys" not in _GRADIENT_PALETTE_IDS
+
+
+# ---------------------------------------------------------------------------
+# Style-key resolution — a styles file's keys vs. the values the bundle holds
+# ---------------------------------------------------------------------------
+
+
+def test_na_style_key_resolves_against_a_null_written_cell():
+    # The frontend writer stores a missing categorical cell as parquet NULL, which
+    # reads back as the string "None". A styles file naming the N/A group — what
+    # `--generate-template` emitted as `__NA__` before that change — must still
+    # find it, or `protspace style` aborts on a bundle it produced itself.
+    assert _resolve_style_value("__NA__", {"None", "Human"}, "organism") == "None"
+    assert _resolve_style_value("<NA>", {"", "Human"}, "organism") == ""
+
+
+def test_numeric_style_key_resolves_across_the_int_float_spelling():
+    # An integral column is stored INT32 now and was stored DOUBLE before, so the
+    # same value is keyed '100' in one export and '100.0' in the other.
+    assert _resolve_style_value("100.0", {"100", "200"}, "length") == "100"
+    assert _resolve_style_value("100", {"100.0", "200.0"}, "length") == "100.0"
+
+
+def test_unknown_style_key_still_raises():
+    with pytest.raises(ValueError, match="does not exist for annotation"):
+        _resolve_style_value("Alien", {"Human", "Mouse"}, "organism")
+
+
+def test_resolve_style_key_answers_what_style_would_accept():
+    # The resolver `protspace style` raises on, for a caller that drops the keys
+    # it would refuse before styling (the showcase build filters its styles).
+    assert resolve_style_key("Human", {"Human", "None"}) == "Human"
+    assert resolve_style_key("__NA__", {"None", "Human"}) == "None"
+    assert resolve_style_key("100.0", {"100"}) == "100"
+    assert resolve_style_key("Alien", {"Human", "Mouse"}) is None
+    # Every spelling the web shows as N/A is N/A to `style` too. "none" was kept
+    # apart while TMbed wrote its negative that way, but the web always drew it
+    # as N/A, so a style on it never applied.
+    assert resolve_style_key("__NA__", {"none", "Human"}) == "none"
+    assert resolve_style_key("N/A", {"null", "Human"}) == "null"
+    assert resolve_style_key("NULL", {"none", "Human"}) == "none"
+    assert resolve_style_key("__NA__", {"Human"}) is None  # no missing cell
+    # With several N/A spellings in the data, always the same one.
+    assert resolve_style_key("N/A", {"None", "", "n/a", "Human"}) == ""
+
+
+def test_style_keys_are_the_display_values_of_every_cell():
+    cells = ["A|IC;B%3Bc|1.0", None, "A", 7]
+    assert style_keys(cells) == {"A", "B;c", "None", "7"}
+    assert style_keys(["B%3Bc"], decode=False) == {"B%3Bc"}
