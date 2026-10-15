@@ -97,19 +97,19 @@ previous phase left. A phase ends with the app working and every test green.
 
 ## 6. Dark mode (plan: `plans/phase-6-dark-mode.md`)
 
-- [ ] 6.1 Theme store, first-paint boot and `/explore`-only scope
-- [ ] 6.2 The theme switch in the app bar and the More sheet
-- [ ] 6.3 Plot neutrals as an input; exports always stage light
-- [ ] 6.4 The plot's background and neutral greys follow the theme
-- [ ] 6.5 Exports and the figure editor preview stay light in dark
-- [ ] 6.6 Plot overlays, tooltip and projection card on tokens
-- [ ] 6.7 Legend swatches follow the plot's neutral greys
-- [ ] 6.8 The structure viewer and Mol\* follow the theme
-- [ ] 6.9 Wordmark, notifications, tour and legacy colours
-- [ ] 6.10 Contrast gates for the role tokens and the default palettes
-- [ ] 6.11 Accessibility of the desktop workbench in both colour schemes
-- [ ] 6.12 Accessibility of the phone layout in both colour schemes
-- [ ] 6.13 The default follows the system
+- [x] 6.1 Theme store, first-paint boot and `/explore`-only scope
+- [x] 6.2 The theme switch in the app bar and the More sheet
+- [x] 6.3 Plot neutrals as an input; exports always stage light
+- [x] 6.4 The plot's background and neutral greys follow the theme
+- [x] 6.5 Exports and the figure editor preview stay light in dark
+- [x] 6.6 Plot overlays, tooltip and projection card on tokens
+- [x] 6.7 Legend swatches follow the plot's neutral greys
+- [x] 6.8 The structure viewer and Mol\* follow the theme
+- [x] 6.9 Wordmark, notifications, tour and legacy colours
+- [x] 6.10 Contrast gates for the role tokens and the default palettes
+- [x] 6.11 Accessibility of the desktop workbench in both colour schemes
+- [x] 6.12 Accessibility of the phone layout in both colour schemes
+- [x] 6.13 The default follows the system
 
 ## 7. Docs, docs media and tour (plan: `plans/phase-7-docs.md`)
 
