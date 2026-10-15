@@ -112,13 +112,23 @@ kept as stored, including the web app's envelope, and statistics SHALL be kept b
 ### Requirement: `protspace convert` SHALL leave a v3 input untouched
 
 When `INPUT` is already a v3 container, the command SHALL report that the file is already current,
-exit successfully and write nothing.
+exit successfully and write nothing. The one exception is `--flatten-3d` on a v3 input holding at
+least one 3-D projection, which SHALL be rewritten with those projections flattened, as the
+`deprecation-policy` capability requires. Without the flag, or with no 3-D projection to flatten, a
+v3 input SHALL still be left untouched.
 
 #### Scenario: Converting a v3 bundle
 
 - **WHEN** `protspace convert current.parquetbundle out.parquetbundle` runs on a v3 bundle
 - **THEN** it exits `0`, says the file is already v3, `current.parquetbundle` is byte-identical
   and `out.parquetbundle` is not created
+
+#### Scenario: Flattening the 3-D projections of a v3 bundle
+
+- **WHEN** `protspace convert current.parquetbundle out.parquetbundle --flatten-3d` runs on a v3
+  bundle holding `UMAP 3`
+- **THEN** `out.parquetbundle` is written with `UMAP 3 (X/Y)` in place of `UMAP 3`, and
+  `current.parquetbundle` is unchanged
 
 ### Requirement: `protspace convert` SHALL write its output atomically
 

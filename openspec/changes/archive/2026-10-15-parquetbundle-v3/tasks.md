@@ -198,11 +198,12 @@
       hit at its last pipe
 - [x] 5.4 Merge the PR with a merge commit, never a squash (it touches `apps/protspace/`)
       (#477, merged 2026-10-02 as `952646cf`)
-- [ ] 5.5 Before archiving, carve `--flatten-3d` out of the `bundle-conversion` requirement
+- [x] 5.5 Before archiving, carve `--flatten-3d` out of the `bundle-conversion` requirement
       "`protspace convert` SHALL leave a v3 input untouched": a v3 input holding 3-D projections is
       rewritten when `--flatten-3d` is given, as `openspec/specs/deprecation-policy/spec.md` (from
       `deprecate-3d-and-serve`) requires; without the flag, or with nothing to flatten, it is still
-      left untouched
+      left untouched (main archived this change first, so the carve-out went straight into
+      `openspec/specs/bundle-conversion/spec.md` when `fix/user-feedback-triage` merged main)
 
 ## 6. Follow-ups for protspace 5.0.0 (tracked in #544)
 
