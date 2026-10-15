@@ -142,3 +142,44 @@ export function validateManifest(entries: readonly CaptureEntry[]): string[] {
   }
   return problems;
 }
+
+/** A GIF's frame rate and width in pixels. */
+export interface GifSettings {
+  fps: number;
+  width: number;
+}
+
+/** Where a GIF's ladder starts unless its entry says otherwise. */
+export const GIF_START: GifSettings = { fps: 30, width: 1000 };
+
+const LADDER_FPS = [20, 15];
+const LADDER_WIDTHS = [800, 640];
+
+/**
+ * The settings a GIF is converted at, in order, until one fits its budget: the start, then each
+ * lower frame rate of 20 and 15, then each narrower width of 800 and 640 at the last rate.
+ * `gifLadder()` is 30/1000, 20/1000, 15/1000, 15/800, 15/640.
+ */
+export function gifLadder(start: Partial<GifSettings> = {}): GifSettings[] {
+  const first = { ...GIF_START, ...start };
+  const ladder = [first];
+  for (const fps of LADDER_FPS) {
+    if (fps < first.fps) ladder.push({ fps, width: first.width });
+  }
+  const { fps } = ladder[ladder.length - 1];
+  for (const width of LADDER_WIDTHS) {
+    if (width < first.width) ladder.push({ fps, width });
+  }
+  return ladder;
+}
+
+/**
+ * What the runner writes beside a GIF's recording (`temp-videos/<name>.json`) for `gif.ts`: where
+ * the scene starts in the video, the size limit and the ladder's first rung.
+ */
+export interface GifSidecar {
+  name: string;
+  trimStartMs: number;
+  budgetBytes: number;
+  start: GifSettings;
+}

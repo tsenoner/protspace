@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   captureVariants,
   DEFAULT_GIF_BUDGET,
+  gifLadder,
   outputFile,
   validateManifest,
   type CaptureEntry,
@@ -94,5 +95,66 @@ describe('validateManifest', () => {
 describe('the GIF budget', () => {
   it('defaults to 3 MiB', () => {
     expect(DEFAULT_GIF_BUDGET).toBe(3_145_728);
+  });
+});
+
+describe('gifLadder', () => {
+  const rungs = (ladder: ReturnType<typeof gifLadder>) =>
+    ladder.map(({ fps, width }) => `${fps}/${width}`);
+
+  it('steps the frame rate down, then the width', () => {
+    expect(rungs(gifLadder())).toEqual(['30/1000', '20/1000', '15/1000', '15/800', '15/640']);
+  });
+
+  it("starts at an entry's own settings", () => {
+    expect(rungs(gifLadder({ fps: 20, width: 800 }))).toEqual(['20/800', '15/800', '15/640']);
+  });
+
+  it('steps only the frame rate from the narrowest width', () => {
+    expect(rungs(gifLadder({ width: 640 }))).toEqual(['30/640', '20/640', '15/640']);
+  });
+});
+
+/**
+ * The capture code as text: decision 19 replaced the old captures' hand-written shadow-root
+ * lookups and fixed sleeps with role locators, typed plot reads and signals. Pacing a GIF is the
+ * one place a fixed wait belongs, and it is `cap.hold`, so it is countable in review.
+ */
+const CAPTURE_SOURCES = import.meta.glob('../../../../scripts/docs-screenshots/**/*.ts', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const SCRIPTS = '../../../../scripts/docs-screenshots/';
+
+describe('the capture code', () => {
+  it('is read', () => {
+    expect(Object.keys(CAPTURE_SOURCES)).toContain(`${SCRIPTS}runner.ts`);
+    expect(Object.keys(CAPTURE_SOURCES)).toContain(`${SCRIPTS}scenes/scatterplot.ts`);
+  });
+
+  it('never reaches into a shadow root', () => {
+    const offenders = Object.entries(CAPTURE_SOURCES)
+      .filter(([, text]) => text.includes('shadowRoot'))
+      .map(([file]) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps timers and page evaluation out of the scenes', () => {
+    const offenders = Object.entries(CAPTURE_SOURCES)
+      .filter(([file]) => file.startsWith(`${SCRIPTS}scenes/`))
+      .filter(([, text]) => text.includes('waitForTimeout') || text.includes('.evaluate('))
+      .map(([file]) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("waits on a timer only in the runner's hold", () => {
+    const timed = Object.entries(CAPTURE_SOURCES)
+      .filter(([, text]) => text.includes('waitForTimeout'))
+      .map(([file]) => file);
+    expect(timed).toEqual([`${SCRIPTS}runner.ts`]);
+    const runner = CAPTURE_SOURCES[`${SCRIPTS}runner.ts`];
+    expect(runner.match(/waitForTimeout/g)).toHaveLength(1);
+    expect(runner).toMatch(/hold: async \(ms\) => \{\s*await page\.waitForTimeout\(ms\);/);
   });
 });

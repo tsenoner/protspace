@@ -1,9 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * The docs media captures in scripts/docs-screenshots/ (`pnpm docs:screenshots`, and
- * `pnpm docs:animations` until the GIF runner replaces it): the runner turns each manifest entry
- * into one test per output file, and docs/explore/images/README.md describes the pipeline.
+ * The docs media captures in scripts/docs-screenshots/ (`pnpm docs:screenshots` for the PNGs,
+ * `pnpm docs:animations` for the GIF recordings, which `pnpm docs:gifs` converts): the runner
+ * turns each manifest entry into one test per output file, and docs/explore/images/README.md
+ * describes the pipeline.
  *
  * It starts its own dev server on DOCS_CAPTURE_PORT (default 8096), with this checkout's packages
  * built first and without VITE_STARTUP_DATASET_URL, so the captures show the product demo, never
@@ -26,7 +27,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: 'list',
 
-  // Each capture sets its own; this covers the old animation captures.
+  // Each capture sets its own (90 s unless its entry says otherwise).
   timeout: 60_000,
 
   use: {
@@ -36,11 +37,6 @@ export default defineConfig({
     screenshot: 'off',
     // Headed on macOS for the system GPU's WebGL; CI runs headless on SwiftShader.
     headless: !!process.env.CI,
-    // Video recording for the old animation captures.
-    video: {
-      mode: 'on',
-      size: { width: 1536, height: 864 },
-    },
   },
 
   webServer: process.env.PLAYWRIGHT_BASE_URL
@@ -65,17 +61,10 @@ export default defineConfig({
       testMatch: /capture-png\.spec\.ts$/,
     },
     {
-      name: 'animations',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 1536, height: 864 },
-        video: {
-          mode: 'on',
-          size: { width: 1536, height: 864 },
-        },
-      },
-      // Any `capture-*animations.spec.ts` registers itself; no per-file listing.
-      testMatch: /animations\.spec\.ts$/,
+      // GIFs: one test per GIF in the manifest; runner.ts records each in a context of its own.
+      name: 'docs-gif',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /capture-gif\.spec\.ts$/,
     },
   ],
 
