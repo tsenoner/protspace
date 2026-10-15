@@ -7,6 +7,20 @@ import {
   validateManifest,
   type CaptureEntry,
 } from '../../../../scripts/docs-screenshots/capture-plan';
+import {
+  headingSlug,
+  imageRefs,
+  LEGACY_IMAGES,
+  lintDocs,
+  lintManifest,
+  pageAnchors,
+  STALE_PAGES,
+  STALE_TERMS,
+  type DocsPage,
+  type ImageFile,
+  type ImageRef,
+  type MediaOutput,
+} from '../../../../scripts/docs-screenshots/docs-lint';
 
 /**
  * Pins the docs media pipeline's pure rules (scripts/docs-screenshots/capture-plan.ts): how an
@@ -224,5 +238,316 @@ describe('the capture code', () => {
         .filter(([, count]) => count > 0),
     );
     expect(timers).toEqual(HELPER_TIMERS);
+  });
+});
+
+// ─── docs-lint.ts: the rules on small pages ──────────────────────────────────
+
+const lintPage = (path: string, ...lines: string[]): DocsPage => ({ path, text: lines.join('\n') });
+const onDisk = (...names: string[]): ImageFile[] => names.map((file) => ({ file }));
+const PAIR = ['![A](./images/a.png){.light-only}', '![A](./images/a-dark.png){.dark-only}'];
+
+describe('docs lint: headingSlug', () => {
+  it.each([
+    ['Numeric range conditions', 'numeric-range-conditions'],
+    ['7. Filter Button', '_7-filter-button'],
+    ['Light and dark', 'light-and-dark'],
+    ["What's new?", 'what-s-new'],
+    ['Selecting items (canvas + sidebar)', 'selecting-items-canvas-sidebar'],
+    ['`predicted_membrane`', 'predicted-membrane'],
+    ['Café **au lait**', 'cafe-au-lait'],
+  ])('slugs %s as VitePress does', (text, slug) => {
+    expect(headingSlug(text)).toBe(slug);
+  });
+});
+
+describe('docs lint: pageAnchors', () => {
+  it('reads slugs, explicit ids and repeats, and skips front matter and code', () => {
+    const anchors = pageAnchors(
+      lintPage(
+        'explore/a.md',
+        '---',
+        '# a YAML comment, not a heading',
+        '---',
+        '# Page',
+        '## Setup {#custom-id}',
+        '## Usage',
+        '## Usage',
+        '```bash',
+        '# a shell comment, not a heading',
+        '```',
+      ),
+    );
+    expect([...anchors].sort()).toEqual(['custom-id', 'page', 'usage', 'usage-1']);
+  });
+});
+
+describe('docs lint: imageRefs', () => {
+  it('reads markdown and raw images in all three path forms, in page order', () => {
+    const explore = lintPage(
+      'explore/a.md',
+      '![A](./images/a.png){.light-only}',
+      '![A](./images/a-dark.png){.dark-only}',
+      '<img src="./images/b.png" class="light-only" alt="B" width="1280" height="720" />',
+      '<img src="./images/b-dark.png" class="dark-only" loading="lazy" alt="B" />',
+      '![C](/explore/images/examples/c.png)',
+    );
+    const guide = lintPage(
+      'guide/x.md',
+      '![D](../explore/images/d.gif)',
+      '![Not ours](./images/chart.png)',
+      '`![in code](../explore/images/e.png)`',
+    );
+    const ref = (
+      page: string,
+      file: string,
+      line: number,
+      classes: string[],
+      lazy = true,
+    ): ImageRef => ({
+      page,
+      file,
+      classes,
+      lazy,
+      line,
+    });
+    expect(imageRefs(explore)).toEqual([
+      ref('explore/a.md', 'a.png', 1, ['light-only']),
+      ref('explore/a.md', 'a-dark.png', 2, ['dark-only']),
+      ref('explore/a.md', 'b.png', 3, ['light-only'], false),
+      ref('explore/a.md', 'b-dark.png', 4, ['dark-only']),
+      ref('explore/a.md', 'examples/c.png', 5, []),
+    ]);
+    expect(imageRefs(guide)).toEqual([ref('guide/x.md', 'd.gif', 1, [])]);
+  });
+});
+
+describe('docs lint: light and dark pairs', () => {
+  const files = onDisk('a.png', 'a-dark.png');
+
+  it('passes a light image followed by its dark twin', () => {
+    expect(lintDocs([lintPage('explore/a.md', ...PAIR)], files)).toEqual([]);
+  });
+
+  it('passes a raw pair whose dark twin loads lazily', () => {
+    const raw = lintPage(
+      'explore/a.md',
+      '<img src="./images/a.png" class="light-only" alt="A" loading="eager" />',
+      '<img src="./images/a-dark.png" class="dark-only" alt="A" loading="lazy" />',
+    );
+    expect(lintDocs([raw], files)).toEqual([]);
+  });
+
+  it.each([
+    ['the dark twin first', [PAIR[1], PAIR[0]], /a-dark\.png is shown outside a light\/dark pair/],
+    ['no .dark-only', [PAIR[0], '![A](./images/a-dark.png)'], /a-dark\.png needs \{\.dark-only\}/],
+    ['no .light-only', ['![A](./images/a.png)', PAIR[1]], /a\.png needs \{\.light-only\}/],
+    [
+      'an eager raw dark twin',
+      [
+        '<img src="./images/a.png" class="light-only" alt="A" />',
+        '<img src="./images/a-dark.png" class="dark-only" alt="A" />',
+      ],
+      /a-dark\.png must load lazily/,
+    ],
+  ])('fails %s with one message', (_, lines, message) => {
+    const messages = lintDocs([lintPage('explore/a.md', ...lines)], files);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(message);
+  });
+
+  it('fails a -dark image shown without its light twin before it', () => {
+    const pages = [lintPage('explore/a.md', ...PAIR), lintPage('explore/b.md', PAIR[1])];
+    expect(lintDocs(pages, files)).toEqual([
+      expect.stringMatching(/^explore\/b\.md:1: a-dark\.png is shown outside a light\/dark pair/),
+    ]);
+  });
+
+  it('fails a -dark file without its light twin', () => {
+    expect(lintDocs([], onDisk('b-dark.png'))).toEqual([
+      'b-dark.png: a -dark image needs its light twin b.png',
+    ]);
+  });
+});
+
+describe('docs lint: files', () => {
+  it('fails a file no page shows', () => {
+    expect(lintDocs([], onDisk('a.png'))).toEqual([
+      'a.png: no docs page shows it; delete it or show it on a page',
+    ]);
+  });
+
+  it('fails a page showing a file that does not exist', () => {
+    expect(lintDocs([lintPage('explore/a.md', '![x](./images/gone.png)')], [])).toEqual([
+      'explore/a.md:1: gone.png does not exist',
+    ]);
+  });
+});
+
+describe('docs lint: anchors', () => {
+  const target = lintPage('explore/a.md', '# A', '## Real heading {#custom}', '## Other part');
+
+  it('resolves links in every form', () => {
+    const pages = [
+      target,
+      lintPage('explore/index.md', '# Overview', '## Light and dark'),
+      lintPage(
+        'explore/b.md',
+        '# B',
+        '## Local',
+        '[1](/explore/a#custom) [2](./a.md#other-part) [3](a#other-part) [4](#local)',
+        '[5](/explore/#light-and-dark) [6](../explore/a.md#a) [7](/explore/a.html#other-part)',
+        '[external](https://example.com/page#frag) [unknown page](/explore/nowhere#x)',
+        '```md',
+        '[in a fence](#nowhere)',
+        '```',
+        'Inline code is no link: `[x](#nowhere)`',
+      ),
+    ];
+    expect(lintDocs(pages, [])).toEqual([]);
+  });
+
+  it('fails an anchor no heading has', () => {
+    const pages = [target, lintPage('guide/data-format.md', 'See [it](/explore/a#nope).')];
+    expect(lintDocs(pages, [])).toEqual([
+      'guide/data-format.md:1: /explore/a#nope points at no heading on explore/a.md',
+    ]);
+  });
+});
+
+describe('docs lint: stale terms', () => {
+  it('fails removed UI named in the user guide', () => {
+    expect(
+      lintDocs([lintPage('explore/new-page.md', '# New', 'Open the Control Bar.')], []),
+    ).toEqual(['explore/new-page.md:2: "Control Bar" names removed UI']);
+  });
+
+  it('leaves the developer docs alone', () => {
+    const api = lintPage('developers/api/index.md', 'The control bar is removed.');
+    expect(lintDocs([api], [])).toEqual([]);
+  });
+
+  it('leaves a page in STALE_PAGES alone until its rewrite', () => {
+    // Empty once every page task has run (7.15); Task 7.16 deletes this case with the set. Until
+    // then an empty set must still flag a stale term, so the case never passes with no assertion.
+    if (STALE_PAGES.size === 0) {
+      expect(lintDocs([lintPage('explore/x.md', 'Use the control bar.')], [])).toHaveLength(1);
+      return;
+    }
+    for (const path of STALE_PAGES) {
+      expect(lintDocs([lintPage(path, 'Use the control bar.')], [])).toEqual([]);
+    }
+  });
+});
+
+describe('docs lint: manifest', () => {
+  const output = (file: string, extra: Partial<MediaOutput> = {}): MediaOutput => ({
+    file,
+    kind: 'png',
+    budgetBytes: 3 * 1024 * 1024,
+    docs: ['explore/a.md'],
+    ...extra,
+  });
+  const shows = (...files: string[]) =>
+    lintPage('explore/a.md', ...files.map((file) => `![x](./images/${file})`));
+
+  it('passes outputs on disk, shown by their page, within budget', () => {
+    const gif = output('z.gif', { kind: 'gif', budgetBytes: 100 });
+    const files = [
+      { file: 'a.png', bytes: 5 },
+      { file: 'z.gif', bytes: 100 },
+    ];
+    expect(lintManifest([output('a.png'), gif], files, [shows('a.png', 'z.gif')])).toEqual([]);
+  });
+
+  it('fails an output missing on disk', () => {
+    expect(lintManifest([output('a.png')], [], [shows('a.png')])).toEqual([
+      expect.stringMatching(/^a\.png: in the manifest but not on disk/),
+    ]);
+  });
+
+  it('fails a file no entry makes', () => {
+    expect(lintManifest([], [{ file: 'stray.png' }], [])).toEqual([
+      expect.stringMatching(/^stray\.png: no manifest entry makes it/),
+    ]);
+  });
+
+  it('fails a GIF one byte over its budget', () => {
+    const gif = output('z.gif', { kind: 'gif', budgetBytes: 100 });
+    expect(lintManifest([gif], [{ file: 'z.gif', bytes: 101 }], [shows('z.gif')])).toEqual([
+      'z.gif: 101 bytes, over its 100-byte budget',
+    ]);
+  });
+
+  it('fails an output its page does not show', () => {
+    expect(lintManifest([output('a.png')], [{ file: 'a.png' }], [shows()])).toEqual([
+      'a.png: explore/a.md does not show it',
+    ]);
+  });
+
+  it('fails an output whose page does not exist', () => {
+    const lost = output('a.png', { docs: ['explore/none.md'] });
+    expect(lintManifest([lost], [{ file: 'a.png' }], [])).toEqual([
+      'a.png: its docs page explore/none.md does not exist',
+    ]);
+  });
+
+  it('lets a legacy image stand without an entry, but not once an entry makes it', () => {
+    // Empty after Task 7.14: an uncovered file must then fail, so the case still asserts.
+    if (LEGACY_IMAGES.size === 0) {
+      expect(lintManifest([], [{ file: 'x.png' }], [])).toEqual([
+        expect.stringMatching(/^x\.png: no manifest entry makes it/),
+      ]);
+      return;
+    }
+    for (const file of [...LEGACY_IMAGES].slice(0, 1)) {
+      expect(lintManifest([], [{ file }], [])).toEqual([]);
+      const made = output(file);
+      expect(lintManifest([made], [{ file }], [shows(file)])).toEqual([
+        `${file}: an entry makes it, so remove it from LEGACY_IMAGES`,
+      ]);
+    }
+  });
+});
+
+// ─── docs-lint.ts: the real docs ─────────────────────────────────────────────
+
+const DOCS_ROOT = '../../../../docs/';
+const IMAGES_ROOT = '../../../../docs/explore/images/';
+const realPageTexts = import.meta.glob('../../../../docs/**/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const REAL_PAGES: DocsPage[] = Object.entries(realPageTexts)
+  // Mirrors `srcExclude` in docs/.vitepress/config.mts: these are not built pages.
+  .filter(([key]) => !key.endsWith('/README.md'))
+  .filter(([key]) => !key.startsWith(`${DOCS_ROOT}superpowers/`))
+  .map(([key, text]) => ({ path: key.slice(DOCS_ROOT.length), text }));
+const REAL_FILES: ImageFile[] = Object.keys(
+  import.meta.glob('../../../../docs/explore/images/**/*.{png,gif}'),
+).map((key) => ({ file: key.slice(IMAGES_ROOT.length) }));
+
+describe('docs lint: the real docs', () => {
+  it('finds the pages and the images', () => {
+    expect(REAL_PAGES.map((page) => page.path)).toContain('explore/index.md');
+    expect(REAL_FILES.map((file) => file.file)).toContain('examples/demo.png');
+  });
+
+  it('passes every page and image', () => {
+    expect(lintDocs(REAL_PAGES, REAL_FILES)).toEqual([]);
+  });
+
+  it('LEGACY_IMAGES lists only files that exist', () => {
+    const names = new Set(REAL_FILES.map((file) => file.file));
+    expect([...LEGACY_IMAGES].filter((file) => !names.has(file))).toEqual([]);
+  });
+
+  it('STALE_PAGES lists only pages that still use a stale term', () => {
+    const stillStale = (path: string) => {
+      const text = REAL_PAGES.find((page) => page.path === path)?.text ?? '';
+      return STALE_TERMS.some((term) => term.test(text));
+    };
+    expect([...STALE_PAGES].filter((path) => !stillStale(path))).toEqual([]);
   });
 });

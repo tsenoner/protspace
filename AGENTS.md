@@ -37,13 +37,17 @@ One-time CLI setup is in [CONTRIBUTING.md](CONTRIBUTING.md#openspec-one-time-per
 ## Before committing
 
 Always run `pnpm precommit` before any git commit. It is
-`lint-staged && quality && docs:annotations:check && docs:examples:check && docs:build`:
+`lint-staged && quality && docs:annotations:check && docs:examples:check && docs:images:check && docs:build`:
 
 - ESLint `--fix` and Prettier `--write`, on staged files only (lint-staged)
 - TypeScript typecheck, Knip, and Knip dependency validation (`pnpm quality`)
 - `docs:annotations:check` — the generated annotation reference must match its source
 - `docs:examples:check` — the generated Example datasets page must match the example catalog,
   the bundle manifest and its prose (`docs/scripts/example-details.ts`)
+- `docs:images:check` — every image under `docs/explore/images/` must come from the capture
+  manifest (`scripts/docs-screenshots/`) and be shown by the pages its entry names; `-dark` twins
+  are written as light/dark pairs, GIFs stay within their size budget, every `#anchor` link
+  resolves, and the user guide names no removed UI
 - `docs:build`, a full VitePress build (a dead internal link fails it)
 
 **It runs no tests at all.** Run `pnpm test` yourself; `pnpm test:e2e` (below) and
